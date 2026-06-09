@@ -20,7 +20,7 @@ services:
     # Pin to the version referenced in connections.ts (catalog.management=dynamic behavior).
     image: trinodb/trino:481
     ports:
-      - "8080:8080"
+      - "8067:8080"
     configs:
       # Inline config avoids Coolify's bind-mount path pre-creation (which creates directories
       # at file mount paths, causing "not a directory" errors on container start).
@@ -44,7 +44,7 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "3067:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -82,7 +82,7 @@ services:
     image: inngest/inngest:latest
     command: inngest dev -u http://app:3000/api/inngest --no-discovery
     ports:
-      - "8288:8288"
+      - "8267:8288"
     depends_on:
       app:
         condition: service_healthy
@@ -92,7 +92,7 @@ services:
 #   details, and click Save — the source registers with Trino automatically.
 # - Built-in tpch sample data is always available:
 #   use tpch.tiny.nation, tpch.tiny.orders, etc. in any cell right away.
-# - Scheduling: the Inngest UI is available at http://localhost:8288
+# - Scheduling: the Inngest UI is available at http://localhost:8267
 # - To auto-init schedules on startup, set: DBT_PROJECT_FOLDER=/path/to/project
 
 volumes:
