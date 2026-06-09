@@ -21,11 +21,14 @@ services:
     image: trinodb/trino:481
     ports:
       - "8080:8080"
+    configs:
+      # Inline config avoids Coolify's bind-mount path pre-creation (which creates directories
+      # at file mount paths, causing "not a directory" errors on container start).
+      - source: trino_config
+        target: /etc/trino/config.properties
     volumes:
-      # Custom config enables dynamic catalog management + file-backed catalog store.
       # New sources are registered by writing a .properties file then restarting Trino
       # (Docker restart:unless-stopped brings it back automatically after graceful shutdown).
-      - ./trino/etc/config.properties:/etc/trino/config.properties:ro
       - ./trino/catalog:/etc/trino/catalog
     depends_on:
       db:
@@ -94,3 +97,12 @@ services:
 
 volumes:
   pgdata:
+
+configs:
+  trino_config:
+    content: |
+      coordinator=true
+      node-scheduler.include-coordinator=true
+      discovery.uri=http://localhost:8080
+      catalog.management=dynamic
+      catalog.store=file
