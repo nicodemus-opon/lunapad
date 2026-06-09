@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync, copyFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createLogger, type Plugin } from 'vite';
@@ -36,10 +36,6 @@ const svelteNodeModulesStyleFix: Plugin = {
 	}
 };
 
-// In dev, /duckdb/* is handled by the SvelteKit route src/routes/duckdb/[file]/+server.ts
-// which adds Cross-Origin-Resource-Policy: same-origin headers (required for Workers under COEP).
-// In production (adapter-node), the same SvelteKit route handles requests via hooks.server.ts.
-// This plugin only intercepts in dev to add the CORP header that the SvelteKit route adds.
 const DUCKDB_FILES = [
 	'duckdb-mvp.wasm',
 	'duckdb-eh.wasm',
@@ -49,6 +45,16 @@ const DUCKDB_FILES = [
 
 const duckdbStaticServe: Plugin = {
 	name: 'duckdb-static-serve',
+	buildStart() {
+		// Copy DuckDB dist files to static/duckdb/ so they're served as CDN static assets
+		// on Vercel (and any other static-file-capable host) without needing a server route.
+		const staticDir = resolve(__dirname, 'static/duckdb');
+		const distDir = resolve(__dirname, 'node_modules/@duckdb/duckdb-wasm/dist');
+		mkdirSync(staticDir, { recursive: true });
+		for (const file of DUCKDB_FILES) {
+			copyFileSync(resolve(distDir, file), resolve(staticDir, file));
+		}
+	},
 	configureServer(server) {
 		server.middlewares.use((req, res, next) => {
 			const match = req.url?.match(/^\/duckdb\/([^?#]+)/);

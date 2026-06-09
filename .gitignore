@@ -22,6 +22,9 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Generated DuckDB static assets (copied from node_modules at build time)
+/static/duckdb/
+
 # Tauri
 src-tauri/target/
 src-tauri/gen/
