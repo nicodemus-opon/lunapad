@@ -44,7 +44,7 @@ services:
   app:
     build: .
     ports:
-      - "3067:3000"
+      - "3967:3000"
     depends_on:
       db:
         condition: service_healthy
