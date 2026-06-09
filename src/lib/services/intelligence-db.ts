@@ -19,7 +19,7 @@ import { hydrateSemanticTemplateBundles } from '$lib/services/semantic-template-
 import type { UploadedTable } from '$lib/stores/notebook.svelte';
 import type { ChartType, GUIPipelineStage, StageType } from '$lib/types/gui-pipeline';
 
-const META_SCHEMA = '_lunapad_intelligence';
+const META_SCHEMA = '_lunapad_metadata';
 let metaReady = false;
 
 function quoteLiteral(value: string): string {

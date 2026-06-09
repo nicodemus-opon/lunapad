@@ -46,7 +46,7 @@ describe('intelligence-db', () => {
 		});
 
 		expect(initDBMock).toHaveBeenCalled();
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS _lunapad_intelligence.table_profiles'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS _lunapad_metadata.table_profiles'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("'uploaded'"));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('column_profiles'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic_type'));
@@ -79,17 +79,17 @@ describe('intelligence-db', () => {
 			stages
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_intelligence.cell_runs'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_intelligence.stage_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.cell_runs'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.stage_usage'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('stage_sequence_usage'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic_confidence'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_intelligence.signature_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('result1'));
 	});
 
 	it('builds llm planning context from semantic metadata and samples', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -167,7 +167,7 @@ describe('intelligence-db', () => {
 
 	it('uses metadata tables to prioritize intelligent chips', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return {
 					rows: [
 						{ stage_type: 'group', column_name: 'region', usage_count: 12 },
@@ -176,7 +176,7 @@ describe('intelligence-db', () => {
 					columns: ['stage_type', 'column_name', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.01, distinct_count: 300, sample_values_json: '["2026-05-01","2026-05-30"]' },
@@ -207,13 +207,13 @@ describe('intelligence-db', () => {
 
 	it('generates at least five rich chips from result evidence across stages', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes("tp.source_kind = 'cell-result'")) {
@@ -294,7 +294,7 @@ describe('intelligence-db', () => {
 					]
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -324,10 +324,10 @@ describe('intelligence-db', () => {
 
 	it('builds intelligent chips from metadata when availableColumns is empty', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'status', data_kind: 'text', null_ratio: 0, distinct_count: 6, sample_values_json: '["active","inactive"]' },
@@ -364,10 +364,10 @@ describe('intelligence-db', () => {
 
 	it('uses >= date comparison for date-like filters from metadata samples', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.0, distinct_count: 300, sample_values_json: '["2026-05-01","2026-05-30"]' },
@@ -399,10 +399,10 @@ describe('intelligence-db', () => {
 
 	it('does not suggest rounded derive for count-like integer metrics', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'total_jobs', data_kind: 'numeric', null_ratio: 0, distinct_count: 20, sample_values_json: '["10","20","30"]' },
@@ -427,7 +427,7 @@ describe('intelligence-db', () => {
 	it('uses signature backoff, recency decay, and column-aware boosts for ranking', async () => {
 		const now = Date.now();
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				if (sql.includes("pipeline_signature = 'from > select'")) {
 					return { rows: [], columns: [] };
 				}
@@ -460,7 +460,7 @@ describe('intelligence-db', () => {
 					};
 				}
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'status', data_kind: 'text', null_ratio: 0.01, distinct_count: 6, sample_values_json: '["active","paused"]' },
@@ -489,10 +489,10 @@ describe('intelligence-db', () => {
 
 	it('keeps distinct same-icon chips when semantics differ', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'is_active', data_kind: 'boolean', null_ratio: 0.0, distinct_count: 2, sample_values_json: '["true","false"]' },
@@ -519,10 +519,10 @@ describe('intelligence-db', () => {
 
 	it('uses seeded semantic types to shape grouping and filtering chips', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -579,7 +579,7 @@ describe('intelligence-db', () => {
 
 	it('registers custom semantic synonyms and backfills semantic signatures', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.semantic_synonyms')) {
+			if (sql.includes('FROM _lunapad_metadata.semantic_synonyms')) {
 				return {
 					rows: [{ token: 'gmv', canonical: 'revenue', semantic_hint: 'amount', weight: 0.95 }],
 					columns: ['token', 'canonical', 'semantic_hint', 'weight']
@@ -621,15 +621,15 @@ describe('intelligence-db', () => {
 			relationName: 'orders'
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_intelligence.semantic_synonyms'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('UPDATE _lunapad_intelligence.column_profiles'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.semantic_synonyms'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('UPDATE _lunapad_metadata.column_profiles'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringMatching(/semantic=(amount|unit_price|currency_amount)/));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_intelligence.signature_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage'));
 	});
 
 	it('backfills expanded semantic taxonomy for media, ordinal, event, and relational ids', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.semantic_synonyms')) {
+			if (sql.includes('FROM _lunapad_metadata.semantic_synonyms')) {
 				return {
 					rows: [],
 					columns: ['token', 'canonical', 'semantic_hint', 'weight']
@@ -708,7 +708,7 @@ describe('intelligence-db', () => {
 
 	it('recommends semantic-aware presets from metadata and sequence usage', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -754,7 +754,7 @@ describe('intelligence-db', () => {
 					]
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'sort', usage_count: 12 },
@@ -788,7 +788,7 @@ describe('intelligence-db', () => {
 
 	it('recommends advanced presets for since23-like semantics', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -854,7 +854,7 @@ describe('intelligence-db', () => {
 					]
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 20 },
@@ -893,7 +893,7 @@ describe('intelligence-db', () => {
 
 	it('applies metadata-aware coercion for text metric and temporal columns in intelligent presets', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -939,7 +939,7 @@ describe('intelligence-db', () => {
 					]
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: ['context_signature', 'next_stage', 'usage_count'] };
 			}
 			return { rows: [], columns: [] };
@@ -986,16 +986,16 @@ describe('intelligence-db', () => {
 
 	it('avoids using id-like columns as numeric group metrics', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -1061,16 +1061,16 @@ describe('intelligence-db', () => {
 
 	it('uses semantic bootstrap from available columns when metadata rows are missing', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [],
 					columns: [
@@ -1101,13 +1101,13 @@ describe('intelligence-db', () => {
 
 	it('does not leak unrelated recent-result chips when current available columns are known', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes("tp.source_kind = 'cell-result'")) {
@@ -1164,7 +1164,7 @@ describe('intelligence-db', () => {
 					]
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -1183,16 +1183,16 @@ describe('intelligence-db', () => {
 
 	it('hydrates preset labels from available columns when profile rows are missing', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [],
 					columns: [
@@ -1225,10 +1225,10 @@ describe('intelligence-db', () => {
 
 	it('hydrates multi-column group labels with relevance-thresholded dimensions', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'group', usage_count: 18 },
@@ -1238,10 +1238,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -1304,10 +1304,10 @@ describe('intelligence-db', () => {
 
 	it('includes extended preset families in intelligent ranking when schema supports them', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 14 },
@@ -1318,10 +1318,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'event_time', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.9, null_ratio: 0.01, distinct_count: 360, sample_values_json: '["2026-01-01"]' },
@@ -1366,16 +1366,16 @@ describe('intelligence-db', () => {
 
 	it('applies adaptive relevance threshold to avoid low-quality dimensions in multi-column labels', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [{ next_stage: 'group', usage_count: 20 }], columns: ['next_stage', 'usage_count'] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'region', data_kind: 'text', semantic_type: 'region', semantic_signature: 'kind=text|semantic=region', semantic_confidence: 0.92, null_ratio: 0.01, distinct_count: 8, sample_values_json: '["NA"]' },
@@ -1411,16 +1411,16 @@ describe('intelligence-db', () => {
 
 	it('humanizes raw column names in hydrated preset labels', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [{ next_stage: 'sort', usage_count: 10 }], columns: ['next_stage', 'usage_count'] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'scraped_at', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.91, null_ratio: 0.01, distinct_count: 120, sample_values_json: '["2026-05-01"]' },
@@ -1474,16 +1474,16 @@ describe('intelligence-db', () => {
 
 	it('suppresses weak generic temporal and seasonal presets when required signals are missing', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'job_title', data_kind: 'text', semantic_type: 'entity_name', semantic_signature: 'kind=text|semantic=entity_name', semantic_confidence: 0.88, null_ratio: 0, distinct_count: 900, sample_values_json: '["Data Analyst"]' },
@@ -1517,16 +1517,16 @@ describe('intelligence-db', () => {
 
 	it('chooses sensible quick chips for a text-heavy jobs schema', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -1553,16 +1553,16 @@ describe('intelligence-db', () => {
 
 	it('prioritizes genre-like dimensions over near-unique names for music schemas', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'updated_at', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.91, null_ratio: 0, distinct_count: 66, sample_values_json: '["2026-05-30"]' },
@@ -1612,16 +1612,16 @@ describe('intelligence-db', () => {
 
 	it('prefers class dimensions over numeric feature dimensions for iris-like schemas', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'sepal_length', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 35, sample_values_json: '["5.1"]' },
@@ -1650,16 +1650,16 @@ describe('intelligence-db', () => {
 
 	it('treats camelCase *Id columns as identifiers and avoids sum collectionId suggestions', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -1688,16 +1688,16 @@ describe('intelligence-db', () => {
 
 	it('does not suggest stage types already present in pipeline', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -1752,13 +1752,13 @@ describe('intelligence-db', () => {
 
 	it('avoids constant status dimensions for filter and group chips', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes("tp.source_kind = 'cell-result'")) {
@@ -1816,7 +1816,7 @@ describe('intelligence-db', () => {
 					columns: []
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -1841,19 +1841,19 @@ describe('intelligence-db', () => {
 
 	it('uses unqualified metadata profiles for schema-qualified from sources', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes("tp.source_kind = 'cell-result'")) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				expect(sql).toContain('relation_name IN');
 				expect(sql).toContain("'main.since23'");
 				expect(sql).toContain("'since23'");
@@ -1890,16 +1890,16 @@ describe('intelligence-db', () => {
 			if (sql.includes('AND ()')) {
 				throw new Error('invalid empty context predicate');
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes("tp.source_kind = 'cell-result'")) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -1916,7 +1916,7 @@ describe('intelligence-db', () => {
 					columns: []
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
 			return { rows: [], columns: [] };
@@ -2032,7 +2032,7 @@ describe('intelligence-db', () => {
 
 	it('persists exhaustive signatures including semantic and quad patterns', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.semantic_synonyms')) {
+			if (sql.includes('FROM _lunapad_metadata.semantic_synonyms')) {
 				return { rows: [], columns: ['token', 'canonical', 'semantic_hint', 'weight'] };
 			}
 			return { rows: [], columns: [] };
@@ -2068,7 +2068,7 @@ describe('intelligence-db', () => {
 
 	it('persists derive-intent composed signatures for blind schemas', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.semantic_synonyms')) {
+			if (sql.includes('FROM _lunapad_metadata.semantic_synonyms')) {
 				return { rows: [], columns: ['token', 'canonical', 'semantic_hint', 'weight'] };
 			}
 			return { rows: [], columns: [] };
@@ -2101,16 +2101,16 @@ describe('intelligence-db', () => {
 
 	it('falls back to count rows when metric evidence is weak', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -2157,10 +2157,10 @@ describe('intelligence-db', () => {
 
 	it('keeps top-metric preset focused on strong metric columns', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return { rows: [{ next_stage: 'sort', usage_count: 9 }], columns: ['next_stage', 'usage_count'] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -2214,7 +2214,7 @@ describe('intelligence-db', () => {
 
 	it('scopes bundle suggestions to currently selected columns', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 11 },
@@ -2224,10 +2224,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
@@ -2315,10 +2315,10 @@ describe('intelligence-db', () => {
 
 	it('suggests composed revenue bundles for price and quantity schemas', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 14 },
@@ -2328,10 +2328,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'Item Name', data_kind: 'text', semantic_type: 'entity_name', semantic_signature: 'kind=text|semantic=entity_name', semantic_confidence: 0.9, null_ratio: 0.02, distinct_count: 120, sample_values_json: '["Apple"]' },
@@ -2366,10 +2366,10 @@ describe('intelligence-db', () => {
 
 	it('surfaces cashflow and text presets for output.csv-like transaction schemas', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 18 },
@@ -2379,10 +2379,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'Receipt No.', data_kind: 'text', semantic_type: 'code', semantic_signature: 'kind=text|semantic=code', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 1200, sample_values_json: '["UCIII9QXAY"]' },
@@ -2415,10 +2415,10 @@ describe('intelligence-db', () => {
 
 	it('emits hydrated semantic-template bundles with dynamic preset ids', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 15 },
@@ -2428,10 +2428,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'Detected At', data_kind: 'date', semantic_type: 'event_time', semantic_signature: 'kind=date|semantic=event_time', semantic_confidence: 0.95, null_ratio: 0, distinct_count: 500, sample_values_json: '["2026-05-01 10:10:00"]' },
@@ -2459,10 +2459,10 @@ describe('intelligence-db', () => {
 
 	it('does not treat downtime metrics as temporal axes in preset labels', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 14 },
@@ -2472,10 +2472,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{ column_name: 'Incident ID', data_kind: 'text', semantic_type: 'code', semantic_signature: 'kind=text|semantic=code', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 500, sample_values_json: '["INC-1"]' },
@@ -2504,10 +2504,10 @@ describe('intelligence-db', () => {
 
 	it('generates syntactically valid intelligent suggestions for spaced identifiers', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
-			if (sql.includes('FROM _lunapad_intelligence.stage_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.stage_sequence_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
 				return {
 					rows: [
 						{ next_stage: 'derive', usage_count: 12 },
@@ -2517,10 +2517,10 @@ describe('intelligence-db', () => {
 					columns: ['next_stage', 'usage_count']
 				};
 			}
-			if (sql.includes('FROM _lunapad_intelligence.signature_usage')) {
+			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
 			}
-			if (sql.includes('FROM _lunapad_intelligence.column_profiles')) {
+			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
 						{
