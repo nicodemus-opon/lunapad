@@ -1,0 +1,45 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Temp/scratch files
+.tmp-*.json
+.vitest-*.json
+generated_datasets/
+generated_datasets_round2/
+*.csv
+
+# Editor
+.cursor/
+.claude/
+.vscode/
+
+src-tauri/

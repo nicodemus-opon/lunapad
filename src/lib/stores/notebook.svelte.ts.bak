@@ -1,0 +1,357 @@
+import { compilePRQL, type PRQLError } from '$lib/services/prql';
+import {
+	executeSQL,
+	createView,
+	dropView,
+	setPrevView,
+	dropTable as dbDropTable
+} from '$lib/services/duckdb';
+import { guiToPreql } from '$lib/services/gui-prql';
+import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
+
+export type CellStatus = 'idle' | 'running' | 'success' | 'error';
+export type CellEditMode = 'gui' | 'prql';
+
+export interface Cell {
+	id: string;
+	outputName: string;
+	code: string;
+	status: CellStatus;
+	result: { rows: Record<string, unknown>[]; columns: string[] } | null;
+	errors: PRQLError[];
+	compiledSQL: string | null;
+	executionMs: number | null;
+	/** GUI pipeline stages (used when editMode === 'gui') */
+	guiStages: GUIPipelineStage[];
+	/** Whether the cell is in GUI or raw PRQL edit mode */
+	editMode: CellEditMode;
+}
+
+export interface UploadedTable {
+	name: string;
+	fileName: string;
+	rowCount: number;
+	columns: string[];
+	columnTypes: string[];
+}
+
+interface NotebookState {
+	cells: Cell[];
+	tables: UploadedTable[];
+	theme: 'light' | 'dark' | 'system';
+}
+
+function makeId(): string {
+	return Math.random().toString(36).slice(2, 10);
+}
+
+function makeCell(code = '', outputName = ''): Cell {
+	return {
+		id: makeId(),
+		outputName,
+		code,
+		status: 'idle',
+		result: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'gui'
+	};
+}
+
+// ── Active-cell insert bridge ───────────────────────────────────────────────
+let _insertCallback = $state<((text: string) => void) | null>(null);
+
+export function registerInsertCallback(fn: ((text: string) => void) | null): void {
+	_insertCallback = fn;
+}
+
+export function insertIntoActiveCell(text: string): void {
+	_insertCallback?.(text);
+}
+
+// ── Reactive state ──────────────────────────────────────────────────────────
+let state = $state<NotebookState>({
+	cells: [makeCell('', 'result1')],
+	tables: [],
+	theme: 'system'
+});
+
+// ── Persistence ─────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'prqlstudio_notebook';
+
+type SerializedCell = Omit<Cell, 'status' | 'result' | 'errors'> & { status: 'idle'; result: null; errors: [] };
+
+function serialize(): string {
+	return JSON.stringify({
+		cells: state.cells.map((c): SerializedCell => ({
+			...c,
+			status: 'idle',
+			result: null,
+			errors: []
+		})),
+		tables: state.tables,
+		theme: state.theme
+	});
+}
+
+function deserialize(raw: string): void {
+	try {
+		const data = JSON.parse(raw) as Partial<NotebookState>;
+		if (Array.isArray(data.cells) && data.cells.length > 0) {
+			state.cells = (data.cells as Cell[]).map((c, i) => ({
+				...makeCell(c.code),
+				id: c.id ?? makeId(),
+				outputName: c.outputName || `result${i + 1}`,
+				guiStages: (c as Cell).guiStages ?? [{ type: 'from', table: '' }],
+				editMode: (c as Cell).editMode ?? 'gui'
+			}));
+		}
+		if (data.theme) state.theme = data.theme;
+		// Tables cannot be restored (file buffers aren't serializable) — keep empty
+	} catch {
+		// ignore corrupt state
+	}
+}
+
+export function loadFromStorage(): void {
+	if (typeof localStorage === 'undefined') return;
+	const raw = localStorage.getItem(STORAGE_KEY);
+	if (raw) deserialize(raw);
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+export function scheduleSave(): void {
+	if (typeof localStorage === 'undefined') return;
+	if (saveTimer) clearTimeout(saveTimer);
+	saveTimer = setTimeout(() => {
+		localStorage.setItem(STORAGE_KEY, serialize());
+	}, 500);
+}
+
+// ── Getters ──────────────────────────────────────────────────────────────────
+export function getCells(): Cell[] {
+	return state.cells;
+}
+
+export function getTables(): UploadedTable[] {
+	return state.tables;
+}
+
+export function getTheme(): 'light' | 'dark' | 'system' {
+	return state.theme;
+}
+
+export function getNotebookState(): NotebookState {
+	return state;
+}
+
+// ── Cell actions ─────────────────────────────────────────────────────────────
+export function addCell(): void {
+	const nextIndex = state.cells.length + 1;
+	state.cells = [...state.cells, makeCell('', `result${nextIndex}`)];
+	scheduleSave();
+}
+
+export function removeCell(id: string): void {
+	const cell = state.cells.find((c) => c.id === id);
+	if (cell) {
+		const viewName = cell.outputName || `_cell_${cell.id}`;
+		dropView(viewName).catch(() => {});
+	}
+	state.cells = state.cells.filter((c) => c.id !== id);
+	scheduleSave();
+}
+
+export function moveCell(id: string, direction: 'up' | 'down'): void {
+	const idx = state.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+	if (newIdx < 0 || newIdx >= state.cells.length) return;
+	const cells = [...state.cells];
+	[cells[idx], cells[newIdx]] = [cells[newIdx], cells[idx]];
+	state.cells = cells;
+	scheduleSave();
+}
+
+export function updateCellCode(id: string, code: string): void {
+	const idx = state.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const cell = state.cells[idx];
+	cell.code = code;
+	// Live compile for error feedback using full pipeline context
+	const preceding = getPrecedingCode(idx);
+	const fullCode = preceding ? `${preceding}\n${code.trim()}` : code;
+	const { errors, sql } = compilePRQL(fullCode);
+	cell.errors = errors;
+	cell.compiledSQL = sql;
+	scheduleSave();
+}
+
+export function updateCellName(id: string, name: string): void {
+	const cell = state.cells.find((c) => c.id === id);
+	if (!cell) return;
+	cell.outputName = name;
+	scheduleSave();
+}
+
+export function setTheme(theme: 'light' | 'dark' | 'system'): void {
+	state.theme = theme;
+	scheduleSave();
+}
+
+// ── GUI stage actions ────────────────────────────────────────────────────────
+export function updateGuiStages(id: string, stages: GUIPipelineStage[]): void {
+	const cell = state.cells.find((c) => c.id === id);
+	if (!cell) return;
+	cell.guiStages = stages;
+	// Sync generated PRQL into the code field so runCell works transparently
+	const prql = guiToPreql(stages);
+	cell.code = prql;
+	// Live compile for error feedback
+	const idx = state.cells.indexOf(cell);
+	const preceding = getPrecedingCode(idx);
+	const fullCode = preceding ? `${preceding}\n${prql.trim()}` : prql;
+	const { errors, sql } = compilePRQL(fullCode);
+	cell.errors = errors;
+	cell.compiledSQL = sql;
+	scheduleSave();
+}
+
+export function setEditMode(id: string, mode: CellEditMode): void {
+	const cell = state.cells.find((c) => c.id === id);
+	if (!cell) return;
+	cell.editMode = mode;
+	scheduleSave();
+}
+
+// ── Execution ────────────────────────────────────────────────────────────────
+async function _runCell(cell: Cell, precedingCode: string, prevViewName: string | null): Promise<void> {
+	cell.status = 'running';
+	cell.errors = [];
+	cell.result = null;
+	cell.compiledSQL = null;
+	cell.executionMs = null;
+
+	// Set up `prev` view if a predecessor exists
+	if (prevViewName) {
+		try {
+			await setPrevView(prevViewName);
+		} catch {
+			// If prev view fails, continue anyway
+		}
+	}
+
+	// Build the full PRQL pipeline by prepending preceding cells' code
+	const fullCode = precedingCode ? `${precedingCode}\n${cell.code.trim()}` : cell.code;
+	const { sql, errors } = compilePRQL(fullCode);
+	if (errors.length > 0 || !sql) {
+		cell.errors = errors;
+		cell.status = 'error';
+		return;
+	}
+
+	cell.compiledSQL = sql;
+	const start = performance.now();
+	try {
+		const result = await executeSQL(sql);
+		cell.executionMs = performance.now() - start;
+		cell.result = result;
+		cell.status = 'success';
+		// Register output view for chaining
+		const viewName = cell.outputName || `_cell_${cell.id}`;
+		await createView(viewName, sql);
+	} catch (err: unknown) {
+		cell.executionMs = performance.now() - start;
+		cell.status = 'error';
+		cell.errors = [
+			{
+				kind: 'Error',
+				code: null,
+				reason: (err as Error).message ?? String(err),
+				hint: null,
+				span: null,
+				display: (err as Error).message ?? String(err),
+				location: null
+			}
+		];
+	}
+}
+
+function prevViewNameForIndex(idx: number): string | null {
+	for (let i = idx - 1; i >= 0; i--) {
+		const prev = state.cells[i];
+		if (prev.status === 'success') {
+			return prev.outputName || `_cell_${prev.id}`;
+		}
+	}
+	return null;
+}
+
+/** True if the cell's code begins a new PRQL pipeline (starts with `from`). */
+function startsWithFrom(code: string): boolean {
+	return /^from\b/i.test(code.trim());
+}
+
+/** Concatenate the code from the current pipeline segment above idx.
+ *  A `from`-starting cell resets the segment boundary, so only cells
+ *  from the most recent `from` cell (inclusive) up to idx are included.
+ *  If the cell at idx itself starts with `from` it needs no preceding code. */
+function getPrecedingCode(idx: number): string {
+	if (startsWithFrom(state.cells[idx].code)) return '';
+
+	let segmentStart = 0;
+	for (let i = idx - 1; i >= 0; i--) {
+		if (startsWithFrom(state.cells[i].code)) {
+			segmentStart = i;
+			break;
+		}
+	}
+
+	return state.cells
+		.slice(segmentStart, idx)
+		.map((c) => c.code.trim())
+		.filter(Boolean)
+		.join('\n');
+}
+
+export async function runCell(id: string): Promise<void> {
+	const idx = state.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const cell = state.cells[idx];
+	const preceding = getPrecedingCode(idx);
+	const prevName = prevViewNameForIndex(idx);
+	await _runCell(cell, preceding, prevName);
+}
+
+export async function runAll(): Promise<void> {
+	for (let i = 0; i < state.cells.length; i++) {
+		const cell = state.cells[i];
+		const preceding = getPrecedingCode(i);
+		const prevName = prevViewNameForIndex(i);
+		await _runCell(cell, preceding, prevName);
+	}
+}
+
+// ── Table actions ─────────────────────────────────────────────────────────────
+export function addTable(table: UploadedTable): void {
+	// Replace if same name
+	state.tables = [...state.tables.filter((t) => t.name !== table.name), table];
+	scheduleSave();
+}
+
+export function removeTable(name: string): void {
+	dbDropTable(name).catch(() => {});
+	state.tables = state.tables.filter((t) => t.name !== name);
+	scheduleSave();
+}
+
+// ── Export / Import ──────────────────────────────────────────────────────────
+export function exportJSON(): string {
+	return serialize();
+}
+
+export function importJSON(json: string): void {
+	deserialize(json);
+}

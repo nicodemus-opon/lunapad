@@ -1,0 +1,5 @@
+# User-added data source catalog files contain connection credentials.
+# Only the bundled catalogs (tpch, docker_postgres) are tracked.
+*.properties
+!tpch.properties
+!docker_postgres.properties

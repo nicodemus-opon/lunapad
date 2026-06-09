@@ -1,0 +1,96 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lunapad
+      POSTGRES_PASSWORD: lunapad
+      POSTGRES_DB: lunapad
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lunapad -d lunapad"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  trino:
+    # Pin to the version referenced in connections.ts (catalog.management=dynamic behavior).
+    image: trinodb/trino:481
+    ports:
+      - "8080:8080"
+    volumes:
+      # Custom config enables dynamic catalog management + file-backed catalog store.
+      # New sources are registered by writing a .properties file then restarting Trino
+      # (Docker restart:unless-stopped brings it back automatically after graceful shutdown).
+      - ./trino/etc/config.properties:/etc/trino/config.properties:ro
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/info | grep -q '\"starting\":false'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+    environment:
+      # Set canonical origin so adapter-node builds URLs as http (not https).
+      # Without this, SvelteKit defaults to https in production, causing Inngest
+      # to register function URLs as https:// and then fail to reach the HTTP app.
+      ORIGIN: http://app:3000
+      TRINO_URL: http://trino:8080
+      TRINO_CATALOG_DIR: /trino-catalog
+      # Inngest: point to the inngest service inside the Docker network.
+      # INNGEST_DEV=1 tells the SDK it's in dev mode (skips signature verification).
+      INNGEST_DEV: "1"
+      INNGEST_BASE_URL: http://inngest:8288
+      INNGEST_EVENT_KEY: local
+      INNGEST_SIGNING_KEY: local
+    volumes:
+      - ./trino/catalog:/trino-catalog
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  # Inngest dev server — schedule monitoring UI at http://localhost:8288
+  # No restart policy: Inngest must start via `docker compose up` so that
+  # depends_on ordering is respected. Auto-restart (restart: unless-stopped)
+  # bypasses depends_on and causes Inngest to fire backfill crons before the
+  # app re-registers its functions, flooding logs with "missing envID" errors.
+  inngest:
+    image: inngest/inngest:latest
+    command: inngest dev -u http://app:3000/api/inngest --no-discovery
+    ports:
+      - "8288:8288"
+    depends_on:
+      app:
+        condition: service_healthy
+
+# Usage notes:
+# - Add a data source: click "Add source" in the Data Sources panel, fill in connection
+#   details, and click Save — the source registers with Trino automatically.
+# - Built-in tpch sample data is always available:
+#   use tpch.tiny.nation, tpch.tiny.orders, etc. in any cell right away.
+# - Scheduling: the Inngest UI is available at http://localhost:8288
+# - To auto-init schedules on startup, set: DBT_PROJECT_FOLDER=/path/to/project
+
+volumes:
+  pgdata:
