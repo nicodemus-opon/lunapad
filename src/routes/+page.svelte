@@ -3,6 +3,8 @@
 	import { initDB } from '$lib/services/duckdb';
 	import { initPRQL } from '$lib/services/prql';
 	import { withTimeout } from '$lib/services/async';
+	import Logo from '$lib/assets/logo.svelte';
+
 	import {
 		getCells,
 		getConnections,
@@ -535,6 +537,10 @@
 
 </script>
 
+<svelte:head>
+  <title>Lunapad | Analytics Workspace</title>
+</svelte:head>
+
 <svelte:window onkeydown={onGlobalKeydown} />
 
 <!-- Loading screen -->
@@ -572,7 +578,7 @@
 			>
 				<div class="flex items-center gap-2">
 					<div class="flex items-center gap-2 shrink-0">
-						<Orbit class="w-4 h-4 text-primary" />
+						<Logo class="w-6 h-6 text-primary" />
 						<span class="text-sm font-semibold tracking-tight">Lunapad</span>
 					</div>
 					<div class="h-5 w-px bg-border mx-1"></div>
@@ -1135,7 +1141,7 @@
 				</div>
 				{#if isNotebookTab}
 					<main class="flex-1 overflow-y-auto bg-background">
-						<div class="max-w-4xl mx-auto pt-8 pb-32 px-6">
+						<div class=" mx-auto pt-8 pb-32 px-10">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input
 									class="h-9 min-w-0 flex-1 bg-transparent border-0 outline-none p-0 text-xl font-semibold tracking-tight text-foreground placeholder:text-muted-foreground/60"

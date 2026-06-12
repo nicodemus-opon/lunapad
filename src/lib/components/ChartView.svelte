@@ -894,7 +894,7 @@
 	});
 </script>
 
-<div class="w-full pb-2 flex flex-col" style="height:{height}px">
+<div class="w-full p-4 flex flex-col" style="height:{height}px">
 	{#if config.title}
 		<div class="mb-1 px-1 shrink-0">
 			<p class="text-sm font-medium text-foreground leading-tight">{config.title}</p>
