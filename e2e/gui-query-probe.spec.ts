@@ -97,7 +97,7 @@ async function gotoWithCode(page: Page, code: string) {
   }, code);
 
   await page.goto('/');
-  await page.waitForSelector('.cm-editor', { timeout: 10000 });
+  await page.waitForSelector('.code-editor .monaco-editor', { timeout: 10000 });
 }
 
 async function switchToGuiMode(page: Page) {
@@ -123,7 +123,7 @@ async function setFromTable(page: Page, table: string) {
     h.updateCellCode(cell.id, `from ${tableName}`);
     await h.tick();
   }, table);
-  await page.waitForSelector('.cm-editor', { timeout: 5000 });
+  await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5000 });
   await switchToGuiMode(page);
 }
 

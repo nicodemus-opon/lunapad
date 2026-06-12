@@ -64,6 +64,10 @@ const duckdbStaticServe: Plugin = {
 					const content = readFileSync(filePath);
 					res.setHeader('Content-Type', match[1].endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
 					res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+					// This middleware runs before Vite's internal middleware, so server.headers
+					// is never applied here. The worker script needs COEP itself: a COEP-isolated
+					// document refuses to spawn dedicated workers whose script lacks the header.
+					res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
 					res.end(content);
 					return;
 				} catch {

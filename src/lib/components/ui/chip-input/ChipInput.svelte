@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { cn } from '$lib/utils';
+	import { beginChipEdit, endChipEdit } from '$lib/stores/chip-edit.svelte';
 
 	interface Props {
 		value: string;
@@ -93,7 +94,14 @@
 		if (e.key === 'Tab') { open = false; }
 	}
 
+	// Holds autorun back while this chip is focused (see chip-edit.svelte.ts)
+	let editing = false;
+
 	function handleFocus() {
+		if (!editing) {
+			editing = true;
+			beginChipEdit();
+		}
 		open = suggestions.length > 0;
 		highlightedIdx = filtered.length > 0 ? 0 : -1;
 		measureWidth();
@@ -101,8 +109,23 @@
 	}
 
 	function handleBlur() {
-		setTimeout(() => { open = false; oncommit?.(draft); }, 80);
+		setTimeout(() => {
+			open = false;
+			oncommit?.(draft);
+			if (editing) {
+				editing = false;
+				endChipEdit();
+			}
+		}, 80);
 	}
+
+	onDestroy(() => {
+		// Stage removed mid-edit — release the counter or autorun stays blocked
+		if (editing) {
+			editing = false;
+			endChipEdit();
+		}
+	});
 </script>
 
 <span class="relative inline-flex items-center">

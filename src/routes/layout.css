@@ -6,7 +6,7 @@
   --background: oklch(0.9818 0.0054 95.0986);
   --foreground: oklch(0.1450 0 0);
   --card: oklch(0.9818 0.0054 95.0986);
-  --card-foreground: #oklch(0.145 0 0);
+  --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1.0000 0 0);
   --popover-foreground: oklch(0.2671 0.0196 98.9390);
   --primary: oklch(0.7040 0.0400 256.7880);
@@ -17,8 +17,10 @@
   --muted-foreground: oklch(0.5530 0.0130 58.0710);
   --accent: oklch(0.9245 0.0138 92.9892);
   --accent-foreground: oklch(0.2333 0.0195 275.9526);
-  --destructive: oklch(0.1908 0.0020 106.5859);
+  --destructive: oklch(0.5770 0.2450 27.3250);
   --destructive-foreground: oklch(1.0000 0 0);
+  --warning: oklch(0.6660 0.1790 58.3180);
+  --success: oklch(0.5880 0.1580 241.9660);
   --border: oklch(0.8690 0.0050 56.3660);
   --input: oklch(0.9220 0 0);
   --ring: oklch(0.5540 0.0460 257.4170);
@@ -62,6 +64,17 @@
   --motion-ease-flow: cubic-bezier(0.22, 1, 0.36, 1);
   --gui-flow-glow: hsl(var(--primary) / 0.2);
 
+  /* Semantic z-index scale */
+  --z-dropdown: 30;
+  --z-sticky: 40;
+  --z-overlay: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  /* Notebook cell geometry */
+  --cell-gutter: 2.5rem;
+
   /* Platform titlebar adaptation */
   --titlebar-height: 0px;
   --titlebar-inset-left: 0px;
@@ -96,8 +109,10 @@
   --muted-foreground: oklch(0.7713 0.0169 99.0657);
   --accent: oklch(0.2130 0.0078 95.4245);
   --accent-foreground: oklch(0.9663 0.0080 98.8792);
-  --destructive: var(--primary);
-  --destructive-foreground: oklch(1.0000 0 0);
+  --destructive: oklch(0.7040 0.1910 22.2160);
+  --destructive-foreground: oklch(0.1450 0 0);
+  --warning: oklch(0.8280 0.1890 84.4290);
+  --success: oklch(0.7460 0.1600 232.6610);
   --border: oklch(0.3618 0.0101 106.8928);
   --input: oklch(0.4336 0.0113 100.2195);
   --ring: oklch(0.8690 0.0220 252.8940);
@@ -112,7 +127,7 @@
   --sidebar-primary-foreground: oklch(0.9881 0 0);
   --sidebar-accent: oklch(0.1680 0.0020 106.6177);
   --sidebar-accent-foreground: oklch(0.8074 0.0142 93.0137);
-  --sidebar-border: oklch(0.9401 0 0);
+  --sidebar-border: oklch(0.3200 0.0080 100.0000);
   --sidebar-ring: oklch(0.7731 0 0);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
@@ -151,6 +166,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -171,6 +188,9 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.45;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -201,6 +221,11 @@
     stroke-width: 0 !important;
     paint-order: normal !important;
   }
+}
+
+/* SortableJS ghost while dragging a notebook cell */
+.cell-sort-ghost {
+  opacity: 0.4;
 }
 
 @keyframes gui-stage-enter {
@@ -255,4 +280,8 @@
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+input,select {
+  @apply font-sans;
 }

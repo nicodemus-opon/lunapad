@@ -65,12 +65,21 @@
 		clearAllResults,
 		setNotebookDefaultCellLanguage,
 		loadDemoNotebook,
-		runCell
+		runCell,
+		insertCellBefore,
+		insertMarkdownCellBefore,
+		reorderCell,
+		setAllCellsDisplay,
+		setNotebookReportView
 	} from '$lib/stores/notebook.svelte';
+	import Sortable from 'sortablejs';
+	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
 	import { isDesktop, platformOS } from '$lib/services/platform.svelte';
 	import WindowControls from '$lib/components/WindowControls.svelte';
 	import NotebookCell from '$lib/components/NotebookCell.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Popover from '$lib/components/ui/popover';
 	import DatabaseTree from '$lib/components/DatabaseTree.svelte';
 	import FileImporter from '$lib/components/FileImporter.svelte';
 	import ConnectionManager from '$lib/components/ConnectionManager.svelte';
@@ -167,19 +176,71 @@
 			typeof window !== 'undefined' &&
 			window.matchMedia('(prefers-color-scheme: dark)').matches)
 	);
+	const reportView = $derived(Boolean(activeNotebook?.reportView));
+
+	// ── Cell list: insert dividers + drag reorder ─────────────────────────────
+	function focusCellAt(index: number) {
+		tick().then(() => {
+			const all = document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]');
+			(all[index] ?? all[all.length - 1])?.focus();
+		});
+	}
+
+	// Divider above the cell at `index`: insert before it.
+	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown', index: number) {
+		const target = cells[index];
+		if (!target) return;
+		if (kind === 'markdown') {
+			insertMarkdownCellBefore(target.id);
+		} else {
+			const lang = kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind;
+			insertCellBefore(target.id, {
+				outputName: '',
+				code: '',
+				guiStages: [{ type: 'from', table: '' }],
+				editMode: lang === 'sql' ? 'prql' : 'gui',
+				language: lang
+			});
+		}
+		focusCellAt(index);
+	}
+
+	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown') {
+		if (kind === 'markdown') {
+			addMarkdownCell();
+		} else {
+			addCellWithLanguage(kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind);
+		}
+		focusCellAt(cells.length);
+	}
+
+	let cellListEl: HTMLElement | undefined = $state();
+	$effect(() => {
+		if (!cellListEl) return;
+		const sortable = Sortable.create(cellListEl, {
+			handle: '[data-drag-handle]',
+			animation: 150,
+			ghostClass: 'cell-sort-ghost',
+			onEnd(evt) {
+				const id = (evt.item as HTMLElement).dataset.cellId;
+				const oldIdx = evt.oldIndex ?? 0;
+				const newIdx = evt.newIndex ?? 0;
+				if (!id || oldIdx === newIdx) return;
+				reorderCell(id, newIdx);
+			}
+		});
+		return () => sortable.destroy();
+	});
 
 	// ── Init ─────────────────────────────────────────────────────────────────
 	let dbReady = $state(false);
 	let dbError = $state<string | null>(null);
-	let openHeaderMenu = $state<null | 'file' | 'edit' | 'run' | 'view' | 'help'>(null);
-	let statsMenuOpen = $state(false);
 	let llmSettingsOpen = $state(false);
 	let shortcutsOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
 	let projectFolderInput = $state('');
 	let projectOpenLoading = $state(false);
 	let aboutOpen = $state(false);
-	let editDefaultCellSubmenuOpen = $state(false);
 	let sidebarSearch = $state('');
 	let showNotebookSearch = $state(false);
 	let activeSidebarPanel = $state<'notebooks' | 'dashboards' | 'tables' | 'dbt' | 'evidence'>('notebooks');
@@ -224,19 +285,7 @@
 		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
 	}
 
-	function toggleHeaderMenu(menu: 'file' | 'edit' | 'run' | 'view' | 'help') {
-		openHeaderMenu = openHeaderMenu === menu ? null : menu;
-	}
 
-	function toggleStatsMenu(e: MouseEvent) {
-		e.stopPropagation();
-		statsMenuOpen = !statsMenuOpen;
-	}
-
-	function onWindowClick() {
-		openHeaderMenu = null;
-		statsMenuOpen = false;
-	}
 
 	function toggleSidebarSection(section: 'notebooks' | 'tables' | 'dashboards') {
 		setSidebarSectionExpanded(section, !sidebarSectionsExpanded[section]);
@@ -269,7 +318,6 @@
 		sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
 		window.addEventListener('pointermove', onSidebarPointerMove);
 		window.addEventListener('pointerup', onSidebarPointerUp);
-		window.addEventListener('click', onWindowClick);
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		try {
 			loadFromStorage();
@@ -303,7 +351,6 @@
 	onDestroy(() => {
 		window.removeEventListener('pointermove', onSidebarPointerMove);
 		window.removeEventListener('pointerup', onSidebarPointerUp);
-		window.removeEventListener('click', onWindowClick);
 	});
 
 	// ── Run All ──────────────────────────────────────────────────────────────
@@ -516,7 +563,7 @@
 {:else}
 	<div class="flex flex-col h-screen overflow-hidden">
 		<header
-			class="border-b bg-background backdrop-blur-sm sticky top-0 z-40"
+			class="border-b border-border/60 bg-background sticky top-0 z-(--z-sticky)"
 			data-tauri-drag-region={isDesktop ? '' : undefined}
 		>
 			<div
@@ -529,281 +576,186 @@
 						<span class="text-sm font-semibold tracking-tight">Lunapad</span>
 					</div>
 					<div class="h-5 w-px bg-border mx-1"></div>
-					<div class="flex items-center gap-1.5">
-						<div class="relative">
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-7 px-2 text-xs gap-1"
-								onclick={(e) => {
-									e.stopPropagation();
-									toggleHeaderMenu('file');
-								}}
-							>
-								File
-								<ChevronDown class="w-3 h-3" />
-							</Button>
-							{#if openHeaderMenu === 'file'}
-								<div class="absolute left-0 top-8 z-50 w-52 rounded-md border bg-popover p-1 shadow-md">
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { addNotebook(); openHeaderMenu = null; }}>
-										<Plus class="w-3 h-3" /> New notebook
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { loadDemoNotebook(); openHeaderMenu = null; }}>
-										<FlaskConical class="w-3 h-3" /> Load demo notebook
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-between text-xs" onclick={() => { addCellWithLanguage('prql'); openHeaderMenu = null; }}>
-										<span class="flex items-center gap-2"><Code2 class="w-3 h-3" /> New PRQL cell</span>
-										<span class="text-muted-foreground font-mono text-[10px]">⇧⌘↵</span>
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-between text-xs" onclick={() => { addCellWithLanguage('sql'); openHeaderMenu = null; }}>
-										<span class="flex items-center gap-2"><FileCode2 class="w-3 h-3" /> New SQL cell</span>
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-between text-xs" onclick={() => { addMarkdownCell(); openHeaderMenu = null; }}>
-										<span class="flex items-center gap-2"><BookOpen class="w-3 h-3" /> New markdown cell</span>
-										<span class="text-muted-foreground font-mono text-[10px]">⇧⌘M</span>
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { projectOpenDialogOpen = true; openHeaderMenu = null; }}>
-										<FolderOpen class="w-3 h-3" /> Open project…
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" disabled={!projectFolder} onclick={() => { closeProject(); openHeaderMenu = null; }}>
-										<X class="w-3 h-3" /> Close project
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { activeSidebarPanel = 'tables'; sidebarCollapsed = false; openHeaderMenu = null; }}>
-										<Upload class="w-3 h-3" /> Upload data file…
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs" onclick={() => { handleImport(); openHeaderMenu = null; }}>Import notebook…</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs" onclick={() => { handleExport(); openHeaderMenu = null; }}>Export notebook</Button>
-								</div>
-							{/if}
-						</div>
+					<div class="flex items-center gap-0.5">
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">File</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-52">
+								<DropdownMenu.Item onclick={() => addNotebook()}>
+									<Plus class="w-3.5 h-3.5" /> New notebook
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => loadDemoNotebook()}>
+									<FlaskConical class="w-3.5 h-3.5" /> Load demo notebook
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
+									<Code2 class="w-3.5 h-3.5" /> New PRQL cell
+									<DropdownMenu.Shortcut>⇧⌘↵</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => addCellWithLanguage('sql')}>
+									<FileCode2 class="w-3.5 h-3.5" /> New SQL cell
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => addMarkdownCell()}>
+									<BookOpen class="w-3.5 h-3.5" /> New markdown cell
+									<DropdownMenu.Shortcut>⇧⌘M</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => (projectOpenDialogOpen = true)}>
+									<FolderOpen class="w-3.5 h-3.5" /> Open project…
+								</DropdownMenu.Item>
+								<DropdownMenu.Item disabled={!projectFolder} onclick={() => closeProject()}>
+									<X class="w-3.5 h-3.5" /> Close project
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => { activeSidebarPanel = 'tables'; sidebarCollapsed = false; }}>
+									<Upload class="w-3.5 h-3.5" /> Upload data file…
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={handleImport}>Import notebook…</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={handleExport}>Export notebook</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 
-						<div class="relative">
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-7 px-2 text-xs gap-1"
-								onclick={(e) => {
-									e.stopPropagation();
-									toggleHeaderMenu('edit');
-								}}
-							>
-								Edit
-								<ChevronDown class="w-3 h-3" />
-							</Button>
-							{#if openHeaderMenu === 'edit'}
-								<div class="absolute left-0 top-8 z-50 w-56 rounded-md border bg-popover p-1 shadow-md" role="presentation" onpointerdown={(e) => e.stopPropagation()}>
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div class="relative" onmouseenter={() => editDefaultCellSubmenuOpen = true} onmouseleave={() => editDefaultCellSubmenuOpen = false}>
-										<Button variant="ghost" size="sm" class="w-full justify-between text-xs">
-											<span class="flex items-center gap-2"><Code2 class="w-3 h-3" /> Default cell type</span>
-											<ChevronRight class="w-3 h-3 text-muted-foreground" />
-										</Button>
-										{#if editDefaultCellSubmenuOpen}
-											<div class="absolute left-full top-0 z-50 w-36 rounded-md border bg-popover p-1 shadow-md">
-												<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2"
-													onclick={() => { if (activeNotebook) setNotebookDefaultCellLanguage(activeNotebook.id, 'prql'); }}>
-													<div class="w-3 h-3 flex items-center justify-center">
-														{#if (activeNotebook?.defaultCellLanguage ?? 'prql') === 'prql'}<Check class="w-3 h-3" />{/if}
-													</div>
-													PRQL
-												</Button>
-												<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2"
-													onclick={() => { if (activeNotebook) setNotebookDefaultCellLanguage(activeNotebook.id, 'sql'); }}>
-													<div class="w-3 h-3 flex items-center justify-center">
-														{#if activeNotebook?.defaultCellLanguage === 'sql'}<Check class="w-3 h-3" />{/if}
-													</div>
-													SQL
-												</Button>
-											</div>
-										{/if}
-									</div>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2"
-										disabled={!activeNotebook}
-										onclick={() => { if (activeNotebook) { duplicateNotebook(activeNotebook.id); openHeaderMenu = null; } }}>
-										<Copy class="w-3 h-3" /> Duplicate notebook
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2"
-										onclick={() => { clearAllResults(); openHeaderMenu = null; toast.success('All results cleared'); }}>
-										<Trash2 class="w-3 h-3" /> Clear all results
-									</Button>
-								</div>
-							{/if}
-						</div>
-
-						<div class="relative">
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-7 px-2 text-xs gap-1"
-								onclick={(e) => {
-									e.stopPropagation();
-									toggleHeaderMenu('run');
-								}}
-							>
-								Run
-								<ChevronDown class="w-3 h-3" />
-							</Button>
-							{#if openHeaderMenu === 'run'}
-								<div class="absolute left-0 top-8 z-50 w-44 rounded-md border bg-popover p-1 shadow-md">
-									<Button
-										variant="ghost"
-										size="sm"
-										class="w-full justify-start text-xs gap-2"
-										disabled={runningAll || cells.length === 0}
-										onclick={handleRunAll}
-									>
-										<Play class="w-3 h-3 fill-current" />
-										Run all cells
-									</Button>
-									{#if staleCellCount > 0}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="w-full justify-start text-xs gap-2"
-											disabled={runningAllStale || runningAll}
-											onclick={() => { void handleRunAllStale(); openHeaderMenu = null; }}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Edit</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-56">
+								<DropdownMenu.Sub>
+									<DropdownMenu.SubTrigger>
+										<Code2 class="w-3.5 h-3.5" /> Default cell type
+									</DropdownMenu.SubTrigger>
+									<DropdownMenu.SubContent>
+										<DropdownMenu.RadioGroup
+											value={activeNotebook?.defaultCellLanguage ?? 'sql'}
+											onValueChange={(value) => { if (activeNotebook && (value === 'prql' || value === 'sql')) setNotebookDefaultCellLanguage(activeNotebook.id, value); }}
 										>
-											<RefreshCw class="w-3 h-3" />
-											Run stale cells
-											<span class="ml-auto rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">{staleCellCount}</span>
-										</Button>
-									{/if}
-									<div class="my-1 h-px bg-border"></div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="w-full justify-start text-xs gap-2"
-									onclick={() => { setAutoRun(!autoRun); openHeaderMenu = null; }}
-								>
-									<div class="w-3 h-3 flex items-center justify-center">
-										{#if autoRun}<Check class="w-3 h-3" />{/if}
-									</div>
+											<DropdownMenu.RadioItem value="prql">PRQL</DropdownMenu.RadioItem>
+											<DropdownMenu.RadioItem value="sql">SQL</DropdownMenu.RadioItem>
+										</DropdownMenu.RadioGroup>
+									</DropdownMenu.SubContent>
+								</DropdownMenu.Sub>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item disabled={!activeNotebook} onclick={() => { if (activeNotebook) duplicateNotebook(activeNotebook.id); }}>
+									<Copy class="w-3.5 h-3.5" /> Duplicate notebook
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => { clearAllResults(); toast.success('All results cleared'); }}>
+									<Trash2 class="w-3.5 h-3.5" /> Clear all results
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Run</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-48">
+								<DropdownMenu.Item disabled={runningAll || cells.length === 0} onclick={() => void handleRunAll()}>
+									<Play class="w-3.5 h-3.5 fill-current" /> Run all cells
+								</DropdownMenu.Item>
+								{#if staleCellCount > 0}
+									<DropdownMenu.Item disabled={runningAllStale || runningAll} onclick={() => void handleRunAllStale()}>
+										<RefreshCw class="w-3.5 h-3.5" /> Run stale cells
+										<span class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs font-medium text-warning">{staleCellCount}</span>
+									</DropdownMenu.Item>
+								{/if}
+								<DropdownMenu.Separator />
+								<DropdownMenu.CheckboxItem checked={autoRun} onCheckedChange={(checked) => setAutoRun(checked)}>
 									Auto Run
-								</Button>								</div>
-							{/if}
-						</div>
+								</DropdownMenu.CheckboxItem>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 
-						<div class="relative">
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-7 px-2 text-xs gap-1"
-								onclick={(e) => {
-									e.stopPropagation();
-									toggleHeaderMenu('view');
-								}}
-							>
-								View
-								<ChevronDown class="w-3 h-3" />
-							</Button>
-							{#if openHeaderMenu === 'view'}
-								<div class="absolute left-0 top-8 z-50 w-52 rounded-md border bg-popover p-1 shadow-md" role="presentation" onpointerdown={(e) => e.stopPropagation()}>
-									<Button variant="ghost" size="sm" class="w-full justify-between text-xs gap-2" onclick={() => { toggleSidebarCollapsed(); openHeaderMenu = null; }}>
-										<span class="flex items-center gap-2"><SidebarClose class="w-3 h-3" /> Toggle sidebar</span>
-										<span class="text-muted-foreground font-mono text-[10px]">⌘B</span>
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => setTheme('system')}>
-										<div class="w-3 h-3 flex items-center justify-center">{#if theme === 'system'}<Check class="w-3 h-3" />{/if}</div>
-										<Monitor class="w-3 h-3" /> System theme
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => setTheme('light')}>
-										<div class="w-3 h-3 flex items-center justify-center">{#if theme === 'light'}<Check class="w-3 h-3" />{/if}</div>
-										<Sun class="w-3 h-3" /> Light theme
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => setTheme('dark')}>
-										<div class="w-3 h-3 flex items-center justify-center">{#if theme === 'dark'}<Check class="w-3 h-3" />{/if}</div>
-										<Moon class="w-3 h-3" /> Dark theme
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { llmSettingsOpen = true; openHeaderMenu = null; }}>
-										<Settings class="w-3 h-3" /> LLM settings…
-									</Button>
-								</div>
-							{/if}
-						</div>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">View</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-56">
+								<DropdownMenu.Item onclick={toggleSidebarCollapsed}>
+									<SidebarClose class="w-3.5 h-3.5" /> Toggle sidebar
+									<DropdownMenu.Shortcut>⌘B</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item disabled={!isNotebookTab} onclick={() => setAllCellsDisplay('collapsed')}>
+									Collapse all cells
+								</DropdownMenu.Item>
+								<DropdownMenu.Item disabled={!isNotebookTab} onclick={() => setAllCellsDisplay('full')}>
+									Expand all cells
+								</DropdownMenu.Item>
+								<DropdownMenu.CheckboxItem
+									disabled={!activeNotebook}
+									checked={reportView}
+									onCheckedChange={(checked) => setNotebookReportView(checked)}
+								>
+									Report view
+								</DropdownMenu.CheckboxItem>
+								<DropdownMenu.Separator />
+								<DropdownMenu.RadioGroup value={theme} onValueChange={(value) => { if (value === 'system' || value === 'light' || value === 'dark') setTheme(value); }}>
+									<DropdownMenu.RadioItem value="system"><Monitor class="w-3.5 h-3.5" /> System theme</DropdownMenu.RadioItem>
+									<DropdownMenu.RadioItem value="light"><Sun class="w-3.5 h-3.5" /> Light theme</DropdownMenu.RadioItem>
+									<DropdownMenu.RadioItem value="dark"><Moon class="w-3.5 h-3.5" /> Dark theme</DropdownMenu.RadioItem>
+								</DropdownMenu.RadioGroup>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => (llmSettingsOpen = true)}>
+									<Settings class="w-3.5 h-3.5" /> LLM settings…
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 
-						<div class="relative">
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-7 px-2 text-xs gap-1"
-								onclick={(e) => { e.stopPropagation(); toggleHeaderMenu('help'); }}
-							>
-								Help
-								<ChevronDown class="w-3 h-3" />
-							</Button>
-							{#if openHeaderMenu === 'help'}
-								<div class="absolute left-0 top-8 z-50 w-52 rounded-md border bg-popover p-1 shadow-md">
-									<Button variant="ghost" size="sm" class="w-full justify-between text-xs" onclick={() => { shortcutsOpen = true; openHeaderMenu = null; }}>
-										Keyboard shortcuts
-										<span class="text-muted-foreground font-mono text-[10px]">?</span>
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { window.open('https://prql-lang.org/book/', '_blank'); openHeaderMenu = null; }}>
-										<BookOpen class="w-3 h-3" /> PRQL documentation
-										<ExternalLink class="w-3 h-3 ml-auto text-muted-foreground" />
-									</Button>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { window.open('https://github.com/PRQL/prql/issues', '_blank'); openHeaderMenu = null; }}>
-										<ExternalLink class="w-3 h-3" /> Report an issue
-									</Button>
-									<div class="my-1 h-px bg-border"></div>
-									<Button variant="ghost" size="sm" class="w-full justify-start text-xs gap-2" onclick={() => { aboutOpen = true; openHeaderMenu = null; }}>
-										<Info class="w-3 h-3" /> About Lunapad
-									</Button>
-								</div>
-							{/if}
-						</div>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Help</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-52">
+								<DropdownMenu.Item onclick={() => (shortcutsOpen = true)}>
+									Keyboard shortcuts
+									<DropdownMenu.Shortcut>?</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => window.open('https://prql-lang.org/book/', '_blank')}>
+									<BookOpen class="w-3.5 h-3.5" /> PRQL documentation
+									<ExternalLink class="w-3.5 h-3.5 ml-auto text-muted-foreground" />
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => window.open('https://github.com/PRQL/prql/issues', '_blank')}>
+									<ExternalLink class="w-3.5 h-3.5" /> Report an issue
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item onclick={() => (aboutOpen = true)}>
+									<Info class="w-3.5 h-3.5" /> About Lunapad
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 					</div>
 				</div>
 
-				<div class="relative">
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-7 w-7 p-0"
-						onclick={toggleStatsMenu}
+				<Popover.Root>
+					<Popover.Trigger
+						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						aria-label="Show workspace stats"
 					>
 						<Info class="h-3.5 w-3.5" />
-					</Button>
-					{#if statsMenuOpen}
-						<div class="absolute right-0 top-8 z-50 w-60 rounded-md border bg-popover p-2 shadow-md">
-							<p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Workspace stats</p>
-							<div class="space-y-1 px-2 py-1 text-xs text-muted-foreground">
-								<div class="flex items-center justify-between">
-									<span>Open notebooks</span>
-									<span class="font-mono text-foreground">{notebooks.length}</span>
-								</div>
-								<div class="flex items-center justify-between">
-									<span>Relations</span>
-									<span class="font-mono text-foreground">{tables.length}</span>
-								</div>
-								<div class="flex items-center justify-between">
-									<span>Result tabs</span>
-									<span class="font-mono text-foreground">{openResultTabs.length}</span>
-								</div>
-								<div class="flex items-center justify-between">
-									<span>Extra tabs</span>
-									<span class="font-mono text-foreground">{openExtraTabs.length}</span>
-								</div>
-								<div class="flex items-center justify-between">
-									<span>Theme</span>
-									<span class="font-mono text-foreground">{theme}</span>
-								</div>
-								<div class="flex items-center justify-between">
-									<span>Auto-run</span>
-									<span class="font-mono text-foreground">{autoRun ? 'on' : 'off'}</span>
-								</div>
+					</Popover.Trigger>
+					<Popover.Content align="end" class="w-60 p-2">
+						<p class="px-2 py-1 text-2xs font-semibold text-muted-foreground">Workspace stats</p>
+						<div class="space-y-1 px-2 py-1 text-xs text-muted-foreground">
+							<div class="flex items-center justify-between">
+								<span>Open notebooks</span>
+								<span class="font-mono text-foreground">{notebooks.length}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Relations</span>
+								<span class="font-mono text-foreground">{tables.length}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Result tabs</span>
+								<span class="font-mono text-foreground">{openResultTabs.length}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Extra tabs</span>
+								<span class="font-mono text-foreground">{openExtraTabs.length}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Theme</span>
+								<span class="font-mono text-foreground">{theme}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span>Auto-run</span>
+								<span class="font-mono text-foreground">{autoRun ? 'on' : 'off'}</span>
 							</div>
 						</div>
-					{/if}
-				</div>
+					</Popover.Content>
+				</Popover.Root>
 
 				<input
 					id="import-notebook-input"
@@ -822,11 +774,11 @@
 
 		<div id="layout-root" class="flex flex-1 overflow-hidden">
 			<div
-				class="h-full border-r border-border/70 bg-background flex flex-row overflow-hidden transition-none"
+				class="h-full border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground flex flex-row overflow-hidden transition-none"
 				style={sidebarCollapsed ? 'width: 0; border: none' : `width: ${sidebarWidth}px`}
 			>
 				<!-- Icon rail -->
-				<div class="w-8 shrink-0 border-r border-border/30 bg-muted/10 flex flex-col items-center pt-1 pb-2 gap-0.5">
+				<div class="w-8 shrink-0 border-r border-sidebar-border/40 bg-sidebar flex flex-col items-center pt-1 pb-2 gap-0.5">
 					<button
 						class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'notebooks' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
 						onclick={() => (activeSidebarPanel = 'notebooks')}
@@ -880,7 +832,7 @@
 					{#if activeSidebarPanel === 'notebooks'}
 						<!-- Notebooks panel -->
 						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-[11px] font-semibold uppercase tracking-wide text-foreground/60 flex-1">Notebooks</span>
+							<span class="text-2xs font-medium text-muted-foreground flex-1">Notebooks</span>
 							<div class="flex items-center gap-0.5">
 								<button
 									class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors {sidebarSearch ? 'text-primary' : ''}"
@@ -938,7 +890,7 @@
 					{:else if activeSidebarPanel === 'dashboards'}
 						<!-- Dashboards panel -->
 						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-[11px] font-semibold uppercase tracking-wide text-foreground/60 flex-1">Dashboards</span>
+							<span class="text-2xs font-medium text-muted-foreground flex-1">Dashboards</span>
 							<button
 								class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
 								onclick={() => { const d = createDashboard('New Dashboard'); openDashboardTab(d.id); }}
@@ -959,13 +911,13 @@
 								</button>
 							{/each}
 							{#if getDashboards().length === 0}
-								<p class="text-[10px] text-muted-foreground/50 px-1.5 py-2">No dashboards yet.</p>
+								<p class="text-2xs text-muted-foreground px-1.5 py-2">No dashboards yet.</p>
 							{/if}
 						</div>
 					{:else if activeSidebarPanel === 'tables'}
 						<!-- Databases & tables panel -->
 						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-[11px] font-semibold uppercase tracking-wide text-foreground/60 flex-1">Databases</span>
+							<span class="text-2xs font-medium text-muted-foreground flex-1">Databases</span>
 						</div>
 						<div class="min-h-0 flex-1 flex flex-col overflow-hidden">
 							<FileImporter />
@@ -1023,15 +975,15 @@
 			{/if}
 
 			<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-				<div class="bg-muted/30 flex items-end gap-0.5 overflow-x-auto shrink-0 px-2 pt-3 border-b border-border">
+				<div class="flex items-center gap-0.5 overflow-x-auto shrink-0 px-2 border-b border-border/60 bg-background">
 					{#each notebooks as nb (nb.id)}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
 							<div
-								class="group flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-t-md px-4 text-xs transition-colors
+								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
 									{activeTabId === nb.id
-									? 'bg-background text-foreground font-medium border border-b-background border-border -mb-px'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+									? 'text-foreground font-medium after:bg-primary'
+									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
 								role="tab"
 								tabindex="0"
 								aria-selected={activeTabId === nb.id}
@@ -1058,7 +1010,7 @@
 								{#if nb.cells.filter(c => c.cellType === 'query' && c.needsRun).length > 0}
 									{@const staleCount = nb.cells.filter(c => c.cellType === 'query' && c.needsRun).length}
 									<span
-										class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+										class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-warning/15 px-1 text-2xs font-medium text-warning"
 										title="{staleCount} stale cell{staleCount === 1 ? '' : 's'}"
 									>{staleCount}</span>
 								{/if}
@@ -1092,10 +1044,10 @@
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
 							<div
-								class="group flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-t-md px-4 text-xs transition-colors
+								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
 									{activeTabId === rt.id
-								? 'bg-background text-foreground font-medium border border-b-background border-border -mb-px'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+								? 'text-foreground font-medium after:bg-primary'
+									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
 								role="tab"
 								tabindex="0"
 								aria-selected={activeTabId === rt.id}
@@ -1129,10 +1081,10 @@
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
 							<div
-								class="group flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-t-md px-4 text-xs transition-colors
+								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
 									{activeTabId === et.id
-									? 'bg-background text-foreground font-medium border border-b-background border-border -mb-px'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+									? 'text-foreground font-medium after:bg-primary'
+									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
 								role="tab"
 								tabindex="0"
 								aria-selected={activeTabId === et.id}
@@ -1183,9 +1135,19 @@
 				</div>
 				{#if isNotebookTab}
 					<main class="flex-1 overflow-y-auto bg-background">
-						<div class="max-w-5xl mx-auto py-4 px-4 ">
-							<div class="mb-3 flex items-center justify-end gap-2.5">
-								<Database class="h-3.5 w-3.5 text-muted-foreground" />
+						<div class="max-w-4xl mx-auto pt-8 pb-32 px-6">
+							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
+								<input
+									class="h-9 min-w-0 flex-1 bg-transparent border-0 outline-none p-0 text-xl font-semibold tracking-tight text-foreground placeholder:text-muted-foreground/60"
+									placeholder="Untitled notebook"
+									value={activeNotebook?.name ?? ''}
+									onblur={(e) => {
+										const next = (e.target as HTMLInputElement).value.trim();
+										if (activeNotebook && next && next !== activeNotebook.name) renameNotebook(activeNotebook.id, next);
+									}}
+									onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+								/>
+								<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								<Select.Root
 									type="single"
 									disabled={connections.length === 0}
@@ -1220,7 +1182,7 @@
 								<div class="flex flex-col items-center gap-4 py-16 text-center">
 									<div class="flex flex-col items-center gap-2">
 										<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
-										<p class="text-xs text-muted-foreground max-w-xs">Add a query cell to start exploring your data. Reference upstream cells by name using <code class="font-mono bg-muted px-1 py-0.5 rounded text-[11px]">from cell_name</code>.</p>
+										<p class="text-xs text-muted-foreground max-w-xs">Add a query cell to start exploring your data. Reference upstream cells by name using <code class="font-mono bg-muted px-1 py-0.5 rounded text-2xs">from cell_name</code>.</p>
 									</div>
 									<div class="flex flex-col gap-2 w-full max-w-xs">
 										<Button
@@ -1231,7 +1193,7 @@
 										>
 											<Plus class="w-3.5 h-3.5" />
 											Add PRQL Cell
-											<span class="ml-auto text-[10px] opacity-60 font-mono">⌘⇧↵</span>
+											<span class="ml-auto text-2xs opacity-60 font-mono">⌘⇧↵</span>
 										</Button>
 										<Button
 											variant="outline"
@@ -1250,59 +1212,43 @@
 										>
 											<Info class="w-3.5 h-3.5" />
 											Add Markdown Cell
-											<span class="ml-auto text-[10px] opacity-60 font-mono">⌘⇧M</span>
+											<span class="ml-auto text-2xs opacity-60 font-mono">⌘⇧M</span>
 										</Button>
 									</div>
-									<div class="text-[10px] text-muted-foreground/60 space-y-0.5">
+									<div class="text-2xs text-muted-foreground space-y-0.5">
 										<p>Press <kbd class="font-mono bg-muted px-1 rounded">?</kbd> for keyboard shortcuts</p>
 									</div>
 								</div>
 							{:else}
-								{#each cells as cell, idx (cell.id)}
-									<div class="mb-3">
-										<NotebookCell
-											{cell}
-											index={idx}
-											isFirst={idx === 0}
-											isLast={idx === cells.length - 1}
-											dark={isDark}
-											prevCellSources={prevSourcesForCell(idx)}
-											notebookId={activeTabId}
-											{autoRun}
-											onOpenResultTab={handleOpenResultTab}
-										/>
-									</div>
-								{/each}
-
-								<div class="flex gap-2 mt-1">
-									<Button
-										variant="outline"
-										size="sm"
-										class="flex-1 h-8 text-xs gap-2 border-dashed"
-										onclick={() => addCellWithLanguage('prql')}
-									>
-										<Plus class="w-3.5 h-3.5" />
-										Add PRQL Cell
-									</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										class="flex-1 h-8 text-xs gap-2 border-dashed"
-										onclick={() => addCellWithLanguage('sql')}
-									>
-										<Plus class="w-3.5 h-3.5" />
-										Add SQL Cell
-									</Button>
+								<div bind:this={cellListEl}>
+									{#each cells as cell, idx (cell.id)}
+										<div data-cell-id={cell.id}>
+											{#if !reportView}
+												<div class="pl-(--cell-gutter)">
+													<AddCellDivider onAdd={(kind) => insertBeforeCell(kind, idx)} />
+												</div>
+											{/if}
+											<NotebookCell
+												{cell}
+												index={idx}
+												isFirst={idx === 0}
+												isLast={idx === cells.length - 1}
+												dark={isDark}
+												prevCellSources={prevSourcesForCell(idx)}
+												notebookId={activeTabId}
+												{autoRun}
+												{reportView}
+												onOpenResultTab={handleOpenResultTab}
+											/>
+										</div>
+									{/each}
 								</div>
-								<Button
-									variant="outline"
-									size="sm"
-									class="w-full h-8 text-xs gap-2 border-dashed mt-2"
-									onclick={addMarkdownCell}
-								>
-									<Info class="w-3.5 h-3.5" />
-									Add Markdown Cell
-								</Button>
+
+								{#if !reportView}
+									<div class="mt-2 pl-(--cell-gutter)">
+										<AddCellDivider persistent onAdd={appendCell} />
+									</div>
+								{/if}
 							{/if}
 						</div>
 					</main>
@@ -1346,6 +1292,7 @@
 								notebookId={activeResultTab.notebookId}
 								rows={resultCell.result.rows}
 								columns={resultCell.result.columns}
+								truncated={resultCell.result.truncated ?? false}
 								name={resultCell.outputName || 'result'}
 								viewMode={activeResultTab.viewMode}
 								chartConfig={activeResultTab.chartConfig}
@@ -1420,8 +1367,8 @@
 
 		<div class="grid grid-cols-2 gap-6 text-xs">
 			<div>
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Notebook — command mode</p>
-				<p class="text-[10px] text-muted-foreground mb-2 italic">Activate: press <code class="font-mono bg-muted px-1 rounded text-[10px]">Esc</code> from any editor</p>
+				<p class="text-2xs font-semibold text-muted-foreground mb-2">Notebook — command mode</p>
+				<p class="text-2xs text-muted-foreground mb-2 italic">Activate: press <code class="font-mono bg-muted px-1 rounded text-2xs">Esc</code> from any editor</p>
 				<table class="w-full">
 					<tbody class="divide-y divide-border/40">
 						{#each [
@@ -1446,7 +1393,7 @@
 			</div>
 
 			<div>
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Notebook — global</p>
+				<p class="text-2xs font-semibold text-muted-foreground mb-2">Notebook — global</p>
 				<table class="w-full mb-4">
 					<tbody class="divide-y divide-border/40">
 						{#each [
@@ -1464,8 +1411,8 @@
 					</tbody>
 				</table>
 
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">GUI pipeline stages</p>
-				<p class="text-[10px] text-muted-foreground mb-2 italic">Activate: click a stage or press <code class="font-mono bg-muted px-1 rounded text-[10px]">Enter</code> in command mode</p>
+				<p class="text-2xs font-semibold text-muted-foreground mb-2">GUI pipeline stages</p>
+				<p class="text-2xs text-muted-foreground mb-2 italic">Activate: click a stage or press <code class="font-mono bg-muted px-1 rounded text-2xs">Enter</code> in command mode</p>
 				<table class="w-full">
 					<tbody class="divide-y divide-border/40">
 						{#each [

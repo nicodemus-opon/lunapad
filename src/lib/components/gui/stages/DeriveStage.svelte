@@ -531,7 +531,7 @@
 							<div>
 								<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">SQL template</p>
 								<div class="flex items-center gap-1">
-									<span class="text-xs font-mono text-amber-500 shrink-0">s"""</span>
+									<span class="text-xs font-mono text-warning shrink-0">s"""</span>
 									<Input
 										class="h-7 text-xs font-mono flex-1"
 										placeholder="raw SQL expression…"
@@ -539,7 +539,7 @@
 										data-testid="derive-sstring-template"
 										oninput={(e) => setTemplate(idx, (e.target as HTMLInputElement).value)}
 									/>
-									<span class="text-xs font-mono text-amber-500 shrink-0">"""</span>
+									<span class="text-xs font-mono text-warning shrink-0">"""</span>
 								</div>
 							</div>
 

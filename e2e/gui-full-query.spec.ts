@@ -73,7 +73,7 @@ async function gotoWithCode(page: Page, code: string) {
 
 	await page.goto('/');
 	// Wait for the cell to render in PRQL mode (CodeMirror editor should be visible)
-	await page.waitForSelector('.cm-editor', { timeout: 10_000 });
+	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 10_000 });
 }
 
 test.describe('GUI full-query', () => {
@@ -136,10 +136,10 @@ test.describe('GUI full-query', () => {
 
 		// Switch to PRQL mode via the cell header toggle
 		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-		await page.waitForSelector('.cm-editor', { timeout: 5_000 });
+		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
 		// The PRQL preview should contain key features
-		const prqlPreview = page.locator('.notebook-cell').first().locator('.cm-content').first();
+		const prqlPreview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(prqlPreview).not.toBeEmpty();
 	});
 
@@ -200,8 +200,8 @@ test.describe('GUI full-query', () => {
 
 		// Switch to PRQL mode and verify f-string syntax
 		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-		await page.waitForSelector('.cm-editor', { timeout: 5_000 });
-		const preview = page.locator('.notebook-cell').first().locator('.cm-content').first();
+		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
+		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('f"');
 	});
 
@@ -220,8 +220,8 @@ test.describe('GUI full-query', () => {
 
 		// Switch to PRQL mode and verify s-string syntax
 		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-		await page.waitForSelector('.cm-editor', { timeout: 5_000 });
-		const preview = page.locator('.notebook-cell').first().locator('.cm-content').first();
+		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
+		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('s"');
 	});
 
@@ -249,8 +249,8 @@ test.describe('GUI full-query', () => {
 
 		// Switch to PRQL mode and verify date literal is preserved
 		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-		await page.waitForSelector('.cm-editor', { timeout: 5_000 });
-		const preview = page.locator('.notebook-cell').first().locator('.cm-content').first();
+		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
+		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('@1970-01-16');
 	});
 
@@ -261,8 +261,8 @@ test.describe('GUI full-query', () => {
 
 		// Switch to PRQL mode and verify no-alias average
 		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-		await page.waitForSelector('.cm-editor', { timeout: 5_000 });
-		const preview = page.locator('.notebook-cell').first().locator('.cm-content').first();
+		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
+		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		// Should have `average total` with no assignment prefix
 		await expect(preview).toContainText('average');
 	});

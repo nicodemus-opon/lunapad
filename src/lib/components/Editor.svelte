@@ -1,16 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { EditorView, basicSetup } from 'codemirror';
-	import { keymap } from '@codemirror/view';
-	import { sql } from '@codemirror/lang-sql';
-
-	import { EditorState, StateEffect, StateField, Compartment } from '@codemirror/state';
-	import { Decoration, type DecorationSet } from '@codemirror/view';
-	import { type Range } from '@codemirror/state';
-	import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
-	import { tags } from '@lezer/highlight';
-	import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 	import { format as formatSQL, type SqlLanguage } from 'sql-formatter';
+	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
 
@@ -26,178 +17,94 @@
 		sqlDialect?: string;
 	}
 
-	let { code, onchange, errors = [], dark = false, readonly = false, completions = [], language = 'prql', sqlDialect = 'sql' }: Props = $props();
+	let {
+		code,
+		onchange,
+		errors = [],
+		dark = false,
+		readonly = false,
+		completions = [],
+		language = 'prql',
+		sqlDialect = 'sql'
+	}: Props = $props();
 
 	let container: HTMLDivElement;
-	let view: EditorView | null = null;
+	let monaco = $state.raw<typeof Monaco | null>(null);
+	let editor = $state.raw<Monaco.editor.IStandaloneCodeEditor | null>(null);
+	let model: Monaco.editor.ITextModel | null = null;
+	let setModelCompletions: ((m: Monaco.editor.ITextModel, items: string[]) => void) | null = null;
+	let clearModelCompletions: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let suppressUpdate = false;
+	let destroyed = false;
 
-	// ── Compartments — allow hot-swapping extensions without destroying the editor ──
-	const themeCompartment = new Compartment();
-	const highlightCompartment = new Compartment();
-	const schemaCompartment = new Compartment();
-	const readonlyCompartment = new Compartment();
-
-	// ── Error decorations via StateEffect + StateField ────────────────────────────
-	const setErrorsEffect = StateEffect.define<PRQLError[]>();
-
-	function makeErrorDecorations(errs: PRQLError[]): DecorationSet {
-		const decorations: Range<Decoration>[] = [];
-		for (const e of errs) {
-			if (e.span) {
-				const [from, to] = e.span;
-				decorations.push(
-					Decoration.mark({ class: 'cm-prql-error' }).range(
-						Math.min(from, to),
-						Math.max(from, to)
-					)
-				);
-			}
-		}
-		return Decoration.set(decorations, true);
+	function themeName(isDark: boolean): string {
+		return isDark ? 'lunapad-dark' : 'lunapad-light';
 	}
 
-	const errorDecorationField = StateField.define<DecorationSet>({
-		create() { return Decoration.none; },
-		update(deco, tr) {
-			for (const effect of tr.effects) {
-				if (effect.is(setErrorsEffect)) return makeErrorDecorations(effect.value);
-			}
-			return deco.map(tr.changes);
-		},
-		provide: f => EditorView.decorations.from(f),
-	});
+	// Monaco intercepts these keys before they bubble; re-dispatch them on the
+	// container so NotebookCell's handleKeydown stays the single source of truth.
+	function shouldForwardKey(be: KeyboardEvent): boolean {
+		const mod = be.metaKey || be.ctrlKey;
+		if (be.key === 'Enter' && (be.shiftKey || mod)) return true;
+		if (mod && be.shiftKey && (be.key.toLowerCase() === 'l' || be.key.toLowerCase() === 't'))
+			return true;
+		if (be.key === 'Escape' && !monacoWidgetOpen()) return true;
+		return false;
+	}
 
-	// ── Theme that reads app CSS variables ────────────────────────────────────────
-	function buildTheme(isDark: boolean) {
-		return EditorView.theme(
-			{
-				'&': {
-					backgroundColor: 'transparent',
-					color: 'var(--card-foreground)',
-					borderRadius: '0.375rem',
-				},
-				'.cm-content': {
-					caretColor: 'var(--card-foreground)',
-					fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-				},
-				'.cm-cursor': {
-					borderLeftColor: 'var(--card-foreground)',
-				},
-				'&.cm-focused .cm-cursor': {
-					borderLeftColor: 'var(--card-foreground)',
-				},
-				'.cm-gutters': {
-					backgroundColor: 'transparent',
-					color: 'var(--muted-foreground)',
-					border: 'none',
-				},
-				'.cm-activeLineGutter': {
-					backgroundColor: 'var(--accent)',
-					color: 'var(--accent-foreground)',
-				},
-				'.cm-activeLine': {
-					backgroundColor: 'var(--accent)',
-				},
-				'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-					backgroundColor: isDark ? 'oklch(1 0 0 / 15%)' : 'oklch(0 0 0 / 10%)',
-				},
-				'.cm-matchingBracket, .cm-nonmatchingBracket': {
-					backgroundColor: isDark ? 'oklch(1 0 0 / 15%)' : 'oklch(0 0 0 / 10%)',
-					outline: '1px solid var(--ring)',
-				},
-				'.cm-searchMatch': {
-					backgroundColor: isDark ? 'oklch(0.8 0.15 85 / 30%)' : 'oklch(0.8 0.15 85 / 40%)',
-					outline: '1px solid oklch(0.7 0.15 85)',
-				},
-				'.cm-searchMatch.cm-searchMatch-selected': {
-					backgroundColor: isDark ? 'oklch(0.7 0.18 85 / 50%)' : 'oklch(0.7 0.18 85 / 60%)',
-				},
-				'.cm-tooltip': {
-					backgroundColor: 'var(--popover)',
-					color: 'var(--popover-foreground)',
-					border: '1px solid var(--border)',
-					borderRadius: '0.375rem',
-				},
-				'.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-					backgroundColor: 'var(--accent)',
-					color: 'var(--accent-foreground)',
-				},
-			},
-			{ dark: isDark }
+	function monacoWidgetOpen(): boolean {
+		const dom = editor?.getDomNode();
+		return !!dom?.querySelector(
+			'.suggest-widget.visible, .find-widget.visible, .parameter-hints-widget.visible'
 		);
 	}
 
-	function buildHighlightStyle(isDark: boolean) {
-		return HighlightStyle.define([
-			{ tag: tags.keyword, color: isDark ? 'var(--color-chart-1)' : 'var(--color-chart-1)', fontWeight: 'bold' },
-			{ tag: tags.string, color: isDark ? '#86efac' : '#16a34a' },
-			{ tag: tags.number, color: isDark ? '#fb923c' : '#c2410c' },
-			{ tag: tags.comment, color: 'var(--muted-foreground)', fontStyle: 'italic' },
-			{ tag: tags.operator, color: isDark ? '#f9a8d4' : '#db2777' },
-			{ tag: tags.typeName, color: isDark ? '#67e8f9' : '#0e7490' },
-			{ tag: tags.variableName, color: 'var(--foreground)' },
-			{ tag: tags.punctuation, color: 'var(--muted-foreground)' },
-		]);
-	}
-
-	function buildSqlExt() {
-		const sqlSchema: Record<string, string[]> = {};
-		for (const item of completions) {
-			if (!item || !item.includes('.')) continue;
-			const [table, column] = item.split('.', 2);
-			if (!table || !column) continue;
-			if (!sqlSchema[table]) sqlSchema[table] = [];
-			if (!sqlSchema[table].includes(column)) sqlSchema[table].push(column);
+	function applyFullReplace(text: string, restoreSelection = true): void {
+		if (!editor || !model) return;
+		const sel = editor.getSelection();
+		const anchorOffset = sel
+			? model.getOffsetAt({
+					lineNumber: sel.selectionStartLineNumber,
+					column: sel.selectionStartColumn
+				})
+			: 0;
+		const headOffset = sel
+			? model.getOffsetAt({ lineNumber: sel.positionLineNumber, column: sel.positionColumn })
+			: 0;
+		// pushEditOperations (not setValue) preserves the undo stack
+		model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null);
+		if (restoreSelection) {
+			const anchor = model.getPositionAt(Math.min(anchorOffset, text.length));
+			const head = model.getPositionAt(Math.min(headOffset, text.length));
+			editor.setSelection({
+				selectionStartLineNumber: anchor.lineNumber,
+				selectionStartColumn: anchor.column,
+				positionLineNumber: head.lineNumber,
+				positionColumn: head.column
+			} as Monaco.ISelection);
 		}
-		return sql({ schema: sqlSchema });
-	}
-
-	// SQL built-in function completions (dialect-agnostic core set)
-	const SQL_FUNCTIONS = [
-		'abs','avg','ceil','coalesce','concat','count','current_date','current_timestamp',
-		'date_diff','date_trunc','extract','floor','greatest','ifnull','iif','ilike','least',
-		'length','like','lower','ltrim','max','min','now','nullif','nvl','replace','round',
-		'rtrim','split_part','strftime','strpos','substr','sum','to_char','to_date','to_timestamp',
-		'trim','upper','variance','stddev','median','mode','percentile_cont','percentile_disc',
-		'row_number','rank','dense_rank','lead','lag','first_value','last_value','ntile',
-		'over','partition','within','filter','distinct','case','when','then','else','end',
-		'cast','try_cast','typeof','is null','is not null','between','in','not in',
-		'exists','any','all','union','intersect','except',
-	];
-
-	function sqlFunctionCompletions(context: CompletionContext): CompletionResult | null {
-		if (language !== 'sql') return null;
-		const word = context.matchBefore(/\w*/);
-		if (!word || (word.from === word.to && !context.explicit)) return null;
-		const options = SQL_FUNCTIONS
-			.filter(fn => fn.startsWith(word.text.toLowerCase()))
-			.map(fn => ({ label: fn, type: 'function', boost: -1 }));
-		if (options.length === 0) return null;
-		return { from: word.from, options };
 	}
 
 	function formatCurrentSQL(): boolean {
-		if (!view || language !== 'sql' || readonly) return false;
-		const current = view.state.doc.toString();
+		if (!editor || !model || language !== 'sql' || readonly) return false;
+		const current = model.getValue();
 		if (!current.trim()) return false;
 		try {
 			const dialectMap: Record<string, SqlLanguage> = {
 				'sql.duckdb': 'sql',
 				'sql.trino': 'trino',
-				'postgresql': 'postgresql',
-				'duckdb': 'sql',
+				postgresql: 'postgresql',
+				duckdb: 'sql'
 			};
 			const formatted = formatSQL(current, {
 				language: dialectMap[sqlDialect] ?? 'sql',
 				tabWidth: 2,
 				keywordCase: 'upper',
-				linesBetweenQueries: 1,
+				linesBetweenQueries: 1
 			});
+			if (formatted === current) return true;
 			suppressUpdate = true;
-			view.dispatch({
-				changes: { from: 0, to: current.length, insert: formatted }
-			});
+			applyFullReplace(formatted);
 			suppressUpdate = false;
 			onchange(formatted);
 		} catch {
@@ -206,77 +113,156 @@
 		return true;
 	}
 
-	function buildExtensions(isDark: boolean, isReadonly: boolean) {
-		return [
-			basicSetup,
-			schemaCompartment.of(buildSqlExt()),
-			autocompletion({ override: [sqlFunctionCompletions] }),
-			themeCompartment.of(buildTheme(isDark)),
-			highlightCompartment.of(syntaxHighlighting(buildHighlightStyle(isDark))),
-			EditorView.updateListener.of((update) => {
-				if (update.docChanged && !suppressUpdate) {
-					onchange(update.state.doc.toString());
-				}
-			}),
-			EditorView.domEventHandlers({
-				blur: () => { formatCurrentSQL(); return false; },
-			}),
-			readonlyCompartment.of(isReadonly ? EditorState.readOnly.of(true) : []),
-			errorDecorationField,
-		];
-	}
+	onMount(async () => {
+		const mod = await import('$lib/monaco');
+		if (destroyed) return;
+		const m = mod.setupMonaco();
+		monaco = m;
+		setModelCompletions = mod.setModelCompletions;
+		clearModelCompletions = mod.clearModelCompletions;
 
-	onMount(() => {
-		view = new EditorView({
-			doc: code,
-			extensions: buildExtensions(dark, readonly),
-			parent: container
+		model = m.editor.createModel(
+			code,
+			language,
+			m.Uri.parse(`inmemory://cell/${crypto.randomUUID()}.${language}`)
+		);
+		setModelCompletions(model, completions);
+
+		const ed = m.editor.create(container, {
+			model,
+			theme: themeName(dark),
+			readOnly: readonly,
+			minimap: { enabled: false },
+			scrollBeyondLastLine: false,
+			automaticLayout: true,
+			wordWrap: 'off',
+			folding: false,
+			lineNumbers: 'on',
+			lineDecorationsWidth: 8,
+			lineNumbersMinChars: 3,
+			glyphMargin: false,
+			renderLineHighlight: 'all',
+			scrollbar: {
+				vertical: 'hidden',
+				horizontal: 'auto',
+				// critical: without this, page scrolling dies over every cell
+				alwaysConsumeMouseWheel: false
+			},
+			overviewRulerLanes: 0,
+			hideCursorInOverviewRuler: true,
+			overviewRulerBorder: false,
+			fontSize: 13.6,
+			fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace",
+			contextmenu: false,
+			// suggest widget must escape the cell card's overflow clipping
+			fixedOverflowWidgets: true,
+			quickSuggestions: true,
+			suggestOnTriggerCharacters: true,
+			tabSize: 2,
+			padding: { top: 6, bottom: 6 }
+		});
+		editor = ed;
+
+		ed.onDidChangeModelContent(() => {
+			if (!suppressUpdate && model) onchange(model.getValue());
+		});
+
+		ed.onDidContentSizeChange(() => {
+			container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
+		});
+		container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
+
+		ed.onDidBlurEditorWidget(() => {
+			formatCurrentSQL();
+		});
+
+		ed.onKeyDown((e) => {
+			const be = e.browserEvent;
+			if (!shouldForwardKey(be)) return;
+			e.preventDefault();
+			e.stopPropagation();
+			container.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: be.key,
+					code: be.code,
+					shiftKey: be.shiftKey,
+					metaKey: be.metaKey,
+					ctrlKey: be.ctrlKey,
+					altKey: be.altKey,
+					bubbles: true,
+					cancelable: true
+				})
+			);
 		});
 	});
 
 	onDestroy(() => {
-		view?.destroy();
+		destroyed = true;
+		if (model && clearModelCompletions) clearModelCompletions(model);
+		editor?.dispose();
+		model?.dispose();
+		editor = null;
+		model = null;
 	});
 
-	// Sync code prop → editor (if external change)
+	// Sync code prop → editor (if external change), keeping the cursor where it
+	// was (clamped) — a full-doc replace otherwise resets the selection and
+	// destroys typing flow.
 	$effect(() => {
-		if (!view) return;
-		const current = view.state.doc.toString();
-		if (current !== code) {
+		if (!editor || !model) return;
+		if (model.getValue() !== code) {
 			suppressUpdate = true;
-			view.dispatch({
-				changes: { from: 0, to: current.length, insert: code }
-			});
+			applyFullReplace(code);
 			suppressUpdate = false;
 		}
 	});
 
-	// Sync dark/readonly → theme compartments (no editor rebuild)
+	// Sync dark → theme (global across instances; the whole app flips at once)
 	$effect(() => {
-		if (!view) return;
-		view.dispatch({
-			effects: [
-				themeCompartment.reconfigure(buildTheme(dark)),
-				highlightCompartment.reconfigure(syntaxHighlighting(buildHighlightStyle(dark))),
-				readonlyCompartment.reconfigure(readonly ? EditorState.readOnly.of(true) : []),
-			]
-		});
+		if (!monaco) return;
+		monaco.editor.setTheme(themeName(dark));
 	});
 
-	// Sync completions → SQL schema compartment (no editor rebuild)
+	// Sync readonly
 	$effect(() => {
-		if (!view) return;
-		view.dispatch({ effects: schemaCompartment.reconfigure(buildSqlExt()) });
+		editor?.updateOptions({ readOnly: readonly });
 	});
 
-	// Sync errors → error decoration field
+	// Sync language (cells convert PRQL ↔ SQL)
 	$effect(() => {
-		if (!view) return;
-		view.dispatch({ effects: setErrorsEffect.of(errors) });
+		if (!monaco || !model) return;
+		monaco.editor.setModelLanguage(model, language);
+	});
+
+	// Sync completions → per-model registry
+	$effect(() => {
+		if (!model || !setModelCompletions) return;
+		setModelCompletions(model, completions);
+	});
+
+	// Sync errors → markers (span offsets are UTF-16, same as getPositionAt)
+	$effect(() => {
+		if (!monaco || !model) return;
+		const markers: Monaco.editor.IMarkerData[] = [];
+		for (const e of errors) {
+			if (!e.span) continue;
+			const [from, to] = e.span;
+			const start = model.getPositionAt(Math.min(from, to));
+			const end = model.getPositionAt(Math.max(from, to));
+			markers.push({
+				severity: monaco.MarkerSeverity.Error,
+				message: e.display ?? e.reason ?? 'Error',
+				startLineNumber: start.lineNumber,
+				startColumn: start.column,
+				endLineNumber: end.lineNumber,
+				endColumn: end.column
+			});
+		}
+		monaco.editor.setModelMarkers(model, 'prql', markers);
 	});
 
 	export function focus(): void {
-		view?.focus();
+		editor?.focus();
 	}
 
 	export function format(): void {
@@ -284,37 +270,35 @@
 	}
 
 	export function insertAtCursor(text: string): void {
-		if (!view) return;
-		const { from } = view.state.selection.main;
-		view.dispatch({
-			changes: { from, to: from, insert: text },
-			selection: { anchor: from + text.length }
-		});
-		view.focus();
+		if (!editor || !monaco) return;
+		const sel = editor.getSelection();
+		if (!sel) return;
+		editor.executeEdits('insert', [{ range: sel, text, forceMoveMarkers: true }]);
+		editor.focus();
 	}
 </script>
 
-<div bind:this={container} class="editor-container relative text-sm" class:dark-editor={dark}></div>
+<div
+	bind:this={container}
+	class="editor-container code-editor relative text-sm"
+	class:dark-editor={dark}
+></div>
 
 {#if errors.length > 0 && !errors[0].span}
 	<p class="mt-1 text-xs text-destructive">{errors[0].display ?? errors[0].reason}</p>
 {/if}
 
 <style>
-	.editor-container :global(.cm-editor) {
-		height: 100%;
+	.editor-container {
 		min-height: 80px;
 		border-radius: 0.375rem;
-		font-size: 0.85rem;
+		overflow: hidden;
 	}
-	.editor-container :global(.cm-focused) {
+	.editor-container :global(.monaco-editor),
+	.editor-container :global(.monaco-editor .overflow-guard) {
+		border-radius: 0.375rem;
+	}
+	.editor-container :global(.monaco-editor:focus-within) {
 		outline: none;
-	}
-	.editor-container :global(.cm-prql-error) {
-		text-decoration: underline wavy #ef4444;
-		text-underline-offset: 3px;
-	}
-	.editor-container :global(.cm-scroller) {
-		font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 	}
 </style>

@@ -31,10 +31,12 @@
 		toolbarActions?: import('svelte').Snippet;
 		/** Query execution time in milliseconds */
 		executionMs?: number | null;
+		/** True when rows were capped at the auto-limit */
+		truncated?: boolean;
 	}
 
 	let {
-		rows, columns, name = 'result', compact = false,
+		rows, columns, name = 'result', compact = false, truncated = false,
 		initialViewMode, initialChartConfig,
 		onViewModeChange, onChartConfigChange,
 		onAddSort, onAddFilter,
@@ -96,7 +98,7 @@
 			<Button
 				variant={viewMode === 'table' ? 'secondary' : 'ghost'}
 				size="sm"
-				class="h-6 gap-1 px-2 text-[11px]"
+				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('table')}
 			>
 				<Table2 class="w-3 h-3" />
@@ -105,7 +107,7 @@
 			<Button
 				variant={viewMode === 'chart' ? 'secondary' : 'ghost'}
 				size="sm"
-				class="h-6 gap-1 px-2 text-[11px]"
+				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('chart')}
 			>
 				<TrendingUp class="w-3 h-3" />
@@ -114,7 +116,7 @@
 			<Button
 				variant={viewMode === 'stats' ? 'secondary' : 'ghost'}
 				size="sm"
-				class="h-6 gap-1 px-2 text-[11px]"
+				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('stats')}
 			>
 				<Sigma class="w-3 h-3" />
@@ -124,7 +126,7 @@
 
 		<div class="flex h-7 items-center justify-end gap-1 shrink-0">
 			{#if executionMs != null}
-				<span class="text-[10px] text-muted-foreground/60 tabular-nums" title="Query execution time">{fmtMs(executionMs)}</span>
+				<span class="text-2xs text-muted-foreground tabular-nums" title="Query execution time">{fmtMs(executionMs)}</span>
 			{/if}
 			{#if viewMode === 'chart' && activeConfig && !compact}
 				<button
@@ -148,6 +150,7 @@
 				{rows}
 				{columns}
 				{name}
+				{truncated}
 				pageSize={compact ? 10 : 25}
 				headerInsights={compact ? 'compact' : 'full'}
 				{onAddSort}

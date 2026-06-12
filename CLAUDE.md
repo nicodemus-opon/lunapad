@@ -66,7 +66,7 @@ For dbt on-disk compilation (`.prql` → `.sql`), see `src/lib/server/prql-compi
 
 ### Editor
 
-`src/lib/components/Editor.svelte` — CodeMirror 6, no Monaco. Uses `@codemirror/lang-sql` for syntax highlighting. Schema-aware completions are built from a `completions: string[]` prop (format: `"table.column"` pairs). Error underlines are applied via a `ViewPlugin` using `cm-prql-error` class.
+`src/lib/components/Editor.svelte` — wraps Monaco (`monaco-editor`). Custom `lunapad-light` / `lunapad-dark` themes live in `src/lib/monaco/themes.ts` (hex values derived from the OKLCH tokens in `src/routes/layout.css` — keep in sync, deliberately low-chroma). Schema-aware completions are built from a `completions: string[]` prop (format: `"table.column"` pairs). Compile errors render as Monaco markers from `span: [from, to]` offsets.
 
 ### External connections
 

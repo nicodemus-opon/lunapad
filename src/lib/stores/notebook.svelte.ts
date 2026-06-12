@@ -82,6 +82,10 @@ export interface DbtTestResult {
 
 export type CellLanguage = 'prql' | 'sql';
 
+// 'full' shows code + result, 'output' hides the code (reading mode),
+// 'collapsed' reduces the cell to a one-line summary row.
+export type CellDisplay = 'full' | 'output' | 'collapsed';
+
 export interface Cell {
 	id: string;
 	cellType: CellType;
@@ -92,7 +96,7 @@ export interface Cell {
 	markdownPreview: boolean;
 	language: CellLanguage;
 	status: CellStatus;
-	result: { rows: Record<string, unknown>[]; columns: string[] } | null;
+	result: { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } | null;
 	errors: PRQLError[];
 	compiledSQL: string | null;
 	executionMs: number | null;
@@ -100,7 +104,7 @@ export interface Cell {
 	editMode: CellEditMode;
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
-	collapsed: boolean;
+	display: CellDisplay;
 	stageResultsCollapsed: boolean[];
 	materializeMode: CellMaterializationMode;
 	materializeTarget: string;
@@ -166,6 +170,9 @@ export interface Notebook {
 	folderId: string | null;
 	cells: Cell[];
 	defaultCellLanguage: CellLanguage;
+	// Presentation flag: render every query cell as output-only with chrome
+	// hidden (errors excepted). Does not mutate per-cell display.
+	reportView?: boolean;
 }
 
 export interface NotebookFolder {
@@ -384,7 +391,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		editMode: 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
-		collapsed: false,
+		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
 		materializeTarget: outputName,
@@ -427,8 +434,8 @@ function makeNotebook(name: string, cells?: Cell[]): Notebook {
 		id: makeId(),
 		name,
 		folderId: null,
-		cells: cells ?? [makeCell('', 'result1')],
-		defaultCellLanguage: 'prql'
+		cells: cells ?? [makeCell('', 'result1', 'sql')],
+		defaultCellLanguage: 'sql'
 	};
 }
 
@@ -830,6 +837,14 @@ export function isSecretRemembered(connectionId: string): boolean {
 	return connectionId in getRememberedSecrets();
 }
 
+// Reads the persisted display state, falling back to the legacy boolean
+// `collapsed` field for notebooks saved before the three-state model.
+function normalizeCellDisplay(c: unknown): CellDisplay {
+	const candidate = (c as { display?: unknown }).display;
+	if (candidate === 'full' || candidate === 'output' || candidate === 'collapsed') return candidate;
+	return (c as { collapsed?: unknown }).collapsed === true ? 'collapsed' : 'full';
+}
+
 function deserializeCell(c: Cell, i: number): Cell {
 	const guiStages: GUIPipelineStage[] = Array.isArray(c.guiStages) && c.guiStages.length > 0
 		? c.guiStages
@@ -857,7 +872,7 @@ function deserializeCell(c: Cell, i: number): Cell {
 		editMode,
 		resultViewMode,
 		resultChartConfig: (c as Partial<Cell>).resultChartConfig ?? null,
-		collapsed: (c as Partial<Cell>).collapsed ?? false,
+		display: normalizeCellDisplay(c),
 		stageResultsCollapsed: Array.isArray((c as Partial<Cell>).stageResultsCollapsed)
 			? ((c as Partial<Cell>).stageResultsCollapsed as boolean[])
 			: [],
@@ -1092,6 +1107,31 @@ function normalizeResultValue(value: unknown): unknown {
 	return value;
 }
 
+// Cap on rows materialized into cell results. Display/intelligence/metadata all
+// work on the capped result; views are created from the unwrapped SQL so
+// downstream cells still see the full relation.
+export const AUTO_LIMIT = 1000;
+
+export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean } {
+	const body = sql.trim().replace(/;\s*$/, '');
+	// Only wrap a single SELECT-like statement — leave EXPLAIN/PRAGMA/multi-statement SQL alone.
+	if (!/^\s*(select|with|values)\b/i.test(body) || body.includes(';')) {
+		return { sql, wrapped: false };
+	}
+	return {
+		sql: `SELECT * FROM (${body}) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+		wrapped: true
+	};
+}
+
+function applyAutoLimit(
+	result: { rows: Record<string, unknown>[]; columns: string[] },
+	wrapped: boolean
+): { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } {
+	if (!wrapped || result.rows.length <= AUTO_LIMIT) return result;
+	return { columns: result.columns, rows: result.rows.slice(0, AUTO_LIMIT), truncated: true };
+}
+
 function normalizeQueryResult(result: {
 	rows: Record<string, unknown>[];
 	columns: string[];
@@ -1117,6 +1157,8 @@ function deserialize(raw: string): void {
 		if (Array.isArray(data.cells)) {
 			const migratedCells = (data.cells as Cell[]).map(deserializeCell);
 			const nb = makeNotebook('Notebook 1', migratedCells);
+			// legacy saved states predate the SQL default — keep their PRQL behavior
+			nb.defaultCellLanguage = 'prql';
 			state.notebooks = [nb];
 			state.activeTabId = nb.id;
 			state.openResultTabs = [];
@@ -1151,6 +1193,7 @@ function deserialize(raw: string): void {
 				name: n.name || 'Notebook',
 				folderId: typeof n.folderId === 'string' ? n.folderId : null,
 				defaultCellLanguage: (n as Partial<Notebook>).defaultCellLanguage === 'sql' ? 'sql' : 'prql',
+				reportView: Boolean((n as Partial<Notebook>).reportView),
 				cells:
 					Array.isArray(n.cells) && n.cells.length > 0
 						? (n.cells as Cell[]).map((cell, idx) => ({
@@ -1488,6 +1531,10 @@ export async function loadProjectNotebooks(): Promise<void> {
 			const mergedCells = freshNb.cells.map((freshCell) => {
 				const prev = prevNb.cells.find((c) => c.id === freshCell.id);
 				if (!prev) return freshCell;
+				// A pending file save means the in-memory cell is newer than disk
+				// (the save will overwrite the file). Taking disk code here would
+				// revert the editor mid-typing and destroy the cursor.
+				if (fileSaveTimers.has(`${freshNb.id}:${freshCell.id}`)) return prev;
 				// Disk fields win for everything that lives on disk.
 				// Preserve only runtime/transient state that is never written to disk.
 				return {
@@ -3155,7 +3202,7 @@ export function addCellWithLanguage(lang: CellLanguage): void {
 
 export function addCell(): void {
 	const nb = getActiveNotebook();
-	addCellWithLanguage(nb.defaultCellLanguage ?? 'prql');
+	addCellWithLanguage(nb.defaultCellLanguage ?? 'sql');
 }
 
 export function addMarkdownCell(): void {
@@ -3176,13 +3223,42 @@ export function addMarkdownCell(): void {
 	scheduleSave();
 }
 
+export function insertMarkdownCellAfter(id: string): void {
+	const nb = getActiveNotebook();
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		// Filesystem mode has no mid-list insert (cells map to files); append.
+		addMarkdownCell();
+		return;
+	}
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, makeMarkdownCell(''));
+	nb.cells = cells;
+	scheduleSave();
+}
+
+export function insertMarkdownCellBefore(id: string): void {
+	const nb = getActiveNotebook();
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		addMarkdownCell();
+		return;
+	}
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const cells = [...nb.cells];
+	cells.splice(idx, 0, makeMarkdownCell(''));
+	nb.cells = cells;
+	scheduleSave();
+}
+
 export function addCellBefore(id: string): void {
 	const nb = getActiveNotebook();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		addCellWithLanguage(nb.defaultCellLanguage ?? 'prql');
+		addCellWithLanguage(nb.defaultCellLanguage ?? 'sql');
 		return;
 	}
-	const lang = nb.defaultCellLanguage ?? 'prql';
+	const lang = nb.defaultCellLanguage ?? 'sql';
 	insertCellBefore(id, {
 		outputName: '',
 		code: '',
@@ -3195,10 +3271,10 @@ export function addCellBefore(id: string): void {
 export function addCellAfter(id: string): void {
 	const nb = getActiveNotebook();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		addCellWithLanguage(nb.defaultCellLanguage ?? 'prql');
+		addCellWithLanguage(nb.defaultCellLanguage ?? 'sql');
 		return;
 	}
-	const lang = nb.defaultCellLanguage ?? 'prql';
+	const lang = nb.defaultCellLanguage ?? 'sql';
 	insertCellAfter(id, {
 		outputName: '',
 		code: '',
@@ -3217,7 +3293,7 @@ export function insertCellBefore(
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	const newCell: Cell = {
-		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'prql'),
+		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
 		editMode: data.editMode
 	};
@@ -3244,7 +3320,7 @@ export function insertCellAfter(
 	const base = nb.cells[idx];
 	const inheritedConnection = data.connectionId === undefined ? base?.connectionId ?? null : data.connectionId;
 	const newCell: Cell = {
-		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'prql'),
+		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
 		editMode: data.editMode,
 		connectionId: inheritedConnection
@@ -3264,6 +3340,20 @@ export function removeCell(id: string): void {
 		dropView(viewName).catch(() => {});
 	}
 	nb.cells = nb.cells.filter((c) => c.id !== id);
+	scheduleSave();
+}
+
+// Drag-reorder: move a cell to an explicit index (used by SortableJS onEnd).
+export function reorderCell(id: string, toIndex: number): void {
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	const target = Math.max(0, Math.min(toIndex, nb.cells.length - 1));
+	if (target === idx) return;
+	const cells = [...nb.cells];
+	const [cell] = cells.splice(idx, 1);
+	cells.splice(target, 0, cell);
+	nb.cells = cells;
 	scheduleSave();
 }
 
@@ -3460,11 +3550,26 @@ export function setCellDescription(id: string, description: string | null): void
 	}
 }
 
-export function setCellCollapsed(id: string, collapsed: boolean): void {
+export function setCellDisplay(id: string, display: CellDisplay): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return;
-	cell.collapsed = collapsed;
+	cell.display = display;
+	scheduleSave();
+}
+
+// Collapse all / Expand all. Markdown cells keep their own display state.
+export function setAllCellsDisplay(display: CellDisplay): void {
+	const nb = getActiveNotebook();
+	for (const cell of nb.cells) {
+		if (cell.cellType === 'query') cell.display = display;
+	}
+	scheduleSave();
+}
+
+export function setNotebookReportView(enabled: boolean): void {
+	const nb = getActiveNotebook();
+	nb.reportView = enabled;
 	scheduleSave();
 }
 
@@ -3770,14 +3875,15 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 	cell.compiledSQL = sql;
 	const start = performance.now();
 	try {
+		const limited = wrapWithAutoLimit(sql);
 		const rawResult = isBuiltin
-			? await executeSQL(sql)
-			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), sql, signal, runId);
+			? await executeSQL(limited.sql)
+			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), limited.sql, signal, runId);
 		if (signal?.aborted) {
 			cell.status = 'idle';
 			return;
 		}
-		const result = normalizeQueryResult(rawResult);
+		const result = applyAutoLimit(normalizeQueryResult(rawResult), limited.wrapped);
 		cell.executionMs = performance.now() - start;
 		cell.result = result;
 		cell.status = 'success';
@@ -4148,10 +4254,11 @@ export async function runGuiStagePreview(
 	}
 
 	try {
+		const limited = wrapWithAutoLimit(sql);
 		const result = isBuiltin
-			? await executeSQL(sql)
-			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), sql);
-		return normalizeQueryResult(result);
+			? await executeSQL(limited.sql)
+			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), limited.sql);
+		return applyAutoLimit(normalizeQueryResult(result), limited.wrapped);
 	} catch (err: unknown) {
 		return { error: (err as Error).message ?? String(err) };
 	}

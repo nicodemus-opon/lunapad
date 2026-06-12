@@ -391,7 +391,7 @@
 						placeholder="localhost"
 					/>
 					{#if form.host === 'localhost' || form.host === '127.0.0.1'}
-						<p class="mt-0.5 text-[10px] text-amber-500/80">
+						<p class="mt-0.5 text-2xs text-warning">
 							Running via Docker? Use <span class="font-mono">host.docker.internal</span> (Mac/Windows) or the service name (e.g. <span class="font-mono">db</span>) instead.
 						</p>
 					{/if}

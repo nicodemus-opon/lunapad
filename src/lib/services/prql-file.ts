@@ -23,6 +23,7 @@
 
 import type {
 	Cell,
+	CellDisplay,
 	CellEditMode,
 	CellLanguage,
 	CellMaterializationMode,
@@ -68,6 +69,8 @@ interface CellJsonMeta {
 	resultViewMode?: ResultViewMode;
 	chartConfig?: ChartConfig | null;
 	guiStages?: GUIPipelineStage[];
+	display?: CellDisplay;
+	/** Legacy pre-display field; still read from old files, never written. */
 	collapsed?: boolean;
 	stageResultsCollapsed?: boolean[];
 	scheduleEnabled?: boolean;
@@ -82,7 +85,7 @@ function buildJsonMeta(cell: Cell): CellJsonMeta {
 		resultViewMode: cell.resultViewMode,
 		chartConfig: cell.resultChartConfig,
 		guiStages: cell.guiStages,
-		collapsed: cell.collapsed,
+		display: cell.display,
 		stageResultsCollapsed: cell.stageResultsCollapsed,
 		scheduleEnabled: cell.scheduleEnabled,
 		scheduleIntervalMinutes: cell.scheduleIntervalMinutes,
@@ -145,7 +148,7 @@ export function serializeCell(cell: Cell, knownModels: string[] = [], notebookId
 			meta.resultViewMode !== 'table' ||
 			meta.chartConfig !== null ||
 			(meta.guiStages && meta.guiStages.length > 0) ||
-			meta.collapsed ||
+			meta.display !== 'full' ||
 			(meta.stageResultsCollapsed && meta.stageResultsCollapsed.length > 0) ||
 			meta.scheduleEnabled;
 

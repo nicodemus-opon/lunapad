@@ -231,6 +231,8 @@ describe('notebook store', () => {
 	it('updates gui stages immediately and compiles after debounce', async () => {
 		vi.useFakeTimers();
 		try {
+			// New cells default to SQL; GUI stages compile through the PRQL path.
+			getCells()[0].language = 'prql';
 			const cellId = getCells()[0].id;
 			updateGuiStages(cellId, [
 				{ type: 'from', table: 'orders' },

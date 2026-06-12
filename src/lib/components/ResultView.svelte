@@ -23,12 +23,14 @@
 		chartConfig: ChartConfig | null;
 		onAddSort?: (column: string, dir: 'asc' | 'desc') => void;
 		onAddFilter?: (column: string) => void;
+		/** True when rows were capped at the auto-limit */
+		truncated?: boolean;
 	}
 
 	let {
 		tabId, cellId = '', notebookId = '', rows, columns,
 		name = 'result', viewMode, chartConfig,
-		onAddSort, onAddFilter
+		onAddSort, onAddFilter, truncated = false
 	}: Props = $props();
 
 	let lastShapeSignature = $state('');
@@ -203,7 +205,7 @@
 	<!-- Content -->
 	{#if viewMode === 'table'}
 		<div class="flex-1 min-h-0">
-			<ResultTable {rows} {columns} {name} pageSize={25} {onAddSort} {onAddFilter} />
+			<ResultTable {rows} {columns} {name} {truncated} pageSize={25} {onAddSort} {onAddFilter} />
 		</div>
 	{:else if viewMode === 'chart' && activeConfig}
 		<!-- Split layout: optional left config panel + chart -->

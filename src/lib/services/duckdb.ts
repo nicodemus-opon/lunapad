@@ -1,5 +1,6 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { withTimeout } from '$lib/services/async';
+import { arrowValueToJS } from '$lib/services/arrow-convert';
 
 // Fixed paths served by the duckdb-static-serve Vite plugin (dev: from node_modules,
 // build: copied to static/duckdb/). Using fixed URLs avoids the content-hash mismatch
@@ -53,22 +54,38 @@ async function instantiateBundle(
 	instantiateTimeoutMs = 12_000,
 	connectTimeoutMs = 8_000
 ): Promise<void> {
-	worker = new Worker(bundle.mainWorker!);
-	const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
-	db = new duckdb.AsyncDuckDB(logger, worker);
-	// Race instantiation against an immediate worker crash so we don't wait the full
-	// timeout when the worker fails to start (e.g. WASM load error, CORS, CSP).
-	const workerCrash = new Promise<never>((_, reject) => {
-		worker!.addEventListener('error', (e) => {
-			reject(new Error(`DuckDB worker failed: ${e.message || `check browser console (worker url: ${bundle.mainWorker})`}`));
-		}, { once: true });
-	});
-	await withTimeout(
-		Promise.race([db.instantiate(bundle.mainModule, bundle.pthreadWorker), workerCrash]),
-		'Instantiating DuckDB WASM engine',
-		instantiateTimeoutMs
+	// Wrap the worker script in a same-origin blob URL. A blob: worker inherits the
+	// document's Cross-Origin-Embedder-Policy, so it works even when the worker script
+	// itself is served without a COEP header (vite dev middleware, adapter-node's sirv) —
+	// a COEP-isolated document refuses to spawn network workers that lack that header.
+	const workerScriptUrl = new URL(bundle.mainWorker!, globalThis.location.href).href;
+	const workerBlobUrl = URL.createObjectURL(
+		new Blob([`importScripts("${workerScriptUrl}");`], { type: 'text/javascript' })
 	);
-	conn = await withTimeout(db.connect(), 'Opening DuckDB connection', connectTimeoutMs);
+	try {
+		worker = new Worker(workerBlobUrl);
+		const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
+		db = new duckdb.AsyncDuckDB(logger, worker);
+		// Race instantiation against an immediate worker crash so we don't wait the full
+		// timeout when the worker fails to start (e.g. WASM load error, CORS, CSP).
+		const workerCrash = new Promise<never>((_, reject) => {
+			worker!.addEventListener('error', (e) => {
+				reject(new Error(`DuckDB worker failed: ${e.message || `check browser console (worker url: ${bundle.mainWorker})`}`));
+			}, { once: true });
+		});
+		// Absolutize the WASM URL: the worker resolves relative URLs against its own
+		// base, which is an opaque blob: URL here, so path-relative fetches would fail.
+		const mainModuleUrl = new URL(bundle.mainModule, globalThis.location.href).href;
+		await withTimeout(
+			Promise.race([db.instantiate(mainModuleUrl, bundle.pthreadWorker), workerCrash]),
+			'Instantiating DuckDB WASM engine',
+			instantiateTimeoutMs
+		);
+		conn = await withTimeout(db.connect(), 'Opening DuckDB connection', connectTimeoutMs);
+	} finally {
+		// Safe to revoke once the worker has either loaded or failed.
+		URL.revokeObjectURL(workerBlobUrl);
+	}
 }
 
 function getBundleVariant(bundle: duckdb.DuckDBBundle): 'mvp' | 'eh' {
@@ -312,9 +329,7 @@ export async function executeSQL(sql: string): Promise<{ rows: Record<string, un
 	const rows = result.toArray().map((row) => {
 		const obj: Record<string, unknown> = {};
 		for (const col of columns) {
-			const val = row[col];
-			// Convert BigInt to number for JSON serialization
-			obj[col] = typeof val === 'bigint' ? Number(val) : val;
+			obj[col] = arrowValueToJS(row[col]);
 		}
 		return obj;
 	});

@@ -41,6 +41,8 @@ vi.mock('$lib/services/intelligence-db', () => ({
 
 import {
 	__resetStateForTests,
+	AUTO_LIMIT,
+	wrapWithAutoLimit,
 	addCell,
 	getNotebookEvents,
 	getNotebooks,
@@ -86,6 +88,9 @@ describe('notebook cell execution', () => {
 		queryConnectionSQLMock.mockResolvedValue({ rows: [], columns: [] });
 		materializeConnectionRelationMock.mockResolvedValue({ name: 'employees_mart', type: 'table' });
 		setPrevViewMock.mockResolvedValue(undefined);
+
+		// New cells default to SQL; these tests exercise the PRQL compile path.
+		getNotebooks()[0].cells[0].language = 'prql';
 	});
 
 	it('keeps the previous result mounted while a rerun is in flight', async () => {
@@ -211,7 +216,7 @@ describe('notebook cell execution', () => {
 		expect(queryConnectionSQLMock).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
 			{ password: 'top-secret' },
-			'SELECT * FROM employees',
+			`SELECT * FROM (SELECT * FROM employees) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
 			expect.anything(), // AbortSignal
 			expect.any(String) // runId
 		);
@@ -259,6 +264,8 @@ describe('notebook cell execution', () => {
 		addCell();
 
 		const [, second, third] = notebook.cells;
+		second.language = 'prql';
+		third.language = 'prql';
 		second.outputName = 'employees_named';
 		second.code = 'from employees_raw\nselect {name}';
 		// third (DuckDB) references second's outputName → gets CTE expansion
@@ -294,6 +301,7 @@ describe('notebook cell execution', () => {
 		addCell();
 
 		const [, second] = notebook.cells;
+		second.language = 'prql';
 		second.outputName = 'pg_result';
 		second.code = 'from employees_raw\nfilter active = true';
 		setCellConnection(second.id, 'pg-main');
@@ -379,5 +387,68 @@ describe('notebook cell execution', () => {
 			'table',
 			'analytics'
 		);
+	});
+
+	it('caps results at AUTO_LIMIT and flags truncation, keeping the view unwrapped', async () => {
+		const cell = getNotebooks()[0].cells[0];
+		cell.code = 'from employees';
+		executeSQLMock.mockResolvedValue({
+			rows: Array.from({ length: AUTO_LIMIT + 1 }, (_, i) => ({ id: i })),
+			columns: ['id']
+		});
+
+		await runCell(cell.id);
+
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			`SELECT * FROM (SELECT * FROM employees) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`
+		);
+		expect(cell.result?.rows).toHaveLength(AUTO_LIMIT);
+		expect(cell.result?.truncated).toBe(true);
+		expect(cell.compiledSQL).toBe('SELECT * FROM employees');
+		expect(createViewMock).toHaveBeenCalledWith(expect.any(String), 'SELECT * FROM employees');
+	});
+
+	it('does not flag truncation when results fit within AUTO_LIMIT', async () => {
+		const cell = getNotebooks()[0].cells[0];
+		cell.code = 'from employees';
+		executeSQLMock.mockResolvedValue({
+			rows: [{ id: 1 }],
+			columns: ['id']
+		});
+
+		await runCell(cell.id);
+
+		expect(cell.result?.rows).toHaveLength(1);
+		expect(cell.result?.truncated).toBeUndefined();
+	});
+});
+
+describe('wrapWithAutoLimit', () => {
+	it('wraps SELECT statements', () => {
+		expect(wrapWithAutoLimit('SELECT * FROM t')).toEqual({
+			sql: `SELECT * FROM (SELECT * FROM t) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+			wrapped: true
+		});
+	});
+
+	it('wraps WITH statements', () => {
+		expect(wrapWithAutoLimit('WITH a AS (SELECT 1) SELECT * FROM a').wrapped).toBe(true);
+	});
+
+	it('strips a trailing semicolon before wrapping', () => {
+		expect(wrapWithAutoLimit('select 1;')).toEqual({
+			sql: `SELECT * FROM (select 1) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+			wrapped: true
+		});
+	});
+
+	it('leaves EXPLAIN and PRAGMA statements unwrapped', () => {
+		expect(wrapWithAutoLimit('EXPLAIN SELECT 1')).toEqual({ sql: 'EXPLAIN SELECT 1', wrapped: false });
+		expect(wrapWithAutoLimit('PRAGMA table_info(t)').wrapped).toBe(false);
+	});
+
+	it('leaves multi-statement SQL unwrapped', () => {
+		const sql = 'CREATE TABLE t (id INT); SELECT * FROM t';
+		expect(wrapWithAutoLimit(sql)).toEqual({ sql, wrapped: false });
 	});
 });

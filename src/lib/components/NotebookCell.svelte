@@ -1,10 +1,8 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { tick } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Input } from '$lib/components/ui/input';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { marked } from 'marked';
 	import Editor from './Editor.svelte';
@@ -13,7 +11,6 @@
 import MaterializeDialog from './MaterializeDialog.svelte';
 	import { prqlToGuiStages, extractLetBindings, mapErrorsToStages, mergeParsedWithHiddenStages } from '$lib/services/gui-prql';
 	import { compilePRQL } from '$lib/services/prql';
-	import { coerceNumber } from '$lib/utils';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import {
 		runCell,
@@ -22,15 +19,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		removeCell,
 		moveCell,
 		updateCellCode,
-		updateCellName,
 		updateGuiStages,
 		setEditMode,
 		setCellLanguage,
-		setCellCollapsed,
+		setCellDisplay,
 		setStageResultCollapsed,
 		registerInsertCallback,
 		insertCellBefore,
-		insertCellAfter,
 		addCellBefore,
 		addCellAfter,
 		getTables,
@@ -41,54 +36,29 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		getRunImpact,
 		setCellResultViewMode,
 		setCellResultChartConfig,
-		setCellConnection,
 		updateCellMarkdown,
 		setCellMarkdownPreview,
-		setCellMaterializeMode,
-		materializeCell,
-		setCellScheduleEnabled,
-		setCellScheduleIntervalMinutes,
-		setCellScheduleScope,
-		processScheduledMaterializations,
-		setCellDbtConfig,
-		setCellDescription,
 		testCell,
 		openLineageTab,
 		getIsDbtProject,
 		getProjectFolder,
 		getDbtModels,
-		refreshDbtManifest,
-		type CellMaterializationMode,
-		type CellScheduleScope,
 		type CellLanguage,
 		type Cell,
-		type DbtTestResult,
 		getCrossNotebookUsageCount
 	} from '$lib/stores/notebook.svelte';
+	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
 	import { updateProjectSchema } from '$lib/services/project-client';
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
-	import {
-		Play,
-		Trash2,
-		ChevronUp,
-		ChevronDown,
-		ChevronRight,
-		Loader2,
-		CheckCircle2,
-		XCircle,
-		Code2,
-		MoreVertical,
-		ExternalLink,
-		BarChart3,
-		Sigma,
-		ChevronsUpDown,
-		Database,
-		FlaskConical,
-		X,
-		Clock
-	} from '@lucide/svelte';
+	import { Loader2, ExternalLink, BarChart3, Sigma } from '@lucide/svelte';
+	import CellGutter from './cell/CellGutter.svelte';
+	import CellHeader from './cell/CellHeader.svelte';
+	import CellMenu from './cell/CellMenu.svelte';
+	import CellStatusLine from './cell/CellStatusLine.svelte';
+	import CellSqlPreview from './cell/CellSqlPreview.svelte';
+	import CellModeSwitchDialogs from './cell/CellModeSwitchDialogs.svelte';
 	import { BUILTIN_DUCKDB_CONNECTION_ID, getPRQLTargetForConnection, resolveConnection } from '$lib/types/connection';
 
 	interface Props {
@@ -100,6 +70,8 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		prevCellSources?: GUISourceSchema[];
 		notebookId?: string;
 		autoRun?: boolean;
+		/** Presentation mode: render as output-only with cell chrome hidden. */
+		reportView?: boolean;
 		onOpenResultTab?: (
 			cellId: string,
 			notebookId: string,
@@ -117,6 +89,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		prevCellSources = [],
 		notebookId = '',
 		autoRun = false,
+		reportView = false,
 		onOpenResultTab
 	}: Props = $props();
 
@@ -125,20 +98,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	let autoRunTimer: ReturnType<typeof setTimeout> | undefined;
 	let pendingAutoRun = $state(false);
 	let menuOpen = $state(false);
-	let menuTop = $state(0);
-	let menuRight = $state(0);
-	let menuDropdownEl: HTMLDivElement | undefined = $state();
 	let materializeDialogOpen = $state(false);
-	let nameInputValue = $state(untrack(() => cell.outputName));
-	// Keep nameInputValue in sync with external changes (e.g. file watcher reload)
-	// but only when the user isn't actively editing it.
-	let nameInputFocused = $state(false);
-	$effect(() => {
-		if (!nameInputFocused) nameInputValue = cell.outputName;
-	});
-	let testPanelVisible = $state(false);
-	let testPanelCollapsed = $state(false);
-	let kebabAnchorEl: HTMLDivElement | undefined = $state();
+	// Portaled popovers (status chips, refs, errors) take focus outside the cell
+	// element; keep the cell chrome revealed while any of them is open.
+	let overlayCount = $state(0);
+	function handleOverlayChange(open: boolean) {
+		overlayCount = Math.max(0, overlayCount + (open ? 1 : -1));
+	}
 	const EDITOR_COMPLETION_LIMIT = 600;
 	const PRQL_KEYWORDS = [
 		'from',
@@ -153,9 +119,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		'let',
 		'case'
 	] as const;
-	const collapsed = $derived(cell.collapsed);
+	const isQueryCell = $derived(cell.cellType === 'query');
+	// Report view renders every query cell as output-only without touching the
+	// per-cell display state.
+	const effectiveDisplay = $derived(reportView && isQueryCell ? 'output' : cell.display);
+	const collapsed = $derived(effectiveDisplay === 'collapsed');
+	const codeHidden = $derived(isQueryCell && effectiveDisplay !== 'full');
 	let running = $derived(cell.status === 'running');
-	let materializing = $derived(cell.materializeStatus === 'running');
 	let cellFocused = $state(false);
 	let cellHovered = $state(false);
 	let cellContainerEl: HTMLElement | undefined = $state();
@@ -164,9 +134,11 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	let confirmSwitchToSql = $state<false | 'with-code' | 'without-code'>(false);
 	let compiledSqlForSwitch = $state('');
 	let confirmSwitchToPrql = $state(false);
-	const showResultControls = $derived(cellFocused || cellHovered);
-	const showResult = $derived(Boolean(cell.result) && (cell.status === 'success' || cell.status === 'running'));
-	const isQueryCell = $derived(cell.cellType === 'query');
+	const revealed = $derived(!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0));
+	const showResultControls = $derived(revealed);
+	const showResult = $derived(
+		!collapsed && Boolean(cell.result) && (cell.status === 'success' || cell.status === 'running')
+	);
 	const renderedMarkdown = $derived.by(() => {
 		if (isQueryCell) return '';
 		const markdown = (cell.markdown || '').trim();
@@ -252,7 +224,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	}
 
 	const editorCompletions = $derived.by(() => {
-		if (!isQueryCell || cell.editMode !== 'prql' || collapsed) return [];
+		if (!isQueryCell || cell.editMode !== 'prql' || collapsed || codeHidden) return [];
 
 		const values = new Set<string>(PRQL_KEYWORDS);
 		for (const table of guiTables) {
@@ -321,7 +293,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		if (!autoRun) return;
 
 		autoRunTimer = setTimeout(() => {
-			if (cell.status === 'running') {
+			if (cell.status === 'running' || isChipEditing()) {
 				pendingAutoRun = true;
 			} else {
 				runCellAndDownstream(cell.id);
@@ -331,9 +303,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		return () => clearTimeout(autoRunTimer);
 	});
 
-	// Deferred rerun: if a run completed while pendingAutoRun was set, run now
+	// Deferred rerun: if a run completed (or chip editing ended) while
+	// pendingAutoRun was set, run now
 	$effect(() => {
-		if (cell.status !== 'running' && pendingAutoRun) {
+		if (cell.status !== 'running' && !isChipEditing() && pendingAutoRun) {
 			pendingAutoRun = false;
 			runCellAndDownstream(cell.id);
 		}
@@ -417,7 +390,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		const tag = (target as HTMLElement).tagName.toLowerCase();
 		if (tag === 'input' || tag === 'textarea') return true;
 		if ((target as HTMLElement).isContentEditable) return true;
-		if (target.closest('.cm-content, .cm-editor')) return true;
+		if (target.closest('.code-editor, .monaco-editor')) return true;
 		return false;
 	}
 
@@ -452,7 +425,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		const inStageEditor = (e.target instanceof Element) && !!(e.target as Element).closest('.stage-editor');
 
 		// Always: run cell — but never when focus is on a plain input like the cell name field.
-		// CodeMirror uses div elements so Shift+Enter still works from the PRQL editor.
+		// Monaco swallows these keys, so Editor.svelte re-dispatches them on its container div.
 		if (isQueryCell && e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey) && !isNativeInputTarget(e.target)) {
 			e.preventDefault();
 			runCell(cell.id);
@@ -466,12 +439,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			return;
 		}
 
-		// ⌘⇧T: run dbt tests for this cell
+		// ⌘⇧T: run dbt tests for this cell (status surfaces in the tests chip)
 		if (isDbtProject && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't' && !isNativeInputTarget(e.target)) {
 			e.preventDefault();
 			void testCell(cell.id);
-			testPanelVisible = true;
-			testPanelCollapsed = false;
 			return;
 		}
 
@@ -503,7 +474,11 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		switch (e.key) {
 			case 'Enter':
 				e.preventDefault();
-				enterEditMode();
+				if (collapsed) {
+					setCellDisplay(cell.id, 'full');
+				} else {
+					enterEditMode();
+				}
 				break;
 			case 'ArrowUp':
 			case 'k':
@@ -549,37 +524,17 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 				break;
 			case 'c':
 				e.preventDefault();
-				setCellCollapsed(cell.id, !cell.collapsed);
+				setCellDisplay(cell.id, collapsed ? 'full' : 'collapsed');
+				break;
+			case 'C':
+				// ⇧C: toggle output-only (hide/show code)
+				if (e.shiftKey && isQueryCell) {
+					e.preventDefault();
+					setCellDisplay(cell.id, cell.display === 'output' ? 'full' : 'output');
+				}
 				break;
 		}
 	}
-
-	function onMaterializeModeChange(mode: string) {
-		if (mode === 'view' || mode === 'table' || mode === 'incremental') {
-			setCellMaterializeMode(cell.id, mode as CellMaterializationMode);
-		}
-	}
-
-	function intervalMinutesToCronExpression(minutes: number): string {
-		if (minutes > 0 && minutes < 60) return `*/${minutes} * * * *`;
-		if (minutes >= 60 && minutes % 60 === 0) return `0 */${minutes / 60} * * *`;
-		return `*/${minutes} * * * *`;
-	}
-
-	$effect(() => {
-		if (!menuOpen) return;
-
-		function onWindowPointerDown(event: PointerEvent) {
-			const target = event.target as Node | null;
-			if (!target) return;
-			if (menuOpen && !kebabAnchorEl?.contains(target) && !menuDropdownEl?.contains(target)) {
-				menuOpen = false;
-			}
-		}
-
-		window.addEventListener('pointerdown', onWindowPointerDown, true);
-		return () => window.removeEventListener('pointerdown', onWindowPointerDown, true);
-	});
 
 	function addSortSuggestion(column: string, dir: 'asc' | 'desc') {
 		if (cell.editMode !== 'gui') return;
@@ -590,20 +545,6 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		if (cell.editMode !== 'gui') return;
 		updateGuiStages(cell.id, [...cell.guiStages, { type: 'filter', conditions: [{ column, op: '==', value: '' }], logic: 'and' }]);
 	}
-
-	function escapeRegExp(value: string): string {
-		return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	}
-
-	const statusColor = $derived<string>(
-		cell.status === 'success'
-			? 'text-[var(--chart-1)]'
-			: cell.status === 'error'
-					? 'text-destructive'
-					: cell.status === 'running'
-						? 'text-[var(--chart-3)]'
-						: 'text-muted-foreground'
-	);
 
 	const crossNotebookUsageCount = $derived(
 		isQueryCell && cell.outputName && notebookId
@@ -657,16 +598,28 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		setCellLanguage(cell.id, 'prql');
 	}
 
-	// True when any downstream cell in this notebook references this cell's output
-	const hasDownstreamRefs = $derived(
-		isQueryCell && (runImpact.downstreamCount > 0 || crossNotebookUsageCount > 0)
+	// Connection name shown in the status line — only for non-default connections
+	const cellConnectionName = $derived(
+		cell.connectionId ? connections.find((c) => c.id === cell.connectionId)?.name ?? null : null
+	);
+
+	const hasStatusLine = $derived(
+		isQueryCell &&
+			!collapsed &&
+			!reportView &&
+			(showResult ||
+				(cell.needsRun && cell.status !== 'running') ||
+				cell.materializeStatus !== 'idle' ||
+				cell.scheduleEnabled ||
+				(isDbtProject && cell.dbtTestStatus !== 'idle') ||
+				cellConnectionName !== null)
 	);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
-	class="notebook-cell group rounded-lg overflow-hidden text-foreground transition-[border-color,box-shadow,background] duration-200 {isMarkdownPreviewMode ? `border ${cellFocused ? 'border-border/30' : 'border-transparent hover:border-border/20'}` : `border bg-accent/20 dark:bg-accent/30 ${cellFocused || running ? 'border-primary shadow-[0_0_0_1px_hsl(var(--primary))]' : 'border-border/70 hover:border-primary/60 hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.45)]'}`}"
+	class="notebook-cell group relative rounded-lg text-foreground outline-none transition-colors duration-200 {reportView ? '' : cellFocused || running ? 'bg-muted/50' : 'hover:bg-muted/20'}"
 	tabindex="0"
 	onkeydown={handleKeydown}
 	onfocusin={onCellFocusIn}
@@ -677,277 +630,59 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	aria-label={`Cell ${index + 1}`}
 	aria-busy={running}
 >
-	<!-- Header bar -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="w-full flex items-center gap-2 px-3 py-1.5 bg-transparent border-b border-border/0 select-none transition-opacity duration-150 {isMarkdownPreviewMode ? 'opacity-0 group-hover:opacity-100' : ''}"
-		onpointerdown={(e) => {
-			if ((e.target as Element) === e.currentTarget) {
-				e.preventDefault();
-				cellContainerEl?.focus();
-			}
-		}}
-	>
-		<div class="min-w-0 flex flex-1 items-center gap-2">
-			<!-- Index — click to enter command mode -->
-			<span
-				class="text-xs font-mono text-muted-foreground w-5 shrink-0 cursor-default"
-				onclick={() => cellContainerEl?.focus()}
-				role="presentation"
+	<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)]">
+		{#if reportView}
+			<div></div>
+		{:else}
+			<CellGutter
+				{isQueryCell}
+				{revealed}
+				status={cell.status}
+				needsRun={cell.needsRun}
+				{running}
+				runTooltip={runTooltipText}
+				onRun={() => runCell(cell.id)}
+				onCancel={() => cancelCell(cell.id)}
 			>
-				{index + 1}
-			</span>
-
-			<!-- Output name input -->
-			<div class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'} flex items-center gap-1">
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<input
-							class="h-6 min-w-0 {collapsed ? 'w-auto max-w-48' : 'w-full'} text-xs font-mono bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground/50 p-0"
-							placeholder={isQueryCell ? 'result name…' : 'note title…'}
-							value={nameInputValue}
-							onfocus={() => { nameInputFocused = true; }}
-							oninput={(e) => { nameInputValue = (e.target as HTMLInputElement).value; }}
-							onblur={() => { nameInputFocused = false; updateCellName(cell.id, nameInputValue); }}
-							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
-						/>
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{#if isQueryCell}
-							<p class="text-xs">Name this cell's output. Reference it from other cells with <code>from {cell.outputName || 'name'}</code>.</p>
-							{#if hasDownstreamRefs}
-								<p class="text-xs mt-1 text-amber-500">Renaming will break {runImpact.downstreamCount + crossNotebookUsageCount} referencing cell{(runImpact.downstreamCount + crossNotebookUsageCount) === 1 ? '' : 's'}.</p>
-							{/if}
-						{:else}
-							<p class="text-xs">Optional heading for this markdown note.</p>
-						{/if}
-						{#if isQueryCell && prevCellNames.length > 0}
-							<p class="text-xs mt-1 text-muted-foreground">← available: <code>{prevCellNames.join(', ')}</code></p>
-						{/if}
-					</Tooltip.Content>
-				</Tooltip.Root>
-				{#if isQueryCell && hasDownstreamRefs}
-					<span class="inline-flex items-center rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-400 shrink-0 select-none" title="Referenced by {runImpact.downstreamCount + crossNotebookUsageCount} cell(s) — rename carefully">
-						↳ {runImpact.downstreamCount + crossNotebookUsageCount}
-					</span>
-				{/if}
-			</div>
-
-			<!-- Collapsed summary: row count + exec time -->
-			{#if collapsed && isQueryCell && cell.result && cell.status !== 'idle'}
-				<span class="text-[10px] font-mono text-muted-foreground shrink-0">
-					{cell.result.rows.length.toLocaleString()} rows
-					{#if cell.executionMs != null}
-						· {cell.executionMs < 1000 ? `${cell.executionMs.toFixed(0)}ms` : `${(cell.executionMs / 1000).toFixed(2)}s`}
-					{/if}
-				</span>
-			{/if}
-
-			<!-- Collapsed stale indicator -->
-			{#if collapsed && isQueryCell && cell.needsRun && cell.status !== 'running'}
-				<span class="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 shrink-0">
-					<Clock class="h-2.5 w-2.5" />
-					stale
-				</span>
-			{/if}
-
-		</div>
-
-		<!-- Always-visible connection badge when using a non-default connection -->
-		{#if isQueryCell && connectionValue !== BUILTIN_DUCKDB_CONNECTION_ID}
-			{@const connName = connections.find(c => c.id === connectionValue)?.name ?? 'External'}
-			<span class="inline-flex items-center gap-1 rounded border border-border/60 bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground shrink-0 max-w-28 truncate" title={connName}>
-				<Database class="h-2.5 w-2.5 shrink-0" />
-				<span class="truncate">{connName}</span>
-			</span>
+				{#snippet menu()}
+					<CellMenu
+						{cell}
+						{isQueryCell}
+						{isFirst}
+						{isLast}
+						{isDbtProject}
+						{connections}
+						{connectionValue}
+						bind:sqlExpanded
+						bind:open={menuOpen}
+						onOpenMaterialize={() => (materializeDialogOpen = true)}
+						onRunTests={() => void testCell(cell.id)}
+					/>
+				{/snippet}
+			</CellGutter>
 		{/if}
 
-		<div class="flex items-center gap-1 transition-opacity duration-150 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto" class:opacity-0={!running} class:pointer-events-none={!running}>
-			<!-- Connection selector -->
-			{#if isQueryCell}
-			<Select.Root
-				type="single"
-				disabled={connections.length === 0}
-				value={connectionValue}
-				onValueChange={(value) => setCellConnection(cell.id, value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value)}
-			>
-				<Select.Trigger class="h-6 min-w-32 text-[11px] font-mono">
-					{connections.find((connection) => connection.id === connectionValue)?.name ?? 'DuckDB (built-in)'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each connections as connection (connection.id)}
-						<Select.Item value={connection.id} class="text-xs font-mono">{connection.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+		<div class="min-w-0 flex flex-col gap-1 py-1 pr-2">
+			{#if !(reportView && !isQueryCell)}
+				<CellHeader
+					{cell}
+					{isQueryCell}
+					{collapsed}
+					{codeHidden}
+					{revealed}
+					hidden={isMarkdownPreviewMode}
+					{prevCellNames}
+					downstreamCount={runImpact.downstreamCount}
+					{crossNotebookUsageCount}
+					{cellMode}
+					onModeChange={setCellMode}
+					onOverlayChange={handleOverlayChange}
+				/>
 			{/if}
-
-			<!-- Cell type selector: PRQL | Visual | SQL -->
-			{#if isQueryCell}
-				<div class="inline-flex items-center rounded border border-border/60 bg-muted/20 p-0.5">
-					<button
-						class="h-5 px-1.5 text-[10px] font-mono font-semibold rounded-sm transition-colors {cellMode === 'prql' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-						onclick={() => setCellMode('prql')}
-						title="PRQL code mode"
-					>PRQL</button>
-					<button
-						class="h-5 px-1.5 text-[10px] font-mono font-semibold rounded-sm transition-colors {cellMode === 'visual' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-						onclick={() => setCellMode('visual')}
-						title="Visual pipeline editor"
-					>Visual</button>
-					<button
-						class="h-5 px-1.5 text-[10px] font-mono font-semibold rounded-sm transition-colors {cellMode === 'sql' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-						onclick={() => setCellMode('sql')}
-						title="SQL mode"
-					>SQL</button>
-				</div>
-			{/if}
-
-			<!-- Collapse button -->
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-6 w-6 p-0 text-muted-foreground"
-						onclick={() => setCellCollapsed(cell.id, !cell.collapsed)}
-						aria-label={collapsed ? 'Expand cell' : 'Collapse cell'}
-					>
-						<ChevronsUpDown class="w-3.5 h-3.5" />
-					</Button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">{collapsed ? 'Expand cell' : 'Collapse cell'} (c in command mode)</p></Tooltip.Content>
-			</Tooltip.Root>
-
-			<!-- Run / Cancel button -->
-			{#if isQueryCell}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Button
-						size="sm"
-						class="h-6 w-6 p-0"
-						disabled={!running && materializing}
-						onclick={() => running ? cancelCell(cell.id) : runCell(cell.id)}
-						aria-label={running ? 'Cancel run' : 'Run cell'}
-					>
-						{#if running}
-							<X class="w-3 h-3" />
-						{:else}
-							<Play class="w-3 h-3 fill-current" />
-						{/if}
-					</Button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>
-					<p class="text-xs">{running ? 'Cancel' : runTooltipText}</p>
-				</Tooltip.Content>
-			</Tooltip.Root>
-			{/if}
-
-			<!-- Materialize / schedule button -->
-			{#if isQueryCell}
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-6 w-6 p-0"
-				title="Materialize and schedule options"
-				onclick={() => (materializeDialogOpen = true)}
-				aria-label="Materialize and schedule options"
-			>
-				<Database class="w-3.5 h-3.5" />
-			</Button>
-			{/if}
-
-			<!-- Kebab menu (includes SQL preview, dbt tests, move, delete) -->
-			<div class="relative" bind:this={kebabAnchorEl}>
-				<Button
-					variant="ghost"
-					size="sm"
-					class="h-6 w-6 p-0"
-					onclick={() => {
-						if (!menuOpen) {
-							const r = kebabAnchorEl!.getBoundingClientRect();
-							menuTop = r.bottom + 4;
-							menuRight = window.innerWidth - r.right;
-						}
-						menuOpen = !menuOpen;
-					}}
-					aria-label="Cell options"
-				>
-					<MoreVertical class="w-3.5 h-3.5" />
-				</Button>
-				{#if menuOpen}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						bind:this={menuDropdownEl}
-						style="position: fixed; top: {menuTop}px; right: {menuRight}px; z-index: 200;"
-						class="min-w-44 rounded-md border bg-popover shadow-md py-1"
-						onmouseleave={() => (menuOpen = false)}
-					>
-						{#if isQueryCell && cell.compiledSQL}
-							<button
-								class="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent {sqlExpanded ? 'text-primary' : ''}"
-								onclick={() => { sqlExpanded = !sqlExpanded; menuOpen = false; }}
-							>
-								<Code2 class="w-3 h-3 shrink-0" />
-								{sqlExpanded ? 'Hide SQL preview' : 'Show SQL preview'}
-							</button>
-						{/if}
-
-						{#if isQueryCell && isDbtProject}
-							<button
-								class="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent {cell.dbtTestStatus === 'fail' ? 'text-destructive' : cell.dbtTestStatus === 'pass' ? 'text-[--chart-1]' : ''}"
-								disabled={cell.dbtTestStatus === 'running'}
-								onclick={() => { void testCell(cell.id); testPanelVisible = true; testPanelCollapsed = false; menuOpen = false; }}
-							>
-								{#if cell.dbtTestStatus === 'running'}
-									<Loader2 class="w-3 h-3 animate-spin shrink-0" />
-								{:else}
-									<FlaskConical class="w-3 h-3 shrink-0" />
-								{/if}
-								{cell.dbtTestStatus === 'idle' ? 'Run dbt tests' : cell.dbtTestStatus === 'running' ? 'Running tests…' : cell.dbtTestStatus === 'pass' ? `Tests passing (${cell.dbtTestResults.length})` : `Tests failed (${cell.dbtTestResults.filter(r => r.status === 'fail').length})`}
-							</button>
-						{/if}
-
-						<div class="my-1 border-t"></div>
-
-						<button
-							class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
-							disabled={isFirst}
-							onclick={() => { moveCell(cell.id, 'up'); menuOpen = false; }}
-						>
-							<span class="flex items-center gap-2"><ChevronUp class="w-3 h-3" /> Move up</span>
-							<span class="text-muted-foreground font-mono">⇧K</span>
-						</button>
-						<button
-							class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
-							disabled={isLast}
-							onclick={() => { moveCell(cell.id, 'down'); menuOpen = false; }}
-						>
-							<span class="flex items-center gap-2"><ChevronDown class="w-3 h-3" /> Move down</span>
-							<span class="text-muted-foreground font-mono">⇧J</span>
-						</button>
-
-						<div class="my-1 border-t"></div>
-						<button
-							class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-destructive hover:bg-accent"
-							onclick={() => { removeCell(cell.id); menuOpen = false; }}
-						>
-							<span class="flex items-center gap-2"><Trash2 class="w-3 h-3" /> Delete cell</span>
-							<span class="text-muted-foreground font-mono">dd</span>
-						</button>
-					</div>
-				{/if}
-			</div>
-
-			{#if isQueryCell}
-				<MaterializeDialog bind:open={materializeDialogOpen} {cell} {isDbtProject} />
-			{/if}
-		</div>
-	</div>
 
 	<!-- Editor (GUI or PRQL mode) -->
-	{#if !collapsed}
-		<div class="{isMarkdownPreviewMode ? 'px-3 pb-3 pt-0' : 'p-3'}" onfocusin={onEditorFocus}>
+	{#if !collapsed && !codeHidden}
+		<div onfocusin={onEditorFocus}>
 			{#if !isQueryCell}
 				<div class="group/markdown relative">
 					{#if isMarkdownPreviewMode}
@@ -960,7 +695,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 							{@html safeMarkdown}
 						</div>
 						<button
-							class="absolute right-0 top-0 hidden rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground group-hover/markdown:block"
+							class="absolute right-0 top-0 hidden rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground group-hover/markdown:block"
 							onclick={() => setCellMarkdownPreview(cell.id, false)}
 						>
 							Edit
@@ -1006,81 +741,14 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		</div>
 	{/if}
 
-	<!-- Confirm: switch PRQL → GUI (will discard manual code) -->
-	{#if confirmSwitchToGui}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-			<div class="bg-card border rounded-lg shadow-xl p-5 max-w-sm w-full mx-4 space-y-3">
-				<p class="font-semibold text-sm">Switch to GUI mode?</p>
-				<p class="text-xs text-muted-foreground">
-					This PRQL cannot be parsed into GUI stages. Switching now will discard it and replace it
-					with a blank pipeline.
-					This cannot be undone.
-				</p>
-				<div class="flex justify-end gap-2">
-					<Button variant="outline" size="sm" onclick={() => (confirmSwitchToGui = false)}>Cancel</Button>
-					<Button size="sm" onclick={doSwitchToGui}>Switch to GUI</Button>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Confirm: switch PRQL → SQL -->
-	{#if confirmSwitchToSql}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-			<div class="bg-card border rounded-lg shadow-xl p-5 max-w-sm w-full mx-4 space-y-3">
-				{#if confirmSwitchToSql === 'with-code'}
-					<p class="font-semibold text-sm">Convert PRQL to SQL?</p>
-					<p class="text-xs text-muted-foreground">
-						PRQL compiled successfully. Use the generated SQL as this cell's code, or switch to SQL mode keeping the current code as-is.
-					</p>
-					<div class="flex justify-end gap-2">
-						<Button variant="outline" size="sm" onclick={() => (confirmSwitchToSql = false)}>Cancel</Button>
-						<Button variant="outline" size="sm" onclick={() => doSwitchToSql(false)}>Keep PRQL code</Button>
-						<Button size="sm" onclick={() => doSwitchToSql(true)}>Use compiled SQL</Button>
-					</div>
-				{:else}
-					<p class="font-semibold text-sm">Switch to SQL?</p>
-					<p class="text-xs text-muted-foreground">
-						This PRQL couldn't be compiled — it may use features that don't translate directly. Switch to SQL anyway? The code will be kept as-is.
-					</p>
-					<div class="flex justify-end gap-2">
-						<Button variant="outline" size="sm" onclick={() => (confirmSwitchToSql = false)}>Cancel</Button>
-						<Button size="sm" onclick={() => doSwitchToSql(false)}>Switch to SQL</Button>
-					</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
-
-	<!-- Confirm: switch SQL → PRQL -->
-	{#if confirmSwitchToPrql}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-			<div class="bg-card border rounded-lg shadow-xl p-5 max-w-sm w-full mx-4 space-y-3">
-				<p class="font-semibold text-sm">Switch to PRQL?</p>
-				<p class="text-xs text-muted-foreground">
-					SQL cannot be automatically converted to PRQL. The existing code will be kept as-is and may have syntax errors in PRQL mode.
-				</p>
-				<div class="flex justify-end gap-2">
-					<Button variant="outline" size="sm" onclick={() => (confirmSwitchToPrql = false)}>Cancel</Button>
-					<Button size="sm" onclick={doSwitchToPrql}>Switch to PRQL</Button>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	<!-- SQL preview -->
+	<!-- Compiled SQL preview -->
 	{#if !collapsed && sqlExpanded && cell.compiledSQL}
-		<div class="px-3 pb-3">
-			<div class="rounded-md bg-muted/50 border p-3">
-				<p class="text-xs text-muted-foreground mb-1.5 font-medium">Generated SQL</p>
-				<pre class="text-xs font-mono overflow-x-auto whitespace-pre-wrap text-foreground/80">{cell.compiledSQL}</pre>
-			</div>
-		</div>
+		<CellSqlPreview sql={cell.compiledSQL} />
 	{/if}
 
 	<!-- Errors -->
 	{#if !collapsed && cell.errors.length > 0}
-		<div class="px-3 pb-3 space-y-2">
+		<div class="space-y-2">
 			{#each cell.errors as error (error.display ?? error.reason)}
 				<Alert variant="destructive" class="py-2">
 					<AlertDescription class="font-mono text-xs whitespace-pre-wrap">
@@ -1092,7 +760,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	{/if}
 
 	{#if !collapsed && cell.materializeError}
-		<div class="px-3 pb-3">
+		<div>
 			<Alert variant="destructive" class="py-2">
 				<AlertDescription class="font-mono text-xs whitespace-pre-wrap">
 					{cell.materializeError}
@@ -1101,60 +769,11 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		</div>
 	{/if}
 
-	<!-- Test panel -->
-	{#if !collapsed && isDbtProject && testPanelVisible && cell.dbtTestStatus !== 'idle'}
-		<div class="border-t border-border/40 bg-muted/20">
-			<div class="flex items-center gap-2 px-3 py-1.5">
-				<FlaskConical class="w-3 h-3 shrink-0 {cell.dbtTestStatus === 'pass' ? 'text-[--chart-1]' : cell.dbtTestStatus === 'fail' ? 'text-destructive' : 'text-muted-foreground'}" />
-				<span class="text-[11px] font-medium">Tests</span>
-				{#if cell.dbtTestStatus !== 'running'}
-					<span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium {cell.dbtTestStatus === 'pass' ? 'border-[--chart-1]/30 bg-[--chart-1]/10 text-[--chart-1]' : 'border-destructive/30 bg-destructive/10 text-destructive'}">
-						{#if cell.dbtTestStatus === 'pass'}{cell.dbtTestResults.length} passing
-						{:else}{cell.dbtTestResults.filter(r => r.status === 'fail').length} failed{/if}
-					</span>
-				{/if}
-				<div class="ml-auto flex items-center gap-1">
-					<button class="text-muted-foreground hover:text-foreground" onclick={() => (testPanelCollapsed = !testPanelCollapsed)}>
-						<ChevronRight class="w-3 h-3 transition-transform {testPanelCollapsed ? '' : 'rotate-90'}" />
-					</button>
-					<button class="text-muted-foreground hover:text-foreground" onclick={() => (testPanelVisible = false)}>
-						<X class="w-3 h-3" />
-					</button>
-				</div>
-			</div>
-			{#if !testPanelCollapsed}
-				{#if cell.dbtTestStatus === 'running'}
-					<div class="px-3 pb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
-						<Loader2 class="w-3 h-3 animate-spin" /> Running tests…
-					</div>
-				{:else if cell.dbtTestResults.length === 0}
-					<p class="px-3 pb-2 text-[11px] text-muted-foreground italic">No tests found for this model. Add tests to _models.yml.</p>
-				{:else}
-					<div class="px-3 pb-2 flex flex-col gap-0.5">
-						{#each cell.dbtTestResults as result (result.testName)}
-							<div class="flex items-center gap-2 text-[11px]">
-								{#if result.status === 'pass'}
-									<CheckCircle2 class="w-3 h-3 shrink-0 text-[--chart-1]" />
-								{:else}
-									<XCircle class="w-3 h-3 shrink-0 text-destructive" />
-								{/if}
-								<span class="font-mono">{result.testName}</span>
-								{#if result.column}
-									<span class="text-muted-foreground">({result.column})</span>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				{/if}
-			{/if}
-		</div>
-	{/if}
-
 	<!-- Results -->
 	{#if showResult && cell.result && cell.result.rows.length >= 0}
-		<div class="relative px-3 pb-3 transition-opacity duration-200 {running ? 'opacity-80' : 'opacity-100'}">
+		<div class="relative transition-opacity duration-200 {running ? 'opacity-80' : 'opacity-100'}">
 			{#if running}
-				<div class="pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]">
+				<div class="pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]">
 					<Loader2 class="w-3 h-3 animate-spin" />
 					<span>Updating</span>
 				</div>
@@ -1165,11 +784,11 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 				<InlineResultView
 					rows={cell.result.rows}
 					columns={cell.result.columns}
+					truncated={cell.result.truncated ?? false}
 					name={cell.outputName || `result${index + 1}`}
 					initialViewMode={cell.resultViewMode}
 					initialChartConfig={cell.resultChartConfig}
 					controlsVisible={showResultControls}
-					executionMs={cell.executionMs}
 					onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
 					onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
 					onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
@@ -1216,157 +835,40 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 				</InlineResultView>
 			{/if}
 
-			<!-- Persistent "open full" affordance when result is large -->
-			{#if onOpenResultTab && cell.result && cell.result.rows.length > 50}
-				<div class="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground/60">
-					<span>Showing preview · {cell.result.rows.length.toLocaleString()} rows total</span>
-					<button
-						class="hover:text-foreground transition-colors underline underline-offset-2"
-						onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'table')}
-					>
-						Open full results →
-					</button>
-				</div>
-			{/if}
 		</div>
 	{/if}
 
-	{#if isQueryCell && (cell.needsRun || crossNotebookUsageCount > 0 || intelligenceSummary || (showResult && cell.result) || cell.scheduleEnabled || cell.status !== 'idle' || cell.materializeStatus !== 'idle' || cell.scheduleStatus !== 'idle')}
-		<div class="flex flex-wrap items-center gap-2 border-t border-border/40 px-3 py-1">
-			<div class="flex items-center gap-1 {statusColor}">
-				{#if cell.status === 'running'}
-					<Loader2 class="w-3.5 h-3.5 animate-spin" />
-				{:else if cell.status === 'success'}
-					<CheckCircle2 class="w-3.5 h-3.5" />
-				{:else if cell.status === 'error'}
-					<XCircle class="w-3.5 h-3.5" />
-				{/if}
-			</div>
-
-			{#if cell.needsRun && cell.status !== 'running'}
-				<div class="inline-flex items-center gap-1">
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							<span class="inline-flex items-center gap-1 rounded-l border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-								<Clock class="h-2.5 w-2.5" />
-								{#if cell.staleReason === 'code-changed'}code changed{:else}upstream changed{/if}
-							</span>
-						</Tooltip.Trigger>
-						<Tooltip.Content>
-							<p class="text-xs">
-								{#if cell.staleReason === 'code-changed'}
-									Code changed — rerun to see updated results
-								{:else if cell.staleSources.length > 0}
-									{cell.staleSources.slice(0, 3).join(', ')}{cell.staleSources.length > 3 ? ` +${cell.staleSources.length - 3} more` : ''} changed — rerun to see updated results
-								{:else}
-									An upstream cell changed — rerun to see updated results
-								{/if}
-							</p>
-						</Tooltip.Content>
-					</Tooltip.Root>
-					<button
-						class="inline-flex items-center gap-0.5 rounded-r border border-l-0 border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
-						onclick={() => runCell(cell.id)}
-						aria-label="Re-run stale cell"
-					>
-						<Play class="h-2 w-2 fill-current" />
-						Re-run
-					</button>
-				</div>
-			{/if}
-
-			{#if crossNotebookUsageCount > 0}
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<span class="inline-flex items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-							<ExternalLink class="h-2.5 w-2.5" />
-							used by {crossNotebookUsageCount} cell{crossNotebookUsageCount === 1 ? '' : 's'} across notebooks
-						</span>
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						<p class="text-xs">
-							This output is referenced by {crossNotebookUsageCount} cell{crossNotebookUsageCount === 1 ? '' : 's'} in other notebooks
-						</p>
-					</Tooltip.Content>
-				</Tooltip.Root>
-			{/if}
-
-			{#if cell.materializeStatus === 'running'}
-				<span class="inline-flex items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-					<Loader2 class="h-2.5 w-2.5 animate-spin" />
-					materializing ({cell.materializeMode})
-				</span>
-			{:else if cell.materializeStatus === 'success'}
-				<span class="inline-flex items-center gap-1 rounded border border-chart-1/40 bg-chart-1/10 px-1.5 py-0.5 text-[10px] font-medium text-chart-1">
-					<CheckCircle2 class="h-2.5 w-2.5" />
-					materialized {cell.materializedRelationType ?? 'relation'}
-				</span>
-			{:else if cell.materializeStatus === 'error'}
-				<span class="inline-flex items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-					<XCircle class="h-2.5 w-2.5" />
-					materialize failed
-				</span>
-			{/if}
-
-			{#if cell.scheduleEnabled}
-				<span class="inline-flex items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-					<Database class="h-2.5 w-2.5" />
-					every {cell.scheduleIntervalMinutes}m ({cell.scheduleScope === 'segment' ? 'segment' : 'cell'})
-				</span>
-			{/if}
-
-			{#if cell.scheduleStatus === 'running'}
-				<span class="inline-flex items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-					<Loader2 class="h-2.5 w-2.5 animate-spin" />
-					schedule running
-				</span>
-			{:else if cell.scheduleStatus === 'error'}
-				<span class="inline-flex items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-					<XCircle class="h-2.5 w-2.5" />
-					schedule failed
-				</span>
-			{/if}
-
-			{#if cell.scheduleEnabled}
-				<span class="text-[10px] font-mono text-muted-foreground">{intervalMinutesToCronExpression(cell.scheduleIntervalMinutes)}</span>
-			{/if}
-
-			{#if intelligenceSummary}
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<span class="inline-flex items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-							<Database class="h-2.5 w-2.5" />
-							insights
-						</span>
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						<div class="max-w-64 space-y-1 text-xs">
-							<p>Connection: {intelligenceSummary.connectionId}</p>
-							<p>{intelligenceSummary.rowCount.toLocaleString()} rows, {intelligenceSummary.columnCount} columns</p>
-							{#if intelligenceSummary.nextAnalysis}
-								<p>Next: {intelligenceSummary.nextAnalysis}</p>
-							{/if}
-							<p>{intelligenceSummary.perfWarnings} performance warning{intelligenceSummary.perfWarnings === 1 ? '' : 's'}, {intelligenceSummary.qualityWarnings} quality warning{intelligenceSummary.qualityWarnings === 1 ? '' : 's'}</p>
-							<p>{intelligenceSummary.joinCount} join suggestion{intelligenceSummary.joinCount === 1 ? '' : 's'}, {intelligenceSummary.schemaMatchCount} schema match{intelligenceSummary.schemaMatchCount === 1 ? '' : 'es'}</p>
-						</div>
-					</Tooltip.Content>
-				</Tooltip.Root>
-			{/if}
-
-			{#if showResult && cell.result}
-				<span class="text-xs text-muted-foreground font-mono">
-					{cell.result.rows.length.toLocaleString()} rows · {cell.result.columns.length} cols
-					{#if running}
-						· updating...
-					{:else if cell.executionMs != null}
-						· {cell.executionMs < 1000
-							? `${cell.executionMs.toFixed(0)}ms`
-							: `${(cell.executionMs / 1000).toFixed(2)}s`}
-					{/if}
-				</span>
-			{/if}
-		</div>
+	{#if hasStatusLine}
+		<CellStatusLine
+			{cell}
+			{showResult}
+			{running}
+			{intelligenceSummary}
+			connectionName={cellConnectionName}
+			{isDbtProject}
+			onOpenMaterialize={() => (materializeDialogOpen = true)}
+			onShowSql={() => (sqlExpanded = true)}
+			onRunTests={() => void testCell(cell.id)}
+			onOverlayChange={handleOverlayChange}
+			onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
+				? () => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'table')
+				: undefined}
+		/>
 	{/if}
+		</div>
+	</div>
+
+	{#if isQueryCell}
+		<MaterializeDialog bind:open={materializeDialogOpen} {cell} {isDbtProject} />
+	{/if}
+	<CellModeSwitchDialogs
+		bind:confirmSwitchToGui
+		bind:confirmSwitchToSql
+		bind:confirmSwitchToPrql
+		onSwitchToGui={doSwitchToGui}
+		onSwitchToSql={doSwitchToSql}
+		onSwitchToPrql={doSwitchToPrql}
+	/>
 </div>
 
 <style>

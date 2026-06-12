@@ -21,6 +21,8 @@
 		onAddSort?: (column: string, dir: 'asc' | 'desc') => void;
 		onAddFilter?: (column: string) => void;
 		onColumnDescriptionChange?: (column: string, description: string) => void;
+		/** True when rows were capped at the auto-limit */
+		truncated?: boolean;
 	}
 
 	let {
@@ -30,6 +32,7 @@
 		name = 'results',
 		headerInsights = 'full',
 		columnDescriptions = {},
+		truncated = false,
 		onAddSort,
 		onAddFilter,
 		onColumnDescriptionChange
@@ -123,11 +126,20 @@
 		return total > 0 ? ((n / total) * 100).toFixed(0) + '%' : '0%';
 	}
 
+	// Cap text put into the DOM — CSS truncate alone still renders the full
+	// string, which freezes the app on multi-MB values.
+	const CELL_DISPLAY_MAX = 200;
+	const DETAIL_DISPLAY_MAX = 20_000;
+
 	function formatCell(value: unknown): string {
 		if (value === null || value === undefined) return '—';
-		if (value instanceof Date) return value.toISOString();
-		if (typeof value === 'object') return JSON.stringify(value);
-		return String(value);
+		const s =
+			value instanceof Date
+				? value.toISOString()
+				: typeof value === 'object'
+					? JSON.stringify(value)
+					: String(value);
+		return s.length > CELL_DISPLAY_MAX ? s.slice(0, CELL_DISPLAY_MAX) + '…' : s;
 	}
 
 	// ── TanStack Table ────────────────────────────────────────────────────
@@ -183,6 +195,13 @@
 		return String(value);
 	}
 
+	function formatDetailValue(value: unknown): string {
+		const s = formatFullValue(value);
+		return s.length > DETAIL_DISPLAY_MAX
+			? s.slice(0, DETAIL_DISPLAY_MAX) + '\n… (truncated — use Copy for full value)'
+			: s;
+	}
+
 	async function copyValue(value: unknown) {
 		try {
 			await navigator.clipboard.writeText(formatFullValue(value));
@@ -221,7 +240,7 @@
 					<Table.Row class="border-b-0">
 						{#each headerGroup.headers as header, hi (header.id)}
 							{@const s = statsMap[header.id]}
-							<Table.Head class="border-r border-b p-2 align-top last:border-r-0 bg-background
+							<Table.Head class="border-b p-2 align-top bg-background
 								{hi === 0
 									? 'sticky top-0 left-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
 									: 'sticky top-0 z-20'}">
@@ -383,7 +402,7 @@
 							{@const value = row.original[cell.column.id]}
 							{@const isNull = value === null || value === undefined}
 							<Table.Cell
-								class="max-w-70 truncate border-r p-2 last:border-r-0 cursor-pointer hover:bg-muted/50 transition-colors
+								class="max-w-70 truncate p-2 cursor-pointer hover:bg-muted/50 transition-colors
 									{ci === 0 ? 'sticky left-0 bg-background shadow-[1px_0_0_0_hsl(var(--border))]' : ''}"
 								onclick={() => { selectedCell = { col: cell.column.id, value }; copied = false; }}
 							>
@@ -417,7 +436,7 @@
 					<X class="w-3.5 h-3.5" />
 				</button>
 			</div>
-			<pre class="flex-1 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all text-foreground min-h-0 max-h-105">{formatFullValue(selectedCell.value)}</pre>
+			<pre class="flex-1 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all text-foreground min-h-0 max-h-105">{formatDetailValue(selectedCell.value)}</pre>
 			<Button
 				variant="outline"
 				size="sm"
@@ -436,57 +455,61 @@
 	{/if}
 	</div>
 
-	<!-- Footer: always show row count + download; show pagination if needed -->
-	<div class="flex items-center justify-between px-1 text-xs text-muted-foreground">
-		<span>{totalRows.toLocaleString()} rows</span>
-		<div class="flex items-center gap-2">
+	<!-- Footer: one quiet line — range, optional truncation note, pager, export -->
+	<div class="flex items-center justify-between px-1 text-2xs text-muted-foreground">
+		<span>
 			{#if totalRows > pagination.pageSize}
-				<span>
-					{startRow.toLocaleString()}–{endRow.toLocaleString()} shown
-				</span>
-				<div class="flex items-center gap-1.5">
-					<span>Per page</span>
-					<Select.Root
-						type="single"
-						value={String(pagination.pageSize)}
-						onValueChange={(v) => {
-							pagination = { pageIndex: 0, pageSize: Number(v) };
-						}}
-					>
-						<Select.Trigger class="h-7 w-16 text-xs">
-							{pagination.pageSize}
-						</Select.Trigger>
-						<Select.Content>
-							{#each pageSizeOptions as size (size)}
-								<Select.Item value={String(size)} class="text-xs">{size}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="flex items-center gap-1.5">
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 px-2 text-xs"
-						onclick={() => table.previousPage()}
-						disabled={!table.getCanPreviousPage()}
-					>
-						Previous
-					</Button>
-					<span>Page {pagination.pageIndex + 1} of {table.getPageCount()}</span>
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 px-2 text-xs"
-						onclick={() => table.nextPage()}
-						disabled={!table.getCanNextPage()}
-					>
-						Next
-					</Button>
-				</div>
+				{startRow.toLocaleString()}–{endRow.toLocaleString()} of {totalRows.toLocaleString()}
+			{:else}
+				{totalRows.toLocaleString()} row{totalRows === 1 ? '' : 's'}
+			{/if}
+			{#if truncated}
+				<span
+					class="text-warning"
+					title="Result capped at the auto-limit; run with a higher limit or export for the full set"
+				> · first {totalRows.toLocaleString()} rows</span>
+			{/if}
+		</span>
+		<div class="flex items-center gap-1.5">
+			{#if totalRows > pagination.pageSize}
+				<Select.Root
+					type="single"
+					value={String(pagination.pageSize)}
+					onValueChange={(v) => {
+						pagination = { pageIndex: 0, pageSize: Number(v) };
+					}}
+				>
+					<Select.Trigger class="h-7 w-16 border-transparent text-xs shadow-none hover:border-border" aria-label="Rows per page">
+						{pagination.pageSize}
+					</Select.Trigger>
+					<Select.Content>
+						{#each pageSizeOptions as size (size)}
+							<Select.Item value={String(size)} class="text-xs">{size} per page</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-7 px-2 text-xs"
+					onclick={() => table.previousPage()}
+					disabled={!table.getCanPreviousPage()}
+				>
+					Previous
+				</Button>
+				<span class="text-2xs tabular-nums">{pagination.pageIndex + 1} / {table.getPageCount()}</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-7 px-2 text-xs"
+					onclick={() => table.nextPage()}
+					disabled={!table.getCanNextPage()}
+				>
+					Next
+				</Button>
 			{/if}
 			<Button
-				variant="outline"
+				variant="ghost"
 				size="sm"
 				class="h-7 px-2 text-xs gap-1"
 				onclick={downloadCSV}

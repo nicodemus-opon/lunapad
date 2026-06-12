@@ -61,7 +61,7 @@ async function gotoWithCode(page: Page, code: string) {
 	}, code);
 
 	await page.goto('/');
-	await page.waitForSelector('.cm-editor', { timeout: 10_000 });
+	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 10_000 });
 }
 
 async function switchToGuiMode(page: Page, expectedStages = 11) {
@@ -148,9 +148,9 @@ test('add-stage prompt Enter flow applies generated block and updates PRQL edito
 	expect(totalStages).toBeGreaterThan(11);
 
 	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-	await page.waitForSelector('.cm-editor', { timeout: 5_000 });
+	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
-	const prqlText = await page.locator('.notebook-cell').first().locator('.cm-content').first().innerText();
+	const prqlText = (await page.locator('.notebook-cell').first().locator('.view-lines').first().innerText()).replace(/\u00a0/g, ' ');
 	const groupCount = prqlText.match(/\bgroup\b/gi)?.length ?? 0;
 
 	expect(groupCount).toBeGreaterThan(1);
@@ -188,9 +188,9 @@ test('add-stage prompt Shift+Enter force-applies block and updates stage card ty
 	expect(takeCount).toBeGreaterThanOrEqual(baselineTakeCount);
 
 	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
-	await page.waitForSelector('.cm-editor', { timeout: 5_000 });
+	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
-	const prqlText = await page.locator('.notebook-cell').first().locator('.cm-content').first().innerText();
+	const prqlText = (await page.locator('.notebook-cell').first().locator('.view-lines').first().innerText()).replace(/\u00a0/g, ' ');
 	expect(prqlText.toLowerCase()).toContain('group customer_id');
 	expect(prqlText.toLowerCase()).toMatch(/sum_[a-z_]+\s*=\s*sum\s+[a-z_]+|avg_[a-z_]+\s*=\s*average\s+[a-z_]+/);
 	expect(prqlText.toLowerCase()).toMatch(/take\s+\d+/);
