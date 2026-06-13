@@ -205,7 +205,7 @@
 	<!-- Content -->
 	{#if viewMode === 'table'}
 		<div class="flex-1 min-h-0">
-			<ResultTable {rows} {columns} {name} {truncated} pageSize={25} {onAddSort} {onAddFilter} />
+			<ResultTable {rows} {columns} {name} {truncated} pageSize={25} fillHeight {onAddSort} {onAddFilter} />
 		</div>
 	{:else if viewMode === 'chart' && activeConfig}
 		<!-- Split layout: optional left config panel + chart -->

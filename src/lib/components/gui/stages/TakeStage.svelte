@@ -2,6 +2,8 @@
 	import type { TakeStage } from '$lib/types/gui-pipeline';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
+	import { CHIP, CHIP_SECTION } from '../chip-styles';
 
 	interface Props {
 		stage: TakeStage;
@@ -62,18 +64,16 @@
 	});
 </script>
 
-<div
-	class="inline-flex items-center rounded border  bg-background text-xs overflow-hidden shrink-0 group/take"
->
+<div class="{CHIP} group/take">
 	{#if isRange}
 		<!-- Range mode: keep popover for range inputs -->
 		<Popover.Root>
-			<Popover.Trigger class="px-2.5 py-1 font-mono hover:bg-muted/90 transition-colors">
+			<Popover.Trigger class={CHIP_SECTION}>
 				{label} rows
 			</Popover.Trigger>
 			<Popover.Content class="w-52 p-3 space-y-3">
 				<div>
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">From</p>
+					<p class="text-2xs font-medium text-muted-foreground mb-1">From</p>
 					<Input
 						type="number"
 						min="1"
@@ -83,7 +83,7 @@
 					/>
 				</div>
 				<div>
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">To</p>
+					<p class="text-2xs font-medium text-muted-foreground mb-1">To</p>
 					<Input
 						type="number"
 						min="1"
@@ -92,18 +92,15 @@
 						oninput={(e) => setRangeTo((e.target as HTMLInputElement).value)}
 					/>
 				</div>
-				<button
-					class="w-full h-7 rounded border text-xs transition-colors bg-muted/50 hover:bg-muted text-muted-foreground"
-					onclick={toggleRange}
-				>
+				<Button variant="outline" size="sm" class="w-full" onclick={toggleRange}>
 					Switch to limit
-				</button>
+				</Button>
 			</Popover.Content>
 		</Popover.Root>
 	{:else}
 		<!-- Limit mode: inline ±  stepper -->
 		<button
-			class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/take:opacity-100 hover:text-foreground hover:bg-muted/60 transition-all select-none"
+			class="flex h-full select-none items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={decrement}
 			aria-label="Decrease by 10"
 		>−</button>
@@ -130,10 +127,10 @@
 			</button>
 		{/if}
 
-		<span class="py-1 pr-1 text-muted-foreground/70 select-none">rows</span>
+		<span class="select-none pr-1 text-muted-foreground/60">rows</span>
 
 		<button
-			class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/take:opacity-100 hover:text-foreground hover:bg-muted/60 transition-all select-none"
+			class="flex h-full select-none items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={increment}
 			aria-label="Increase by 10"
 		>+</button>
@@ -141,16 +138,13 @@
 		<!-- ⋯ opens range/limit toggle -->
 		<Popover.Root>
 			<Popover.Trigger
-				class="px-1.5 py-1 text-muted-foreground/50 opacity-0 group-hover/take:opacity-100 hover:text-muted-foreground transition-all border-l border-border/50"
+				class="flex h-full items-center px-1.5 text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 				title="Switch to range mode"
 			>⋯</Popover.Trigger>
 			<Popover.Content class="w-44 p-3">
-				<button
-					class="w-full h-7 rounded border text-xs transition-colors bg-muted/50 hover:bg-muted text-muted-foreground"
-					onclick={toggleRange}
-				>
+				<Button variant="outline" size="sm" class="w-full" onclick={toggleRange}>
 					Switch to range
-				</button>
+				</Button>
 			</Popover.Content>
 		</Popover.Root>
 	{/if}

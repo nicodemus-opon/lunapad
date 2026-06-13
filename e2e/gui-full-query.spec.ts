@@ -6,7 +6,12 @@ async function expandStage(page: Page, stageType: string, nth = 0) {
 }
 
 async function switchToGuiMode(page: Page) {
-	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to GUI mode/i }).first().click({ force: true });
+	// The PRQL / Visual / SQL segmented toggle in the cell header (revealed on hover, hence force)
+	await page.locator('.notebook-cell').first().getByRole('button', { name: 'Visual', exact: true }).first().click({ force: true });
+}
+
+async function switchToPrqlMode(page: Page) {
+	await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click({ force: true });
 }
 
 const FULL_QUERY = `from invoices
@@ -91,9 +96,9 @@ test.describe('GUI full-query', () => {
 		// Focus a stage card first so shortcuts are scoped to this editor.
 		await stageCards.nth(1).focus();
 
-		// C: create via AddStageMenu keyboard picker (A + 1)
-		await page.keyboard.press('a');
-		await expect(page.getByPlaceholder('Search stages')).toBeVisible();
+		// C: create via AddStageMenu keyboard picker (/ + 1)
+		await page.keyboard.press('/');
+		await expect(page.getByPlaceholder('search stages')).toBeVisible();
 		await page.keyboard.press('1');
 		await expect(stageCards).toHaveCount(12);
 
@@ -135,7 +140,7 @@ test.describe('GUI full-query', () => {
 		await expect(stageCards).toHaveCount(11, { timeout: 5_000 });
 
 		// Switch to PRQL mode via the cell header toggle
-		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+		await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click();
 		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
 		// The PRQL preview should contain key features
@@ -173,16 +178,16 @@ test.describe('GUI full-query', () => {
 		await expect(firstStage.locator('[data-testid="stage-evidence-panel"]')).toContainText('evidence');
 	});
 
-	test('stage connectors: each transition shows a right-angle elbow', async ({ page }) => {
+	test('flat stages: every stage renders as a block with a header row, no connector rail', async ({ page }) => {
 		await gotoWithCode(page, FULL_QUERY);
 
 		await switchToGuiMode(page);
 		const stageCards = page.locator('[data-testid="stage-card"]');
 		await expect(stageCards).toHaveCount(11, { timeout: 5_000 });
 
-		await expect(page.locator('[data-testid="stage-card"] .stage-link')).toHaveCount(10);
-		await expect(stageCards.first().locator('.stage-link')).toHaveCount(1);
-		await expect(stageCards.last().locator('.stage-link')).toHaveCount(0);
+		await expect(page.locator('[data-testid="stage-card"] [data-testid="stage-header"]')).toHaveCount(11);
+		// The connector rail was removed in the flat Notion-style redesign
+		await expect(page.locator('.connector-line, .connector-dot, .stage-link')).toHaveCount(0);
 	});
 
 	test('fstring-derive: fstring derive stage is parsed from full query', async ({ page }) => {
@@ -193,13 +198,17 @@ test.describe('GUI full-query', () => {
 		await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(11, { timeout: 5_000 });
 
 		// The 9th stage is `derive name = f"{...}"` → fstring mode (2nd derive stage, 0-indexed)
-		await expandStage(page, 'derive', 1);
-		await page.locator('[data-testid="stage-card"][data-stage-type="derive"]').nth(1).locator('[role="listitem"]').first().locator('button').first().click({ force: true });
+		// The expression popover trigger is the button whose label is the f-string template
+		await page
+			.locator('[data-testid="stage-card"][data-stage-type="derive"]').nth(1)
+			.locator('[role="listitem"]').first()
+			.getByRole('button', { name: /^f"""/ })
+			.click({ force: true });
 		const fstringInput = page.locator('[data-testid="derive-fstring-template"]').first();
 		await expect(fstringInput).toBeVisible({ timeout: 3_000 });
 
 		// Switch to PRQL mode and verify f-string syntax
-		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+		await switchToPrqlMode(page);
 		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('f"');
@@ -213,33 +222,39 @@ test.describe('GUI full-query', () => {
 		await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(11, { timeout: 5_000 });
 
 		// The 11th stage is `derive db_version = s"version()"` → sstring mode (3rd derive stage, 0-indexed)
-		await expandStage(page, 'derive', 2);
-		await page.locator('[data-testid="stage-card"][data-stage-type="derive"]').nth(2).locator('[role="listitem"]').first().locator('button').first().click({ force: true });
+		// The expression popover trigger is the button whose label is the s-string template
+		await page
+			.locator('[data-testid="stage-card"][data-stage-type="derive"]').nth(2)
+			.locator('[role="listitem"]').first()
+			.getByRole('button', { name: /^s"""/ })
+			.click({ force: true });
 		const sstringInput = page.locator('[data-testid="derive-sstring-template"]').first();
 		await expect(sstringInput).toBeVisible({ timeout: 3_000 });
 
 		// Switch to PRQL mode and verify s-string syntax
-		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+		await switchToPrqlMode(page);
 		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('s"');
 	});
 
-	test('join alias + shorthand condition: alias input and shorthand button', async ({ page }) => {
+	test('join alias + shorthand condition: alias and shorthand chip render', async ({ page }) => {
 		await gotoWithCode(page, FULL_QUERY);
 		await switchToGuiMode(page);
 		await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(11, { timeout: 5_000 });
 
-		// The join stage (8th stage, 0-indexed = 7) should have alias "c"
-		await expandStage(page, 'join', 0);
-		await page.locator('[data-testid="stage-card"][data-stage-type="join"]').first().locator('[data-testid="join-main-pill"]').click({ force: true });
-		const joinAliasInput = page.locator('[data-testid="join-alias-input"]').first();
-		await expect(joinAliasInput).toHaveValue('c');
+		// No expandStage here: clicking the header row's center can land on the
+		// condition pill and switch it into edit mode; chips are visible by default.
+		const joinCard = page.locator('[data-testid="stage-card"][data-stage-type="join"]').first();
 
-		// The shorthand condition column should show "customer_id"
-		await page.locator('[data-testid="stage-card"][data-stage-type="join"]').first().locator('[role="listitem"]').first().locator('button').first().click({ force: true });
-		const shorthandCol = page.locator('[data-testid="join-shorthand-col"]').first();
-		await expect(shorthandCol).toBeVisible();
+		// The main join pill renders the alias "c" as an inline editable label
+		await expect(joinCard.locator('[data-testid="join-main-pill"]')).toBeVisible();
+		await expect(
+			joinCard.locator('[data-testid="join-main-pill"]').getByRole('button', { name: 'c', exact: true })
+		).toBeVisible();
+
+		// The shorthand condition renders as ==customer_id
+		await expect(joinCard.getByRole('button', { name: '==customer_id' })).toBeVisible();
 	});
 
 	test('date literal filter: @-prefixed value preserved in output', async ({ page }) => {
@@ -248,7 +263,7 @@ test.describe('GUI full-query', () => {
 		await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(11, { timeout: 5_000 });
 
 		// Switch to PRQL mode and verify date literal is preserved
-		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+		await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click();
 		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		await expect(preview).toContainText('@1970-01-16');
@@ -260,7 +275,7 @@ test.describe('GUI full-query', () => {
 		await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(11, { timeout: 5_000 });
 
 		// Switch to PRQL mode and verify no-alias average
-		await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+		await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click();
 		await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 		const preview = page.locator('.notebook-cell').first().locator('.view-lines').first();
 		// Should have `average total` with no assignment prefix

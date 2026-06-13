@@ -9,6 +9,8 @@
 	import { InlineChipLabel } from '$lib/components/ui/inline-chip-label';
 	import { ChipInput } from '$lib/components/ui/chip-input';
 	import { pickDefaultAgg, pickGroupByColumn } from '$lib/components/gui/chip-intelligence';
+	import { Button } from '$lib/components/ui/button';
+	import { CHIP, CHIP_ADD, CHIP_EDITING, CHIP_INVALID, CHIP_META, CHIP_SECTION, CHIP_SELECT, CHIP_X, SECTION_LABEL } from '../chip-styles';
 
 	interface Props {
 		stage: GroupStage;
@@ -320,24 +322,23 @@
 				ondragover={(e) => e.preventDefault()}
 				ondrop={(e) => { e.preventDefault(); if (dragWinSortIdx !== null && dragWinSortIdx !== idx) { reorderWinSortKeys(dragWinSortIdx, idx); dragWinSortIdx = null; } }}
 				ondragend={() => (dragWinSortIdx = null)}
-				class="inline-flex items-center rounded border bg-background text-xs overflow-hidden group/pill shrink-0 cursor-grab active:cursor-grabbing"
+				class="{CHIP} cursor-grab active:cursor-grabbing"
 				class:opacity-40={dragWinSortIdx !== null && dragWinSortIdx === idx}
-				style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
 			>
 				<button
-					class="inline-flex items-center gap-1 px-2 py-1 font-mono hover:bg-muted/60 transition-colors"
+					class="{CHIP_SECTION} gap-1"
 					onclick={() => toggleWindowSortDir(idx)}
 					title="Toggle sort direction"
 				>
 					{#if key.dir === 'asc'}
-						<ArrowUp class="w-3 h-3 text-primary/70" />
+						<ArrowUp class="w-3 h-3 text-muted-foreground" />
 					{:else}
-						<ArrowDown class="w-3 h-3 text-chart-1/70" />
+						<ArrowDown class="w-3 h-3 text-muted-foreground" />
 					{/if}
 					{key.column}
 				</button>
 				<button
-					class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+					class={CHIP_X}
 					onclick={() => removeWindowSortKey(idx)}
 					aria-label="Remove sort key"
 				>
@@ -348,10 +349,7 @@
 
 		<!-- Add sort key -->
 		<Popover.Root bind:open={addWindowSortOpen}>
-			<Popover.Trigger
-				class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-				title="Add sort key"
-			>
+			<Popover.Trigger class={CHIP_ADD} title="Add sort key">
 				<ArrowUp class="w-3 h-3" />
 				<Plus class="w-3 h-3" />
 			</Popover.Trigger>
@@ -362,12 +360,9 @@
 					placeholder="column…"
 					onchange={(v) => (draftSortCol = v)}
 				/>
-				<button
-					class="mt-1 w-full h-7 rounded-md border text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-					onclick={confirmAddWindowSort}
-				>
+				<Button size="sm" class="mt-1 w-full" onclick={confirmAddWindowSort}>
 					Add sort key
-				</button>
+				</Button>
 			</Popover.Content>
 		</Popover.Root>
 
@@ -389,7 +384,7 @@
 
 	{:else}
 		<!-- ── Aggregate mode ──────────────────────────────────────────────── -->
-		<span class="text-[9px] uppercase tracking-widest text-muted-foreground/50 shrink-0 w-8 text-right pr-1.5 select-none">agg</span>
+		<span class="{SECTION_LABEL} w-8 shrink-0 pr-1.5 text-right">agg</span>
 
 		{#if stage.aggregations.length === 0}
 			<span class="text-xs text-muted-foreground/60 italic">none</span>
@@ -403,7 +398,7 @@
 				ondragover={(e) => e.preventDefault()}
 				ondrop={(e) => { e.preventDefault(); if (dragAggIdx !== null && dragAggIdx !== idx) { reorderAggs(dragAggIdx, idx); dragAggIdx = null; } }}
 				ondragend={() => (dragAggIdx = null)}
-				class="inline-flex items-center rounded border text-xs overflow-hidden shrink-0 transition-all"
+				class="group/pill inline-flex items-center text-xs shrink-0"
 				class:cursor-grab={expandedAggIdx !== idx}
 				class:opacity-40={dragAggIdx !== null && dragAggIdx === idx}
 			>
@@ -411,8 +406,7 @@
 					<!-- ── Expanded inline form for structured aggs ── -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<div
-						class="inline-flex items-center gap-1 rounded-lg border border-primary/50 bg-background px-1.5 py-0.5 ring-1 ring-primary/20"
-						style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
+						class={CHIP_EDITING}
 						onkeydown={(e) => { if (e.key === 'Escape') expandedAggIdx = null; }}
 						onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) expandedAggIdx = null; }}
 						role="group"
@@ -425,20 +419,20 @@
 							oninput={(v) => updateAgg(idx, { name: v })}
 						/>
 						{#if agg.name}
-							<span class="text-muted-foreground/40 text-[10px] select-none">=</span>
+							<span class={CHIP_META}>=</span>
 						{/if}
 
 						<!-- Function selector (native select, styled inline) -->
 						<select
 							value={agg.func}
-							class="bg-transparent text-xs text-primary outline-none cursor-pointer font-mono hover:text-primary/80 transition-colors"
+							class="{CHIP_SELECT} text-foreground"
 							onchange={(e) => updateAgg(idx, { func: (e.target as HTMLSelectElement).value as AggFunc })}
 						>
 							{#each AGG_FUNCS as f (f.value)}
 								<option value={f.value}>{f.value}</option>
 							{/each}
 						</select>
-						<span class="font-mono text-xs text-primary/60 select-none">(</span>
+						<span class="{CHIP_META} font-mono">(</span>
 
 						<!-- Column input (hidden for count) -->
 						{#if !noColFuncs.includes(agg.func)}
@@ -451,23 +445,20 @@
 								oninput={(v) => updateAgg(idx, { column: v })}
 							/>
 						{/if}
-						<span class="font-mono text-xs text-primary/60 select-none">)</span>
+						<span class="{CHIP_META} font-mono">)</span>
 
 						<!-- Confirm -->
 						<button
-							class="text-muted-foreground hover:text-primary transition-colors px-0.5 text-[11px]"
+							class="px-1 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
 							onclick={() => (expandedAggIdx = null)}
 							aria-label="Done editing"
 						>✓</button>
 					</div>
 				{:else if isRawAgg(agg)}
 					<!-- Raw agg: keep the existing popover (complex structured expr) -->
-					<div
-						class="inline-flex items-center rounded border bg-background overflow-hidden group/inner cursor-grab"
-						style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
-					>
+					<div class="{CHIP} cursor-grab">
 						<Popover.Root>
-							<Popover.Trigger class="px-2.5 py-1 hover:bg-muted/60 transition-colors font-mono">
+							<Popover.Trigger class={CHIP_SECTION}>
 								{humanizeAgg(agg)}
 							</Popover.Trigger>
 							<Popover.Content class="w-64 p-3 space-y-2">
@@ -480,13 +471,13 @@
 								<div class="space-y-2">
 									<div class="flex items-center gap-2">
 										<button
-											class="h-7 rounded border px-2 text-[11px] font-mono transition-colors {isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary text-primary' : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/40'} disabled:cursor-not-allowed disabled:opacity-50"
+											class="h-7 rounded border px-2 text-xs font-mono transition-colors duration-150 {isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary/40 text-primary' : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-50"
 											disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}
 											title={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg) ? 'Structured mode requires a parseable aggregate expression' : undefined}
 											onclick={() => setRawAggMode(idx, agg, true)}
 										>structured</button>
 										<button
-											class="h-7 rounded border px-2 text-[11px] font-mono transition-colors {!isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary text-primary' : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/40'}"
+											class="h-7 rounded border px-2 text-xs font-mono transition-colors duration-150 {!isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary/40 text-primary' : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 											onclick={() => setRawAggMode(idx, agg, false)}
 										>raw</button>
 									</div>
@@ -517,7 +508,7 @@
 													{/if}
 												</div>
 											</div>
-											<p class="text-[10px] text-muted-foreground font-mono">{structuredAggExprToString(parsed)}</p>
+											<p class="text-2xs text-muted-foreground font-mono">{structuredAggExprToString(parsed)}</p>
 										</div>
 									{:else}
 										<Input class="h-7 text-xs font-mono" placeholder="PRQL aggregation expression…" value={agg.expr ?? ''} oninput={(e) => updateAgg(idx, { expr: (e.target as HTMLInputElement).value })} />
@@ -528,12 +519,9 @@
 					</div>
 				{:else}
 					<!-- Collapsed structured agg chip -->
-					<div
-						class="inline-flex items-center rounded border bg-background overflow-hidden group/inner"
-						style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
-					>
+					<div class={CHIP}>
 						<button
-							class="px-2.5 py-1 hover:bg-muted/60 transition-colors font-mono"
+							class={CHIP_SECTION}
 							onclick={() => (expandedAggIdx = idx)}
 						>{humanizeAgg(agg)}</button>
 					</div>
@@ -541,7 +529,7 @@
 
 				<!-- Remove button — always outside the inner chip div -->
 				<button
-					class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+					class="{CHIP_X} py-1"
 					onclick={() => removeAgg(idx)}
 					aria-label="Remove aggregation"
 				>
@@ -551,10 +539,7 @@
 		{/each}
 
 		<!-- Add aggregation — immediate inline (no popover) -->
-		<button
-			class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-			onclick={addAggInline}
-		>
+		<button class={CHIP_ADD} onclick={addAggInline} aria-label="Add aggregation">
 			<Plus class="w-3 h-3" />
 		</button>
 	{/if}
@@ -563,7 +548,7 @@
 
 	<!-- ── Bottom row: group-by columns ──────────────────────────────────── -->
 	<div class="flex items-center gap-1.5 flex-wrap">
-		<span class="text-[9px] uppercase tracking-widest text-muted-foreground/50 shrink-0 w-8 text-right pr-1.5 select-none">by</span>
+		<span class="{SECTION_LABEL} w-8 shrink-0 pr-1.5 text-right">by</span>
 
 		{#if stage.by.length === 0 && !pendingNewBy}
 			<span class="text-xs text-muted-foreground/60 italic">none</span>
@@ -578,18 +563,17 @@
 				ondragover={(e) => e.preventDefault()}
 				ondrop={(e) => { e.preventDefault(); if (dragByIdx !== null && dragByIdx !== idx) { reorderBy(dragByIdx, idx); dragByIdx = null; } }}
 				ondragend={() => (dragByIdx = null)}
-				class="inline-flex items-center rounded-full border bg-background text-xs overflow-hidden group/pill shrink-0 cursor-grab active:cursor-grabbing transition-colors {dragByIdx !== null && dragByIdx === idx ? 'opacity-40' : ''} {invalid ? 'border-destructive/50' : ''}"
-				style={invalid ? '' : `border-color: hsl(var(--chart-${(idx % 5) + 1}))`}
+				class="{CHIP} cursor-grab active:cursor-grabbing {dragByIdx !== null && dragByIdx === idx ? 'opacity-40' : ''} {invalid ? CHIP_INVALID : ''}"
 			>
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c) || c === col)}
-					class="px-2.5 py-1 font-mono text-xs"
+					class="px-2 py-1 font-mono text-xs"
 					oncommit={(v) => renameBy(idx, v)}
 					oncancel={() => { if (!col) removeGroupByIdx(idx); }}
 				/>
 				<button
-					class="px-1.5 py-1 opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+					class={CHIP_X}
 					onclick={() => removeGroupByIdx(idx)}
 					aria-label="Remove {col}"
 				>
@@ -600,13 +584,13 @@
 
 		<!-- Pending new by-column (inline, no popover) -->
 		{#if pendingNewBy}
-			<div class="inline-flex items-center rounded-full border border-primary/50 bg-background text-xs overflow-hidden shrink-0">
+			<div class="{CHIP} border-ring/60">
 				<InlineChipLabel
 					value={pendingNewByValue}
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c))}
 					initialEditing={true}
 					placeholder="column…"
-					class="px-2.5 py-1 font-mono text-xs"
+					class="px-2 py-1 font-mono text-xs"
 					oncommit={commitAddBy}
 					oncancel={() => (pendingNewBy = false)}
 				/>
@@ -615,8 +599,9 @@
 
 		{#if !pendingNewBy}
 			<button
-				class="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/30 px-2 py-1 text-xs text-primary/60 hover:border-primary hover:text-primary transition-colors"
+				class={CHIP_ADD}
 				onclick={() => { pendingNewByValue = pickGroupByColumn(availableColumns, stage.by); pendingNewBy = true; }}
+				aria-label="Add group-by column"
 			>
 				<Plus class="w-3 h-3" />
 			</button>

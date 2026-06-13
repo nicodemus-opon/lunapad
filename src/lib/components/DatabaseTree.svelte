@@ -1,9 +1,18 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { getDatabaseCatalog, type CatalogTable } from '$lib/services/duckdb';
-	import { getTables, getExternalSchemaTables, getConnections, getConnectionSecret, setExternalConnectionSchema } from '$lib/stores/notebook.svelte';
+	import { getDatabaseCatalog } from '$lib/services/duckdb';
+	import {
+		getTables,
+		getExternalSchemaTables,
+		getConnections,
+		getConnectionSecret,
+		setExternalConnectionSchema
+	} from '$lib/stores/notebook.svelte';
 	import { fetchConnectionSchema } from '$lib/services/connections';
-	import { ChevronRight, Columns3, Database, LayoutGrid, RefreshCw, Table2 } from '@lucide/svelte';
+	import { Columns3, Database, LayoutGrid, RefreshCw, Table2 } from '@lucide/svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
+	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 
 	const tables = $derived(getTables());
 	const externalSchemaTables = $derived(getExternalSchemaTables());
@@ -19,7 +28,10 @@
 	let refreshingIds = $state(new Set<string>());
 
 	const externalCatalog = $derived.by(() => {
-		const grouped = new Map<string, { id: string; name: string; schemas: Map<string, typeof externalSchemaTables> }>();
+		const grouped = new Map<
+			string,
+			{ id: string; name: string; schemas: Map<string, typeof externalSchemaTables> }
+		>();
 		for (const table of externalSchemaTables) {
 			let entry = grouped.get(table.connectionId);
 			if (!entry) {
@@ -36,10 +48,10 @@
 				...entry,
 				schemas: [...entry.schemas.entries()]
 					.sort((a, b) => a[0].localeCompare(b[0]))
-					.map(([schema, schemaTables]) => [
-						schema,
-						[...schemaTables].sort((a, b) => a.name.localeCompare(b.name))
-					] as const)
+					.map(
+						([schema, schemaTables]) =>
+							[schema, [...schemaTables].sort((a, b) => a.name.localeCompare(b.name))] as const
+					)
 			}));
 	});
 
@@ -141,100 +153,130 @@
 	});
 </script>
 
+{#snippet dbRow(
+	name: string,
+	meta: string | undefined,
+	expanded: boolean,
+	onToggle: () => void,
+	refreshing: boolean = false
+)}
+	<TreeRow depth={0} expandable {expanded} onActivate={onToggle}>
+		{#snippet icon()}
+			<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+		{/snippet}
+		{#snippet label()}
+			<span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">{name}</span>
+		{/snippet}
+		{#snippet trailing()}
+			{#if refreshing}
+				<RefreshCw class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+			{:else if meta}
+				<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
+			{/if}
+		{/snippet}
+	</TreeRow>
+{/snippet}
+
+{#snippet schemaRow(name: string, count: number, expanded: boolean, onToggle: () => void)}
+	<TreeRow depth={1} expandable {expanded} onActivate={onToggle}>
+		{#snippet icon()}
+			<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground" />
+		{/snippet}
+		{#snippet label()}
+			<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
+		{/snippet}
+		{#snippet trailing()}
+			{#if count > 0}
+				<span class="shrink-0 text-2xs text-muted-foreground">{count}</span>
+			{/if}
+		{/snippet}
+	</TreeRow>
+{/snippet}
+
+{#snippet tableRow(name: string, meta: string | undefined, expanded: boolean, onToggle: () => void)}
+	<TreeRow depth={2} expandable {expanded} onActivate={onToggle}>
+		{#snippet icon()}
+			<Table2 class="h-3 w-3 shrink-0 text-muted-foreground" />
+		{/snippet}
+		{#snippet label()}
+			<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
+		{/snippet}
+		{#snippet trailing()}
+			{#if meta}
+				<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
+			{/if}
+		{/snippet}
+	</TreeRow>
+{/snippet}
+
+{#snippet columnRow(name: string, type?: string)}
+	<TreeRow depth={3} class="cursor-default hover:bg-transparent" tabindex={-1}>
+		{#snippet icon()}
+			<Columns3 class="h-3 w-3 shrink-0 text-muted-foreground/70" />
+		{/snippet}
+		{#snippet label()}
+			<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{name}</span>
+		{/snippet}
+		{#snippet trailing()}
+			{#if type}
+				<span class="shrink-0 font-mono text-2xs text-muted-foreground/70">{type}</span>
+			{/if}
+		{/snippet}
+	</TreeRow>
+{/snippet}
+
 <div class="flex h-full flex-col overflow-hidden">
 	<div class="flex-1 overflow-y-auto py-1">
 		{#if loading}
-			<p class="px-3 py-3 text-xs text-muted-foreground italic">Loading…</p>
+			{#each [80, 60, 72, 48, 64] as width, i (i)}
+				<div class="mx-1 flex h-7 items-center gap-1.5 px-2">
+					<Skeleton class="h-3 w-3 shrink-0 rounded-sm" />
+					<Skeleton class="h-3 rounded-sm" style="width: {width}%" />
+				</div>
+			{/each}
 		{:else if catalog.length === 0 && externalCatalog.length === 0}
-			<p class="px-3 py-4 text-xs text-muted-foreground italic text-center">No databases found.</p>
+			<EmptyState description="Upload a file or add a connection to browse tables here.">
+				{#snippet icon()}<Database class="h-4 w-4" />{/snippet}
+			</EmptyState>
 		{:else}
-
 			<!-- DuckDB databases from catalog -->
 			{#each catalog as db (db.name)}
 				{@const dbKey = `duckdb:${db.name}`}
 				{@const dbExpanded = expandedDb[dbKey] ?? true}
-				<!-- Database row -->
-				<div
-					class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-1 pl-2 pr-2 hover:bg-muted/50 transition-colors"
-					role="treeitem"
-					aria-expanded={dbExpanded}
-					aria-selected="false"
-					tabindex="0"
-					onclick={() => toggleDatabase(dbKey)}
-					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleDatabase(dbKey); }}
-				>
-					<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {dbExpanded ? 'rotate-90' : ''}" />
-					<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-					<span class="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/90">{db.name}</span>
-					<span class="shrink-0 text-[10px] text-muted-foreground/40">{db.schemas.reduce((n, s) => n + s.tables.length, 0)} tables</span>
-				</div>
+				{@const tableCount = db.schemas.reduce((n, s) => n + s.tables.length, 0)}
+				{@render dbRow(
+					db.name,
+					`${tableCount} ${tableCount === 1 ? 'table' : 'tables'}`,
+					dbExpanded,
+					() => toggleDatabase(dbKey)
+				)}
 
 				{#if dbExpanded}
 					{#each db.schemas as schema (schema.name)}
 						{@const schemaKey = `${dbKey}.${schema.name}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
-						<!-- Schema row -->
-						<div
-							class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-0.5 pr-2 hover:bg-muted/40 transition-colors"
-							style="padding-left: 22px"
-							role="treeitem"
-							aria-expanded={schemaExpanded}
-							aria-selected="false"
-							tabindex="0"
-							onclick={() => toggleSchema(dbKey, schema.name)}
-							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSchema(dbKey, schema.name); }}
-						>
-							<span class="h-4 w-px shrink-0 bg-border/70 mr-0.5" aria-hidden="true"></span>
-							<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {schemaExpanded ? 'rotate-90' : ''}" />
-							<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-							<span class="min-w-0 flex-1 truncate text-[12px] text-foreground/80">{schema.name}</span>
-							{#if schema.tables.length > 0}
-								<span class="shrink-0 text-[10px] text-muted-foreground/40">{schema.tables.length}</span>
-							{/if}
-						</div>
+						{@render schemaRow(schema.name, schema.tables.length, schemaExpanded, () =>
+							toggleSchema(dbKey, schema.name)
+						)}
 
 						{#if schemaExpanded}
 							{#if schema.tables.length === 0}
-								<p class="text-[11px] text-muted-foreground/40 italic" style="padding-left: 58px; padding-top: 2px; padding-bottom: 4px;">Empty</p>
+								<p class="py-0.5 pl-14 text-2xs text-muted-foreground/70 italic">Empty</p>
 							{/if}
 							{#each schema.tables as table (table.name)}
 								{@const tableKey = `${schemaKey}.${table.name}`}
 								{@const tableExpanded = expandedTable[tableKey] ?? false}
 								{@const rowCount = uploadedRowCounts.get(table.name)}
-								<!-- Table row -->
-								<div
-									class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-0.5 pr-2 hover:bg-muted/35 transition-colors"
-									style="padding-left: 42px"
-									role="treeitem"
-									aria-expanded={tableExpanded}
-									aria-selected="false"
-									tabindex="0"
-									onclick={() => toggleTable(tableKey)}
-									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleTable(tableKey); }}
-								>
-									<span class="h-4 w-px shrink-0 bg-border/50 mr-0.5" aria-hidden="true"></span>
-									<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {tableExpanded ? 'rotate-90' : ''}" />
-									<Table2 class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-									<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{table.name}</span>
-									{#if rowCount !== undefined}
-										<span class="shrink-0 text-[10px] text-muted-foreground/40">{fmtRows(rowCount)}</span>
-									{/if}
-								</div>
+								{@render tableRow(
+									table.name,
+									rowCount !== undefined ? fmtRows(rowCount) : undefined,
+									tableExpanded,
+									() => toggleTable(tableKey)
+								)}
 
 								{#if tableExpanded}
 									{#each table.columns as col (col.name)}
-										<div
-											class="mx-1 flex select-none items-center gap-1.5 rounded-sm py-0.5 pr-2"
-											style="padding-left: 62px"
-											role="treeitem"
-											aria-selected="false"
-											tabindex="-1"
-										>
-											<span class="h-4 w-px shrink-0 bg-border/40 mr-0.5" aria-hidden="true"></span>
-											<Columns3 class="h-3 w-3 shrink-0 text-muted-foreground/50" />
-											<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground/80">{col.name}</span>
-											<span class="shrink-0 text-[10px] text-muted-foreground/40 font-mono">{col.type}</span>
-										</div>
+										{@render columnRow(col.name, col.type)}
 									{/each}
 								{/if}
 							{/each}
@@ -248,85 +290,37 @@
 				{@const dbKey = `external:${entry.id}`}
 				{@const dbExpanded = expandedDb[dbKey] ?? true}
 				{@const isRefreshing = refreshingIds.has(entry.id)}
-				<div
-					class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-1 pl-2 pr-2 hover:bg-muted/50 transition-colors"
-					role="treeitem"
-					aria-expanded={dbExpanded}
-					aria-selected="false"
-					tabindex="0"
-					onclick={() => toggleDatabase(dbKey)}
-					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleDatabase(dbKey); }}
-				>
-					<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {dbExpanded ? 'rotate-90' : ''}" />
-					<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-					<span class="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/90">{entry.name}</span>
-					{#if isRefreshing}
-						<RefreshCw class="h-3 w-3 shrink-0 text-muted-foreground/50 animate-spin" />
-					{/if}
-				</div>
+				{@render dbRow(
+					entry.name,
+					undefined,
+					dbExpanded,
+					() => toggleDatabase(dbKey),
+					isRefreshing
+				)}
 
 				{#if dbExpanded}
 					{#each entry.schemas as [schema, schemaTables] (schema)}
 						{@const schemaKey = `${dbKey}.${schema}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
-						<div
-							class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-0.5 pr-2 hover:bg-muted/40 transition-colors"
-							style="padding-left: 22px"
-							role="treeitem"
-							aria-expanded={schemaExpanded}
-							aria-selected="false"
-							tabindex="0"
-							onclick={() => toggleSchema(dbKey, schema)}
-							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSchema(dbKey, schema); }}
-						>
-							<span class="h-4 w-px shrink-0 bg-border/70 mr-0.5" aria-hidden="true"></span>
-							<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {schemaExpanded ? 'rotate-90' : ''}" />
-							<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-							<span class="min-w-0 flex-1 truncate text-[12px] text-foreground/80">{schema}</span>
-							{#if schemaTables.length > 0}
-								<span class="shrink-0 text-[10px] text-muted-foreground/40">{schemaTables.length}</span>
-							{/if}
-						</div>
+						{@render schemaRow(schema, schemaTables.length, schemaExpanded, () =>
+							toggleSchema(dbKey, schema)
+						)}
 
 						{#if schemaExpanded}
 							{#each schemaTables as table (table.name)}
-								{@const rawName = table.schema && table.name.startsWith(`${table.schema}.`)
-									? table.name.slice(table.schema.length + 1)
-									: table.name}
+								{@const rawName =
+									table.schema && table.name.startsWith(`${table.schema}.`)
+										? table.name.slice(table.schema.length + 1)
+										: table.name}
 								{@const tableNodeKey = `${entry.id}:${schema}:${table.name}`}
 								{@const tableExpanded = expandedTable[tableNodeKey] ?? false}
-								<div
-									class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-0.5 pr-2 hover:bg-muted/35 transition-colors"
-									style="padding-left: 42px"
-									role="treeitem"
-									aria-expanded={tableExpanded}
-									aria-selected="false"
-									tabindex="0"
-									onclick={() => toggleTable(tableNodeKey)}
-									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleTable(tableNodeKey); }}
-								>
-									<span class="h-4 w-px shrink-0 bg-border/50 mr-0.5" aria-hidden="true"></span>
-									<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {tableExpanded ? 'rotate-90' : ''}" />
-									<Table2 class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-									<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{rawName}</span>
-								</div>
+								{@render tableRow(rawName, undefined, tableExpanded, () =>
+									toggleTable(tableNodeKey)
+								)}
 
 								{#if tableExpanded}
 									{#each table.columns as column, colIdx (column)}
-										<div
-											class="mx-1 flex select-none items-center gap-1.5 rounded-sm py-0.5 pr-2"
-											style="padding-left: 62px"
-											role="treeitem"
-											aria-selected="false"
-											tabindex="-1"
-										>
-											<span class="h-4 w-px shrink-0 bg-border/40 mr-0.5" aria-hidden="true"></span>
-											<Columns3 class="h-3 w-3 shrink-0 text-muted-foreground/50" />
-											<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground/80">{column}</span>
-											{#if table.columnTypes[colIdx]}
-												<span class="shrink-0 text-[10px] text-muted-foreground/40 font-mono">{table.columnTypes[colIdx]}</span>
-											{/if}
-										</div>
+										{@render columnRow(column, table.columnTypes[colIdx])}
 									{/each}
 								{/if}
 							{/each}

@@ -2,7 +2,9 @@
 	import type { AppendStage } from '$lib/types/gui-pipeline';
 	import * as Popover from '$lib/components/ui/popover';
 	import { ColumnInput } from '$lib/components/ui/column-input';
+	import { Button } from '$lib/components/ui/button';
 	import { Plus, X } from '@lucide/svelte';
+	import { CHIP, CHIP_ADD, CHIP_SECTION, CHIP_X } from '../chip-styles';
 
 	interface Props {
 		stage: AppendStage;
@@ -39,9 +41,9 @@
 	{/if}
 
 	{#each stage.sources as source, idx (`${source}-${idx}`)}
-		<div class="inline-flex items-center rounded-full border bg-muted/35 text-xs overflow-hidden group/pill shrink-0" style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))">
+		<div class={CHIP}>
 			<Popover.Root>
-				<Popover.Trigger class="px-2.5 py-1 hover:bg-muted/60 transition-colors font-mono">
+				<Popover.Trigger class={CHIP_SECTION}>
 					from {source || '?'}
 				</Popover.Trigger>
 				<Popover.Content class="w-56 p-2">
@@ -54,7 +56,7 @@
 				</Popover.Content>
 			</Popover.Root>
 			<button
-				class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+				class={CHIP_X}
 				onclick={() => removeSource(idx)}
 				aria-label="Remove source"
 			>
@@ -64,9 +66,7 @@
 	{/each}
 
 	<Popover.Root bind:open={addOpen}>
-		<Popover.Trigger
-			class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-		>
+		<Popover.Trigger class={CHIP_ADD}>
 			<Plus class="w-3 h-3" /> source
 		</Popover.Trigger>
 		<Popover.Content class="w-56 p-2 space-y-2">
@@ -76,12 +76,7 @@
 				placeholder="source..."
 				onchange={(value) => (draftSource = value)}
 			/>
-			<button
-				class="w-full h-7 rounded-md border text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-				onclick={confirmAdd}
-			>
-				Add source
-			</button>
+			<Button size="sm" class="w-full" onclick={confirmAdd}>Add source</Button>
 		</Popover.Content>
 	</Popover.Root>
 </div>

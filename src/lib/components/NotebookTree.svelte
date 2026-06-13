@@ -1,6 +1,10 @@
 <script lang="ts">
 	import * as ContextMenu from '$lib/components/ui/context-menu';
-	import * as Popover from '$lib/components/ui/popover';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { Button } from '$lib/components/ui/button';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
+	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import {
 		addNotebook,
 		addNotebookInFolder,
@@ -25,13 +29,40 @@
 		type NotebookFolder
 	} from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
-	import { ChevronRight, Copy, NotebookText, Folder, FolderOpen, FolderPlus, MoreHorizontal, Plus, Trash2 } from '@lucide/svelte';
+	import { fade } from 'svelte/transition';
+	import {
+		Copy,
+		FlaskConical,
+		Folder,
+		FolderOpen,
+		FolderPlus,
+		MoreHorizontal,
+		NotebookText,
+		Pencil,
+		Plus,
+		Trash2
+	} from '@lucide/svelte';
 
 	let { pendingRenameFolderId = $bindable<string | null>(null), filterQuery = '' } = $props();
 
-	type TreeRow =
+	type TreeRowItem =
 		| { kind: 'folder'; depth: number; folder: NotebookFolder }
 		| { kind: 'notebook'; depth: number; notebook: Notebook; folderName?: string };
+
+	type MenuAction =
+		| { separator: true }
+		| {
+				separator?: undefined;
+				label: string;
+				icon: typeof Plus;
+				onSelect: () => void;
+				destructive?: boolean;
+		  };
+
+	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
+	const reducedMotion =
+		typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const fadeMs = reducedMotion ? 0 : 120;
 
 	const notebooks = $derived(getNotebooks());
 	const folders = $derived(getFolders());
@@ -42,9 +73,15 @@
 	let renamingNotebookId = $state<string | null>(null);
 	let renamingFolderId = $state<string | null>(null);
 	let renameValue = $state('');
-	let openPopoverNotebookId = $state<string | null>(null);
+	let openMenuId = $state<string | null>(null);
 	let draggingNotebookId = $state<string | null>(null);
 	let dragOverFolderId = $state<string | null>(null);
+	let dragOverRoot = $state(false);
+
+	let confirmOpen = $state(false);
+	let confirmTarget = $state<{ kind: 'notebook' | 'folder'; id: string; name: string } | null>(
+		null
+	);
 
 	$effect(() => {
 		if (pendingRenameFolderId) {
@@ -62,15 +99,17 @@
 			const folderMap = new Map(sortedFolders.map((f) => [f.id, f.name]));
 			return sortedNotebooks
 				.filter((n) => n.name.toLowerCase().includes(q))
-				.map((n): TreeRow => ({
-					kind: 'notebook',
-					depth: 0,
-					notebook: n,
-					folderName: n.folderId ? folderMap.get(n.folderId) : undefined
-				}));
+				.map(
+					(n): TreeRowItem => ({
+						kind: 'notebook',
+						depth: 0,
+						notebook: n,
+						folderName: n.folderId ? folderMap.get(n.folderId) : undefined
+					})
+				);
 		}
 
-		const rows: TreeRow[] = [];
+		const rows: TreeRowItem[] = [];
 
 		const build = (parentId: string | null, depth: number) => {
 			const childFolders = sortedFolders.filter((f) => (f.parentId ?? null) === parentId);
@@ -135,19 +174,29 @@
 		if (event.key === 'Escape') clearRename();
 	}
 
-	function handleDeleteNotebook(id: string, name: string) {
-		if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
-		deleteNotebook(id);
+	function requestDeleteNotebook(id: string, name: string) {
+		confirmTarget = { kind: 'notebook', id, name };
+		confirmOpen = true;
 	}
 
-	function handleDeleteFolder(id: string, name: string) {
+	function requestDeleteFolder(id: string, name: string) {
 		if (!isFolderEmpty(id)) {
 			toast.error('Folder is not empty. Move or delete items first.');
 			return;
 		}
-		if (!confirm(`Delete folder "${name}"?`)) return;
-		const ok = deleteFolderIfEmpty(id);
-		if (!ok) toast.error('Folder could not be deleted.');
+		confirmTarget = { kind: 'folder', id, name };
+		confirmOpen = true;
+	}
+
+	function executeDelete() {
+		if (!confirmTarget) return;
+		if (confirmTarget.kind === 'notebook') {
+			deleteNotebook(confirmTarget.id);
+		} else {
+			const ok = deleteFolderIfEmpty(confirmTarget.id);
+			if (!ok) toast.error('Folder could not be deleted.');
+		}
+		confirmTarget = null;
 	}
 
 	function createFolderAt(parentId: string | null) {
@@ -162,217 +211,314 @@
 		}
 		addNotebookInFolder(folderId);
 	}
+
+	function folderActions(folder: NotebookFolder): MenuAction[] {
+		return [
+			{ label: 'New notebook', icon: Plus, onSelect: () => createNotebookAt(folder.id) },
+			{ label: 'New folder', icon: FolderPlus, onSelect: () => createFolderAt(folder.id) },
+			{ separator: true },
+			{
+				label: 'Rename folder',
+				icon: Pencil,
+				onSelect: () => startRenameFolder(folder.id, folder.name)
+			},
+			{
+				label: 'Delete folder',
+				icon: Trash2,
+				destructive: true,
+				onSelect: () => requestDeleteFolder(folder.id, folder.name)
+			}
+		];
+	}
+
+	function notebookActions(notebook: Notebook): MenuAction[] {
+		return [
+			{ label: 'Open notebook', icon: NotebookText, onSelect: () => openNotebookTab(notebook.id) },
+			{
+				label: 'New notebook here',
+				icon: Plus,
+				onSelect: () => createNotebookAt(notebook.folderId ?? null)
+			},
+			{ separator: true },
+			{
+				label: 'Rename notebook',
+				icon: Pencil,
+				onSelect: () => startRenameNotebook(notebook.id, notebook.name)
+			},
+			{ label: 'Duplicate notebook', icon: Copy, onSelect: () => duplicateNotebook(notebook.id) },
+			{ separator: true },
+			{
+				label: 'Delete notebook',
+				icon: Trash2,
+				destructive: true,
+				onSelect: () => requestDeleteNotebook(notebook.id, notebook.name)
+			}
+		];
+	}
 </script>
 
+{#snippet contextItems(actions: MenuAction[])}
+	{#each actions as action, i (i)}
+		{#if action.separator}
+			<ContextMenu.Separator />
+		{:else}
+			{@const Icon = action.icon}
+			<ContextMenu.Item
+				variant={action.destructive ? 'destructive' : 'default'}
+				onclick={action.onSelect}
+			>
+				<Icon />
+				{action.label}
+			</ContextMenu.Item>
+		{/if}
+	{/each}
+{/snippet}
+
+{#snippet dropdownItems(actions: MenuAction[])}
+	{#each actions as action, i (i)}
+		{#if action.separator}
+			<DropdownMenu.Separator />
+		{:else}
+			{@const Icon = action.icon}
+			<DropdownMenu.Item
+				variant={action.destructive ? 'destructive' : 'default'}
+				onclick={action.onSelect}
+			>
+				<Icon />
+				{action.label}
+			</DropdownMenu.Item>
+		{/if}
+	{/each}
+{/snippet}
+
+{#snippet rowMenu(id: string, actions: MenuAction[], visible: boolean)}
+	<DropdownMenu.Root open={openMenuId === id} onOpenChange={(v) => (openMenuId = v ? id : null)}>
+		<DropdownMenu.Trigger
+			class="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {visible ||
+			openMenuId === id
+				? 'opacity-100'
+				: 'opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100'}"
+			onclick={(e: MouseEvent) => e.stopPropagation()}
+			aria-label="More actions"
+		>
+			<MoreHorizontal class="h-3.5 w-3.5" />
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content class="w-48" side="right" align="start">
+			{@render dropdownItems(actions)}
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+{/snippet}
+
 <div class="flex h-full flex-col overflow-hidden">
-	<div class="flex-1 overflow-y-auto py-1">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="flex-1 overflow-y-auto py-1 {dragOverRoot && draggingNotebookId
+			? 'ring-1 ring-primary/30 ring-inset'
+			: ''}"
+		ondragover={(e) => {
+			if (!draggingNotebookId) return;
+			e.preventDefault();
+			dragOverRoot = true;
+		}}
+		ondragleave={() => (dragOverRoot = false)}
+		ondrop={(e) => {
+			if (!draggingNotebookId) return;
+			e.preventDefault();
+			const id = e.dataTransfer?.getData('text/plain') ?? draggingNotebookId;
+			if (id) moveNotebookToFolder(id, null);
+			dragOverRoot = false;
+			draggingNotebookId = null;
+			dragOverFolderId = null;
+		}}
+	>
 		{#if treeRows.length === 0}
-			<div class="px-3 py-4 text-center">
-				<p class="text-xs italic text-muted-foreground">No notebooks yet.</p>
-				<button
-					class="mt-2 text-xs text-muted-foreground underline hover:text-foreground"
-					onclick={loadDemoNotebook}
-				>Load demo notebook</button>
-			</div>
+			{#if filterQuery.trim()}
+				<EmptyState description="No notebooks match your filter." />
+			{:else}
+				<EmptyState description="Notebooks hold cells that build on each other as models.">
+					{#snippet icon()}<NotebookText class="h-4 w-4" />{/snippet}
+					{#snippet actions()}
+						<Button variant="ghost" size="sm" onclick={() => addNotebook()}>
+							<Plus /> New notebook
+						</Button>
+						<Button variant="ghost" size="sm" onclick={loadDemoNotebook}>
+							<FlaskConical /> Load demo
+						</Button>
+					{/snippet}
+				</EmptyState>
+			{/if}
 		{:else}
 			{#each treeRows as row (row.kind === 'folder' ? row.folder.id : row.notebook.id)}
 				{#if row.kind === 'folder'}
 					{@const isExpanded = expandedFolderIds.includes(row.folder.id)}
-					{@const isDragTarget = dragOverFolderId === row.folder.id}
-					<ContextMenu.Root>
-						<ContextMenu.Trigger>
-							<div
-								class="mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-1 pr-2 transition-colors hover:bg-accent/60 {isDragTarget ? 'bg-accent ring-1 ring-primary/30' : ''}"
-								style={`padding-left: ${8 + row.depth * 14}px`}
-								onclick={() => toggleFolder(row.folder.id)}
-								role="treeitem"
-								aria-expanded={isExpanded}
-								aria-selected="false"
-								tabindex="0"
-								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') toggleFolder(row.folder.id);
-								}}
-								ondragover={(e) => { e.preventDefault(); dragOverFolderId = row.folder.id; }}
-								ondragleave={() => { if (dragOverFolderId === row.folder.id) dragOverFolderId = null; }}
-								ondrop={(e) => {
-									e.preventDefault();
-									const id = e.dataTransfer?.getData('text/plain') ?? draggingNotebookId;
-									if (id) moveNotebookToFolder(id, row.folder.id);
-									dragOverFolderId = null;
-									draggingNotebookId = null;
-								}}
-							>
-								<ChevronRight
-									class="h-3 w-3 shrink-0 text-muted-foreground transition-transform {isExpanded ? 'rotate-90' : ''}"
-								/>
-								{#if isExpanded}
-									<FolderOpen class="h-3.5 w-3.5 shrink-0 text-primary/80" />
-								{:else}
-									<Folder class="h-3.5 w-3.5 shrink-0 text-primary/80" />
-								{/if}
-								{#if renamingFolderId === row.folder.id}
-									<!-- svelte-ignore a11y_autofocus -->
-									<input
-										autofocus
-										class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
-										bind:value={renameValue}
-										onblur={commitRename}
-										onkeydown={onRenameKeydown}
-										onclick={(e) => e.stopPropagation()}
-									/>
-								{:else}
-									<span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">{row.folder.name}</span>
-								{/if}
-							</div>
-						</ContextMenu.Trigger>
-						<ContextMenu.Content class="w-48">
-							<ContextMenu.Item onclick={() => createFolderAt(row.folder.id)}>
-								<FolderPlus class="mr-2 h-3.5 w-3.5" />
-								New folder
-							</ContextMenu.Item>
-							<ContextMenu.Item onclick={() => createNotebookAt(row.folder.id)}>
-								<Plus class="mr-2 h-3.5 w-3.5" />
-								New notebook
-							</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item onclick={() => startRenameFolder(row.folder.id, row.folder.name)}>
-								<Copy class="mr-2 h-3.5 w-3.5" />
-								Rename folder
-							</ContextMenu.Item>
-							<ContextMenu.Item onclick={() => handleDeleteFolder(row.folder.id, row.folder.name)}>
-								<Trash2 class="mr-2 h-3.5 w-3.5" />
-								Delete folder
-							</ContextMenu.Item>
-						</ContextMenu.Content>
-					</ContextMenu.Root>
+					<div in:fade={{ duration: fadeMs }}>
+						<ContextMenu.Root>
+							<ContextMenu.Trigger>
+								<TreeRow
+									depth={row.depth}
+									expandable
+									expanded={isExpanded}
+									dragTarget={dragOverFolderId === row.folder.id}
+									onActivate={() => toggleFolder(row.folder.id)}
+									ondragover={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										dragOverFolderId = row.folder.id;
+									}}
+									ondragleave={() => {
+										if (dragOverFolderId === row.folder.id) dragOverFolderId = null;
+									}}
+									ondrop={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										const id = e.dataTransfer?.getData('text/plain') ?? draggingNotebookId;
+										if (id) moveNotebookToFolder(id, row.folder.id);
+										dragOverFolderId = null;
+										dragOverRoot = false;
+										draggingNotebookId = null;
+									}}
+								>
+									{#snippet icon()}
+										{#if isExpanded}
+											<FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+										{:else}
+											<Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+										{/if}
+									{/snippet}
+									{#snippet label()}
+										{#if renamingFolderId === row.folder.id}
+											<!-- svelte-ignore a11y_autofocus -->
+											<input
+												autofocus
+												class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
+												bind:value={renameValue}
+												onblur={commitRename}
+												onkeydown={onRenameKeydown}
+												onclick={(e) => e.stopPropagation()}
+											/>
+										{:else}
+											<span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">
+												{row.folder.name}
+											</span>
+										{/if}
+									{/snippet}
+									{#snippet trailing()}
+										<button
+											class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+											onclick={(e) => {
+												e.stopPropagation();
+												createNotebookAt(row.folder.id);
+											}}
+											aria-label="New notebook in folder"
+										>
+											<Plus class="h-3.5 w-3.5" />
+										</button>
+										{@render rowMenu(`folder:${row.folder.id}`, folderActions(row.folder), false)}
+									{/snippet}
+								</TreeRow>
+							</ContextMenu.Trigger>
+							<ContextMenu.Content class="w-48">
+								{@render contextItems(folderActions(row.folder))}
+							</ContextMenu.Content>
+						</ContextMenu.Root>
+					</div>
 				{:else}
 					{@const isActive = activeTabId === row.notebook.id}
 					{@const isOpen = openTabIds.includes(row.notebook.id)}
-					<ContextMenu.Root>
-						<ContextMenu.Trigger>
-							<div
-								class="group mx-1 flex cursor-pointer select-none items-center gap-1.5 rounded-sm py-1 pr-1 transition-colors hover:bg-muted/60 {isActive ? 'bg-muted' : ''}"
-								style={`padding-left: ${20 + row.depth * 14}px`}
-								onclick={() => openNotebookTab(row.notebook.id)}
-								role="treeitem"
-								aria-selected={isActive}
-								tabindex="0"
-								draggable={true}
-								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') openNotebookTab(row.notebook.id);
-								}}
-								ondragstart={(e) => {
-									draggingNotebookId = row.notebook.id;
-									e.dataTransfer?.setData('text/plain', row.notebook.id);
-								}}
-								ondragend={() => { draggingNotebookId = null; dragOverFolderId = null; }}
-							>
-								<NotebookText class="h-3.5 w-3.5 shrink-0 {isActive ? 'text-foreground' : 'text-muted-foreground'}" />
-								{#if renamingNotebookId === row.notebook.id}
-									<!-- svelte-ignore a11y_autofocus -->
-									<input
-										autofocus
-										class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
-										bind:value={renameValue}
-										onblur={commitRename}
-										onkeydown={onRenameKeydown}
-										onclick={(e) => e.stopPropagation()}
-									/>
-								{:else}
-									<span class="min-w-0 flex-1 overflow-hidden">
-										<span class="block truncate text-xs {isActive ? 'font-semibold text-foreground' : 'text-foreground/80'}">
-											{row.notebook.name}
-										</span>
-										{#if row.folderName}
-											<span class="block truncate text-[10px] text-muted-foreground/50 leading-none pb-0.5">{row.folderName}</span>
-										{/if}
-									</span>
-								{/if}
-								{#if isNotebookDirty(row.notebook.id)}
-									<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/80" title="Unsaved"></span>
-								{:else if isOpen && !isActive}
-									<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/50"></span>
-								{/if}
-								<Popover.Root
-									open={openPopoverNotebookId === row.notebook.id}
-									onOpenChange={(v) => { openPopoverNotebookId = v ? row.notebook.id : null; }}
+					{@const isDragging = draggingNotebookId === row.notebook.id}
+					<div in:fade={{ duration: fadeMs }}>
+						<ContextMenu.Root>
+							<ContextMenu.Trigger>
+								<TreeRow
+									depth={row.depth}
+									selected={isActive}
+									class={isDragging ? 'opacity-50' : ''}
+									onActivate={() => openNotebookTab(row.notebook.id)}
+									draggable={true}
+									ondragstart={(e) => {
+										draggingNotebookId = row.notebook.id;
+										e.dataTransfer?.setData('text/plain', row.notebook.id);
+									}}
+									ondragend={() => {
+										draggingNotebookId = null;
+										dragOverFolderId = null;
+										dragOverRoot = false;
+									}}
 								>
-									<Popover.Trigger>
-										<button
-											class="ml-auto shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-opacity {isActive || openPopoverNotebookId === row.notebook.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
-											onclick={(e) => e.stopPropagation()}
-											aria-label="Notebook options"
-										>
-											<MoreHorizontal class="h-3.5 w-3.5" />
-										</button>
-									</Popover.Trigger>
-									<Popover.Content class="w-44 p-1" side="right" align="start">
-										<button
-											class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent"
-											onclick={(e) => { e.stopPropagation(); openNotebookTab(row.notebook.id); openPopoverNotebookId = null; }}
-										>
-											<NotebookText class="h-3.5 w-3.5 text-muted-foreground" />
-											Open
-										</button>
-										<button
-											class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent"
-											onclick={(e) => { e.stopPropagation(); createNotebookAt(row.notebook.folderId ?? null); openPopoverNotebookId = null; }}
-										>
-											<Plus class="h-3.5 w-3.5 text-muted-foreground" />
-											New notebook here
-										</button>
-										<div class="my-1 h-px bg-border"></div>
-										<button
-											class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent"
-											onclick={(e) => { e.stopPropagation(); startRenameNotebook(row.notebook.id, row.notebook.name); openPopoverNotebookId = null; }}
-										>
-											<Copy class="h-3.5 w-3.5 text-muted-foreground" />
-											Rename
-										</button>
-										<button
-											class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent"
-											onclick={(e) => { e.stopPropagation(); duplicateNotebook(row.notebook.id); openPopoverNotebookId = null; }}
-										>
-											<Copy class="h-3.5 w-3.5 text-muted-foreground" />
-											Duplicate
-										</button>
-										<button
-											class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-accent"
-											onclick={(e) => { e.stopPropagation(); handleDeleteNotebook(row.notebook.id, row.notebook.name); openPopoverNotebookId = null; }}
-										>
-											<Trash2 class="h-3.5 w-3.5" />
-											Delete
-										</button>
-									</Popover.Content>
-								</Popover.Root>
-							</div>
-						</ContextMenu.Trigger>
-						<ContextMenu.Content class="w-48">
-							<ContextMenu.Item onclick={() => openNotebookTab(row.notebook.id)}>
-								<NotebookText class="mr-2 h-3.5 w-3.5" />
-								Open
-							</ContextMenu.Item>
-							<ContextMenu.Item onclick={() => createNotebookAt(row.notebook.folderId ?? null)}>
-								<Plus class="mr-2 h-3.5 w-3.5" />
-								New notebook here
-							</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item onclick={() => startRenameNotebook(row.notebook.id, row.notebook.name)}>
-								<Copy class="mr-2 h-3.5 w-3.5" />
-								Rename notebook
-							</ContextMenu.Item>
-							<ContextMenu.Item onclick={() => duplicateNotebook(row.notebook.id)}>
-								<Copy class="mr-2 h-3.5 w-3.5" />
-								Duplicate notebook
-							</ContextMenu.Item>
-							<ContextMenu.Item onclick={() => handleDeleteNotebook(row.notebook.id, row.notebook.name)}>
-								<Trash2 class="mr-2 h-3.5 w-3.5" />
-								Delete notebook
-							</ContextMenu.Item>
-						</ContextMenu.Content>
-					</ContextMenu.Root>
+									{#snippet icon()}
+										<NotebookText
+											class="h-3.5 w-3.5 shrink-0 {isActive
+												? 'text-foreground'
+												: 'text-muted-foreground'}"
+										/>
+									{/snippet}
+									{#snippet label()}
+										{#if renamingNotebookId === row.notebook.id}
+											<!-- svelte-ignore a11y_autofocus -->
+											<input
+												autofocus
+												class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
+												bind:value={renameValue}
+												onblur={commitRename}
+												onkeydown={onRenameKeydown}
+												onclick={(e) => e.stopPropagation()}
+											/>
+										{:else}
+											<span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+												<span
+													class="truncate text-xs {isActive
+														? 'font-medium text-foreground'
+														: 'text-foreground/80'}"
+												>
+													{row.notebook.name}
+												</span>
+												{#if row.folderName}
+													<span class="truncate text-2xs text-muted-foreground/70"
+														>{row.folderName}</span
+													>
+												{/if}
+											</span>
+										{/if}
+									{/snippet}
+									{#snippet trailing()}
+										{#if isNotebookDirty(row.notebook.id)}
+											<span
+												class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning group-hover/row:hidden"
+												title="Unsaved changes"
+											></span>
+										{:else if isOpen && !isActive}
+											<span
+												class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/50 group-hover/row:hidden"
+												title="Open in a tab"
+											></span>
+										{/if}
+										{@render rowMenu(
+											`notebook:${row.notebook.id}`,
+											notebookActions(row.notebook),
+											isActive
+										)}
+									{/snippet}
+								</TreeRow>
+							</ContextMenu.Trigger>
+							<ContextMenu.Content class="w-48">
+								{@render contextItems(notebookActions(row.notebook))}
+							</ContextMenu.Content>
+						</ContextMenu.Root>
+					</div>
 				{/if}
 			{/each}
 		{/if}
 	</div>
 </div>
+
+<ConfirmDialog
+	bind:open={confirmOpen}
+	title={confirmTarget?.kind === 'folder'
+		? `Delete folder "${confirmTarget?.name}"?`
+		: `Delete "${confirmTarget?.name ?? ''}"?`}
+	body={confirmTarget?.kind === 'folder'
+		? 'The folder will be removed. This cannot be undone.'
+		: 'The notebook and its cells will be removed. This cannot be undone.'}
+	confirmLabel={confirmTarget?.kind === 'folder' ? 'Delete folder' : 'Delete notebook'}
+	onConfirm={executeDelete}
+/>

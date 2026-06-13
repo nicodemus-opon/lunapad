@@ -212,15 +212,8 @@ test('group stage by add-chip pre-fills with categorical column', async ({ page 
 	const groupCard = page.locator('[data-testid="stage-card"][data-stage-type="group"]');
 	await groupCard.click();
 
-	// The by-row has a small round + button with border-primary/30 styling
 	// There are two + buttons: one for agg (top row) and one for by (bottom row)
-	// The by + button comes after the "BY  none" row
-	// The by-row + button is the last button in the group card
-	// (buttons order: drag handle, collapse label, run, disable, remove, agg +, by +)
-	const allPlusBtns = groupCard.locator('button');
-
-	// Click the last one which is the by-column add button
-	await allPlusBtns.last().click();
+	await groupCard.getByRole('button', { name: 'Add group-by column' }).click();
 	await page.waitForTimeout(200);
 
 	// The pending chip input should appear

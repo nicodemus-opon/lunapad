@@ -19,6 +19,8 @@
 	import TakeStageEditor from './TakeStage.svelte';
 	import { pickDefaultFilter } from '$lib/components/gui/chip-intelligence';
 	import { Plus, X } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { CHIP, SECTION_LABEL } from '../chip-styles';
 
 	interface Props {
 		stage: LoopStage;
@@ -124,25 +126,27 @@
 
 <div class="w-full space-y-3">
 	<div class="flex items-center gap-2 flex-wrap">
-		<span class="inline-flex items-center rounded-full border border-chart-3 bg-muted/35 px-2.5 py-1 text-xs font-mono">
+		<span class="{CHIP} px-2">
 			loop {effectiveMode} ({stage.body.split('\n').length} line{stage.body.split('\n').length === 1 ? '' : 's'})
 		</span>
-		<button
-			class="h-7 rounded-md border px-2.5 text-xs font-mono transition-colors {effectiveMode === 'structured' ? 'bg-primary/10 border-primary text-primary' : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/40'}"
-			onclick={() => switchMode('structured')}
-		>
-			structured
-		</button>
-		<button
-			class="h-7 rounded-md border px-2.5 text-xs font-mono transition-colors {effectiveMode === 'raw' ? 'bg-primary/10 border-primary text-primary' : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/40'}"
-			onclick={() => switchMode('raw')}
-		>
-			raw PRQL
-		</button>
+		<div class="inline-flex items-center rounded border border-border/60 bg-muted/20 p-0.5">
+			<button
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode === 'structured' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => switchMode('structured')}
+			>
+				structured
+			</button>
+			<button
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode === 'raw' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => switchMode('raw')}
+			>
+				raw PRQL
+			</button>
+		</div>
 	</div>
 
 	{#if effectiveMode === 'raw'}
-		<p class="text-[10px] uppercase tracking-wider text-muted-foreground">Loop body PRQL</p>
+		<p class={SECTION_LABEL}>loop body PRQL</p>
 		<Textarea
 			rows={8}
 			class="text-xs font-mono"
@@ -170,12 +174,9 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<button
-					class="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-mono hover:bg-muted/50 transition-colors"
-					onclick={addMiniStage}
-				>
+				<Button variant="outline" size="sm" class="h-7 gap-1 font-mono text-xs" onclick={addMiniStage}>
 					<Plus class="h-3 w-3" /> add stage
-				</button>
+				</Button>
 			</div>
 
 			{#if structuredBody.length === 0}
@@ -183,7 +184,7 @@
 			{/if}
 
 			{#each structuredBody as mini, idx}
-				<div class="rounded-md border p-2 space-y-2 bg-background/80">
+				<div class="space-y-2 border-l border-border/50 py-1 pl-3">
 					<div class="flex items-center gap-2">
 						<Select.Root
 							type="single"
@@ -198,7 +199,7 @@
 							</Select.Content>
 						</Select.Root>
 						<button
-							class="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-mono text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+							class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-mono text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
 							onclick={() => removeMiniStage(idx)}
 						>
 							<X class="h-3 w-3" /> remove

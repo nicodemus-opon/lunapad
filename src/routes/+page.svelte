@@ -82,10 +82,13 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Popover from '$lib/components/ui/popover';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { fade } from 'svelte/transition';
 	import DatabaseTree from '$lib/components/DatabaseTree.svelte';
 	import FileImporter from '$lib/components/FileImporter.svelte';
 	import ConnectionManager from '$lib/components/ConnectionManager.svelte';
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
+	import DashboardList from '$lib/components/DashboardList.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
@@ -136,7 +139,13 @@
 		FolderOpen,
 		Code2,
 		FileCode2,
-		SidebarClose
+		SidebarClose,
+		FileDown,
+		FileUp,
+		ChevronsDownUp,
+		ChevronsUpDown,
+		Keyboard,
+		Bug
 	} from '@lucide/svelte';
 
 	// ── Reactive state ──────────────────────────────────────────────────────
@@ -160,7 +169,7 @@
 	const activeResultTab = $derived(openResultTabs.find((t) => t.id === activeTabId) ?? null);
 	const isNotebookTab = $derived(
 		allNotebooks.some((n) => n.id === activeTabId) &&
-		!openExtraTabs.some((t) => t.id === activeTabId)
+			!openExtraTabs.some((t) => t.id === activeTabId)
 	);
 	const activeNotebook = $derived(allNotebooks.find((n) => n.id === activeTabId) ?? null);
 	const activeNotebookConnectionValue = $derived.by(() => {
@@ -174,9 +183,9 @@
 	});
 	const isDark = $derived(
 		theme === 'dark' ||
-		(theme === 'system' &&
-			typeof window !== 'undefined' &&
-			window.matchMedia('(prefers-color-scheme: dark)').matches)
+			(theme === 'system' &&
+				typeof window !== 'undefined' &&
+				window.matchMedia('(prefers-color-scheme: dark)').matches)
 	);
 	const reportView = $derived(Boolean(activeNotebook?.reportView));
 
@@ -211,7 +220,9 @@
 		if (kind === 'markdown') {
 			addMarkdownCell();
 		} else {
-			addCellWithLanguage(kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind);
+			addCellWithLanguage(
+				kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind
+			);
 		}
 		focusCellAt(cells.length);
 	}
@@ -245,7 +256,16 @@
 	let aboutOpen = $state(false);
 	let sidebarSearch = $state('');
 	let showNotebookSearch = $state(false);
-	let activeSidebarPanel = $state<'notebooks' | 'dashboards' | 'tables' | 'dbt' | 'evidence'>('notebooks');
+	const menuTriggerClass =
+		'h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
+
+	type SidebarPanel = 'notebooks' | 'dashboards' | 'tables' | 'dbt' | 'evidence';
+	let activeSidebarPanel = $state<SidebarPanel>('notebooks');
+
+	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
+	const reducedMotion =
+		typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const panelFadeMs = reducedMotion ? 0 : 130;
 
 	const SIDEBAR_WIDTH_KEY = 'lunapad.sidebar.width';
 	const SIDEBAR_COLLAPSED_KEY = 'lunapad.sidebar.collapsed';
@@ -270,6 +290,26 @@
 		localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
 	}
 
+	const RAIL_WIDTH = 36;
+
+	function selectSidebarPanel(panel: SidebarPanel) {
+		activeSidebarPanel = panel;
+		if (sidebarCollapsed) {
+			sidebarCollapsed = false;
+			localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+		}
+	}
+
+	// Keep the active tab visible when the tab bar overflows horizontally.
+	$effect(() => {
+		void activeTabId;
+		tick().then(() => {
+			document
+				.querySelector('[role="tab"][aria-selected="true"]')
+				?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+		});
+	});
+
 	function onSidebarPointerDown(e: PointerEvent) {
 		if (sidebarCollapsed) return;
 		isDraggingSidebar = true;
@@ -286,8 +326,6 @@
 		isDraggingSidebar = false;
 		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
 	}
-
-
 
 	function toggleSidebarSection(section: 'notebooks' | 'tables' | 'dashboards') {
 		setSidebarSectionExpanded(section, !sidebarSectionsExpanded[section]);
@@ -452,8 +490,6 @@
 			}));
 	}
 
-
-
 	let pendingRenameFolderId = $state<string | null>(null);
 
 	// ── Tab rename state ──────────────────────────────────────────────────────
@@ -522,23 +558,43 @@
 			return;
 		}
 		if (isTypingTarget(e.target)) return;
-		if (e.key === '?') { e.preventDefault(); shortcutsOpen = true; return; }
+		if (e.key === '?') {
+			e.preventDefault();
+			shortcutsOpen = true;
+			return;
+		}
 		// Cmd+1-9: switch to notebook tab by position
 		if (mod && !e.shiftKey && /^[1-9]$/.test(e.key)) {
 			const idx = parseInt(e.key) - 1;
-			if (notebooks[idx]) { e.preventDefault(); setActiveTab(notebooks[idx].id); return; }
+			if (notebooks[idx]) {
+				e.preventDefault();
+				setActiveTab(notebooks[idx].id);
+				return;
+			}
 		}
-		if (mod && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); toggleSidebarCollapsed(); return; }
+		if (mod && (e.key === 'b' || e.key === 'B')) {
+			e.preventDefault();
+			toggleSidebarCollapsed();
+			return;
+		}
 		if (!isNotebookTab) return;
-		if (mod && e.shiftKey && e.key === 'Enter') { e.preventDefault(); addCellWithLanguage('prql'); }
-		if (mod && e.shiftKey && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); addMarkdownCell(); }
-		if (mod && e.shiftKey && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); void handleRunAll(); }
+		if (mod && e.shiftKey && e.key === 'Enter') {
+			e.preventDefault();
+			addCellWithLanguage('prql');
+		}
+		if (mod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+			e.preventDefault();
+			addMarkdownCell();
+		}
+		if (mod && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+			e.preventDefault();
+			void handleRunAll();
+		}
 	}
-
 </script>
 
 <svelte:head>
-  <title>Lunapad | Analytics Workspace</title>
+	<title>Lunapad | Analytics Workspace</title>
 </svelte:head>
 
 <svelte:window onkeydown={onGlobalKeydown} />
@@ -548,18 +604,18 @@
 	<div class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background">
 		{#if dbError}
 			<div class="text-center">
-					<p class="text-destructive font-medium mb-2">Failed to initialize DuckDB</p>
-				<p class="text-xs text-muted-foreground font-mono max-w-md">{dbError}</p>
+				<p class="mb-2 font-medium text-destructive">Failed to initialize DuckDB</p>
+				<p class="max-w-md font-mono text-xs text-muted-foreground">{dbError}</p>
 				<div class="mt-4">
 					<Button size="sm" onclick={initializeRuntime}>Retry</Button>
 				</div>
 			</div>
 		{:else}
 			<div class="flex items-center gap-3">
-				<Orbit class="w-6 h-6 text-primary animate-pulse" />
+				<Orbit class="h-6 w-6 animate-pulse text-primary" />
 				<span class="text-sm text-muted-foreground">Initializing WASM engines…</span>
 			</div>
-			<div class="space-y-2 w-64">
+			<div class="w-64 space-y-2">
 				<Skeleton class="h-2 w-full" />
 				<Skeleton class="h-2 w-4/5" />
 				<Skeleton class="h-2 w-3/5" />
@@ -567,9 +623,9 @@
 		{/if}
 	</div>
 {:else}
-	<div class="flex flex-col h-screen overflow-hidden">
+	<div class="flex h-screen flex-col overflow-hidden">
 		<header
-			class="border-b border-border/60 bg-background sticky top-0 z-(--z-sticky)"
+			class="sticky top-0 z-(--z-sticky) border-b border-border/60 bg-background"
 			data-tauri-drag-region={isDesktop ? '' : undefined}
 		>
 			<div
@@ -577,60 +633,72 @@
 				style="padding-left: max(1rem, var(--titlebar-inset-left)); padding-right: max(1rem, var(--titlebar-inset-right))"
 			>
 				<div class="flex items-center gap-2">
-					<div class="flex items-center gap-2 shrink-0">
-						<Logo class="w-6 h-6 text-primary" />
+					<div class="flex shrink-0 items-center gap-2">
+						<Logo class="h-5 w-5 text-foreground" />
 						<span class="text-sm font-semibold tracking-tight">Lunapad</span>
 					</div>
-					<div class="h-5 w-px bg-border mx-1"></div>
+					<div class="mx-1 h-5 w-px bg-border"></div>
 					<div class="flex items-center gap-0.5">
 						<DropdownMenu.Root>
-							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">File</DropdownMenu.Trigger>
+							<DropdownMenu.Trigger class={menuTriggerClass}>File</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-52">
 								<DropdownMenu.Item onclick={() => addNotebook()}>
-									<Plus class="w-3.5 h-3.5" /> New notebook
+									<Plus class="h-3.5 w-3.5" /> New notebook
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => loadDemoNotebook()}>
-									<FlaskConical class="w-3.5 h-3.5" /> Load demo notebook
+									<FlaskConical class="h-3.5 w-3.5" /> Load demo notebook
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
-									<Code2 class="w-3.5 h-3.5" /> New PRQL cell
+									<Code2 class="h-3.5 w-3.5" /> New PRQL cell
 									<DropdownMenu.Shortcut>⇧⌘↵</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => addCellWithLanguage('sql')}>
-									<FileCode2 class="w-3.5 h-3.5" /> New SQL cell
+									<FileCode2 class="h-3.5 w-3.5" /> New SQL cell
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => addMarkdownCell()}>
-									<BookOpen class="w-3.5 h-3.5" /> New markdown cell
+									<BookOpen class="h-3.5 w-3.5" /> New markdown cell
 									<DropdownMenu.Shortcut>⇧⌘M</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item onclick={() => (projectOpenDialogOpen = true)}>
-									<FolderOpen class="w-3.5 h-3.5" /> Open project…
+									<FolderOpen class="h-3.5 w-3.5" /> Open project…
 								</DropdownMenu.Item>
 								<DropdownMenu.Item disabled={!projectFolder} onclick={() => closeProject()}>
-									<X class="w-3.5 h-3.5" /> Close project
+									<X class="h-3.5 w-3.5" /> Close project
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => { activeSidebarPanel = 'tables'; sidebarCollapsed = false; }}>
-									<Upload class="w-3.5 h-3.5" /> Upload data file…
+								<DropdownMenu.Item
+									onclick={() => {
+										activeSidebarPanel = 'tables';
+										sidebarCollapsed = false;
+									}}
+								>
+									<Upload class="h-3.5 w-3.5" /> Upload data file…
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={handleImport}>Import notebook…</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={handleExport}>Export notebook</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={handleImport}>
+									<FileDown class="h-3.5 w-3.5" /> Import notebook…
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={handleExport}>
+									<FileUp class="h-3.5 w-3.5" /> Export notebook
+								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
 
 						<DropdownMenu.Root>
-							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Edit</DropdownMenu.Trigger>
+							<DropdownMenu.Trigger class={menuTriggerClass}>Edit</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-56">
 								<DropdownMenu.Sub>
 									<DropdownMenu.SubTrigger>
-										<Code2 class="w-3.5 h-3.5" /> Default cell type
+										<Code2 class="h-3.5 w-3.5" /> Default cell type
 									</DropdownMenu.SubTrigger>
 									<DropdownMenu.SubContent>
 										<DropdownMenu.RadioGroup
 											value={activeNotebook?.defaultCellLanguage ?? 'sql'}
-											onValueChange={(value) => { if (activeNotebook && (value === 'prql' || value === 'sql')) setNotebookDefaultCellLanguage(activeNotebook.id, value); }}
+											onValueChange={(value) => {
+												if (activeNotebook && (value === 'prql' || value === 'sql'))
+													setNotebookDefaultCellLanguage(activeNotebook.id, value);
+											}}
 										>
 											<DropdownMenu.RadioItem value="prql">PRQL</DropdownMenu.RadioItem>
 											<DropdownMenu.RadioItem value="sql">SQL</DropdownMenu.RadioItem>
@@ -638,48 +706,77 @@
 									</DropdownMenu.SubContent>
 								</DropdownMenu.Sub>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item disabled={!activeNotebook} onclick={() => { if (activeNotebook) duplicateNotebook(activeNotebook.id); }}>
-									<Copy class="w-3.5 h-3.5" /> Duplicate notebook
+								<DropdownMenu.Item
+									disabled={!activeNotebook}
+									onclick={() => {
+										if (activeNotebook) duplicateNotebook(activeNotebook.id);
+									}}
+								>
+									<Copy class="h-3.5 w-3.5" /> Duplicate notebook
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => { clearAllResults(); toast.success('All results cleared'); }}>
-									<Trash2 class="w-3.5 h-3.5" /> Clear all results
+								<DropdownMenu.Item
+									onclick={() => {
+										clearAllResults();
+										toast.success('All results cleared');
+									}}
+								>
+									<Trash2 class="h-3.5 w-3.5" /> Clear all results
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
 
 						<DropdownMenu.Root>
-							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Run</DropdownMenu.Trigger>
+							<DropdownMenu.Trigger class={menuTriggerClass}>Run</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-48">
-								<DropdownMenu.Item disabled={runningAll || cells.length === 0} onclick={() => void handleRunAll()}>
-									<Play class="w-3.5 h-3.5 fill-current" /> Run all cells
+								<DropdownMenu.Item
+									disabled={runningAll || cells.length === 0}
+									onclick={() => void handleRunAll()}
+								>
+									<Play class="h-3.5 w-3.5 fill-current" /> Run all cells
+									<DropdownMenu.Shortcut>⇧⌘R</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								{#if staleCellCount > 0}
-									<DropdownMenu.Item disabled={runningAllStale || runningAll} onclick={() => void handleRunAllStale()}>
-										<RefreshCw class="w-3.5 h-3.5" /> Run stale cells
-										<span class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs font-medium text-warning">{staleCellCount}</span>
+									<DropdownMenu.Item
+										disabled={runningAllStale || runningAll}
+										onclick={() => void handleRunAllStale()}
+									>
+										<RefreshCw class="h-3.5 w-3.5" /> Run stale cells
+										<span
+											class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs font-medium text-warning"
+											>{staleCellCount}</span
+										>
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
-								<DropdownMenu.CheckboxItem checked={autoRun} onCheckedChange={(checked) => setAutoRun(checked)}>
+								<DropdownMenu.CheckboxItem
+									checked={autoRun}
+									onCheckedChange={(checked) => setAutoRun(checked)}
+								>
 									Auto Run
 								</DropdownMenu.CheckboxItem>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
 
 						<DropdownMenu.Root>
-							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">View</DropdownMenu.Trigger>
+							<DropdownMenu.Trigger class={menuTriggerClass}>View</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-56">
 								<DropdownMenu.Item onclick={toggleSidebarCollapsed}>
-									<SidebarClose class="w-3.5 h-3.5" /> Toggle sidebar
+									<SidebarClose class="h-3.5 w-3.5" /> Toggle sidebar
 									<DropdownMenu.Shortcut>⌘B</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item disabled={!isNotebookTab} onclick={() => setAllCellsDisplay('collapsed')}>
-									Collapse all cells
+								<DropdownMenu.Item
+									disabled={!isNotebookTab}
+									onclick={() => setAllCellsDisplay('collapsed')}
+								>
+									<ChevronsDownUp class="h-3.5 w-3.5" /> Collapse all cells
 								</DropdownMenu.Item>
-								<DropdownMenu.Item disabled={!isNotebookTab} onclick={() => setAllCellsDisplay('full')}>
-									Expand all cells
+								<DropdownMenu.Item
+									disabled={!isNotebookTab}
+									onclick={() => setAllCellsDisplay('full')}
+								>
+									<ChevronsUpDown class="h-3.5 w-3.5" /> Expand all cells
 								</DropdownMenu.Item>
 								<DropdownMenu.CheckboxItem
 									disabled={!activeNotebook}
@@ -689,36 +786,53 @@
 									Report view
 								</DropdownMenu.CheckboxItem>
 								<DropdownMenu.Separator />
-								<DropdownMenu.RadioGroup value={theme} onValueChange={(value) => { if (value === 'system' || value === 'light' || value === 'dark') setTheme(value); }}>
-									<DropdownMenu.RadioItem value="system"><Monitor class="w-3.5 h-3.5" /> System theme</DropdownMenu.RadioItem>
-									<DropdownMenu.RadioItem value="light"><Sun class="w-3.5 h-3.5" /> Light theme</DropdownMenu.RadioItem>
-									<DropdownMenu.RadioItem value="dark"><Moon class="w-3.5 h-3.5" /> Dark theme</DropdownMenu.RadioItem>
+								<DropdownMenu.RadioGroup
+									value={theme}
+									onValueChange={(value) => {
+										if (value === 'system' || value === 'light' || value === 'dark')
+											setTheme(value);
+									}}
+								>
+									<DropdownMenu.RadioItem value="system"
+										><Monitor class="h-3.5 w-3.5" /> System theme</DropdownMenu.RadioItem
+									>
+									<DropdownMenu.RadioItem value="light"
+										><Sun class="h-3.5 w-3.5" /> Light theme</DropdownMenu.RadioItem
+									>
+									<DropdownMenu.RadioItem value="dark"
+										><Moon class="h-3.5 w-3.5" /> Dark theme</DropdownMenu.RadioItem
+									>
 								</DropdownMenu.RadioGroup>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item onclick={() => (llmSettingsOpen = true)}>
-									<Settings class="w-3.5 h-3.5" /> LLM settings…
+									<Settings class="h-3.5 w-3.5" /> LLM settings…
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
 
 						<DropdownMenu.Root>
-							<DropdownMenu.Trigger class="h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Help</DropdownMenu.Trigger>
+							<DropdownMenu.Trigger class={menuTriggerClass}>Help</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-52">
 								<DropdownMenu.Item onclick={() => (shortcutsOpen = true)}>
-									Keyboard shortcuts
+									<Keyboard class="h-3.5 w-3.5" /> Keyboard shortcuts
 									<DropdownMenu.Shortcut>?</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => window.open('https://prql-lang.org/book/', '_blank')}>
-									<BookOpen class="w-3.5 h-3.5" /> PRQL documentation
-									<ExternalLink class="w-3.5 h-3.5 ml-auto text-muted-foreground" />
+								<DropdownMenu.Item
+									onclick={() => window.open('https://prql-lang.org/book/', '_blank')}
+								>
+									<BookOpen class="h-3.5 w-3.5" /> PRQL documentation
+									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
 								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => window.open('https://github.com/PRQL/prql/issues', '_blank')}>
-									<ExternalLink class="w-3.5 h-3.5" /> Report an issue
+								<DropdownMenu.Item
+									onclick={() => window.open('https://github.com/PRQL/prql/issues', '_blank')}
+								>
+									<Bug class="h-3.5 w-3.5" /> Report an issue
+									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item onclick={() => (aboutOpen = true)}>
-									<Info class="w-3.5 h-3.5" /> About Lunapad
+									<Info class="h-3.5 w-3.5" /> About Lunapad
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
@@ -727,7 +841,7 @@
 
 				<Popover.Root>
 					<Popover.Trigger
-						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 						aria-label="Show workspace stats"
 					>
 						<Info class="h-3.5 w-3.5" />
@@ -772,194 +886,203 @@
 				/>
 			</div>
 			{#if isDesktop && (platformOS.value === 'windows' || platformOS.value === 'linux')}
-				<div class="absolute right-0 top-0 h-full pointer-events-auto">
+				<div class="pointer-events-auto absolute top-0 right-0 h-full">
 					<WindowControls />
 				</div>
 			{/if}
 		</header>
 
+		{#snippet railButton(panel: SidebarPanel, Icon: typeof BookOpen, tooltipLabel: string)}
+			<Tooltip.Root>
+				<Tooltip.Trigger
+					class="flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
+					panel
+						? 'bg-primary/15 text-primary'
+						: 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'}"
+					onclick={() => selectSidebarPanel(panel)}
+					aria-label={tooltipLabel}
+					aria-pressed={activeSidebarPanel === panel}
+				>
+					<Icon class="h-4 w-4" />
+				</Tooltip.Trigger>
+				<Tooltip.Content side="right">{tooltipLabel}</Tooltip.Content>
+			</Tooltip.Root>
+		{/snippet}
+
+		{#snippet headerAction(
+			label: string,
+			Icon: typeof Plus,
+			onclick: () => void,
+			highlighted: boolean = false
+		)}
+			<Tooltip.Root>
+				<Tooltip.Trigger
+					class="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {highlighted
+						? 'text-primary'
+						: 'text-muted-foreground'}"
+					{onclick}
+					aria-label={label}
+				>
+					<Icon class="h-3.5 w-3.5" />
+				</Tooltip.Trigger>
+				<Tooltip.Content side="bottom">{label}</Tooltip.Content>
+			</Tooltip.Root>
+		{/snippet}
+
 		<div id="layout-root" class="flex flex-1 overflow-hidden">
 			<div
-				class="h-full border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground flex flex-row overflow-hidden transition-none"
-				style={sidebarCollapsed ? 'width: 0; border: none' : `width: ${sidebarWidth}px`}
+				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground {isDraggingSidebar
+					? 'transition-none'
+					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
+				style={`width: ${sidebarCollapsed ? RAIL_WIDTH : sidebarWidth}px`}
 			>
 				<!-- Icon rail -->
-				<div class="w-8 shrink-0 border-r border-sidebar-border/40 bg-sidebar flex flex-col items-center pt-1 pb-2 gap-0.5">
-					<button
-						class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'notebooks' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
-						onclick={() => (activeSidebarPanel = 'notebooks')}
-						title="Notebooks"
-						aria-label="Notebooks"
-					>
-						<BookOpen class="h-3.5 w-3.5" />
-					</button>
-					<button
-						class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'dashboards' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
-						onclick={() => (activeSidebarPanel = 'dashboards')}
-						title="Dashboards"
-						aria-label="Dashboards"
-					>
-						<LayoutDashboard class="h-3.5 w-3.5" />
-					</button>
-					<button
-						class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'tables' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
-						onclick={() => (activeSidebarPanel = 'tables')}
-						title="Databases & tables"
-						aria-label="Databases & tables"
-					>
-						<Database class="h-3.5 w-3.5" />
-					</button>
+				<div
+					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background pt-1 pb-1.5 px-1"
+				>
+					{@render railButton('notebooks', BookOpen, 'Notebooks')}
+					{@render railButton('dashboards', LayoutDashboard, 'Dashboards')}
+					{@render railButton('tables', Database, 'Databases & tables')}
 					{#if isDbtProject}
-						<button
-							class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'dbt' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
-							onclick={() => (activeSidebarPanel = 'dbt')}
-							title="dbt models"
-							aria-label="dbt models"
-						>
-							<FlaskConical class="h-3.5 w-3.5" />
-						</button>
+						{@render railButton('dbt', FlaskConical, 'dbt models')}
 					{/if}
 					{#if isEvidenceProject}
-						<button
-							class="h-7 w-7 flex items-center justify-center rounded transition-colors {activeSidebarPanel === 'evidence' ? 'bg-primary/15 text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60'}"
-							onclick={() => (activeSidebarPanel = 'evidence')}
-							title="Evidence pages"
-							aria-label="Evidence pages"
-						>
-							<MonitorPlay class="h-3.5 w-3.5" />
-						</button>
+						{@render railButton('evidence', MonitorPlay, 'Evidence pages')}
 					{/if}
+					<div class="mt-auto">
+						<Tooltip.Root>
+							<Tooltip.Trigger
+								class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+								onclick={toggleSidebarCollapsed}
+								aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+							>
+								{#if sidebarCollapsed}
+									<PanelLeftOpen class="h-4 w-4" />
+								{:else}
+									<PanelLeftClose class="h-4 w-4" />
+								{/if}
+							</Tooltip.Trigger>
+							<Tooltip.Content side="right">
+								{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} · ⌘B
+							</Tooltip.Content>
+						</Tooltip.Root>
+					</div>
 				</div>
 
-				<!-- Panel content -->
-				<div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+				<!-- Panel content (fixed width so collapse slides instead of reflowing) -->
+				<div
+					class="flex shrink-0 flex-col overflow-hidden"
+					style={`width: ${sidebarWidth - RAIL_WIDTH}px`}
+					inert={sidebarCollapsed}
+				>
 					<ProjectSection />
 
-					{#if activeSidebarPanel === 'notebooks'}
-						<!-- Notebooks panel -->
-						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-2xs font-medium text-muted-foreground flex-1">Notebooks</span>
-							<div class="flex items-center gap-0.5">
-								<button
-									class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors {sidebarSearch ? 'text-primary' : ''}"
-									onclick={() => { showNotebookSearch = !showNotebookSearch; if (!showNotebookSearch) sidebarSearch = ''; }}
-									title="Filter notebooks"
-									aria-label="Filter notebooks"
-								>
-									<Search class="h-3 w-3" />
-								</button>
-								<button
-									class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-									onclick={() => { pendingRenameFolderId = createFolder('New Folder', null); }}
-									title="New folder"
-									aria-label="New folder"
-								>
-									<FolderPlus class="h-3 w-3" />
-								</button>
-								<button
-									class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-									onclick={() => addNotebook()}
-									title="New notebook"
-									aria-label="New notebook"
-								>
-									<Plus class="h-3 w-3" />
-								</button>
-							</div>
-						</div>
+					{#key activeSidebarPanel}
+						<div
+							class="flex min-h-0 flex-1 flex-col overflow-hidden"
+							in:fade={{ duration: panelFadeMs }}
+						>
+							{#if activeSidebarPanel === 'notebooks'}
+								<!-- Notebooks panel -->
+								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+									<span class="flex-1 text-2xs font-medium text-muted-foreground">Notebooks</span>
+									<div class="flex items-center gap-0.5">
+										{@render headerAction(
+											'Filter notebooks',
+											Search,
+											() => {
+												showNotebookSearch = !showNotebookSearch;
+												if (!showNotebookSearch) sidebarSearch = '';
+											},
+											Boolean(sidebarSearch)
+										)}
+										{@render headerAction('New folder', FolderPlus, () => {
+											pendingRenameFolderId = createFolder('New Folder', null);
+										})}
+										{@render headerAction('New notebook', Plus, () => addNotebook())}
+									</div>
+								</div>
 
-						{#if showNotebookSearch || sidebarSearch}
-							<div class="mx-2 my-1 flex h-7 items-center gap-1.5 rounded border border-border/60 bg-muted/30 px-2 shrink-0">
-								<Search class="h-3 w-3 shrink-0 text-muted-foreground/50" />
-								<!-- svelte-ignore a11y_autofocus -->
-								<input
-									autofocus
-									class="min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 outline-none"
-									placeholder="Filter notebooks…"
-									bind:value={sidebarSearch}
-									onkeydown={(e) => { if (e.key === 'Escape') { sidebarSearch = ''; showNotebookSearch = false; } }}
-								/>
-								{#if sidebarSearch}
-									<button
-										class="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-										onclick={() => { sidebarSearch = ''; showNotebookSearch = false; }}
-										aria-label="Clear filter"
+								{#if showNotebookSearch || sidebarSearch}
+									<div
+										class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
 									>
-										<X class="h-3 w-3" />
-									</button>
+										<Search class="h-3 w-3 shrink-0 text-muted-foreground/60" />
+										<!-- svelte-ignore a11y_autofocus -->
+										<input
+											autofocus
+											class="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+											placeholder="Filter notebooks…"
+											bind:value={sidebarSearch}
+											onkeydown={(e) => {
+												if (e.key === 'Escape') {
+													sidebarSearch = '';
+													showNotebookSearch = false;
+												}
+											}}
+										/>
+										{#if sidebarSearch}
+											<button
+												class="rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+												onclick={() => {
+													sidebarSearch = '';
+													showNotebookSearch = false;
+												}}
+												aria-label="Clear filter"
+											>
+												<X class="h-3 w-3" />
+											</button>
+										{/if}
+									</div>
 								{/if}
-							</div>
-						{/if}
 
-						<div class="flex-1 overflow-hidden">
-							<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
-						</div>
-					{:else if activeSidebarPanel === 'dashboards'}
-						<!-- Dashboards panel -->
-						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-2xs font-medium text-muted-foreground flex-1">Dashboards</span>
-							<button
-								class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-								onclick={() => { const d = createDashboard('New Dashboard'); openDashboardTab(d.id); }}
-								title="New dashboard"
-								aria-label="New dashboard"
-							>
-								<Plus class="h-3 w-3" />
-							</button>
-						</div>
-						<div class="flex-1 overflow-y-auto px-2 py-1">
-							{#each getDashboards() as dash (dash.id)}
-								<button
-									class="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors text-left"
-									onclick={() => openDashboardTab(dash.id)}
-								>
-									<LayoutDashboard class="w-3 h-3 shrink-0" />
-									<span class="truncate">{dash.name}</span>
-								</button>
-							{/each}
-							{#if getDashboards().length === 0}
-								<p class="text-2xs text-muted-foreground px-1.5 py-2">No dashboards yet.</p>
+								<div class="flex-1 overflow-hidden">
+									<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+								</div>
+							{:else if activeSidebarPanel === 'dashboards'}
+								<!-- Dashboards panel -->
+								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+									<span class="flex-1 text-2xs font-medium text-muted-foreground">Dashboards</span>
+									{@render headerAction('New dashboard', Plus, () => {
+										const d = createDashboard('New Dashboard');
+										openDashboardTab(d.id);
+									})}
+								</div>
+								<div class="flex-1 overflow-hidden">
+									<DashboardList />
+								</div>
+							{:else if activeSidebarPanel === 'tables'}
+								<!-- Databases & tables panel -->
+								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+									<span class="flex-1 text-2xs font-medium text-muted-foreground">Databases</span>
+								</div>
+								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+									<FileImporter />
+									<ConnectionManager />
+									<div class="min-h-0 flex-1 overflow-y-auto">
+										<DatabaseTree />
+									</div>
+								</div>
+							{:else if activeSidebarPanel === 'dbt' && isDbtProject}
+								<!-- dbt panel -->
+								<DbtPanel />
+							{:else if activeSidebarPanel === 'evidence' && isEvidenceProject}
+								<!-- Evidence panel -->
+								<div class="min-h-0 flex-1 overflow-y-auto">
+									<EvidencePanel />
+								</div>
 							{/if}
 						</div>
-					{:else if activeSidebarPanel === 'tables'}
-						<!-- Databases & tables panel -->
-						<div class="flex h-9 shrink-0 items-center px-2 border-b border-border/30">
-							<span class="text-2xs font-medium text-muted-foreground flex-1">Databases</span>
-						</div>
-						<div class="min-h-0 flex-1 flex flex-col overflow-hidden">
-							<FileImporter />
-							<ConnectionManager />
-							<div class="flex-1 min-h-0 overflow-y-auto">
-								<DatabaseTree />
-							</div>
-						</div>
-					{:else if activeSidebarPanel === 'dbt' && isDbtProject}
-						<!-- dbt panel -->
-						<DbtPanel />
-					{:else if activeSidebarPanel === 'evidence' && isEvidenceProject}
-						<!-- Evidence panel -->
-						<div class="flex-1 min-h-0 overflow-y-auto">
-							<EvidencePanel />
-						</div>
-					{/if}
+					{/key}
 				</div>
 			</div>
 
-			<!-- Resize handle / sidebar toggle -->
-			{#if sidebarCollapsed}
+			<!-- Resize handle -->
+			{#if !sidebarCollapsed}
 				<div
-					class="w-8 shrink-0 flex items-center justify-center bg-muted/20 hover:bg-muted/50 transition-colors cursor-pointer border-r border-border/50"
-					onclick={toggleSidebarCollapsed}
-					role="button"
-					tabindex="0"
-					aria-label="Expand sidebar"
-					title="Expand sidebar"
-					onkeydown={(e) => e.key === 'Enter' && toggleSidebarCollapsed()}
-				>
-					<PanelLeftOpen class="h-3.5 w-3.5 text-muted-foreground" />
-				</div>
-			{:else}
-				<div
-					class="group relative w-px shrink-0 cursor-col-resize bg-border/60 hover:bg-primary/40 transition-colors"
+					class="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors hover:after:bg-primary/40 {isDraggingSidebar
+						? 'after:bg-primary/50'
+						: 'after:bg-transparent'}"
 					onpointerdown={onSidebarPointerDown}
 					ondblclick={toggleSidebarCollapsed}
 					role="separator"
@@ -968,190 +1091,224 @@
 					aria-valuemax={460}
 					aria-valuenow={sidebarWidth}
 					title="Drag to resize · Double-click to collapse"
-				>
-					<button
-						class="absolute left-1/2 top-6 -translate-x-1/2 z-10 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-background border border-border shadow-sm text-muted-foreground hover:text-foreground"
-						onclick={(e) => { e.stopPropagation(); toggleSidebarCollapsed(); }}
-						title="Collapse sidebar"
-						aria-label="Collapse sidebar"
-					>
-						<PanelLeftClose class="h-3 w-3" />
-					</button>
-				</div>
+				></div>
 			{/if}
 
 			<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-				<div class="flex items-center gap-0.5 overflow-x-auto shrink-0 px-2 border-b border-border/60 bg-background">
+				{#snippet tabMenu(
+					onClose: () => void,
+					onCloseOthers: () => void,
+					onCloseAll: () => void,
+					closeDisabled: boolean,
+					othersDisabled: boolean
+				)}
+					<ContextMenu.Item disabled={closeDisabled} onclick={onClose}>Close tab</ContextMenu.Item>
+					<ContextMenu.Item disabled={othersDisabled} onclick={onCloseOthers}
+						>Close other tabs</ContextMenu.Item
+					>
+					<ContextMenu.Separator />
+					<ContextMenu.Item onclick={onCloseAll}>Close all tabs</ContextMenu.Item>
+				{/snippet}
+
+				{#snippet appTab(opts: {
+					id: string;
+					name: string;
+					icon?: typeof Table2;
+					dirty?: boolean;
+					staleCount?: number;
+					renamable?: boolean;
+					closable?: boolean;
+					closeLabel?: string;
+					onClose: () => void;
+				})}
+					{@const isActive = activeTabId === opts.id}
+					{@const Icon = opts.icon}
+					<div
+						class="group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-xs transition-colors select-none after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors {isActive
+							? 'font-medium text-foreground after:bg-primary'
+							: 'text-muted-foreground after:bg-transparent hover:bg-muted/40 hover:text-foreground'}"
+						role="tab"
+						tabindex="0"
+						aria-selected={isActive}
+						onclick={() => setActiveTab(opts.id)}
+						onkeydown={(e) => e.key === 'Enter' && setActiveTab(opts.id)}
+						ondblclick={() => {
+							if (opts.renamable) startRename(opts.id, opts.name);
+						}}
+						onauxclick={(e) => {
+							if (e.button === 1 && opts.closable !== false) {
+								e.preventDefault();
+								opts.onClose();
+							}
+						}}
+					>
+						{#if Icon}
+							<Icon class="h-3 w-3 shrink-0" />
+						{/if}
+						{#if opts.renamable && renamingTabId === opts.id}
+							<!-- svelte-ignore a11y_autofocus -->
+							<input
+								autofocus
+								class="h-5 w-40 min-w-0 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
+								bind:value={renameValue}
+								onblur={commitRename}
+								onkeydown={onRenameKeydown}
+								onclick={(e) => e.stopPropagation()}
+							/>
+						{:else}
+							<span class="max-w-32 truncate">{opts.name}</span>
+						{/if}
+						{#if (opts.staleCount ?? 0) > 0}
+							<span
+								class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-warning/15 px-1 text-2xs font-medium text-warning"
+								title="{opts.staleCount} stale cell{opts.staleCount === 1 ? '' : 's'}"
+								>{opts.staleCount}</span
+							>
+						{/if}
+						{#if opts.closable !== false}
+							<span class="relative ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+								{#if opts.dirty}
+									<span
+										class="absolute h-1.5 w-1.5 rounded-full bg-warning transition-opacity group-hover:opacity-0"
+										title="Unsaved changes"
+									></span>
+								{/if}
+								<button
+									class="absolute inset-0 flex items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+									onclick={(e) => {
+										e.stopPropagation();
+										opts.onClose();
+									}}
+									aria-label={opts.closeLabel ?? 'Close tab'}
+								>
+									<X class="h-3 w-3" />
+								</button>
+							</span>
+						{:else if opts.dirty}
+							<span
+								class="ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+								title="Unsaved changes"
+							></span>
+						{/if}
+					</div>
+				{/snippet}
+
+				<div
+					class="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-2"
+					role="tablist"
+				>
 					{#each notebooks as nb (nb.id)}
+						{@const staleCount = nb.cells.filter(
+							(c) => c.cellType === 'query' && c.needsRun
+						).length}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
-							<div
-								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
-									{activeTabId === nb.id
-									? 'text-foreground font-medium after:bg-primary'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
-								role="tab"
-								tabindex="0"
-								aria-selected={activeTabId === nb.id}
-								onclick={() => setActiveTab(nb.id)}
-								onkeydown={(e) => e.key === 'Enter' && setActiveTab(nb.id)}
-								ondblclick={() => startRename(nb.id, nb.name)}
-							>
-								{#if isNotebookDirty(nb.id)}
-									<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" title="Unsaved changes"></span>
-								{/if}
-								{#if renamingTabId === nb.id}
-									<!-- svelte-ignore a11y_autofocus -->
-									<input
-										autofocus
-										class="h-5 w-40 min-w-0 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
-										bind:value={renameValue}
-										onblur={commitRename}
-										onkeydown={onRenameKeydown}
-										onclick={(e) => e.stopPropagation()}
-									/>
-								{:else}
-									<span class="truncate max-w-32">{nb.name}</span>
-								{/if}
-								{#if nb.cells.filter(c => c.cellType === 'query' && c.needsRun).length > 0}
-									{@const staleCount = nb.cells.filter(c => c.cellType === 'query' && c.needsRun).length}
-									<span
-										class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-warning/15 px-1 text-2xs font-medium text-warning"
-										title="{staleCount} stale cell{staleCount === 1 ? '' : 's'}"
-									>{staleCount}</span>
-								{/if}
-								{#if notebooks.length > 1}
-									<button
-										class="ml-0.5 rounded-full p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
-										onclick={(e) => { e.stopPropagation(); closeNotebookTab(nb.id); }}
-										aria-label="Close notebook"
-									>
-										<X class="w-3 h-3" />
-									</button>
-								{/if}
-							</div>
+								{@render appTab({
+									id: nb.id,
+									name: nb.name,
+									dirty: isNotebookDirty(nb.id),
+									staleCount,
+									renamable: true,
+									closable: notebooks.length > 1,
+									closeLabel: 'Close notebook',
+									onClose: () => closeNotebookTab(nb.id)
+								})}
 							</ContextMenu.Trigger>
-						<ContextMenu.Content class="z-50">
-							<ContextMenu.Item
-								disabled={notebooks.length <= 1}
-								onclick={() => closeNotebookTab(nb.id)}
-							>Close Tab</ContextMenu.Item>
-							<ContextMenu.Item
-								disabled={notebooks.length <= 1}
-								onclick={() => closeOtherNotebookTabs(nb.id)}
-							>Close Others</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item onclick={closeAllNotebookTabs}>Close All</ContextMenu.Item>
-						</ContextMenu.Content>
+							<ContextMenu.Content>
+								{@render tabMenu(
+									() => closeNotebookTab(nb.id),
+									() => closeOtherNotebookTabs(nb.id),
+									closeAllNotebookTabs,
+									notebooks.length <= 1,
+									notebooks.length <= 1
+								)}
+							</ContextMenu.Content>
 						</ContextMenu.Root>
 					{/each}
 
 					{#each openResultTabs as rt (rt.id)}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
-							<div
-								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
-									{activeTabId === rt.id
-								? 'text-foreground font-medium after:bg-primary'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
-								role="tab"
-								tabindex="0"
-								aria-selected={activeTabId === rt.id}
-								onclick={() => setActiveTab(rt.id)}
-								onkeydown={(e) => e.key === 'Enter' && setActiveTab(rt.id)}
-							>
-								<Table2 class="w-3 h-3 shrink-0" />
-								<span class="truncate max-w-32">{rt.name}</span>
-								<button
-									class="ml-0.5 rounded-full p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
-									onclick={(e) => { e.stopPropagation(); closeResultTab(rt.id); }}
-									aria-label="Close result tab"
-								>
-									<X class="w-3 h-3" />
-								</button>
-							</div>
+								{@render appTab({
+									id: rt.id,
+									name: rt.name,
+									icon: Table2,
+									closeLabel: 'Close result tab',
+									onClose: () => closeResultTab(rt.id)
+								})}
 							</ContextMenu.Trigger>
-						<ContextMenu.Content class="z-50">
-							<ContextMenu.Item onclick={() => closeResultTab(rt.id)}>Close Tab</ContextMenu.Item>
-							<ContextMenu.Item
-								disabled={openResultTabs.length <= 1}
-								onclick={() => closeOtherResultTabs(rt.id)}
-							>Close Others</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item onclick={closeAllResultTabs}>Close All</ContextMenu.Item>
-						</ContextMenu.Content>
+							<ContextMenu.Content>
+								{@render tabMenu(
+									() => closeResultTab(rt.id),
+									() => closeOtherResultTabs(rt.id),
+									closeAllResultTabs,
+									false,
+									openResultTabs.length <= 1
+								)}
+							</ContextMenu.Content>
 						</ContextMenu.Root>
 					{/each}
 
 					{#each openExtraTabs as et (et.id)}
+						{@const extraIcon =
+							et.type === 'profile'
+								? BarChart2
+								: et.type === 'lineage'
+									? Network
+									: et.type === 'dashboard'
+										? LayoutDashboard
+										: et.type === 'evidence-preview'
+											? MonitorPlay
+											: Table2}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
-							<div
-								class="group relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 px-3 text-xs transition-colors after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors
-									{activeTabId === et.id
-									? 'text-foreground font-medium after:bg-primary'
-									: 'text-muted-foreground hover:text-foreground hover:bg-muted/40 after:bg-transparent'}"
-								role="tab"
-								tabindex="0"
-								aria-selected={activeTabId === et.id}
-								onclick={() => setActiveTab(et.id)}
-								onkeydown={(e) => e.key === 'Enter' && setActiveTab(et.id)}
-							>
-								{#if et.type === 'profile'}
-									<BarChart2 class="w-3 h-3 shrink-0" />
-								{:else if et.type === 'lineage'}
-									<Network class="w-3 h-3 shrink-0" />
-								{:else if et.type === 'dashboard'}
-									<LayoutDashboard class="w-3 h-3 shrink-0" />
-								{:else if et.type === 'evidence-preview'}
-									<MonitorPlay class="w-3 h-3 shrink-0" />
-								{:else}
-									<Table2 class="w-3 h-3 shrink-0" />
-								{/if}
-								<span class="truncate max-w-32">{et.name}</span>
-								<button
-									class="ml-0.5 rounded-full p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
-									onclick={(e) => { e.stopPropagation(); closeExtraTab(et.id); }}
-									aria-label="Close tab"
-								>
-									<X class="w-3 h-3" />
-								</button>
-							</div>
+								{@render appTab({
+									id: et.id,
+									name: et.name,
+									icon: extraIcon,
+									onClose: () => closeExtraTab(et.id)
+								})}
 							</ContextMenu.Trigger>
-						<ContextMenu.Content class="z-50">
-							<ContextMenu.Item onclick={() => closeExtraTab(et.id)}>Close Tab</ContextMenu.Item>
-							<ContextMenu.Item
-								disabled={openExtraTabs.length <= 1}
-								onclick={() => closeOtherExtraTabs(et.id)}
-							>Close Others</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item onclick={closeAllExtraTabs}>Close All</ContextMenu.Item>
-						</ContextMenu.Content>
+							<ContextMenu.Content>
+								{@render tabMenu(
+									() => closeExtraTab(et.id),
+									() => closeOtherExtraTabs(et.id),
+									closeAllExtraTabs,
+									false,
+									openExtraTabs.length <= 1
+								)}
+							</ContextMenu.Content>
 						</ContextMenu.Root>
 					{/each}
 
 					<button
-						class="flex items-center justify-center h-7 w-7 shrink-0 text-muted-foreground/50 hover:text-muted-foreground transition-colors ml-0.5"
+						class="ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 						onclick={addNotebook}
 						title="New notebook"
-						aria-label="Add notebook"
+						aria-label="New notebook"
 					>
-						<Plus class="w-3.5 h-3.5" />
+						<Plus class="h-3.5 w-3.5" />
 					</button>
 				</div>
 				{#if isNotebookTab}
 					<main class="flex-1 overflow-y-auto bg-background">
-						<div class=" mx-auto pt-8 pb-32 px-10">
+						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input
-									class="h-9 min-w-0 flex-1 bg-transparent border-0 outline-none p-0 text-xl font-semibold tracking-tight text-foreground placeholder:text-muted-foreground/60"
+									class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
 									placeholder="Untitled notebook"
 									value={activeNotebook?.name ?? ''}
 									onblur={(e) => {
 										const next = (e.target as HTMLInputElement).value.trim();
-										if (activeNotebook && next && next !== activeNotebook.name) renameNotebook(activeNotebook.id, next);
+										if (activeNotebook && next && next !== activeNotebook.name)
+											renameNotebook(activeNotebook.id, next);
 									}}
-									onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') {
+											e.preventDefault();
+											(e.target as HTMLInputElement).blur();
+										}
+									}}
 								/>
 								<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								<Select.Root
@@ -1166,19 +1323,25 @@
 										);
 									}}
 								>
-									<Select.Trigger class="h-7 min-w-44 text-xs font-mono">
+									<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
 										{#if activeNotebookConnectionValue === '__mixed__'}
 											Mixed connections
 										{:else}
-											{connections.find((connection) => connection.id === activeNotebookConnectionValue)?.name ?? 'DuckDB (built-in)'}
+											{connections.find(
+												(connection) => connection.id === activeNotebookConnectionValue
+											)?.name ?? 'DuckDB (built-in)'}
 										{/if}
 									</Select.Trigger>
 									<Select.Content>
 										{#if activeNotebookConnectionValue === '__mixed__'}
-											<Select.Item value="__mixed__" class="text-xs font-mono">Mixed connections</Select.Item>
+											<Select.Item value="__mixed__" class="font-mono text-xs"
+												>Mixed connections</Select.Item
+											>
 										{/if}
 										{#each connections as connection (connection.id)}
-											<Select.Item value={connection.id} class="text-xs font-mono">{connection.name}</Select.Item>
+											<Select.Item value={connection.id} class="font-mono text-xs"
+												>{connection.name}</Select.Item
+											>
 										{/each}
 									</Select.Content>
 								</Select.Root>
@@ -1188,41 +1351,48 @@
 								<div class="flex flex-col items-center gap-4 py-16 text-center">
 									<div class="flex flex-col items-center gap-2">
 										<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
-										<p class="text-xs text-muted-foreground max-w-xs">Add a query cell to start exploring your data. Reference upstream cells by name using <code class="font-mono bg-muted px-1 py-0.5 rounded text-2xs">from cell_name</code>.</p>
+										<p class="max-w-xs text-xs text-muted-foreground">
+											Add a query cell to start exploring your data. Reference upstream cells by
+											name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
+												>from cell_name</code
+											>.
+										</p>
 									</div>
-									<div class="flex flex-col gap-2 w-full max-w-xs">
+									<div class="flex w-full max-w-xs flex-col gap-2">
 										<Button
 											variant="default"
 											size="sm"
-											class="w-full h-8 text-xs gap-2"
+											class="h-8 w-full gap-2 text-xs"
 											onclick={() => addCellWithLanguage('prql')}
 										>
-											<Plus class="w-3.5 h-3.5" />
+											<Plus class="h-3.5 w-3.5" />
 											Add PRQL Cell
-											<span class="ml-auto text-2xs opacity-60 font-mono">⌘⇧↵</span>
+											<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
 										</Button>
 										<Button
 											variant="outline"
 											size="sm"
-											class="w-full h-8 text-xs gap-2"
+											class="h-8 w-full gap-2 text-xs"
 											onclick={() => addCellWithLanguage('sql')}
 										>
-											<Plus class="w-3.5 h-3.5" />
+											<Plus class="h-3.5 w-3.5" />
 											Add SQL Cell
 										</Button>
 										<Button
 											variant="outline"
 											size="sm"
-											class="w-full h-8 text-xs gap-2"
+											class="h-8 w-full gap-2 text-xs"
 											onclick={addMarkdownCell}
 										>
-											<Info class="w-3.5 h-3.5" />
+											<Info class="h-3.5 w-3.5" />
 											Add Markdown Cell
-											<span class="ml-auto text-2xs opacity-60 font-mono">⌘⇧M</span>
+											<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
 										</Button>
 									</div>
-									<div class="text-2xs text-muted-foreground space-y-0.5">
-										<p>Press <kbd class="font-mono bg-muted px-1 rounded">?</kbd> for keyboard shortcuts</p>
+									<div class="space-y-0.5 text-2xs text-muted-foreground">
+										<p>
+											Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
+										</p>
 									</div>
 								</div>
 							{:else}
@@ -1274,7 +1444,7 @@
 						</main>
 					{:else}
 						<main class="flex-1 overflow-y-auto">
-							<div class="max-w-7xl mx-auto py-4 px-4">
+							<div class="mx-auto max-w-7xl px-4 py-4">
 								{#if activeExtraTab.type === 'table-view'}
 									<TableView
 										tableName={activeExtraTab.tableName}
@@ -1290,7 +1460,7 @@
 					{/if}
 				{:else}
 					{@const resultCell = getCellForResultTab(activeResultTab?.id ?? activeTabId)}
-					<main class="flex-1 overflow-hidden px-4 py-3 flex flex-col">
+					<main class="flex flex-1 flex-col overflow-hidden px-4 py-3">
 						{#if resultCell && resultCell.result && resultCell.status === 'success' && activeResultTab}
 							<ResultView
 								tabId={activeResultTab.id}
@@ -1302,17 +1472,33 @@
 								name={resultCell.outputName || 'result'}
 								viewMode={activeResultTab.viewMode}
 								chartConfig={activeResultTab.chartConfig}
-								onAddSort={resultCell.editMode === 'gui' ? (col, dir) => updateGuiStages(resultCell.id, [...resultCell.guiStages, { type: 'sort', keys: [{ column: col, dir }] }]) : undefined}
-								onAddFilter={resultCell.editMode === 'gui' ? (col) => updateGuiStages(resultCell.id, [...resultCell.guiStages, { type: 'filter', conditions: [{ column: col, op: '==', value: '' }], logic: 'and' }]) : undefined}
+								onAddSort={resultCell.editMode === 'gui'
+									? (col, dir) =>
+											updateGuiStages(resultCell.id, [
+												...resultCell.guiStages,
+												{ type: 'sort', keys: [{ column: col, dir }] }
+											])
+									: undefined}
+								onAddFilter={resultCell.editMode === 'gui'
+									? (col) =>
+											updateGuiStages(resultCell.id, [
+												...resultCell.guiStages,
+												{
+													type: 'filter',
+													conditions: [{ column: col, op: '==', value: '' }],
+													logic: 'and'
+												}
+											])
+									: undefined}
 							/>
 						{:else if resultCell && resultCell.status === 'running'}
-							<div class="flex items-center gap-3 text-sm text-muted-foreground mt-8">
-								<Database class="w-4 h-4 animate-pulse" />
+							<div class="mt-8 flex items-center gap-3 text-sm text-muted-foreground">
+								<Database class="h-4 w-4 animate-pulse" />
 								Running query…
 							</div>
 						{:else}
-							<div class="flex flex-col items-center gap-2 mt-16 text-muted-foreground">
-								<Table2 class="w-8 h-8 opacity-30" />
+							<div class="mt-16 flex flex-col items-center gap-2 text-muted-foreground">
+								<Table2 class="h-8 w-8 opacity-30" />
 								<p class="text-sm">No results available. Run the cell first.</p>
 							</div>
 						{/if}
@@ -1321,11 +1507,10 @@
 			</div>
 		</div>
 	</div>
-
 {/if}
 
 <Dialog.Root bind:open={llmSettingsOpen}>
-	<Dialog.Content class="p-6 space-y-4">
+	<Dialog.Content class="space-y-4 p-6">
 		<h2 class="text-sm font-semibold">LLM settings</h2>
 		<div class="space-y-3">
 			<div class="space-y-1">
@@ -1333,9 +1518,10 @@
 				<Select.Root
 					type="single"
 					value={llmConfig.provider}
-					onValueChange={(value) => setLLMConfig({ provider: value as 'openapi-compatible' | 'ollama' })}
+					onValueChange={(value) =>
+						setLLMConfig({ provider: value as 'openapi-compatible' | 'ollama' })}
 				>
-					<Select.Trigger id="llm-provider" class="h-8 text-xs font-mono">
+					<Select.Trigger id="llm-provider" class="h-8 font-mono text-xs">
 						{llmConfig.provider === 'ollama' ? 'Ollama (OpenAI-compatible)' : 'OpenAPI-compatible'}
 					</Select.Trigger>
 					<Select.Content>
@@ -1348,7 +1534,7 @@
 				<label for="llm-base-url" class="text-xs text-muted-foreground">Base URL</label>
 				<Input
 					id="llm-base-url"
-					class="h-8 text-xs font-mono"
+					class="h-8 font-mono text-xs"
 					value={llmConfig.baseUrl}
 					oninput={(e: Event) => setLLMConfig({ baseUrl: (e.target as HTMLInputElement).value })}
 				/>
@@ -1357,40 +1543,33 @@
 				<label for="llm-model" class="text-xs text-muted-foreground">Model</label>
 				<Input
 					id="llm-model"
-					class="h-8 text-xs font-mono"
+					class="h-8 font-mono text-xs"
 					value={llmConfig.model}
 					oninput={(e: Event) => setLLMConfig({ model: (e.target as HTMLInputElement).value })}
 				/>
 			</div>
-			<p class="text-xs text-muted-foreground">Used by AI prompt-to-block generation (slower path).</p>
+			<p class="text-xs text-muted-foreground">
+				Used by AI prompt-to-block generation (slower path).
+			</p>
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
 
 <Dialog.Root bind:open={shortcutsOpen}>
-	<Dialog.Content class="max-w-2xl max-h-[85vh] overflow-y-auto p-6">
-		<h2 class="text-sm font-semibold mb-4">Keyboard shortcuts</h2>
+	<Dialog.Content class="max-h-[85vh] max-w-2xl overflow-y-auto p-6">
+		<h2 class="mb-4 text-sm font-semibold">Keyboard shortcuts</h2>
 
 		<div class="grid grid-cols-2 gap-6 text-xs">
 			<div>
-				<p class="text-2xs font-semibold text-muted-foreground mb-2">Notebook — command mode</p>
-				<p class="text-2xs text-muted-foreground mb-2 italic">Activate: press <code class="font-mono bg-muted px-1 rounded text-2xs">Esc</code> from any editor</p>
+				<p class="mb-2 text-2xs font-semibold text-muted-foreground">Notebook — command mode</p>
+				<p class="mb-2 text-2xs text-muted-foreground italic">
+					Activate: press <code class="rounded bg-muted px-1 font-mono text-2xs">Esc</code> from any editor
+				</p>
 				<table class="w-full">
 					<tbody class="divide-y divide-border/40">
-						{#each [
-							['Enter', 'Enter edit mode'],
-							['↑ / k', 'Focus previous cell'],
-							['↓ / j', 'Focus next cell'],
-							['a', 'Insert cell above'],
-							['b', 'Insert cell below'],
-							['d d', 'Delete cell'],
-							['⇧K', 'Move cell up'],
-							['⇧J', 'Move cell down'],
-							['c', 'Collapse / expand cell'],
-							['⇧↵ / ⌘↵', 'Run cell'],
-						] as [key, desc]}
+						{#each [['Enter', 'Enter edit mode'], ['↑ / k', 'Focus previous cell'], ['↓ / j', 'Focus next cell'], ['a', 'Insert cell above'], ['b', 'Insert cell below'], ['d d', 'Delete cell'], ['⇧K', 'Move cell up'], ['⇧J', 'Move cell down'], ['c', 'Collapse / expand cell'], ['⇧↵ / ⌘↵', 'Run cell']] as [key, desc]}
 							<tr>
-								<td class="py-1 pr-4 font-mono text-foreground whitespace-nowrap">{key}</td>
+								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
 								<td class="py-1 text-muted-foreground">{desc}</td>
 							</tr>
 						{/each}
@@ -1399,47 +1578,29 @@
 			</div>
 
 			<div>
-				<p class="text-2xs font-semibold text-muted-foreground mb-2">Notebook — global</p>
-				<table class="w-full mb-4">
+				<p class="mb-2 text-2xs font-semibold text-muted-foreground">Notebook — global</p>
+				<table class="mb-4 w-full">
 					<tbody class="divide-y divide-border/40">
-						{#each [
-							['⌘⇧↵', 'Add PRQL cell'],
-							['⌘⇧M', 'Add markdown cell'],
-							['⌘⇧R', 'Run all cells'],
-							['⌘B', 'Toggle sidebar'],
-							['⌘1–9', 'Switch to notebook tab'],
-						] as [key, desc]}
+						{#each [['⌘⇧↵', 'Add PRQL cell'], ['⌘⇧M', 'Add markdown cell'], ['⌘⇧R', 'Run all cells'], ['⌘B', 'Toggle sidebar'], ['⌘1–9', 'Switch to notebook tab']] as [key, desc]}
 							<tr>
-								<td class="py-1 pr-4 font-mono text-foreground whitespace-nowrap">{key}</td>
+								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
 								<td class="py-1 text-muted-foreground">{desc}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 
-				<p class="text-2xs font-semibold text-muted-foreground mb-2">GUI pipeline stages</p>
-				<p class="text-2xs text-muted-foreground mb-2 italic">Activate: click a stage or press <code class="font-mono bg-muted px-1 rounded text-2xs">Enter</code> in command mode</p>
+				<p class="mb-2 text-2xs font-semibold text-muted-foreground">GUI pipeline stages</p>
+				<p class="mb-2 text-2xs text-muted-foreground italic">
+					Activate: click a stage or press <code class="rounded bg-muted px-1 font-mono text-2xs"
+						>Enter</code
+					> in command mode
+				</p>
 				<table class="w-full">
 					<tbody class="divide-y divide-border/40">
-						{#each [
-							['j / ↓', 'Navigate to next stage'],
-							['k / ↑', 'Navigate to prev stage'],
-							['⇧J', 'Move stage down'],
-							['⇧K', 'Move stage up'],
-							['r', 'Run stage preview'],
-							['x / Del', 'Remove stage'],
-							['⇧D', 'Duplicate stage'],
-							['v', 'Toggle stage disabled'],
-							['n', 'Add chip to stage'],
-							['c', 'Collapse / expand stage'],
-							['/', 'Open Add Stage menu'],
-							['1–9', 'Pick result from menu'],
-							['↵', 'Apply fast plan'],
-							['⌘↵', 'Run AI generation'],
-							['Esc', 'Exit to cell command mode'],
-						] as [key, desc]}
+						{#each [['j / ↓', 'Navigate to next stage'], ['k / ↑', 'Navigate to prev stage'], ['⇧J', 'Move stage down'], ['⇧K', 'Move stage up'], ['r', 'Run stage preview'], ['x / Del', 'Remove stage'], ['⇧D', 'Duplicate stage'], ['v', 'Toggle stage disabled'], ['n', 'Add chip to stage'], ['c', 'Collapse / expand stage'], ['/', 'Open Add Stage menu'], ['1–9', 'Pick result from menu'], ['↵', 'Apply fast plan'], ['⌘↵', 'Run AI generation'], ['Esc', 'Exit to cell command mode']] as [key, desc]}
 							<tr>
-								<td class="py-1 pr-4 font-mono text-foreground whitespace-nowrap">{key}</td>
+								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
 								<td class="py-1 text-muted-foreground">{desc}</td>
 							</tr>
 						{/each}
@@ -1453,43 +1614,63 @@
 <!-- Open project dialog -->
 {#if projectOpenDialogOpen}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onclick={() => { projectOpenDialogOpen = false; projectFolderInput = ''; }}></div>
-	<div class="fixed left-1/2 top-[30%] z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl">
+	<div
+		class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+		onclick={() => {
+			projectOpenDialogOpen = false;
+			projectFolderInput = '';
+		}}
+	></div>
+	<div
+		class="fixed top-[30%] left-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl"
+	>
 		<div class="flex items-center justify-between border-b border-border/60 px-5 py-4">
 			<h2 class="text-[15px] font-semibold">Open project folder</h2>
 			<button
-				class="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-				onclick={() => { projectOpenDialogOpen = false; projectFolderInput = ''; }}
+				class="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				onclick={() => {
+					projectOpenDialogOpen = false;
+					projectFolderInput = '';
+				}}
 			>
 				<X class="h-4 w-4" />
 			</button>
 		</div>
 		<div class="flex flex-col gap-4 p-5">
-			<p class="text-[13px] text-muted-foreground leading-relaxed">
-				Enter the path to an existing project folder. Supports SQL, PRQL, and project formats including dbt.
+			<p class="text-[13px] leading-relaxed text-muted-foreground">
+				Enter the path to an existing project folder. Supports SQL, PRQL, and project formats
+				including dbt.
 			</p>
 			<div class="flex flex-col gap-1.5">
-				<label for="menu-open-folder-path" class="text-[12px] font-medium text-foreground/70">Folder path</label>
+				<label for="menu-open-folder-path" class="text-[12px] font-medium text-foreground/70"
+					>Folder path</label
+				>
 				<input
 					id="menu-open-folder-path"
-					class="w-full rounded-lg border border-input bg-background px-3 py-2 text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/40"
+					class="w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-[13px] placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/40 focus:outline-none"
 					placeholder="/Users/you/my-project"
 					bind:value={projectFolderInput}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') void handleOpenProject();
-						if (e.key === 'Escape') { projectOpenDialogOpen = false; projectFolderInput = ''; }
+						if (e.key === 'Escape') {
+							projectOpenDialogOpen = false;
+							projectFolderInput = '';
+						}
 					}}
 				/>
 			</div>
 			<div class="flex justify-end gap-2 pt-1">
 				<button
-					class="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted transition-colors"
-					onclick={() => { projectOpenDialogOpen = false; projectFolderInput = ''; }}
+					class="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
+					onclick={() => {
+						projectOpenDialogOpen = false;
+						projectFolderInput = '';
+					}}
 				>
 					Cancel
 				</button>
 				<button
-					class="rounded-lg bg-primary px-4 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+					class="rounded-lg bg-primary px-4 py-1.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
 					onclick={() => void handleOpenProject()}
 					disabled={!projectFolderInput.trim() || projectOpenLoading}
 				>
@@ -1503,23 +1684,32 @@
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>
 	<Dialog.Content class="max-w-sm">
-		<div class="flex items-center gap-2 mb-4">
-			<Database class="w-4 h-4 text-primary" />
+		<div class="mb-4 flex items-center gap-2">
+			<Database class="h-4 w-4 text-primary" />
 			<h2 class="text-[15px] font-semibold">Lunapad</h2>
 		</div>
 		<div class="flex flex-col gap-3 text-sm text-muted-foreground">
-			<p>A notebook-style SQL IDE that runs entirely in the browser. Write SQL, reference other cells as CTEs, and query DuckDB or external databases interactively.</p>
-			<div class="rounded-lg border bg-muted/40 px-3 py-2 text-xs font-mono space-y-1">
-				<div class="flex justify-between"><span>Engine</span><span class="text-foreground">DuckDB WASM</span></div>
-				<div class="flex justify-between"><span>Language</span><span class="text-foreground">SQL / PRQL</span></div>
-				<div class="flex justify-between"><span>Framework</span><span class="text-foreground">SvelteKit</span></div>
+			<p>
+				A notebook-style SQL IDE that runs entirely in the browser. Write SQL, reference other cells
+				as CTEs, and query DuckDB or external databases interactively.
+			</p>
+			<div class="space-y-1 rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs">
+				<div class="flex justify-between">
+					<span>Engine</span><span class="text-foreground">DuckDB WASM</span>
+				</div>
+				<div class="flex justify-between">
+					<span>Language</span><span class="text-foreground">SQL / PRQL</span>
+				</div>
+				<div class="flex justify-between">
+					<span>Framework</span><span class="text-foreground">SvelteKit</span>
+				</div>
 			</div>
 			<div class="flex gap-2 pt-1">
 				<button
 					class="flex items-center gap-1.5 text-xs text-primary hover:underline"
 					onclick={() => window.open('https://prql-lang.org', '_blank')}
 				>
-					<ExternalLink class="w-3 h-3" /> prql-lang.org
+					<ExternalLink class="h-3 w-3" /> prql-lang.org
 				</button>
 			</div>
 		</div>

@@ -11,7 +11,7 @@ async function switchToGuiMode(page: import('@playwright/test').Page) {
 	const guiButton = page
 		.locator('.notebook-cell')
 		.first()
-		.getByRole('button', { name: /Switch to GUI mode/i })
+		.getByRole('button', { name: 'Visual', exact: true })
 		.first();
 	if (await guiButton.count()) {
 		await guiButton.click({ force: true });

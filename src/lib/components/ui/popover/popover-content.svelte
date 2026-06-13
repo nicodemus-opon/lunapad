@@ -21,7 +21,7 @@
 		{sideOffset}
 		strategy="fixed"
 		class={cn(
-			'bg-popover text-popover-foreground z-50 min-w-48 rounded-lg border shadow-md outline-none',
+			'z-(--z-dropdown) min-w-48 rounded-lg border bg-popover text-popover-foreground shadow-md outline-none',
 			'data-[state=open]:animate-in data-[state=closed]:animate-out',
 			'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 			'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',

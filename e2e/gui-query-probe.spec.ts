@@ -101,7 +101,7 @@ async function gotoWithCode(page: Page, code: string) {
 }
 
 async function switchToGuiMode(page: Page) {
-  const guiButton = page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to GUI mode/i }).first();
+  const guiButton = page.locator('.notebook-cell').first().getByRole('button', { name: 'Visual', exact: true }).first();
   if (await guiButton.count()) {
     await guiButton.click({ force: true });
   }

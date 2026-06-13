@@ -52,7 +52,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
-	import { Loader2, ExternalLink, BarChart3, Sigma } from '@lucide/svelte';
+	import { Loader2, ExternalLink } from '@lucide/svelte';
 	import CellGutter from './cell/CellGutter.svelte';
 	import CellHeader from './cell/CellHeader.svelte';
 	import CellMenu from './cell/CellMenu.svelte';
@@ -789,6 +789,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 					initialViewMode={cell.resultViewMode}
 					initialChartConfig={cell.resultChartConfig}
 					controlsVisible={showResultControls}
+					toolbarReserveSpace={!codeHidden}
 					onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
 					onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
 					onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
@@ -806,28 +807,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 									<Tooltip.Trigger>
 										<Button
 											variant="ghost" size="sm" class="h-6 w-6 p-0"
-											onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'table')}
+											onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, cell.resultViewMode)}
 										><ExternalLink class="w-3 h-3" /></Button>
 									</Tooltip.Trigger>
-									<Tooltip.Content><p class="text-xs">Open table in full tab</p></Tooltip.Content>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<Button
-											variant="ghost" size="sm" class="h-6 w-6 p-0"
-											onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'chart')}
-										><BarChart3 class="w-3 h-3" /></Button>
-									</Tooltip.Trigger>
-									<Tooltip.Content><p class="text-xs">Open chart in full tab</p></Tooltip.Content>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<Button
-											variant="ghost" size="sm" class="h-6 w-6 p-0"
-											onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'stats')}
-										><Sigma class="w-3 h-3" /></Button>
-									</Tooltip.Trigger>
-									<Tooltip.Content><p class="text-xs">Open stats in full tab</p></Tooltip.Content>
+									<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
 								</Tooltip.Root>
 							</div>
 						{/if}

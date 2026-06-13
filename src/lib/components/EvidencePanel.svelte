@@ -1,8 +1,17 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import {
-		Play, Square, RefreshCw, ExternalLink, ChevronDown, ChevronRight,
-		FileText, Plus, Loader2, X, Circle
+		Play,
+		Square,
+		RefreshCw,
+		ExternalLink,
+		ChevronDown,
+		ChevronRight,
+		FileText,
+		Plus,
+		Loader2,
+		X,
+		Circle
 	} from '@lucide/svelte';
 	import {
 		getProjectFolder,
@@ -37,7 +46,7 @@
 	function logLineClass(line: string): string {
 		if (/error|failed/i.test(line)) return 'text-destructive';
 		if (/warn/i.test(line)) return 'text-yellow-500';
-		if (/ready|localhost|✓|compiled/i.test(line)) return 'text-green-500';
+		if (/ready|localhost|✓|compiled/i.test(line)) return 'text-success';
 		return 'text-muted-foreground';
 	}
 
@@ -63,7 +72,10 @@
 						if (!line.startsWith('data:')) continue;
 						try {
 							const event = JSON.parse(line.slice(5).trim()) as {
-								type: string; text?: string; port?: number; exitCode?: number;
+								type: string;
+								text?: string;
+								port?: number;
+								exitCode?: number;
 							};
 							if (event.type === 'line' && event.text) {
 								logLines = [...logLines, event.text];
@@ -75,10 +87,14 @@
 								exitCode = event.exitCode ?? 0;
 								starting = false;
 							}
-						} catch { /* ignore */ }
+						} catch {
+							/* ignore */
+						}
 					}
 				}
-			} catch { /* aborted */ }
+			} catch {
+				/* aborted */
+			}
 		})();
 		return () => ctrl.abort();
 	}
@@ -144,18 +160,20 @@
 	<div class="flex flex-col text-sm">
 		<!-- Header -->
 		<button
-			class="flex items-center gap-2 px-3 py-2 hover:bg-muted/40 transition-colors"
+			class="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40"
 			onclick={() => (expanded = !expanded)}
 		>
 			{#if expanded}
-				<ChevronDown class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+				<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			{:else}
-				<ChevronRight class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+				<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			{/if}
-			<span class="font-semibold text-xs uppercase tracking-wide text-foreground flex-1 text-left">Evidence</span>
+			<span class="flex-1 text-left text-xs font-semibold tracking-wide text-foreground uppercase"
+				>Evidence</span
+			>
 			{#if runningJobId}
-				<span class="flex items-center gap-1 text-[10px] text-green-500 shrink-0">
-					<Circle class="w-2 h-2 fill-green-500" />
+				<span class="flex shrink-0 items-center gap-1 text-2xs text-success">
+					<Circle class="h-2 w-2 fill-green-500" />
 					Port {devPort ?? '…'}
 				</span>
 			{/if}
@@ -163,27 +181,27 @@
 
 		{#if expanded}
 			<!-- Server controls -->
-			<div class="px-3 pb-2 flex items-center gap-2 flex-wrap">
+			<div class="flex flex-wrap items-center gap-2 px-3 pb-2">
 				{#if !runningJobId}
 					<button
-						class="flex items-center gap-1.5 h-7 px-3 rounded text-xs border border-border bg-background hover:bg-muted/50 transition-colors text-foreground disabled:opacity-50"
+						class="flex h-7 items-center gap-1.5 rounded border border-border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
 						onclick={handleStart}
 						disabled={starting}
 					>
 						{#if starting}
-							<Loader2 class="w-3 h-3 animate-spin" />
+							<Loader2 class="h-3 w-3 animate-spin" />
 						{:else}
-							<Play class="w-3 h-3" />
+							<Play class="h-3 w-3" />
 						{/if}
 						{starting ? 'Starting…' : 'Start dev server'}
 					</button>
 				{:else}
 					<button
-						class="flex items-center gap-1.5 h-7 px-3 rounded text-xs border border-border bg-background hover:bg-muted/50 transition-colors text-foreground"
+						class="flex h-7 items-center gap-1.5 rounded border border-border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted/50"
 						onclick={handleStop}
 						disabled={stopping}
 					>
-						<Square class="w-3 h-3" />
+						<Square class="h-3 w-3" />
 						Stop
 					</button>
 					{#if serverUrl}
@@ -193,36 +211,38 @@
 							rel="noopener noreferrer"
 							class="flex items-center gap-1 text-xs text-primary hover:underline"
 						>
-							<ExternalLink class="w-3 h-3" />
+							<ExternalLink class="h-3 w-3" />
 							Open
 						</a>
 					{/if}
 				{/if}
 				<button
-					class="ml-auto h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+					class="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					onclick={() => void refreshEvidencePages()}
 					title="Refresh pages"
 				>
-					<RefreshCw class="w-3 h-3" />
+					<RefreshCw class="h-3 w-3" />
 				</button>
 			</div>
 
 			<!-- Log button -->
 			{#if logLines.length > 0}
 				<button
-					class="mx-3 mb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+					class="mx-3 mb-2 flex items-center gap-1.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					onclick={() => (logOpen = !logOpen)}
 				>
-					<ChevronRight class="w-3 h-3 {logOpen ? 'rotate-90' : ''} transition-transform" />
+					<ChevronRight class="h-3 w-3 {logOpen ? 'rotate-90' : ''} transition-transform" />
 					Dev server log
 					{#if exitCode !== null}
-						<span class="ml-auto {exitCode === 0 ? 'text-green-500' : 'text-destructive'}">
+						<span class="ml-auto {exitCode === 0 ? 'text-success' : 'text-destructive'}">
 							exit {exitCode}
 						</span>
 					{/if}
 				</button>
 				{#if logOpen}
-					<div class="mx-3 mb-2 max-h-40 overflow-y-auto rounded bg-black/20 p-2 font-mono text-[10px] leading-relaxed">
+					<div
+						class="mx-3 mb-2 max-h-40 overflow-y-auto rounded bg-black/20 p-2 font-mono text-2xs leading-relaxed"
+					>
 						{#each logLines as line (line)}
 							<div class={logLineClass(line)}>{line}</div>
 						{/each}
@@ -231,69 +251,82 @@
 			{/if}
 
 			<!-- Pages list -->
-			<div class="px-3 pb-1 flex items-center justify-between">
-				<span class="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Pages</span>
+			<div class="flex items-center justify-between px-3 pb-1">
+				<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">Pages</span
+				>
 				<button
-					class="text-muted-foreground hover:text-foreground transition-colors"
+					class="text-muted-foreground transition-colors hover:text-foreground"
 					onclick={() => (showNewPage = !showNewPage)}
 					title="New page"
 				>
-					<Plus class="w-3.5 h-3.5" />
+					<Plus class="h-3.5 w-3.5" />
 				</button>
 			</div>
 
 			{#if showNewPage}
 				<form
-					class="px-3 pb-2 flex gap-1"
-					onsubmit={(e) => { e.preventDefault(); void handleNewPage(); }}
+					class="flex gap-1 px-3 pb-2"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void handleNewPage();
+					}}
 				>
 					<input
-						class="flex-1 min-w-0 h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+						class="h-7 min-w-0 flex-1 rounded border border-input bg-background px-2 text-xs focus:ring-1 focus:ring-primary/50 focus:outline-none"
 						placeholder="page-name"
 						bind:value={newPageName}
 					/>
-					<button type="submit" class="h-7 px-2 rounded border border-border text-xs hover:bg-muted/50">
+					<button
+						type="submit"
+						class="h-7 rounded border border-border px-2 text-xs hover:bg-muted/50"
+					>
 						Add
 					</button>
 					<button
 						type="button"
-						class="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground"
+						class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground"
 						onclick={() => (showNewPage = false)}
 					>
-						<X class="w-3 h-3" />
+						<X class="h-3 w-3" />
 					</button>
 				</form>
 			{/if}
 
 			{#if pages.length === 0}
-				<p class="px-3 pb-3 text-[11px] text-muted-foreground">No pages found in pages/</p>
+				<p class="px-3 pb-3 text-2xs text-muted-foreground">No pages found in pages/</p>
 			{:else}
 				<div class="pb-2">
 					{#each pages as pagePath (pagePath)}
 						{@const label = pagePath.replace(/^pages\//, '').replace(/\.md$/, '')}
-						<div class="group flex items-center gap-1 px-3 py-1 hover:bg-muted/40 transition-colors">
-							<FileText class="w-3 h-3 text-muted-foreground shrink-0" />
-							<span class="flex-1 min-w-0 truncate text-xs text-foreground" title={pagePath}>{label}</span>
-							<div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+						<div
+							class="group flex items-center gap-1 px-3 py-1 transition-colors hover:bg-muted/40"
+						>
+							<FileText class="h-3 w-3 shrink-0 text-muted-foreground" />
+							<span class="min-w-0 flex-1 truncate text-xs text-foreground" title={pagePath}
+								>{label}</span
+							>
+							<div
+								class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+							>
 								{#if serverUrl}
 									<button
-										class="h-5 px-1.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+										class="h-5 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										onclick={() => openEvidencePreviewTab(pagePath)}
-										title="Preview"
-									>Preview</button>
+										title="Preview">Preview</button
+									>
 									<a
 										href="{serverUrl}/{label}"
 										target="_blank"
 										rel="noopener noreferrer"
-										class="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-										title="Open in browser"
-									><ExternalLink class="w-3 h-3" /></a>
+										class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+										title="Open in browser"><ExternalLink class="h-3 w-3" /></a
+									>
 								{:else}
 									<button
-										class="h-5 px-1.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+										class="h-5 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										onclick={() => openEvidencePreviewTab(pagePath)}
-										title="Start dev server to preview"
-									>Preview</button>
+										title="Start dev server to preview">Preview</button
+									>
 								{/if}
 							</div>
 						</div>

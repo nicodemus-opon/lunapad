@@ -497,9 +497,7 @@
 <!-- Pipeline stages -->
 <div bind:this={stageEditorEl} class="stage-editor" role="region" aria-label="Pipeline stages">
 	<div class="stage-wrapper">
-		<!-- Connector line lives outside stageListEl so SortableJS ignores it -->
-		<div class="connector-line" aria-hidden="true"></div>
-		<div bind:this={stageListEl} class="stage-stack rounded-xl border-0">
+		<div bind:this={stageListEl} class="stage-stack">
 			{#each stages as stage, idx (stageKeys[idx] ?? idx)}
 				{#if idx > 0}
 					<!-- Insert-between zone -->
@@ -517,14 +515,12 @@
 					</div>
 				{/if}
 				<div class="stage-item" style={`--stage-enter-delay: ${Math.min(idx, 7) * 26}ms`}>
-					<div class="connector-dot" aria-hidden="true"></div>
 				<PipelineStageCard
 					{stage}
 					index={idx}
 					active={activeStageIndex === idx}
 					draggable={idx > 0}
 					isLast={idx === stages.length - 1}
-					variant="strip"
 					collapsed={collapsedStages.has(idx)}
 					onCollapsedChange={() => toggleCollapse(idx)}
 					resultCollapsed={stageResultsCollapsed[idx] ?? false}
@@ -639,36 +635,11 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.125rem;
 	}
 
 	.stage-wrapper {
 		position: relative;
-	}
-
-	/* vertical pipeline connector line */
-	.connector-line {
-		position: absolute;
-		left: 17px;
-		top: 26px;
-		bottom: 26px;
-		width: 1px;
-		background: hsl(var(--border) / 0.55);
-		pointer-events: none;
-	}
-
-	/* connector dot per stage */
-	.connector-dot {
-		position: absolute;
-		left: -18px;
-		top: 50%;
-		transform: translateY(-50%);
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		border: 1.5px solid hsl(var(--border) / 0.8);
-		background: hsl(var(--background));
-		pointer-events: none;
 	}
 
 	:global(.stage-editor [data-slot='input']),
@@ -687,7 +658,6 @@
 
 	.stage-item {
 		position: relative;
-		margin-left: 2rem;
 		/* backwards: only fills before animation starts (prevents flash), element returns
 		   to natural state (no transform/filter) after — avoids creating a containing block
 		   for position:fixed descendants (chip dropdowns, popovers) */
@@ -698,10 +668,10 @@
 	/* ── Insert-between zone ── */
 	.insert-zone {
 		position: relative;
-		height: 1.1rem;
+		height: 0.875rem;
 		display: flex;
 		align-items: center;
-		margin-inline-start: 2rem;
+		margin-inline-start: 2.25rem;
 		margin-inline-end: 0.5rem;
 	}
 
@@ -716,7 +686,7 @@
 
 	.insert-zone:hover .insert-zone-line,
 	.insert-zone:focus-within .insert-zone-line {
-		background: hsl(var(--primary) / 0.25);
+		background: hsl(var(--border));
 	}
 
 	.insert-zone-pills {
@@ -738,13 +708,13 @@
 	}
 
 	.insert-type-btn {
-		font-size: 0.625rem;
+		font-size: var(--text-2xs, 0.6875rem);
 		line-height: 1;
-		padding: 0.2rem 0.5rem;
-		border-radius: 9999px;
-		border: 1px solid hsl(var(--primary) / 0.4);
+		padding: 0.15rem 0.45rem;
+		border-radius: calc(var(--radius) - 2px);
+		border: 1px solid hsl(var(--border));
 		background: hsl(var(--background));
-		color: hsl(var(--primary) / 0.8);
+		color: hsl(var(--muted-foreground));
 		font-family: var(--font-mono, monospace);
 		cursor: pointer;
 		transition:
@@ -754,24 +724,17 @@
 	}
 
 	.insert-type-btn:hover {
-		background: hsl(var(--primary) / 0.1);
-		color: hsl(var(--primary));
+		background: hsl(var(--muted));
+		color: hsl(var(--foreground));
 	}
 
 	:global(.stage-editor .stage-sort-ghost [data-testid='stage-card']) {
-		opacity: 0.45;
-		border-color: hsl(var(--primary) / 0.35);
-		background: hsl(var(--accent) / 0.24);
+		opacity: 0.4;
+		background: hsl(var(--muted) / 0.4);
 	}
 
 	:global(.stage-editor .stage-sort-chosen [data-testid='stage-card']) {
-		border-color: hsl(var(--primary) / 0.6);
-		box-shadow:
-			0 0 0 1px hsl(var(--primary) / 0.5),
-			0 8px 24px hsl(var(--primary) / 0.18);
-	}
-
-	:global(.stage-editor .stage-sort-drag [data-testid='stage-card']) {
-		transform: rotate(-0.25deg) scale(1.01);
+		background: hsl(var(--muted) / 0.4);
+		box-shadow: inset 0 0 0 1px hsl(var(--ring) / 0.35);
 	}
 </style>

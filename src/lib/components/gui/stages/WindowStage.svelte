@@ -6,6 +6,7 @@
 	import { pickSortColumn, pickSortDir } from '$lib/components/gui/chip-intelligence';
 	import { ArrowUp, ArrowDown, Plus, X } from '@lucide/svelte';
 	import DeriveStageEditor from './DeriveStage.svelte';
+	import { CHIP, CHIP_ADD, CHIP_INVALID, CHIP_X } from '../chip-styles';
 
 	interface Props {
 		stage: WindowStage;
@@ -52,7 +53,7 @@
 <div class="flex items-center gap-1.5 flex-wrap">
 	<!-- Frame chip — keep popover (raw PRQL expression, not a column name) -->
 	<Popover.Root>
-		<Popover.Trigger class="inline-flex items-center rounded-full border border-chart-2 bg-muted/35 px-2.5 py-1 text-xs font-mono hover:bg-muted/60 transition-colors">
+		<Popover.Trigger class="{CHIP} px-2 hover:bg-muted/60">
 			window {stage.frame || 'rows:-2..0'}
 		</Popover.Trigger>
 		<Popover.Content class="w-72 p-3">
@@ -69,12 +70,11 @@
 	{#each stage.sortKeys as key, idx (`${key.column}-${key.dir}-${idx}`)}
 		{@const invalid = availableColumns.length > 0 && key.column && !availableColumns.includes(key.column)}
 		<div
-			class="inline-flex items-center rounded border bg-background text-xs overflow-hidden group/pill shrink-0 cursor-grab active:cursor-grabbing transition-colors {invalid ? 'border-destructive/50' : ''}"
-			style={invalid ? '' : `border-color: hsl(var(--chart-${(idx % 5) + 1}))`}
+			class="{CHIP} cursor-grab active:cursor-grabbing {invalid ? CHIP_INVALID : ''}"
 		>
 			<!-- Direction toggle -->
 			<button
-				class="flex items-center gap-0.5 pl-1.5 py-1 transition-colors hover:bg-muted text-primary"
+				class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
 				onclick={() => toggleSortDir(idx)}
 				title="Click to toggle direction"
 			>
@@ -95,7 +95,7 @@
 			/>
 
 			<button
-				class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+				class={CHIP_X}
 				onclick={() => removeSortKey(idx)}
 				aria-label="Remove sort key"
 			>
@@ -106,8 +106,8 @@
 
 	<!-- Pending new sort key -->
 	{#if pendingNewSort}
-		<div class="inline-flex items-center rounded border border-primary/50 bg-background text-xs overflow-hidden shrink-0">
-			<span class="pl-1.5 py-1 text-primary"><ArrowUp class="w-3 h-3" /></span>
+		<div class="{CHIP} border-ring/60">
+			<span class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground"><ArrowUp class="w-3 h-3" /></span>
 			<InlineChipLabel
 				value={pendingNewSortValue}
 				suggestions={availableColumns}
@@ -121,10 +121,7 @@
 	{/if}
 
 	{#if !pendingNewSort}
-		<button
-			class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-			onclick={startAddSort}
-		>
+		<button class={CHIP_ADD} onclick={startAddSort}>
 			<Plus class="w-3 h-3" /> sort
 		</button>
 	{/if}

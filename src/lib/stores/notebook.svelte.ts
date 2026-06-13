@@ -388,7 +388,8 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		compiledSQL: null,
 		executionMs: null,
 		guiStages: [{ type: 'from', table: '' }],
-		editMode: 'gui',
+		// GUI mode is a PRQL feature (updateGuiStages writes PRQL into cell.code)
+		editMode: language === 'sql' ? 'prql' : 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
 		display: 'full',
@@ -850,7 +851,7 @@ function deserializeCell(c: Cell, i: number): Cell {
 		? c.guiStages
 		: [{ type: 'from', table: '' } as GUIPipelineStage];
 	const language: CellLanguage = (c as Partial<Cell>).language === 'sql' ? 'sql' : 'prql';
-	const editMode: CellEditMode = c.editMode === 'prql' ? 'prql' : 'gui';
+	const editMode: CellEditMode = language === 'sql' || c.editMode === 'prql' ? 'prql' : 'gui';
 	const persistedViewMode = (c as Partial<Cell>).resultViewMode;
 	const cellType: CellType = (c as Partial<Cell>).cellType === 'markdown' ? 'markdown' : 'query';
 	const markdown = typeof (c as Partial<Cell>).markdown === 'string' ? (c as Partial<Cell>).markdown as string : '';

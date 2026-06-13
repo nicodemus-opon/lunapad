@@ -1,6 +1,25 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { Zap, Play, CheckCircle, RefreshCcw, ChevronDown, ChevronRight, X, CheckCircle2, XCircle, Minus, FlaskConical, BookOpen, Network, Loader2, Plus, Pencil, Trash2, Clock } from '@lucide/svelte';
+	import {
+		Zap,
+		Play,
+		CheckCircle,
+		RefreshCcw,
+		ChevronDown,
+		ChevronRight,
+		X,
+		CheckCircle2,
+		XCircle,
+		Minus,
+		FlaskConical,
+		BookOpen,
+		Network,
+		Loader2,
+		Plus,
+		Pencil,
+		Trash2,
+		Clock
+	} from '@lucide/svelte';
 	import {
 		getProjectFolder,
 		getDbtModels,
@@ -49,7 +68,10 @@
 	}
 
 	function stopSchedulePoll() {
-		if (schedulePollTimer) { clearInterval(schedulePollTimer); schedulePollTimer = null; }
+		if (schedulePollTimer) {
+			clearInterval(schedulePollTimer);
+			schedulePollTimer = null;
+		}
 	}
 
 	// Watch for scheduled runs starting via SSE (server-sent events from scheduleEvents).
@@ -74,7 +96,9 @@
 		const q = selectorInput.trim().toLowerCase();
 		if (!q) return [];
 		const modelNames = dbtModels.map((m) => m.name);
-		const tags = [...new Set(dbtModels.flatMap((m) => (m as DbtModel & { tags?: string[] }).tags ?? []))];
+		const tags = [
+			...new Set(dbtModels.flatMap((m) => (m as DbtModel & { tags?: string[] }).tags ?? []))
+		];
 		const tagSuggestions = tags.map((t) => `tag:${t}`);
 		return [...modelNames, ...tagSuggestions]
 			.filter((s) => s.toLowerCase().includes(q))
@@ -109,7 +133,9 @@
 			setDbtRunningJobId(jobId);
 			logUnsubscribe = watchDbtLogs(
 				jobId,
-				(line) => { logLines = [...logLines, line]; },
+				(line) => {
+					logLines = [...logLines, line];
+				},
 				(code) => {
 					exitCode = code;
 					setDbtRunningJobId(null);
@@ -158,7 +184,8 @@
 		if (parts.length !== 5) return '';
 		const [min, hour, dom, month, dow] = parts;
 		if (dom === '*' && month === '*' && dow === '*') {
-			if (min !== '*' && hour !== '*') return `daily ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+			if (min !== '*' && hour !== '*')
+				return `daily ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
 			if (min !== '*' && hour === '*') return `every hour :${min.padStart(2, '0')}`;
 			if (min === '*' && hour === '*') return 'every min';
 		}
@@ -222,7 +249,9 @@
 				startSchedulePoll();
 				logUnsubscribe = watchDbtLogs(
 					jobId,
-					(line) => { logLines = [...logLines, line]; },
+					(line) => {
+						logLines = [...logLines, line];
+					},
 					(code) => {
 						exitCode = code;
 						setDbtRunningJobId(null);
@@ -247,7 +276,8 @@
 			selectorHighlight = (selectorHighlight + 1) % selectorSuggestions.length;
 			e.preventDefault();
 		} else if (e.key === 'ArrowUp') {
-			selectorHighlight = (selectorHighlight - 1 + selectorSuggestions.length) % selectorSuggestions.length;
+			selectorHighlight =
+				(selectorHighlight - 1 + selectorSuggestions.length) % selectorSuggestions.length;
 			e.preventDefault();
 		} else if (e.key === 'Enter' && selectorHighlight >= 0) {
 			selectorInput = selectorSuggestions[selectorHighlight];
@@ -271,27 +301,27 @@
 			{:else}
 				<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			{/if}
-			<span class="text-[11px] font-semibold uppercase tracking-wide text-foreground/60">dbt</span>
+			<span class="text-2xs font-semibold tracking-wide text-foreground/60 uppercase">dbt</span>
 			{#if runningJobId}
-				<span class="ml-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+				<span class="ml-1 inline-flex items-center gap-1 text-2xs text-muted-foreground">
 					<span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-chart-1"></span>
 					running
 				</span>
 			{:else if lastCompileAt}
-				<span class="ml-1 text-[11px] text-muted-foreground">{relativeTime(lastCompileAt)}</span>
+				<span class="ml-1 text-2xs text-muted-foreground">{relativeTime(lastCompileAt)}</span>
 			{/if}
 		</button>
 		<!-- Action buttons -->
 		<div class="flex items-center gap-0.5">
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
 				title="View lineage"
 				onclick={() => openLineageTab()}
 			>
 				<Network class="h-3.5 w-3.5" />
 			</button>
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
 				title="Compile"
 				disabled={!!runningJobId || !projectFolder}
 				onclick={() => runCommand(() => dbtCompile(projectFolder!), 'Compile')}
@@ -299,7 +329,7 @@
 				<Zap class="h-3.5 w-3.5" />
 			</button>
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
 				title="Refresh manifest"
 				disabled={!!runningJobId || !projectFolder}
 				onclick={() => void refreshDbtManifest()}
@@ -311,20 +341,29 @@
 
 	{#if expanded}
 		<!-- Node selector -->
-		<div class="px-2 pb-2 relative">
+		<div class="relative px-2 pb-2">
 			<div class="relative">
 				<input
-					class="w-full rounded border border-input bg-background px-2 py-1 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/40 placeholder:text-muted-foreground/40 pr-5"
+					class="w-full rounded border border-input bg-background px-2 py-1 pr-5 font-mono text-2xs placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
 					placeholder="Selector (e.g. +model, tag:…)"
 					bind:value={selectorInput}
-					onfocus={() => { selectorFocused = true; selectorHighlight = -1; }}
-					onblur={() => setTimeout(() => { selectorFocused = false; }, 150)}
+					onfocus={() => {
+						selectorFocused = true;
+						selectorHighlight = -1;
+					}}
+					onblur={() =>
+						setTimeout(() => {
+							selectorFocused = false;
+						}, 150)}
 					onkeydown={handleSelectorKey}
 				/>
 				{#if selectorInput}
 					<button
-						class="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-						onclick={() => { selectorInput = ''; selectorHighlight = -1; }}
+						class="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+						onclick={() => {
+							selectorInput = '';
+							selectorHighlight = -1;
+						}}
 					>
 						<X class="h-3 w-3" />
 					</button>
@@ -332,21 +371,33 @@
 			</div>
 			<!-- Autocomplete dropdown -->
 			{#if selectorFocused && selectorSuggestions.length > 0}
-				<div class="absolute left-2 right-2 top-full z-50 mt-0.5 rounded border border-border bg-popover shadow-md">
+				<div
+					class="absolute top-full right-2 left-2 z-50 mt-0.5 rounded border border-border bg-popover shadow-md"
+				>
 					{#each selectorSuggestions as suggestion, i}
 						<button
-							class="flex w-full items-center px-2 py-1 text-[11px] font-mono hover:bg-accent {i === selectorHighlight ? 'bg-accent' : ''}"
-							onmousedown={() => { selectorInput = suggestion; selectorFocused = false; }}
-						>{suggestion}</button>
+							class="flex w-full items-center px-2 py-1 font-mono text-2xs hover:bg-accent {i ===
+							selectorHighlight
+								? 'bg-accent'
+								: ''}"
+							onmousedown={() => {
+								selectorInput = suggestion;
+								selectorFocused = false;
+							}}>{suggestion}</button
+						>
 					{/each}
 				</div>
 			{/if}
 			<!-- Run / Test with selector -->
 			<div class="mt-1.5 flex gap-1">
 				<button
-					class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40 transition-colors"
+					class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-2xs transition-colors hover:bg-accent disabled:opacity-40"
 					disabled={!!runningJobId || !projectFolder}
-					onclick={() => runCommand(() => dbtRun(projectFolder!, selectorInput || undefined), selectorInput ? `Run ${selectorInput}` : 'Run all')}
+					onclick={() =>
+						runCommand(
+							() => dbtRun(projectFolder!, selectorInput || undefined),
+							selectorInput ? `Run ${selectorInput}` : 'Run all'
+						)}
 				>
 					{#if runningJobId}
 						<Loader2 class="h-3 w-3 animate-spin" />
@@ -356,9 +407,13 @@
 					{selectorInput ? `Run ${selectorInput}` : 'Run all'}
 				</button>
 				<button
-					class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40 transition-colors"
+					class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-2xs transition-colors hover:bg-accent disabled:opacity-40"
 					disabled={!!runningJobId || !projectFolder}
-					onclick={() => runCommand(() => dbtTest(projectFolder!, selectorInput || undefined), selectorInput ? `Test ${selectorInput}` : 'Test all')}
+					onclick={() =>
+						runCommand(
+							() => dbtTest(projectFolder!, selectorInput || undefined),
+							selectorInput ? `Test ${selectorInput}` : 'Test all'
+						)}
 				>
 					<FlaskConical class="h-3 w-3" />
 					{selectorInput ? `Test ${selectorInput}` : 'Test all'}
@@ -368,35 +423,44 @@
 
 		<!-- Model list -->
 		{#if dbtModels.length === 0}
-			<p class="px-4 pb-2 text-[11px] text-muted-foreground">
+			<p class="px-4 pb-2 text-2xs text-muted-foreground">
 				No models found. Run <span class="font-mono">dbt compile</span> to load the manifest.
 			</p>
 		{:else}
-			<div class="overflow-y-auto max-h-48 pb-1">
+			<div class="max-h-48 overflow-y-auto pb-1">
 				{#each [...modelsBySchema.entries()] as [schema, models]}
 					<div class="px-3 pb-0.5">
-						<span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">{schema}</span>
+						<span class="text-2xs font-semibold tracking-wider text-muted-foreground/50 uppercase"
+							>{schema}</span
+						>
 					</div>
 					{#each models as model}
 						{@const status = modelStatusIcon(model)}
-						<div class="flex items-center gap-1.5 px-4 py-0.5 hover:bg-muted/50 group" title={model.description ?? undefined}>
+						<div
+							class="group flex items-center gap-1.5 px-4 py-0.5 hover:bg-muted/50"
+							title={model.description ?? undefined}
+						>
 							<status.icon class="h-3 w-3 shrink-0 {status.class}" />
-							<span class="min-w-0 flex-1 truncate text-[12px] font-mono">{model.name}</span>
+							<span class="min-w-0 flex-1 truncate font-mono text-xs">{model.name}</span>
 							{#if model.description}
-								<BookOpen class="h-2.5 w-2.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground" />
+								<BookOpen
+									class="h-2.5 w-2.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground"
+								/>
 							{/if}
 							<button
-								class="invisible group-hover:visible shrink-0 rounded px-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+								class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
 								title="Test model"
-								onclick={() => runCommand(() => dbtTest(projectFolder!, model.name), `Test ${model.name}`)}
+								onclick={() =>
+									runCommand(() => dbtTest(projectFolder!, model.name), `Test ${model.name}`)}
 								disabled={!!runningJobId}
 							>
 								<FlaskConical class="h-2.5 w-2.5" />
 							</button>
 							<button
-								class="invisible group-hover:visible shrink-0 rounded px-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+								class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
 								title="Run model"
-								onclick={() => runCommand(() => dbtRun(projectFolder!, model.name), `Run ${model.name}`)}
+								onclick={() =>
+									runCommand(() => dbtRun(projectFolder!, model.name), `Run ${model.name}`)}
 								disabled={!!runningJobId}
 							>
 								<Play class="h-2.5 w-2.5" />
@@ -422,11 +486,16 @@
 						<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 					{/if}
 					<Clock class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-					<span class="text-[11px] font-semibold uppercase tracking-wide text-foreground/60">Schedules</span>
+					<span class="text-2xs font-semibold tracking-wide text-foreground/60 uppercase"
+						>Schedules</span
+					>
 					{#if runningScheduleId}
-						<span class="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-chart-1"></span>
+						<span class="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-chart-1"
+						></span>
 					{:else if schedules.length > 0}
-						<span class="ml-1 text-[10px] text-muted-foreground/50">{schedules.filter((s) => s.enabled).length}/{schedules.length}</span>
+						<span class="ml-1 text-2xs text-muted-foreground/50"
+							>{schedules.filter((s) => s.enabled).length}/{schedules.length}</span
+						>
 					{/if}
 				</button>
 				<!-- Link to Inngest monitoring UI (Docker: localhost:8288) -->
@@ -434,13 +503,13 @@
 					href="http://localhost:8288"
 					target="_blank"
 					rel="noopener"
-					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					title="Open Inngest dashboard (run history & logs)"
 				>
 					<Network class="h-3.5 w-3.5" />
 				</a>
 				<button
-					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					title="Add schedule"
 					onclick={openAddModal}
 				>
@@ -450,25 +519,33 @@
 
 			{#if schedulesExpanded}
 				{#if schedules.length === 0}
-					<p class="px-4 pb-3 text-[11px] text-muted-foreground/50">No schedules — add one with +</p>
+					<p class="px-4 pb-3 text-2xs text-muted-foreground/50">No schedules — add one with +</p>
 				{:else}
 					<div class="pb-1">
 						{#each schedules as schedule}
-							<div class="flex items-center gap-1.5 px-3 py-0.5 hover:bg-muted/50 group">
+							<div class="group flex items-center gap-1.5 px-3 py-0.5 hover:bg-muted/50">
 								<!-- Enable/disable dot -->
 								<button
-									class="h-2 w-2 shrink-0 rounded-full transition-colors {schedule.enabled ? 'bg-chart-1' : 'bg-muted-foreground/30'}"
+									class="h-2 w-2 shrink-0 rounded-full transition-colors {schedule.enabled
+										? 'bg-chart-1'
+										: 'bg-muted-foreground/30'}"
 									title={schedule.enabled ? 'Disable' : 'Enable'}
 									onclick={() => void handleToggleSchedule(schedule)}
 								></button>
 
 								<!-- Label -->
-								<span class="min-w-0 flex-1 truncate text-[12px] font-mono">{schedule.label}</span>
+								<span class="min-w-0 flex-1 truncate font-mono text-xs">{schedule.label}</span>
 
 								<!-- Cron hint / next run label -->
-								<span class="shrink-0 text-[10px] font-mono text-muted-foreground/50 hidden group-[.wide]:inline">{schedule.cron}</span>
+								<span
+									class="hidden shrink-0 font-mono text-2xs text-muted-foreground/50 group-[.wide]:inline"
+									>{schedule.cron}</span
+								>
 								{#if schedule.select}
-									<span class="shrink-0 rounded-sm border border-border/50 px-1 text-[9px] font-mono text-muted-foreground/50">{schedule.select}</span>
+									<span
+										class="shrink-0 rounded-sm border border-border/50 px-1 font-mono text-[9px] text-muted-foreground/50"
+										>{schedule.select}</span
+									>
 								{/if}
 
 								<!-- Status badge -->
@@ -484,14 +561,14 @@
 
 								<!-- Hover actions -->
 								<button
-									class="invisible group-hover:visible shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+									class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
 									title="Edit"
 									onclick={() => openEditModal(schedule)}
 								>
 									<Pencil class="h-3 w-3" />
 								</button>
 								<button
-									class="invisible group-hover:visible shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+									class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover:visible hover:bg-muted hover:text-destructive"
 									title="Delete"
 									onclick={() => void handleDeleteSchedule(schedule.id)}
 								>
@@ -507,19 +584,25 @@
 
 	<!-- Live log drawer — floats above the sidebar, does not push layout -->
 	{#if logOpen && logLines.length > 0}
-		<div class="fixed bottom-0 left-0 z-50 w-72 rounded-tr-lg border border-border bg-background shadow-xl">
-			<div class="flex items-center justify-between px-2 py-1 border-b border-border/40">
-				<span class="text-[11px] font-medium text-muted-foreground truncate">
-					{runningJobId ? `${logHeader}…` : exitCode === 0 ? `${logHeader} completed` : `${logHeader} failed (exit ${exitCode})`}
+		<div
+			class="fixed bottom-0 left-0 z-50 w-72 rounded-tr-lg border border-border bg-background shadow-xl"
+		>
+			<div class="flex items-center justify-between border-b border-border/40 px-2 py-1">
+				<span class="truncate text-2xs font-medium text-muted-foreground">
+					{runningJobId
+						? `${logHeader}…`
+						: exitCode === 0
+							? `${logHeader} completed`
+							: `${logHeader} failed (exit ${exitCode})`}
 				</span>
 				<button
-					class="ml-2 shrink-0 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+					class="ml-2 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
 					onclick={() => (logOpen = false)}
 				>
 					<X class="h-3 w-3" />
 				</button>
 			</div>
-			<div class="max-h-44 overflow-y-auto px-2 py-1.5 font-mono text-[10px] leading-5">
+			<div class="max-h-44 overflow-y-auto px-2 py-1.5 font-mono text-2xs leading-5">
 				{#each logLines as line}
 					<div class={logLineClass(line)}>{line}</div>
 				{/each}
@@ -533,6 +616,9 @@
 	<DbtScheduleModal
 		initial={editingSchedule}
 		onSave={handleSaveSchedule}
-		onClose={() => { modalOpen = false; editingSchedule = null; }}
+		onClose={() => {
+			modalOpen = false;
+			editingSchedule = null;
+		}}
 	/>
 {/if}

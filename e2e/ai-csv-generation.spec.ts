@@ -29,7 +29,7 @@ async function uploadCSV(page: Page, csvPath: string, expectedTableName: string)
 
 /** Switch the first cell to GUI mode */
 async function switchToGUI(page: Page) {
-	const btn = page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to GUI mode/i }).first();
+	const btn = page.locator('.notebook-cell').first().getByRole('button', { name: 'Visual', exact: true }).first();
 	await btn.click({ force: true });
 	await page.waitForSelector('[data-testid="stage-card"]', { timeout: 10_000 });
 }

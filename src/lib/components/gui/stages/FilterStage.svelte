@@ -5,6 +5,7 @@
 	import { ChipInput } from '$lib/components/ui/chip-input';
 	import { pickDefaultFilter } from '$lib/components/gui/chip-intelligence';
 	import { Plus, X, Loader2 } from '@lucide/svelte';
+	import { CHIP, CHIP_ADD, CHIP_EDITING, CHIP_INVALID, CHIP_SECTION, CHIP_SELECT, CHIP_X } from '../chip-styles';
 
 	interface UpstreamResult {
 		rows: Record<string, unknown>[];
@@ -196,10 +197,10 @@
 				{#if selected.length > 0}
 					<div class="flex flex-wrap gap-1">
 						{#each selected as item (item)}
-							<span class="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-1 text-[11px] font-mono">
+							<span class="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-2xs">
 								{item}
 								<button
-									class="hover:text-destructive transition-colors"
+									class="text-muted-foreground/60 transition-colors duration-150 hover:text-destructive"
 									onclick={() => onChange(serializeMultiValue(selected.filter((s) => s !== item)))}
 									aria-label="Remove {item}"
 								>
@@ -210,7 +211,7 @@
 					</div>
 				{/if}
 				{#if distinctVals.length > 0}
-					<div class="max-h-36 overflow-y-auto rounded border divide-y text-xs">
+					<div class="max-h-36 overflow-y-auto rounded-md border border-border/60 divide-y text-xs">
 						{#each distinctVals as val (val)}
 							{@const checked = selected.includes(val)}
 							<label class="flex items-center gap-2 px-2 py-1 hover:bg-muted/50 cursor-pointer">
@@ -232,7 +233,7 @@
 						oninput={(e) => onChange((e.target as HTMLInputElement).value)}
 					/>
 					{#if upstreamLoading}
-						<div class="flex items-center gap-1 text-[10px] text-muted-foreground">
+						<div class="flex items-center gap-1 text-2xs text-muted-foreground">
 							<Loader2 class="w-3 h-3 animate-spin" /> loading suggestions…
 						</div>
 					{/if}
@@ -240,9 +241,9 @@
 			</div>
 		{:else if colType === 'date'}
 			<!-- Date picker -->
-			<input
+			<Input
 				type="date"
-				class="h-7 w-full rounded-md border border-input bg-background px-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+				class="h-7 w-full font-mono text-xs"
 				value={toDateInputValue(value)}
 				oninput={(e) => onChange(fromDateInputValue((e.target as HTMLInputElement).value))}
 			/>
@@ -256,14 +257,14 @@
 					oninput={(e) => onChange((e.target as HTMLInputElement).value)}
 				/>
 				{#if upstreamLoading}
-					<div class="flex items-center gap-1 text-[10px] text-muted-foreground">
+					<div class="flex items-center gap-1 text-2xs text-muted-foreground">
 						<Loader2 class="w-3 h-3 animate-spin" /> loading suggestions…
 					</div>
 				{:else if distinctVals.length > 0}
 					<div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
 						{#each distinctVals.slice(0, 12) as val (val)}
 							<button
-								class="rounded px-1.5 py-1 text-[11px] font-mono bg-muted hover:bg-primary/10 hover:text-primary transition-colors truncate max-w-full"
+								class="rounded bg-muted/50 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground truncate max-w-full"
 								onclick={() => onChange(val)}
 								title={val}
 							>
@@ -286,7 +287,7 @@
 		{#if idx > 0}
 			<!-- AND / OR logic toggle badge -->
 			<button
-				class="text-[9px] font-bold uppercase rounded px-1.5 py-1 bg-primary/10 text-primary hover:bg-primary/20 transition-colors shrink-0"
+				class="inline-flex h-5 shrink-0 items-center rounded bg-muted/50 px-1.5 font-mono text-2xs lowercase text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
 				onclick={toggleLogic}
 				title="Click to toggle AND / OR"
 			>
@@ -302,7 +303,7 @@
 			ondragover={(e) => e.preventDefault()}
 			ondrop={(e) => { e.preventDefault(); if (dragCondIdx !== null && dragCondIdx !== idx) { reorderConditions(dragCondIdx, idx); dragCondIdx = null; } }}
 			ondragend={() => (dragCondIdx = null)}
-			class="inline-flex items-center text-xs overflow-hidden group/pill shrink-0 transition-all"
+			class="inline-flex items-center text-xs group/pill shrink-0"
 			class:opacity-40={dragCondIdx !== null && dragCondIdx === idx}
 			class:cursor-grab={expandedCondIdx !== idx}
 			class:active:cursor-grabbing={expandedCondIdx !== idx}
@@ -313,8 +314,7 @@
 				{@const invalid = availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<div
-					class="inline-flex items-center gap-1 rounded-lg border border-primary/50 bg-background px-1.5 py-0.5 ring-1 ring-primary/20"
-					style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
+					class={CHIP_EDITING}
 					onkeydown={(e) => { if (e.key === 'Escape') collapseCond(); }}
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) collapseCond(); }}
 					role="group"
@@ -332,7 +332,7 @@
 					<!-- Op select -->
 					<select
 						value={cond.op}
-						class="bg-transparent text-xs text-muted-foreground outline-none cursor-pointer hover:text-foreground transition-colors"
+						class={CHIP_SELECT}
 						onchange={(e) => updateCond(idx, { op: (e.target as HTMLSelectElement).value as FilterOp })}
 					>
 						{#each OPS as op}
@@ -365,7 +365,7 @@
 
 					<!-- Confirm -->
 					<button
-						class="text-muted-foreground hover:text-primary transition-colors px-0.5"
+						class="px-1 text-muted-foreground transition-colors duration-150 hover:text-foreground"
 						onclick={collapseCond}
 						aria-label="Done editing"
 					>
@@ -375,19 +375,16 @@
 			{:else}
 				<!-- ── Collapsed chip ── -->
 				{@const invalid = availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
-				<div
-					class="inline-flex items-center rounded-full border bg-muted/60 overflow-hidden group/inner {invalid ? 'border-destructive/50' : ''}"
-					style={invalid ? '' : `border-color: hsl(var(--chart-${(idx % 5) + 1}))`}
-				>
+				<div class="{CHIP} {invalid ? CHIP_INVALID : ''}">
 					<button
-						class="px-2.5 py-1 hover:bg-muted transition-colors font-mono text-left {invalid ? 'text-destructive/70' : ''}"
+						class="{CHIP_SECTION} text-left"
 						onclick={() => expandCond(idx)}
 						data-testid="filter-condition-pill"
 					>
 						{humanize(cond)}
 					</button>
 					<button
-						class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/inner:opacity-100 hover:text-destructive transition-all"
+						class={CHIP_X}
 						onclick={() => removeCond(idx)}
 						aria-label="Remove condition"
 					>
@@ -399,10 +396,7 @@
 	{/each}
 
 	<!-- Add condition — immediate inline add (no popover) -->
-	<button
-		class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-		onclick={addInline}
-	>
+	<button class={CHIP_ADD} onclick={addInline}>
 		<Plus class="w-3 h-3" /> add
 	</button>
 </div>

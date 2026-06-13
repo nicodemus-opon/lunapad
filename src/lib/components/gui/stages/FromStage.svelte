@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FromStage } from '$lib/types/gui-pipeline';
 	import { ChipInput } from '$lib/components/ui/chip-input';
+	import { CHIP_META } from '../chip-styles';
 
 	interface Props {
 		stage: FromStage;
@@ -106,10 +107,10 @@
   Schema column only shown when multiple schemas are available.
 -->
 <div
-	class="inline-flex items-center rounded border text-xs overflow-visible group/from transition-colors
+	class="stage-chip group/from inline-flex h-6 shrink-0 items-center overflow-visible rounded border font-mono text-xs transition-colors duration-150
 		{stage.table
-		? 'bg-background border-border'
-		: 'border-dashed border-muted-foreground/30'}"
+		? 'border-border/60 bg-background'
+		: 'border-dashed border-border/70 text-muted-foreground'}"
 >
 	{#if stage.alias}
 		<ChipInput
@@ -119,7 +120,7 @@
 			oninput={(v) => onUpdate({ ...stage, alias: v || undefined })}
 			oncommit={(v) => onUpdate({ ...stage, alias: v.trim() || undefined })}
 		/>
-		<span class="py-1 pr-0.5 text-muted-foreground/40 text-[10px] select-none">=</span>
+		<span class="{CHIP_META} pr-0.5">=</span>
 	{/if}
 
 	{#if hasMultipleSchemas}
@@ -131,7 +132,7 @@
 			oninput={onSchemaInput}
 			oncommit={onSchemaInput}
 		/>
-		<span class="py-1 text-muted-foreground/30 text-[10px] select-none">.</span>
+		<span class={CHIP_META}>.</span>
 	{/if}
 
 	<ChipInput
@@ -146,7 +147,7 @@
 	<!-- Alias toggle (hover-only, for when alias isn't set) -->
 	{#if !stage.alias}
 		<button
-			class="px-1.5 py-1 opacity-0 group-hover/from:opacity-100 hover:bg-muted/60 transition-all text-muted-foreground/50 hover:text-muted-foreground border-l border-border/30 text-[10px]"
+			class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/from:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 			onclick={() => onUpdate({ ...stage, alias: stage.table?.slice(0, 1) || 't' })}
 			title="Add alias"
 		>≡</button>

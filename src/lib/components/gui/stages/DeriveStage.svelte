@@ -23,6 +23,7 @@
 	} from '$lib/constants/prql-functions';
 	import { Plus, X } from '@lucide/svelte';
 	import { InlineChipLabel } from '$lib/components/ui/inline-chip-label';
+	import { CHIP, CHIP_ADD, CHIP_META, CHIP_X } from '../chip-styles';
 
 	const EXPR_MODE_ICON: Record<string, string> = {
 		binary: '±',
@@ -307,22 +308,21 @@
 			ondragover={(e) => e.preventDefault()}
 			ondrop={(e) => { e.preventDefault(); if (dragColIdx !== null && dragColIdx !== idx) { reorderCols(dragColIdx, idx); dragColIdx = null; } }}
 			ondragend={() => (dragColIdx = null)}
-			class="inline-flex items-center rounded border text-xs overflow-hidden group/pill shrink-0 transition-colors"
+			class={CHIP}
 			class:err-chip={erroredChipIndices?.has(idx)}
 			class:opacity-40={dragColIdx !== null && dragColIdx === idx}
-			style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
 		>
 			<!-- Drag handle — only spot dragging can start from -->
 			<span
 				data-drag-handle
-				class="pl-1 pr-0.5 py-1 text-muted-foreground/20 hover:text-muted-foreground/50 transition-colors cursor-grab active:cursor-grabbing shrink-0"
+				class="flex h-full shrink-0 cursor-grab items-center pl-1 pr-0.5 text-muted-foreground/20 transition-colors duration-150 hover:text-muted-foreground/50 active:cursor-grabbing"
 				title="Drag to reorder"
 			><GripVertical class="w-3 h-3" /></span>
 
 			<!-- Mode selector — click to switch expression type -->
 			<select
 				value={col.expr.mode}
-				class="bg-transparent text-[10px] font-mono text-muted-foreground/60 outline-none cursor-pointer hover:text-primary transition-colors border-r border-border/40 py-1 px-1 shrink-0"
+				class="h-full shrink-0 cursor-pointer bg-transparent px-1 font-mono text-2xs text-muted-foreground/60 outline-none transition-colors duration-150 hover:text-foreground"
 				title="Expression type"
 				onchange={(e) => setMode(idx, (e.target as HTMLSelectElement).value as ExprMode)}
 			>
@@ -341,10 +341,10 @@
 					class="px-1.5 py-1 font-mono text-xs"
 					oncommit={(v) => updateColName(idx, v)}
 				/>
-				<span class="px-0.5 py-1 text-muted-foreground/50 select-none text-[10px]">=</span>
+				<span class="{CHIP_META} px-0.5">=</span>
 				<!-- Left operand -->
 				<button
-					class="px-1 py-1 text-[10px] text-muted-foreground/70 hover:text-primary border-r border-border/30 transition-colors select-none font-mono"
+					class="select-none px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
 					onclick={() => toggleBinaryLeftKind(idx)}
 					title="Toggle column / literal"
 				>{bexpr.left.kind === 'column' ? 'col' : 'lit'}</button>
@@ -367,7 +367,7 @@
 				<!-- Op dropdown -->
 				<select
 					value={bexpr.op}
-					class="bg-transparent text-xs font-mono text-muted-foreground outline-none cursor-pointer hover:text-foreground transition-colors border-x border-border/30 py-1 px-0.5"
+					class="h-full cursor-pointer bg-transparent px-0.5 font-mono text-xs text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground"
 					onchange={(e) => setBinaryOp(idx, (e.target as HTMLSelectElement).value as ExprOp)}
 				>
 					{#each BINARY_OPS as op (op.value)}
@@ -376,7 +376,7 @@
 				</select>
 				<!-- Right operand -->
 				<button
-					class="px-1 py-1 text-[10px] text-muted-foreground/70 hover:text-primary border-r border-border/30 transition-colors select-none font-mono"
+					class="select-none px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
 					onclick={() => toggleBinaryRightKind(idx)}
 					title="Toggle column / literal"
 				>{bexpr.right.kind === 'column' ? 'col' : 'lit'}</button>
@@ -404,9 +404,9 @@
 					class="px-1.5 py-1 font-mono text-xs"
 					oncommit={(v) => updateColName(idx, v)}
 				/>
-				<span class="px-0.5 py-1 text-muted-foreground/40 select-none text-[10px]">=</span>
+				<span class="{CHIP_META} px-0.5">=</span>
 				<Popover.Root>
-				<Popover.Trigger class="px-1.5 py-1 font-mono hover:bg-muted/90 transition-colors text-muted-foreground/80 hover:text-foreground">
+				<Popover.Trigger class="inline-flex h-full items-center px-1.5 font-mono text-muted-foreground/80 transition-colors duration-150 hover:bg-muted/60 hover:text-foreground">
 					{humanizeExpr(col.expr)}
 				</Popover.Trigger>
 				<Popover.Content class="w-72 p-0 overflow-hidden">
@@ -414,12 +414,12 @@
 					<div class="px-3 py-3 space-y-3">
 						<!-- Mode segmented control -->
 						<div>
-							<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">Expression type</p>
+							<p class="text-2xs font-medium text-muted-foreground mb-1.5">Expression type</p>
 							<div class="flex rounded-md border overflow-hidden w-full">
 								{#each MODE_BUTTONS as btn (btn.value)}
 									<button
 										type="button"
-										class="flex-1 py-1 text-[11px] font-mono border-r last:border-r-0 transition-colors
+										class="flex-1 py-1 text-xs font-mono border-r last:border-r-0 transition-colors duration-150
 											{col.expr.mode === btn.value
 											? 'bg-primary text-primary-foreground'
 											: 'bg-background text-muted-foreground hover:bg-muted/50'}"
@@ -439,12 +439,12 @@
 							{@const fargs = getFuncArgs(fexpr)}
 							<div class="space-y-2">
 								<div>
-									<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Category</p>
+									<p class="text-2xs font-medium text-muted-foreground mb-1">Category</p>
 									<div class="grid grid-cols-4 rounded-md border overflow-hidden">
 										{#each FUNC_CATEGORIES as category (category.value)}
 											<button
 												type="button"
-												class="py-1 text-[11px] font-mono border-r last:border-r-0 transition-colors
+												class="py-1 text-xs font-mono border-r last:border-r-0 transition-colors duration-150
 													{activeCategory === category.value
 													? 'bg-primary text-primary-foreground'
 													: 'bg-background text-muted-foreground hover:bg-muted/50'}"
@@ -454,7 +454,7 @@
 									</div>
 								</div>
 								<div>
-									<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Function</p>
+									<p class="text-2xs font-medium text-muted-foreground mb-1">Function</p>
 									<Select.Root
 										type="single"
 										value={activeFunction.value}
@@ -469,21 +469,21 @@
 											{/each}
 										</Select.Content>
 									</Select.Root>
-									<p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">{activeFunction.detail}</p>
+									<p class="mt-1 text-2xs leading-relaxed text-muted-foreground">{activeFunction.detail}</p>
 								</div>
 								{#if activeFunction.args.length === 0}
-									<div class="rounded-md border border-dashed border-primary/25 bg-primary/5 px-2.5 py-2 text-[11px] text-muted-foreground">
+									<div class="rounded-md border border-dashed border-border/70 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
 										This function inserts a value directly, no inputs required.
 									</div>
 								{:else}
 									{#each activeFunction.args as argSpec, argIdx (`${activeFunction.value}-${argIdx}-${argSpec.label}`)}
 										{@const arg = fargs[argIdx] ?? defaultOperand(argSpec)}
 										<div>
-											<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">{argSpec.label}</p>
+											<p class="text-2xs font-medium text-muted-foreground mb-1">{argSpec.label}</p>
 											<div class="flex gap-1.5 items-center">
 												<button
-													class="text-[10px] px-1.5 py-0.5 rounded border shrink-0 transition-colors
-														{arg.kind === 'column' ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-muted-foreground/30 hover:border-primary/30'}"
+													class="text-2xs px-1.5 py-0.5 rounded border shrink-0 transition-colors duration-150
+														{arg.kind === 'column' ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border/70 hover:bg-muted/40 hover:text-foreground'}"
 													onclick={() => toggleFuncArgKind(idx, argIdx)}
 													title="Toggle column / literal"
 												>{arg.kind === 'column' ? 'col' : 'lit'}</button>
@@ -512,7 +512,7 @@
 						{:else if col.expr.mode === 'fstring'}
 							{@const fsexpr = col.expr}
 							<div>
-								<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Template</p>
+								<p class="text-2xs font-medium text-muted-foreground mb-1">Template</p>
 								<div class="flex items-center gap-1">
 									<span class="text-xs font-mono text-primary shrink-0">f"""</span>
 									<Input
@@ -529,7 +529,7 @@
 						{:else if col.expr.mode === 'sstring'}
 							{@const ssexpr = col.expr}
 							<div>
-								<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">SQL template</p>
+								<p class="text-2xs font-medium text-muted-foreground mb-1">SQL template</p>
 								<div class="flex items-center gap-1">
 									<span class="text-xs font-mono text-warning shrink-0">s"""</span>
 									<Input
@@ -546,7 +546,7 @@
 						{:else if col.expr.mode === 'raw'}
 							{@const rawexpr = col.expr}
 							<div>
-								<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Expression</p>
+								<p class="text-2xs font-medium text-muted-foreground mb-1">Expression</p>
 								<ColumnInput
 									class="w-full"
 									value={rawexpr.expr}
@@ -562,7 +562,7 @@
 			</Popover.Root>
 			{/if}<!-- end binary/non-binary -->
 			<button
-				class="px-1.5 py-0.5 text-muted-foreground opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+				class={CHIP_X}
 				onclick={() => removeCol(idx)}
 				aria-label="Remove column"
 			>
@@ -572,11 +572,7 @@
 	{/each}
 
 	<!-- Add column -->
-	<button
-		class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-		onclick={addColumn}
-		aria-label="Add derived column"
-	>
+	<button class={CHIP_ADD} onclick={addColumn} aria-label="Add derived column">
 		<Plus class="w-3 h-3" />
 	</button>
 </div>

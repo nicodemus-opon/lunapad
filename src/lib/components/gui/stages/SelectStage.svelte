@@ -5,6 +5,7 @@
 	import { InlineChipLabel } from '$lib/components/ui/inline-chip-label';
 	import { pickSelectColumn } from '$lib/components/gui/chip-intelligence';
 	import { X, Plus, CheckSquare, Square } from '@lucide/svelte';
+	import { CHIP, CHIP_ADD, CHIP_INVALID, CHIP_X } from '../chip-styles';
 
 	interface Props {
 		stage: SelectStage;
@@ -86,9 +87,7 @@
 	{:else if showSummary}
 		<!-- Summary pill when many columns selected -->
 		<Popover.Root>
-			<Popover.Trigger
-				class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 transition-colors"
-			>
+			<Popover.Trigger class="{CHIP} gap-1 px-2 text-foreground hover:bg-muted/60">
 				{stage.columns.length} columns
 			</Popover.Trigger>
 			<Popover.Content class="w-64 p-3">
@@ -107,10 +106,10 @@
 					{#each availableColumns as col}
 						{@const selected = stage.columns.includes(col)}
 						<button
-							class="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors
+							class="flex items-center gap-1 px-2 py-0.5 rounded text-xs border transition-colors duration-150
 								{selected
 								? 'bg-primary text-primary-foreground border-primary'
-								: 'bg-transparent text-muted-foreground border-muted-foreground/30 hover:border-primary/50'}"
+								: 'bg-transparent text-muted-foreground border-border/70 hover:bg-muted/40 hover:text-foreground'}"
 							onclick={() => toggle(col)}
 						>
 							{#if selected}<CheckSquare class="w-3 h-3" />{:else}<Square class="w-3 h-3" />{/if}
@@ -131,18 +130,17 @@
 				ondragover={(e) => e.preventDefault()}
 				ondrop={(e) => { e.preventDefault(); if (dragColIdx !== null && dragColIdx !== idx) { reorderColumns(dragColIdx, idx); dragColIdx = null; } }}
 				ondragend={() => (dragColIdx = null)}
-				class="inline-flex items-center rounded-full border bg-primary/10 text-primary text-xs overflow-hidden group/pill shrink-0 cursor-grab active:cursor-grabbing transition-colors {dragColIdx !== null && dragColIdx === idx ? 'opacity-40' : ''} {invalid ? 'border-destructive/50 text-destructive/70' : ''}"
-				style={invalid ? '' : `border-color: hsl(var(--chart-${(idx % 5) + 1}))`}
+				class="{CHIP} cursor-grab active:cursor-grabbing {dragColIdx !== null && dragColIdx === idx ? 'opacity-40' : ''} {invalid ? CHIP_INVALID : ''}"
 			>
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns}
-					class="px-2.5 py-1 font-mono text-xs"
+					class="px-2 py-1 font-mono text-xs"
 					oncommit={(v) => renameCol(idx, v)}
 					oncancel={() => { if (!col) remove(col); }}
 				/>
 				<button
-					class="px-1.5 py-1 opacity-0 group-hover/pill:opacity-100 hover:text-destructive transition-all"
+					class={CHIP_X}
 					onclick={() => remove(col)}
 					aria-label="Remove {col}"
 				>
@@ -154,13 +152,13 @@
 
 	<!-- Pending new chip (in edit mode immediately) -->
 	{#if pendingNew && !showSummary}
-		<div class="inline-flex items-center rounded-full border border-primary/50 bg-primary/5 text-primary text-xs overflow-hidden shrink-0">
+		<div class="{CHIP} border-ring/60">
 			<InlineChipLabel
 				value={pendingNewValue}
 				suggestions={unselected}
 				initialEditing={true}
 				placeholder="column…"
-				class="px-2.5 py-1 font-mono text-xs"
+				class="px-2 py-1 font-mono text-xs"
 				oncommit={commitPending}
 				oncancel={cancelPending}
 			/>
@@ -169,10 +167,7 @@
 
 	<!-- Add button — only shown when not in summary mode -->
 	{#if !showSummary && !pendingNew}
-		<button
-			class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-			onclick={addPending}
-		>
+		<button class={CHIP_ADD} onclick={addPending}>
 			<Plus class="w-3 h-3" /> add
 		</button>
 	{/if}

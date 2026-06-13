@@ -4,6 +4,7 @@
 	import { ChipInput } from '$lib/components/ui/chip-input';
 	import { pickJoinColumn } from '$lib/components/gui/chip-intelligence';
 	import { Plus, X } from '@lucide/svelte';
+	import { CHIP, CHIP_ADD, CHIP_EDITING, CHIP_META, CHIP_SECTION, CHIP_X } from '../chip-styles';
 
 	interface Props {
 		stage: JoinStage;
@@ -65,20 +66,18 @@
 
 <div class="flex items-center gap-1.5 flex-wrap">
 	<!-- Main join chip: join type segmented + table reference -->
-	<div
-		class="inline-flex items-center rounded-full border border-chart-1 bg-muted/30 text-xs overflow-hidden group/pill shrink-0"
-	>
-		<!-- Join type segmented control (INNER/LEFT/RIGHT/FULL) — no popover needed -->
-		<div class="flex border-r border-border/50">
+	<div class={CHIP} data-testid="join-main-pill">
+		<!-- Join type segmented control (inner/left/right/full) — no popover needed -->
+		<div class="flex h-full border-r border-border/50">
 			{#each JOIN_TYPES as jt}
 				<button
-					class="px-1.5 py-1 font-mono transition-colors text-[10px]
+					class="flex h-full items-center px-1.5 font-mono text-2xs transition-colors duration-150
 						{stage.joinType === jt.value
-						? 'bg-primary/20 text-primary font-semibold'
-						: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+						? 'bg-muted font-medium text-foreground'
+						: 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 					onclick={() => onUpdate({ ...stage, joinType: jt.value })}
 					title="{jt.short} JOIN"
-				>{jt.short}</button>
+				>{jt.value}</button>
 			{/each}
 		</div>
 
@@ -90,7 +89,7 @@
 				class="px-1.5 py-1 font-mono text-xs text-muted-foreground"
 				oncommit={(v) => onUpdate({ ...stage, alias: v || undefined })}
 			/>
-			<span class="py-1 text-muted-foreground/50 text-[10px] select-none">=</span>
+			<span class={CHIP_META}>=</span>
 		{/if}
 
 		<!-- Table name (inline editable with autocomplete) -->
@@ -105,7 +104,7 @@
 		<!-- Add alias button (if no alias yet) -->
 		{#if stage.alias === undefined && stage.table}
 			<button
-				class="px-1.5 py-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors text-[10px] border-l border-border/40"
+				class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 transition-colors duration-150 hover:bg-muted/60 hover:text-muted-foreground"
 				onclick={() => onUpdate({ ...stage, alias: stage.table.slice(0, 1) })}
 				title="Add alias"
 			>≡</button>
@@ -114,7 +113,7 @@
 
 	{#if stage.table}
 		<!-- "on" separator -->
-		<span class="text-xs text-muted-foreground font-mono shrink-0">on</span>
+		<span class="shrink-0 font-mono text-2xs text-muted-foreground/60">on</span>
 
 		<!-- Condition pills -->
 		{#each stage.conditions as cond, idx}
@@ -125,7 +124,7 @@
 				ondragover={(e) => e.preventDefault()}
 				ondrop={(e) => { e.preventDefault(); if (dragCondIdx !== null && dragCondIdx !== idx) { reorderConditions(dragCondIdx, idx); dragCondIdx = null; } }}
 				ondragend={() => (dragCondIdx = null)}
-				class="inline-flex items-center text-xs overflow-hidden shrink-0"
+				class="inline-flex items-center text-xs shrink-0"
 				class:opacity-40={dragCondIdx !== null && dragCondIdx === idx}
 				class:cursor-grab={expandedCondIdx !== idx}
 			>
@@ -133,13 +132,12 @@
 					<!-- Expanded inline form -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<div
-						class="inline-flex items-center gap-1 rounded-lg border border-primary/50 bg-muted/30 px-1.5 py-0.5 ring-1 ring-primary/20"
-						style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
+						class={CHIP_EDITING}
 						onkeydown={(e) => { if (e.key === 'Escape') expandedCondIdx = null; }}
 						role="group"
 					>
 						{#if cond.shorthand}
-							<span class="text-muted-foreground/60 font-mono text-[10px] select-none">==</span>
+							<span class="{CHIP_META} font-mono">==</span>
 							<ChipInput
 								value={cond.left}
 								suggestions={availableColumns}
@@ -155,8 +153,8 @@
 								class="font-mono text-xs"
 								oninput={(v) => updateCond(idx, { left: v })}
 							/>
-							<span class="text-muted-foreground/60 font-mono text-[10px] select-none px-0.5">==</span>
-							<span class="text-muted-foreground/50 text-[10px] select-none font-mono">{stage.alias ?? stage.table}.</span>
+							<span class="{CHIP_META} px-0.5 font-mono">==</span>
+							<span class="{CHIP_META} font-mono">{stage.alias ?? stage.table}.</span>
 							<ChipInput
 								value={cond.right}
 								suggestions={[]}
@@ -167,29 +165,26 @@
 						{/if}
 						<!-- shorthand toggle -->
 						<button
-							class="text-[9px] px-1 py-0.5 rounded border text-muted-foreground/60 hover:text-muted-foreground transition-colors font-mono ml-0.5"
+							class="ml-0.5 rounded border border-border/60 px-1 py-0.5 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
 							onclick={() => updateCond(idx, { shorthand: !cond.shorthand, right: cond.shorthand ? '' : cond.left })}
 							title="Toggle shorthand / full"
 						>{cond.shorthand ? '==' : 'l==r'}</button>
 						<button
-							class="text-muted-foreground hover:text-primary transition-colors px-0.5"
+							class="px-1 text-muted-foreground transition-colors duration-150 hover:text-foreground"
 							onclick={() => (expandedCondIdx = null)}
 						>✓</button>
 					</div>
 				{:else}
 					<!-- Collapsed pill -->
-					<div
-						class="inline-flex items-center rounded-full border bg-muted/30 overflow-hidden group/inner"
-						style="border-colorb: hsl(var(--chart-{(idx % 5) + 1}))"
-					>
+					<div class={CHIP}>
 						<button
-							class="px-2.5 py-1 hover:bg-muted/60 transition-colors font-mono"
+							class={CHIP_SECTION}
 							onclick={() => (expandedCondIdx = idx)}
 						>
 							{humanizeCond(cond)}
 						</button>
 						<button
-							class="px-1.5 py-1 text-muted-foreground opacity-0 group-hover/inner:opacity-100 hover:text-destructive transition-all"
+							class={CHIP_X}
 							onclick={() => removeCond(idx)}
 							aria-label="Remove condition"
 						>
@@ -201,10 +196,7 @@
 		{/each}
 
 		<!-- Add ON condition — immediate inline -->
-		<button
-			class="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-			onclick={addCondInline}
-		>
+		<button class={CHIP_ADD} onclick={addCondInline}>
 			<Plus class="w-3 h-3" /> on
 		</button>
 	{/if}

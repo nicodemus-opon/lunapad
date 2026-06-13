@@ -27,6 +27,8 @@
 		onColumnDescriptionChange?: (column: string, description: string) => void;
 		/** Hide non-essential controls until the surrounding cell is focused */
 		controlsVisible?: boolean;
+		/** When false, the hidden toolbar collapses to 0 height instead of reserving a row (used when the cell shows output only) */
+		toolbarReserveSpace?: boolean;
 		/** Optional actions rendered on the right side of the toolbar row */
 		toolbarActions?: import('svelte').Snippet;
 		/** Query execution time in milliseconds */
@@ -41,7 +43,7 @@
 		onViewModeChange, onChartConfigChange,
 		onAddSort, onAddFilter,
 		columnDescriptions, onColumnDescriptionChange,
-		controlsVisible = true, toolbarActions,
+		controlsVisible = true, toolbarReserveSpace = true, toolbarActions,
 		executionMs = null,
 	}: Props = $props();
 
@@ -91,7 +93,11 @@
 <div class="flex flex-col gap-2">
 	<!-- Toolbar -->
 	<div
-		class="flex h-7 items-center justify-between gap-2 transition-opacity duration-150 ease-(--motion-ease-out) {controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}"
+		class="flex items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-150 ease-(--motion-ease-out) {controlsVisible
+			? 'h-7 opacity-100'
+			: toolbarReserveSpace
+				? 'h-7 opacity-0 pointer-events-none'
+				: 'h-0 opacity-0 pointer-events-none'}"
 		aria-hidden={!controlsVisible}
 	>
 		<div class="inline-flex flex-nowrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-0.5">

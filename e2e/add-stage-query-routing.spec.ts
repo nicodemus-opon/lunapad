@@ -65,7 +65,7 @@ async function gotoWithCode(page: Page, code: string) {
 }
 
 async function switchToGuiMode(page: Page, expectedStages = 11) {
-	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to GUI mode/i }).first().click({ force: true });
+	await page.locator('.notebook-cell').first().getByRole('button', { name: 'Visual', exact: true }).first().click({ force: true });
 	await expect(page.locator('[data-testid="stage-card"]')).toHaveCount(expectedStages, { timeout: 5_000 });
 }
 
@@ -147,7 +147,7 @@ test('add-stage prompt Enter flow applies generated block and updates PRQL edito
 	const totalStages = await stageCards.count();
 	expect(totalStages).toBeGreaterThan(11);
 
-	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+	await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click();
 	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
 	const prqlText = (await page.locator('.notebook-cell').first().locator('.view-lines').first().innerText()).replace(/\u00a0/g, ' ');
@@ -187,7 +187,7 @@ test('add-stage prompt Shift+Enter force-applies block and updates stage card ty
 	expect(groupCount).toBeGreaterThan(baselineGroupCount);
 	expect(takeCount).toBeGreaterThanOrEqual(baselineTakeCount);
 
-	await page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to PRQL mode/i }).first().click();
+	await page.locator('.notebook-cell').first().getByRole('button', { name: 'PRQL', exact: true }).first().click();
 	await page.waitForSelector('.code-editor .monaco-editor', { timeout: 5_000 });
 
 	const prqlText = (await page.locator('.notebook-cell').first().locator('.view-lines').first().innerText()).replace(/\u00a0/g, ' ');

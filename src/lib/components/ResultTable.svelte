@@ -23,6 +23,8 @@
 		onColumnDescriptionChange?: (column: string, description: string) => void;
 		/** True when rows were capped at the auto-limit */
 		truncated?: boolean;
+		/** Fill the parent's height instead of capping the table at max-h-125 (full result tab) */
+		fillHeight?: boolean;
 	}
 
 	let {
@@ -33,6 +35,7 @@
 		headerInsights = 'full',
 		columnDescriptions = {},
 		truncated = false,
+		fillHeight = false,
 		onAddSort,
 		onAddFilter,
 		onColumnDescriptionChange
@@ -231,10 +234,10 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2 min-h-0">
-	<div class="flex gap-2 min-h-0">
-	<div class="flex-1 min-w-0">
-		<Table.Root containerClass="overflow-auto max-h-125 rounded-md border">
+<div class="flex flex-col gap-2 min-h-0 {fillHeight ? 'h-full' : ''}">
+	<div class="flex gap-2 min-h-0 {fillHeight ? 'flex-1' : ''}">
+	<div class="flex-1 min-w-0 {fillHeight ? 'min-h-0' : ''}">
+		<Table.Root containerClass="overflow-auto rounded-md border {fillHeight ? 'h-full' : 'max-h-125'}">
 			<Table.Header>
 				{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 					<Table.Row class="border-b-0">

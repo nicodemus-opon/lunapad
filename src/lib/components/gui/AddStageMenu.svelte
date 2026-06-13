@@ -891,9 +891,9 @@
 
 <div class="border-t pt-2 mt-1">
 	<div class="flex items-center justify-between gap-2">
-		<div class="add-stage-title flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider">
+		<div class="add-stage-title flex items-center gap-1.5 font-mono text-2xs lowercase text-muted-foreground/60">
 			<Sparkles class="w-3 h-3" />
-				<span>Add stage</span>
+				<span>add stage</span>
 		</div>
 
 		<Dialog.Root bind:open>
@@ -1168,39 +1168,20 @@
 		position: relative;
 		display: inline-flex;
 		border-radius: 0.375rem;
-		transition:
-			transform var(--motion-fast) var(--motion-ease-out),
-			border-color var(--motion-fast) var(--motion-ease-out),
-			box-shadow var(--motion-medium) var(--motion-ease-out);
-	}
-
-	.add-stage-trigger:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 0 0 1px hsl(var(--primary) / 0.25);
 	}
 
 	.add-stage-trigger:hover :global(button) {
-		border-color: hsl(var(--primary) / 0.45);
-	}
-
-	.add-stage-trigger::after {
-		content: '';
-		position: absolute;
-		inset: -3px;
-		border-radius: inherit;
-		pointer-events: none;
-		box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
-		animation: gui-soft-pulse 1.9s var(--motion-ease-flow) infinite;
+		border-color: hsl(var(--muted-foreground) / 0.45);
 	}
 
 	.add-stage-badge {
-		font-size: 10px;
+		font-size: var(--text-2xs, 0.6875rem);
 		line-height: 1.1;
 		padding: 0.2rem 0.5rem;
-		border-radius: 999px;
-		border: 1px solid hsl(var(--primary) / 0.35);
-		background: hsl(var(--primary) / 0.1);
-		color: hsl(var(--primary));
+		border-radius: calc(var(--radius) - 2px);
+		border: 1px solid hsl(var(--border));
+		background: hsl(var(--muted) / 0.5);
+		color: hsl(var(--muted-foreground));
 		text-transform: none;
 	}
 
