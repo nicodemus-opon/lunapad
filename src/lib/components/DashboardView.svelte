@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 	// @ts-ignore — sortablejs types don't export default properly
 	import Sortable from 'sortablejs';
 	import ChartView from '$lib/components/ChartView.svelte';
 	import TextBlockComponent from '$lib/components/dashboard/TextBlock.svelte';
 	import CalloutBlockComponent from '$lib/components/dashboard/CalloutBlock.svelte';
 	import FilterBlockComponent from '$lib/components/dashboard/FilterBlock.svelte';
+	import KpiBlockComponent from '$lib/components/dashboard/KpiBlock.svelte';
+	import SectionBlockComponent from '$lib/components/dashboard/SectionBlock.svelte';
 	import {
 		LayoutDashboard, Plus, RefreshCw, X, GripVertical,
-		Maximize2, Pencil, Check, ChevronDown
+		Maximize2, ChevronDown, BarChart2, Hash, AlignLeft, Filter, TrendingUp
 	} from '@lucide/svelte';
 	import {
 		getDashboards, getNotebooks,
@@ -19,7 +23,7 @@
 		runCell
 	} from '$lib/stores/notebook.svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
-	import type { DashboardBlock, ChartBlock, CalloutBlock, FilterBlock, DashboardPanelWidth, DashboardPanelHeight } from '$lib/types/gui-pipeline';
+	import type { DashboardBlock, ChartBlock, CalloutBlock, FilterBlock, KpiBlock, SectionBlock, DashboardPanelWidth, DashboardPanelHeight } from '$lib/types/gui-pipeline';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 
 	interface Props {
@@ -34,18 +38,14 @@
 		dashboard ? [...dashboard.blocks].sort((a, b) => a.order - b.order) : []
 	);
 
-	// Separate filter blocks (render in filter bar) from content blocks
-	const filterBlocks = $derived(blocksSorted.filter((b): b is FilterBlock => b.type === 'filter'));
-	const contentBlocks = $derived(blocksSorted.filter((b) => b.type !== 'filter'));
-
 	// ── Filter state ──────────────────────────────────────────────────────────
 	let filterState = $state<Record<string, string>>({});
 
-	// Initialize filter defaults when dashboard loads
 	$effect(() => {
-		for (const fb of filterBlocks) {
-			if (filterState[fb.paramName] === undefined && fb.defaultValue) {
-				filterState[fb.paramName] = fb.defaultValue;
+		for (const block of blocksSorted) {
+			if (block.type !== 'filter') continue;
+			if (filterState[block.paramName] === undefined && block.defaultValue) {
+				filterState[block.paramName] = block.defaultValue;
 			}
 		}
 	});
@@ -64,10 +64,10 @@
 		return allCells.find((c) => c.outputName === lastName) ?? null;
 	}
 
-	// ── Query results map (for value interpolation in text/callout blocks) ───
+	// ── Query results map (for value interpolation in text/kpi/callout blocks) ─
 	const queryResultsMap = $derived.by(() => {
 		const map = new Map<string, { columns: string[]; rows: Record<string, unknown>[] }>();
-		for (const block of contentBlocks) {
+		for (const block of blocksSorted) {
 			if (block.type !== 'chart') continue;
 			const cell = findCell(block.cellId);
 			const result = localResults[block.id] ?? cell?.result ?? null;
@@ -90,9 +90,10 @@
 	// ── Height map ────────────────────────────────────────────────────────────
 	const HEIGHT_MAP: Record<DashboardPanelHeight, number> = { sm: 200, md: 320, lg: 480 };
 
-	// ── Rename dashboard ──────────────────────────────────────────────────────
+	// ── Dashboard title — click-to-edit ───────────────────────────────────────
 	let editingTitle = $state(false);
 	let titleDraft = $state('');
+	let titleInputEl = $state<HTMLInputElement | null>(null);
 
 	function startRename() {
 		titleDraft = dashboard?.name ?? '';
@@ -106,6 +107,10 @@
 		if (e.key === 'Enter') commitRename();
 		if (e.key === 'Escape') editingTitle = false;
 	}
+
+	$effect(() => {
+		if (editingTitle && titleInputEl) titleInputEl.focus();
+	});
 
 	// ── Auto-refresh ──────────────────────────────────────────────────────────
 	const REFRESH_OPTIONS = [
@@ -131,7 +136,7 @@
 	async function refreshAll() {
 		if (!dashboard || refreshing) return;
 		refreshing = true;
-		const ids = contentBlocks
+		const ids = blocksSorted
 			.filter((b): b is ChartBlock => b.type === 'chart')
 			.map((b) => findCell(b.cellId)?.id)
 			.filter(Boolean) as string[];
@@ -143,8 +148,18 @@
 	let addMenuOpen = $state(false);
 	let addPanelOpen = $state(false);
 
+	function addKpi() {
+		addBlockToDashboard(dashboardId, { type: 'kpi', label: 'Metric', valueExpr: '', width: 1 });
+		addMenuOpen = false;
+	}
+
 	function addText() {
 		addBlockToDashboard(dashboardId, { type: 'text', markdown: '', width: 3 });
+		addMenuOpen = false;
+	}
+
+	function addSection() {
+		addBlockToDashboard(dashboardId, { type: 'section', heading: 'Section', level: 1, width: 3 });
 		addMenuOpen = false;
 	}
 
@@ -164,10 +179,9 @@
 		addMenuOpen = false;
 	}
 
-	// Store the cell UUID as cellId for reliable in-app lookup
 	function addPanel(cellUuid: string, notebookId: string) {
 		if (!dashboard) return;
-		addPanelToDashboard(dashboardId, { cellId: cellUuid, notebookId, width: 1, height: 'md' });
+		addPanelToDashboard(dashboardId, { cellId: cellUuid, notebookId, width: 2, height: 'md' });
 		addPanelOpen = false;
 		addMenuOpen = false;
 	}
@@ -241,7 +255,6 @@
 		return () => { sortable?.destroy(); sortable = null; };
 	});
 
-	// Notebooks for add-panel dialog
 	const notebooks = $derived(getNotebooks());
 </script>
 
@@ -253,62 +266,84 @@
 	</div>
 {:else}
 	<div class="flex flex-col h-full">
-		<!-- Toolbar -->
-		<div class="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
-			<div class="flex items-center gap-1.5 flex-1 min-w-0">
-				<LayoutDashboard class="w-4 h-4 text-muted-foreground shrink-0" />
-				{#if editingTitle}
-					<!-- svelte-ignore a11y_autofocus -->
-					<input
-						class="flex-1 min-w-0 text-sm font-medium bg-transparent border-b border-primary focus:outline-none"
-						bind:value={titleDraft}
-						onblur={commitRename}
-						onkeydown={onTitleKey}
-						autofocus
-					/>
-					<button class="text-muted-foreground hover:text-foreground" onclick={commitRename}><Check class="w-3.5 h-3.5" /></button>
-				{:else}
-					<span class="text-sm font-medium truncate">{dashboard.name}</span>
-				{/if}
-			</div>
+		<!-- Minimal toolbar: Add Block + Refresh only -->
+		<div class="flex items-center gap-2 px-4 py-2 border-b border-border/70 bg-sidebar/40 shrink-0">
+			<div class="flex-1"></div>
 
 			<!-- Add block menu -->
 			<div class="relative">
 				<button
-					class="flex items-center gap-1.5 h-7 px-3 rounded-md text-xs border border-border hover:bg-muted/50 transition-colors text-foreground"
+					class="flex items-center gap-1.5 h-7 px-3 rounded-md text-xs border border-border/70 bg-background shadow-2xs hover:bg-muted/40 hover:border-border transition-[background-color,border-color] duration-(--motion-fast) text-foreground"
 					onclick={() => (addMenuOpen = !addMenuOpen)}
 				>
 					<Plus class="w-3 h-3" />
 					Add Block
-					<ChevronDown class="w-3 h-3" />
+					<ChevronDown class="w-3 h-3 opacity-60" />
 				</button>
 				{#if addMenuOpen}
 					<div
-						class="absolute right-0 top-full mt-1 w-44 rounded-md border border-border bg-popover shadow-lg z-50 py-1"
+						class="absolute right-0 top-full mt-1 w-48 rounded-xl border border-border bg-popover shadow-lg z-50 py-1.5"
 						role="menu"
 					>
 						<button
-							class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+							class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
 							onclick={() => { addPanelOpen = true; addMenuOpen = false; }}
-						>Chart</button>
+						>
+							<BarChart2 class="w-3.5 h-3.5 text-muted-foreground" />
+							Chart
+						</button>
 						<button
-							class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+							class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+							onclick={addKpi}
+						>
+							<TrendingUp class="w-3.5 h-3.5 text-muted-foreground" />
+							KPI / Metric
+						</button>
+						<div class="border-t border-border/50 my-1"></div>
+						<button
+							class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
 							onclick={addText}
-						>Text / Markdown</button>
+						>
+							<AlignLeft class="w-3.5 h-3.5 text-muted-foreground" />
+							Text
+						</button>
+						<button
+							class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+							onclick={addSection}
+						>
+							<Hash class="w-3.5 h-3.5 text-muted-foreground" />
+							Section Heading
+						</button>
 						<div class="border-t border-border/50 my-1"></div>
-						<button class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('info')}>Callout — Info</button>
-						<button class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('warning')}>Callout — Warning</button>
-						<button class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('error')}>Callout — Error</button>
-						<button class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('success')}>Callout — Success</button>
+						<button class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('info')}>
+							<span class="w-3.5 h-3.5 rounded-full bg-blue-400/40 shrink-0"></span>
+							Callout — Info
+						</button>
+						<button class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('warning')}>
+							<span class="w-3.5 h-3.5 rounded-full bg-yellow-400/40 shrink-0"></span>
+							Callout — Warning
+						</button>
+						<button class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('error')}>
+							<span class="w-3.5 h-3.5 rounded-full bg-red-400/40 shrink-0"></span>
+							Callout — Error
+						</button>
+						<button class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={() => addCallout('success')}>
+							<span class="w-3.5 h-3.5 rounded-full bg-green-400/40 shrink-0"></span>
+							Callout — Success
+						</button>
 						<div class="border-t border-border/50 my-1"></div>
-						<button class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={addFilter}>Filter Control</button>
+						<button class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors" onclick={addFilter}>
+							<Filter class="w-3.5 h-3.5 text-muted-foreground" />
+							Filter Control
+						</button>
 					</div>
 					<div class="fixed inset-0 z-40" role="presentation" onclick={() => (addMenuOpen = false)}></div>
 				{/if}
 			</div>
 
+			<!-- Refresh + auto-refresh -->
 			<button
-				class="flex items-center gap-1.5 h-7 px-2 rounded-md text-xs border border-border hover:bg-muted/50 transition-colors text-foreground {refreshing ? 'opacity-60' : ''}"
+				class="flex items-center gap-1.5 h-7 px-2 rounded-md text-xs border border-border/70 bg-background shadow-2xs hover:bg-muted/40 hover:border-border transition-[background-color,border-color] duration-(--motion-fast) text-foreground {refreshing ? 'opacity-60' : ''}"
 				onclick={() => void refreshAll()}
 				disabled={refreshing}
 				title="Refresh all panels"
@@ -325,56 +360,82 @@
 					<option value={opt.seconds}>{opt.label}</option>
 				{/each}
 			</select>
-
-			<button onclick={startRename} title="Rename dashboard" class="text-muted-foreground hover:text-foreground transition-colors">
-				<Pencil class="w-3.5 h-3.5" />
-			</button>
 		</div>
 
-		<!-- Filter bar (if any filter blocks) -->
-		{#if filterBlocks.length > 0}
-			<div class="flex items-end gap-4 px-4 py-2 border-b border-border/50 bg-muted/20 shrink-0 flex-wrap">
-				{#each filterBlocks as fb (fb.id)}
-					<div class="min-w-32 max-w-48">
-						<FilterBlockComponent
-							block={fb}
-							value={filterState[fb.paramName] ?? fb.defaultValue ?? ''}
-							onChange={(v) => { filterState = { ...filterState, [fb.paramName]: v }; }}
-						/>
-					</div>
-					<button
-						class="mb-0.5 text-muted-foreground hover:text-destructive transition-colors self-end"
-						onclick={() => removeBlockFromDashboard(dashboardId, fb.id)}
-						title="Remove filter"
-					><X class="w-3 h-3" /></button>
-				{/each}
-			</div>
-		{/if}
-
-		<!-- Content -->
-		<div class="flex-1 overflow-y-auto p-4">
+		<!-- Canvas -->
+		<div class="flex-1 overflow-y-auto">
 			{#if blocksSorted.length === 0}
-				<div class="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-					<LayoutDashboard class="w-10 h-10 opacity-30" />
-					<p class="text-sm">No blocks yet.</p>
-					<button
-						class="flex items-center gap-1.5 h-8 px-4 rounded-md text-sm border border-border hover:bg-muted/50 transition-colors text-foreground"
-						onclick={() => { addPanelOpen = true; }}
-					>
-						<Plus class="w-3.5 h-3.5" />
-						Add Chart
-					</button>
+				<!-- Empty state -->
+				<div class="flex flex-col h-full items-center justify-center gap-6 px-10">
+					<div class="flex flex-col items-center gap-2 text-center">
+						<LayoutDashboard class="w-8 h-8 text-muted-foreground/40" />
+						<h2 class="text-base font-semibold text-foreground">{dashboard.name}</h2>
+						<p class="text-sm text-muted-foreground">Add your first block to get started.</p>
+					</div>
+					<div class="flex gap-3 flex-wrap justify-center">
+						<button
+							class="flex flex-col items-center gap-2.5 p-5 rounded-xl border border-border hover:border-primary/60 hover:bg-muted/30 transition-colors w-28 text-muted-foreground hover:text-foreground"
+							onclick={() => { addPanelOpen = true; }}
+						>
+							<BarChart2 class="w-5 h-5" />
+							<span class="text-xs">Chart</span>
+						</button>
+						<button
+							class="flex flex-col items-center gap-2.5 p-5 rounded-xl border border-border hover:border-primary/60 hover:bg-muted/30 transition-colors w-28 text-muted-foreground hover:text-foreground"
+							onclick={addKpi}
+						>
+							<TrendingUp class="w-5 h-5" />
+							<span class="text-xs">KPI</span>
+						</button>
+						<button
+							class="flex flex-col items-center gap-2.5 p-5 rounded-xl border border-border hover:border-primary/60 hover:bg-muted/30 transition-colors w-28 text-muted-foreground hover:text-foreground"
+							onclick={addText}
+						>
+							<AlignLeft class="w-5 h-5" />
+							<span class="text-xs">Text</span>
+						</button>
+						<button
+							class="flex flex-col items-center gap-2.5 p-5 rounded-xl border border-border hover:border-primary/60 hover:bg-muted/30 transition-colors w-28 text-muted-foreground hover:text-foreground"
+							onclick={addFilter}
+						>
+							<Filter class="w-5 h-5" />
+							<span class="text-xs">Filter</span>
+						</button>
+					</div>
 				</div>
 			{:else}
+				<!-- Page title (click to edit) -->
+				<div class="px-10 pt-8 pb-4">
+					{#if editingTitle}
+						<!-- svelte-ignore a11y_autofocus -->
+						<input
+							bind:this={titleInputEl}
+							class="text-2xl font-semibold tracking-tight w-full bg-transparent border-none outline-none focus:ring-0"
+							bind:value={titleDraft}
+							onblur={commitRename}
+							onkeydown={onTitleKey}
+							autofocus
+						/>
+					{:else}
+						<button
+							class="text-2xl font-semibold tracking-tight text-left w-full hover:opacity-60 transition-opacity bg-transparent border-none p-0"
+							onclick={startRename}
+						>{dashboard.name}</button>
+					{/if}
+				</div>
+
+				<!-- Grid -->
 				<div
-					class="grid gap-4"
+					class="grid gap-5 px-10 pb-10"
 					style="grid-template-columns: repeat(3, 1fr);"
 					bind:this={gridEl}
 				>
-					{#each contentBlocks as block (block.id)}
+					{#each blocksSorted as block (block.id)}
 						<div
 							data-block-id={block.id}
-							style="grid-column: span {block.width};"
+							style="grid-column: span {block.type === 'section' ? 3 : block.width};"
+							in:fly={{ y: 8, duration: 220 }}
+							animate:flip={{ duration: 220 }}
 						>
 							{#if block.type === 'text'}
 								<TextBlockComponent
@@ -392,15 +453,40 @@
 									onRemove={() => removeBlockFromDashboard(dashboardId, block.id)}
 									onCycleWidth={() => cycleWidth(block)}
 								/>
+							{:else if block.type === 'filter'}
+								<FilterBlockComponent
+									{block}
+									value={filterState[block.paramName] ?? block.defaultValue ?? ''}
+									onChange={(v) => { filterState = { ...filterState, [block.paramName]: v }; }}
+									onRemove={() => removeBlockFromDashboard(dashboardId, block.id)}
+									onCycleWidth={() => cycleWidth(block)}
+								/>
+							{:else if block.type === 'kpi'}
+								<KpiBlockComponent
+									{block}
+									results={queryResultsMap}
+									onUpdate={(patch) => updateDashboardBlock(dashboardId, block.id, patch)}
+									onRemove={() => removeBlockFromDashboard(dashboardId, block.id)}
+									onCycleWidth={() => cycleWidth(block)}
+								/>
+							{:else if block.type === 'section'}
+								<SectionBlockComponent
+									{block}
+									onUpdate={(patch) => updateDashboardBlock(dashboardId, block.id, patch)}
+									onRemove={() => removeBlockFromDashboard(dashboardId, block.id)}
+								/>
 							{:else if block.type === 'chart'}
 								{@const cell = findCell(block.cellId)}
 								{@const result = localResults[block.id] ?? cell?.result ?? null}
 								{@const config = result && cell ? resolveChartConfig({ ...cell, result }) : (cell ? resolveChartConfig(cell) : null)}
 								{@const panelTitle = block.title ?? config?.title ?? cell?.outputName ?? block.cellId}
-								<div class="group/panel rounded-lg border-0 border-border bg-card overflow-hidden flex flex-col" style="height: {HEIGHT_MAP[block.height] + 40}px;">
+								<div
+									class="group/panel rounded-xl border border-border/60 bg-card surface-raised overflow-hidden flex flex-col transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-md hover:border-border/80"
+									style="height: {HEIGHT_MAP[block.height] + 48}px;"
+								>
 									<!-- Panel header -->
-									<div class="flex items-center gap-1 px-2 py-1 border-0 border-border/40 shrink-0 bg-transparent h-9">
-										<button class="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground mr-0.5 opacity-0 group-hover/panel:opacity-100 transition-opacity">
+									<div class="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 bg-muted/20 shrink-0 h-10">
+										<button class="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground mr-0.5 opacity-20 group-hover/panel:opacity-100 transition-opacity">
 											<GripVertical class="w-3 h-3" />
 										</button>
 										<div class="flex-1 min-w-0">
@@ -415,7 +501,7 @@
 												/>
 											{:else}
 												<button
-													class="text-xs font-medium text-foreground/80 truncate max-w-full text-left hover:text-primary transition-colors"
+													class="text-xs font-medium text-foreground/70 truncate max-w-full text-left hover:text-foreground transition-colors"
 													onclick={() => startPanelRename(block)}
 													title={panelTitle}
 												>{panelTitle}</button>
@@ -442,7 +528,7 @@
 									</div>
 
 									<!-- Chart body -->
-									<div class="flex-1 min-h-0 p-1 overflow-hidden">
+									<div class="flex-1 min-h-0 p-2 overflow-hidden">
 										{#if cell && result && config}
 											<div style="height:{HEIGHT_MAP[block.height]}px; overflow:hidden;">
 												<ChartView
@@ -456,7 +542,7 @@
 											<div class="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
 												<p class="text-xs">No results yet — run the cell first.</p>
 												<button
-													class="text-xs px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+													class="text-xs px-2 py-1 rounded-md border border-border hover:bg-muted/50 transition-colors"
 													onclick={() => cell && runCell(cell.id)}
 												>Run query</button>
 											</div>
@@ -537,7 +623,7 @@
 							<div class="space-y-1">
 								{#each queryCells as cell (cell.id)}
 									<button
-										class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/50 transition-colors text-left"
+										class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
 										onclick={() => addPanel(cell.id, nb.id)}
 									>
 										<div class="flex-1 min-w-0">

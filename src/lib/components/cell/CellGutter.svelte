@@ -30,6 +30,30 @@
 	// Stale, running, and failed cells keep their run affordance visible at all
 	// times — it's the primary signal and the primary fix in one button.
 	const runAlwaysVisible = $derived(running || needsRun || status === 'error');
+
+	// Success flash — brief green color after a successful run
+	let justSucceeded = $state(false);
+	let prevStatus: typeof status = 'idle';
+	$effect(() => {
+		const curr = status;
+		if (curr === 'success' && prevStatus === 'running') {
+			justSucceeded = true;
+			setTimeout(() => (justSucceeded = false), 1000);
+		}
+		prevStatus = curr;
+	});
+
+	// Stale ring pulse — one-shot ring when needsRun flips to true
+	let stalePulsing = $state(false);
+	let prevNeedsRun = false;
+	$effect(() => {
+		const curr = needsRun;
+		if (curr && !prevNeedsRun) {
+			stalePulsing = true;
+			setTimeout(() => (stalePulsing = false), 600);
+		}
+		prevNeedsRun = curr;
+	});
 </script>
 
 <div class="flex items-start justify-end gap-px pt-1 pr-1 select-none">
@@ -37,14 +61,18 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,background-color,color] duration-150 outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
+					class="flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
 					revealed
 						? 'opacity-100'
-						: 'pointer-events-none opacity-0'} {needsRun && !running
-						? 'text-warning'
-						: status === 'error' && !running
-							? 'text-destructive'
-							: 'text-muted-foreground hover:text-foreground'}"
+						: 'pointer-events-none opacity-0'} {justSucceeded
+						? 'text-success bg-success/8 border-success/25 run-btn-success-pulse'
+						: stalePulsing
+							? 'run-btn-stale-pulse text-warning bg-warning/8 border-warning/25'
+							: needsRun && !running
+								? 'text-warning bg-warning/8 border-warning/20 hover:bg-warning/15'
+								: status === 'error' && !running
+									? 'text-destructive bg-destructive/8 border-destructive/20 hover:bg-destructive/15'
+									: 'text-muted-foreground border-transparent hover:bg-muted/60 hover:border-border/40 hover:text-foreground'}"
 					aria-label={running ? 'Cancel run' : 'Run cell'}
 					onclick={() => (running ? onCancel() : onRun())}
 					onmouseenter={() => (runHovered = true)}

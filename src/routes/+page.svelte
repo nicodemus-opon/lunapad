@@ -81,7 +81,6 @@
 	import NotebookCell from '$lib/components/NotebookCell.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import * as Popover from '$lib/components/ui/popover';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { fade } from 'svelte/transition';
 	import DatabaseTree from '$lib/components/DatabaseTree.svelte';
@@ -93,6 +92,8 @@
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
+	import UploadDialog from '$lib/components/UploadDialog.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ResultView from '$lib/components/ResultView.svelte';
 	import TableView from '$lib/components/TableView.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
@@ -145,8 +146,19 @@
 		ChevronsDownUp,
 		ChevronsUpDown,
 		Keyboard,
-		Bug
+		Bug,
+		Sparkles
 	} from '@lucide/svelte';
+	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
+	import {
+		getAIChatOpen,
+		setAIChatOpen,
+		getAIChatPanelWidth,
+		setAIChatPanelWidth,
+		getGhostCellIds,
+		addContextCell,
+		initAIChatWidth
+	} from '$lib/stores/ai-chat.svelte';
 
 	// ── Reactive state ──────────────────────────────────────────────────────
 	const cells = $derived(getCells());
@@ -188,6 +200,9 @@
 				window.matchMedia('(prefers-color-scheme: dark)').matches)
 	);
 	const reportView = $derived(Boolean(activeNotebook?.reportView));
+	const aiChatOpen = $derived(getAIChatOpen());
+	const aiPanelWidth = $derived(getAIChatPanelWidth());
+	const ghostCellIds = $derived(getGhostCellIds());
 
 	// ── Cell list: insert dividers + drag reorder ─────────────────────────────
 	function focusCellAt(index: number) {
@@ -250,7 +265,9 @@
 	let dbError = $state<string | null>(null);
 	let llmSettingsOpen = $state(false);
 	let shortcutsOpen = $state(false);
+	let commandPaletteOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
+	let uploadDialogOpen = $state(false);
 	let projectFolderInput = $state('');
 	let projectOpenLoading = $state(false);
 	let aboutOpen = $state(false);
@@ -273,6 +290,28 @@
 	let sidebarCollapsed = $state(false);
 	let isDraggingSidebar = $state(false);
 	let layoutRoot: HTMLDivElement | null = null;
+
+	// AI panel resize
+	let isDraggingAIPanel = $state(false);
+	let aiPanelResizeStartX = 0;
+	let aiPanelResizeStartWidth = 0;
+
+	function onAIPanelPointerDown(e: PointerEvent) {
+		isDraggingAIPanel = true;
+		aiPanelResizeStartX = e.clientX;
+		aiPanelResizeStartWidth = getAIChatPanelWidth();
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function onAIPanelPointerMove(e: PointerEvent) {
+		if (!isDraggingAIPanel) return;
+		const delta = aiPanelResizeStartX - e.clientX;
+		setAIChatPanelWidth(aiPanelResizeStartWidth + delta);
+	}
+
+	function onAIPanelPointerUp() {
+		isDraggingAIPanel = false;
+	}
 
 	function clamp(value: number, min: number, max: number): number {
 		return Math.min(max, Math.max(min, value));
@@ -358,7 +397,10 @@
 		sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
 		window.addEventListener('pointermove', onSidebarPointerMove);
 		window.addEventListener('pointerup', onSidebarPointerUp);
+		window.addEventListener('pointermove', onAIPanelPointerMove);
+		window.addEventListener('pointerup', onAIPanelPointerUp);
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
+		initAIChatWidth();
 		try {
 			loadFromStorage();
 		} catch {
@@ -391,6 +433,8 @@
 	onDestroy(() => {
 		window.removeEventListener('pointermove', onSidebarPointerMove);
 		window.removeEventListener('pointerup', onSidebarPointerUp);
+		window.removeEventListener('pointermove', onAIPanelPointerMove);
+		window.removeEventListener('pointerup', onAIPanelPointerUp);
 	});
 
 	// ── Run All ──────────────────────────────────────────────────────────────
@@ -572,9 +616,19 @@
 				return;
 			}
 		}
+		if (mod && (e.key === 'k' || e.key === 'K') && !e.shiftKey) {
+			e.preventDefault();
+			commandPaletteOpen = !commandPaletteOpen;
+			return;
+		}
 		if (mod && (e.key === 'b' || e.key === 'B')) {
 			e.preventDefault();
 			toggleSidebarCollapsed();
+			return;
+		}
+		if (mod && (e.key === 'j' || e.key === 'J')) {
+			e.preventDefault();
+			setAIChatOpen(!getAIChatOpen());
 			return;
 		}
 		if (!isNotebookTab) return;
@@ -765,6 +819,10 @@
 									<SidebarClose class="h-3.5 w-3.5" /> Toggle sidebar
 									<DropdownMenu.Shortcut>⌘B</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => setAIChatOpen(!getAIChatOpen())}>
+									<Sparkles class="h-3.5 w-3.5" /> Toggle AI chat
+									<DropdownMenu.Shortcut>⌘J</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item
 									disabled={!isNotebookTab}
@@ -839,43 +897,34 @@
 					</div>
 				</div>
 
-				<Popover.Root>
-					<Popover.Trigger
-						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-						aria-label="Show workspace stats"
+				{#if isNotebookTab}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<button
+								class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+								onclick={() => setAIChatOpen(!getAIChatOpen())}
+								aria-pressed={aiChatOpen}
+								aria-label="Toggle AI chat"
+							>
+								<Sparkles class="h-3.5 w-3.5" />
+								<span class="hidden sm:inline">AI</span>
+							</button>
+						</Tooltip.Trigger>
+						<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
+
+				<Tooltip.Root>
+					<Tooltip.Trigger
+						aria-label="Upload file"
+						onclick={() => (uploadDialogOpen = true)}
 					>
-						<Info class="h-3.5 w-3.5" />
-					</Popover.Trigger>
-					<Popover.Content align="end" class="w-60 p-2">
-						<p class="px-2 py-1 text-2xs font-semibold text-muted-foreground">Workspace stats</p>
-						<div class="space-y-1 px-2 py-1 text-xs text-muted-foreground">
-							<div class="flex items-center justify-between">
-								<span>Open notebooks</span>
-								<span class="font-mono text-foreground">{notebooks.length}</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span>Relations</span>
-								<span class="font-mono text-foreground">{tables.length}</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span>Result tabs</span>
-								<span class="font-mono text-foreground">{openResultTabs.length}</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span>Extra tabs</span>
-								<span class="font-mono text-foreground">{openExtraTabs.length}</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span>Theme</span>
-								<span class="font-mono text-foreground">{theme}</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span>Auto-run</span>
-								<span class="font-mono text-foreground">{autoRun ? 'on' : 'off'}</span>
-							</div>
-						</div>
-					</Popover.Content>
-				</Popover.Root>
+						<Button variant="default" size="sm">
+							<Upload class="h-3.5 w-3.5" />Upload
+						</Button>
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom">Upload file</Tooltip.Content>
+				</Tooltip.Root>
 
 				<input
 					id="import-notebook-input"
@@ -938,7 +987,7 @@
 			>
 				<!-- Icon rail -->
 				<div
-					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background pt-1 pb-1.5 px-1"
+					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background px-1 pt-1 pb-1.5"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
 					{@render railButton('dashboards', LayoutDashboard, 'Dashboards')}
@@ -971,7 +1020,7 @@
 
 				<!-- Panel content (fixed width so collapse slides instead of reflowing) -->
 				<div
-					class="flex shrink-0 flex-col overflow-hidden"
+					class="flex shrink-0 flex-col overflow-hidden transition-opacity duration-(--motion-fast) {sidebarCollapsed ? 'opacity-0' : 'opacity-100'}"
 					style={`width: ${sidebarWidth - RAIL_WIDTH}px`}
 					inert={sidebarCollapsed}
 				>
@@ -1194,7 +1243,7 @@
 				{/snippet}
 
 				<div
-					class="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-2"
+					class="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-2 scroll-smooth"
 					role="tablist"
 				>
 					{#each notebooks as nb (nb.id)}
@@ -1291,7 +1340,8 @@
 					</button>
 				</div>
 				{#if isNotebookTab}
-					<main class="flex-1 overflow-y-auto bg-background">
+				<div class="flex min-h-0 flex-1 overflow-hidden">
+					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
 						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input
@@ -1414,6 +1464,8 @@
 												notebookId={activeTabId}
 												{autoRun}
 												{reportView}
+												isGhost={ghostCellIds.has(cell.id)}
+												onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
 												onOpenResultTab={handleOpenResultTab}
 											/>
 										</div>
@@ -1428,6 +1480,10 @@
 							{/if}
 						</div>
 					</main>
+					{#if aiChatOpen}
+						<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
+					{/if}
+				</div>
 				{:else if activeExtraTab}
 					{#if activeExtraTab.type === 'lineage'}
 						<!-- Lineage fills the full remaining height with no scroll/padding -->
@@ -1509,6 +1565,12 @@
 	</div>
 {/if}
 
+<CommandPalette
+	bind:open={commandPaletteOpen}
+	onClose={() => (commandPaletteOpen = false)}
+	onToggleSidebar={toggleSidebarCollapsed}
+/>
+
 <Dialog.Root bind:open={llmSettingsOpen}>
 	<Dialog.Content class="space-y-4 p-6">
 		<h2 class="text-sm font-semibold">LLM settings</h2>
@@ -1549,7 +1611,7 @@
 				/>
 			</div>
 			<p class="text-xs text-muted-foreground">
-				Used by AI prompt-to-block generation (slower path).
+				Used by the AI chat panel. For Ollama: <span class="font-mono">qwen3:1.7b</span> (fast) or <span class="font-mono">qwen3:4b</span> (better quality).
 			</p>
 		</div>
 	</Dialog.Content>
@@ -1622,7 +1684,7 @@
 		}}
 	></div>
 	<div
-		class="fixed top-[30%] left-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl"
+		class="fixed top-[30%] left-1/2 z-50 w-105 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl"
 	>
 		<div class="flex items-center justify-between border-b border-border/60 px-5 py-4">
 			<h2 class="text-[15px] font-semibold">Open project folder</h2>
@@ -1680,6 +1742,8 @@
 		</div>
 	</div>
 {/if}
+
+<UploadDialog bind:open={uploadDialogOpen} />
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>

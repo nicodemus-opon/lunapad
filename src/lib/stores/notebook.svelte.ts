@@ -62,7 +62,7 @@ import {
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 import type { ResultViewMode } from '$lib/types/gui-pipeline';
-import type { Dashboard, DashboardBlock, DashboardPanel, ChartBlock, TextBlock, CalloutBlock, FilterBlock, DashboardPanelWidth, DashboardPanelHeight } from '$lib/types/gui-pipeline';
+import type { Dashboard, DashboardBlock, DashboardPanel, ChartBlock, TextBlock, CalloutBlock, FilterBlock, KpiBlock, SectionBlock, DashboardPanelWidth, DashboardPanelHeight } from '$lib/types/gui-pipeline';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
@@ -173,6 +173,8 @@ export interface Notebook {
 	// Presentation flag: render every query cell as output-only with chrome
 	// hidden (errors excepted). Does not mutate per-cell display.
 	reportView?: boolean;
+	// Last cell scrolled to via sidebar navigation — restored on tab re-open.
+	lastActiveCellId?: string;
 }
 
 export interface NotebookFolder {
@@ -226,8 +228,10 @@ interface NotebookState {
 	externalSchemaTables: ExternalSchemaTable[];
 	openNotebookTabIds: string[];
 	expandedNotebookFolderIds: string[];
+	expandedNotebookIds: string[];
 	sidebarSectionsExpanded: SidebarSectionsExpanded;
 	activeTabId: string;
+	focusedCellId: string | null;
 	openResultTabs: ResultTabInfo[];
 	openExtraTabs: ExtraTab[];
 	tables: UploadedTable[];
@@ -629,20 +633,22 @@ let state = $state<NotebookState>({
 	externalSchemaTables: [],
 	openNotebookTabIds: [_initialNotebook.id],
 	expandedNotebookFolderIds: [],
+	expandedNotebookIds: [],
 	sidebarSectionsExpanded: {
 		notebooks: true,
 		tables: true,
 		dashboards: true
 	},
 	activeTabId: _initialNotebook.id,
+	focusedCellId: null,
 	openResultTabs: [],
 	openExtraTabs: [],
 	tables: [],
 	theme: 'system',
 	autoRun: false,
 	llmConfig: {
-		provider: 'openapi-compatible',
-		baseUrl: 'http://127.0.0.1:11434/v1',
+		provider: 'ollama',
+		baseUrl: 'http://127.0.0.1:11434',
 		model: 'qwen3:4b'
 	},
 	notebookEvents: [],
@@ -686,6 +692,7 @@ function serialize(): string {
 		externalSchemaTables: state.externalSchemaTables,
 		openNotebookTabIds: state.openNotebookTabIds,
 		expandedNotebookFolderIds: state.expandedNotebookFolderIds,
+		expandedNotebookIds: state.expandedNotebookIds,
 		sidebarSectionsExpanded: state.sidebarSectionsExpanded,
 		activeTabId: state.activeTabId,
 		openResultTabs: state.openResultTabs,
@@ -1244,6 +1251,12 @@ function deserialize(raw: string): void {
 			);
 		}
 
+		if (Array.isArray(data.expandedNotebookIds)) {
+			state.expandedNotebookIds = (data.expandedNotebookIds as string[]).filter((id) =>
+				notebookIds.has(id)
+			);
+		}
+
 		if (data.sidebarSectionsExpanded && typeof data.sidebarSectionsExpanded === 'object') {
 			const sections = data.sidebarSectionsExpanded as Partial<SidebarSectionsExpanded>;
 			state.sidebarSectionsExpanded = {
@@ -1282,7 +1295,7 @@ function deserialize(raw: string): void {
 				model:
 					typeof llmConfig.model === 'string' && llmConfig.model.trim().length > 0
 						? llmConfig.model.trim()
-						: 'qwen3:4b'
+						: 'qwen3:8b'
 			};
 		}
 		state.notebookEvents = Array.isArray(data.notebookEvents)
@@ -1920,6 +1933,11 @@ export function getCells(): Cell[] {
 	return getActiveNotebook().cells;
 }
 
+export function getLastCellId(): string {
+	const cells = getActiveNotebook().cells;
+	return cells.length > 0 ? cells[cells.length - 1].id : '';
+}
+
 export function getConnections(): Connection[] {
 	return state.connections;
 }
@@ -2100,9 +2118,14 @@ function getNextActiveTabId(closedNotebookId?: string): string {
 }
 
 export function openNotebookTab(id: string): void {
-	if (!state.notebooks.find((n) => n.id === id)) return;
-	if (!state.openNotebookTabIds.includes(id)) {
+	const nb = state.notebooks.find((n) => n.id === id);
+	if (!nb) return;
+	const isNew = !state.openNotebookTabIds.includes(id);
+	if (isNew) {
 		state.openNotebookTabIds = [...state.openNotebookTabIds, id];
+		if (nb.lastActiveCellId && nb.cells.some((c) => c.id === nb.lastActiveCellId)) {
+			state.focusedCellId = nb.lastActiveCellId;
+		}
 	}
 	state.activeTabId = id;
 	scheduleSave();
@@ -2136,6 +2159,41 @@ export function closeAllNotebookTabs(): void {
 	state.openNotebookTabIds = [keepId];
 	state.activeTabId = keepId;
 	scheduleSave();
+}
+
+export function openNotebookTabAtCell(notebookId: string, cellId: string): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	if (!state.openNotebookTabIds.includes(notebookId)) {
+		state.openNotebookTabIds = [...state.openNotebookTabIds, notebookId];
+	}
+	state.activeTabId = notebookId;
+	state.focusedCellId = cellId;
+	state.notebooks = state.notebooks.map((n) =>
+		n.id === notebookId ? { ...n, lastActiveCellId: cellId } : n
+	);
+	scheduleSave();
+}
+
+export function clearFocusedCell(): void {
+	state.focusedCellId = null;
+}
+
+export function getFocusedCellId(): string | null {
+	return state.focusedCellId;
+}
+
+export function toggleNotebookExpanded(notebookId: string): void {
+	if (state.expandedNotebookIds.includes(notebookId)) {
+		state.expandedNotebookIds = state.expandedNotebookIds.filter((id) => id !== notebookId);
+	} else {
+		state.expandedNotebookIds = [...state.expandedNotebookIds, notebookId];
+	}
+	scheduleSave();
+}
+
+export function getExpandedNotebookIds(): string[] {
+	return state.expandedNotebookIds;
 }
 
 export function deleteNotebook(id: string): void {
@@ -2612,7 +2670,7 @@ export function addPanelToDashboard(
 
 export function addBlockToDashboard(
 	dashboardId: string,
-	block: Omit<ChartBlock, 'id' | 'order'> | Omit<TextBlock, 'id' | 'order'> | Omit<CalloutBlock, 'id' | 'order'> | Omit<FilterBlock, 'id' | 'order'>
+	block: Omit<ChartBlock, 'id' | 'order'> | Omit<TextBlock, 'id' | 'order'> | Omit<CalloutBlock, 'id' | 'order'> | Omit<FilterBlock, 'id' | 'order'> | Omit<KpiBlock, 'id' | 'order'> | Omit<SectionBlock, 'id' | 'order'>
 ): void {
 	const dash = state.dashboards.find((d) => d.id === dashboardId);
 	if (!dash) return;
@@ -2816,6 +2874,15 @@ function buildEvidencePage(_folder: string, dashboard: Dashboard): string {
 			lines.push(`      paramName: ${block.paramName}`);
 			if (block.defaultValue) lines.push(`      defaultValue: "${block.defaultValue}"`);
 			if (block.options?.length) lines.push(`      options: [${block.options.map((o) => `"${o}"`).join(', ')}]`);
+		} else if (block.type === 'kpi') {
+			lines.push(`      label: "${block.label.replace(/"/g, '\\"')}"`);
+			lines.push(`      valueExpr: "${block.valueExpr.replace(/"/g, '\\"')}"`);
+			if (block.changeExpr) lines.push(`      changeExpr: "${block.changeExpr.replace(/"/g, '\\"')}"`);
+			if (block.prefix) lines.push(`      prefix: "${block.prefix}"`);
+			if (block.suffix) lines.push(`      suffix: "${block.suffix}"`);
+		} else if (block.type === 'section') {
+			lines.push(`      heading: "${block.heading.replace(/"/g, '\\"')}"`);
+			lines.push(`      level: ${block.level}`);
 		}
 	}
 	lines.push('---');
@@ -2868,9 +2935,9 @@ function buildEvidencePage(_folder: string, dashboard: Dashboard): string {
 		lines.push('');
 	}
 
-	// ── Main content: interleave text/callout/chart blocks in order ───────────
+	// ── Main content: interleave text/callout/chart/kpi/section blocks in order ─
 	// Consecutive chart blocks are grouped into Grid sections.
-	type Segment = { kind: 'charts'; blocks: ChartBlock[] } | { kind: 'prose'; block: TextBlock | CalloutBlock };
+	type Segment = { kind: 'charts'; blocks: ChartBlock[] } | { kind: 'prose'; block: TextBlock | CalloutBlock } | { kind: 'kpi'; block: KpiBlock } | { kind: 'section'; block: SectionBlock };
 	const segments: Segment[] = [];
 	for (const block of blocksSorted) {
 		if (block.type === 'filter') continue; // rendered above
@@ -2883,6 +2950,10 @@ function buildEvidencePage(_folder: string, dashboard: Dashboard): string {
 			}
 		} else if (block.type === 'text' || block.type === 'callout') {
 			segments.push({ kind: 'prose', block: block as TextBlock | CalloutBlock });
+		} else if (block.type === 'kpi') {
+			segments.push({ kind: 'kpi', block: block as KpiBlock });
+		} else if (block.type === 'section') {
+			segments.push({ kind: 'section', block: block as SectionBlock });
 		}
 	}
 
@@ -2904,6 +2975,25 @@ function buildEvidencePage(_folder: string, dashboard: Dashboard): string {
 				}
 				lines.push('');
 			}
+			continue;
+		}
+
+		if (seg.kind === 'kpi') {
+			// KPI block → render as bold metric line in Evidence
+			const b = seg.block;
+			const value = b.valueExpr;
+			const prefix = b.prefix ?? '';
+			const suffix = b.suffix ?? '';
+			lines.push(`**${b.label}**: ${prefix}${value}${suffix}`);
+			lines.push('');
+			continue;
+		}
+
+		if (seg.kind === 'section') {
+			const b = seg.block;
+			const hashes = b.level === 1 ? '##' : '###';
+			lines.push(`${hashes} ${b.heading}`);
+			lines.push('');
 			continue;
 		}
 
@@ -3071,6 +3161,21 @@ function parseDashboardFromMd(content: string, filePath: string): Dashboard | nu
 						defaultValue: getStr('defaultValue') || undefined,
 						options
 					});
+				} else if (type === 'kpi') {
+					blocks.push({
+						type: 'kpi', id, width, order,
+						label: getStr('label'),
+						valueExpr: getStr('valueExpr'),
+						changeExpr: getStr('changeExpr') || undefined,
+						prefix: getStr('prefix') || undefined,
+						suffix: getStr('suffix') || undefined
+					});
+				} else if (type === 'section') {
+					blocks.push({
+						type: 'section', id, width: 3, order,
+						heading: getStr('heading'),
+						level: (parseInt(get('level'), 10) || 1) as 1 | 2
+					});
 				}
 			}
 			return { id: makeId(), name, slug, blocks };
@@ -3224,6 +3329,35 @@ export function addMarkdownCell(): void {
 	scheduleSave();
 }
 
+/** Append a query or markdown cell at the end of the active notebook; returns the new cell id. */
+export function appendCellAtEnd(data: {
+	outputName: string;
+	code: string;
+	language: CellLanguage;
+	editMode: CellEditMode;
+	guiStages: GUIPipelineStage[];
+	markdown?: string;
+	connectionId?: string | null;
+}): string {
+	const nb = getActiveNotebook();
+	const lastQueryCell = nb.cells.filter((c) => c.cellType === 'query').at(-1) ?? null;
+	const inheritedConnection = data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
+	let newCell: Cell;
+	if (data.markdown !== undefined) {
+		newCell = { ...makeMarkdownCell(data.markdown), outputName: data.outputName };
+	} else {
+		newCell = {
+			...makeCell(data.code, data.outputName, data.language),
+			guiStages: data.guiStages,
+			editMode: data.editMode,
+			connectionId: inheritedConnection
+		};
+	}
+	nb.cells = [...nb.cells, newCell];
+	scheduleSave();
+	return newCell.id;
+}
+
 export function insertMarkdownCellAfter(id: string): void {
 	const nb = getActiveNotebook();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
@@ -3314,10 +3448,10 @@ export function insertCellAfter(
 		connectionId?: string | null;
 		language?: CellLanguage;
 	}
-): void {
+): string {
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return '';
 	const base = nb.cells[idx];
 	const inheritedConnection = data.connectionId === undefined ? base?.connectionId ?? null : data.connectionId;
 	const newCell: Cell = {
@@ -3330,6 +3464,7 @@ export function insertCellAfter(
 	cells.splice(idx + 1, 0, newCell);
 	nb.cells = cells;
 	scheduleSave();
+	return newCell.id;
 }
 
 export function removeCell(id: string): void {
@@ -3341,6 +3476,56 @@ export function removeCell(id: string): void {
 		dropView(viewName).catch(() => {});
 	}
 	nb.cells = nb.cells.filter((c) => c.id !== id);
+	scheduleSave();
+}
+
+export interface AICellSnapshot {
+	id: string;
+	outputName: string;
+	code: string;
+	markdown: string;
+	language: CellLanguage;
+	cellType: 'query' | 'markdown';
+	display: CellDisplay;
+	guiStages: GUIPipelineStage[];
+	editMode: CellEditMode;
+	connectionId: string | null;
+}
+
+/** Restore cells to a pre-AI-generation snapshot, preserving execution results for existing cells. */
+export function restoreCellsFromAISnapshot(notebookId: string, snapCells: AICellSnapshot[]): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+
+	const liveCells = nb.cells;
+	const restoredCells = snapCells.map((snap) => {
+		const live = liveCells.find((c) => c.id === snap.id);
+		if (live) {
+			return {
+				...live,
+				outputName: snap.outputName,
+				code: snap.code,
+				markdown: snap.markdown,
+				language: snap.language,
+				cellType: snap.cellType,
+				display: snap.display,
+				guiStages: snap.guiStages,
+				editMode: snap.editMode,
+				connectionId: snap.connectionId
+			} satisfies Cell;
+		}
+		return {
+			...makeCell(snap.code, snap.outputName, snap.language),
+			cellType: snap.cellType,
+			markdown: snap.markdown,
+			display: snap.display,
+			guiStages: snap.guiStages,
+			editMode: snap.editMode,
+			connectionId: snap.connectionId
+		} satisfies Cell;
+	});
+
+	nb.cells = restoredCells;
 	scheduleSave();
 }
 
@@ -4443,20 +4628,22 @@ export function __resetStateForTests(): void {
 		externalSchemaTables: [],
 		openNotebookTabIds: [initial.id],
 		expandedNotebookFolderIds: [],
+		expandedNotebookIds: [],
 		sidebarSectionsExpanded: {
 			notebooks: true,
 			tables: true,
 			dashboards: true
 		},
 		activeTabId: initial.id,
+		focusedCellId: null,
 		openResultTabs: [],
 		openExtraTabs: [],
 		tables: [],
 		theme: 'system',
 		autoRun: false,
 		llmConfig: {
-			provider: 'openapi-compatible',
-			baseUrl: 'http://127.0.0.1:11434/v1',
+			provider: 'ollama',
+			baseUrl: 'http://127.0.0.1:11434',
 			model: 'qwen3:4b'
 		},
 		notebookEvents: [],

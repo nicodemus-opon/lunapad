@@ -17,6 +17,7 @@
 
 	let editing = $state(false);
 	let draft = $state('');
+	let textareaEl = $state<HTMLTextAreaElement | null>(null);
 
 	const rendered = $derived(() => {
 		const interpolated = interpolate(block.markdown, results);
@@ -36,15 +37,27 @@
 	}
 
 	function onKey(e: KeyboardEvent) {
-		if (e.key === 'Escape') {
-			editing = false;
-		}
+		if (e.key === 'Escape') commit();
+		// Allow Enter for new lines — don't intercept it
 	}
+
+	// Auto-resize textarea
+	function autoResize(el: HTMLTextAreaElement) {
+		el.style.height = 'auto';
+		el.style.height = `${el.scrollHeight}px`;
+	}
+
+	$effect(() => {
+		if (editing && textareaEl) {
+			textareaEl.focus();
+			autoResize(textareaEl);
+		}
+	});
 </script>
 
-<div class="group/block relative rounded-lg bg-card overflow-hidden">
+<div class="group/block relative rounded-xl border border-border/60 bg-card surface-raised overflow-hidden transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-md hover:border-border/75">
 	<!-- Hover controls -->
-	<div class="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
+	<div class="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
 		<button
 			class="text-[10px] font-mono px-1 h-5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors bg-background"
 			onclick={onCycleWidth}
@@ -58,29 +71,24 @@
 	</div>
 
 	<!-- Drag handle -->
-	<button class="drag-handle absolute left-1 top-1 cursor-grab active:cursor-grabbing text-muted-foreground opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
+	<button class="drag-handle absolute left-1.5 top-1.5 cursor-grab active:cursor-grabbing text-muted-foreground opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
 		<GripVertical class="w-3.5 h-3.5" />
 	</button>
 
 	{#if editing}
-		<div class="p-2">
-			<!-- svelte-ignore a11y_autofocus -->
-			<textarea
-				class="w-full min-h-24 rounded border border-input bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 resize-y"
-				bind:value={draft}
-				onblur={commit}
-				onkeydown={onKey}
-				placeholder="Write markdown… Use {'{'}queryName.columnName{'}'} to embed live values."
-				autofocus
-			></textarea>
-			<div class="flex justify-end gap-2 mt-1">
-				<button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => (editing = false)}>Cancel</button>
-				<button class="text-xs text-primary hover:text-primary/80" onclick={commit}>Done</button>
-			</div>
-		</div>
+		<!-- Inline textarea — no form chrome, just text on the card -->
+		<textarea
+			bind:this={textareaEl}
+			class="w-full px-5 py-4 font-mono text-xs text-foreground bg-transparent focus:outline-none resize-none min-h-16 leading-relaxed"
+			bind:value={draft}
+			onblur={commit}
+			onkeydown={onKey}
+			oninput={(e) => autoResize(e.currentTarget)}
+			placeholder="Write markdown… Use {'{'}queryName.columnName{'}'} to embed live values."
+		></textarea>
 	{:else}
 		<button
-			class="w-full text-left px-4 py-3 min-h-10 cursor-text"
+			class="w-full text-left px-5 py-4 min-h-16 cursor-text"
 			onclick={startEdit}
 			title="Click to edit"
 		>
@@ -89,9 +97,9 @@
 					{@html rendered()}
 				</div>
 			{:else}
-				<div class="flex items-center gap-2 text-muted-foreground/50 text-xs py-2">
-					<AlignLeft class="w-4 h-4" />
-					Click to add markdown text…
+				<div class="flex items-center gap-2 text-muted-foreground/35 text-xs py-1 select-none">
+					<AlignLeft class="w-3.5 h-3.5" />
+					Click to add text…
 				</div>
 			{/if}
 		</button>

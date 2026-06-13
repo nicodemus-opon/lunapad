@@ -14,6 +14,7 @@
 		duplicateNotebook,
 		getActiveTabId,
 		getExpandedNotebookFolderIds,
+		getExpandedNotebookIds,
 		getFolders,
 		getNotebooks,
 		getOpenNotebookTabIds,
@@ -21,16 +22,21 @@
 		isFolderEmpty,
 		moveNotebookToFolder,
 		openNotebookTab,
+		openNotebookTabAtCell,
+		toggleNotebookExpanded,
 		renameFolder,
 		renameNotebook,
 		setFolderExpanded,
 		loadDemoNotebook,
+		type Cell,
 		type Notebook,
 		type NotebookFolder
 	} from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
 	import { fade } from 'svelte/transition';
 	import {
+		ChevronRight,
+		Code2,
 		Copy,
 		FlaskConical,
 		Folder,
@@ -40,14 +46,16 @@
 		NotebookText,
 		Pencil,
 		Plus,
-		Trash2
+		Trash2,
+		Type
 	} from '@lucide/svelte';
 
 	let { pendingRenameFolderId = $bindable<string | null>(null), filterQuery = '' } = $props();
 
 	type TreeRowItem =
 		| { kind: 'folder'; depth: number; folder: NotebookFolder }
-		| { kind: 'notebook'; depth: number; notebook: Notebook; folderName?: string };
+		| { kind: 'notebook'; depth: number; notebook: Notebook; folderName?: string }
+		| { kind: 'cell'; depth: number; cell: Cell; notebook: Notebook };
 
 	type MenuAction =
 		| { separator: true }
@@ -68,6 +76,7 @@
 	const folders = $derived(getFolders());
 	const activeTabId = $derived(getActiveTabId());
 	const expandedFolderIds = $derived(getExpandedNotebookFolderIds());
+	const expandedNotebookIds = $derived(getExpandedNotebookIds());
 	const openTabIds = $derived(getOpenNotebookTabIds());
 
 	let renamingNotebookId = $state<string | null>(null);
@@ -124,6 +133,11 @@
 
 			for (const notebook of childNotebooks) {
 				rows.push({ kind: 'notebook', depth, notebook });
+				if (expandedNotebookIds.includes(notebook.id)) {
+					for (const cell of notebook.cells) {
+						rows.push({ kind: 'cell', depth: depth + 1, cell, notebook });
+					}
+				}
 			}
 		};
 
@@ -348,7 +362,7 @@
 				</EmptyState>
 			{/if}
 		{:else}
-			{#each treeRows as row (row.kind === 'folder' ? row.folder.id : row.notebook.id)}
+			{#each treeRows as row (row.kind === 'folder' ? `f:${row.folder.id}` : row.kind === 'notebook' ? `n:${row.notebook.id}` : `c:${row.cell.id}`)}
 				{#if row.kind === 'folder'}
 					{@const isExpanded = expandedFolderIds.includes(row.folder.id)}
 					<div in:fade={{ duration: fadeMs }}>
@@ -390,7 +404,7 @@
 											<!-- svelte-ignore a11y_autofocus -->
 											<input
 												autofocus
-												class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
+												class="h-5 min-w-0 flex-1 rounded-sm border border-border bg-input px-1.5 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
 												bind:value={renameValue}
 												onblur={commitRename}
 												onkeydown={onRenameKeydown}
@@ -422,10 +436,11 @@
 							</ContextMenu.Content>
 						</ContextMenu.Root>
 					</div>
-				{:else}
+				{:else if row.kind === 'notebook'}
 					{@const isActive = activeTabId === row.notebook.id}
 					{@const isOpen = openTabIds.includes(row.notebook.id)}
 					{@const isDragging = draggingNotebookId === row.notebook.id}
+					{@const isExpanded = expandedNotebookIds.includes(row.notebook.id)}
 					<div in:fade={{ duration: fadeMs }}>
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
@@ -457,7 +472,7 @@
 											<!-- svelte-ignore a11y_autofocus -->
 											<input
 												autofocus
-												class="h-5 min-w-0 flex-1 border-0 border-b border-primary bg-transparent px-0 text-xs text-foreground outline-none"
+												class="h-5 min-w-0 flex-1 rounded-sm border border-border bg-input px-1.5 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
 												bind:value={renameValue}
 												onblur={commitRename}
 												onkeydown={onRenameKeydown}
@@ -483,14 +498,26 @@
 									{#snippet trailing()}
 										{#if isNotebookDirty(row.notebook.id)}
 											<span
-												class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning group-hover/row:hidden"
+												class="h-2 w-2 shrink-0 rounded-full bg-warning/90 ring-1 ring-background group-hover/row:hidden"
 												title="Unsaved changes"
 											></span>
 										{:else if isOpen && !isActive}
 											<span
-												class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/50 group-hover/row:hidden"
+												class="h-2 w-2 shrink-0 rounded-full bg-primary/60 ring-1 ring-background group-hover/row:hidden"
 												title="Open in a tab"
 											></span>
+										{/if}
+										{#if row.notebook.cells.length > 0}
+											<button
+												class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,transform] group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+												onclick={(e) => {
+													e.stopPropagation();
+													toggleNotebookExpanded(row.notebook.id);
+												}}
+												aria-label={isExpanded ? 'Collapse cells' : 'Expand cells'}
+											>
+												<ChevronRight class="h-3 w-3 transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}" />
+											</button>
 										{/if}
 										{@render rowMenu(
 											`notebook:${row.notebook.id}`,
@@ -504,6 +531,26 @@
 								{@render contextItems(notebookActions(row.notebook))}
 							</ContextMenu.Content>
 						</ContextMenu.Root>
+					</div>
+				{:else if row.kind === 'cell'}
+					<div in:fade={{ duration: fadeMs }}>
+						<TreeRow
+							depth={row.depth}
+							onActivate={() => openNotebookTabAtCell(row.notebook.id, row.cell.id)}
+						>
+							{#snippet icon()}
+								{#if row.cell.cellType === 'query'}
+									<Code2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								{:else}
+									<Type class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								{/if}
+							{/snippet}
+							{#snippet label()}
+								<span class="min-w-0 flex-1 truncate font-mono text-xs text-foreground/70">
+									{row.cell.outputName || 'Untitled'}
+								</span>
+							{/snippet}
+						</TreeRow>
 					</div>
 				{/if}
 			{/each}

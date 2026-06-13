@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Clock, ChevronsUpDown, XCircle, Eye, EyeOff } from '@lucide/svelte';
+	import { Clock, ChevronsUpDown, XCircle, Eye, EyeOff, BrainCircuit } from '@lucide/svelte';
 	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
 
 	let {
@@ -16,8 +16,10 @@
 		downstreamCount,
 		crossNotebookUsageCount,
 		cellMode,
+		aiChatOpen = false,
 		onModeChange,
-		onOverlayChange
+		onOverlayChange,
+		onShareWithAI
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -30,8 +32,10 @@
 		downstreamCount: number;
 		crossNotebookUsageCount: number;
 		cellMode: 'prql' | 'visual' | 'sql';
+		aiChatOpen?: boolean;
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
 		onOverlayChange?: (open: boolean) => void;
+		onShareWithAI?: () => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -72,9 +76,9 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'}">
 				<input
-					class="h-6 min-w-0 {collapsed
+					class="cell-name-input h-6 min-w-0 {collapsed
 						? 'w-auto max-w-48'
-						: 'w-full'} border-0 bg-transparent p-0 font-mono text-[13px] font-medium text-foreground outline-none placeholder:font-normal placeholder:text-muted-foreground/70"
+						: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
 					placeholder={isQueryCell ? 'model name…' : 'note title…'}
 					value={nameInputValue}
 					onfocus={() => {
@@ -152,7 +156,7 @@
 			{/if}
 			{#if cell.needsRun && cell.status !== 'running'}
 				<span
-					class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-warning/50 bg-warning/10 px-1.5 text-2xs font-medium text-warning"
+					class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-warning/60 bg-warning/12 px-1.5 text-2xs font-semibold text-warning shadow-2xs"
 				>
 					<Clock class="h-2.5 w-2.5" />
 					stale
@@ -161,7 +165,7 @@
 			{#if errorCount > 0}
 				<Popover.Root onOpenChange={onOverlayChange}>
 					<Popover.Trigger
-						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-1.5 text-2xs font-medium text-destructive transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/55 bg-destructive/12 px-1.5 text-2xs font-semibold text-destructive transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50 shadow-2xs"
 						aria-label="Show errors"
 					>
 						<XCircle class="h-2.5 w-2.5" />
@@ -213,32 +217,38 @@
 					>
 				</Tooltip.Root>
 			{/if}
-			<div class="inline-flex items-center rounded border border-border/60 bg-muted/20 p-0.5">
+			<div class="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5 gap-px surface-inset">
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-colors {cellMode ===
-					'prql'
-						? 'bg-foreground text-background shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'}"
+					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'prql' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
 					onclick={() => onModeChange('prql')}
 					title="PRQL code mode">PRQL</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-colors {cellMode ===
-					'visual'
-						? 'bg-foreground text-background shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'}"
+					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'visual' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
 					onclick={() => onModeChange('visual')}
 					title="Visual pipeline editor">Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-colors {cellMode ===
-					'sql'
-						? 'bg-foreground text-background shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'}"
+					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'sql' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
 					onclick={() => onModeChange('sql')}
 					title="SQL mode">SQL</button
 				>
 			</div>
+		{/if}
+
+		{#if aiChatOpen && onShareWithAI}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-primary/20 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+						onclick={onShareWithAI}
+						aria-label="Share with AI"
+					>
+						<BrainCircuit class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Share with AI</p></Tooltip.Content>
+			</Tooltip.Root>
 		{/if}
 
 		<Tooltip.Root>
@@ -259,3 +269,25 @@
 		</Tooltip.Root>
 	</div>
 </div>
+
+<style>
+	.cell-name-input {
+		border: 1px solid transparent;
+		background: transparent;
+		padding: 0;
+		outline: none;
+		box-shadow: none;
+		transition: background var(--motion-fast) var(--motion-ease-out),
+		            border-color var(--motion-fast) var(--motion-ease-out),
+		            padding var(--motion-fast) var(--motion-ease-out);
+	}
+	.cell-name-input:focus {
+		background: var(--input);
+		border-color: var(--border);
+		border-radius: var(--radius-sm);
+		padding: 0 0.375rem;
+		outline: none;
+		box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.06),
+		            0 0 0 2px oklch(from var(--ring) l c h / 0.15);
+	}
+</style>

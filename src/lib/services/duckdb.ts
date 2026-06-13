@@ -171,17 +171,20 @@ export async function registerFile(
 	tableName: string,
 	fileName: string,
 	buffer: ArrayBuffer,
-	format: FileFormat
+	format: FileFormat,
+	options?: { header?: boolean }
 ): Promise<{ rowCount: number; columns: string[]; columnTypes: string[] }> {
 	const c = assertConn();
-	await db!.registerFileBuffer(fileName, new Uint8Array(buffer));
+	// Slice before passing so DuckDB's worker transfer doesn't detach the caller's buffer
+	await db!.registerFileBuffer(fileName, new Uint8Array(buffer.slice(0)));
 	await c.query(`DROP TABLE IF EXISTS "${tableName}"`);
 
+	const header = options?.header !== false;
 	let readExpr: string;
 	if (format === 'csv') {
-		readExpr = `read_csv_auto('${fileName}', header=true)`;
+		readExpr = `read_csv_auto('${fileName}', header=${header})`;
 	} else if (format === 'tsv') {
-		readExpr = `read_csv_auto('${fileName}', header=true, delim='\\t')`;
+		readExpr = `read_csv_auto('${fileName}', header=${header}, delim='\\t')`;
 	} else if (format === 'parquet') {
 		readExpr = `read_parquet('${fileName}')`;
 	} else {

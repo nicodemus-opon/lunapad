@@ -618,6 +618,94 @@ export async function fetchExternalConnectionSchema(
 	return { tables: [...tables.values()] };
 }
 
+// ── File upload via Trino ─────────────────────────────────────────────────────
+
+function duckdbTypeToTrino(type: string): string {
+	const t = type.toUpperCase().split('(')[0].trim();
+	const map: Record<string, string> = {
+		BIGINT: 'BIGINT', INT8: 'BIGINT', HUGEINT: 'BIGINT',
+		INTEGER: 'INTEGER', INT4: 'INTEGER', INT: 'INTEGER',
+		SMALLINT: 'SMALLINT', INT2: 'SMALLINT',
+		TINYINT: 'TINYINT', INT1: 'TINYINT',
+		DOUBLE: 'DOUBLE', FLOAT8: 'DOUBLE',
+		FLOAT: 'REAL', FLOAT4: 'REAL', REAL: 'REAL',
+		BOOLEAN: 'BOOLEAN', BOOL: 'BOOLEAN',
+		DATE: 'DATE',
+		TIMESTAMP: 'TIMESTAMP(6)',
+		BLOB: 'VARBINARY',
+		DECIMAL: 'DECIMAL(38,18)', NUMERIC: 'DECIMAL(38,18)',
+	};
+	return map[t] ?? 'VARCHAR';
+}
+
+function serializeTrinoValue(value: unknown): string {
+	if (value === null || value === undefined) return 'NULL';
+	if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+	if (typeof value === 'number') return isFinite(value) ? String(value) : 'NULL';
+	return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+async function uploadTrinoTable(
+	connection: Exclude<Connection, DuckDBWASMConnection>,
+	targetSchema: string,
+	targetName: string,
+	columns: { name: string; type: string }[],
+	rows: unknown[][],
+	mode: 'replace' | 'append'
+): Promise<{ rowsInserted: number }> {
+	const catalogName = connection.catalogName;
+	const ident = quoteTrinoPath(catalogName, targetSchema, targetName);
+	const colDefs = columns.map((c) => `${quoteTrinoIdent(c.name)} ${duckdbTypeToTrino(c.type)}`).join(', ');
+	const colNames = columns.map((c) => quoteTrinoIdent(c.name)).join(', ');
+
+	if (mode === 'replace') {
+		await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, targetSchema);
+		await trinoExec(`CREATE TABLE ${ident} (${colDefs})`, catalogName, targetSchema);
+	}
+
+	const BATCH = 500;
+	for (let i = 0; i < rows.length; i += BATCH) {
+		const batch = rows.slice(i, i + BATCH);
+		const valueRows = batch
+			.map((row) => `(${row.map(serializeTrinoValue).join(', ')})`)
+			.join(',\n');
+		await trinoExec(
+			`INSERT INTO ${ident} (${colNames}) VALUES\n${valueRows}`,
+			catalogName,
+			targetSchema
+		);
+	}
+
+	return { rowsInserted: rows.length };
+}
+
+export async function uploadToExternalConnection(
+	connection: Connection,
+	secret: ConnectionSecret | undefined,
+	tableName: string,
+	schema: string | undefined,
+	columns: { name: string; type: string }[],
+	rows: unknown[][],
+	mode: 'replace' | 'append'
+): Promise<{ rowsInserted: number }> {
+	if (connection.type === 'duckdb-wasm') {
+		throw new Error(`Connection type 'duckdb-wasm' is not supported for server-side upload.`);
+	}
+
+	const normalizedName = normalizeExternalRelationName(tableName);
+	const normalizedSchema = normalizeExternalSchemaName(schema ?? defaultSchema(connection));
+
+	try {
+		return await uploadTrinoTable(connection, normalizedSchema, normalizedName, columns, rows, mode);
+	} catch (err) {
+		if (isCatalogNotFoundError(err)) {
+			await registerCatalog(connection, secret);
+			return uploadTrinoTable(connection, normalizedSchema, normalizedName, columns, rows, mode);
+		}
+		throw err;
+	}
+}
+
 export async function materializeExternalConnection(
 	connection: Connection,
 	secret: ConnectionSecret | undefined,

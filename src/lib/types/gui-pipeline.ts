@@ -354,7 +354,24 @@ export interface FilterBlock extends DashboardBlockBase {
 	defaultValue?: string;
 }
 
-export type DashboardBlock = ChartBlock | TextBlock | CalloutBlock | FilterBlock;
+/** A big-number KPI card with optional trend indicator. */
+export interface KpiBlock extends DashboardBlockBase {
+	type: 'kpi';
+	label: string;
+	valueExpr: string;
+	changeExpr?: string;
+	prefix?: string;
+	suffix?: string;
+}
+
+/** A full-width section heading separator. */
+export interface SectionBlock extends DashboardBlockBase {
+	type: 'section';
+	heading: string;
+	level: 1 | 2;
+}
+
+export type DashboardBlock = ChartBlock | TextBlock | CalloutBlock | FilterBlock | KpiBlock | SectionBlock;
 
 /** Keep DashboardPanel as an alias for ChartBlock for callsite compat. */
 export type DashboardPanel = ChartBlock;

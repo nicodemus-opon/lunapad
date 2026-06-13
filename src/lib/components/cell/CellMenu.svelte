@@ -6,6 +6,7 @@
 		Eye,
 		EyeOff,
 		FlaskConical,
+		Link,
 		Loader2,
 		Database,
 		Plug,
@@ -24,6 +25,7 @@
 
 	let {
 		cell,
+		notebookId = '',
 		isQueryCell,
 		isFirst,
 		isLast,
@@ -36,6 +38,7 @@
 		onRunTests
 	}: {
 		cell: Cell;
+		notebookId?: string;
 		isQueryCell: boolean;
 		isFirst: boolean;
 		isLast: boolean;
@@ -121,6 +124,14 @@
 			<DropdownMenu.Shortcut>⇧J</DropdownMenu.Shortcut>
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
+		{#if notebookId}
+			<DropdownMenu.Item
+				onclick={() => void navigator.clipboard.writeText(`${notebookId}#${cell.id}`)}
+			>
+				<Link class="h-3.5 w-3.5" /> Copy cell link
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+		{/if}
 		<DropdownMenu.Item variant="destructive" onclick={() => removeCell(cell.id)}>
 			<Trash2 class="h-3.5 w-3.5" /> Delete cell
 			<DropdownMenu.Shortcut>dd</DropdownMenu.Shortcut>

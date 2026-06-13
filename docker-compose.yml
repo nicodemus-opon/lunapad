@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: lunapad
       POSTGRES_PASSWORD: lunapad
@@ -9,6 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-pgvector.sql:/docker-entrypoint-initdb.d/01-pgvector.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lunapad -d lunapad"]
       interval: 5s
@@ -57,12 +58,21 @@ services:
       ORIGIN: http://app:3000
       TRINO_URL: http://trino:8080
       TRINO_CATALOG_DIR: /trino-catalog
+      # Postgres (pgvector) — use service name, not localhost, inside Docker network.
+      DATABASE_URL: postgresql://lunapad:lunapad@db:5432/lunapad
+      # Ollama runs on the host machine. host.docker.internal resolves to the host
+      # on Docker Desktop (Mac/Windows). On Linux, extra_hosts adds the route.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       # Inngest: point to the inngest service inside the Docker network.
       # INNGEST_DEV=1 tells the SDK it's in dev mode (skips signature verification).
       INNGEST_DEV: "1"
       INNGEST_BASE_URL: http://inngest:8288
       INNGEST_EVENT_KEY: local
       INNGEST_SIGNING_KEY: local
+    extra_hosts:
+      # On Linux, Docker does not resolve host.docker.internal by default.
+      # This maps it to the host gateway so Ollama is reachable from the container.
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./trino/catalog:/trino-catalog
     healthcheck:
