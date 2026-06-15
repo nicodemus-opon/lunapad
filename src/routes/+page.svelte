@@ -157,8 +157,10 @@
 		setAIChatPanelWidth,
 		getGhostCellIds,
 		addContextCell,
-		initAIChatWidth
+		initAIChatWidth,
+		initWorkspaceStandards
 	} from '$lib/stores/ai-chat.svelte';
+	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
 
 	// ── Reactive state ──────────────────────────────────────────────────────
 	const cells = $derived(getCells());
@@ -401,6 +403,7 @@
 		window.addEventListener('pointerup', onAIPanelPointerUp);
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		initAIChatWidth();
+		initWorkspaceStandards();
 		try {
 			loadFromStorage();
 		} catch {
@@ -905,6 +908,7 @@
 								onclick={() => setAIChatOpen(!getAIChatOpen())}
 								aria-pressed={aiChatOpen}
 								aria-label="Toggle AI chat"
+								data-testid="ai-toggle"
 							>
 								<Sparkles class="h-3.5 w-3.5" />
 								<span class="hidden sm:inline">AI</span>
@@ -1360,7 +1364,7 @@
 										}
 									}}
 								/>
-								<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								
 								<Select.Root
 									type="single"
 									disabled={connections.length === 0}
@@ -1373,7 +1377,7 @@
 										);
 									}}
 								>
-									<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
+									<Select.Trigger  class="h-7 min-w-44 font-mono text-xs">
 										{#if activeNotebookConnectionValue === '__mixed__'}
 											Mixed connections
 										{:else}
@@ -1466,6 +1470,11 @@
 												{reportView}
 												isGhost={ghostCellIds.has(cell.id)}
 												onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
+												onFixWithAI={aiChatOpen ? (errorMsg) => {
+													addContextCell(cell.id);
+													setAIChatOpen(true);
+													void submitAIMessage(`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`);
+												} : undefined}
 												onOpenResultTab={handleOpenResultTab}
 											/>
 										</div>
@@ -1599,6 +1608,16 @@
 					class="h-8 font-mono text-xs"
 					value={llmConfig.baseUrl}
 					oninput={(e: Event) => setLLMConfig({ baseUrl: (e.target as HTMLInputElement).value })}
+				/>
+			</div>
+			<div class="space-y-1">
+				<label for="llm-api-key" class="text-xs text-muted-foreground">API key <span class="opacity-50">(optional)</span></label>
+				<Input
+					id="llm-api-key"
+					type="password"
+					class="h-8 font-mono text-xs"
+					value={llmConfig.apiKey ?? ''}
+					oninput={(e: Event) => setLLMConfig({ apiKey: (e.target as HTMLInputElement).value || undefined })}
 				/>
 			</div>
 			<div class="space-y-1">

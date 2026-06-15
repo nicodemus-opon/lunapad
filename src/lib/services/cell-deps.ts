@@ -19,6 +19,85 @@ function stripSqlRefs(code: string): string {
 }
 
 /**
+ * If sql starts with a WITH clause, parse out the named CTE definitions and
+ * the trailing main query (SELECT / INSERT / etc.).
+ * Returns null when sql does not start with WITH.
+ *
+ * Handles nested parentheses inside CTE bodies correctly.
+ */
+function extractLeadingCTEs(sql: string): { ctes: Array<{ name: string; body: string }>; mainQuery: string } | null {
+	const trimmed = sql.trimStart();
+	const withMatch = trimmed.match(/^WITH\s+/i);
+	if (!withMatch) return null;
+
+	let pos = withMatch[0].length;
+	const ctes: Array<{ name: string; body: string }> = [];
+
+	while (pos < trimmed.length) {
+		// CTE name followed by optional whitespace/AS/(
+		const nameMatch = trimmed.slice(pos).match(/^(\w+)\s+AS\s*\(\s*/i);
+		if (!nameMatch) break;
+		const cteName = nameMatch[1];
+		pos += nameMatch[0].length;
+
+		// Find the matching closing paren using depth counting
+		let depth = 1;
+		const bodyStart = pos;
+		while (pos < trimmed.length && depth > 0) {
+			if (trimmed[pos] === '(') depth++;
+			else if (trimmed[pos] === ')') depth--;
+			pos++;
+		}
+		const body = trimmed.slice(bodyStart, pos - 1).trim();
+		ctes.push({ name: cteName, body });
+
+		// Optional comma before next CTE
+		const commaMatch = trimmed.slice(pos).match(/^\s*,\s*/);
+		if (commaMatch) {
+			pos += commaMatch[0].length;
+		} else {
+			break;
+		}
+	}
+
+	const mainQuery = trimmed.slice(pos).trimStart();
+	if (ctes.length === 0 || !mainQuery) return null;
+	return { ctes, mainQuery };
+}
+
+/**
+ * Assemble a final SQL string from upstream WITH parts and the cell's own code.
+ * If the cell code itself starts with a WITH clause, its CTEs are merged into the
+ * outer WITH chain (de-duplicated by name — upstream deps take priority) and only
+ * the trailing SELECT is used as the final query body.
+ * This prevents "WITH ... WITH ..." double-WITH syntax that DuckDB rejects.
+ */
+function assembleWithSQL(withParts: string[], cellCode: string): string {
+	if (withParts.length === 0) return cellCode;
+
+	const extracted = extractLeadingCTEs(cellCode);
+	if (!extracted) {
+		return `WITH ${withParts.join(',\n')}\n${cellCode}`;
+	}
+
+	// Merge inner CTEs, skipping any whose name is already defined by an upstream dep
+	const existingNames = new Set(
+		withParts.map((p) => {
+			const m = p.match(/^(\w+)\s+AS\s*\(/i);
+			return m ? m[1] : '';
+		})
+	);
+	for (const cte of extracted.ctes) {
+		if (!existingNames.has(cte.name)) {
+			withParts.push(`${cte.name} AS (\n${indent(cte.body)}\n)`);
+			existingNames.add(cte.name);
+		}
+	}
+
+	return `WITH ${withParts.join(',\n')}\n${extracted.mainQuery}`;
+}
+
+/**
  * Returns all preceding query cells that cell[idx] transitively depends on,
  * in topological order (each dep before the cells that use it).
  * A cell "depends on" another if its code contains the other's outputName as a whole word.
@@ -145,7 +224,7 @@ export function buildSQLExecutionCode(
 	}
 
 	if (withParts.length === 0) return stripSqlRefs(cell.code.trim());
-	return `WITH ${withParts.join(',\n')}\n${stripSqlRefs(cell.code.trim())}`;
+	return assembleWithSQL(withParts, stripSqlRefs(cell.code.trim()));
 }
 
 /**
@@ -258,5 +337,5 @@ export function buildSQLGlobalExecutionCode(
 	}
 
 	if (withParts.length === 0) return stripSqlRefs(cell.code.trim());
-	return `WITH ${withParts.join(',\n')}\n${stripSqlRefs(cell.code.trim())}`;
+	return assembleWithSQL(withParts, stripSqlRefs(cell.code.trim()));
 }

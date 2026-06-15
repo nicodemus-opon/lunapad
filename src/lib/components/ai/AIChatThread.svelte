@@ -1,24 +1,46 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import AIChatMessage from './AIChatMessage.svelte';
-	import { getMessages } from '$lib/stores/ai-chat.svelte.js';
+	import { getMessages, setPendingSuggestion } from '$lib/stores/ai-chat.svelte.js';
 
 	let messages = $derived(getMessages());
 	let scrollEl: HTMLDivElement | undefined = $state();
+	// Whether the user was pinned to the bottom *before* the latest content arrived.
+	// Measured in $effect.pre (before the DOM updates) so streamed tokens only auto-scroll
+	// when the user is already at the bottom — scrolling up to read history is respected.
+	let wasAtBottom = true;
 
-	$effect(() => {
-		// Scroll to bottom when messages change or streaming updates
-		if (messages.length) {
-			tick().then(() => {
-				if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
-			});
-		}
+	function nearBottom(): boolean {
+		if (!scrollEl) return true;
+		return scrollEl.scrollHeight - (scrollEl.scrollTop + scrollEl.clientHeight) < 40;
+	}
+
+	// Runs BEFORE the DOM reflects new message text/events.
+	$effect.pre(() => {
+		const last = messages[messages.length - 1];
+		void [messages.length, last?.text.length, last?.actionEvents.length, last?.isStreaming, last?.suggestions?.length];
+		wasAtBottom = nearBottom();
 	});
+
+	// Runs AFTER the DOM updates — follow the bottom only if the user was already there.
+	$effect(() => {
+		const last = messages[messages.length - 1];
+		void [messages.length, last?.text.length, last?.actionEvents.length, last?.isStreaming, last?.suggestions?.length];
+		if (!wasAtBottom) return;
+		tick().then(() => {
+			if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+		});
+	});
+
+	function handleSuggestion(text: string): void {
+		setPendingSuggestion(text);
+	}
 </script>
 
 <div
 	bind:this={scrollEl}
-	class="flex min-h-0 flex-1 flex-col overflow-y-auto py-1"
+	class="flex min-h-0 flex-1 flex-col overflow-y-auto py-1 bg-sidebar"
+	data-testid="ai-thread"
 >
 	{#if messages.length === 0}
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
@@ -36,15 +58,8 @@
 				{#each ['Analyze orders by region and month', 'Create a revenue dashboard', 'Find the top 10 customers by spend'] as suggestion}
 					<button
 						class="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-						onclick={() => {
-							// Dispatch to parent via custom event
-							const el = document.querySelector('.ai-chat-input textarea') as HTMLTextAreaElement | null;
-							if (el) {
-								el.value = suggestion;
-								el.dispatchEvent(new Event('input'));
-								el.focus();
-							}
-						}}
+						onclick={() => setPendingSuggestion(suggestion)}
+						data-testid="ai-empty-suggestion"
 					>
 						{suggestion}
 					</button>
@@ -53,7 +68,7 @@
 		</div>
 	{:else}
 		{#each messages as message (message.id)}
-			<AIChatMessage {message} />
+			<AIChatMessage {message} onSuggestion={handleSuggestion} />
 		{/each}
 	{/if}
 </div>

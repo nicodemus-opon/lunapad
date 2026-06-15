@@ -19,7 +19,8 @@
 		aiChatOpen = false,
 		onModeChange,
 		onOverlayChange,
-		onShareWithAI
+		onShareWithAI,
+		onFixWithAI
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -36,6 +37,7 @@
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
 		onOverlayChange?: (open: boolean) => void;
 		onShareWithAI?: () => void;
+		onFixWithAI?: (errorMsg: string) => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -179,6 +181,15 @@
 						{#if cell.materializeError}
 							<pre
 								class="font-mono text-xs whitespace-pre-wrap text-destructive">{cell.materializeError}</pre>
+						{/if}
+						{#if aiChatOpen && onFixWithAI}
+							<button
+								class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary/30 bg-primary/8 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
+								onclick={() => onFixWithAI!(cell.errors[0]?.display ?? cell.errors[0]?.reason ?? cell.materializeError ?? 'unknown error')}
+							>
+								<BrainCircuit class="h-3 w-3" />
+								Fix with AI
+							</button>
 						{/if}
 					</Popover.Content>
 				</Popover.Root>

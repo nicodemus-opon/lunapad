@@ -1,4 +1,11 @@
 import type { Cell } from './notebook.svelte.js';
+import type { WorkspaceNamingRule, SprintTask } from '$lib/types/ai-chat.js';
+import type { PlanAssertion } from '$lib/types/ai-subagents.js';
+
+export interface WorkspaceStandards {
+	namingRules: WorkspaceNamingRule[];
+	customInstructions: string;
+}
 
 export interface ContextPill {
 	cellId: string;
@@ -6,9 +13,15 @@ export interface ContextPill {
 }
 
 export interface ActionEvent {
+	/** Stable id for keyed rendering — assigned by appendActionEvent. */
+	id?: string;
 	tool: string;
 	label: string;
 	cellId?: string;
+	preview?: string;
+	/** Before/after code for update_cell diff preview */
+	oldCode?: string;
+	newCode?: string;
 }
 
 export interface ChatMessage {
@@ -16,9 +29,13 @@ export interface ChatMessage {
 	role: 'user' | 'assistant' | 'error';
 	text: string;
 	isStreaming: boolean;
+	hasError?: boolean;
+	/** Set when generation was aborted by the user mid-stream. */
+	stopped?: boolean;
 	contextPills: ContextPill[];
 	actionEvents: ActionEvent[];
 	createdAt: number;
+	suggestions?: string[];
 }
 
 export interface NotebookSnapshot {
@@ -28,6 +45,7 @@ export interface NotebookSnapshot {
 }
 
 const PANEL_WIDTH_KEY = 'lunapad.aichat.width';
+const WORKSPACE_STANDARDS_KEY = 'lunapad.aichat.standards';
 const DEFAULT_WIDTH = 340;
 
 function loadWidth(): number {
@@ -35,6 +53,17 @@ function loadWidth(): number {
 	const raw = localStorage.getItem(PANEL_WIDTH_KEY);
 	const n = raw ? parseInt(raw, 10) : NaN;
 	return isNaN(n) ? DEFAULT_WIDTH : Math.max(260, Math.min(520, n));
+}
+
+function loadWorkspaceStandards(): WorkspaceStandards {
+	if (typeof localStorage === 'undefined') return { namingRules: [], customInstructions: '' };
+	try {
+		const raw = localStorage.getItem(WORKSPACE_STANDARDS_KEY);
+		if (!raw) return { namingRules: [], customInstructions: '' };
+		return JSON.parse(raw) as WorkspaceStandards;
+	} catch {
+		return { namingRules: [], customInstructions: '' };
+	}
 }
 
 function makeId(): string {
@@ -49,10 +78,27 @@ let _messages = $state<ChatMessage[]>([]);
 let _isGenerating = $state(false);
 let _contextCellIds = $state<string[]>([]);
 let _pendingSnapshot = $state<NotebookSnapshot | null>(null);
+let _workspaceStandards = $state<WorkspaceStandards>({ namingRules: [], customInstructions: '' });
 let _undoAvailable = $state(false);
 let _ghostCellIds = $state<Set<string>>(new Set());
 
+let _pendingSuggestion = $state<string | null>(null);
+
 let _activeController: AbortController | null = null;
+// Per-iteration checkpoint stack (max 5) — for step-undo
+let _checkpoints = $state<NotebookSnapshot[]>([]);
+// Confirmation gate state — resolves when user clicks Proceed/Cancel
+let _confirmationRequest = $state<{ cellCount: number; resolve: (proceed: boolean) => void } | null>(null);
+// Plan proposal gate — resolves when user approves or rejects the modeling plan (before sql-gen starts)
+let _pendingPlanProposal = $state<{ models: Array<{ name: string; grain: string; source?: string; depends_on?: string[]; type?: string }>; note?: string; assertions?: PlanAssertion[] } | null>(null);
+let _planProposalResolve = $state<((proceed: boolean) => void) | null>(null);
+
+// Sprint tasks — populated by sprint_planning subagent, updated as tasks execute
+let _sprintTasks = $state<SprintTask[]>([]);
+// Sprint plan approval gate — resolves null (start building) or string (refinement feedback)
+let _sprintPlanApprovalResolve: ((feedback: string | null) => void) | null = null;
+// Reactive flag — _sprintPlanApprovalResolve is not $state (functions shouldn't be proxied)
+let _sprintPlanApprovalPending = $state(false);
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
@@ -89,12 +135,35 @@ export function setMessageStreaming(id: string, streaming: boolean): void {
 }
 
 export function appendActionEvent(msgId: string, event: ActionEvent): void {
+	const withId: ActionEvent = { ...event, id: event.id ?? makeId() };
 	_messages = _messages.map((m) =>
-		m.id === msgId ? { ...m, actionEvents: [...m.actionEvents, event] } : m
+		m.id === msgId ? { ...m, actionEvents: [...m.actionEvents, withId] } : m
 	);
 }
 
-export function clearMessages(): void { _messages = []; }
+/** Append a distinct error message to the thread (rendered with destructive styling). */
+export function appendErrorMessage(text: string): ChatMessage {
+	return appendMessage({ role: 'error', text, isStreaming: false, contextPills: [], actionEvents: [] });
+}
+
+export function updateLastActionEvent(msgId: string, update: Partial<ActionEvent>): void {
+	_messages = _messages.map((m) => {
+		if (m.id !== msgId || m.actionEvents.length === 0) return m;
+		const events = [...m.actionEvents];
+		events[events.length - 1] = { ...events[events.length - 1], ...update };
+		return { ...m, actionEvents: events };
+	});
+}
+
+export function setMessageSuggestions(id: string, suggestions: string[]): void {
+	_messages = _messages.map((m) => m.id === id ? { ...m, suggestions } : m);
+}
+
+export function setMessageError(id: string): void {
+	_messages = _messages.map((m) => m.id === id ? { ...m, hasError: true } : m);
+}
+
+export function clearMessages(): void { _messages = []; _sprintTasks = []; }
 
 // ── Generation state ──────────────────────────────────────────────────────────
 
@@ -110,8 +179,24 @@ export function abortGeneration(): void {
 	_isGenerating = false;
 	// Clear all ghost markers on abort
 	_ghostCellIds = new Set();
-	// Mark last streaming message as done
-	_messages = _messages.map((m) => m.isStreaming ? { ...m, isStreaming: false } : m);
+	// Mark any streaming message as stopped so a halted partial answer is clearly
+	// distinguishable from a completed one.
+	_messages = _messages.map((m) => m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m);
+	// Resolve any hanging confirmation or plan-proposal Promise so the old agentic loop exits
+	if (_confirmationRequest) {
+		_confirmationRequest.resolve(false);
+		_confirmationRequest = null;
+	}
+	if (_planProposalResolve) {
+		_planProposalResolve(false);
+		_pendingPlanProposal = null;
+		_planProposalResolve = null;
+	}
+	if (_sprintPlanApprovalResolve) {
+		_sprintPlanApprovalResolve(null);
+		_sprintPlanApprovalResolve = null;
+		_sprintPlanApprovalPending = false;
+	}
 }
 
 // ── Context cells ─────────────────────────────────────────────────────────────
@@ -155,3 +240,120 @@ export function setPendingSnapshot(snap: NotebookSnapshot | null): void { _pendi
 
 export function getUndoAvailable(): boolean { return _undoAvailable; }
 export function setUndoAvailable(v: boolean): void { _undoAvailable = v; }
+
+// ── Per-iteration checkpoints (step-undo) ─────────────────────────────────────
+
+export function getCheckpointCount(): number { return _checkpoints.length; }
+
+export function pushCheckpoint(snap: NotebookSnapshot): void {
+	_checkpoints = [..._checkpoints.slice(-4), snap];
+}
+
+export function popCheckpoint(): NotebookSnapshot | null {
+	if (_checkpoints.length === 0) return null;
+	const last = _checkpoints[_checkpoints.length - 1];
+	_checkpoints = _checkpoints.slice(0, -1);
+	return last;
+}
+
+export function clearCheckpoints(): void { _checkpoints = []; }
+
+// ── Confirmation gate ─────────────────────────────────────────────────────────
+
+export function getConfirmationRequest(): { cellCount: number } | null {
+	return _confirmationRequest ? { cellCount: _confirmationRequest.cellCount } : null;
+}
+
+export function requestConfirmation(cellCount: number): Promise<boolean> {
+	// If a confirmation is already pending, reject the new request rather than
+	// overwriting the resolver (which would leave the first Promise hanging).
+	if (_confirmationRequest) return Promise.resolve(false);
+	return new Promise<boolean>((resolve) => {
+		_confirmationRequest = { cellCount, resolve };
+	});
+}
+
+export function resolveConfirmation(proceed: boolean): void {
+	_confirmationRequest?.resolve(proceed);
+	_confirmationRequest = null;
+}
+
+// ── Plan proposal gate ────────────────────────────────────────────────────────
+
+export function getPendingPlanProposal(): typeof _pendingPlanProposal {
+	return _pendingPlanProposal;
+}
+
+export function setPendingPlanProposal(proposal: typeof _pendingPlanProposal): void {
+	_pendingPlanProposal = proposal;
+}
+
+export function requestPlanApproval(
+	proposal: NonNullable<typeof _pendingPlanProposal>
+): Promise<boolean> {
+	if (_planProposalResolve) return Promise.resolve(false);
+	return new Promise<boolean>((resolve) => {
+		_pendingPlanProposal = proposal;
+		_planProposalResolve = resolve;
+	});
+}
+
+export function resolvePlanApproval(proceed: boolean): void {
+	_planProposalResolve?.(proceed);
+	_pendingPlanProposal = null;
+	_planProposalResolve = null;
+}
+
+// ── Input suggestion ─────────────────────────────────────────────────────────
+
+export function getPendingSuggestion(): string | null { return _pendingSuggestion; }
+export function setPendingSuggestion(text: string): void { _pendingSuggestion = text; }
+export function clearPendingSuggestion(): void { _pendingSuggestion = null; }
+
+// ── Workspace standards ───────────────────────────────────────────────────────
+
+export function initWorkspaceStandards(): void {
+	_workspaceStandards = loadWorkspaceStandards();
+}
+
+export function getWorkspaceStandards(): WorkspaceStandards { return _workspaceStandards; }
+
+export function setWorkspaceStandards(s: WorkspaceStandards): void {
+	_workspaceStandards = s;
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem(WORKSPACE_STANDARDS_KEY, JSON.stringify(s));
+	}
+}
+
+// ── Sprint tasks ──────────────────────────────────────────────────────────────
+
+export function getSprintTasks(): SprintTask[] { return _sprintTasks; }
+
+export function setSprintTasks(tasks: SprintTask[]): void { _sprintTasks = tasks; }
+
+export function updateSprintTask(id: string, patch: Partial<SprintTask>): void {
+	const idx = _sprintTasks.findIndex((t) => t.id === id);
+	if (idx >= 0) _sprintTasks[idx] = { ..._sprintTasks[idx], ...patch };
+}
+
+export function clearSprintTasks(): void { _sprintTasks = []; }
+
+// ── Sprint plan approval gate ─────────────────────────────────────────────────
+
+export function isSprintPlanPendingApproval(): boolean {
+	return _sprintPlanApprovalPending;
+}
+
+export function requestSprintPlanApproval(): Promise<string | null> {
+	if (_sprintPlanApprovalResolve) return Promise.resolve(null);
+	return new Promise<string | null>((resolve) => {
+		_sprintPlanApprovalResolve = resolve;
+		_sprintPlanApprovalPending = true;
+	});
+}
+
+export function resolveSprintPlanApproval(feedback: string | null): void {
+	_sprintPlanApprovalResolve?.(feedback);
+	_sprintPlanApprovalResolve = null;
+	_sprintPlanApprovalPending = false;
+}

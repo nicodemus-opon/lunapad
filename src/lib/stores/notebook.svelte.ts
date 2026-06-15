@@ -219,6 +219,7 @@ export interface LLMConfig {
 	provider: 'openapi-compatible' | 'ollama';
 	baseUrl: string;
 	model: string;
+	apiKey?: string;
 }
 
 interface NotebookState {
@@ -668,24 +669,45 @@ let state = $state<NotebookState>({
 let connectionSecrets = $state<ConnectionSecrets>({});
 
 // ── Persistence ─────────────────────────────────────────────────────────────
-type SerializedCell = Omit<Cell, 'status' | 'result' | 'errors' | 'needsRun' | 'staleReason' | 'staleSources'> & {
-	status: 'idle';
-	result: null;
+type SerializedCell = Omit<Cell, 'errors' | 'needsRun' | 'staleReason' | 'staleSources'> & {
 	errors: [];
-	needsRun: false;
+	needsRun: boolean;
 	staleReason: null;
 	staleSources: [];
 };
 
-function serializeCell(c: Cell): SerializedCell {
-	return { ...c, status: 'idle', result: null, errors: [], needsRun: false, staleReason: null, staleSources: [] };
+// Caps for persisting query results to localStorage. Results are kept so output survives
+// reload/HMR (the main "output disappeared" complaint), but oversized results are dropped to
+// avoid blowing the ~5MB localStorage quota — the cell is marked needsRun so the UI offers a re-run.
+const PERSIST_RESULT_ROW_CAP = 2000;
+const PERSIST_RESULT_BYTE_CAP = 256 * 1024;
+
+function serializeCell(c: Cell, persistResults = true): SerializedCell {
+	let result: Cell['result'] = null;
+	let status: Cell['status'] = 'idle';
+	let needsRun = Boolean(c.needsRun);
+	if (persistResults && c.status === 'success' && c.result) {
+		const rowCount = c.result.rows?.length ?? 0;
+		let withinCap = rowCount <= PERSIST_RESULT_ROW_CAP;
+		if (withinCap) {
+			try { withinCap = JSON.stringify(c.result).length <= PERSIST_RESULT_BYTE_CAP; } catch { withinCap = false; }
+		}
+		if (withinCap) {
+			result = c.result;
+			status = 'success';
+			needsRun = false;
+		} else {
+			needsRun = true; // result too big to persist — prompt a re-run on reload
+		}
+	}
+	return { ...c, status, result, errors: [], needsRun, staleReason: null, staleSources: [] };
 }
 
-function serialize(): string {
+function serialize(persistResults = true): string {
 	return JSON.stringify({
 		notebooks: state.notebooks.map((n) => ({
 			...n,
-			cells: n.cells.map(serializeCell)
+			cells: n.cells.map((c) => serializeCell(c, persistResults))
 		})),
 		folders: state.folders,
 		connections: state.connections,
@@ -880,6 +902,11 @@ function deserializeCell(c: Cell, i: number): Cell {
 		editMode,
 		resultViewMode,
 		resultChartConfig: (c as Partial<Cell>).resultChartConfig ?? null,
+		// Restore persisted (capped) result so output survives reload/HMR.
+		result: (c as Partial<Cell>).result ?? null,
+		status: (c as Partial<Cell>).result ? 'success' : 'idle',
+		executionMs: typeof (c as Partial<Cell>).executionMs === 'number' ? ((c as Partial<Cell>).executionMs as number) : null,
+		needsRun: (c as Partial<Cell>).result ? false : Boolean((c as Partial<Cell>).needsRun),
 		display: normalizeCellDisplay(c),
 		stageResultsCollapsed: Array.isArray((c as Partial<Cell>).stageResultsCollapsed)
 			? ((c as Partial<Cell>).stageResultsCollapsed as boolean[])
@@ -1295,7 +1322,10 @@ function deserialize(raw: string): void {
 				model:
 					typeof llmConfig.model === 'string' && llmConfig.model.trim().length > 0
 						? llmConfig.model.trim()
-						: 'qwen3:8b'
+						: 'qwen3:8b',
+				...(typeof llmConfig.apiKey === 'string' && llmConfig.apiKey.trim().length > 0
+					? { apiKey: llmConfig.apiKey.trim() }
+					: {})
 			};
 		}
 		state.notebookEvents = Array.isArray(data.notebookEvents)
@@ -1361,7 +1391,15 @@ export function scheduleSave(): void {
 	if (typeof localStorage === 'undefined') return;
 	if (saveTimer) clearTimeout(saveTimer);
 	saveTimer = setTimeout(() => {
-		localStorage.setItem(STORAGE_KEY, serialize());
+		try {
+			localStorage.setItem(STORAGE_KEY, serialize());
+		} catch {
+			// Quota exceeded (persisted results too large) — retry without results so the
+			// rest of the workspace state still saves. Output is recomputed by re-running.
+			try {
+				localStorage.setItem(STORAGE_KEY, serialize(false));
+			} catch { /* give up silently — nothing else we can do */ }
+		}
 	}, 500);
 }
 
@@ -3490,6 +3528,15 @@ export interface AICellSnapshot {
 	guiStages: GUIPipelineStage[];
 	editMode: CellEditMode;
 	connectionId: string | null;
+	// Runtime/result fields — captured so a restore can recreate a cell that was deleted
+	// during generation without blanking its output. Optional for back-compat with older
+	// in-memory snapshots.
+	result?: Cell['result'];
+	status?: Cell['status'];
+	resultViewMode?: Cell['resultViewMode'];
+	resultChartConfig?: Cell['resultChartConfig'];
+	executionMs?: Cell['executionMs'];
+	errors?: Cell['errors'];
 }
 
 /** Restore cells to a pre-AI-generation snapshot, preserving execution results for existing cells. */
@@ -3521,7 +3568,14 @@ export function restoreCellsFromAISnapshot(notebookId: string, snapCells: AICell
 			display: snap.display,
 			guiStages: snap.guiStages,
 			editMode: snap.editMode,
-			connectionId: snap.connectionId
+			connectionId: snap.connectionId,
+			// Restore captured runtime/result state so a recreated cell keeps its output.
+			...(snap.result !== undefined && { result: snap.result }),
+			...(snap.status !== undefined && { status: snap.status }),
+			...(snap.resultViewMode !== undefined && { resultViewMode: snap.resultViewMode }),
+			...(snap.resultChartConfig !== undefined && { resultChartConfig: snap.resultChartConfig }),
+			...(snap.executionMs !== undefined && { executionMs: snap.executionMs }),
+			...(snap.errors !== undefined && { errors: snap.errors })
 		} satisfies Cell;
 	});
 

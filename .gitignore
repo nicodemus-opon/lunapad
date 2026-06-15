@@ -32,6 +32,7 @@ src-tauri/gen/
 # Test artifacts
 test-results/
 playwright-report/
+e2e/
 
 # Temp/scratch files
 .tmp-*.json

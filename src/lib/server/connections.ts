@@ -110,7 +110,7 @@ async function trinoRequest(
 					allRows.push(Object.fromEntries(
 						columns.map((col, i) => {
 							let value = (row as unknown[])[i];
-							if (col.type.startsWith('varbinary') && typeof value === 'string') {
+							if (col.type?.startsWith('varbinary') && typeof value === 'string') {
 								try { value = Buffer.from(value, 'base64').toString('utf8'); } catch { /* keep original */ }
 							}
 							return [col.name, value];

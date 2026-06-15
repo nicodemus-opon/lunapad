@@ -49,9 +49,9 @@ const clickHouseConnection: Connection = {
 };
 
 /** Single-page Trino query response (done immediately, no nextUri). */
-function trinoPage(columns: { name: string }[], data: unknown[][]): Response {
+function trinoPage(columns: { name: string; type?: string }[], data: unknown[][]): Response {
 	return new Response(
-		JSON.stringify({ id: 'q1', columns, data, stats: { state: 'FINISHED' } }),
+		JSON.stringify({ id: 'q1', columns: columns.map((c) => ({ type: 'varchar', ...c })), data, stats: { state: 'FINISHED' } }),
 		{ status: 200 }
 	);
 }

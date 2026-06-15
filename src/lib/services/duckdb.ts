@@ -54,13 +54,16 @@ async function instantiateBundle(
 	instantiateTimeoutMs = 12_000,
 	connectTimeoutMs = 8_000
 ): Promise<void> {
-	// Wrap the worker script in a same-origin blob URL. A blob: worker inherits the
-	// document's Cross-Origin-Embedder-Policy, so it works even when the worker script
-	// itself is served without a COEP header (vite dev middleware, adapter-node's sirv) —
-	// a COEP-isolated document refuses to spawn network workers that lack that header.
+	// Fetch the worker script on the main thread and embed it in a blob: URL. This avoids
+	// a Chromium bug where importScripts() inside a blob: worker fails with NetworkError
+	// in COEP cross-origin-isolated contexts, even for same-origin URLs. Fetching here
+	// (where origin is unambiguous) and embedding the content sidesteps the issue entirely.
+	// The blob: URL trick is still needed: a COEP-isolated page refuses to spawn network
+	// workers whose script lacks a COEP header (dev server and sirv don't add it).
 	const workerScriptUrl = new URL(bundle.mainWorker!, globalThis.location.href).href;
+	const workerScript = await fetch(workerScriptUrl).then((r) => r.text());
 	const workerBlobUrl = URL.createObjectURL(
-		new Blob([`importScripts("${workerScriptUrl}");`], { type: 'text/javascript' })
+		new Blob([workerScript], { type: 'text/javascript' })
 	);
 	try {
 		worker = new Worker(workerBlobUrl);

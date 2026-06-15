@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { GripVertical, X, TrendingUp, TrendingDown } from '@lucide/svelte';
-	import type { KpiBlock } from '$lib/types/gui-pipeline';
+	import type { KpiBlock, DashboardPanelWidth } from '$lib/types/gui-pipeline';
 	import { interpolate, type QueryResults } from '$lib/services/dashboard-interpolate';
+	import WidthPicker from './WidthPicker.svelte';
 
 	interface Props {
 		block: KpiBlock;
 		results: QueryResults;
 		onUpdate: (patch: Partial<KpiBlock>) => void;
 		onRemove: () => void;
-		onCycleWidth: () => void;
+		onSetWidth: (w: DashboardPanelWidth) => void;
 	}
 
-	const { block, results, onUpdate, onRemove, onCycleWidth }: Props = $props();
+	const { block, results, onUpdate, onRemove, onSetWidth }: Props = $props();
 
 	const rawValue = $derived(interpolate(block.valueExpr, results));
 	const rawChange = $derived(block.changeExpr ? interpolate(block.changeExpr, results) : null);
@@ -70,16 +71,12 @@
 	}
 </script>
 
-<div class="group/block relative rounded-xl border border-border/60 bg-card surface-raised overflow-hidden transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-md hover:border-border/75 px-5 py-4 flex flex-col gap-1.5 min-h-20">
+<div class="group/block relative rounded-xl border-l-[3px] border border-border/35 border-l-primary/35 bg-card overflow-hidden transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-sm hover:border-border/55 px-5 py-4 flex flex-col gap-1.5 min-h-24">
 	<!-- Hover controls -->
 	<div class="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
+		<WidthPicker width={block.width} {onSetWidth} />
 		<button
-			class="text-[10px] font-mono px-1 h-5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors bg-background"
-			onclick={onCycleWidth}
-			title="Cycle width"
-		>{block.width === 1 ? 'S' : block.width === 2 ? 'M' : 'L'}</button>
-		<button
-			class="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors bg-background"
+			class="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors bg-background/80"
 			onclick={onRemove}
 			title="Remove block"
 		><X class="w-3 h-3" /></button>
@@ -94,7 +91,7 @@
 	{#if editingLabel}
 		<!-- svelte-ignore a11y_autofocus -->
 		<input
-			class="text-2xs font-semibold text-muted-foreground/80 bg-transparent border-b border-primary focus:outline-none w-full"
+			class="text-xs font-medium text-muted-foreground/70 bg-transparent border-b border-primary focus:outline-none w-full"
 			bind:value={labelDraft}
 			onblur={commitLabel}
 			onkeydown={onLabelKey}
@@ -102,7 +99,7 @@
 		/>
 	{:else}
 		<button
-			class="text-2xs font-semibold text-muted-foreground/80 text-left hover:text-foreground transition-colors"
+			class="text-xs font-medium text-muted-foreground/70 text-left hover:text-foreground transition-colors"
 			onclick={startLabelEdit}
 			title="Click to edit label"
 		>{block.label || 'Label'}</button>
@@ -113,7 +110,7 @@
 		{#if editingExpr}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
-				class="text-2xl font-bold font-mono tabular-nums bg-transparent border-b border-primary focus:outline-none flex-1 min-w-0"
+				class="text-3xl font-bold tabular-nums tracking-tight bg-transparent border-b border-primary focus:outline-none flex-1 min-w-0"
 				bind:value={exprDraft}
 				onblur={commitExpr}
 				onkeydown={onExprKey}
@@ -122,7 +119,7 @@
 			/>
 		{:else}
 			<button
-				class="text-2xl font-bold font-mono tabular-nums leading-none text-left {isResolved ? 'text-foreground' : 'text-muted-foreground/30'} hover:opacity-70 transition-opacity"
+				class="text-3xl font-bold tabular-nums tracking-tight leading-none text-left {isResolved ? 'text-foreground' : 'text-muted-foreground/25'} hover:opacity-70 transition-opacity"
 				onclick={startExprEdit}
 				title="Click to edit value expression"
 			>{displayValue()}</button>
@@ -142,7 +139,7 @@
 	</div>
 
 	{#if !isResolved && !editingExpr}
-		<p class="text-[10px] text-muted-foreground/50">
+		<p class="text-[10px] text-muted-foreground/40">
 			Enter <span class="font-mono">{'{'}query.column{'}'}</span> to bind a live value
 		</p>
 	{/if}

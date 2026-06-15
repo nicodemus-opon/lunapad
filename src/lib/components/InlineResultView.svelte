@@ -61,10 +61,22 @@
 	let showConfigPanel = $state(false);
 	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
 
+	// Sync when the parent changes viewMode or chartConfig externally (e.g., AI setting chart view)
+	$effect(() => {
+		const incoming = initialViewMode;
+		if (incoming != null) viewMode = incoming;
+	});
+	$effect(() => {
+		const incoming = initialChartConfig;
+		if (incoming != null) chartConfig = incoming;
+	});
+
 	$effect(() => {
 		const signature = computeShapeSignature(columns, rows);
 		if (signature === lastShapeSignature) return;
 		lastShapeSignature = signature;
+		// Don't override an explicit chart config set by the AI or user
+		if (chartConfig != null) return;
 		const nextConfig = inferSmartChartConfig(columns, rows);
 		chartConfig = nextConfig;
 		onChartConfigChange?.(nextConfig);
@@ -150,22 +162,9 @@
 	</div>
 
 	<!-- Content -->
-	{#if viewMode === 'table'}
-		<div class={compact ? 'max-h-52 overflow-auto' : ''}>
-			<ResultTable
-				{rows}
-				{columns}
-				{name}
-				{truncated}
-				pageSize={compact ? 10 : 25}
-				headerInsights={compact ? 'compact' : 'full'}
-				{onAddSort}
-				{onAddFilter}
-				{columnDescriptions}
-				{onColumnDescriptionChange}
-			/>
-		</div>
-	{:else if viewMode === 'chart' && activeConfig}
+	<!-- Chart/stats are special-cased; everything else (incl. chart view with an
+	     unusable config) falls back to the table so the result area is never blank. -->
+	{#if viewMode === 'chart' && activeConfig}
 		{#if compact}
 			<!-- Compact stage preview: just the chart, no config panel -->
 			<div class="min-h-40 max-h-52 overflow-hidden">
@@ -187,6 +186,21 @@
 	{:else if viewMode === 'stats'}
 		<div class={compact ? 'max-h-52 overflow-auto' : ''}>
 			<StatsView {rows} {columns} {name} />
+		</div>
+	{:else}
+		<div class={compact ? 'max-h-52 overflow-auto' : ''}>
+			<ResultTable
+				{rows}
+				{columns}
+				{name}
+				{truncated}
+				pageSize={compact ? 10 : 25}
+				headerInsights={compact ? 'compact' : 'full'}
+				{onAddSort}
+				{onAddFilter}
+				{columnDescriptions}
+				{onColumnDescriptionChange}
+			/>
 		</div>
 	{/if}
 </div>

@@ -45,6 +45,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		getDbtModels,
 		getFocusedCellId,
 		clearFocusedCell,
+		getCells,
 		type CellLanguage,
 		type Cell,
 		getCrossNotebookUsageCount
@@ -62,6 +63,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	import CellSqlPreview from './cell/CellSqlPreview.svelte';
 	import CellModeSwitchDialogs from './cell/CellModeSwitchDialogs.svelte';
 	import { BUILTIN_DUCKDB_CONNECTION_ID, getPRQLTargetForConnection, resolveConnection } from '$lib/types/connection';
+	import { interpolateMarkdownRefs, extractMarkdownRefs } from '$lib/services/markdown-interp';
 
 	interface Props {
 		cell: Cell;
@@ -78,6 +80,8 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		isGhost?: boolean;
 		/** Called when the user clicks "Share with AI" in the cell header. */
 		onShareWithAI?: () => void;
+		/** Called when the user clicks "Fix with AI" in the error popover. */
+		onFixWithAI?: (errorMsg: string) => void;
 		onOpenResultTab?: (
 			cellId: string,
 			notebookId: string,
@@ -98,6 +102,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		reportView = false,
 		isGhost = false,
 		onShareWithAI,
+		onFixWithAI,
 		onOpenResultTab
 	}: Props = $props();
 
@@ -161,7 +166,8 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		if (isQueryCell) return '';
 		const markdown = (cell.markdown || '').trim();
 		if (!markdown) return '';
-		return marked.parse(markdown, { async: false, breaks: true, gfm: true });
+		const interpolated = interpolateMarkdownRefs(markdown, getCells());
+		return marked.parse(interpolated, { async: false, breaks: true, gfm: true });
 	});
 	const safeMarkdown = $derived.by(() => {
 		if (!renderedMarkdown) return '';
@@ -170,6 +176,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			.replace(/on[a-z]+="[^"]*"/gi, '');
 	});
 	const isMarkdownPreviewMode = $derived(!isQueryCell && cell.markdownPreview && !!cell.markdown?.trim());
+	const hasLiveRefs = $derived(!isQueryCell && extractMarkdownRefs(cell.markdown ?? '').length > 0);
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
 	const tables = $derived(getTables());
 	const externalSchemaTables = $derived(getExternalSchemaTables());
@@ -699,6 +706,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 					onModeChange={setCellMode}
 					onOverlayChange={handleOverlayChange}
 					{onShareWithAI}
+					{onFixWithAI}
 				/>
 			{/if}
 
@@ -733,6 +741,9 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 							oninput={(e: Event) => updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value)}
 							onblur={() => { if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true); }}
 						/>
+						{#if hasLiveRefs}
+							<p class="mt-0.5 text-2xs text-muted-foreground select-none">⚡ Live refs active — run upstream cells to update values</p>
+						{/if}
 					{/if}
 				</div>
 			{:else if cell.editMode === 'gui'}
@@ -923,4 +934,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	.markdown-body :global(th),
 	.markdown-body :global(td) { padding: 0.3rem 0.6rem; border: 1px solid color-mix(in oklch, currentColor 15%, transparent); text-align: left; }
 	.markdown-body :global(th) { font-weight: 600; background: color-mix(in oklch, currentColor 4%, transparent); }
+	.markdown-body :global(.md-live-ref) {
+		border-bottom: 1px dashed color-mix(in oklch, currentColor 35%, transparent);
+		padding-bottom: 1px;
+	}
+	.markdown-body :global(.md-live-ref--missing) {
+		color: color-mix(in oklch, currentColor 45%, transparent);
+		font-style: italic;
+		border-bottom-style: dotted;
+	}
 </style>

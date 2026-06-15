@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { GripVertical, X } from '@lucide/svelte';
-	import type { FilterBlock } from '$lib/types/gui-pipeline';
+	import type { FilterBlock, DashboardPanelWidth } from '$lib/types/gui-pipeline';
+	import WidthPicker from './WidthPicker.svelte';
 
 	interface Props {
 		block: FilterBlock;
 		value: string;
 		onChange: (v: string) => void;
 		onRemove?: () => void;
-		onCycleWidth?: () => void;
+		onSetWidth?: (w: DashboardPanelWidth) => void;
 		queryOptions?: string[];
 	}
 
-	const { block, value, onChange, onRemove, onCycleWidth, queryOptions }: Props = $props();
+	const { block, value, onChange, onRemove, onSetWidth, queryOptions }: Props = $props();
 
 	const effectiveOptions = $derived(queryOptions ?? block.options ?? []);
 
@@ -23,20 +24,16 @@
 	}
 </script>
 
-<div class="group/block relative rounded-xl border border-border/55 bg-card surface-raised overflow-hidden flex flex-col gap-1 px-4 py-3 transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-sm hover:border-border/70">
+<div class="group/block relative rounded-xl border border-border/35 bg-card overflow-hidden flex flex-col gap-1 px-4 py-3 transition-[box-shadow,border-color] duration-(--motion-medium) hover:shadow-sm hover:border-border/55">
 	<!-- Hover controls -->
-	{#if onRemove || onCycleWidth}
+	{#if onRemove || onSetWidth}
 		<div class="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-10">
-			{#if onCycleWidth}
-				<button
-					class="text-[10px] font-mono px-1 h-5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors bg-background"
-					onclick={onCycleWidth}
-					title="Cycle width"
-				>{block.width === 1 ? 'S' : block.width === 2 ? 'M' : 'L'}</button>
+			{#if onSetWidth}
+				<WidthPicker width={block.width} {onSetWidth} />
 			{/if}
 			{#if onRemove}
 				<button
-					class="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors bg-background"
+					class="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors bg-background/80"
 					onclick={onRemove}
 					title="Remove filter"
 				><X class="w-3 h-3" /></button>
@@ -49,7 +46,7 @@
 		</button>
 	{/if}
 
-	<span class="text-2xs font-semibold text-muted-foreground/80">{block.label}</span>
+	<span class="text-xs font-medium text-muted-foreground/70">{block.label}</span>
 
 	{#if block.filterKind === 'dropdown'}
 		<select

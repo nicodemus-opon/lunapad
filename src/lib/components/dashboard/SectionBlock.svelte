@@ -33,7 +33,7 @@
 	}
 </script>
 
-<div class="group/section relative flex items-center gap-3 py-2">
+<div class="group/section relative flex items-center gap-3 pt-6 pb-1">
 	<!-- Drag handle -->
 	<button class="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground opacity-0 group-hover/section:opacity-100 transition-opacity shrink-0">
 		<GripVertical class="w-3.5 h-3.5" />
@@ -44,7 +44,9 @@
 		{#if editing}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
-				class="{block.level === 1 ? 'text-base font-semibold' : 'text-sm font-semibold text-muted-foreground'} bg-transparent focus:outline-none w-full pb-1.5"
+				class="{block.level === 1
+					? 'text-2xl font-bold text-foreground'
+					: 'text-xs font-semibold uppercase tracking-widest text-muted-foreground'} bg-transparent focus:outline-none w-full pb-1"
 				bind:value={draft}
 				onblur={commit}
 				onkeydown={onKey}
@@ -52,12 +54,13 @@
 			/>
 		{:else}
 			<button
-				class="{block.level === 1 ? 'text-base font-semibold text-foreground' : 'text-sm font-semibold text-muted-foreground'} text-left w-full pb-1.5 hover:opacity-70 transition-opacity cursor-text"
+				class="{block.level === 1
+					? 'text-2xl font-bold text-foreground'
+					: 'text-xs font-semibold uppercase tracking-widest text-muted-foreground'} text-left w-full pb-1 hover:opacity-70 transition-opacity cursor-text"
 				onclick={startEdit}
 				title="Click to edit heading"
 			>{block.heading || 'Section'}</button>
 		{/if}
-		<div class="border-b border-border/60"></div>
 	</div>
 
 	<!-- Hover controls -->
