@@ -243,9 +243,9 @@
 					<Table.Row class="border-b-0">
 						{#each headerGroup.headers as header, hi (header.id)}
 							{@const s = statsMap[header.id]}
-							<Table.Head class="border-b p-2 align-top bg-background
+							<Table.Head class="border-b p-2 align-top bg-accent dark:bg-accent
 								{hi === 0
-									? 'sticky top-0 left-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
+									? 'sticky top-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
 									: 'sticky top-0 z-20'}">
 								{#if s && headerInsights === 'full'}
 									<div class="flex min-w-22.5 flex-col gap-0.5">
@@ -400,13 +400,13 @@
 			</Table.Header>
 			<Table.Body>
 				{#each table.getRowModel().rows as row (row.id)}
-					<Table.Row>
+					<Table.Row class="even:bg-background ">
 						{#each row.getVisibleCells() as cell, ci (cell.id)}
 							{@const value = row.original[cell.column.id]}
 							{@const isNull = value === null || value === undefined}
 							<Table.Cell
 								class="max-w-70 truncate p-2 cursor-pointer hover:bg-muted/50 transition-colors
-									{ci === 0 ? 'sticky left-0 bg-background shadow-[1px_0_0_0_hsl(var(--border))]' : ''}"
+									{ci === 0 ? 'stickyv left-0v even:bg-background   shadow-[1px_0_0_0_hsl(var(--border))]' : ''}"
 								onclick={() => { selectedCell = { col: cell.column.id, value }; copied = false; }}
 							>
 								<span class="font-mono text-xs {isNull ? 'text-muted-foreground' : ''}">

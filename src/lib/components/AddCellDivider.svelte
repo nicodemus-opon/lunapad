@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Plus } from '@lucide/svelte';
+	import { Plus, Ellipsis } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 
 	let {
@@ -27,19 +27,20 @@
 	></div>
 	<div class="relative flex items-center gap-0.5">
 		<button
-			class="flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors outline-none hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+			class="flex p-2 items-center justify-center rounded-full border bg-secondary text-secondary-foreground transition-colors outline-none hover:border-border hover:bg-secondary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
 			aria-label="Add cell here"
 			title="Add cell"
 			onclick={() => onAdd('default')}
 		>
-			<Plus class="h-3 w-3" />
+			<Plus class="h-5 w-5" />
 		</button>
 		<DropdownMenu.Root bind:open={menuOpen}>
 			<DropdownMenu.Trigger
-				class="flex h-5 items-center rounded-full border bg-background px-1.5 text-2xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+				class="flex p-2 items-center rounded-full border bg-accent text-2xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 				aria-label="Choose cell type"
 			>
-				…
+			<Ellipsis class="h-5 w-5"/>
+				
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content side="bottom" align="center" class="min-w-32">
 				<DropdownMenu.Item onclick={() => onAdd('prql')}>PRQL cell</DropdownMenu.Item>

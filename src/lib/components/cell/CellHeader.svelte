@@ -75,10 +75,11 @@
 	onclick={onRowClick}
 >
 	<div class="flex min-w-0 flex-1 items-center gap-1.5">
+	{#if !codeHidden}
 		<Tooltip.Root>
 			<Tooltip.Trigger class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'}">
 				<input
-					class="cell-name-input h-6 min-w-0 {collapsed
+					class="cell-name-input text-inherit h-6 min-w-0 {collapsed
 						? 'w-auto max-w-48'
 						: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
 					placeholder={isQueryCell ? 'model name…' : 'note title…'}
@@ -118,8 +119,8 @@
 				{/if}
 			</Tooltip.Content>
 		</Tooltip.Root>
-
-		{#if isQueryCell && downstreamTotal > 0}
+		{/if}
+		{#if !codeHidden && isQueryCell && downstreamTotal > 0}
 			<Popover.Root onOpenChange={onOverlayChange}>
 				<Popover.Trigger
 					class="inline-flex h-5 shrink-0 items-center gap-0.5 rounded px-1 text-2xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -228,19 +229,19 @@
 					>
 				</Tooltip.Root>
 			{/if}
-			<div class="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5 gap-px surface-inset">
+			<div class="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5 gap-px ">
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'prql' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'prql' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
 					onclick={() => onModeChange('prql')}
 					title="PRQL code mode">PRQL</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'visual' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'visual' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
 					onclick={() => onModeChange('visual')}
 					title="Visual pipeline editor">Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 font-mono text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'sql' ? 'bg-foreground text-background shadow-sm ring-1 ring-black/8 dark:ring-white/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'sql' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
 					onclick={() => onModeChange('sql')}
 					title="SQL mode">SQL</button
 				>

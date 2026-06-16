@@ -172,7 +172,7 @@
 			</div>
 		{:else}
 			<!-- Full cell view: left config panel + chart (matches ResultView layout) -->
-			<div class="flex overflow-hidden rounded-md border border-border/40">
+			<div class="flex overflow-hidden rounded-md">
 				{#if showConfigPanel}
 					<div class="w-52 shrink-0 border-r border-border/60 bg-muted/10 overflow-y-auto px-3 py-3">
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />

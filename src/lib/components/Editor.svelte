@@ -152,7 +152,7 @@
 			hideCursorInOverviewRuler: true,
 			overviewRulerBorder: false,
 			fontSize: 13.6,
-			fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace",
+			fontFamily: "'IBM Plex Mono','JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace",
 			contextmenu: false,
 			// suggest widget must escape the cell card's overflow clipping
 			fixedOverflowWidgets: true,
@@ -280,7 +280,7 @@
 
 <div
 	bind:this={container}
-	class="editor-container code-editor relative text-sm"
+	class="editor-container code-editor relative text-sm border rounded-md"
 	class:dark-editor={dark}
 ></div>
 
@@ -291,7 +291,7 @@
 <style>
 	.editor-container {
 		min-height: 80px;
-		border-radius: 0.375rem;
+		
 		overflow: hidden;
 	}
 	.editor-container :global(.monaco-editor),

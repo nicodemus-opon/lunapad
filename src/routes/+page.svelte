@@ -686,8 +686,8 @@
 			data-tauri-drag-region={isDesktop ? '' : undefined}
 		>
 			<div
-				class="flex items-center justify-between py-2"
-				style="padding-left: max(1rem, var(--titlebar-inset-left)); padding-right: max(1rem, var(--titlebar-inset-right))"
+				class="flex items-center justify-between py-2 px-2"
+				
 			>
 				<div class="flex items-center gap-2">
 					<div class="flex shrink-0 items-center gap-2">
@@ -923,7 +923,7 @@
 						aria-label="Upload file"
 						onclick={() => (uploadDialogOpen = true)}
 					>
-						<Button variant="default" size="sm">
+						<Button variant="secondary" size="sm">
 							<Upload class="h-3.5 w-3.5" />Upload
 						</Button>
 					</Tooltip.Trigger>
@@ -948,9 +948,9 @@
 		{#snippet railButton(panel: SidebarPanel, Icon: typeof BookOpen, tooltipLabel: string)}
 			<Tooltip.Root>
 				<Tooltip.Trigger
-					class="flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
+					class="flex  h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
 					panel
-						? 'bg-primary/15 text-primary'
+						? 'bg-accent border border-border/50 text-foreground'
 						: 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'}"
 					onclick={() => selectSidebarPanel(panel)}
 					aria-label={tooltipLabel}
@@ -1178,7 +1178,7 @@
 					{@const Icon = opts.icon}
 					<div
 						class="group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-xs transition-colors select-none after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors {isActive
-							? 'font-medium text-foreground after:bg-primary'
+							? 'font-medium text-foreground after:bg-secondary'
 							: 'text-muted-foreground after:bg-transparent hover:bg-muted/40 hover:text-foreground'}"
 						role="tab"
 						tabindex="0"
@@ -1345,7 +1345,7 @@
 				</div>
 				{#if isNotebookTab}
 				<div class="flex min-h-0 flex-1 overflow-hidden">
-					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
+					<main class="notebook-scroll flex-1 overflow-y-auto bg-background font-serif">
 						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input
