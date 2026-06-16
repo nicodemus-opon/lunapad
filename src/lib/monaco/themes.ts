@@ -19,7 +19,7 @@ const LIGHT = {
 };
 
 const DARK = {
-	background: '#222220', // one step inset from --background
+	background: '#1f1e1b', // one step inset from --background
 	foreground: '#c3c0b6', // --foreground
 	mutedForeground: '#b7b5a9',
 	accent: '#1a1915',

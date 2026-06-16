@@ -135,9 +135,11 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		'case'
 	] as const;
 	const isQueryCell = $derived(cell.cellType === 'query');
-	// Report view renders every query cell as output-only without touching the
-	// per-cell display state.
-	const effectiveDisplay = $derived(reportView && isQueryCell ? 'output' : cell.display);
+	// Report view renders query cells as output-only, unless they are explicitly
+	// collapsed — collapsed cells are hidden entirely in report mode.
+	const effectiveDisplay = $derived(
+		reportView && isQueryCell && cell.display !== 'collapsed' ? 'output' : cell.display
+	);
 	const collapsed = $derived(effectiveDisplay === 'collapsed');
 	const codeHidden = $derived(isQueryCell && effectiveDisplay !== 'full');
 	let running = $derived(cell.status === 'running');
@@ -644,7 +646,8 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
-	class="notebook-cell group relative rounded-lg text-foreground outline-none {entering ? 'is-entering' : ''} {reportView ? '' : running ? 'bg-muted/30' : 'hover:bg-muted/15'} {isGhost ? 'cell-ai-ghost ring-1 ring-primary/30 bg-primary/5' : ''}"
+	class="notebook-cell p-4 border-1 border-transparent group relative rounded-lg text-foreground outline-none {entering ? 'is-entering' : ''} {reportView ? '' : running ? 'bg-muted/30' : 'hover:bg-muted/10 hover:border-1 hover:border-border  '} {isGhost ? 'cell-ai-ghost ring-1 ring-primary/30 bg-primary/5' : ''}"
+	hidden={reportView && collapsed}
 	data-focused={cellFocused}
 	tabindex="0"
 	onkeydown={handleKeydown}
@@ -785,7 +788,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	{#if cell.errors.length > 0}
 		<div class="space-y-0.5 pl-0.5" in:fly={{ y: -4, duration: 130 }}>
 			{#each cell.errors as error (error.display ?? error.reason)}
-				<div class="rounded-r-sm border-l-2 border-destructive/80 bg-destructive/6 pl-2 pr-2 py-1">
+				<div class="rounded-r-sm  border-destructive/80  py-2">
 					<p class="text-xs font-mono text-destructive/90 leading-snug whitespace-pre-wrap">{error.display ?? error.reason}</p>
 				</div>
 			{/each}
@@ -793,7 +796,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	{/if}
 
 	{#if cell.materializeError}
-		<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm border-l-2 border-destructive/80 bg-destructive/6 pl-2 pr-2 py-1">
+		<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm  py-2">
 			<p class="text-xs font-mono text-destructive/90 leading-snug whitespace-pre-wrap">{cell.materializeError}</p>
 		</div>
 	{/if}

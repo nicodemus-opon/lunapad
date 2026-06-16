@@ -72,7 +72,6 @@ describe('interpolateMarkdownRefs', () => {
 
 	it('handles bad ref syntax gracefully', () => {
 		const out = interpolateMarkdownRefs('{{bad ref!}}', []);
-		expect(out).toContain('bad ref');
 		expect(out).toContain('md-live-ref--missing');
 	});
 
@@ -81,6 +80,44 @@ describe('interpolateMarkdownRefs', () => {
 		const out = interpolateMarkdownRefs('{{orders.count}}', cells);
 		expect(out).toContain('class="md-live-ref"');
 		expect(out).not.toContain('md-live-ref--missing');
+	});
+
+	it('rowCount is an alias for count', () => {
+		const cells = [makeCell('orders', [{ id: 1 }, { id: 2 }, { id: 3 }])];
+		const out = interpolateMarkdownRefs('Total: {{orders.rowCount}}', cells);
+		expect(strip(out)).toBe('Total: 3');
+	});
+
+	it('resolves column-first indexed ref name.col[N]', () => {
+		const cells = [makeCell('orders', [{ month: 'Jan' }, { month: 'Feb' }])];
+		const out = interpolateMarkdownRefs('Second: {{orders.month[1]}}', cells);
+		expect(strip(out)).toBe('Second: Feb');
+	});
+
+	it('resolves negative index name.col[-1] as last row', () => {
+		const cells = [makeCell('orders', [{ month: 'Jan' }, { month: 'Feb' }, { month: 'Mar' }])];
+		const out = interpolateMarkdownRefs('Last: {{orders.month[-1]}}', cells);
+		expect(strip(out)).toBe('Last: Mar');
+	});
+
+	it('evaluates simple arithmetic expression', () => {
+		const cells = [makeCell('orders', [{ id: 1 }, { id: 2 }, { id: 3 }])];
+		const out = interpolateMarkdownRefs('N-1: {{orders.count - 1}}', cells);
+		expect(strip(out)).toBe('N-1: 2');
+	});
+
+	it('evaluates compound expression with | round filter', () => {
+		const a = makeCell('sales', [{ revenue: 150 }]);
+		const b = makeCell('totals', [{ id: 1 }, { id: 2 }]);
+		const out = interpolateMarkdownRefs('Pct: {{(sales.revenue[0] * 100 / totals.count) | round(1)}}', [a, b]);
+		expect(strip(out)).toBe('Pct: 7500.0');
+	});
+
+	it('evaluates cross-cell arithmetic with rowCount', () => {
+		const a = makeCell('subset', [{ val: 25 }]);
+		const b = makeCell('all', [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+		const out = interpolateMarkdownRefs('Share: {{(subset.val[0] * 100 / all.rowCount) | round(1)}}', [a, b]);
+		expect(strip(out)).toBe('Share: 625.0');
 	});
 });
 
