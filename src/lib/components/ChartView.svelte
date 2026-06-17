@@ -894,7 +894,7 @@
 	});
 </script>
 
-<div class="w-full px-8 py-8 border bg-accent/50 dark:bg-accent rounded-md flex flex-col " style="height:{height}px">
+<div class="w-full px-8 py-8 border bg-background rounded-md flex flex-col " style="height:{height}px">
 	{#if config.title}
 		<div class="mb-1 px-1 shrink-0">
 			<p class="text-sm font-medium text-foreground leading-tight">{config.title}</p>

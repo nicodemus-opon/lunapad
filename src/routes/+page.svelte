@@ -1345,7 +1345,7 @@
 				</div>
 				{#if isNotebookTab}
 				<div class="flex min-h-0 flex-1 overflow-hidden">
-					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
+					<main class="notebook-scroll flex-1 overflow-y-auto bg-accent">
 						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input

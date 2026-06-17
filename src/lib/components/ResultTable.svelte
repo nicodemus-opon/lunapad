@@ -243,7 +243,7 @@
 					<Table.Row class="border-b-0">
 						{#each headerGroup.headers as header, hi (header.id)}
 							{@const s = statsMap[header.id]}
-							<Table.Head class="border-b p-2 align-top bg-accent dark:bg-accent
+							<Table.Head class="border-b p-2 align-top bg-background 
 								{hi === 0
 									? 'sticky top-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
 									: 'sticky top-0 z-20'}">
