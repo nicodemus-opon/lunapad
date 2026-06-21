@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable, WorkspaceContract } from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
+import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -8,7 +9,6 @@ function formatCellGraph(c: AIChatCell): string {
 	const parts: string[] = [`${c.outputName}(${c.language},${c.status})`];
 	if (c.upstream?.length) parts.push(`←[${c.upstream.join(',')}]`);
 	if (c.downstream?.length) parts.push(`→[${c.downstream.join(',')}]`);
-	if (c.usedInDashboards?.length) parts.push(`dash:${c.usedInDashboards.join(',')}`);
 	if (c.criticalityScore && c.criticalityScore >= 3) {
 		parts.push(`[HIGH IMPACT — ${c.criticalityScore} dependents]`);
 	}
@@ -152,12 +152,7 @@ Sample table:    <tool_call>{"tool":"sample_data","callId":"D2","args":{"table":
 Profile col:     <tool_call>{"tool":"profile_column","callId":"D3","args":{"table":"orders","column":"status"}}</tool_call>
 Get cell result: <tool_call>{"tool":"get_cell_result","callId":"D4","args":{"cellId":"C1","limit":20}}</tool_call>
 List cells:      <tool_call>{"tool":"list_cells","callId":"L1","args":{}}</tool_call>
-List dashboards: <tool_call>{"tool":"list_dashboards","callId":"L2","args":{}}</tool_call>
 Search:          <tool_call>{"tool":"search_workspace","callId":"S1","args":{"query":"customer dim"}}</tool_call>
-New dashboard:   <tool_call>{"tool":"create_dashboard","callId":"DB1","args":{"name":"Revenue Dashboard"}}</tool_call>
-Add chart block: <tool_call>{"tool":"add_dashboard_block","callId":"DB2","args":{"dashboardId":"DB1","blockType":"chart","config":{"cellId":"C1","height":"md","width":2}}}</tool_call>
-Add KPI block:   <tool_call>{"tool":"add_dashboard_block","callId":"DB3","args":{"dashboardId":"DB1","blockType":"kpi","config":{"label":"Total Revenue","valueExpr":"revenue","prefix":"$","width":1}}}</tool_call>
-Open dashboard:  <tool_call>{"tool":"open_dashboard","callId":"DB4","args":{"dashboardId":"DB1"}}</tool_call>
 Record decision: <tool_call>{"tool":"record_decision","callId":"R1","args":{"decision":"treating email as FK to customers — no id in source"}}</tool_call>
 `;
 
@@ -213,7 +208,7 @@ RULES:
 14. DONE: <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Keep each suggestion under 60 chars. Never include <done> in a response that also calls run_cells, sample_data, query_data, or profile_column — the system pauses after those and gives you results first.
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
 16. DOCUMENT YOUR WORK: after cells run clean, always write a markdown findings cell (cellType:"markdown", outputName:"findings") summarising what was built, data quality notes, and key decisions.
-17. LIVE REFS IN MARKDOWN: markdown cells support \`{{outputName.field}}\` interpolation — resolved at render time from query results. Use \`{{name.count}}\` for row counts, \`{{name.col}}\` for a first-row value, \`{{name[N].col}}\` for the Nth row. ALWAYS prefer live refs over hard-coded numbers in findings cells so the doc stays accurate when data changes. Example: "Found **{{orders.count}} orders**; peak month: **{{top_month.month}}** with **{{top_month.revenue}}** revenue."
+17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
 17. RECORD DECISIONS: after confirming a primary key, join key, grain, or business rule, call record_decision. Re-injected in all future turns — you will never need to re-investigate it.
 
 You MAY write 1–2 sentences of explanation before tool calls.
@@ -233,10 +228,7 @@ function buildWorkspaceContractSection(contract: WorkspaceContract | undefined):
 	}
 
 	if (contract.topReusableModels.length > 0) {
-		const rows = contract.topReusableModels.map((m) => {
-			const dashNote = m.dashboards.length ? `, dashboards: ${m.dashboards.join(', ')}` : '';
-			return `  ${m.name}  — ${m.downstreamCount} downstream${dashNote}`;
-		}).join('\n');
+		const rows = contract.topReusableModels.map((m) => `  ${m.name}  — ${m.downstreamCount} downstream`).join('\n');
 		parts.push(`Top reusable models:\n${rows}`);
 	}
 
@@ -253,12 +245,11 @@ function buildSystemPromptXML(cells: AIChatCell[], schema: AIChatSchemaTable[], 
 		? cells.map((c) => {
 			const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
 			const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
-			const dash = c.usedInDashboards?.length ? ` dashboards=[${c.usedInDashboards.join(', ')}]` : '';
 			const chart = c.resultChartConfig ? ` chart=${c.resultChartConfig.chartType}(x=${c.resultChartConfig.xColumn},y=[${c.resultChartConfig.yColumns?.join(',')}])` : '';
 			const active = c.isActiveNotebook ? ' [active]' : '';
 			const impact = (c.criticalityScore ?? 0) >= 3 ? ` [HIGH IMPACT — ${c.criticalityScore} dependents]` : '';
 			const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
-			return `  id=${c.id} name="${c.outputName}" status=${c.status}${active}${impact}${up}${down}${dash}${chart}${err}`;
+			return `  id=${c.id} name="${c.outputName}" status=${c.status}${active}${impact}${up}${down}${chart}${err}`;
 		}).join('\n')
 		: '  (none)';
 
@@ -328,7 +319,7 @@ Set \`materializeMode\` on new cells per workspace conventions.
 **Step 5 — Document** (required after cells run clean)
 Write a markdown cell (\`cellType: "markdown"\`, \`outputName: "findings"\` or \`"summary"\`) leading with **findings** — what the data actually reveals, not just what was built. Format: "**Finding**: 23% of orders have null customer_id — likely guest checkout." Then cover: grain of each model, key decisions (layer, materialization, join logic, dedup), data quality observations (NULLs, duplicates, unexpected values, date range). An analyst reading this notebook should immediately understand what the data *means*, not just what was built.
 
-Use \`{{outputName.field}}\` live refs for all key numbers so the summary updates automatically when data refreshes: \`{{orders.count}} orders\`, \`{{top_segment.segment}} leads by revenue\`, \`{{quality_check.null_pct}}% null rate\`. Never hard-code numbers that come from query results.
+${buildMarkdocSyntaxBlock()}
 
 **Step 6 — Done**: output the \`<done>\` signal.
 
@@ -339,6 +330,7 @@ Use \`{{outputName.field}}\` live refs for all key numbers so the summary update
 
 ## SQL quality
 - NEVER end SQL with a semicolon (;) — trailing semicolons break CTE chaining
+- SQL comments use \`-- like this\`, NEVER \`# like this\` — a leading \`#\` is a parser syntax error in both DuckDB and Trino
 - Use meaningful column aliases (revenue, order_count, avg_value — not col1, val)
 - Prefer explicit column lists over SELECT *
 - Include ORDER BY for ranked/time-series results
@@ -370,20 +362,6 @@ Use \`{{outputName.field}}\` live refs for all key numbers so the summary update
 - delete_cell: {cellId:string}
 - move_cell: {cellId:string, direction?:"up"|"down", toIndex?:number} — reorder a cell in the notebook
 
-## Tools (dashboard)
-Use these to build dashboards from notebook cells. Call list_dashboards first to see existing dashboards.
-- list_dashboards: {} — list all dashboards with their block layout and referenced cells
-- create_dashboard: {name:string} — create a new empty dashboard, returns dashboardId
-- add_dashboard_block: {dashboardId:string, blockType:"chart"|"text"|"kpi"|"filter"|"section"|"callout", config:{...}}
-  - chart block: config={cellId:string, height:"sm"|"md"|"lg", width:1|2|3, title?:string}
-  - kpi block: config={label:string, valueExpr:string, changeExpr?:string, prefix?:string, suffix?:string, width:1|2|3}
-  - text block: config={markdown:string, width:1|2|3}
-  - callout block: config={markdown:string, variant:"info"|"warning"|"error"|"success", title?:string, width:1|2|3}
-  - filter block: config={label:string, paramName:string, filterKind:"dropdown"|"text-input"|"date-range"|"button-group", options?:string[], width:1|2|3}
-  - section block: config={heading:string, level:1|2, width:3}
-- update_dashboard_block: {dashboardId:string, blockId:string, patch:{...}} — update any block fields
-- open_dashboard: {dashboardId:string} — navigate the user to this dashboard
-
 ## Tools (data investigation — call BEFORE writing SQL)
 - sample_data: {table:string, n?:number} — random rows from a schema table. **Call this first on any unfamiliar table** to learn actual values, date formats, and column content.
 - query_data: {sql:string, limit?:number} — run any read-only SELECT to verify specific values, ranges, or join keys
@@ -396,15 +374,14 @@ Use these to build dashboards from notebook cells. Call list_dashboards first to
 **DONE SIGNAL: When your analysis is fully complete, output a \`<done>\` block at the very end (after all tool calls and prose): \`<done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>\`. Each suggestion must name a specific analytical pattern, metric, or model the data can support next — not a generic task. Good: \`"Retention curve by signup_month"\`, \`"RFM segmentation on these orders"\`. Bad: \`"Add more metrics"\`, \`"Improve the model"\`. Then stop calling tools. After each \`run_cells\`, \`sample_data\`, \`query_data\`, or \`profile_column\` call, the system pauses and gives you the result before you continue — do NOT include \`<done>\` in the same response as these tools.**
 
 ## Tools (lookup — use before building or modifying cells)
-- get_lineage: {outputName:string} — upstream/downstream deps + dashboard usage
-- find_dashboard_usage: {outputName:string} — which dashboards reference this cell
+- get_lineage: {outputName:string} — upstream/downstream deps
 - list_cells: {} — full inventory of existing models (use in Step 1)
 - search_workspace: {query:string} — semantic search; returns full SQL code for matched cells (use in Step 1 to find reusable models)
 - get_cell_result: {cellId:string, limit?:number} — read an already-run cell's result data without re-querying. Use when explaining results or charting existing data.
 - **record_decision: {decision:string}** — record a modeling decision that persists across turns. Call after confirming a primary key, join key, grain, business rule, or data quality fix. Prevents re-investigating already-resolved questions in later turns.
 
 ## Graph notation
-depends_on=[x] = reads FROM x. feeds_into=[x] = x reads FROM this. dashboards=[x] = used in dashboard x. [HIGH IMPACT] = cell has 3+ dependents — be conservative when modifying.
+depends_on=[x] = reads FROM x. feeds_into=[x] = x reads FROM this. [HIGH IMPACT] = cell has 3+ dependents — be conservative when modifying.
 Notebook cells show name, status, and topology. Use search_workspace to retrieve full SQL for a cell before extending it.
 
 Notebook:
@@ -416,7 +393,7 @@ Respond with concise prose and inline tool calls. Make the notebook beautiful.`;
 }
 
 function buildSubagentSystemPrompt(
-	type: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning',
+	type: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning' | 'documentation',
 	cells: AIChatCell[],
 	schema: AIChatSchemaTable[],
 	sessionDataContext: Record<string, string> | undefined,
@@ -684,7 +661,7 @@ ${schemaList}`;
 		}
 
 		case 'dashboard':
-			return `You are a dashboard builder. Your job is to chart existing query cells and assemble them into a dashboard.
+			return `You are a visual summary builder. Your job is to compose a single Markdoc markdown cell that lays out existing query cells as a grid of KPI/chart widgets — there is no separate "dashboard" object anymore, just a richly-templated markdown cell.
 
 ${toolFmt}
 Available tools:
@@ -693,28 +670,50 @@ Available tools:
 - get_lineage: {"outputName": "..."}
 - pick_chart: {"cellId": "..."}
 - set_chart: {"cellId": "...", "chartConfig": {...}}
-- create_dashboard: {"name": "..."}
-- add_dashboard_block: {"dashboardId": "...", "blockType": "chart", "config": {...}}
-- update_dashboard_block: {"dashboardId": "...", "blockId": "...", "patch": {...}}
-- list_dashboards: {}
-- open_dashboard: {"dashboardId": "..."}
+- create_cell: {"outputName": "overview", "cellType": "markdown", "markdown": "..."}
+- update_cell: {"cellId": "...", "markdown": "..."}
+
+${buildMarkdocSyntaxBlock()}
 
 Workflow:
-1. Call list_cells. Identify cells by dbt layer and prioritise for the dashboard:
+1. Call list_cells. Identify cells by dbt layer and prioritise for the summary:
    - mart_ cells are designed for reporting — prefer these above all others.
    - fct_ and dim_ cells are acceptable when no mart_ exists for the topic.
-   - Do NOT add stg_ or ephemeral intermediate cells to the dashboard — they are not reporting-ready.
+   - Do NOT include stg_ or ephemeral intermediate cells — they are not reporting-ready.
    If the topic has no mart_ or fct_ cells, include a suggestion in <done> that a mart model should be created first.
-2. For each selected cell, call get_cell_result to understand its shape.
-3. Call pick_chart for each cell to auto-infer the best chart type.
-4. Call create_dashboard with a descriptive name.
-5. Add each charted cell to the dashboard via add_dashboard_block.
-6. Call open_dashboard to show the result.
-7. Call <done>.
+2. For each selected cell, call get_cell_result to understand its shape (columns, row count).
+3. Write ONE markdown cell (cellType: "markdown") using {% grid cols=N %} of {% metric %} widgets for top-line KPIs and {% chart %} tags for trends — reference cells via $outputName, never hardcoded values (numbers, dates, or text).
+4. Use {% columns %}/{% column %} to lay out multiple charts side by side when there are several cells to cover.
+5. Call <done>.
 
-Do NOT write SQL or create query cells — only chart and arrange existing ones.
+Do NOT write SQL or create query cells — only compose the summary cell from existing ones.
 
-<done>{"suggestions":["Follow-up ideas for the dashboard"]}</done>
+<done>{"suggestions":["Follow-up ideas for the summary"]}</done>
+
+Notebook:
+${cellList}${contractNote}`;
+
+		case 'documentation':
+			return `You are a documentation agent. Your only job is to read existing cell results and write ONE well-structured Markdoc markdown cell summarizing them. Do NOT write or modify SQL, and do NOT create or edit query cells.
+
+${toolFmt}
+Available tools:
+- list_cells: {}
+- get_cell_result: {"cellId": "...", "limit": 50}
+- create_cell: {"outputName": "findings", "cellType": "markdown", "markdown": "..."}
+- update_cell: {"cellId": "...", "markdown": "..."}
+- record_decision: {"decision": "..."}
+
+${buildMarkdocSyntaxBlock()}
+
+Workflow:
+1. Call list_cells, then get_cell_result on the cells relevant to this task to see actual values, row counts, and column names.
+2. Write one markdown cell (cellType: "markdown") leading with the finding, not just a description of what was built.
+3. Use {% grid %} of {% metric %} widgets for top-line KPIs, {% chart %} for trends, {% callout type="warning" %} to flag data-quality issues (nulls, duplicates, unexpected values), and {% if gt($cell.count, 0) %}...{% else /%}...{% /if %} to handle empty-result states gracefully.
+4. Never hard-code a value — number, date, or text — that comes from a query result; every such value must be a live ref.
+5. Call <done>.
+
+<done>{"suggestions":["Follow-up ideas for the documentation"]}</done>
 
 Notebook:
 ${cellList}${contractNote}`;
@@ -731,7 +730,6 @@ Available tools:
 - search_workspace: {"query": "..."}
 - list_cells: {}
 - get_lineage: {"outputName": "..."}
-- find_dashboard_usage: {"outputName": "..."}
 - compare_cells: {"cellId1": "...", "cellId2": "..."}
 
 Workflow:
@@ -764,7 +762,7 @@ Instructions:
    - "build": create one or more SQL cells for a specific model layer
    - "visualize": apply charts to existing query cells
    - "document": write a findings markdown cell
-   - "dashboard": assemble a dashboard from existing cells
+   - "dashboard": compose a Markdoc grid/columns layout of metric and chart widgets in one markdown cell, from existing cells
 3. Order tasks so each builds on the previous (investigate before build, build before visualize).
 4. For each task, write a clear successCriteria: what "done" means (e.g. "cell runs with >0 rows and columns customer_id, region").
 5. Output ONLY a <sprint> block containing a JSON array — nothing else before or after:
@@ -773,7 +771,7 @@ Instructions:
   {"type":"investigate","title":"Explore orders table","successCriteria":"Confirmed grain and key columns of the orders source table"},
   {"type":"build","title":"Build dim_customers model","successCriteria":"dim_customers runs with >0 rows, columns include customer_id and region"},
   {"type":"visualize","title":"Chart revenue cell","successCriteria":"revenue_by_month has a line chart applied"},
-  {"type":"dashboard","title":"Assemble summary dashboard","successCriteria":"Dashboard created with revenue chart and KPI blocks"}
+  {"type":"dashboard","title":"Compose summary cell","successCriteria":"Markdown cell created with a metric grid and revenue chart"}
 ]</sprint>
 
 <done>{"suggestions":[]}</done>
@@ -802,7 +800,7 @@ const NATIVE_TOOLS = [
 					outputName: { type: 'string', description: 'For markdown: short word (intro, summary, findings). For SQL: snake_case description (revenue_by_month, top_customers).' },
 					cellType: { type: 'string', enum: ['query', 'markdown'], description: 'query for SQL, markdown for explanatory prose' },
 					code: { type: 'string', description: 'Complete SQL for query cells. Omit for markdown cells.' },
-					markdown: { type: 'string', description: 'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with {{outputName.field}} (e.g. {{orders.count}}, {{top_month.revenue}}) — values update automatically when cells re-run.' },
+					markdown: { type: 'string', description: 'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with {{outputName.field}} (e.g. {{orders.count}}, {{top_month.revenue}}) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %} — any cell containing {% is rendered with Markdoc. Values update automatically when cells re-run.' },
 					language: { type: 'string', enum: ['sql'], description: 'Always "sql" for query cells.' },
 					materializeMode: { type: 'string', enum: ['ephemeral', 'view', 'table', 'incremental'], description: 'How to materialize this model. Set per workspace naming conventions: dim_→table, fct_→incremental, stg_→view, metric_→incremental. Omit for ephemeral ad-hoc queries.' }
 				},
@@ -828,7 +826,7 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'set_chart',
-			description: 'Explicitly configure a chart when you need a specific type that pick_chart would not choose (e.g. area for cumulative revenue, pie for proportions, scatter with colorColumn). For all other cases, prefer pick_chart after run_cells.',
+			description: 'Explicitly configure a chart when you need a specific type that pick_chart would not choose (e.g. area for cumulative revenue, pie for proportions, scatter with colorColumn). For all other cases, prefer pick_chart after run_cells. Use chartType "custom" with a `code` snippet for chart shapes none of the other types can express — code receives `rows`, `columns`, `Plot` (the Observable Plot API), `width`, `height` and should return a Plot spec object or call Plot.plot(...) itself; xColumn/yColumns can be left empty for "custom".',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -836,13 +834,14 @@ const NATIVE_TOOLS = [
 					chartConfig: {
 						type: 'object',
 						properties: {
-							chartType: { type: 'string', enum: ['bar', 'bar-horizontal', 'line', 'area', 'scatter', 'bubble', 'pie', 'histogram', 'heatmap', 'big-value', 'value', 'delta', 'funnel', 'box-plot', 'calendar-heatmap', 'sankey'] },
+							chartType: { type: 'string', enum: ['bar', 'bar-horizontal', 'line', 'area', 'scatter', 'bubble', 'pie', 'histogram', 'heatmap', 'big-value', 'value', 'delta', 'funnel', 'box-plot', 'calendar-heatmap', 'sankey', 'custom'] },
 							xColumn: { type: 'string', description: 'Dimension / date / category / value column' },
 							yColumns: { type: 'array', items: { type: 'string' }, description: 'One or more measure columns. List all numeric measures for grouped/stacked charts.' },
 							colorColumn: { type: 'string', description: 'Optional: split series by this column (grouped bars, scatter color)' },
 							seriesMode: { type: 'string', enum: ['auto', 'grouped', 'stacked'], description: 'Use grouped or stacked when yColumns has multiple entries' },
 							sortOrder: { type: 'string', enum: ['none', 'asc', 'desc'] },
-							title: { type: 'string' }
+							title: { type: 'string' },
+							code: { type: 'string', description: 'Required when chartType is "custom": a JS Observable Plot spec, see description above.' }
 						},
 						required: ['chartType', 'xColumn', 'yColumns']
 					}
@@ -888,18 +887,6 @@ const NATIVE_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: { outputName: { type: 'string', description: 'The cell outputName to inspect' } },
-				required: ['outputName']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'find_dashboard_usage',
-			description: 'Returns which dashboards reference a given cell by outputName.',
-			parameters: {
-				type: 'object',
-				properties: { outputName: { type: 'string' } },
 				required: ['outputName']
 			}
 		}
@@ -997,77 +984,6 @@ const NATIVE_TOOLS = [
 					toIndex: { type: 'number', description: 'Move to exact 0-based index position.' }
 				},
 				required: ['cellId']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'list_dashboards',
-			description: 'List all dashboards with their blocks and referenced cells. Call before creating a dashboard to check what already exists.',
-			parameters: { type: 'object', properties: {} }
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'create_dashboard',
-			description: 'Create a new empty dashboard. Returns the dashboardId to use with add_dashboard_block.',
-			parameters: {
-				type: 'object',
-				properties: {
-					name: { type: 'string', description: 'Human-readable dashboard name.' }
-				},
-				required: ['name']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'add_dashboard_block',
-			description: 'Add a block to a dashboard. Use create_dashboard first to get a dashboardId. Block types: chart (references a cell), kpi (big number), text (markdown), filter (interactive filter), section (heading), callout (alert).',
-			parameters: {
-				type: 'object',
-				properties: {
-					dashboardId: { type: 'string', description: 'Dashboard id from create_dashboard or list_dashboards.' },
-					blockType: { type: 'string', enum: ['chart', 'text', 'kpi', 'filter', 'section', 'callout'] },
-					config: {
-						type: 'object',
-						description: 'Block-specific fields. chart: {cellId, height:"sm"|"md"|"lg", width:1|2|3, title?}. kpi: {label, valueExpr, changeExpr?, prefix?, suffix?, width}. text: {markdown, width}. filter: {label, paramName, filterKind:"dropdown"|"text-input"|"date-range"|"button-group", options?, width}. section: {heading, level:1|2, width:3}. callout: {markdown, variant:"info"|"warning"|"error"|"success", title?, width}.'
-					}
-				},
-				required: ['dashboardId', 'blockType', 'config']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'update_dashboard_block',
-			description: 'Update fields on an existing dashboard block. Use list_dashboards to find block ids.',
-			parameters: {
-				type: 'object',
-				properties: {
-					dashboardId: { type: 'string' },
-					blockId: { type: 'string' },
-					patch: { type: 'object', description: 'Fields to update (partial).' }
-				},
-				required: ['dashboardId', 'blockId', 'patch']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'open_dashboard',
-			description: 'Navigate the user to a dashboard after building it.',
-			parameters: {
-				type: 'object',
-				properties: {
-					dashboardId: { type: 'string', description: 'Dashboard to open.' }
-				},
-				required: ['dashboardId']
 			}
 		}
 	},

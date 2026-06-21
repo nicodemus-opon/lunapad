@@ -1,9 +1,10 @@
-// Monaco singleton — slim ESM build: editor core + SQL Monarch tokenizer only
+// Monaco singleton — slim ESM build: editor core + SQL/Python Monarch tokenizers only
 // (no JSON/TS/CSS/HTML language services, so only the base editor worker is needed).
 // Always load this module lazily from the client (await import('$lib/monaco')) —
 // it touches `self` and must never run during SSR/prerender.
 import 'monaco-editor/esm/vs/editor/editor.all.js';
 import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js';
+import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
 import type {
 	ClickHouseConnection,
 	Connection,
@@ -361,7 +362,11 @@ const WRITE_KEYWORD_RE =
 	/\b(insert|update|delete|drop|create|alter|truncate|replace|merge|grant|revoke|call|execute|exec|copy|vacuum|analyze|refresh|set\s+local|set\s+session|do\b)\b/i;
 
 function assertReadableSQL(sql: string): void {
-	const normalized = sql.trim().toLowerCase();
+	// Trino's inline Python UDFs (`WITH FUNCTION ... AS $$ <python> $$`) embed
+	// arbitrary Python source, which can plausibly contain blocklisted keywords
+	// or semicolons as literal text. Mask dollar-quoted blocks before validating
+	// so only the surrounding SQL shell — not the UDF body — is checked.
+	const normalized = maskDollarQuotedBlocks(sql.trim()).toLowerCase();
 	if (!normalized) throw new Error('SQL query is required.');
 	if (normalized.includes(';')) throw new Error('Only a single SQL statement is allowed.');
 	if (

@@ -6,10 +6,18 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { marked } from 'marked';
 	import Editor from './Editor.svelte';
+	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
+	import RefPickerMenu from './markdown/RefPickerMenu.svelte';
 	import GUIEditor from './gui/GUIEditor.svelte';
 	import InlineResultView from './InlineResultView.svelte';
-import MaterializeDialog from './MaterializeDialog.svelte';
-	import { prqlToGuiStages, extractLetBindings, mapErrorsToStages, mergeParsedWithHiddenStages } from '$lib/services/gui-prql';
+	import MaterializeDialog from './MaterializeDialog.svelte';
+	import PromoteDialog from './PromoteDialog.svelte';
+	import {
+		prqlToGuiStages,
+		extractLetBindings,
+		mapErrorsToStages,
+		mergeParsedWithHiddenStages
+	} from '$lib/services/gui-prql';
 	import { compilePRQL } from '$lib/services/prql';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import {
@@ -37,7 +45,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		setCellResultViewMode,
 		setCellResultChartConfig,
 		updateCellMarkdown,
+		updateCellUdfBody,
 		setCellMarkdownPreview,
+		duplicateCell,
+		copyCellToClipboard,
+		pasteCellAfter,
+		undo,
+		redo,
 		testCell,
 		openLineageTab,
 		getIsDbtProject,
@@ -46,6 +60,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		getFocusedCellId,
 		clearFocusedCell,
 		getCells,
+		getAllCellsAcrossNotebooks,
 		type CellLanguage,
 		type Cell,
 		getCrossNotebookUsageCount
@@ -62,8 +77,17 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	import CellStatusLine from './cell/CellStatusLine.svelte';
 	import CellSqlPreview from './cell/CellSqlPreview.svelte';
 	import CellModeSwitchDialogs from './cell/CellModeSwitchDialogs.svelte';
-	import { BUILTIN_DUCKDB_CONNECTION_ID, getPRQLTargetForConnection, resolveConnection } from '$lib/types/connection';
+	import {
+		BUILTIN_DUCKDB_CONNECTION_ID,
+		getPRQLTargetForConnection,
+		resolveConnection
+	} from '$lib/types/connection';
 	import { interpolateMarkdownRefs, extractMarkdownRefs } from '$lib/services/markdown-interp';
+	import {
+		hasMarkdocSyntax,
+		renderMarkdocCell,
+		extractMarkdocRefs
+	} from '$lib/services/markdoc-interp';
 
 	interface Props {
 		cell: Cell;
@@ -109,11 +133,14 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	let editorRef: Editor | undefined = $state();
 	let sqlExpanded = $state(false);
 	let entering = $state(true);
-	onMount(() => { setTimeout(() => (entering = false), 220); });
+	onMount(() => {
+		setTimeout(() => (entering = false), 220);
+	});
 	let autoRunTimer: ReturnType<typeof setTimeout> | undefined;
 	let pendingAutoRun = $state(false);
 	let menuOpen = $state(false);
 	let materializeDialogOpen = $state(false);
+	let promoteDialogOpen = $state(false);
 	// Portaled popovers (status chips, refs, errors) take focus outside the cell
 	// element; keep the cell chrome revealed while any of them is open.
 	let overlayCount = $state(0);
@@ -135,6 +162,8 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		'case'
 	] as const;
 	const isQueryCell = $derived(cell.cellType === 'query');
+	const isUdfCell = $derived(cell.cellType === 'udf');
+	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	// Report view renders query cells as output-only, unless they are explicitly
 	// collapsed — collapsed cells are hidden entirely in report mode.
 	const effectiveDisplay = $derived(
@@ -159,13 +188,21 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	let confirmSwitchToSql = $state<false | 'with-code' | 'without-code'>(false);
 	let compiledSqlForSwitch = $state('');
 	let confirmSwitchToPrql = $state(false);
-	const revealed = $derived(!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0));
+	let markdownTextareaEl: HTMLTextAreaElement | null = $state(null);
+	const revealed = $derived(
+		!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0)
+	);
 	const showResultControls = $derived(revealed);
 	const showResult = $derived(
 		!collapsed && Boolean(cell.result) && (cell.status === 'success' || cell.status === 'running')
 	);
+	const isMarkdocCell = $derived(isMarkdownCell && hasMarkdocSyntax(cell.markdown ?? ''));
+	const markdocResult = $derived.by(() => {
+		if (!isMarkdocCell) return null;
+		return renderMarkdocCell(cell.markdown ?? '', getAllCellsAcrossNotebooks());
+	});
 	const renderedMarkdown = $derived.by(() => {
-		if (isQueryCell) return '';
+		if (!isMarkdownCell || isMarkdocCell) return '';
 		const markdown = (cell.markdown || '').trim();
 		if (!markdown) return '';
 		const interpolated = interpolateMarkdownRefs(markdown, getCells());
@@ -177,8 +214,36 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			.replace(/<script[\s\S]*?<\/script>/gi, '')
 			.replace(/on[a-z]+="[^"]*"/gi, '');
 	});
-	const isMarkdownPreviewMode = $derived(!isQueryCell && cell.markdownPreview && !!cell.markdown?.trim());
-	const hasLiveRefs = $derived(!isQueryCell && extractMarkdownRefs(cell.markdown ?? '').length > 0);
+	const isMarkdownPreviewMode = $derived(
+		isMarkdownCell && cell.markdownPreview && !!cell.markdown?.trim()
+	);
+	const hasLiveRefs = $derived(
+		isMarkdownCell &&
+			(isMarkdocCell
+				? extractMarkdocRefs(cell.markdown ?? '').length > 0
+				: extractMarkdownRefs(cell.markdown ?? '').length > 0)
+	);
+	const refPickerEntries = $derived(
+		getAllCellsAcrossNotebooks()
+			.filter((c) => c.cellType === 'query' && c.result)
+			.map((c) => ({ cellName: c.outputName, columns: c.result!.columns }))
+	);
+
+	function insertMarkdownRef(cellName: string, column: string) {
+		const token = isMarkdocCell ? `$${cellName}.${column}` : `{{${cellName}.${column}}}`;
+		const text = cell.markdown ?? '';
+		const start = markdownTextareaEl?.selectionStart ?? text.length;
+		const end = markdownTextareaEl?.selectionEnd ?? text.length;
+		const next = text.slice(0, start) + token + text.slice(end);
+		updateCellMarkdown(cell.id, next);
+		const pos = start + token.length;
+		tick().then(() => {
+			markdownTextareaEl?.focus();
+			markdownTextareaEl?.setSelectionRange(pos, pos);
+			adjustMarkdownHeight();
+		});
+	}
+
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
 	const tables = $derived(getTables());
 	const externalSchemaTables = $derived(getExternalSchemaTables());
@@ -205,9 +270,12 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		const seen = new Set<string>();
 		for (const table of externalSchemaTables) {
 			if (table.connectionId !== connectionValue) continue;
-			const qualifiedName = cellCatalogName && table.schema
-			? `${cellCatalogName}.${table.schema}.${table.name}`
-			: table.schema ? `${table.schema}.${table.name}` : table.name;
+			const qualifiedName =
+				cellCatalogName && table.schema
+					? `${cellCatalogName}.${table.schema}.${table.name}`
+					: table.schema
+						? `${table.schema}.${table.name}`
+						: table.name;
 			if (seen.has(qualifiedName)) continue;
 			seen.add(qualifiedName);
 			merged.push({
@@ -220,7 +288,9 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		}
 		return merged;
 	});
-	const cellSqlDialect = $derived(getPRQLTargetForConnection(resolveConnection(connections, cell.connectionId)));
+	const cellSqlDialect = $derived(
+		getPRQLTargetForConnection(resolveConnection(connections, cell.connectionId))
+	);
 	const isDbtProject = $derived(getIsDbtProject());
 	const projectFolder = $derived(getProjectFolder());
 
@@ -272,6 +342,13 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			}
 		}
 
+		if (cell.language === 'sql') {
+			for (const c of getAllCellsAcrossNotebooks()) {
+				if (values.size >= EDITOR_COMPLETION_LIMIT) break;
+				if (c.cellType === 'udf' && c.outputName) values.add(c.outputName);
+			}
+		}
+
 		return Array.from(values);
 	});
 	const runImpact = $derived(getRunImpact(cell.id));
@@ -282,8 +359,12 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	});
 	const intelligenceSummary = $derived.by(() => {
 		if (!cell.intelligence) return null;
-		const qualityWarnings = cell.intelligence.dataQuality.filter((check) => check.status === 'warn').length;
-		const perfWarnings = cell.intelligence.performance.filter((item) => item.severity === 'warn').length;
+		const qualityWarnings = cell.intelligence.dataQuality.filter(
+			(check) => check.status === 'warn'
+		).length;
+		const perfWarnings = cell.intelligence.performance.filter(
+			(item) => item.severity === 'warn'
+		).length;
 		return {
 			rowCount: cell.intelligence.rowCount,
 			columnCount: cell.intelligence.columnCount,
@@ -302,7 +383,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			? mapErrorsToStages(
 					cell.guiStages,
 					cell.errors,
-					(() => { const p = getPrecedingCodeForCell(cell.id); return p ? p.split('\n').length : 0; })()
+					(() => {
+						const p = getPrecedingCodeForCell(cell.id);
+						return p ? p.split('\n').length : 0;
+					})()
 				)
 			: new Map<number, PRQLStageError[]>()
 	);
@@ -311,9 +395,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 	$effect(() => {
 		if (!isQueryCell) return;
 		// Track content — code in PRQL mode, stages in GUI mode
-		const _content = cell.editMode === 'gui'
-			? JSON.stringify(cell.guiStages)
-			: cell.code;
+		const _content = cell.editMode === 'gui' ? JSON.stringify(cell.guiStages) : cell.code;
 
 		clearTimeout(autoRunTimer);
 
@@ -427,19 +509,29 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		all[dir === 'prev' ? idx - 1 : idx + 1]?.focus();
 	}
 
+	function focusCellById(id: string) {
+		document.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)?.focus();
+	}
+
 	function enterEditMode() {
-		if (isQueryCell && cell.editMode === 'prql') {
+		if (isUdfCell || (isQueryCell && cell.editMode === 'prql')) {
 			editorRef?.focus();
 		} else if (isQueryCell && cell.editMode === 'gui') {
-			cellContainerEl
-				?.querySelector<HTMLElement>('.stage-card[tabindex]')
-				?.focus();
+			cellContainerEl?.querySelector<HTMLElement>('.stage-card[tabindex]')?.focus();
 		} else {
-			cellContainerEl
-				?.querySelector<HTMLElement>('textarea, input:not([readonly])')
-				?.focus();
+			cellContainerEl?.querySelector<HTMLElement>('textarea, input:not([readonly])')?.focus();
 		}
 	}
+
+	function adjustMarkdownHeight() {
+		if (!markdownTextareaEl) return;
+		markdownTextareaEl.style.height = 'auto';
+		markdownTextareaEl.style.height = `${markdownTextareaEl.scrollHeight}px`;
+	}
+
+	$effect(() => {
+		if (!isMarkdownPreviewMode && markdownTextareaEl) adjustMarkdownHeight();
+	});
 
 	function isNativeInputTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
@@ -449,11 +541,17 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 
 	function handleKeydown(e: KeyboardEvent) {
 		const inCommandMode = e.target === cellContainerEl;
-		const inStageEditor = (e.target instanceof Element) && !!(e.target as Element).closest('.stage-editor');
+		const inStageEditor =
+			e.target instanceof Element && !!(e.target as Element).closest('.stage-editor');
 
 		// Always: run cell — but never when focus is on a plain input like the cell name field.
 		// Monaco swallows these keys, so Editor.svelte re-dispatches them on its container div.
-		if (isQueryCell && e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey) && !isNativeInputTarget(e.target)) {
+		if (
+			isQueryCell &&
+			e.key === 'Enter' &&
+			(e.shiftKey || e.metaKey || e.ctrlKey) &&
+			!isNativeInputTarget(e.target)
+		) {
 			e.preventDefault();
 			runCell(cell.id);
 			return;
@@ -467,10 +565,32 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		}
 
 		// ⌘⇧T: run dbt tests for this cell (status surfaces in the tests chip)
-		if (isDbtProject && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't' && !isNativeInputTarget(e.target)) {
+		if (
+			isDbtProject &&
+			(e.metaKey || e.ctrlKey) &&
+			e.shiftKey &&
+			e.key === 't' &&
+			!isNativeInputTarget(e.target)
+		) {
 			e.preventDefault();
 			void testCell(cell.id);
 			return;
+		}
+
+		// ⌘Z / ⌘⇧Z / ⌘Y: notebook-level undo/redo. Global (not command-mode gated) so it
+		// works while the cell container has focus but the editor doesn't — but Monaco
+		// swallows these keys itself while it has focus, so its own text-undo takes over there.
+		if ((e.metaKey || e.ctrlKey) && !isNativeInputTarget(e.target)) {
+			if (e.key === 'z' && !e.shiftKey) {
+				e.preventDefault();
+				undo();
+				return;
+			}
+			if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+				e.preventDefault();
+				redo();
+				return;
+			}
 		}
 
 		// Escape: let GUIEditor handle events from inside the stage editor (stage cards, chip inputs)
@@ -483,14 +603,22 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 
 		// / in a GUI cell: enter stage mode then open the Add Stage menu
 		// Works from cell command mode, header buttons, or anywhere outside the stage editor
-		if (e.key === '/' && isQueryCell && cell.editMode === 'gui' && !inStageEditor && !isEditModeFocus(e.target)) {
+		if (
+			e.key === '/' &&
+			isQueryCell &&
+			cell.editMode === 'gui' &&
+			!inStageEditor &&
+			!isEditModeFocus(e.target)
+		) {
 			e.preventDefault();
 			enterEditMode();
 			tick().then(() => {
 				const focused = document.activeElement as HTMLElement | null;
 				if (focused?.classList.contains('stage-card')) {
 					// Dispatch / on the now-focused stage card — bubbles to AddStageMenu's window listener
-					focused.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }));
+					focused.dispatchEvent(
+						new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+					);
 				}
 			});
 			return;
@@ -530,12 +658,16 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 			case 'd':
 				e.preventDefault();
 				if (ddPending) {
-					const all = Array.from(document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]'));
+					const all = Array.from(
+						document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')
+					);
 					const idx = all.indexOf(cellContainerEl!);
 					removeCell(cell.id);
 					ddPending = false;
 					tick().then(() => {
-						const next = Array.from(document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]'));
+						const next = Array.from(
+							document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')
+						);
 						(next[idx] ?? next[idx - 1] ?? next[0])?.focus();
 					});
 				} else {
@@ -544,20 +676,60 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 				}
 				break;
 			case 'K':
-				if (e.shiftKey) { e.preventDefault(); moveCell(cell.id, 'up'); }
+				if (e.shiftKey) {
+					e.preventDefault();
+					moveCell(cell.id, 'up');
+				}
 				break;
 			case 'J':
-				if (e.shiftKey) { e.preventDefault(); moveCell(cell.id, 'down'); }
+				if (e.shiftKey) {
+					e.preventDefault();
+					moveCell(cell.id, 'down');
+				}
 				break;
 			case 'c':
 				e.preventDefault();
-				setCellDisplay(cell.id, collapsed ? 'full' : 'collapsed');
+				if (e.metaKey || e.ctrlKey) {
+					// ⌘C: copy cell (command-mode only, so it never competes with native text copy)
+					copyCellToClipboard(cell.id);
+				} else {
+					setCellDisplay(cell.id, collapsed ? 'full' : 'collapsed');
+				}
 				break;
 			case 'C':
 				// ⇧C: toggle output-only (hide/show code)
 				if (e.shiftKey && isQueryCell) {
 					e.preventDefault();
 					setCellDisplay(cell.id, cell.display === 'output' ? 'full' : 'output');
+				}
+				break;
+			case 'y':
+				// y: copy cell (vim-style yank)
+				e.preventDefault();
+				copyCellToClipboard(cell.id);
+				break;
+			case 'v':
+				if (e.metaKey || e.ctrlKey) {
+					// ⌘V: paste cell below (command-mode only — see ⌘C above)
+					e.preventDefault();
+					void pasteCellAfter(cell.id).then((newId) => {
+						if (newId) tick().then(() => focusCellById(newId));
+					});
+				}
+				break;
+			case 'p':
+				// p: paste cell below (vim-style)
+				e.preventDefault();
+				void pasteCellAfter(cell.id).then((newId) => {
+					if (newId) tick().then(() => focusCellById(newId));
+				});
+				break;
+			case 'D':
+				if (e.metaKey || e.ctrlKey) {
+					// ⇧⌘D: duplicate cell
+					e.preventDefault();
+					const newId = duplicateCell(cell.id);
+					if (newId) tick().then(() => focusCellById(newId));
 				}
 				break;
 		}
@@ -570,7 +742,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 
 	function addFilterSuggestion(column: string) {
 		if (cell.editMode !== 'gui') return;
-		updateGuiStages(cell.id, [...cell.guiStages, { type: 'filter', conditions: [{ column, op: '==', value: '' }], logic: 'and' }]);
+		updateGuiStages(cell.id, [
+			...cell.guiStages,
+			{ type: 'filter', conditions: [{ column, op: '==', value: '' }], logic: 'and' }
+		]);
 	}
 
 	const crossNotebookUsageCount = $derived(
@@ -627,7 +802,7 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 
 	// Connection name shown in the status line — only for non-default connections
 	const cellConnectionName = $derived(
-		cell.connectionId ? connections.find((c) => c.id === cell.connectionId)?.name ?? null : null
+		cell.connectionId ? (connections.find((c) => c.id === cell.connectionId)?.name ?? null) : null
 	);
 
 	const hasStatusLine = $derived(
@@ -646,9 +821,18 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
-	class="notebook-cell p-4 border-1 border-transparent group relative rounded-lg text-foreground outline-none {entering ? 'is-entering' : ''} {reportView ? '' : running ? 'bg-muted/30' : 'hover:bg-muted/10 hover:border-1 hover:border-border  '} {isGhost ? 'cell-ai-ghost ring-1 ring-primary/30 bg-primary/5' : ''}"
+	class="notebook-cell group relative border-l-4 border-transparent p-4 text-foreground outline-none {entering
+		? 'is-entering'
+		: ''} {reportView
+		? ''
+		: running
+			? 'bg-muted/30'
+			: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
+		? 'cell-ai-ghost bg-primary/5 ring-1 ring-primary/30'
+		: ''}"
 	hidden={reportView && collapsed}
 	data-focused={cellFocused}
+	data-cell-id={cell.id}
 	tabindex="0"
 	onkeydown={handleKeydown}
 	onfocusin={onCellFocusIn}
@@ -686,13 +870,14 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 						bind:sqlExpanded
 						bind:open={menuOpen}
 						onOpenMaterialize={() => (materializeDialogOpen = true)}
+						onOpenPromote={() => (promoteDialogOpen = true)}
 						onRunTests={() => void testCell(cell.id)}
 					/>
 				{/snippet}
 			</CellGutter>
 		{/if}
 
-		<div class="min-w-0 flex flex-col gap-1 py-1 pr-2">
+		<div class="flex min-w-0 flex-col gap-1 py-1 pr-2">
 			{#if !(reportView && !isQueryCell)}
 				<CellHeader
 					{cell}
@@ -713,170 +898,230 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 				/>
 			{/if}
 
-	{#if !collapsed}
-	<div class="flex flex-col gap-1" transition:slide={{ duration: 220 }}>
-	<!-- Editor (GUI or PRQL mode) -->
-	{#if !codeHidden}
-		<div onfocusin={onEditorFocus}>
-			{#if !isQueryCell}
-				<div class="group/markdown relative">
-					{#if isMarkdownPreviewMode}
-						<!-- Preview mode: seamless {#html}, double-click to edit -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="markdown-body cursor-text"
-							ondblclick={() => setCellMarkdownPreview(cell.id, false)}
-						>
-							{@html safeMarkdown}
+			{#if !collapsed}
+				<div class="flex flex-col gap-1" transition:slide={{ duration: 220 }}>
+					<!-- Editor (GUI or PRQL mode) -->
+					{#if !codeHidden}
+						<div onfocusin={onEditorFocus}>
+							{#if isUdfCell}
+								<Editor
+									bind:this={editorRef}
+									code={cell.udfBody}
+									language="python"
+									{dark}
+									onchange={(c) => updateCellUdfBody(cell.id, c)}
+								/>
+							{:else if !isQueryCell}
+								<div class="group/markdown relative">
+									{#if isMarkdownPreviewMode}
+										<!-- Preview mode: seamless {#html}, double-click to edit -->
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<div
+											class="markdown-body cursor-text"
+											ondblclick={() => setCellMarkdownPreview(cell.id, false)}
+										>
+											{#if markdocResult}
+												<MarkdocRenderer
+													content={markdocResult.tree}
+													errors={markdocResult.errors}
+													{notebookId}
+												/>
+											{:else}
+												{@html safeMarkdown}
+											{/if}
+										</div>
+										<button
+											class="absolute top-0 right-0 hidden rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors group-hover/markdown:block hover:text-foreground"
+											onclick={() => setCellMarkdownPreview(cell.id, false)}
+										>
+											Edit
+										</button>
+									{:else}
+										<!-- Edit mode: minimal textarea, blur → preview -->
+										<div class="mb-1 flex justify-end">
+											<RefPickerMenu entries={refPickerEntries} onSelect={insertMarkdownRef} />
+										</div>
+										<Textarea
+											bind:ref={markdownTextareaEl}
+											value={cell.markdown}
+											placeholder="Write markdown here..."
+											class="min-h-24! resize-none! overflow-hidden! rounded-none! border-0! bg-transparent! px-0! py-0.5! text-sm! leading-6! shadow-none! ring-0! focus-visible:border-transparent! focus-visible:ring-0! focus-visible:outline-none!"
+											oninput={(e: Event) => {
+												updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value);
+												adjustMarkdownHeight();
+											}}
+											onblur={(e: FocusEvent) => {
+												const related = e.relatedTarget as HTMLElement | null;
+												if (related?.closest('.md-refpicker-trigger, .md-refpicker-content'))
+													return;
+												if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true);
+											}}
+										/>
+										{#if hasLiveRefs}
+											<p class="mt-0.5 text-2xs text-muted-foreground select-none">
+												⚡ Live refs active — run upstream cells to update values
+											</p>
+										{/if}
+									{/if}
+								</div>
+							{:else if cell.editMode === 'gui'}
+								<GUIEditor
+									stages={cell.guiStages}
+									tables={guiTables}
+									{prevCellSources}
+									{dark}
+									connectionId={connectionValue}
+									{connectionType}
+									stageResultsCollapsed={cell.stageResultsCollapsed}
+									{stageErrorMap}
+									onStagesChange={(stages) => updateGuiStages(cell.id, stages)}
+									onRunStage={(upToStageIdx) => runGuiStagePreview(cell.id, upToStageIdx)}
+									onStageResultCollapsedChange={(stageIdx, c) =>
+										setStageResultCollapsed(cell.id, stageIdx, c)}
+									onEscapeEditor={() => cellContainerEl?.focus()}
+								/>
+							{:else}
+								<Editor
+									bind:this={editorRef}
+									code={cell.code}
+									errors={cell.errors}
+									completions={editorCompletions}
+									language={cell.language}
+									sqlDialect={cellSqlDialect}
+									{dark}
+									onchange={(c) => updateCellCode(cell.id, c)}
+								/>
+							{/if}
 						</div>
-						<button
-							class="absolute right-0 top-0 hidden rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground group-hover/markdown:block"
-							onclick={() => setCellMarkdownPreview(cell.id, false)}
+					{/if}
+
+					<!-- Compiled SQL preview -->
+					{#if sqlExpanded && cell.compiledSQL}
+						<CellSqlPreview sql={cell.compiledSQL} />
+					{/if}
+
+					<!-- Errors — quiet inline annotation bar -->
+					{#if cell.errors.length > 0}
+						<div class="space-y-0.5 pl-0.5" in:fly={{ y: -4, duration: 130 }}>
+							{#each cell.errors as error, errorIdx (errorIdx)}
+								<div class="rounded-r-sm border-destructive/80 py-2">
+									<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
+										{error.display ?? error.reason}
+									</p>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					{#if cell.materializeError}
+						<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm py-2">
+							<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
+								{cell.materializeError}
+							</p>
+						</div>
+					{/if}
+
+					<!-- Results -->
+					{#if cell.result && (cell.status === 'success' || cell.status === 'running')}
+						<div
+							in:fade={{ duration: 220 }}
+							class="relative transition-opacity duration-300 {running
+								? 'opacity-70'
+								: 'opacity-100'}"
 						>
-							Edit
-						</button>
-					{:else}
-						<!-- Edit mode: minimal textarea, blur → preview -->
-						<Textarea
-							value={cell.markdown}
-							placeholder="Write markdown here..."
-							class="min-h-24! rounded-none! border-0! bg-transparent! px-0! py-0.5! text-sm! leading-6! shadow-none! ring-0! resize-none! focus-visible:border-transparent! focus-visible:ring-0! focus-visible:outline-none!"
-							oninput={(e: Event) => updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value)}
-							onblur={() => { if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true); }}
+							{#if running}
+								<div
+									class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
+								>
+									<Loader2 class="h-3 w-3 animate-spin" />
+									<span>Updating</span>
+								</div>
+							{/if}
+							{#if cell.result.rows.length === 0}
+								<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
+							{:else}
+								<InlineResultView
+									rows={cell.result.rows}
+									columns={cell.result.columns}
+									truncated={cell.result.truncated ?? false}
+									name={cell.outputName || `result${index + 1}`}
+									initialViewMode={cell.resultViewMode}
+									initialChartConfig={cell.resultChartConfig}
+									controlsVisible={showResultControls}
+									toolbarReserveSpace={!codeHidden}
+									onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
+									onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
+									onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
+									onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
+									columnDescriptions={isDbtProject ? columnDescriptions : undefined}
+									onColumnDescriptionChange={isDbtProject
+										? handleColumnDescriptionChange
+										: undefined}
+								>
+									{#snippet toolbarActions()}
+										{#if onOpenResultTab}
+											<div
+												class="flex items-center gap-1 transition-opacity duration-150 ease-(--motion-ease-out) {showResultControls
+													? 'opacity-100'
+													: 'pointer-events-none opacity-0'}"
+												aria-hidden={!showResultControls}
+											>
+												<Tooltip.Root>
+													<Tooltip.Trigger>
+														<Button
+															variant="ghost"
+															size="sm"
+															class="h-6 w-6 p-0"
+															onclick={() =>
+																onOpenResultTab!(
+																	cell.id,
+																	notebookId,
+																	cell.outputName || `result${index + 1}`,
+																	cell.resultViewMode
+																)}><ExternalLink class="h-3 w-3" /></Button
+														>
+													</Tooltip.Trigger>
+													<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
+												</Tooltip.Root>
+											</div>
+										{/if}
+									{/snippet}
+								</InlineResultView>
+							{/if}
+						</div>
+					{/if}
+
+					{#if hasStatusLine}
+						<CellStatusLine
+							{cell}
+							{showResult}
+							{running}
+							{intelligenceSummary}
+							connectionName={cellConnectionName}
+							{isDbtProject}
+							onOpenMaterialize={() => (materializeDialogOpen = true)}
+							onShowSql={() => (sqlExpanded = true)}
+							onRunTests={() => void testCell(cell.id)}
+							onOverlayChange={handleOverlayChange}
+							onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
+								? () =>
+										onOpenResultTab!(
+											cell.id,
+											notebookId,
+											cell.outputName || `result${index + 1}`,
+											'table'
+										)
+								: undefined}
 						/>
-						{#if hasLiveRefs}
-							<p class="mt-0.5 text-2xs text-muted-foreground select-none">⚡ Live refs active — run upstream cells to update values</p>
-						{/if}
 					{/if}
 				</div>
-			{:else if cell.editMode === 'gui'}
-				<GUIEditor
-					stages={cell.guiStages}
-					tables={guiTables}
-					{prevCellSources}
-					{dark}
-					connectionId={connectionValue}
-					{connectionType}
-					stageResultsCollapsed={cell.stageResultsCollapsed}
-					{stageErrorMap}
-					onStagesChange={(stages) => updateGuiStages(cell.id, stages)}
-					onRunStage={(upToStageIdx) => runGuiStagePreview(cell.id, upToStageIdx)}
-					onStageResultCollapsedChange={(stageIdx, c) => setStageResultCollapsed(cell.id, stageIdx, c)}
-					onEscapeEditor={() => cellContainerEl?.focus()}
-				/>
-			{:else}
-				<Editor
-					bind:this={editorRef}
-					code={cell.code}
-					errors={cell.errors}
-					completions={editorCompletions}
-					language={cell.language}
-					sqlDialect={cellSqlDialect}
-					{dark}
-					onchange={(c) => updateCellCode(cell.id, c)}
-				/>
 			{/if}
-		</div>
-	{/if}
-
-	<!-- Compiled SQL preview -->
-	{#if sqlExpanded && cell.compiledSQL}
-		<CellSqlPreview sql={cell.compiledSQL} />
-	{/if}
-
-	<!-- Errors — quiet inline annotation bar -->
-	{#if cell.errors.length > 0}
-		<div class="space-y-0.5 pl-0.5" in:fly={{ y: -4, duration: 130 }}>
-			{#each cell.errors as error (error.display ?? error.reason)}
-				<div class="rounded-r-sm  border-destructive/80  py-2">
-					<p class="text-xs font-mono text-destructive/90 leading-snug whitespace-pre-wrap">{error.display ?? error.reason}</p>
-				</div>
-			{/each}
-		</div>
-	{/if}
-
-	{#if cell.materializeError}
-		<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm  py-2">
-			<p class="text-xs font-mono text-destructive/90 leading-snug whitespace-pre-wrap">{cell.materializeError}</p>
-		</div>
-	{/if}
-
-	<!-- Results -->
-	{#if cell.result && (cell.status === 'success' || cell.status === 'running')}
-		<div in:fade={{ duration: 220 }} class="relative transition-opacity duration-300 {running ? 'opacity-70' : 'opacity-100'}">
-			{#if running}
-				<div class="pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]">
-					<Loader2 class="w-3 h-3 animate-spin" />
-					<span>Updating</span>
-				</div>
-			{/if}
-			{#if cell.result.rows.length === 0}
-				<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
-			{:else}
-				<InlineResultView
-					rows={cell.result.rows}
-					columns={cell.result.columns}
-					truncated={cell.result.truncated ?? false}
-					name={cell.outputName || `result${index + 1}`}
-					initialViewMode={cell.resultViewMode}
-					initialChartConfig={cell.resultChartConfig}
-					controlsVisible={showResultControls}
-					toolbarReserveSpace={!codeHidden}
-					onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
-					onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
-					onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
-					onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
-					columnDescriptions={isDbtProject ? columnDescriptions : undefined}
-					onColumnDescriptionChange={isDbtProject ? handleColumnDescriptionChange : undefined}
-				>
-					{#snippet toolbarActions()}
-						{#if onOpenResultTab}
-							<div
-								class="flex items-center gap-1 transition-opacity duration-150 ease-(--motion-ease-out) {showResultControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}"
-								aria-hidden={!showResultControls}
-							>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<Button
-											variant="ghost" size="sm" class="h-6 w-6 p-0"
-											onclick={() => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, cell.resultViewMode)}
-										><ExternalLink class="w-3 h-3" /></Button>
-									</Tooltip.Trigger>
-									<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
-								</Tooltip.Root>
-							</div>
-						{/if}
-					{/snippet}
-				</InlineResultView>
-			{/if}
-
-		</div>
-	{/if}
-
-	{#if hasStatusLine}
-		<CellStatusLine
-			{cell}
-			{showResult}
-			{running}
-			{intelligenceSummary}
-			connectionName={cellConnectionName}
-			{isDbtProject}
-			onOpenMaterialize={() => (materializeDialogOpen = true)}
-			onShowSql={() => (sqlExpanded = true)}
-			onRunTests={() => void testCell(cell.id)}
-			onOverlayChange={handleOverlayChange}
-			onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
-				? () => onOpenResultTab!(cell.id, notebookId, cell.outputName || `result${index + 1}`, 'table')
-				: undefined}
-		/>
-	{/if}
-	</div>
-	{/if}
 		</div>
 	</div>
 
 	{#if isQueryCell}
 		<MaterializeDialog bind:open={materializeDialogOpen} {cell} {isDbtProject} />
+		<PromoteDialog bind:open={promoteDialogOpen} {cell} />
 	{/if}
 	<CellModeSwitchDialogs
 		bind:confirmSwitchToGui
@@ -893,17 +1138,40 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		font-size: 0.875rem;
 		line-height: 1.7;
 	}
-	.markdown-body :global(h1) { font-size: 1.3rem; font-weight: 700; margin: 0 0 0.6rem; line-height: 1.3; }
-	.markdown-body :global(h2) { font-size: 1.1rem; font-weight: 600; margin: 0.75rem 0 0.4rem; line-height: 1.35; }
+	.markdown-body :global(h1) {
+		font-size: 1.3rem;
+		font-weight: 700;
+		margin: 0 0 0.6rem;
+		line-height: 1.3;
+	}
+	.markdown-body :global(h2) {
+		font-size: 1.1rem;
+		font-weight: 600;
+		margin: 0.75rem 0 0.4rem;
+		line-height: 1.35;
+	}
 	.markdown-body :global(h3),
 	.markdown-body :global(h4),
 	.markdown-body :global(h5),
-	.markdown-body :global(h6) { font-size: 0.9rem; font-weight: 600; margin: 0.6rem 0 0.3rem; }
-	.markdown-body :global(p) { margin: 0 0 0.5rem; }
-	.markdown-body :global(*:last-child) { margin-bottom: 0; }
+	.markdown-body :global(h6) {
+		font-size: 0.9rem;
+		font-weight: 600;
+		margin: 0.6rem 0 0.3rem;
+	}
+	.markdown-body :global(p) {
+		margin: 0 0 0.5rem;
+	}
+	.markdown-body :global(*:last-child) {
+		margin-bottom: 0;
+	}
 	.markdown-body :global(ul),
-	.markdown-body :global(ol) { padding-left: 1.25rem; margin: 0 0 0.5rem; }
-	.markdown-body :global(li) { margin-bottom: 0.125rem; }
+	.markdown-body :global(ol) {
+		padding-left: 1.25rem;
+		margin: 0 0 0.5rem;
+	}
+	.markdown-body :global(li) {
+		margin-bottom: 0.125rem;
+	}
 	.markdown-body :global(pre) {
 		background: color-mix(in oklch, currentColor 6%, transparent);
 		border-radius: 0.3rem;
@@ -919,7 +1187,10 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		border-radius: 0.2rem;
 		padding: 0.1em 0.3em;
 	}
-	.markdown-body :global(pre code) { background: none; padding: 0; }
+	.markdown-body :global(pre code) {
+		background: none;
+		padding: 0;
+	}
 	.markdown-body :global(blockquote) {
 		border-left: 2px solid color-mix(in oklch, currentColor 30%, transparent);
 		margin: 0 0 0.5rem;
@@ -931,12 +1202,30 @@ import MaterializeDialog from './MaterializeDialog.svelte';
 		border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 		margin: 0.75rem 0;
 	}
-	.markdown-body :global(a) { text-decoration: underline; text-underline-offset: 2px; }
-	.markdown-body :global(img) { max-width: 100%; border-radius: 0.25rem; }
-	.markdown-body :global(table) { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 0 0 0.5rem; }
+	.markdown-body :global(a) {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.markdown-body :global(img) {
+		max-width: 100%;
+		border-radius: 0.25rem;
+	}
+	.markdown-body :global(table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.85em;
+		margin: 0 0 0.5rem;
+	}
 	.markdown-body :global(th),
-	.markdown-body :global(td) { padding: 0.3rem 0.6rem; border: 1px solid color-mix(in oklch, currentColor 15%, transparent); text-align: left; }
-	.markdown-body :global(th) { font-weight: 600; background: color-mix(in oklch, currentColor 4%, transparent); }
+	.markdown-body :global(td) {
+		padding: 0.3rem 0.6rem;
+		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
+		text-align: left;
+	}
+	.markdown-body :global(th) {
+		font-weight: 600;
+		background: color-mix(in oklch, currentColor 4%, transparent);
+	}
 	.markdown-body :global(.md-live-ref) {
 		border-bottom: 1px dashed color-mix(in oklch, currentColor 35%, transparent);
 		padding-bottom: 1px;

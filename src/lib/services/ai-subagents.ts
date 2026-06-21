@@ -29,17 +29,17 @@ export const DEBUG_TOOLS: AIChatToolName[] = [
 	'validate_result'
 ];
 
+// Composes a Markdoc grid/columns layout of metric/chart widgets in a markdown cell —
+// also covers the 'visualize' sprint task (charting a single existing cell).
 export const DASHBOARD_TOOLS: AIChatToolName[] = [
 	'list_cells',
 	'get_cell_result',
 	'get_lineage',
 	'pick_chart',
 	'set_chart',
-	'create_dashboard',
-	'add_dashboard_block',
-	'update_dashboard_block',
-	'list_dashboards',
-	'open_dashboard'
+	'set_view_mode',
+	'create_cell',
+	'update_cell'
 ];
 
 export const INVESTIGATION_TOOLS: AIChatToolName[] = [
@@ -50,18 +50,19 @@ export const INVESTIGATION_TOOLS: AIChatToolName[] = [
 	'search_workspace',
 	'list_cells',
 	'get_lineage',
-	'find_dashboard_usage',
 	'compare_cells'
 ];
 
 export const SPRINT_PLANNING_TOOLS: AIChatToolName[] = ['search_workspace', 'list_cells', 'sample_data'];
+
+export const DOCUMENTATION_TOOLS: AIChatToolName[] = ['create_cell', 'update_cell', 'get_cell_result', 'list_cells', 'record_decision'];
 
 // Per-task tool sets — narrowed by task type to reduce hallucinated tool use
 export const SPRINT_TASK_TOOLS: Record<import('$lib/types/ai-chat.js').SprintTaskType, AIChatToolName[]> = {
 	'investigate': ['sample_data', 'profile_column', 'query_data', 'search_workspace', 'list_cells', 'get_lineage', 'record_decision'],
 	'build': ['create_cell', 'update_cell', 'run_cells', 'validate_result', 'get_cell_result', 'query_data', 'record_decision'],
 	'visualize': ['pick_chart', 'set_chart', 'set_view_mode', 'get_cell_result', 'list_cells'],
-	'document': ['create_cell'],
+	'document': DOCUMENTATION_TOOLS,
 	'dashboard': DASHBOARD_TOOLS
 };
 
@@ -73,7 +74,8 @@ export const SUBAGENT_TOOLS: Record<NonNullable<import('$lib/types/ai-chat.js').
 	'debug': DEBUG_TOOLS,
 	'dashboard': DASHBOARD_TOOLS,
 	'investigation': INVESTIGATION_TOOLS,
-	'sprint_planning': SPRINT_PLANNING_TOOLS
+	'sprint_planning': SPRINT_PLANNING_TOOLS,
+	'documentation': DOCUMENTATION_TOOLS
 };
 
 export type ChatIntent = 'creation' | 'debug' | 'dashboard' | 'investigation' | 'standard';

@@ -312,6 +312,51 @@ describe('queryExternalConnection', () => {
 		).rejects.toThrow('Only read-only SQL statements are allowed');
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
+
+	it('allows a Trino inline Python UDF whose body contains write-like keywords and semicolons as literal text', async () => {
+		fetchMock.mockResolvedValueOnce(trinoPage([{ name: 'id' }], [[2]]));
+		const udfQuery = [
+			"WITH FUNCTION my_udf(x bigint) RETURNS bigint LANGUAGE PYTHON WITH (handler = 'my_udf') AS $$",
+			'def my_udf(x):',
+			"    s = '; DROP TABLE x; --'",
+			'    return x',
+			'$$',
+			'SELECT my_udf(id) FROM jobs'
+		].join('\n');
+
+		const result = await queryExternalConnection(postgresConnection, undefined, udfQuery);
+		expect(result.rows).toEqual([{ id: 2 }]);
+		expect(fetchMock).toHaveBeenCalled();
+	});
+
+	it('still blocks a genuine write statement outside the dollar-quoted UDF body', async () => {
+		const udfQuery = [
+			"WITH FUNCTION my_udf(x bigint) RETURNS bigint LANGUAGE PYTHON WITH (handler = 'my_udf') AS $$",
+			'def my_udf(x):',
+			'    return x',
+			'$$',
+			'DELETE FROM jobs'
+		].join('\n');
+
+		await expect(queryExternalConnection(postgresConnection, undefined, udfQuery)).rejects.toThrow(
+			'Only read-only SQL statements are allowed'
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('blocks an unbalanced/unterminated dollar-quoted block as a safe failure', async () => {
+		const udfQuery = [
+			"WITH FUNCTION my_udf(x bigint) RETURNS bigint LANGUAGE PYTHON WITH (handler='my_udf') AS $$",
+			'def my_udf(x):',
+			'    return x; DROP TABLE jobs',
+			'SELECT my_udf(1)'
+		].join('\n');
+
+		await expect(queryExternalConnection(postgresConnection, undefined, udfQuery)).rejects.toThrow(
+			'Only a single SQL statement is allowed'
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
 });
 
 describe('fetchExternalConnectionSchema', () => {

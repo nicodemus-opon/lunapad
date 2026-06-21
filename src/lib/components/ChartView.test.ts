@@ -11,9 +11,16 @@ describe('ChartView label styling', () => {
 	it('disables LayerChart axis text stroke styling', () => {
 		const source = readFileSync(sourcePath, 'utf8');
 
-		// ECharts-based chart rendering
-		expect(source).toContain('echartsOption');
-		expect(source).toContain('EChart');
+		// ECharts fully replaced by Observable Plot — these must never come back
+		expect(source).not.toContain('echartsOption');
+		expect(source).not.toContain('EChart');
+
+		// Plot-based rendering, including the previously-deferred types
+		expect(source).toContain('plotRender');
+		expect(source).toContain("t === 'pie'");
+		expect(source).toContain("t === 'sankey'");
+		expect(source).toContain("t === 'funnel'");
+		expect(source).toContain("t === 'calendar-heatmap'");
 
 		// Bubble chart support
 		expect(source).toContain("t === 'bubble'");

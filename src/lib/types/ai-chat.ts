@@ -1,5 +1,6 @@
 import type { ChartConfig } from './gui-pipeline.js';
 
+/** 'dashboard' composes a Markdoc grid/columns layout of metric/chart widgets in one markdown cell. */
 export type SprintTaskType = 'investigate' | 'build' | 'visualize' | 'document' | 'dashboard';
 export type SprintTaskStatus = 'pending' | 'active' | 'done' | 'failed' | 'skipped';
 
@@ -21,7 +22,7 @@ export interface WorkspaceNamingRule {
 
 export interface WorkspaceContract {
 	namingRules: WorkspaceNamingRule[];
-	topReusableModels: Array<{ name: string; downstreamCount: number; dashboards: string[] }>;
+	topReusableModels: Array<{ name: string; downstreamCount: number }>;
 	customInstructions?: string;
 }
 
@@ -34,12 +35,11 @@ export interface AIChatCell {
 	status: string;
 	upstream?: string[];
 	downstream?: string[];
-	usedInDashboards?: string[];
 	/** Existing chart config — included for context-selected cells so AI can modify it */
 	resultChartConfig?: ChartConfig | null;
 	/** True when this cell belongs to the notebook currently open/active in the editor */
 	isActiveNotebook?: boolean;
-	/** downstream cell count + 3×dashboard count — signals high-impact cells */
+	/** downstream cell count — signals high-impact cells */
 	criticalityScore?: number;
 	/** First error message when status === 'error' — lets the LLM know what to fix */
 	errorMessage?: string;
@@ -70,7 +70,7 @@ export interface AIChatRequest {
 	/** Non-empty when the schema changed since the previous turn */
 	schemaChangeNote?: string;
 	/** Subagent mode: narrows the system prompt to a specialized role */
-	subagentType?: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning';
+	subagentType?: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning' | 'documentation';
 	/** When set, the server silently drops tool_call events for tools not in this list */
 	allowedTools?: AIChatToolName[];
 }
@@ -85,15 +85,9 @@ export type AIChatToolName =
 	| 'run_cells'
 	| 'move_cell'
 	| 'get_lineage'
-	| 'find_dashboard_usage'
 	| 'list_cells'
 	| 'search_workspace'
 	| 'get_cell_result'
-	| 'list_dashboards'
-	| 'create_dashboard'
-	| 'add_dashboard_block'
-	| 'update_dashboard_block'
-	| 'open_dashboard'
 	| 'query_data'
 	| 'sample_data'
 	| 'profile_column'
@@ -117,6 +111,7 @@ export interface UpdateCellArgs {
 	code?: string;
 	outputName?: string;
 	language?: 'sql' | 'prql';
+	markdown?: string;
 }
 
 export interface SetChartArgs {
@@ -138,10 +133,6 @@ export interface RunCellsArgs {
 }
 
 export interface GetLineageArgs {
-	outputName: string;
-}
-
-export interface FindDashboardUsageArgs {
 	outputName: string;
 }
 
@@ -183,30 +174,6 @@ export interface GetCellResultArgs {
 	limit?: number;
 }
 
-export interface ListDashboardsArgs {
-	// no args
-}
-
-export interface CreateDashboardArgs {
-	name: string;
-}
-
-export interface AddDashboardBlockArgs {
-	dashboardId: string;
-	blockType: 'chart' | 'text' | 'callout' | 'kpi' | 'filter' | 'section';
-	config: Record<string, unknown>;
-}
-
-export interface UpdateDashboardBlockArgs {
-	dashboardId: string;
-	blockId: string;
-	patch: Record<string, unknown>;
-}
-
-export interface OpenDashboardArgs {
-	dashboardId: string;
-}
-
 export interface ValidateResultArgs {
 	cellId: string;
 	expectedRowCount?: number;
@@ -223,5 +190,5 @@ export interface CompareCellsArgs {
 export interface AIChatToolCall {
 	callId: string;
 	tool: AIChatToolName;
-	args: CreateCellArgs | UpdateCellArgs | SetChartArgs | PickChartArgs | SetViewModeArgs | DeleteCellArgs | RunCellsArgs | MoveCellArgs | GetCellResultArgs | GetLineageArgs | FindDashboardUsageArgs | SearchWorkspaceArgs | ListDashboardsArgs | CreateDashboardArgs | AddDashboardBlockArgs | UpdateDashboardBlockArgs | OpenDashboardArgs | QueryDataArgs | SampleDataArgs | ProfileColumnArgs | RecordDecisionArgs | ValidateResultArgs | CompareCellsArgs;
+	args: CreateCellArgs | UpdateCellArgs | SetChartArgs | PickChartArgs | SetViewModeArgs | DeleteCellArgs | RunCellsArgs | MoveCellArgs | GetCellResultArgs | GetLineageArgs | SearchWorkspaceArgs | QueryDataArgs | SampleDataArgs | ProfileColumnArgs | RecordDecisionArgs | ValidateResultArgs | CompareCellsArgs;
 }

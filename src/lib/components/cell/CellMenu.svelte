@@ -9,9 +9,13 @@
 		Link,
 		Loader2,
 		Database,
+		ArrowUpToLine,
 		Plug,
 		ChevronUp,
 		ChevronDown,
+		Copy,
+		ClipboardPaste,
+		CopyPlus,
 		Trash2
 	} from '@lucide/svelte';
 	import {
@@ -19,6 +23,11 @@
 		removeCell,
 		setCellConnection,
 		setCellDisplay,
+		isCellPromotable,
+		duplicateCell,
+		copyCellToClipboard,
+		pasteCellAfter,
+		hasClipboardCell,
 		type Cell
 	} from '$lib/stores/notebook.svelte';
 	import { BUILTIN_DUCKDB_CONNECTION_ID, type Connection } from '$lib/types/connection';
@@ -35,6 +44,7 @@
 		sqlExpanded = $bindable(false),
 		open = $bindable(false),
 		onOpenMaterialize,
+		onOpenPromote,
 		onRunTests
 	}: {
 		cell: Cell;
@@ -48,10 +58,12 @@
 		sqlExpanded?: boolean;
 		open?: boolean;
 		onOpenMaterialize: () => void;
+		onOpenPromote?: () => void;
 		onRunTests: () => void;
 	} = $props();
 
 	const codeHidden = $derived(cell.display === 'output');
+	const promotable = $derived(onOpenPromote !== undefined && isCellPromotable(cell.id));
 </script>
 
 <DropdownMenu.Root bind:open>
@@ -113,6 +125,11 @@
 			<DropdownMenu.Item onclick={onOpenMaterialize}>
 				<Database class="h-3.5 w-3.5" /> Materialize & schedule…
 			</DropdownMenu.Item>
+			{#if promotable}
+				<DropdownMenu.Item onclick={onOpenPromote}>
+					<ArrowUpToLine class="h-3.5 w-3.5" /> Promote to dbt model…
+				</DropdownMenu.Item>
+			{/if}
 			<DropdownMenu.Separator />
 		{/if}
 		<DropdownMenu.Item disabled={isFirst} onclick={() => moveCell(cell.id, 'up')}>
@@ -122,6 +139,19 @@
 		<DropdownMenu.Item disabled={isLast} onclick={() => moveCell(cell.id, 'down')}>
 			<ChevronDown class="h-3.5 w-3.5" /> Move down
 			<DropdownMenu.Shortcut>⇧J</DropdownMenu.Shortcut>
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item onclick={() => duplicateCell(cell.id)}>
+			<CopyPlus class="h-3.5 w-3.5" /> Duplicate cell
+			<DropdownMenu.Shortcut>⇧⌘D</DropdownMenu.Shortcut>
+		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => copyCellToClipboard(cell.id)}>
+			<Copy class="h-3.5 w-3.5" /> Copy cell
+			<DropdownMenu.Shortcut>⌘C</DropdownMenu.Shortcut>
+		</DropdownMenu.Item>
+		<DropdownMenu.Item disabled={!hasClipboardCell()} onclick={() => void pasteCellAfter(cell.id)}>
+			<ClipboardPaste class="h-3.5 w-3.5" /> Paste cell after
+			<DropdownMenu.Shortcut>⌘V</DropdownMenu.Shortcut>
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
 		{#if notebookId}

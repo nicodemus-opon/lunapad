@@ -2,10 +2,11 @@
 	import {
 		TrendingUp, BarChart2, AreaChart, ScatterChart, PieChart,
 		BarChartHorizontal, Activity, Orbit, Grid2x2, CalendarDays, Filter,
-		BoxSelect, GitFork, Table2, Hash, TrendingDown, Minus
+		BoxSelect, GitFork, Table2, Hash, TrendingDown, Minus, Code2
 	} from '@lucide/svelte';
 	import type { ChartConfig, ChartType, ChartSortOrder } from '$lib/types/gui-pipeline';
-	import { coerceNumber, inferSmartChartConfig, inferSmartChartConfigForType, normalizeChartConfig } from '$lib/utils';
+	import { coerceNumber, inferSmartChartConfig, inferSmartChartConfigForType, normalizeChartConfig, DEFAULT_CUSTOM_CHART_CODE } from '$lib/utils';
+	import Editor from '$lib/components/Editor.svelte';
 
 	interface Props {
 		config: ChartConfig;
@@ -42,6 +43,7 @@
 		{ type: 'funnel',           label: 'Funnel',    Icon: Filter },
 		{ type: 'box-plot',         label: 'Box',       Icon: BoxSelect },
 		{ type: 'sankey',           label: 'Sankey',    Icon: GitFork },
+		{ type: 'custom',           label: 'Custom',    Icon: Code2 },
 	];
 
 	function cardinality(col: string): number {
@@ -86,6 +88,7 @@
 	const isBoxPlot             = $derived(config.chartType === 'box-plot');
 	const isSankey              = $derived(config.chartType === 'sankey');
 	const isTable               = $derived(config.chartType === 'table');
+	const isCustom               = $derived(config.chartType === 'custom');
 	const isBigValue            = $derived(config.chartType === 'big-value');
 	const isDelta               = $derived(config.chartType === 'delta');
 	const isValue               = $derived(config.chartType === 'value');
@@ -150,7 +153,23 @@
 	<div class="h-px bg-border"></div>
 
 	<!-- Type-specific column config -->
-	{#if isTable}
+	{#if isCustom}
+		<div class="space-y-1">
+			<p class={label}>Plot spec (JS)</p>
+			<div class="h-64 border border-input rounded-md overflow-hidden">
+				<Editor
+					code={config.code ?? DEFAULT_CUSTOM_CHART_CODE}
+					language="javascript"
+					onchange={(code) => update({ code })}
+				/>
+			</div>
+			<p class="text-[10px] text-muted-foreground">
+				Receives <code>rows</code>, <code>columns</code>, <code>Plot</code>, <code>width</code>, <code>height</code>.
+				Return a Plot spec object or call Plot.plot(...) yourself.
+			</p>
+		</div>
+
+	{:else if isTable}
 		<p class="text-xs text-muted-foreground text-center">All columns shown as a table.</p>
 		<div class="flex items-center gap-2">
 			<div class="flex-1 space-y-1">

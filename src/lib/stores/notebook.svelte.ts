@@ -1,6 +1,9 @@
 import { compilePRQL, type PRQLError } from '$lib/services/prql';
 import { buildExecutionCode, buildGlobalExecutionCode, buildSQLExecutionCode, buildSQLGlobalExecutionCode, resolveDependencies, resolveGlobalDependencies } from '$lib/services/cell-deps';
+import { parseUdfSignature } from '$lib/services/udf';
+import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
+import { serializeLunaFile } from '$lib/services/luna-file';
 import {
 	openProject as openProjectAPI,
 	listProjectNotebooks,
@@ -13,7 +16,10 @@ import {
 	watchDbtLogs,
 	updateProjectSchema,
 	auditProject,
-	backfillSchemaFromManifest
+	backfillSchemaFromManifest,
+	promoteCells,
+	type PromotePlanItem,
+	type PromoteResult
 } from '$lib/services/project-client';
 import type { DbtModel } from '$lib/server/dbt';
 import type { DbtSchedule } from '$lib/types/schedule';
@@ -62,11 +68,10 @@ import {
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 import type { ResultViewMode } from '$lib/types/gui-pipeline';
-import type { Dashboard, DashboardBlock, DashboardPanel, ChartBlock, TextBlock, CalloutBlock, FilterBlock, KpiBlock, SectionBlock, DashboardPanelWidth, DashboardPanelHeight } from '$lib/types/gui-pipeline';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
-export type CellType = 'query' | 'markdown';
+export type CellType = 'query' | 'markdown' | 'udf';
 export type CellMaterializationMode = DBMaterializationMode | 'ephemeral';
 export type CellMaterializationStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellScheduleStatus = 'idle' | 'running' | 'success' | 'error';
@@ -94,6 +99,9 @@ export interface Cell {
 	code: string;
 	markdown: string;
 	markdownPreview: boolean;
+	// Python source for cellType 'udf'. Name/params/return type are parsed from
+	// type hints (see services/udf.ts), not stored separately.
+	udfBody: string;
 	language: CellLanguage;
 	status: CellStatus;
 	result: { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } | null;
@@ -115,6 +123,10 @@ export interface Cell {
 	description: string | null;
 	dbtSchema: string | null;
 	dbtTags: string[];
+	// Set when this cell has been promoted out of its .luna notebook into its own
+	// real model file (relative path from the project root). Promoted cells render
+	// as a `{% model ref %}` placeholder in the originating .luna source.
+	promotedModelPath: string | null;
 	dbtTestStatus: CellTestStatus;
 	dbtTestResults: DbtTestResult[];
 	dbtTestLog: string[];
@@ -170,11 +182,19 @@ export interface Notebook {
 	folderId: string | null;
 	cells: Cell[];
 	defaultCellLanguage: CellLanguage;
+	// 'luna' notebooks are backed by a single `<id>.luna` file (multi-cell, Markdoc-
+	// flavored prose + query cells in document order). Unset/'flat' notebooks keep
+	// the legacy one-file-per-cell `.prql`/`.sql` representation.
+	format?: 'luna' | 'flat';
 	// Presentation flag: render every query cell as output-only with chrome
 	// hidden (errors excepted). Does not mutate per-cell display.
 	reportView?: boolean;
 	// Last cell scrolled to via sidebar navigation — restored on tab re-open.
 	lastActiveCellId?: string;
+	// Current values for {% filter param="..." /%} controls declared in markdown cells, keyed by paramName.
+	filters?: Record<string, string>;
+	// When set (ms), all query cells in this notebook re-run on this interval. 0/undefined = off.
+	autoRefreshIntervalMs?: number;
 }
 
 export interface NotebookFolder {
@@ -183,12 +203,11 @@ export interface NotebookFolder {
 	parentId: string | null;
 }
 
-export type SidebarSection = 'notebooks' | 'tables' | 'dashboards';
+export type SidebarSection = 'notebooks' | 'tables';
 
 export interface SidebarSectionsExpanded {
 	notebooks: boolean;
 	tables: boolean;
-	dashboards: boolean;
 }
 
 export interface ResultTabInfo {
@@ -202,15 +221,13 @@ export interface ResultTabInfo {
 
 export interface ExtraTab {
 	id: string;
-	type: 'table-view' | 'profile' | 'lineage' | 'dashboard' | 'evidence-preview';
+	type: 'table-view' | 'profile' | 'lineage' | 'evidence-preview';
 	tableName: string;
 	name: string;
 	viewMode: ResultViewMode;
 	chartConfig: ChartConfig | null;
 	// For lineage tabs: which model to center on (optional)
 	focusedModelName?: string;
-	// For dashboard tabs
-	dashboardId?: string;
 	// For evidence-preview tabs
 	pagePath?: string;
 }
@@ -253,8 +270,6 @@ interface NotebookState {
 	evidenceRunningJobId: string | null;
 	evidenceDevPort: number | null;
 	evidencePages: string[];
-	// ── Dashboards ──
-	dashboards: Dashboard[];
 }
 
 const GUI_COMPILE_DEBOUNCE_MS = 120;
@@ -386,6 +401,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		code,
 		markdown: '',
 		markdownPreview: false,
+		udfBody: '',
 		language,
 		status: 'idle',
 		result: null,
@@ -407,6 +423,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		description: null,
 		dbtSchema: null,
 		dbtTags: [],
+		promotedModelPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -435,13 +452,27 @@ function makeMarkdownCell(markdown = ''): Cell {
 	};
 }
 
+const DEFAULT_UDF_BODY = `def my_udf(x: int) -> float:\n    return x * 1.5\n`;
+
+function makeUdfCell(udfBody = DEFAULT_UDF_BODY): Cell {
+	const sig = parseUdfSignature(udfBody);
+	const outputName = 'error' in sig ? '' : sig.name;
+	return {
+		...makeCell('', outputName, 'sql'),
+		cellType: 'udf',
+		udfBody,
+		editMode: 'prql'
+	};
+}
+
 function makeNotebook(name: string, cells?: Cell[]): Notebook {
 	return {
 		id: makeId(),
 		name,
 		folderId: null,
 		cells: cells ?? [makeCell('', 'result1', 'sql')],
-		defaultCellLanguage: 'sql'
+		defaultCellLanguage: 'sql',
+		filters: {}
 	};
 }
 
@@ -637,8 +668,7 @@ let state = $state<NotebookState>({
 	expandedNotebookIds: [],
 	sidebarSectionsExpanded: {
 		notebooks: true,
-		tables: true,
-		dashboards: true
+		tables: true
 	},
 	activeTabId: _initialNotebook.id,
 	focusedCellId: null,
@@ -663,8 +693,7 @@ let state = $state<NotebookState>({
 	isEvidenceProject: false,
 	evidenceRunningJobId: null,
 	evidenceDevPort: null,
-	evidencePages: [],
-	dashboards: []
+	evidencePages: []
 });
 let connectionSecrets = $state<ConnectionSecrets>({});
 
@@ -722,8 +751,7 @@ function serialize(persistResults = true): string {
 		theme: state.theme,
 		autoRun: state.autoRun,
 		llmConfig: state.llmConfig,
-		notebookEvents: state.notebookEvents,
-		dashboards: state.dashboards
+		notebookEvents: state.notebookEvents
 	});
 }
 
@@ -882,9 +910,12 @@ function deserializeCell(c: Cell, i: number): Cell {
 	const language: CellLanguage = (c as Partial<Cell>).language === 'sql' ? 'sql' : 'prql';
 	const editMode: CellEditMode = language === 'sql' || c.editMode === 'prql' ? 'prql' : 'gui';
 	const persistedViewMode = (c as Partial<Cell>).resultViewMode;
-	const cellType: CellType = (c as Partial<Cell>).cellType === 'markdown' ? 'markdown' : 'query';
+	const persistedCellType = (c as Partial<Cell>).cellType;
+	const cellType: CellType =
+		persistedCellType === 'markdown' || persistedCellType === 'udf' ? persistedCellType : 'query';
 	const markdown = typeof (c as Partial<Cell>).markdown === 'string' ? (c as Partial<Cell>).markdown as string : '';
 	const markdownPreview = Boolean((c as Partial<Cell>).markdownPreview);
+	const udfBody = typeof (c as Partial<Cell>).udfBody === 'string' ? (c as Partial<Cell>).udfBody as string : '';
 	const resultViewMode: ResultViewMode =
 		persistedViewMode === 'chart' || persistedViewMode === 'stats' || persistedViewMode === 'table'
 			? persistedViewMode
@@ -897,6 +928,7 @@ function deserializeCell(c: Cell, i: number): Cell {
 		outputName: c.outputName || `result${i + 1}`,
 		markdown,
 		markdownPreview,
+		udfBody,
 		language,
 		guiStages,
 		editMode,
@@ -930,6 +962,10 @@ function deserializeCell(c: Cell, i: number): Cell {
 		dbtTags: Array.isArray((c as Partial<Cell>).dbtTags)
 			? ((c as Partial<Cell>).dbtTags as string[])
 			: [],
+		promotedModelPath:
+			typeof (c as Partial<Cell>).promotedModelPath === 'string'
+				? ((c as Partial<Cell>).promotedModelPath as string)
+				: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -1149,8 +1185,12 @@ export const AUTO_LIMIT = 1000;
 
 export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean } {
 	const body = sql.trim().replace(/;\s*$/, '');
+	// Test against the masked body so a Trino UDF's dollar-quoted Python source
+	// (which may legitimately contain a semicolon) doesn't get mistaken for a
+	// second statement — but still wrap the original, unmasked body.
+	const maskedBody = maskDollarQuotedBlocks(body);
 	// Only wrap a single SELECT-like statement — leave EXPLAIN/PRAGMA/multi-statement SQL alone.
-	if (!/^\s*(select|with|values)\b/i.test(body) || body.includes(';')) {
+	if (!/^\s*(select|with|values)\b/i.test(maskedBody) || maskedBody.includes(';')) {
 		return { sql, wrapped: false };
 	}
 	return {
@@ -1229,6 +1269,14 @@ function deserialize(raw: string): void {
 				folderId: typeof n.folderId === 'string' ? n.folderId : null,
 				defaultCellLanguage: (n as Partial<Notebook>).defaultCellLanguage === 'sql' ? 'sql' : 'prql',
 				reportView: Boolean((n as Partial<Notebook>).reportView),
+				filters:
+					(n as Partial<Notebook>).filters && typeof (n as Partial<Notebook>).filters === 'object'
+						? (n as Partial<Notebook>).filters
+						: {},
+				autoRefreshIntervalMs:
+					typeof (n as Partial<Notebook>).autoRefreshIntervalMs === 'number'
+						? (n as Partial<Notebook>).autoRefreshIntervalMs
+						: undefined,
 				cells:
 					Array.isArray(n.cells) && n.cells.length > 0
 						? (n.cells as Cell[]).map((cell, idx) => ({
@@ -1288,8 +1336,7 @@ function deserialize(raw: string): void {
 			const sections = data.sidebarSectionsExpanded as Partial<SidebarSectionsExpanded>;
 			state.sidebarSectionsExpanded = {
 				notebooks: sections.notebooks ?? true,
-				tables: sections.tables ?? true,
-				dashboards: sections.dashboards ?? true
+				tables: sections.tables ?? true
 			};
 		}
 
@@ -1337,15 +1384,6 @@ function deserialize(raw: string): void {
 					typeof event.eventType === 'string'
 				)
 			: [];
-		// Migrate old format: Dashboard.panels[] → Dashboard.blocks[]
-		state.dashboards = Array.isArray(data.dashboards)
-			? (data.dashboards as (Dashboard & { panels?: ChartBlock[] })[]).map((d) => {
-				if (!d.blocks && d.panels) {
-					return { ...d, blocks: d.panels.map((p) => ({ ...p, type: 'chart' as const })), panels: undefined };
-				}
-				return d as Dashboard;
-			})
-			: [];
 	} catch {
 		// ignore corrupt state
 	}
@@ -1367,6 +1405,10 @@ export function loadFromStorage(): void {
 	loadRememberedSecretsFromLocalStorage();
 	loadSecretsFromSessionStorage();
 	ensureSchedulePoller();
+	// Restart any auto-refresh timers that were enabled in the saved session.
+	for (const nb of state.notebooks) {
+		if (nb.autoRefreshIntervalMs) setNotebookAutoRefresh(nb.id, nb.autoRefreshIntervalMs);
+	}
 	// Restore project folder from last session
 	const savedFolder = localStorage.getItem(PROJECT_FOLDER_KEY);
 	if (savedFolder) {
@@ -1444,12 +1486,17 @@ function allProjectModelNames(): string[] {
 }
 
 const fileSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Separate timer map for `.luna` notebooks: one file = one notebook, so saves
+// are debounced per-notebook rather than per-cell (see scheduleFileSave below).
+const lunaSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let dirtyNotebookIds = $state(new Set<string>());
 
 /** Cancel all pending debounced file saves. Call before switching storage modes. */
 function cancelPendingFileSaves(): void {
 	for (const timer of fileSaveTimers.values()) clearTimeout(timer);
 	fileSaveTimers.clear();
+	for (const timer of lunaSaveTimers.values()) clearTimeout(timer);
+	lunaSaveTimers.clear();
 	dirtyNotebookIds = new Set();
 }
 
@@ -1458,9 +1505,34 @@ export function isNotebookDirty(id: string): boolean {
 	return dirtyNotebookIds.has(id);
 }
 
-/** Debounced save of a single cell's .prql file to the project folder. */
+/** Debounced save of an entire `.luna`-backed notebook (one file, many cells,
+ *  document order = cell order). */
+function scheduleLunaNotebookSave(notebookId: string): void {
+	const existing = lunaSaveTimers.get(notebookId);
+	if (existing) clearTimeout(existing);
+	dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
+	lunaSaveTimers.set(
+		notebookId,
+		setTimeout(() => {
+			lunaSaveTimers.delete(notebookId);
+			dirtyNotebookIds = new Set([...dirtyNotebookIds].filter((id) => id !== notebookId));
+			const nb = state.notebooks.find((n) => n.id === notebookId);
+			if (!nb || !state.projectFolder) return;
+			const content = serializeLunaFile(nb.cells);
+			writeProjectFile(state.projectFolder, `${nb.id}.luna`, content, state.isDbtProject).catch(() => {});
+		}, 500)
+	);
+}
+
+/** Debounced save of a single cell's .prql file to the project folder
+ *  (or, for `.luna`-backed notebooks, the whole notebook file). */
 export function scheduleFileSave(notebookId: string, cellId: string): void {
 	if (state.storageMode !== 'filesystem' || !state.projectFolder) return;
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (nb?.format === 'luna') {
+		scheduleLunaNotebookSave(notebookId);
+		return;
+	}
 	const key = `${notebookId}:${cellId}`;
 	const existing = fileSaveTimers.get(key);
 	if (existing) clearTimeout(existing);
@@ -1579,6 +1651,10 @@ export async function loadProjectNotebooks(): Promise<void> {
 		state.notebooks = notebooks.map((freshNb) => {
 			const prevNb = prevMap.get(freshNb.id);
 			if (!prevNb) return freshNb;
+			// A pending whole-notebook .luna save means every in-memory cell is
+			// newer than disk — skip per-cell merging entirely (the save will
+			// overwrite the file shortly anyway).
+			if (lunaSaveTimers.has(freshNb.id)) return prevNb;
 
 			const mergedCells = freshNb.cells.map((freshCell) => {
 				const prev = prevNb.cells.find((c) => c.id === freshCell.id);
@@ -1857,12 +1933,189 @@ function getGlobalOutputRegistry(): Map<string, { cell: Cell; notebookId: string
 	const registry = new Map<string, { cell: Cell; notebookId: string }>();
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
-			if (cell.cellType === 'query' && cell.outputName) {
+			if ((cell.cellType === 'query' || cell.cellType === 'udf') && cell.outputName) {
 				registry.set(cell.outputName, { cell, notebookId: nb.id });
 			}
 		}
 	}
 	return registry;
+}
+
+/** All cells across every notebook — used so Markdoc cells can reference cells in other notebooks. */
+export function getAllCellsAcrossNotebooks(): Cell[] {
+	return state.notebooks.flatMap((nb) => nb.cells);
+}
+
+// ── Promote to dbt model ─────────────────────────────────────────────────────
+
+export interface PromotionChainItem {
+	cell: Cell;
+	/** Default target path (no extension), editable by the user before submitting. */
+	suggestedRelPath: string;
+}
+
+/** True when a cell lives in a `.luna` notebook and isn't already backed by a
+ *  real model file — i.e. it's eligible for "Promote to dbt model". */
+export function isCellPromotable(cellId: string): boolean {
+	if (state.storageMode !== 'filesystem') return false;
+	const ctx = findCellContext(cellId);
+	if (!ctx) return false;
+	return ctx.notebook.format === 'luna' && ctx.cell.cellType === 'query' && !ctx.cell.promotedModelPath;
+}
+
+/**
+ * Returns the ordered list of cells that must be promoted (un-promoted
+ * ancestors first, the requested cell last) to turn `cellId` into a real dbt
+ * model. Promoting requires promoting the whole un-promoted upstream chain —
+ * ancestors already backed by a model file (`promotedModelPath` set) are
+ * excluded since they're already real models.
+ */
+export function getPromotionChain(cellId: string): PromotionChainItem[] {
+	const ctx = findCellContext(cellId);
+	if (!ctx) return [];
+	const { notebook, cell, idx } = ctx;
+	if (cell.cellType !== 'query' || cell.promotedModelPath) return [];
+
+	const globalRegistry = new Map<string, Cell>();
+	for (const [name, { cell: c }] of getGlobalOutputRegistry()) globalRegistry.set(name, c);
+
+	const ancestors = resolveGlobalDependencies(notebook.cells, idx, globalRegistry).filter((c) => !c.promotedModelPath);
+	const chain = [...ancestors, cell];
+
+	const defaultDir =
+		notebook.id.startsWith('models/') || notebook.id.startsWith('analyses/')
+			? notebook.id.substring(0, notebook.id.lastIndexOf('/'))
+			: 'models/staging';
+
+	return chain.map((c) => ({ cell: c, suggestedRelPath: `${defaultDir}/${c.outputName}` }));
+}
+
+/**
+ * Explodes `cellId` and its un-promoted upstream chain into real dbt model
+ * files. `overrides` lets the caller (PromoteDialog) adjust target path /
+ * materialization / schema / tags per cell before submitting; cells without
+ * an override fall back to their current metadata and a default `models/staging/<name>` path.
+ */
+export async function promoteCellChain(
+	cellId: string,
+	overrides: Map<
+		string,
+		{ targetRelPath?: string; materialized?: CellMaterializationMode; schema?: string | null; tags?: string[] }
+	> = new Map()
+): Promise<PromoteResult> {
+	if (!state.projectFolder) throw new Error('No project open');
+	const ctx = findCellContext(cellId);
+	if (!ctx) throw new Error('Cell not found');
+	const { notebook } = ctx;
+	if (notebook.format !== 'luna') throw new Error('Only cells in .luna notebooks can be promoted');
+
+	const chain = getPromotionChain(cellId);
+	if (chain.length === 0) throw new Error('Nothing to promote');
+
+	const plan: PromotePlanItem[] = chain.map(({ cell, suggestedRelPath }) => {
+		const o = overrides.get(cell.id);
+		return {
+			outputName: cell.outputName,
+			code: cell.code,
+			language: cell.language,
+			connectionId: cell.connectionId,
+			targetRelPath: o?.targetRelPath ?? suggestedRelPath,
+			materialized: o?.materialized ?? cell.materializeMode,
+			schema: o?.schema ?? cell.dbtSchema,
+			tags: o?.tags ?? cell.dbtTags
+		};
+	});
+
+	const result = await promoteCells(state.projectFolder, `${notebook.id}.luna`, plan);
+
+	if (result.promoted.length > 0) {
+		const promotedMap = new Map(result.promoted.map((p) => [p.outputName, p.relPath]));
+		notebook.cells = notebook.cells.map((c) =>
+			promotedMap.has(c.outputName) ? { ...c, promotedModelPath: promotedMap.get(c.outputName)! } : c
+		);
+		if (state.isDbtProject) void refreshDbtManifest();
+	}
+
+	return result;
+}
+
+// ── Notebook-scoped filters ({% filter %} tags in markdown cells) ─────────────
+
+export function getNotebookFilterValue(notebookId: string, paramName: string): string {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	return nb?.filters?.[paramName] ?? '';
+}
+
+export function setNotebookFilterValue(notebookId: string, paramName: string, value: string): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	nb.filters = { ...(nb.filters ?? {}), [paramName]: value };
+	scheduleSave();
+
+	const token = `\${${paramName}}`;
+	const affected = nb.cells.filter((c) => c.cellType === 'query' && c.code.includes(token));
+	for (const cell of affected) {
+		void runCellAndDownstream(cell.id);
+	}
+}
+
+// Raw substitution, dbt/Jinja-style: the user wraps ${param} in their own quotes in SQL
+// when they need a string literal (e.g. region = '${region}'). Only escape embedded single
+// quotes so a value like "O'Brien" doesn't break out of a quoted literal.
+function formatFilterValueForCode(value: string): string {
+	return value.replace(/'/g, "''");
+}
+
+/** Substitutes ${paramName} tokens in query cell code with the notebook's current filter values. */
+function applyFilterSubstitution(cells: Cell[], notebookId: string): Cell[] {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	const filters = nb?.filters;
+	if (!filters || Object.keys(filters).length === 0) return cells;
+	return cells.map((c) => {
+		if (c.cellType !== 'query' || !c.code) return c;
+		let code = c.code;
+		for (const [paramName, value] of Object.entries(filters)) {
+			const token = `\${${paramName}}`;
+			if (code.includes(token)) code = code.split(token).join(formatFilterValueForCode(value));
+		}
+		return code === c.code ? c : { ...c, code };
+	});
+}
+
+// ── Notebook-scoped auto-refresh ──────────────────────────────────────────────
+
+const autoRefreshTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+export function setNotebookAutoRefresh(notebookId: string, intervalMs: number): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	nb.autoRefreshIntervalMs = intervalMs > 0 ? intervalMs : undefined;
+	scheduleSave();
+
+	const existing = autoRefreshTimers.get(notebookId);
+	if (existing) {
+		clearInterval(existing);
+		autoRefreshTimers.delete(notebookId);
+	}
+
+	if (intervalMs > 0) {
+		const timer = setInterval(() => {
+			const current = state.notebooks.find((n) => n.id === notebookId);
+			if (!current) {
+				clearInterval(timer);
+				autoRefreshTimers.delete(notebookId);
+				return;
+			}
+			for (const cell of current.cells) {
+				if (cell.cellType === 'query') void runCell(cell.id);
+			}
+		}, intervalMs);
+		autoRefreshTimers.set(notebookId, timer);
+	}
+}
+
+export function getNotebookAutoRefresh(notebookId: string): number {
+	return state.notebooks.find((n) => n.id === notebookId)?.autoRefreshIntervalMs ?? 0;
 }
 
 export function getCrossNotebookUsageCount(outputName: string, ownNotebookId: string): number {
@@ -2295,6 +2548,7 @@ export function duplicateNotebook(id: string): void {
 			outputName: cell.outputName || `result${i + 1}`,
 			markdown: cell.markdown,
 			markdownPreview: cell.markdownPreview,
+			udfBody: cell.udfBody,
 			language: cell.language ?? 'prql',
 			guiStages: JSON.parse(JSON.stringify(cell.guiStages)) as GUIPipelineStage[],
 			editMode: cell.editMode,
@@ -2449,17 +2703,6 @@ export function renameNotebook(id: string, name: string): void {
 			firstCell.outputName = name;
 			firstCell.materializeTarget = name;
 			firstCell.id = name;
-		}
-
-		// Update dashboard chart blocks that reference the old cell ID
-		if (oldCellId && oldCellId !== name) {
-			state.dashboards = state.dashboards.map((d) => {
-				const updatedBlocks = d.blocks.map((b) =>
-					b.type === 'chart' && b.cellId === oldCellId ? { ...b, cellId: name } : b
-				);
-				const changed = updatedBlocks.some((b, i) => b !== d.blocks[i]);
-				return changed ? { ...d, blocks: updatedBlocks } : d;
-			});
 		}
 
 		// Update open tab references
@@ -2640,603 +2883,6 @@ export function closeAllExtraTabs(): void {
 	}
 }
 
-// ── Dashboard store functions ─────────────────────────────────────────────────
-
-export function getDashboards(): Dashboard[] {
-	return state.dashboards;
-}
-
-function toSlug(name: string): string {
-	return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'dashboard';
-}
-
-export function createDashboard(name: string): Dashboard {
-	const baseSlug = toSlug(name);
-	let slug = baseSlug;
-	let n = 1;
-	while (state.dashboards.find((d) => d.slug === slug)) slug = `${baseSlug}_${n++}`;
-	const dashboard: Dashboard = { id: makeId(), name, slug, blocks: [] };
-	state.dashboards = [...state.dashboards, dashboard];
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, dashboard);
-	}
-	return dashboard;
-}
-
-export function renameDashboard(id: string, name: string): void {
-	const idx = state.dashboards.findIndex((d) => d.id === id);
-	if (idx === -1) return;
-	const old = state.dashboards[idx];
-	const newSlug = toSlug(name);
-	const updated = { ...old, name, slug: newSlug };
-	state.dashboards = state.dashboards.map((d) => (d.id === id ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		// Delete old file, write new
-		void deleteProjectFile(state.projectFolder, `pages/${old.slug}.md`).catch(() => {});
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-export function deleteDashboard(id: string): void {
-	const dash = state.dashboards.find((d) => d.id === id);
-	state.dashboards = state.dashboards.filter((d) => d.id !== id);
-	// Close any open dashboard tabs for this dashboard
-	state.openExtraTabs = state.openExtraTabs.filter((t) => !(t.type === 'dashboard' && t.dashboardId === id));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder && dash) {
-		void deleteProjectFile(state.projectFolder, `pages/${dash.slug}.md`).catch(() => {});
-	}
-}
-
-export function addPanelToDashboard(
-	dashboardId: string,
-	panel: Omit<ChartBlock, 'id' | 'order' | 'type'>
-): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const maxOrder = dash.blocks.reduce((m, b) => Math.max(m, b.order), -1);
-	const newBlock: ChartBlock = { ...panel, type: 'chart', id: makeId(), order: maxOrder + 1 };
-	const updated = { ...dash, blocks: [...dash.blocks, newBlock] };
-	state.dashboards = state.dashboards.map((d) => (d.id === dashboardId ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-export function addBlockToDashboard(
-	dashboardId: string,
-	block: Omit<ChartBlock, 'id' | 'order'> | Omit<TextBlock, 'id' | 'order'> | Omit<CalloutBlock, 'id' | 'order'> | Omit<FilterBlock, 'id' | 'order'> | Omit<KpiBlock, 'id' | 'order'> | Omit<SectionBlock, 'id' | 'order'>
-): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const maxOrder = dash.blocks.reduce((m, b) => Math.max(m, b.order), -1);
-	const newBlock = { ...block, id: makeId(), order: maxOrder + 1 } as DashboardBlock;
-	const updated = { ...dash, blocks: [...dash.blocks, newBlock] };
-	state.dashboards = state.dashboards.map((d) => (d.id === dashboardId ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-export function removeBlockFromDashboard(dashboardId: string, blockId: string): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const updated = { ...dash, blocks: dash.blocks.filter((b) => b.id !== blockId) };
-	state.dashboards = state.dashboards.map((d) => (d.id === dashboardId ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-/** @deprecated use removeBlockFromDashboard */
-export const removePanelFromDashboard = removeBlockFromDashboard;
-
-export function updateDashboardBlock(
-	dashboardId: string,
-	blockId: string,
-	patch: Record<string, unknown>
-): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const updated = {
-		...dash,
-		blocks: dash.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b))
-	};
-	state.dashboards = state.dashboards.map((d) => (d.id === dashboardId ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-/** @deprecated use updateDashboardBlock */
-export function updateDashboardPanel(
-	dashboardId: string,
-	panelId: string,
-	patch: Partial<Pick<ChartBlock, 'title' | 'width' | 'height'>>
-): void {
-	updateDashboardBlock(dashboardId, panelId, patch as Record<string, unknown>);
-}
-
-export function reorderDashboardPanels(dashboardId: string, orderedBlockIds: string[]): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const byId = new Map(dash.blocks.map((b) => [b.id, b]));
-	const reordered = orderedBlockIds
-		.map((bid, i) => {
-			const b = byId.get(bid);
-			return b ? { ...b, order: i } : null;
-		})
-		.filter((b): b is DashboardBlock => b !== null);
-	const updated = { ...dash, blocks: reordered };
-	state.dashboards = state.dashboards.map((d) => (d.id === dashboardId ? updated : d));
-	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		void writeDashboardFile(state.projectFolder, updated);
-	}
-}
-
-export function openDashboardTab(dashboardId: string): void {
-	const dash = state.dashboards.find((d) => d.id === dashboardId);
-	if (!dash) return;
-	const existing = state.openExtraTabs.find(
-		(t) => t.type === 'dashboard' && t.dashboardId === dashboardId
-	);
-	if (existing) {
-		state.activeTabId = existing.id;
-		return;
-	}
-	const tab: ExtraTab = {
-		id: makeId(),
-		type: 'dashboard',
-		tableName: '',
-		name: dash.name,
-		viewMode: 'table',
-		chartConfig: null,
-		dashboardId
-	};
-	state.openExtraTabs = [...state.openExtraTabs, tab];
-	state.activeTabId = tab.id;
-}
-
-// ── Evidence.dev flat file serialization ─────────────────────────────────────
-
-function evidenceChartComponent(
-	chart: ChartConfig,
-	queryName: string,
-	heightPx: number
-): string {
-	const h = `chartAreaHeight=${heightPx}`;
-	const title = chart.title ? ` title="${chart.title}"` : '';
-	const x = chart.xColumn;
-	const y = chart.yColumns[0] ?? '';
-
-	switch (chart.chartType) {
-		// ── Evidence.dev data components ──────────────────────────────────────
-		case 'table':
-			return `<DataTable data={${queryName}} rows=${chart.tableRows ?? 10}${chart.tableSearch ? ' search=true' : ''} downloadable=true />`;
-		case 'big-value': {
-			const comparisonProp = chart.yColumns[0] ? ` comparison=${chart.yColumns[0]}` : '';
-			const sparklineProp = chart.colorColumn ? ` sparkline=${chart.colorColumn}` : '';
-			const fmtProp = ''; // users can add fmt manually
-			return `<BigValue data={${queryName}} value=${x}${comparisonProp}${sparklineProp}${title ? ` title="${chart.title}"` : ''} />`;
-		}
-		case 'delta':
-			return `<Delta data={${queryName}} column=${x}${chart.deltaDownIsGood ? ' downIsGood=true' : ''} />`;
-		case 'value':
-			return `<Value data={${queryName}} column=${x}${chart.valueRow ? ` row=${chart.valueRow}` : ''} />`;
-		// ── Chart components ──────────────────────────────────────────────────
-		case 'line':
-			return `<LineChart data={${queryName}} x=${x} y=${y}${chart.yColumnsSecondary?.length ? ` y2=${chart.yColumnsSecondary[0]}` : ''}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''}${title} ${h} />`;
-		case 'area':
-			return `<AreaChart data={${queryName}} x=${x} y=${y}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''}${title} ${h} />`;
-		case 'bar':
-			return `<BarChart data={${queryName}} x=${x} y=${y}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''}${chart.seriesMode === 'grouped' ? ' type=grouped' : ''}${title} ${h} />`;
-		case 'bar-horizontal':
-			return `<BarChart data={${queryName}} x=${x} y=${y}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''} swapXY=true${title} ${h} />`;
-		case 'scatter':
-			return `<ScatterPlot data={${queryName}} x=${x} y=${y}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''}${title} ${h} />`;
-		case 'bubble':
-			return `<BubbleChart data={${queryName}} x=${x} y=${y}${chart.sizeColumn ? ` size=${chart.sizeColumn}` : ''}${chart.colorColumn ? ` series=${chart.colorColumn}` : ''}${title} ${h} />`;
-		case 'pie':
-			return `<PieChart data={${queryName}} name=${x} value=${y}${title} />`;
-		case 'histogram':
-			return `<Histogram data={${queryName}} x=${y}${title} ${h} />`;
-		case 'heatmap':
-			return `<Heatmap data={${queryName}} x=${x} y=${chart.colorColumn ?? ''} value=${y}${title} />`;
-		case 'calendar-heatmap':
-			return `<CalendarHeatmap data={${queryName}} date=${x} value=${y}${title} />`;
-		case 'funnel':
-			return `<FunnelChart data={${queryName}} nameCol=${x} valueCol=${y}${title} />`;
-		case 'box-plot': {
-			const [minC, q1C, medC, q3C, maxC] = chart.yColumns;
-			return `<BoxPlot data={${queryName}} name=${x} min=${minC} intervalBottom=${q1C} midpoint=${medC} intervalTop=${q3C} max=${maxC}${title} />`;
-		}
-		case 'sankey':
-			return `<SankeyDiagram data={${queryName}} sourceCol=${x} targetCol=${chart.colorColumn ?? ''} valueCol=${y}${title} />`;
-		default:
-			return `<BarChart data={${queryName}} x=${x} y=${y}${title} ${h} />`;
-	}
-}
-
-const HEIGHT_MAP: Record<string, number> = { sm: 180, md: 280, lg: 420 };
-
-/** Sanitize a query name to be a valid Evidence SQL block identifier. */
-function toQueryName(raw: string, used: Set<string>): string {
-	let base = raw.split('/').pop()!.replace(/[^a-z0-9_]/gi, '_').replace(/^[^a-z_]/i, 'q$&').toLowerCase();
-	if (!base) base = 'query';
-	let name = base;
-	let n = 2;
-	while (used.has(name)) name = `${base}_${n++}`;
-	used.add(name);
-	return name;
-}
-
-function buildEvidencePage(_folder: string, dashboard: Dashboard): string {
-	const blocksSorted = [...dashboard.blocks].sort((a, b) => a.order - b.order);
-	const lines: string[] = [];
-	const allCells = state.notebooks.flatMap((nb) => nb.cells);
-	const usedQueryNames = new Set<string>();
-
-	// ── Frontmatter ───────────────────────────────────────────────────────────
-	lines.push('---');
-	lines.push(`title: ${dashboard.name}`);
-	lines.push('lunapad:');
-	lines.push('  version: 2');
-	lines.push('  blocks:');
-	for (const block of blocksSorted) {
-		lines.push(`    - type: ${block.type}`);
-		lines.push(`      id: ${block.id}`);
-		lines.push(`      width: ${block.width}`);
-		lines.push(`      order: ${block.order}`);
-		if (block.type === 'chart') {
-			lines.push(`      cellId: ${block.cellId}`);
-			lines.push(`      height: ${block.height}`);
-			if (block.title) lines.push(`      title: "${block.title.replace(/"/g, '\\"')}"`);
-		} else if (block.type === 'text') {
-			const escaped = block.markdown.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-			lines.push(`      markdown: "${escaped}"`);
-		} else if (block.type === 'callout') {
-			lines.push(`      variant: ${block.variant}`);
-			if (block.title) lines.push(`      title: "${block.title.replace(/"/g, '\\"')}"`);
-			const escaped = block.markdown.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-			lines.push(`      markdown: "${escaped}"`);
-		} else if (block.type === 'filter') {
-			lines.push(`      filterKind: ${block.filterKind}`);
-			lines.push(`      label: "${block.label.replace(/"/g, '\\"')}"`);
-			lines.push(`      paramName: ${block.paramName}`);
-			if (block.defaultValue) lines.push(`      defaultValue: "${block.defaultValue}"`);
-			if (block.options?.length) lines.push(`      options: [${block.options.map((o) => `"${o}"`).join(', ')}]`);
-		} else if (block.type === 'kpi') {
-			lines.push(`      label: "${block.label.replace(/"/g, '\\"')}"`);
-			lines.push(`      valueExpr: "${block.valueExpr.replace(/"/g, '\\"')}"`);
-			if (block.changeExpr) lines.push(`      changeExpr: "${block.changeExpr.replace(/"/g, '\\"')}"`);
-			if (block.prefix) lines.push(`      prefix: "${block.prefix}"`);
-			if (block.suffix) lines.push(`      suffix: "${block.suffix}"`);
-		} else if (block.type === 'section') {
-			lines.push(`      heading: "${block.heading.replace(/"/g, '\\"')}"`);
-			lines.push(`      level: ${block.level}`);
-		}
-	}
-	lines.push('---');
-	lines.push('');
-
-	// ── Build query name map for chart blocks ──────────────────────────────────
-	const queryNames = new Map<string, string>();
-	for (const block of blocksSorted) {
-		if (block.type !== 'chart') continue;
-		const raw = block.cellId.split('/').pop() ?? 'query';
-		queryNames.set(block.id, toQueryName(raw, usedQueryNames));
-	}
-
-	// ── SQL blocks (one per chart block) ──────────────────────────────────────
-	for (const block of blocksSorted) {
-		if (block.type !== 'chart') continue;
-		const qName = queryNames.get(block.id)!;
-		const cellName = block.cellId.split('/').pop();
-		const cell = allCells.find((c) => c.outputName === cellName || c.id === block.cellId);
-		const sql = cell?.compiledSQL ?? cell?.code ?? `-- cell: ${block.cellId}\nSELECT 1`;
-		lines.push('```sql ' + qName);
-		lines.push(sql.trim());
-		lines.push('```');
-		lines.push('');
-	}
-
-	// ── Filter blocks (render before main content) ───────────────────────────
-	const filterBlocks = blocksSorted.filter((b) => b.type === 'filter') as FilterBlock[];
-	if (filterBlocks.length > 0) {
-		lines.push('<div class="evidence-filters">');
-		lines.push('');
-		for (const f of filterBlocks) {
-			switch (f.filterKind) {
-				case 'dropdown':
-					lines.push(`<Dropdown name="${f.paramName}" title="${f.label}"${f.defaultValue ? ` defaultValue="${f.defaultValue}"` : ''} />`);
-					break;
-				case 'text-input':
-					lines.push(`<TextInput name="${f.paramName}" title="${f.label}"${f.defaultValue ? ` defaultValue="${f.defaultValue}"` : ''} />`);
-					break;
-				case 'date-range':
-					lines.push(`<DateRangePicker name="${f.paramName}" title="${f.label}" />`);
-					break;
-				case 'button-group':
-					lines.push(`<ButtonGroup name="${f.paramName}" title="${f.label}" options={[${(f.options ?? []).map((o) => `"${o}"`).join(', ')}]} />`);
-					break;
-			}
-		}
-		lines.push('');
-		lines.push('</div>');
-		lines.push('');
-	}
-
-	// ── Main content: interleave text/callout/chart/kpi/section blocks in order ─
-	// Consecutive chart blocks are grouped into Grid sections.
-	type Segment = { kind: 'charts'; blocks: ChartBlock[] } | { kind: 'prose'; block: TextBlock | CalloutBlock } | { kind: 'kpi'; block: KpiBlock } | { kind: 'section'; block: SectionBlock };
-	const segments: Segment[] = [];
-	for (const block of blocksSorted) {
-		if (block.type === 'filter') continue; // rendered above
-		if (block.type === 'chart') {
-			const last = segments[segments.length - 1];
-			if (last?.kind === 'charts') {
-				last.blocks.push(block as ChartBlock);
-			} else {
-				segments.push({ kind: 'charts', blocks: [block as ChartBlock] });
-			}
-		} else if (block.type === 'text' || block.type === 'callout') {
-			segments.push({ kind: 'prose', block: block as TextBlock | CalloutBlock });
-		} else if (block.type === 'kpi') {
-			segments.push({ kind: 'kpi', block: block as KpiBlock });
-		} else if (block.type === 'section') {
-			segments.push({ kind: 'section', block: block as SectionBlock });
-		}
-	}
-
-	for (const seg of segments) {
-		if (seg.kind === 'prose') {
-			const b = seg.block;
-			if (b.type === 'text') {
-				lines.push(b.markdown);
-				lines.push('');
-			} else {
-				// Callout → blockquote with variant marker
-				const variantLabel = b.variant.charAt(0).toUpperCase() + b.variant.slice(1);
-				if (b.title) {
-					lines.push(`> **${b.title}**`);
-					lines.push(`>`);
-					lines.push(`> ${b.markdown.replace(/\n/g, '\n> ')}`);
-				} else {
-					lines.push(`> **${variantLabel}**: ${b.markdown.replace(/\n/g, '\n> ')}`);
-				}
-				lines.push('');
-			}
-			continue;
-		}
-
-		if (seg.kind === 'kpi') {
-			// KPI block → render as bold metric line in Evidence
-			const b = seg.block;
-			const value = b.valueExpr;
-			const prefix = b.prefix ?? '';
-			const suffix = b.suffix ?? '';
-			lines.push(`**${b.label}**: ${prefix}${value}${suffix}`);
-			lines.push('');
-			continue;
-		}
-
-		if (seg.kind === 'section') {
-			const b = seg.block;
-			const hashes = b.level === 1 ? '##' : '###';
-			lines.push(`${hashes} ${b.heading}`);
-			lines.push('');
-			continue;
-		}
-
-		// Chart segment: group by width into Grid rows
-		const chartBlocks = seg.blocks;
-		const groups: Array<{ fullWidth: boolean; blocks: ChartBlock[] }> = [];
-		for (const block of chartBlocks) {
-			if (block.width === 3) {
-				groups.push({ fullWidth: true, blocks: [block] });
-			} else {
-				const last = groups[groups.length - 1];
-				if (last && !last.fullWidth) {
-					last.blocks.push(block);
-				} else {
-					groups.push({ fullWidth: false, blocks: [block] });
-				}
-			}
-		}
-
-		for (const group of groups) {
-			if (group.fullWidth) {
-				const block = group.blocks[0];
-				const qName = queryNames.get(block.id)!;
-				const cellName = block.cellId.split('/').pop();
-				const cell = allCells.find((c) => c.outputName === cellName || c.id === block.cellId);
-				const chart = cell?.resultChartConfig;
-				const heightPx = HEIGHT_MAP[block.height] ?? 280;
-				if (block.title) lines.push(`## ${block.title}`);
-				lines.push(chart ? evidenceChartComponent(chart, qName, heightPx) : `<!-- no chart config for ${block.cellId} -->`);
-				lines.push('');
-			} else {
-				lines.push('<Grid cols=3>');
-				lines.push('');
-				for (const block of group.blocks) {
-					const qName = queryNames.get(block.id)!;
-					const cellName = block.cellId.split('/').pop();
-					const cell = allCells.find((c) => c.outputName === cellName || c.id === block.cellId);
-					const chart = cell?.resultChartConfig;
-					const heightPx = HEIGHT_MAP[block.height] ?? 280;
-					const component = chart ? evidenceChartComponent(chart, qName, heightPx) : `<!-- no chart config for ${block.cellId} -->`;
-					if (block.width === 2) {
-						lines.push('<Group>');
-						if (block.title) lines.push(`## ${block.title}`);
-						lines.push(component);
-						lines.push('</Group>');
-					} else {
-						if (block.title) lines.push(`## ${block.title}`);
-						lines.push(component);
-					}
-					lines.push('');
-				}
-				lines.push('</Grid>');
-				lines.push('');
-			}
-		}
-	}
-
-	return lines.join('\n');
-}
-
-async function writeDashboardFile(folder: string, dashboard: Dashboard): Promise<void> {
-	const content = buildEvidencePage(folder, dashboard);
-	await writeProjectFile(folder, `pages/${dashboard.slug}.md`, content).catch(() => {});
-}
-
-export async function loadDashboardsFromProject(folder: string): Promise<void> {
-	try {
-		const res = await fetch(`/api/project/list-files?folder=${encodeURIComponent(folder)}&pattern=pages/*.md`);
-		if (!res.ok) return;
-		const body = await res.json() as { files?: string[] };
-		const files = body.files ?? [];
-		const loaded: Dashboard[] = [];
-		for (const file of files) {
-			try {
-				const contentRes = await fetch(`/api/project/read-file?folder=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`);
-				if (!contentRes.ok) continue;
-				const { content } = await contentRes.json() as { content: string };
-				const dash = parseDashboardFromMd(content, file);
-				if (dash) loaded.push(dash);
-			} catch {
-				// skip unreadable files
-			}
-		}
-		if (loaded.length > 0) {
-			state.dashboards = loaded;
-		}
-	} catch {
-		// Endpoint may not exist — ignore
-	}
-}
-
-function parseDashboardFromMd(content: string, filePath: string): Dashboard | null {
-	try {
-		const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-		if (!fmMatch) return null;
-		const fm = fmMatch[1];
-		const titleMatch = fm.match(/^title:\s*(.+)$/m);
-		const name = titleMatch?.[1]?.trim() ?? filePath.split('/').pop()?.replace('.md', '') ?? 'Dashboard';
-		const slug = filePath.split('/').pop()?.replace('.md', '') ?? toSlug(name);
-
-		// Parse lunapad: block
-		const psMatch = fm.match(/lunapad:\n([\s\S]*?)(?=\n\w|\n*$)/);
-		if (!psMatch) return null;
-		const ps = psMatch[1];
-
-		// Detect version
-		const versionMatch = ps.match(/version:\s*(\d+)/);
-		const version = versionMatch ? parseInt(versionMatch[1], 10) : 1;
-
-		if (version >= 2) {
-			// v2: read blocks array — each block is a YAML object
-			// Simple approach: split on "    - type:" entries
-			const blockRaw = ps.replace(/^[\s\S]*?blocks:\n/, '');
-			const blockEntries = blockRaw.split(/\n\s{4}- type: /).filter(Boolean);
-			const blocks: DashboardBlock[] = [];
-			for (const entry of blockEntries) {
-				const lines = entry.split('\n');
-				const type = lines[0]?.trim() as DashboardBlock['type'];
-				const get = (key: string) => {
-					const m = entry.match(new RegExp(`${key}: ([^\n]+)`));
-					return m?.[1]?.trim() ?? '';
-				};
-				const getStr = (key: string) => {
-					const raw = get(key);
-					if (raw.startsWith('"') && raw.endsWith('"')) {
-						return raw.slice(1, -1)
-							.replace(/\\n/g, '\n')
-							.replace(/\\"/g, '"')
-							.replace(/\\\\/g, '\\');
-					}
-					return raw;
-				};
-				const id = get('id') || makeId();
-				const width = (parseInt(get('width'), 10) || 1) as DashboardPanelWidth;
-				const order = parseInt(get('order'), 10) || 0;
-
-				if (type === 'chart') {
-					blocks.push({
-						type: 'chart',
-						id, width, order,
-						cellId: get('cellId'),
-						notebookId: '',
-						height: (get('height') || 'md') as DashboardPanelHeight,
-						title: getStr('title') || undefined
-					});
-				} else if (type === 'text') {
-					blocks.push({ type: 'text', id, width, order, markdown: getStr('markdown') });
-				} else if (type === 'callout') {
-					blocks.push({
-						type: 'callout', id, width, order,
-						variant: (get('variant') || 'info') as CalloutBlock['variant'],
-						title: getStr('title') || undefined,
-						markdown: getStr('markdown')
-					});
-				} else if (type === 'filter') {
-					const optRaw = get('options');
-					const options = optRaw
-						? [...optRaw.matchAll(/"([^"]*)"/g)].map((m) => m[1])
-						: undefined;
-					blocks.push({
-						type: 'filter', id, width, order,
-						filterKind: (get('filterKind') || 'dropdown') as FilterBlock['filterKind'],
-						label: getStr('label'),
-						paramName: get('paramName'),
-						defaultValue: getStr('defaultValue') || undefined,
-						options
-					});
-				} else if (type === 'kpi') {
-					blocks.push({
-						type: 'kpi', id, width, order,
-						label: getStr('label'),
-						valueExpr: getStr('valueExpr'),
-						changeExpr: getStr('changeExpr') || undefined,
-						prefix: getStr('prefix') || undefined,
-						suffix: getStr('suffix') || undefined
-					});
-				} else if (type === 'section') {
-					blocks.push({
-						type: 'section', id, width: 3, order,
-						heading: getStr('heading'),
-						level: (parseInt(get('level'), 10) || 1) as 1 | 2
-					});
-				}
-			}
-			return { id: makeId(), name, slug, blocks };
-		} else {
-			// v1 legacy: panels array → ChartBlock[]
-			const panelBlocks = [...ps.matchAll(/- id: (\S+)\n\s+cellId: (\S+)\n\s+width: (\d)\n\s+height: (\w+)\n\s+order: (\d+)(?:\n\s+queryName: \S+)?(?:\n\s+title: "([^"]*)")?/g)];
-			const blocks: ChartBlock[] = panelBlocks.map((m) => ({
-				type: 'chart' as const,
-				id: m[1],
-				cellId: m[2],
-				notebookId: '',
-				width: Number(m[3]) as DashboardPanelWidth,
-				height: m[4] as DashboardPanelHeight,
-				order: Number(m[5]),
-				title: m[6] || undefined
-			}));
-			return { id: makeId(), name, slug, blocks };
-		}
-	} catch {
-		return null;
-	}
-}
-
 export function setTabViewMode(tabId: string, mode: ResultViewMode): void {
 	const rt = state.openResultTabs.find((t) => t.id === tabId);
 	if (rt) {
@@ -3315,6 +2961,7 @@ export function addCellWithLanguage(lang: CellLanguage): void {
 	const inheritedSource = lang === 'prql' ? getPreviousCellOutputReference(queryCells) : null;
 	const guiStages = makeInheritedGuiStages(inheritedSource ?? '');
 	const code = inheritedSource ? makeInheritedGuiCode(inheritedSource) : '';
+	pushHistoryCheckpoint(nb.id);
 
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const outputName = generateUniqueOutputName();
@@ -3351,6 +2998,7 @@ export function addCell(): void {
 
 export function addMarkdownCell(): void {
 	const nb = getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
 
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const outputName = generateUniqueOutputName();
@@ -3365,6 +3013,61 @@ export function addMarkdownCell(): void {
 
 	nb.cells = [...nb.cells, makeMarkdownCell('')];
 	scheduleSave();
+}
+
+/** UDF cells (Python, compiled to Trino's inline `WITH FUNCTION` syntax) have no
+ *  natural .prql/.sql file mapping since they aren't dbt models. In filesystem
+ *  (dbt project) mode they're only supported in .luna-format notebooks — flat
+ *  one-file-per-cell projects have no way to represent one. Outside filesystem
+ *  mode (plain in-browser notebooks) there's no file mapping at all, so they're
+ *  always allowed. */
+export function canAddUdfCell(): boolean {
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		const nb = getActiveNotebook();
+		return nb.format === 'luna';
+	}
+	return true;
+}
+
+export function addUdfCell(): void {
+	if (!canAddUdfCell()) return;
+	const nb = getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeUdfCell();
+	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	nb.cells = [...nb.cells, cell];
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertUdfCellAfter(id: string): void {
+	if (!canAddUdfCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeUdfCell();
+	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertUdfCellBefore(id: string): void {
+	if (!canAddUdfCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeUdfCell();
+	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
 }
 
 /** Append a query or markdown cell at the end of the active notebook; returns the new cell id. */
@@ -3465,6 +3168,7 @@ export function insertCellBefore(
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
 	const newCell: Cell = {
 		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
@@ -3490,6 +3194,7 @@ export function insertCellAfter(
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return '';
+	pushHistoryCheckpoint(nb.id);
 	const base = nb.cells[idx];
 	const inheritedConnection = data.connectionId === undefined ? base?.connectionId ?? null : data.connectionId;
 	const newCell: Cell = {
@@ -3509,6 +3214,7 @@ export function removeCell(id: string): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (cell) {
+		pushHistoryCheckpoint(nb.id);
 		clearGuiCompileTimer(id);
 		const viewName = cell.outputName || `_cell_${cell.id}`;
 		dropView(viewName).catch(() => {});
@@ -3517,20 +3223,28 @@ export function removeCell(id: string): void {
 	scheduleSave();
 }
 
-export interface AICellSnapshot {
+export interface CellSnapshot {
 	id: string;
 	outputName: string;
 	code: string;
 	markdown: string;
+	udfBody: string;
 	language: CellLanguage;
-	cellType: 'query' | 'markdown';
+	cellType: CellType;
 	display: CellDisplay;
 	guiStages: GUIPipelineStage[];
 	editMode: CellEditMode;
 	connectionId: string | null;
+	materializeMode: CellMaterializationMode;
+	materializeTarget: string;
+	description: string | null;
+	dbtTags: string[];
+	scheduleEnabled: boolean;
+	scheduleIntervalMinutes: number;
+	scheduleScope: CellScheduleScope;
 	// Runtime/result fields — captured so a restore can recreate a cell that was deleted
-	// during generation without blanking its output. Optional for back-compat with older
-	// in-memory snapshots.
+	// (during AI generation, or by removeCell+undo) without blanking its output. Optional
+	// for back-compat with older in-memory snapshots.
 	result?: Cell['result'];
 	status?: Cell['status'];
 	resultViewMode?: Cell['resultViewMode'];
@@ -3539,36 +3253,87 @@ export interface AICellSnapshot {
 	errors?: Cell['errors'];
 }
 
-/** Restore cells to a pre-AI-generation snapshot, preserving execution results for existing cells. */
-export function restoreCellsFromAISnapshot(notebookId: string, snapCells: AICellSnapshot[]): void {
+function cellToSnapshot(cell: Cell): CellSnapshot {
+	return {
+		id: cell.id,
+		outputName: cell.outputName,
+		code: cell.code,
+		markdown: cell.markdown,
+		udfBody: cell.udfBody,
+		language: cell.language,
+		cellType: cell.cellType,
+		display: cell.display,
+		guiStages: cell.guiStages,
+		editMode: cell.editMode,
+		connectionId: cell.connectionId,
+		materializeMode: cell.materializeMode,
+		materializeTarget: cell.materializeTarget,
+		description: cell.description,
+		dbtTags: cell.dbtTags,
+		scheduleEnabled: cell.scheduleEnabled,
+		scheduleIntervalMinutes: cell.scheduleIntervalMinutes,
+		scheduleScope: cell.scheduleScope,
+		result: cell.result,
+		status: cell.status,
+		resultViewMode: cell.resultViewMode,
+		resultChartConfig: cell.resultChartConfig,
+		executionMs: cell.executionMs,
+		errors: cell.errors
+	};
+}
+
+/** Restore cells to a snapshot (AI-generation undo, or notebook-level undo/redo),
+ *  preserving execution results for cells that are still live. */
+export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot[]): void {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
 	if (!nb) return;
 
 	const liveCells = nb.cells;
+	const codeChangedIds = new Set<string>();
 	const restoredCells = snapCells.map((snap) => {
 		const live = liveCells.find((c) => c.id === snap.id);
 		if (live) {
+			if (live.cellType === 'query' && live.code !== snap.code) codeChangedIds.add(snap.id);
 			return {
 				...live,
 				outputName: snap.outputName,
 				code: snap.code,
 				markdown: snap.markdown,
+				udfBody: snap.udfBody,
 				language: snap.language,
 				cellType: snap.cellType,
 				display: snap.display,
 				guiStages: snap.guiStages,
 				editMode: snap.editMode,
-				connectionId: snap.connectionId
+				connectionId: snap.connectionId,
+				materializeMode: snap.materializeMode,
+				materializeTarget: snap.materializeTarget,
+				description: snap.description,
+				dbtTags: snap.dbtTags,
+				scheduleEnabled: snap.scheduleEnabled,
+				scheduleIntervalMinutes: snap.scheduleIntervalMinutes,
+				scheduleScope: snap.scheduleScope
 			} satisfies Cell;
 		}
 		return {
 			...makeCell(snap.code, snap.outputName, snap.language),
+			// Preserve the original id so anything still referencing it (open result
+			// tabs, schedule timers, etc.) reattaches instead of dangling.
+			id: snap.id,
 			cellType: snap.cellType,
 			markdown: snap.markdown,
+			udfBody: snap.udfBody,
 			display: snap.display,
 			guiStages: snap.guiStages,
 			editMode: snap.editMode,
 			connectionId: snap.connectionId,
+			materializeMode: snap.materializeMode,
+			materializeTarget: snap.materializeTarget,
+			description: snap.description,
+			dbtTags: snap.dbtTags,
+			scheduleEnabled: snap.scheduleEnabled,
+			scheduleIntervalMinutes: snap.scheduleIntervalMinutes,
+			scheduleScope: snap.scheduleScope,
 			// Restore captured runtime/result state so a recreated cell keeps its output.
 			...(snap.result !== undefined && { result: snap.result }),
 			...(snap.status !== undefined && { status: snap.status }),
@@ -3580,7 +3345,217 @@ export function restoreCellsFromAISnapshot(notebookId: string, snapCells: AICell
 	});
 
 	nb.cells = restoredCells;
+
+	// Live cells whose code changed need their compiled SQL/diagnostics refreshed against
+	// the fully-restored cell list (dependency resolution looks at sibling cells), so this
+	// runs as a second pass once nb.cells holds the final array.
+	for (const cell of nb.cells) {
+		if (!codeChangedIds.has(cell.id)) continue;
+		const idx = nb.cells.indexOf(cell);
+		cell.needsRun = true;
+		cell.staleReason = 'code-changed';
+		cell.staleSources = [];
+		const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
+		cell.errors = errors;
+		cell.compiledSQL = sql;
+	}
+
 	scheduleSave();
+}
+
+// ── Undo/redo history ────────────────────────────────────────────────────────
+// Session-only (never persisted): a per-notebook stack of CellSnapshot arrays.
+// Structural mutations push a checkpoint of the pre-mutation cell list; continuous
+// text mutations (updateCellCode/updateCellMarkdown/updateGuiStages) coalesce a
+// burst of edits into a single checkpoint via checkpointCoalesced below.
+const MAX_HISTORY_DEPTH = 50;
+const historyStacks = new Map<string, { undo: CellSnapshot[][]; redo: CellSnapshot[][] }>();
+
+function snapshotNotebookCells(nb: Notebook): CellSnapshot[] {
+	return nb.cells.map(cellToSnapshot);
+}
+
+function pushHistoryCheckpoint(notebookId: string): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	let entry = historyStacks.get(notebookId);
+	if (!entry) {
+		entry = { undo: [], redo: [] };
+		historyStacks.set(notebookId, entry);
+	}
+	entry.undo.push(snapshotNotebookCells(nb));
+	// Depth cap: oldest steps are silently dropped once the stack overflows — intentional,
+	// not a bug, since history is session-only and unbounded growth would leak memory.
+	if (entry.undo.length > MAX_HISTORY_DEPTH) entry.undo.shift();
+	entry.redo = [];
+}
+
+/** Apply a history snapshot and, in filesystem mode, re-save any cell that was
+ *  deleted (and is therefore not in the live notebook) so its file reappears. */
+function applyHistorySnapshot(notebookId: string, snap: CellSnapshot[]): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	const liveIds = new Set(nb.cells.map((c) => c.id));
+	restoreCellSnapshots(notebookId, snap);
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		for (const s of snap) {
+			if (!liveIds.has(s.id)) scheduleFileSave(notebookId, s.id);
+		}
+	}
+}
+
+export function undo(): void {
+	const nb = getActiveNotebook();
+	const entry = historyStacks.get(nb.id);
+	if (!entry || entry.undo.length === 0) return;
+	const prev = entry.undo.pop()!;
+	entry.redo.push(snapshotNotebookCells(nb));
+	if (entry.redo.length > MAX_HISTORY_DEPTH) entry.redo.shift();
+	applyHistorySnapshot(nb.id, prev);
+}
+
+export function redo(): void {
+	const nb = getActiveNotebook();
+	const entry = historyStacks.get(nb.id);
+	if (!entry || entry.redo.length === 0) return;
+	const next = entry.redo.pop()!;
+	entry.undo.push(snapshotNotebookCells(nb));
+	if (entry.undo.length > MAX_HISTORY_DEPTH) entry.undo.shift();
+	applyHistorySnapshot(nb.id, next);
+}
+
+export function canUndo(): boolean {
+	return (historyStacks.get(getActiveNotebook().id)?.undo.length ?? 0) > 0;
+}
+
+export function canRedo(): boolean {
+	return (historyStacks.get(getActiveNotebook().id)?.redo.length ?? 0) > 0;
+}
+
+// Coalesces a burst of continuous edits (e.g. every keystroke in updateCellCode) into a
+// single undo checkpoint: the first call in a burst checkpoints the pre-burst state, and
+// subsequent calls within the idle window just reset the timer rather than checkpointing again.
+const COALESCE_IDLE_MS = 800;
+const coalesceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function checkpointCoalesced(notebookId: string, cellId: string, field: string): void {
+	const key = `${notebookId}:${cellId}:${field}`;
+	const existing = coalesceTimers.get(key);
+	if (existing) {
+		clearTimeout(existing);
+	} else {
+		pushHistoryCheckpoint(notebookId);
+	}
+	coalesceTimers.set(
+		key,
+		setTimeout(() => coalesceTimers.delete(key), COALESCE_IDLE_MS)
+	);
+}
+
+// ── Clipboard (copy/paste/duplicate) ────────────────────────────────────────
+const CLIPBOARD_MIME_MARKER = '__lunaCell';
+let cellClipboard = $state<CellSnapshot | null>(null);
+
+function deconflictOutputName(nb: Notebook, baseName: string): string {
+	if (!baseName) return baseName;
+	const existing = new Set(nb.cells.map((c) => c.outputName).filter(Boolean));
+	if (!existing.has(baseName)) return baseName;
+	let candidate = `${baseName}_copy`;
+	let i = 2;
+	while (existing.has(candidate)) candidate = `${baseName}_copy${i++}`;
+	return candidate;
+}
+
+/** Clone a cell and insert the clone immediately after it. */
+export function duplicateCell(id: string): string {
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return '';
+	pushHistoryCheckpoint(nb.id);
+	const source = nb.cells[idx];
+	const outputName = deconflictOutputName(nb, source.outputName);
+	const clone: Cell = {
+		...source,
+		id: makeId(),
+		outputName,
+		materializeTarget: outputName || source.materializeTarget,
+		// A duplicate isn't the model that was promoted — it's a fresh, unpromoted copy.
+		promotedModelPath: null,
+		// Avoid silently doubling a running schedule — the duplicate starts disabled.
+		scheduleEnabled: false,
+		scheduleNextRunAt: null
+	};
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, clone);
+	nb.cells = cells;
+	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) scheduleFileSave(nb.id, clone.id);
+	return clone.id;
+}
+
+/** Copy a cell's authoring fields to the in-memory clipboard, mirrored to the
+ *  system clipboard (best-effort) so paste also works across browser tabs. */
+export function copyCellToClipboard(id: string): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell) return;
+	cellClipboard = cellToSnapshot(cell);
+	if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+		const payload = JSON.stringify({ [CLIPBOARD_MIME_MARKER]: true, version: 1, cell: cellClipboard });
+		navigator.clipboard.writeText(payload).catch(() => {});
+	}
+}
+
+export function hasClipboardCell(): boolean {
+	return cellClipboard !== null;
+}
+
+async function readClipboardSnapshot(): Promise<CellSnapshot | null> {
+	if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+		try {
+			const text = await navigator.clipboard.readText();
+			const parsed = JSON.parse(text);
+			if (isPlainObject(parsed) && parsed[CLIPBOARD_MIME_MARKER] === true && isPlainObject(parsed.cell)) {
+				return parsed.cell as unknown as CellSnapshot;
+			}
+		} catch {
+			// Not JSON, no clipboard permission, or not a Luna cell — fall back below.
+		}
+	}
+	return cellClipboard;
+}
+
+/** Paste the clipboard cell immediately after `afterId` (or at the end of the
+ *  active notebook if `afterId` is null). Returns the new cell id, or '' if the
+ *  clipboard is empty. */
+export async function pasteCellAfter(afterId: string | null): Promise<string> {
+	const nb = getActiveNotebook();
+	const snap = await readClipboardSnapshot();
+	if (!snap) return '';
+	pushHistoryCheckpoint(nb.id);
+	const outputName = deconflictOutputName(nb, snap.outputName);
+	const newCell: Cell = {
+		...makeCell(snap.code, outputName, snap.language),
+		cellType: snap.cellType,
+		markdown: snap.markdown,
+		display: snap.display,
+		guiStages: snap.guiStages,
+		editMode: snap.editMode,
+		connectionId: snap.connectionId,
+		materializeMode: snap.materializeMode,
+		materializeTarget: outputName || snap.materializeTarget,
+		description: snap.description,
+		dbtTags: snap.dbtTags,
+		scheduleScope: snap.scheduleScope
+		// scheduleEnabled intentionally left at the makeCell default (false).
+	};
+	const insertAt = afterId ? nb.cells.findIndex((c) => c.id === afterId) : nb.cells.length - 1;
+	const cells = [...nb.cells];
+	cells.splice((insertAt === -1 ? nb.cells.length - 1 : insertAt) + 1, 0, newCell);
+	nb.cells = cells;
+	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) scheduleFileSave(nb.id, newCell.id);
+	return newCell.id;
 }
 
 // Drag-reorder: move a cell to an explicit index (used by SortableJS onEnd).
@@ -3590,6 +3565,7 @@ export function reorderCell(id: string, toIndex: number): void {
 	if (idx === -1) return;
 	const target = Math.max(0, Math.min(toIndex, nb.cells.length - 1));
 	if (target === idx) return;
+	pushHistoryCheckpoint(nb.id);
 	const cells = [...nb.cells];
 	const [cell] = cells.splice(idx, 1);
 	cells.splice(target, 0, cell);
@@ -3603,6 +3579,7 @@ export function moveCell(id: string, direction: 'up' | 'down'): void {
 	if (idx === -1) return;
 	const newIdx = direction === 'up' ? idx - 1 : idx + 1;
 	if (newIdx < 0 || newIdx >= nb.cells.length) return;
+	pushHistoryCheckpoint(nb.id);
 	const cells = [...nb.cells];
 	[cells[idx], cells[newIdx]] = [cells[newIdx], cells[idx]];
 	nb.cells = cells;
@@ -3614,7 +3591,8 @@ export function updateCellCode(id: string, code: string): void {
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	const cell = nb.cells[idx];
-	if (cell.cellType === 'markdown') return;
+	if (cell.cellType !== 'query') return;
+	checkpointCoalesced(nb.id, id, 'code');
 	cell.code = code;
 	cell.needsRun = true;
 	cell.staleReason = 'code-changed';
@@ -3630,7 +3608,29 @@ export function updateCellMarkdown(id: string, markdown: string): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell || cell.cellType !== 'markdown') return;
+	checkpointCoalesced(nb.id, id, 'markdown');
 	cell.markdown = markdown;
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+}
+
+export function updateCellUdfBody(id: string, udfBody: string): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || cell.cellType !== 'udf') return;
+	checkpointCoalesced(nb.id, id, 'udfBody');
+	const oldName = cell.outputName;
+	cell.udfBody = udfBody;
+	const sig = parseUdfSignature(udfBody);
+	if ('error' in sig) {
+		cell.errors = [{ kind: 'udf', code: null, reason: sig.error, hint: null, span: null, display: sig.error, location: null }];
+	} else {
+		cell.errors = [];
+		const newName = sig.name === oldName ? oldName : deconflictOutputName(nb, sig.name);
+		cell.outputName = newName;
+		cell.materializeTarget = newName;
+		if (oldName && oldName !== newName) markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
+	}
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
 }
@@ -3648,7 +3648,6 @@ export function updateCellName(id: string, name: string): void {
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return;
 	const oldName = cell.outputName;
-	const oldCellId = cell.id;
 	// In filesystem mode, rename the .prql file and keep notebook/tab IDs in sync.
 	if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName) {
 		const oldPath = getRelativeCellPath(nb, cell);
@@ -3685,19 +3684,12 @@ export function updateCellName(id: string, name: string): void {
 			});
 		}
 	} else {
+		// Pure in-memory rename — no on-disk side effects, so this is safely checkpointed.
+		// The filesystem branch above is intentionally NOT checkpointed: its async
+		// rename-with-rollback isn't something notebook-level undo can safely reverse.
+		pushHistoryCheckpoint(nb.id);
 		cell.outputName = name;
 		cell.materializeTarget = name;
-	}
-	// Update dashboard chart blocks that referenced the old cell ID
-	const newCellId = cell.id;
-	if (oldCellId !== newCellId) {
-		state.dashboards = state.dashboards.map((d) => {
-			const updatedBlocks = d.blocks.map((b) =>
-				b.type === 'chart' && b.cellId === oldCellId ? { ...b, cellId: newCellId } : b
-			);
-			const changed = updatedBlocks.some((b, i) => b !== d.blocks[i]);
-			return changed ? { ...d, blocks: updatedBlocks } : d;
-		});
 	}
 	// Old dependents referenced the old name — they're now broken
 	if (oldName && oldName !== name) markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
@@ -3714,6 +3706,7 @@ export function updateGuiStages(id: string, stages: GUIPipelineStage[]): void {
 	const context = findCellContext(id);
 	if (!context) return;
 	const { notebook: nb, cell } = context;
+	checkpointCoalesced(nb.id, id, 'guiStages');
 	cell.guiStages = stages;
 	cell.code = guiToPreql(stages);
 	cell.needsRun = true;
@@ -3731,6 +3724,7 @@ export function setEditMode(id: string, mode: CellEditMode): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return;
+	pushHistoryCheckpoint(nb.id);
 	cell.editMode = mode;
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
@@ -3740,6 +3734,7 @@ export function setCellLanguage(id: string, language: CellLanguage): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return;
+	pushHistoryCheckpoint(nb.id);
 	cell.language = language;
 	if (language === 'sql') cell.editMode = 'prql';
 	cell.errors = [];
@@ -3817,6 +3812,7 @@ export function setCellMaterializeMode(id: string, mode: CellMaterializationMode
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return;
+	pushHistoryCheckpoint(nb.id);
 	cell.materializeMode = mode;
 	scheduleSave();
 }
@@ -3833,6 +3829,7 @@ export function setCellScheduleEnabled(id: string, enabled: boolean): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell || cell.cellType !== 'query') return;
+	pushHistoryCheckpoint(nb.id);
 	cell.scheduleEnabled = enabled;
 	cell.scheduleStatus = 'idle';
 	cell.scheduleLastError = null;
@@ -3867,6 +3864,7 @@ export function setCellConnection(id: string, connectionId: string | null): void
 	if (!context) return;
 	const { notebook, cell, idx } = context;
 	if (!cell || cell.cellType !== 'query') return;
+	pushHistoryCheckpoint(notebook.id);
 	cell.connectionId = normalizeConnectionId(connectionId, state.connections);
 	const { errors, sql } = getCompiledCellSQL(notebook.cells, idx);
 	cell.errors = errors;
@@ -4012,15 +4010,53 @@ export function setStageResultCollapsed(id: string, stageIdx: number, collapsed:
  * SQL cells: SQL is returned directly from the pre-built execution code.
  * PRQL cells: the execution code is compiled via prqlc.
  */
+function makeUdfError(reason: string): PRQLError {
+	return { kind: 'udf', code: null, reason, hint: null, span: null, display: reason, location: null };
+}
+
+/**
+ * Trino's Python UDFs only exist as an inline `WITH FUNCTION` fragment spliced
+ * into a SQL WITH clause — they aren't relations, so a PRQL cell can't bind one
+ * as a CTE, and DuckDB WASM has no Python UDF support at all. Both cases must be
+ * caught before compilation, not surfaced as a confusing downstream SQL/compile error.
+ */
+function checkUdfCompatibility(cells: Cell[], idx: number, connection: Connection): PRQLError | null {
+	const cell = cells[idx];
+	if (!cell) return null;
+	const isBuiltin = isBuiltinDuckDBConnection(connection);
+	const deps = isBuiltin
+		? resolveDependencies(cells, idx)
+		: resolveGlobalDependencies(
+				cells,
+				idx,
+				new Map([...getGlobalOutputRegistry()].map(([n, { cell: c }]) => [n, c] as [string, Cell]))
+			);
+	const udfDep = deps.find((d) => d.cellType === 'udf');
+	if (!udfDep) return null;
+	if (cell.language === 'prql') {
+		return makeUdfError(
+			`UDF "${udfDep.outputName}" can only be called from a SQL-language cell — Python UDFs aren't relations, so PRQL can't bind them as CTEs.`
+		);
+	}
+	if (isBuiltin) {
+		return makeUdfError(
+			`UDF "${udfDep.outputName}" requires a Trino-backed connection — Python UDFs are not supported on DuckDB.`
+		);
+	}
+	return null;
+}
+
 function getCompiledCellSQL(
 	cells: Cell[],
 	idx: number
 ): { sql: string | null; errors: PRQLError[] } {
 	const cell = cells[idx];
 	if (!cell || cell.cellType !== 'query') return { sql: null, errors: [] };
+	const connection = getCellConnection(cell);
+	const udfError = checkUdfCompatibility(cells, idx, connection);
+	if (udfError) return { sql: null, errors: [udfError] };
 	const fullCode = getExecutionCode(cells, idx);
 	if (cell.language === 'sql') return { sql: fullCode, errors: [] };
-	const connection = getCellConnection(cell);
 	return compilePRQLCached(fullCode, getPRQLTargetForConnection(connection));
 }
 
@@ -4028,7 +4064,13 @@ function getExecutionCode(cells: Cell[], idx: number): string {
 	const cell = cells[idx];
 	if (!cell || cell.cellType !== 'query') return '';
 	const connection = getCellConnection(cell);
+	if (checkUdfCompatibility(cells, idx, connection)) return '';
 	const target = getPRQLTargetForConnection(connection);
+
+	// Substitute ${paramName} filter tokens before resolving dependencies, so
+	// downstream deps that also reference the same filter get the same value.
+	const owningNotebook = state.notebooks.find((nb) => nb.cells === cells);
+	const effectiveCells = owningNotebook ? applyFilterSubstitution(cells, owningNotebook.id) : cells;
 
 	const extractCells = (): Map<string, Cell> =>
 		new Map([...getGlobalOutputRegistry()].map(([n, { cell: c }]) => [n, c] as [string, Cell]));
@@ -4037,16 +4079,16 @@ function getExecutionCode(cells: Cell[], idx: number): string {
 		// For SQL cells, build a SQL WITH clause from deps and return raw SQL.
 		const compile = (prql: string): string | null => compilePRQLCached(prql, target).sql;
 		if (isBuiltinDuckDBConnection(connection)) {
-			return buildSQLExecutionCode(cells, idx, compile);
+			return buildSQLExecutionCode(effectiveCells, idx, compile);
 		}
-		return buildSQLGlobalExecutionCode(cells, idx, extractCells(), compile);
+		return buildSQLGlobalExecutionCode(effectiveCells, idx, extractCells(), compile);
 	}
 
 	if (isBuiltinDuckDBConnection(connection)) {
-		return buildExecutionCode(cells, idx);
+		return buildExecutionCode(effectiveCells, idx);
 	}
 	// External connection: include cross-notebook deps as CTEs via global registry
-	return buildGlobalExecutionCode(cells, idx, extractCells());
+	return buildGlobalExecutionCode(effectiveCells, idx, extractCells());
 }
 
 async function _runCell(cell: Cell, fullCode: string, prevViewName: string | null, signal?: AbortSignal, runId?: string): Promise<void> {
@@ -4222,13 +4264,13 @@ function getCellConnection(cell: Cell): Connection {
 
 function getSegmentStartIndex(cells: Cell[], idx: number): number {
 	const current = cells[idx];
-	if (!current || current.cellType === 'markdown') return idx;
+	if (!current || current.cellType !== 'query') return idx;
 	const currentConnectionId = getCellConnection(current).id;
 
 	let segmentStart = 0;
 	for (let i = idx - 1; i >= 0; i--) {
 		const candidate = cells[i];
-		if (candidate.cellType === 'markdown') continue;
+		if (candidate.cellType !== 'query') continue;
 		if (getCellConnection(candidate).id !== currentConnectionId) {
 			segmentStart = i + 1;
 			break;
@@ -4243,11 +4285,11 @@ function getSegmentStartIndex(cells: Cell[], idx: number): number {
 }
 
 function findPreviousSuccessfulCell(cells: Cell[], idx: number): Cell | null {
-	if (cells[idx]?.cellType === 'markdown' || startsWithFrom(cells[idx]?.code ?? '')) return null;
+	if (cells[idx]?.cellType !== 'query' || startsWithFrom(cells[idx]?.code ?? '')) return null;
 	const segmentStart = getSegmentStartIndex(cells, idx);
 	for (let i = idx - 1; i >= segmentStart; i--) {
 		const prev = cells[i];
-		if (prev.cellType === 'markdown') continue;
+		if (prev.cellType !== 'query') continue;
 		if (prev.status === 'success') {
 			return prev;
 		}
@@ -4265,7 +4307,7 @@ function startsWithFrom(code: string): boolean {
 }
 
 function getPrecedingCode(cells: Cell[], idx: number): string {
-	if (cells[idx].cellType === 'markdown') return '';
+	if (cells[idx].cellType !== 'query') return '';
 	if (startsWithFrom(cells[idx].code)) return '';
 	const segmentStart = getSegmentStartIndex(cells, idx);
 
@@ -4366,7 +4408,7 @@ async function _runDownstreamCells(
 }
 
 export async function runCell(id: string): Promise<void> {
-	// Search all notebooks so dashboard "Refresh All" works regardless of which tab is active.
+	// Search all notebooks so auto-refresh timers can run cells in a background (non-active) notebook.
 	let nb = getActiveNotebook();
 	let idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) {
@@ -4377,7 +4419,13 @@ export async function runCell(id: string): Promise<void> {
 	}
 	if (idx === -1) return;
 	const cell = nb.cells[idx];
-	if (cell.cellType === 'markdown') return;
+	if (cell.cellType !== 'query') return;
+	const udfError = checkUdfCompatibility(nb.cells, idx, getCellConnection(cell));
+	if (udfError) {
+		cell.errors = [udfError];
+		cell.status = 'error';
+		return;
+	}
 	// One controller per cell — any previous run for this cell is superseded.
 	cellRunControllers.get(id)?.abort();
 	const controller = new AbortController();
@@ -4424,12 +4472,12 @@ export function cancelCell(id: string): void {
 
 function collectRunnableSegmentCells(cells: Cell[], startIdx: number): Cell[] {
 	const start = cells[startIdx];
-	if (!start || start.cellType === 'markdown') return [];
+	if (!start || start.cellType !== 'query') return [];
 	const startConnectionId = getCellConnection(start).id;
 	const toRun: Cell[] = [];
 	for (let i = startIdx; i < cells.length; i++) {
 		const candidate = cells[i];
-		if (candidate.cellType === 'markdown') continue;
+		if (candidate.cellType !== 'query') continue;
 		if (getCellConnection(candidate).id !== startConnectionId) break;
 		if (i > startIdx && startsWithFrom(candidate.code)) break;
 		toRun.push(candidate);
@@ -4469,7 +4517,7 @@ export async function runGuiStagePreview(
 	const idx = nb.cells.findIndex((c) => c.id === cellId);
 	if (idx === -1) return { error: 'Cell not found' };
 	const cell = nb.cells[idx];
-	if (cell.cellType === 'markdown') return { error: 'Markdown cells are not executable' };
+	if (cell.cellType !== 'query') return { error: 'Only query cells are executable' };
 	const connection = getCellConnection(cell);
 	const isBuiltin = isBuiltinDuckDBConnection(connection);
 	const partialStages = cell.guiStages.slice(0, upToStageIdx + 1);
@@ -4508,7 +4556,13 @@ export async function runAll(): Promise<void> {
 	const nb = getActiveNotebook();
 	for (let i = 0; i < nb.cells.length; i++) {
 		const cell = nb.cells[i];
-		if (cell.cellType === 'markdown') continue;
+		if (cell.cellType !== 'query') continue;
+		const udfError = checkUdfCompatibility(nb.cells, i, getCellConnection(cell));
+		if (udfError) {
+			cell.errors = [udfError];
+			cell.status = 'error';
+			continue;
+		}
 		const fullCode = getExecutionCode(nb.cells, i);
 		const prevName = prevViewNameForIndex(nb.cells, i);
 		await _runCell(cell, fullCode, prevName);
@@ -4674,6 +4728,10 @@ export function __resetStateForTests(): void {
 	}
 	scheduleRunInFlight = false;
 	compileCache.clear();
+	historyStacks.clear();
+	for (const timer of coalesceTimers.values()) clearTimeout(timer);
+	coalesceTimers.clear();
+	cellClipboard = null;
 	const initial = makeNotebook('Notebook 1');
 	state = {
 		notebooks: [initial],
@@ -4685,8 +4743,7 @@ export function __resetStateForTests(): void {
 		expandedNotebookIds: [],
 		sidebarSectionsExpanded: {
 			notebooks: true,
-			tables: true,
-			dashboards: true
+			tables: true
 		},
 		activeTabId: initial.id,
 		focusedCellId: null,
@@ -4711,8 +4768,7 @@ export function __resetStateForTests(): void {
 		isEvidenceProject: false,
 		evidenceRunningJobId: null,
 		evidenceDevPort: null,
-		evidencePages: [],
-		dashboards: []
+		evidencePages: []
 	};
 	connectionSecrets = {};
 }

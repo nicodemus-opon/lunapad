@@ -107,20 +107,25 @@
 			</button>
 		{/if}
 	</div>
-	<div class="mt-1 flex items-center gap-2 px-0.5">
-		<select
-			bind:value={selectedMode}
-			disabled={isGenerating}
-			class="h-6 rounded border border-border/50 bg-muted/40 px-1.5 text-2xs text-muted-foreground outline-none transition-colors focus:border-primary/60 disabled:opacity-50"
-			aria-label="AI mode"
-		>
-			<option value="auto">Auto</option>
-			<option value="build">Build</option>
-			<option value="sprint">Sprint</option>
-			<option value="fix">Fix</option>
-			<option value="dashboard">Dashboard</option>
-			<option value="explore">Explore</option>
-		</select>
-		<p class="text-2xs text-muted-foreground/50">Enter to send · Shift+Enter for new line</p>
+	<div class="mt-1 flex flex-col gap-1 px-0.5">
+		<div class="flex items-center gap-2">
+			<select
+				bind:value={selectedMode}
+				disabled={isGenerating}
+				class="h-6 rounded border border-border/50 bg-muted/40 px-1.5 text-2xs text-muted-foreground outline-none transition-colors focus:border-primary/60 disabled:opacity-50"
+				aria-label="AI mode"
+			>
+				<option value="auto">Auto</option>
+				<option value="build">Build</option>
+				<option value="sprint">Sprint</option>
+				<option value="fix">Fix</option>
+				<option value="dashboard">Visualize</option>
+				<option value="explore">Explore</option>
+			</select>
+			<p class="text-2xs text-muted-foreground/50">Enter to send · Shift+Enter for new line</p>
+		</div>
+		{#if selectedMode === 'sprint'}
+			<p class="text-2xs text-primary/70">Breaks your request into a task plan you can review before it runs</p>
+		{/if}
 	</div>
 </div>

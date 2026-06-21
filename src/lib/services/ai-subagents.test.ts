@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyIntent, classifyComplexity } from './ai-subagents.js';
+import { classifyIntent, classifyComplexity, SUBAGENT_TOOLS, SPRINT_TASK_TOOLS } from './ai-subagents.js';
 
 describe('classifyIntent', () => {
 	it('routes model-building requests to creation', () => {
@@ -136,5 +136,17 @@ describe('classifyComplexity', () => {
 		]) {
 			expect(classifyComplexity(p), p).toBe('medium');
 		}
+	});
+});
+
+describe('documentation subagent tooling', () => {
+	it('gives the documentation subagent read + markdown-write tools, no SQL tools', () => {
+		expect(SUBAGENT_TOOLS.documentation).toEqual(['create_cell', 'update_cell', 'get_cell_result', 'list_cells', 'record_decision']);
+		expect(SUBAGENT_TOOLS.documentation).not.toContain('run_cells');
+		expect(SUBAGENT_TOOLS.documentation).not.toContain('query_data');
+	});
+
+	it('routes the "document" sprint task type to the same tool set', () => {
+		expect(SPRINT_TASK_TOOLS.document).toEqual(SUBAGENT_TOOLS.documentation);
 	});
 });

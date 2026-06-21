@@ -82,8 +82,13 @@
 					class="cell-name-input text-inherit h-6 min-w-0 {collapsed
 						? 'w-auto max-w-48'
 						: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
-					placeholder={isQueryCell ? 'model name…' : 'note title…'}
+					placeholder={cell.cellType === 'udf'
+						? 'untitled udf…'
+						: isQueryCell
+							? 'model name…'
+							: 'note title…'}
 					value={nameInputValue}
+					disabled={cell.cellType === 'udf'}
 					onfocus={() => {
 						nameInputFocused = true;
 					}}
@@ -103,7 +108,9 @@
 				/>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
-				{#if isQueryCell}
+				{#if cell.cellType === 'udf'}
+					<p class="text-xs">Name is derived from the function's <code>def</code> line.</p>
+				{:else if isQueryCell}
 					<p class="text-xs">
 						Name this cell's output. Reference it from other cells with <code
 							>from {cell.outputName || 'name'}</code

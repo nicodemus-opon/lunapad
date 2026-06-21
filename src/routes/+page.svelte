@@ -50,6 +50,7 @@
 		updateGuiStages,
 		refreshTablesFromCatalog,
 		setNotebookConnection,
+		setNotebookAutoRefresh,
 		addTable,
 		getProjectFolder,
 		getIsDbtProject,
@@ -58,9 +59,6 @@
 		isNotebookDirty,
 		scheduleFileSave,
 		openLineageTab,
-		getDashboards,
-		createDashboard,
-		openDashboardTab,
 		duplicateNotebook,
 		closeProject,
 		openProject,
@@ -70,9 +68,14 @@
 		runCell,
 		insertCellBefore,
 		insertMarkdownCellBefore,
+		addUdfCell,
+		insertUdfCellBefore,
+		canAddUdfCell,
 		reorderCell,
 		setAllCellsDisplay,
-		setNotebookReportView
+		setNotebookReportView,
+		undo,
+		redo
 	} from '$lib/stores/notebook.svelte';
 	import Sortable from 'sortablejs';
 	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
@@ -87,7 +90,6 @@
 	import FileImporter from '$lib/components/FileImporter.svelte';
 	import ConnectionManager from '$lib/components/ConnectionManager.svelte';
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
-	import DashboardList from '$lib/components/DashboardList.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
@@ -98,7 +100,6 @@
 	import TableView from '$lib/components/TableView.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
 	import DbtLineageView from '$lib/components/DbtLineageView.svelte';
-	import DashboardView from '$lib/components/DashboardView.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
@@ -126,7 +127,6 @@
 		Search,
 		Info,
 		Settings,
-		LayoutDashboard,
 		RefreshCw,
 		PanelLeftClose,
 		PanelLeftOpen,
@@ -215,11 +215,13 @@
 	}
 
 	// Divider above the cell at `index`: insert before it.
-	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown', index: number) {
+	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf', index: number) {
 		const target = cells[index];
 		if (!target) return;
 		if (kind === 'markdown') {
 			insertMarkdownCellBefore(target.id);
+		} else if (kind === 'udf') {
+			insertUdfCellBefore(target.id);
 		} else {
 			const lang = kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind;
 			insertCellBefore(target.id, {
@@ -233,9 +235,11 @@
 		focusCellAt(index);
 	}
 
-	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown') {
+	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf') {
 		if (kind === 'markdown') {
 			addMarkdownCell();
+		} else if (kind === 'udf') {
+			addUdfCell();
 		} else {
 			addCellWithLanguage(
 				kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind
@@ -278,7 +282,7 @@
 	const menuTriggerClass =
 		'h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 
-	type SidebarPanel = 'notebooks' | 'dashboards' | 'tables' | 'dbt' | 'evidence';
+	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence';
 	let activeSidebarPanel = $state<SidebarPanel>('notebooks');
 
 	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
@@ -368,7 +372,7 @@
 		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
 	}
 
-	function toggleSidebarSection(section: 'notebooks' | 'tables' | 'dashboards') {
+	function toggleSidebarSection(section: 'notebooks' | 'tables') {
 		setSidebarSectionExpanded(section, !sidebarSectionsExpanded[section]);
 	}
 
@@ -595,6 +599,9 @@
 	});
 
 	function onGlobalKeydown(e: KeyboardEvent) {
+		// A cell-level handler (NotebookCell.svelte) already preventDefault()'d this key —
+		// don't double-handle it here (this fallback only covers "no cell has focus").
+		if (e.defaultPrevented) return;
 		const mod = e.metaKey || e.ctrlKey;
 		// Cmd+S: immediate save (also works when typing target is focused)
 		if (mod && (e.key === 's' || e.key === 'S')) {
@@ -646,6 +653,17 @@
 		if (mod && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
 			e.preventDefault();
 			void handleRunAll();
+		}
+		// Fallback undo/redo for when no cell container has focus (e.g. focus is on the
+		// sidebar or a toolbar button) — when a cell IS focused, NotebookCell.svelte's own
+		// handler runs first and preventDefault()s, so we never reach here (see top of fn).
+		if (mod && e.key === 'z' && !e.shiftKey) {
+			e.preventDefault();
+			undo();
+		}
+		if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
+			e.preventDefault();
+			redo();
 		}
 	}
 </script>
@@ -716,6 +734,11 @@
 									<BookOpen class="h-3.5 w-3.5" /> New markdown cell
 									<DropdownMenu.Shortcut>⇧⌘M</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
+								{#if canAddUdfCell()}
+									<DropdownMenu.Item onclick={() => addUdfCell()}>
+										<FileCode2 class="h-3.5 w-3.5" /> New Python UDF cell
+									</DropdownMenu.Item>
+								{/if}
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item onclick={() => (projectOpenDialogOpen = true)}>
 									<FolderOpen class="h-3.5 w-3.5" /> Open project…
@@ -994,7 +1017,6 @@
 					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background px-1 pt-1 pb-1.5"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
-					{@render railButton('dashboards', LayoutDashboard, 'Dashboards')}
 					{@render railButton('tables', Database, 'Databases & tables')}
 					{#if isDbtProject}
 						{@render railButton('dbt', FlaskConical, 'dbt models')}
@@ -1091,18 +1113,6 @@
 
 								<div class="flex-1 overflow-hidden">
 									<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
-								</div>
-							{:else if activeSidebarPanel === 'dashboards'}
-								<!-- Dashboards panel -->
-								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
-									<span class="flex-1 text-2xs font-medium text-muted-foreground">Dashboards</span>
-									{@render headerAction('New dashboard', Plus, () => {
-										const d = createDashboard('New Dashboard');
-										openDashboardTab(d.id);
-									})}
-								</div>
-								<div class="flex-1 overflow-hidden">
-									<DashboardList />
 								</div>
 							{:else if activeSidebarPanel === 'tables'}
 								<!-- Databases & tables panel -->
@@ -1308,11 +1318,9 @@
 								? BarChart2
 								: et.type === 'lineage'
 									? Network
-									: et.type === 'dashboard'
-										? LayoutDashboard
-										: et.type === 'evidence-preview'
-											? MonitorPlay
-											: Table2}
+									: et.type === 'evidence-preview'
+										? MonitorPlay
+										: Table2}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
 								{@render appTab({
@@ -1345,7 +1353,7 @@
 				</div>
 				{#if isNotebookTab}
 				<div class="flex min-h-0 flex-1 overflow-hidden">
-					<main class="notebook-scroll flex-1 overflow-y-auto bg-accent">
+					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
 						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
 								<input
@@ -1397,6 +1405,34 @@
 												>{connection.name}</Select.Item
 											>
 										{/each}
+									</Select.Content>
+								</Select.Root>
+
+								<Select.Root
+									type="single"
+									value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
+									onValueChange={(value) => {
+										if (!activeNotebook) return;
+										setNotebookAutoRefresh(activeNotebook.id, Number(value));
+									}}
+								>
+									<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
+										<RefreshCw class="h-3 w-3" />
+										{#if !activeNotebook?.autoRefreshIntervalMs}
+											Off
+										{:else if activeNotebook.autoRefreshIntervalMs === 30000}
+											30s
+										{:else if activeNotebook.autoRefreshIntervalMs === 60000}
+											1m
+										{:else}
+											5m
+										{/if}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
+										<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
+										<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
+										<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
 									</Select.Content>
 								</Select.Root>
 							</div>
@@ -1455,7 +1491,10 @@
 										<div data-cell-id={cell.id}>
 											{#if !reportView}
 												<div class="pl-(--cell-gutter)">
-													<AddCellDivider onAdd={(kind) => insertBeforeCell(kind, idx)} />
+													<AddCellDivider
+														onAdd={(kind) => insertBeforeCell(kind, idx)}
+														showUdf={canAddUdfCell()}
+													/>
 												</div>
 											{/if}
 											<NotebookCell
@@ -1483,7 +1522,7 @@
 
 								{#if !reportView}
 									<div class="mt-2 pl-(--cell-gutter)">
-										<AddCellDivider persistent onAdd={appendCell} />
+										<AddCellDivider persistent onAdd={appendCell} showUdf={canAddUdfCell()} />
 									</div>
 								{/if}
 							{/if}
@@ -1498,10 +1537,6 @@
 						<!-- Lineage fills the full remaining height with no scroll/padding -->
 						<main class="flex-1 overflow-hidden">
 							<DbtLineageView focusedModelName={activeExtraTab.focusedModelName} />
-						</main>
-					{:else if activeExtraTab.type === 'dashboard'}
-						<main class="flex-1 overflow-hidden">
-							<DashboardView dashboardId={activeExtraTab.dashboardId ?? ''} />
 						</main>
 					{:else if activeExtraTab.type === 'evidence-preview'}
 						<main class="flex-1 overflow-hidden">
@@ -1648,7 +1683,7 @@
 				</p>
 				<table class="w-full">
 					<tbody class="divide-y divide-border/40">
-						{#each [['Enter', 'Enter edit mode'], ['↑ / k', 'Focus previous cell'], ['↓ / j', 'Focus next cell'], ['a', 'Insert cell above'], ['b', 'Insert cell below'], ['d d', 'Delete cell'], ['⇧K', 'Move cell up'], ['⇧J', 'Move cell down'], ['c', 'Collapse / expand cell'], ['⇧↵ / ⌘↵', 'Run cell']] as [key, desc]}
+						{#each [['Enter', 'Enter edit mode'], ['↑ / k', 'Focus previous cell'], ['↓ / j', 'Focus next cell'], ['a', 'Insert cell above'], ['b', 'Insert cell below'], ['d d', 'Delete cell'], ['⇧K', 'Move cell up'], ['⇧J', 'Move cell down'], ['c', 'Collapse / expand cell'], ['y / ⌘C', 'Copy cell'], ['p / ⌘V', 'Paste cell below'], ['⇧⌘D', 'Duplicate cell'], ['⇧↵ / ⌘↵', 'Run cell']] as [key, desc]}
 							<tr>
 								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
 								<td class="py-1 text-muted-foreground">{desc}</td>
@@ -1662,7 +1697,7 @@
 				<p class="mb-2 text-2xs font-semibold text-muted-foreground">Notebook — global</p>
 				<table class="mb-4 w-full">
 					<tbody class="divide-y divide-border/40">
-						{#each [['⌘⇧↵', 'Add PRQL cell'], ['⌘⇧M', 'Add markdown cell'], ['⌘⇧R', 'Run all cells'], ['⌘B', 'Toggle sidebar'], ['⌘1–9', 'Switch to notebook tab']] as [key, desc]}
+						{#each [['⌘⇧↵', 'Add PRQL cell'], ['⌘⇧M', 'Add markdown cell'], ['⌘⇧R', 'Run all cells'], ['⌘Z', 'Undo'], ['⌘⇧Z / ⌘Y', 'Redo'], ['⌘B', 'Toggle sidebar'], ['⌘1–9', 'Switch to notebook tab']] as [key, desc]}
 							<tr>
 								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
 								<td class="py-1 text-muted-foreground">{desc}</td>

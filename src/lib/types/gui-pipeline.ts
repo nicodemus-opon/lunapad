@@ -271,7 +271,8 @@ export type ChartType =
 	| 'calendar-heatmap'
 	| 'funnel'
 	| 'box-plot'
-	| 'sankey';
+	| 'sankey'
+	| 'custom';
 
 export type ChartSeriesMode = 'auto' | 'grouped' | 'stacked';
 
@@ -296,6 +297,8 @@ export interface ChartConfig {
 	title?: string;
 	description?: string;
 	recommendation?: ChartRecommendationMeta | null;
+	// custom: a Plot spec written in JS, evaluated with `rows`/`columns`/`Plot` in scope
+	code?: string;
 	// Evidence.dev data component extras
 	// big-value: xColumn=value col, yColumns[0]=comparison col, colorColumn=sparkline date col
 	// delta: xColumn=delta col; deltaDownIsGood=true reverses coloring
@@ -309,78 +312,3 @@ export interface ChartConfig {
 
 export type ResultViewMode = 'table' | 'chart' | 'stats';
 
-// ── Dashboard types ───────────────────────────────────────────────────────────
-export type DashboardPanelWidth = 1 | 2 | 3;
-export type DashboardPanelHeight = 'sm' | 'md' | 'lg';
-
-interface DashboardBlockBase {
-	id: string;
-	order: number;
-	width: DashboardPanelWidth;
-}
-
-/** A chart panel referencing a notebook cell. */
-export interface ChartBlock extends DashboardBlockBase {
-	type: 'chart';
-	cellId: string;
-	notebookId: string;
-	title?: string;
-	height: DashboardPanelHeight;
-}
-
-/** A markdown prose block with optional {query.col} interpolation. */
-export interface TextBlock extends DashboardBlockBase {
-	type: 'text';
-	markdown: string;
-}
-
-/** A styled callout/alert block. */
-export interface CalloutBlock extends DashboardBlockBase {
-	type: 'callout';
-	variant: 'info' | 'warning' | 'error' | 'success';
-	title?: string;
-	markdown: string;
-}
-
-/** An interactive filter control that parameterizes queries via ${paramName}. */
-export interface FilterBlock extends DashboardBlockBase {
-	type: 'filter';
-	filterKind: 'dropdown' | 'text-input' | 'date-range' | 'button-group';
-	label: string;
-	paramName: string;
-	options?: string[];
-	optionsCellId?: string;
-	optionsColumn?: string;
-	defaultValue?: string;
-}
-
-/** A big-number KPI card with optional trend indicator. */
-export interface KpiBlock extends DashboardBlockBase {
-	type: 'kpi';
-	label: string;
-	valueExpr: string;
-	changeExpr?: string;
-	prefix?: string;
-	suffix?: string;
-}
-
-/** A full-width section heading separator. */
-export interface SectionBlock extends DashboardBlockBase {
-	type: 'section';
-	heading: string;
-	level: 1 | 2;
-}
-
-export type DashboardBlock = ChartBlock | TextBlock | CalloutBlock | FilterBlock | KpiBlock | SectionBlock;
-
-/** Keep DashboardPanel as an alias for ChartBlock for callsite compat. */
-export type DashboardPanel = ChartBlock;
-
-export interface Dashboard {
-	id: string;
-	name: string;
-	slug: string;
-	blocks: DashboardBlock[];
-	/** @deprecated use blocks */
-	panels?: ChartBlock[];
-}

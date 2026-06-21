@@ -1,4 +1,5 @@
 import type { Cell } from '$lib/stores/notebook.svelte';
+import { compileUdfFragment } from '$lib/services/udf';
 
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -25,7 +26,9 @@ function stripSqlRefs(code: string): string {
  *
  * Handles nested parentheses inside CTE bodies correctly.
  */
-function extractLeadingCTEs(sql: string): { ctes: Array<{ name: string; body: string }>; mainQuery: string } | null {
+function extractLeadingCTEs(
+	sql: string
+): { ctes: Array<{ name: string; body: string }>; mainQuery: string } | null {
 	const trimmed = sql.trimStart();
 	const withMatch = trimmed.match(/^WITH\s+/i);
 	if (!withMatch) return null;
@@ -107,10 +110,12 @@ export function resolveDependencies(cells: Cell[], idx: number): Cell[] {
 	if (!target || target.cellType !== 'query') return [];
 
 	// Only cells that come before the target and have an outputName can be deps.
+	// UDF cells are included so SQL cells can reference a Python UDF by name,
+	// exactly like a query cell's outputName.
 	const byName = new Map<string, Cell>();
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if (c.cellType === 'query' && c.outputName) {
+		if ((c.cellType === 'query' || c.cellType === 'udf') && c.outputName) {
 			byName.set(c.outputName, c);
 		}
 	}
@@ -158,8 +163,13 @@ export function hasDependencies(cells: Cell[], idx: number): boolean {
  * Emits a PRQL CTE binding for a dep cell.
  * SQL deps use an s-string so prqlc treats the raw SQL as a table expression,
  * which compiles correctly to all targets (DuckDB, Postgres, ClickHouse).
+ *
+ * UDF cells are not relations and can't be bound as a PRQL CTE — callers must
+ * reject PRQL cells with a UDF dependency before reaching this point (see
+ * notebook.svelte.ts's UDF compatibility check). Defensively emits nothing here.
  */
 function prqlCteForDep(dep: Cell): string {
+	if (dep.cellType === 'udf') return '';
 	if (dep.language === 'sql') {
 		// Escape any embedded double-quotes by doubling them (PRQL s-string escaping)
 		const escaped = stripSqlRefs(dep.code.trim()).replace(/"/g, '""');
@@ -210,6 +220,11 @@ export function buildSQLExecutionCode(
 
 	const withParts: string[] = [];
 	for (const dep of deps) {
+		if (dep.cellType === 'udf') {
+			const fragment = compileUdfFragment(dep);
+			if (typeof fragment === 'string') withParts.push(fragment);
+			continue;
+		}
 		let depSQL: string | null;
 		if (dep.language === 'sql') {
 			depSQL = stripSqlRefs(dep.code.trim());
@@ -248,11 +263,16 @@ export function resolveGlobalDependencies(
 	// Same-notebook preceding cells take priority
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if (c.cellType === 'query' && c.outputName) byName.set(c.outputName, c);
+		if ((c.cellType === 'query' || c.cellType === 'udf') && c.outputName)
+			byName.set(c.outputName, c);
 	}
 	// Fill in cross-notebook cells not already covered
 	for (const [name, cell] of globalRegistry) {
-		if (!byName.has(name) && cell.cellType === 'query' && cell.id !== target.id) {
+		if (
+			!byName.has(name) &&
+			(cell.cellType === 'query' || cell.cellType === 'udf') &&
+			cell.id !== target.id
+		) {
 			byName.set(name, cell);
 		}
 	}
@@ -320,6 +340,11 @@ export function buildSQLGlobalExecutionCode(
 
 	const withParts: string[] = [];
 	for (const dep of deps) {
+		if (dep.cellType === 'udf') {
+			const fragment = compileUdfFragment(dep);
+			if (typeof fragment === 'string') withParts.push(fragment);
+			continue;
+		}
 		let depSQL: string | null;
 		if (dep.language === 'sql') {
 			depSQL = stripSqlRefs(dep.code.trim());
@@ -327,9 +352,7 @@ export function buildSQLGlobalExecutionCode(
 			// Resolve dep's own global deps, then compile the combined PRQL
 			const depIdx = cells.indexOf(dep);
 			const depCode =
-				depIdx >= 0
-					? buildGlobalExecutionCode(cells, depIdx, globalRegistry)
-					: dep.code;
+				depIdx >= 0 ? buildGlobalExecutionCode(cells, depIdx, globalRegistry) : dep.code;
 			depSQL = compile(depCode);
 		}
 		if (!depSQL) continue;

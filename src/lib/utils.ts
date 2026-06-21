@@ -177,8 +177,16 @@ export function normalizeChartConfig(config: ChartConfig): ChartConfig {
 		...(config.valueRow !== undefined && { valueRow: config.valueRow }),
 		...(config.tableRows !== undefined && { tableRows: config.tableRows }),
 		...(config.tableSearch !== undefined && { tableSearch: config.tableSearch }),
+		...(config.code !== undefined && { code: config.code }),
 	};
 }
+
+export const DEFAULT_CUSTOM_CHART_CODE = `// rows: the cell's result rows, columns: their names, Plot: the Observable Plot API
+return Plot.plot({
+	marks: [
+		Plot.dot(rows, { x: columns[0], y: columns[1], fill: 'var(--chart-1)' })
+	]
+});`;
 
 function sanitizeColumn(column: string | null | undefined, columns: string[]): string | null {
 	if (!column) return null;
@@ -243,6 +251,10 @@ export function inferSmartChartConfigForType(
 		yColumnsSecondary = [];
 		sizeColumn = null;
 		seriesMode = 'auto';
+	} else if (chartType === 'custom') {
+		if (!base.code) {
+			return normalizeChartConfig({ ...base, chartType, code: DEFAULT_CUSTOM_CHART_CODE });
+		}
 	} else if (chartType === 'pie') {
 		xColumn = textCols[0] ?? dateCols[0] ?? xColumn;
 		yColumns = [numCols.find((col) => col !== xColumn) ?? numCols[0]].filter(Boolean);

@@ -3,14 +3,10 @@
 	import ChartView from '$lib/components/ChartView.svelte';
 	import ChartConfigPanel from '$lib/components/ChartConfigPanel.svelte';
 	import StatsView from '$lib/components/StatsView.svelte';
-	import { Table2, TrendingUp, Sigma, Maximize2, X, Download, LayoutDashboard, Settings2 } from '@lucide/svelte';
+	import { Table2, TrendingUp, Sigma, Maximize2, X, Download, Settings2 } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
-	import {
-		setTabViewMode, setTabChartConfig, setCellResultChartConfig,
-		getDashboards, createDashboard, addPanelToDashboard, openDashboardTab
-	} from '$lib/stores/notebook.svelte';
+	import { setTabViewMode, setTabChartConfig, setCellResultChartConfig } from '$lib/stores/notebook.svelte';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
-	import { Popover } from 'bits-ui';
 
 	interface Props {
 		tabId: string;
@@ -92,31 +88,53 @@
 		if (cellId) setCellResultChartConfig(cellId, cfg);
 	}
 
-	// ── PNG export (ECharts canvas renderer) ─────────────────────────────────
-	function downloadChartPng() {
-		const src = chartContainerEl?.querySelector('canvas') as HTMLCanvasElement | null;
-		if (!src) return;
-		const out = document.createElement('canvas');
-		out.width = src.width;
-		out.height = src.height;
-		const ctx = out.getContext('2d')!;
-		const bg = getComputedStyle(document.documentElement).getPropertyValue('--background').trim() || '#ffffff';
-		ctx.fillStyle = bg;
-		ctx.fillRect(0, 0, out.width, out.height);
-		ctx.drawImage(src, 0, 0);
-		const a = document.createElement('a');
-		a.download = `${name || 'chart'}.png`;
-		a.href = out.toDataURL('image/png');
-		a.click();
+	// ── PNG export ────────────────────────────────────────────────────────────
+	// Charts render as Plot/hand-built SVG; export by serializing the SVG with
+	// inlined computed styles (CSS vars don't resolve on a detached/serialized node).
+	function inlineComputedStyles(srcRoot: Element, dstRoot: Element) {
+		const srcEls = [srcRoot, ...srcRoot.querySelectorAll('*')];
+		const dstEls = [dstRoot, ...dstRoot.querySelectorAll('*')];
+		const PROPS = ['fill', 'stroke', 'color', 'font-family', 'font-size', 'opacity', 'stroke-width', 'stroke-dasharray'];
+		for (let i = 0; i < srcEls.length; i++) {
+			const computed = getComputedStyle(srcEls[i]);
+			const decls = PROPS.map((p) => `${p}:${computed.getPropertyValue(p)}`).join(';');
+			const existing = (dstEls[i] as HTMLElement).getAttribute('style') ?? '';
+			(dstEls[i] as HTMLElement).setAttribute('style', `${decls};${existing}`);
+		}
 	}
 
-	// ── Dashboard pin ─────────────────────────────────────────────────────────
-	let dashPopoverOpen = $state(false);
+	function downloadSvgPng(svg: SVGSVGElement) {
+		const clone = svg.cloneNode(true) as SVGSVGElement;
+		// Resolve var(--chart-1)-style colors to concrete values while still
+		// attached to the document, then inline them onto the (soon detached)
+		// clone — a serialized SVG can't resolve CSS vars on its own.
+		inlineComputedStyles(svg, clone);
+		const xml = new XMLSerializer().serializeToString(clone);
+		const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+		const img = new Image();
+		img.onload = () => {
+			const rect = svg.getBoundingClientRect();
+			const scale = window.devicePixelRatio || 1;
+			const out = document.createElement('canvas');
+			out.width = rect.width * scale;
+			out.height = rect.height * scale;
+			const ctx = out.getContext('2d')!;
+			const bg = getComputedStyle(document.documentElement).getPropertyValue('--background').trim() || '#ffffff';
+			ctx.fillStyle = bg;
+			ctx.fillRect(0, 0, out.width, out.height);
+			ctx.drawImage(img, 0, 0, out.width, out.height);
+			const a = document.createElement('a');
+			a.download = `${name || 'chart'}.png`;
+			a.href = out.toDataURL('image/png');
+			a.click();
+			URL.revokeObjectURL(url);
+		};
+		img.src = url;
+	}
 
-	function pinToDashboard(dashId: string) {
-		addPanelToDashboard(dashId, { cellId: cellId || name, notebookId: notebookId || '', width: 1, height: 'md' });
-		openDashboardTab(dashId);
-		dashPopoverOpen = false;
+	function downloadChartPng() {
+		const svg = chartContainerEl?.querySelector('svg');
+		if (svg) downloadSvgPng(svg);
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -158,38 +176,6 @@
 					title="Chart settings"
 					onclick={() => (showConfigPanel = !showConfigPanel)}
 				><Settings2 class="w-3.5 h-3.5" /></button>
-
-				<!-- Dashboard pin -->
-				<Popover.Root bind:open={dashPopoverOpen}>
-					<Popover.Trigger>
-						{#snippet child({ props })}
-							<button
-								class="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-								title="Add to dashboard" {...props}
-							><LayoutDashboard class="w-3.5 h-3.5" /></button>
-						{/snippet}
-					</Popover.Trigger>
-					<Popover.Portal>
-						<Popover.Content class="z-50 w-56 rounded-lg border bg-popover text-popover-foreground shadow-lg p-2 space-y-1" sideOffset={6} align="end">
-							{#if getDashboards().length === 0}
-								<button class="w-full text-left px-3 py-2 text-sm rounded hover:bg-muted transition-colors"
-									onclick={() => { const d = createDashboard('My Dashboard'); pinToDashboard(d.id); }}>
-									New dashboard
-								</button>
-							{:else}
-								{#each getDashboards() as dash (dash.id)}
-									<button class="w-full text-left px-3 py-2 text-sm rounded hover:bg-muted transition-colors truncate"
-										onclick={() => pinToDashboard(dash.id)}>{dash.name}</button>
-								{/each}
-								<div class="h-px bg-border my-1"></div>
-								<button class="w-full text-left px-3 py-2 text-sm rounded hover:bg-muted transition-colors text-muted-foreground"
-									onclick={() => { const d = createDashboard('New Dashboard'); pinToDashboard(d.id); }}>
-									+ New dashboard
-								</button>
-							{/if}
-						</Popover.Content>
-					</Popover.Portal>
-				</Popover.Root>
 
 				<!-- PNG download -->
 				<button class="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"

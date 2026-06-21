@@ -1,6 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { parseCellFile, serializeCell } from '$lib/services/prql-file';
+import crypto from 'node:crypto';
+import { parseCellFile, serializeCell, stripRefs } from '$lib/services/prql-file';
+import { parseLunaFile, type LunaEntry, type LunaQueryEntry } from '$lib/services/luna-file';
+import { parseUdfSignature } from '$lib/services/udf';
 import type { Cell, CellLanguage, Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
 import { readSchemaFile, findSchemaFile, upsertModelEntry, writeSchemaFile } from './dbt-schema.js';
 
@@ -291,6 +294,9 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	// Models section: top-level files/folders go directly under null parent
 	await walkDir(path.join(folder, 'models'), 'models', null);
 
+	// Notebooks section: `.luna` multi-cell notebooks, parallel to models/analyses.
+	await walkNotebooksDirectory(folder, notebooks, folders);
+
 	// Post-process: append secondary cells to their target notebooks.
 	// Files with a -- @notebook header belong to a multi-cell notebook rather than
 	// being standalone notebooks themselves.
@@ -396,6 +402,7 @@ async function loadMissingModelsFromManifest(
 			code,
 			markdown: '',
 			markdownPreview: false,
+			udfBody: '',
 			status: 'idle',
 			result: null,
 			errors: [],
@@ -415,6 +422,7 @@ async function loadMissingModelsFromManifest(
 			description: node.description || null,
 			dbtSchema: node.config?.schema ?? null,
 			dbtTags: node.config?.tags ?? [],
+			promotedModelPath: null,
 			dbtTestStatus: 'idle',
 			dbtTestResults: [],
 			dbtTestLog: [],
@@ -443,6 +451,297 @@ async function loadMissingModelsFromManifest(
 		notebooks.push(notebook);
 		existingNotebookIds.add(notebookId);
 	}
+}
+
+// ── `.luna` multi-cell notebooks ─────────────────────────────────────────────
+
+/**
+ * Walk `notebooks/`, parsing each `.luna` file as a single multi-cell notebook
+ * (cell order = document order). This is the replacement for the old
+ * `-- @notebook` annotation hack, scoped to its own directory so it never
+ * collides with dbt's `models/**\/*.sql` discovery.
+ */
+async function walkNotebooksDirectory(folder: string, notebooks: Notebook[], folders: NotebookFolder[]): Promise<void> {
+	const notebooksDir = path.join(folder, 'notebooks');
+	let hasContent = false;
+	try {
+		const entries = await fs.readdir(notebooksDir, { withFileTypes: true });
+		hasContent = entries.some(
+			(e) => (e.isFile() && e.name.endsWith('.luna')) || (e.isDirectory() && !e.name.startsWith('.'))
+		);
+	} catch {
+		return; // no notebooks dir yet
+	}
+	if (!hasContent) return;
+
+	folders.push({ id: 'notebooks', name: 'notebooks', parentId: null });
+
+	async function walk(absDir: string, relDir: string, parentFolderId: string | null): Promise<void> {
+		let entries: import('node:fs').Dirent[];
+		try {
+			entries = await fs.readdir(absDir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+
+		const subdirs = entries
+			.filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+			.sort((a, b) => a.name.localeCompare(b.name));
+		for (const dir of subdirs) {
+			const childRelDir = `${relDir}/${dir.name}`;
+			folders.push({ id: childRelDir, name: dir.name, parentId: parentFolderId });
+			await walk(path.join(absDir, dir.name), childRelDir, childRelDir);
+		}
+
+		const lunaFiles = entries
+			.filter((e) => e.isFile() && e.name.endsWith('.luna'))
+			.sort((a, b) => a.name.localeCompare(b.name));
+		for (const file of lunaFiles) {
+			const name = file.name.replace(/\.luna$/, '');
+			const notebookId = `${relDir}/${name}`;
+			try {
+				const content = await fs.readFile(path.join(absDir, file.name), 'utf-8');
+				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder);
+				notebooks.push({
+					id: notebookId,
+					name,
+					folderId: parentFolderId,
+					format: 'luna',
+					defaultCellLanguage: cells.find((c) => c.cellType === 'query')?.language ?? 'prql',
+					cells
+				});
+			} catch {
+				// skip unreadable/unparseable files
+			}
+		}
+	}
+
+	await walk(notebooksDir, 'notebooks', 'notebooks');
+}
+
+/** Find a model's source file (`<name>.prql` or `<name>.sql`) under models/ or analyses/. */
+async function findModelFilePath(projectFolder: string, modelName: string): Promise<string | null> {
+	async function search(dir: string): Promise<string | null> {
+		let entries: import('node:fs').Dirent[];
+		try {
+			entries = await fs.readdir(dir, { withFileTypes: true });
+		} catch {
+			return null;
+		}
+		for (const e of entries) {
+			if (e.isDirectory() && !e.name.startsWith('.')) {
+				const found = await search(path.join(dir, e.name));
+				if (found) return found;
+			} else if (e.isFile() && (e.name === `${modelName}.prql` || e.name === `${modelName}.sql`)) {
+				return path.join(dir, e.name);
+			}
+		}
+		return null;
+	}
+
+	for (const root of ['models', 'analyses']) {
+		const found = await search(path.join(projectFolder, root));
+		if (found) return path.relative(projectFolder, found);
+	}
+	return null;
+}
+
+/** Convert parsed `.luna` entries into Cells, hydrating `model` ref placeholders
+ *  from the real model file so they participate in dependency resolution
+ *  (cell-deps.ts) exactly like any other cell. */
+async function hydrateLunaEntries(entries: LunaEntry[], projectRoot: string): Promise<Cell[]> {
+	const cells: Cell[] = [];
+	for (const entry of entries) {
+		if (entry.kind === 'markdown') {
+			cells.push(buildMarkdownCell(entry.markdown));
+			continue;
+		}
+		if (entry.kind === 'query') {
+			cells.push(buildQueryCellFromLuna(entry));
+			continue;
+		}
+		if (entry.kind === 'udf') {
+			cells.push(buildUdfCellFromLuna(entry.udfBody));
+			continue;
+		}
+		// modelRef: hydrate the real cell from its promoted model file.
+		const relPath = await findModelFilePath(projectRoot, entry.ref);
+		if (relPath) {
+			try {
+				const fileLanguage: CellLanguage = relPath.endsWith('.sql') ? 'sql' : 'prql';
+				const { cell } = await readCellFile(path.join(projectRoot, relPath), entry.ref, 0, projectRoot, fileLanguage);
+				cells.push({ ...cell, promotedModelPath: relPath });
+				continue;
+			} catch {
+				// fall through to stub below
+			}
+		}
+		// Model file missing — keep a stub so the notebook doesn't silently lose the cell.
+		cells.push({
+			...buildQueryCellFromLuna({
+				kind: 'query',
+				name: entry.ref,
+				lang: 'sql',
+				connection: null,
+				materialized: 'table',
+				schema: null,
+				tags: [],
+				meta: {},
+				code: ''
+			}),
+			promotedModelPath: relPath ?? ''
+		});
+	}
+	return cells;
+}
+
+function buildUdfCellFromLuna(udfBody: string): Cell {
+	const sig = parseUdfSignature(udfBody);
+	const outputName = 'error' in sig ? '' : sig.name;
+	return {
+		id: outputName || crypto.randomUUID(),
+		cellType: 'udf',
+		language: 'sql',
+		connectionId: null,
+		outputName,
+		code: '',
+		markdown: '',
+		markdownPreview: false,
+		udfBody,
+		status: 'idle',
+		result: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		resultViewMode: 'table',
+		resultChartConfig: null,
+		display: 'full',
+		stageResultsCollapsed: [],
+		materializeMode: 'table',
+		materializeTarget: outputName,
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		description: null,
+		dbtSchema: null,
+		dbtTags: [],
+		promotedModelPath: null,
+		dbtTestStatus: 'idle',
+		dbtTestResults: [],
+		dbtTestLog: [],
+		scheduleEnabled: false,
+		scheduleIntervalMinutes: 60,
+		scheduleScope: 'cell',
+		scheduleStatus: 'idle',
+		scheduleLastRunAt: null,
+		scheduleNextRunAt: null,
+		scheduleLastError: null,
+		intelligence: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null
+	};
+}
+
+function buildMarkdownCell(markdown: string): Cell {
+	return {
+		id: crypto.randomUUID(),
+		cellType: 'markdown',
+		language: 'prql',
+		connectionId: null,
+		outputName: '',
+		code: '',
+		markdown,
+		markdownPreview: false,
+		udfBody: '',
+		status: 'idle',
+		result: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		resultViewMode: 'table',
+		resultChartConfig: null,
+		display: 'full',
+		stageResultsCollapsed: [],
+		materializeMode: 'table',
+		materializeTarget: '',
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		description: null,
+		dbtSchema: null,
+		dbtTags: [],
+		promotedModelPath: null,
+		dbtTestStatus: 'idle',
+		dbtTestResults: [],
+		dbtTestLog: [],
+		scheduleEnabled: false,
+		scheduleIntervalMinutes: 60,
+		scheduleScope: 'cell',
+		scheduleStatus: 'idle',
+		scheduleLastRunAt: null,
+		scheduleNextRunAt: null,
+		scheduleLastError: null,
+		intelligence: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null
+	};
+}
+
+export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
+	return {
+		id: entry.name || crypto.randomUUID(),
+		cellType: 'query',
+		language: entry.lang,
+		connectionId: entry.connection,
+		outputName: entry.name,
+		code: entry.lang === 'prql' ? stripRefs(entry.code) : entry.code,
+		markdown: '',
+		markdownPreview: false,
+		udfBody: '',
+		status: 'idle',
+		result: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: entry.meta.guiStages ?? [{ type: 'from', table: '' }],
+		editMode: entry.meta.editMode ?? (entry.lang === 'sql' ? 'prql' : 'gui'),
+		resultViewMode: entry.meta.resultViewMode ?? 'table',
+		resultChartConfig: entry.meta.chartConfig ?? null,
+		display: entry.meta.display ?? 'full',
+		stageResultsCollapsed: entry.meta.stageResultsCollapsed ?? [],
+		materializeMode: entry.materialized,
+		materializeTarget: entry.name,
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		description: null,
+		dbtSchema: entry.schema,
+		dbtTags: entry.tags,
+		promotedModelPath: null,
+		dbtTestStatus: 'idle',
+		dbtTestResults: [],
+		dbtTestLog: [],
+		scheduleEnabled: entry.meta.scheduleEnabled ?? false,
+		scheduleIntervalMinutes: entry.meta.scheduleIntervalMinutes ?? 60,
+		scheduleScope: entry.meta.scheduleScope ?? 'cell',
+		scheduleStatus: 'idle',
+		scheduleLastRunAt: null,
+		scheduleNextRunAt: null,
+		scheduleLastError: null,
+		intelligence: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null
+	};
 }
 
 // ── Single file I/O ──────────────────────────────────────────────────────────
@@ -490,6 +789,7 @@ async function readCellFile(
 		code: parsed.code,
 		markdown: parsed.markdown,
 		markdownPreview: false,
+		udfBody: '',
 		status: 'idle',
 		result: null,
 		errors: [],
@@ -509,6 +809,7 @@ async function readCellFile(
 		description,
 		dbtSchema: ymlSchema,
 		dbtTags: ymlTags,
+		promotedModelPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],

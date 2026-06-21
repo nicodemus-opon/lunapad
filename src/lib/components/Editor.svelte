@@ -5,6 +5,8 @@
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
 
+	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
+
 	interface Props {
 		code: string;
 		onchange: (code: string) => void;
@@ -12,7 +14,7 @@
 		dark?: boolean;
 		readonly?: boolean;
 		completions?: string[];
-		language?: CellLanguage;
+		language?: EditorLanguage;
 		/** SQL dialect for formatter: 'duckdb' | 'postgresql' | 'clickhouse' */
 		sqlDialect?: string;
 	}

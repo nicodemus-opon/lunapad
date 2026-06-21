@@ -16,17 +16,13 @@ import {
 	setCellResultViewMode,
 	setCellMarkdownPreview,
 	setCellMaterializeMode,
-	restoreCellsFromAISnapshot,
-	getDashboards,
-	createDashboard,
-	addBlockToDashboard,
-	updateDashboardBlock,
-	openDashboardTab,
+	restoreCellSnapshots,
 	moveCell,
 	reorderCell,
 	getConnections,
 	getConnectionSecret,
-	type AICellSnapshot,
+	getAllCellsAcrossNotebooks,
+	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
 import {
@@ -64,14 +60,16 @@ import {
 	updateSprintTask,
 	clearSprintTasks,
 	requestSprintPlanApproval,
+	setCurrentActivityLabel,
 	type NotebookSnapshot
 } from '$lib/stores/ai-chat.svelte.js';
-import type { AIChatRequest, AIChatToolCall, CreateCellArgs, UpdateCellArgs, SetChartArgs, PickChartArgs, SetViewModeArgs, DeleteCellArgs, RunCellsArgs, MoveCellArgs, GetCellResultArgs, GetLineageArgs, FindDashboardUsageArgs, SearchWorkspaceArgs, ListDashboardsArgs, CreateDashboardArgs, AddDashboardBlockArgs, UpdateDashboardBlockArgs, OpenDashboardArgs, QueryDataArgs, SampleDataArgs, ProfileColumnArgs, RecordDecisionArgs, WorkspaceContract, WorkspaceNamingRule, SprintTask, SprintTaskType } from '$lib/types/ai-chat.js';
+import type { AIChatRequest, AIChatToolCall, CreateCellArgs, UpdateCellArgs, SetChartArgs, PickChartArgs, SetViewModeArgs, DeleteCellArgs, RunCellsArgs, MoveCellArgs, GetCellResultArgs, GetLineageArgs, SearchWorkspaceArgs, QueryDataArgs, SampleDataArgs, ProfileColumnArgs, RecordDecisionArgs, WorkspaceContract, WorkspaceNamingRule, SprintTask, SprintTaskType } from '$lib/types/ai-chat.js';
 import { classifyIntent, classifyComplexity, buildDiscoverySummary, parseReviewResult, formatReviewFeedback, SUBAGENT_TOOLS, SPRINT_TASK_TOOLS } from '$lib/services/ai-subagents.js';
 import type { PlanAssertion } from '$lib/types/ai-subagents.js';
 import { executeSQL } from '$lib/services/duckdb.js';
 import { queryConnectionSQL } from '$lib/services/connections.js';
 import { resolveDependencies } from '$lib/services/cell-deps.js';
+import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { type Connection, BUILTIN_DUCKDB_CONNECTION, BUILTIN_DUCKDB_CONNECTION_ID, isBuiltinDuckDBConnection } from '$lib/types/connection.js';
 
@@ -588,19 +586,27 @@ function takeSnapshot(): NotebookSnapshot {
 			outputName: c.outputName,
 			code: c.code,
 			markdown: c.markdown,
+			udfBody: c.udfBody,
 			language: c.language,
 			cellType: c.cellType,
 			display: c.display,
 			guiStages: c.guiStages,
 			editMode: c.editMode,
 			connectionId: c.connectionId,
+			materializeMode: c.materializeMode,
+			materializeTarget: c.materializeTarget,
+			description: c.description,
+			dbtTags: c.dbtTags,
+			scheduleEnabled: c.scheduleEnabled,
+			scheduleIntervalMinutes: c.scheduleIntervalMinutes,
+			scheduleScope: c.scheduleScope,
 			result: c.result,
 			status: c.status,
 			resultViewMode: c.resultViewMode,
 			resultChartConfig: c.resultChartConfig,
 			executionMs: c.executionMs,
 			errors: c.errors
-		} satisfies AICellSnapshot))
+		} satisfies CellSnapshot))
 	};
 }
 
@@ -629,7 +635,7 @@ export function undoAIChanges(): void {
 
 	clearGhostCells();
 	clearCheckpoints();
-	restoreCellsFromAISnapshot(snap.notebookId, snap.cells as AICellSnapshot[]);
+	restoreCellSnapshots(snap.notebookId, snap.cells);
 	setPendingSnapshot(null);
 	setUndoAvailable(false);
 }
@@ -638,7 +644,7 @@ export function undoLastAIStep(): void {
 	const snap = popCheckpoint();
 	if (!snap) return;
 	clearGhostCells();
-	restoreCellsFromAISnapshot(snap.notebookId, snap.cells as AICellSnapshot[]);
+	restoreCellSnapshots(snap.notebookId, snap.cells);
 	// Keep pendingSnapshot and undoAvailable so full undo is still possible
 }
 
@@ -659,8 +665,7 @@ const VALID_MATERIALIZE_MODES = new Set(['ephemeral', 'view', 'table', 'incremen
 
 function deriveWorkspaceContract(
 	cells: ReturnType<typeof getCells>,
-	downstreamCounts: Map<string, number>,
-	dashboardUsage: Map<string, string[]>
+	downstreamCounts: Map<string, number>
 ): WorkspaceContract | undefined {
 	const standards = getWorkspaceStandards();
 
@@ -697,8 +702,7 @@ function deriveWorkspaceContract(
 		.slice(0, 8)
 		.map((c) => ({
 			name: c.outputName,
-			downstreamCount: downstreamCounts.get(c.outputName) ?? 0,
-			dashboards: dashboardUsage.get(c.id) ?? []
+			downstreamCount: downstreamCounts.get(c.outputName) ?? 0
 		}));
 
 	if (namingRules.length === 0 && topReusableModels.length === 0 && !standards.customInstructions.trim()) {
@@ -736,8 +740,6 @@ function compressOldMessage(content: string): string {
 	const DROP_PREFIXES = [
 		'**Cells:**\n',
 		'**Lineage: `',
-		'**Dashboard usage for `',
-		'**Dashboards:**\n',
 		'**Search unavailable**',
 	];
 	const paragraphs = result.split('\n\n');
@@ -752,7 +754,6 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 	const cells = getCells();
 	const schema = getExternalSchemaTables();
 	const llmConfig = getLLMConfig();
-	const dashboards = getDashboards();
 	const defaultConn = getDefaultConnection();
 
 	// Relevance-weighted history: keep first (task framing) + any older messages that mention
@@ -823,18 +824,6 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 		: undefined;
 	_lastSchemaHash = currentSchemaHash;
 
-	// Build cellId → dashboard names index (chart blocks reference cells by id)
-	const dashboardUsage = new Map<string, string[]>();
-	for (const dash of dashboards) {
-		for (const block of dash.blocks) {
-			if (block.type === 'chart') {
-				const arr = dashboardUsage.get(block.cellId) ?? [];
-				arr.push(dash.name);
-				dashboardUsage.set(block.cellId, arr);
-			}
-		}
-	}
-
 	// Build regex map for whole-word matching of outputNames
 	const outputNames = cells.filter((c) => c.outputName).map((c) => c.outputName);
 	const nameRegexes = new Map<string, RegExp>(
@@ -853,7 +842,7 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 		if (count > 0) downstreamCounts.set(cell.outputName, count);
 	}
 
-	const workspaceContract = deriveWorkspaceContract(cells, downstreamCounts, dashboardUsage);
+	const workspaceContract = deriveWorkspaceContract(cells, downstreamCounts);
 
 	// Pre-compute per-cell upstream/downstream (needed for depth BFS and cell objects)
 	const cellUpstreamNames = new Map<string, string[]>();
@@ -902,9 +891,8 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				const upstream = cellUpstreamNames.get(c.id) ?? [];
 				const downstream = cellDownstreamNames.get(c.id) ?? [];
 
-				// #4 — Criticality score: downstream cell count + 3×dashboard count
-				const criticalityScore = (c.outputName ? (downstreamCounts.get(c.outputName) ?? 0) : 0)
-					+ 3 * (dashboardUsage.get(c.id)?.length ?? 0);
+				// #4 — Criticality score: downstream cell count — signals high-impact cells
+				const criticalityScore = c.outputName ? (downstreamCounts.get(c.outputName) ?? 0) : 0;
 
 				// #8 — Tiered code truncation by BFS depth from context cells:
 				// depth 0 (context) or depth 1 (direct dep): full code
@@ -935,7 +923,6 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					isActiveNotebook: true,
 					...(upstream.length > 0 && { upstream }),
 					...(downstream.length > 0 && { downstream }),
-					...(dashboardUsage.has(c.id) && { usedInDashboards: dashboardUsage.get(c.id) }),
 					// Include existing chart config for context cells so AI can modify rather than replace
 					...(isContext && c.resultChartConfig && { resultChartConfig: c.resultChartConfig }),
 					// #4 — Include criticality score so system prompt can flag high-impact cells
@@ -971,7 +958,6 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 
 async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<string> {
 	const cells = getCells();
-	const dashboards = getDashboards();
 
 	switch (call.tool) {
 		case 'get_lineage': {
@@ -996,35 +982,11 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 				.filter((c) => c.outputName !== outputName && re.test(c.code))
 				.map((c) => c.outputName);
 
-			const dashUsage: string[] = [];
-			for (const dash of dashboards) {
-				for (const block of dash.blocks) {
-					if (block.type === 'chart' && block.cellId === target?.id) {
-						dashUsage.push(dash.name);
-					}
-				}
-			}
-
 			const result = target
-				? `**Lineage: \`${outputName}\`**\n- Upstream: ${upstream.join(', ') || 'none'}\n- Downstream: ${downstream.join(', ') || 'none'}\n- In dashboards: ${dashUsage.join(', ') || 'none'}`
+				? `**Lineage: \`${outputName}\`**\n- Upstream: ${upstream.join(', ') || 'none'}\n- Downstream: ${downstream.join(', ') || 'none'}`
 				: `**Lineage: \`${outputName}\` not found in notebook**`;
 			updateMessageText(aiMsgId, `\n\n${result}\n\n`);
 			return result;
-		}
-
-		case 'find_dashboard_usage': {
-			const { outputName } = call.args as FindDashboardUsageArgs;
-			const target = cells.find((c) => c.outputName === outputName);
-			const results: string[] = [];
-			if (target) {
-				for (const dash of dashboards) {
-					const matching = dash.blocks.filter((b) => b.type === 'chart' && b.cellId === target.id);
-					if (matching.length) results.push(`${dash.name} (${matching.length} chart${matching.length > 1 ? 's' : ''})`);
-				}
-			}
-			const text = `**Dashboard usage for \`${outputName}\`:** ${results.join(', ') || 'not used in any dashboard'}`;
-			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
-			return text;
 		}
 
 		case 'list_cells': {
@@ -1074,30 +1036,6 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 			});
 			_sessionDataContext.set(`result: ${cell.outputName}`, `${cell.result.rows.length} rows, cols: ${cell.result.columns.join(', ')}`);
 			return `get_cell_result(${cell.outputName}): ${cell.result.rows.length} rows, columns: ${cell.result.columns.join(', ')}\n${csv}`;
-		}
-
-		case 'list_dashboards': {
-			const dashboards = getDashboards();
-			if (dashboards.length === 0) {
-				const text = '**Dashboards:** (none)';
-				updateMessageText(aiMsgId, `\n\n${text}\n\n`);
-				return text;
-			}
-			const summary = dashboards.map((d) => {
-				const blockSummary = d.blocks.map((b) => {
-					if (b.type === 'chart') return `chart(${b.cellId})`;
-					if (b.type === 'kpi') return `kpi:${b.label}`;
-					if (b.type === 'filter') return `filter:${b.label}`;
-					if (b.type === 'section') return `section:${b.heading}`;
-					if (b.type === 'text') return 'text';
-					if (b.type === 'callout') return `callout:${b.variant}`;
-					return '';
-				}).join(', ');
-				return `- **${d.name}** (id: ${d.id}):\n  blocks: [${blockSummary || 'empty'}]`;
-			}).join('\n');
-			const text = `**Dashboards:**\n${summary}`;
-			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
-			return text;
 		}
 
 		case 'search_workspace': {
@@ -1164,7 +1102,7 @@ function inferMaterializeMode(outputName: string): CellMaterializationMode | nul
 
 async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string): Promise<string | null> {
 	// Read-only inspection tools — inject result as text, also return for LLM re-injection
-	if (call.tool === 'get_lineage' || call.tool === 'find_dashboard_usage' || call.tool === 'list_cells' || call.tool === 'search_workspace' || call.tool === 'get_cell_result' || call.tool === 'list_dashboards') {
+	if (call.tool === 'get_lineage' || call.tool === 'list_cells' || call.tool === 'search_workspace' || call.tool === 'get_cell_result') {
 		return executeReadTool(call, aiMsgId);
 	}
 
@@ -1221,7 +1159,8 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					_outputNameToId.set(outputName, existingMarkdownId);
 					if (call.callId) _callIdToId.set(call.callId, existingMarkdownId);
 					appendActionEvent(aiMsgId, { tool: 'update_cell', label: `Edited cell \`${outputName}\``, cellId: existingMarkdownId });
-					return `Cell '${outputName}' updated (create_cell redirected — markdown cell already exists)`;
+					const redirectLintHint = newMarkdown ? detectHardcodedContent(newMarkdown, getAllCellsAcrossNotebooks()) : null;
+					return `Cell '${outputName}' updated (create_cell redirected — markdown cell already exists)${redirectLintHint ? `\n\n⚠ Live-ref hint: ${redirectLintHint}` : ''}`;
 				}
 			}
 
@@ -1279,7 +1218,8 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				const createColWarning = !isMarkdown && args.code
 					? validateColumnRefs(args.code, getExternalSchemaTables(), getTables())
 					: null;
-				return `Cell '${outputName}' created (id: ${newCellId}, type: ${isMarkdown ? 'markdown' : 'query'})${createColWarning ? `\n\n⚠ Column hint: ${createColWarning}` : ''}`;
+				const createLintHint = isMarkdown ? detectHardcodedContent(markdownContent, getAllCellsAcrossNotebooks()) : null;
+				return `Cell '${outputName}' created (id: ${newCellId}, type: ${isMarkdown ? 'markdown' : 'query'})${createColWarning ? `\n\n⚠ Column hint: ${createColWarning}` : ''}${createLintHint ? `\n\n⚠ Live-ref hint: ${createLintHint}` : ''}`;
 			}
 			return null;
 		}
@@ -1295,6 +1235,7 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			const oldCode = cellBeforeUpdate?.code;
 			const oldName = cellBeforeUpdate?.outputName;
 			if (args.code !== undefined) updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
+			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
 			if (args.outputName !== undefined) {
 				// Keep _outputNameToId in sync with renames so stall-recovery nudges
 				// and duplicate-create checks reference the correct (new) cell name.
@@ -1304,6 +1245,7 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			}
 			_updatedCellIds.add(cellId);
 			const newCode = args.code !== undefined ? stripTrailingSemicolons(args.code) : undefined;
+			const updateLintHint = args.markdown !== undefined ? detectHardcodedContent(args.markdown, getAllCellsAcrossNotebooks()) : null;
 			appendActionEvent(aiMsgId, {
 				tool: 'update_cell',
 				label: `Edited cell \`${args.outputName ?? args.cellId}\``,
@@ -1311,8 +1253,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				...(oldCode !== undefined && newCode !== undefined && { oldCode, newCode })
 			});
 			// Lightweight column validation warning
-			const colWarning = validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables());
-			return `Cell '${args.outputName ?? args.cellId}' updated${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}`;
+			const colWarning = args.code !== undefined
+				? validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables())
+				: null;
+			return `Cell '${args.outputName ?? args.cellId}' updated${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}${updateLintHint ? `\n\n⚠ Live-ref hint: ${updateLintHint}` : ''}`;
 		}
 
 		case 'set_chart': {
@@ -1393,58 +1337,6 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				return `Cell '${args.cellId}' moved ${args.direction}`;
 			}
 			return `move_cell: specify direction ('up'|'down') or toIndex`;
-		}
-
-		case 'create_dashboard': {
-			const args = call.args as CreateDashboardArgs;
-			const existing = getDashboards().find((d) => d.name === args.name);
-			if (existing) {
-				appendActionEvent(aiMsgId, { tool: 'create_dashboard', label: `Using dashboard "${args.name}"` });
-				return `Dashboard '${args.name}' already exists (id: ${existing.id})`;
-			}
-			const dashboard = createDashboard(args.name);
-			appendActionEvent(aiMsgId, { tool: 'create_dashboard', label: `Created dashboard "${args.name}"` });
-			return `Dashboard '${args.name}' created (id: ${dashboard.id})`;
-		}
-
-		case 'add_dashboard_block': {
-			const args = call.args as AddDashboardBlockArgs;
-			const notebookId = getActiveTabId();
-			const blockConfig: Record<string, unknown> = {
-				type: args.blockType,
-				width: (args.config.width as number) ?? 2,
-				...args.config
-			};
-			// Auto-fill notebookId for chart blocks; resolve cellId reference
-			if (args.blockType === 'chart') {
-				if (!blockConfig.notebookId) blockConfig.notebookId = notebookId;
-				const cellRef = blockConfig.cellId as string | undefined;
-				if (cellRef) {
-					const resolvedCellId = resolveCellId(cellRef);
-					if (resolvedCellId) blockConfig.cellId = resolvedCellId;
-				}
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			addBlockToDashboard(args.dashboardId, blockConfig as any);
-			const dashName = getDashboards().find((d) => d.id === args.dashboardId)?.name ?? args.dashboardId;
-			appendActionEvent(aiMsgId, { tool: 'add_dashboard_block', label: `Added ${args.blockType} to "${dashName}"` });
-			return `Added ${args.blockType} block to dashboard '${dashName}'`;
-		}
-
-		case 'update_dashboard_block': {
-			const args = call.args as UpdateDashboardBlockArgs;
-			updateDashboardBlock(args.dashboardId, args.blockId, args.patch);
-			const dashName = getDashboards().find((d) => d.id === args.dashboardId)?.name ?? args.dashboardId;
-			appendActionEvent(aiMsgId, { tool: 'update_dashboard_block', label: `Updated block in "${dashName}"` });
-			return `Dashboard block updated in '${dashName}'`;
-		}
-
-		case 'open_dashboard': {
-			const args = call.args as OpenDashboardArgs;
-			openDashboardTab(args.dashboardId);
-			const dashName = getDashboards().find((d) => d.id === args.dashboardId)?.name ?? args.dashboardId;
-			appendActionEvent(aiMsgId, { tool: 'open_dashboard', label: `Opened dashboard "${dashName}"` });
-			return `Dashboard '${dashName}' opened`;
 		}
 
 		case 'record_decision': {
@@ -1835,6 +1727,31 @@ function resolveCellId(ref: string): string | null {
 	return _callIdToId.get(ref) ?? null;
 }
 
+const ACTIVITY_LABELS: Record<string, string> = {
+	create_cell: 'Creating cell…',
+	update_cell: 'Editing cell…',
+	set_chart: 'Configuring chart…',
+	pick_chart: 'Auto-charting…',
+	set_view_mode: 'Switching view…',
+	delete_cell: 'Deleting cell…',
+	run_cells: 'Running cells…',
+	move_cell: 'Reordering cells…',
+	get_lineage: 'Checking lineage…',
+	list_cells: 'Listing cells…',
+	search_workspace: 'Searching workspace…',
+	get_cell_result: 'Reading cell result…',
+	query_data: 'Querying data…',
+	sample_data: 'Sampling data…',
+	profile_column: 'Profiling column…',
+	record_decision: 'Recording decision…',
+	validate_result: 'Validating result…',
+	compare_cells: 'Comparing cells…'
+};
+
+function activityLabelForTool(tool: string): string {
+	return ACTIVITY_LABELS[tool] ?? 'Working…';
+}
+
 // ── Streaming helper ──────────────────────────────────────────────────────────
 
 async function streamOneTurn(
@@ -1885,6 +1802,7 @@ async function streamOneTurn(
 				break;
 			case 'tool_call': {
 				const toolCall = event.call as AIChatToolCall;
+				setCurrentActivityLabel(activityLabelForTool(toolCall.tool));
 				if (DATA_TOOL_NAMES.has(toolCall.tool)) {
 					// Execute inline so results reach the model in the same turn
 					hadDataToolCalls = true;
@@ -1967,7 +1885,9 @@ async function streamOneTurn(
 		}
 		// Flush any trailing complete event left without a final newline.
 		for (const event of parser.flush()) await dispatchEvent(event);
+		setCurrentActivityLabel(null);
 	} catch (err) {
+		setCurrentActivityLabel(null);
 		// The SSE stream broke mid-response (network reset, server closed the connection).
 		// Surface it as a retryable streamError instead of throwing — the old code let this
 		// propagate to the outer catch and silently kill the whole generation.
@@ -2091,6 +2011,7 @@ async function runSprintLoop(
 		const taskSubagentType: NonNullable<AIChatRequest['subagentType']> =
 			task.type === 'investigate' ? 'discovery'
 			: task.type === 'visualize' || task.type === 'dashboard' ? 'dashboard'
+			: task.type === 'document' ? 'documentation'
 			: 'sql-gen';
 		const MAX_TASK_DEPTH = 8;
 		let taskDepth = 0;
@@ -2611,6 +2532,8 @@ async function runDebugLoop(
 	}
 }
 
+// Composes a Markdoc grid/columns layout of metric/chart widgets in one markdown cell —
+// the replacement for the old "assemble a Dashboard object" loop.
 async function runDashboardLoop(
 	userText: string,
 	aiMsgId: string,
@@ -2622,10 +2545,9 @@ async function runDashboardLoop(
 	let depth = 0;
 	let injection: { role: 'user'; content: string } | null = null;
 	let stallRetries = 0;
-	// Track the created dashboard across turns so we can inject the id explicitly
-	// and prevent the model from calling create_dashboard a second time.
-	let knownDashboardId: string | null = null;
-	let knownDashboardName: string | null = null;
+	// Track the created summary cell across turns so the model updates it instead of
+	// creating a second one.
+	let knownCellName: string | null = null;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
 		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } = await streamOneTurn(
@@ -2646,33 +2568,31 @@ async function runDashboardLoop(
 		if (allToolResults.length > 0) {
 			stallRetries = 0;
 
-			// Extract dashboardId from any create_dashboard result in this turn
-			if (!knownDashboardId) {
+			if (!knownCellName) {
 				for (const r of allToolResults) {
-					const m = r.match(/Dashboard '(.+?)' (?:created|already exists) \(id: ([^)]+)\)/);
+					const m = r.match(/Cell '(.+?)' (?:created|updated)/);
 					if (m) {
-						knownDashboardName = m[1];
-						knownDashboardId = m[2].trim();
+						knownCellName = m[1];
 						break;
 					}
 				}
 			}
 
-			const dashDirective = knownDashboardId
-				? `Dashboard '${knownDashboardName}' is already created (id: ${knownDashboardId}). Do NOT call create_dashboard again. Now: call pick_chart for each relevant cell (if not done), then add_dashboard_block for each chart using dashboardId "${knownDashboardId}", then open_dashboard("${knownDashboardId}") and call <done>.`
-				: 'Call create_dashboard first to get a dashboard id, then pick_chart for each relevant cell, then add_dashboard_block for each chart.';
+			const directive = knownCellName
+				? `The summary cell '${knownCellName}' already exists. Use update_cell to revise it rather than creating a new one. Then call <done>.`
+				: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags for the relevant cells, then call <done>.';
 
-			injection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${dashDirective} Do NOT respond with prose only — call the tools now.` };
+			injection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive} Do NOT respond with prose only — call the tools now.` };
 			depth++;
 			continue;
 		}
 
 		if (stallRetries < 2) {
 			stallRetries++;
-			const dashDirective = knownDashboardId
-				? `Dashboard id is ${knownDashboardId}. Call pick_chart for each relevant cell, then add_dashboard_block for each using dashboardId "${knownDashboardId}", then open_dashboard. Do NOT respond with prose only.`
-				: 'Call create_dashboard to create the dashboard, then pick_chart for each relevant cell, then add_dashboard_block for each, then open_dashboard. Do NOT respond with prose only.';
-			injection = { role: 'user', content: dashDirective };
+			const directive = knownCellName
+				? `The summary cell '${knownCellName}' already exists — use update_cell to revise it, then call <done>.`
+				: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags, then call <done>. Do NOT respond with prose only.';
+			injection = { role: 'user', content: directive };
 			depth++;
 			continue;
 		}
@@ -2934,7 +2854,7 @@ export async function submitAIMessage(userText: string, forcedIntent?: 'build' |
 			// Detect turns where only inspection tools were called (list_cells, search_workspace, etc.)
 			// and no cells have been built yet — used by Fix A (stronger directive) and Fix B (don't
 			// honour <done> when the task clearly still requires building cells).
-			const INSPECTION_PREFIXES = ['**Cells:', '**Search:', '**Lineage:', '**Dashboard usage', '**Dashboards:', '**Search unavailable'];
+			const INSPECTION_PREFIXES = ['**Cells:', '**Search:', '**Lineage:', '**Search unavailable'];
 			const allResultsAreInspection =
 				allToolResults.length > 0 &&
 				allToolResults.every((r) => INSPECTION_PREFIXES.some((p) => r.startsWith(p)));

@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-	import { BotMessageSquare, User, SquarePlay, Square, PencilLine, ChartBar, Trash2, RefreshCw, Database, ChevronDown, ChevronRight, LayoutDashboard, PlusSquare, ArrowUpDown } from '@lucide/svelte';
+	import { BotMessageSquare, User, SquarePlay, Square, PencilLine, ChartBar, Trash2, RefreshCw, Database, ChevronDown, ChevronRight, ArrowUpDown } from '@lucide/svelte';
 	import DOMPurify from 'dompurify';
 	import type { ChatMessage } from '$lib/stores/ai-chat.svelte.js';
 	import { getCells } from '$lib/stores/notebook.svelte.js';
@@ -31,12 +31,7 @@
 		query_data: Database,
 		sample_data: Database,
 		profile_column: Database,
-		get_cell_result: Database,
-		list_dashboards: LayoutDashboard,
-		create_dashboard: LayoutDashboard,
-		add_dashboard_block: PlusSquare,
-		update_dashboard_block: PencilLine,
-		open_dashboard: LayoutDashboard
+		get_cell_result: Database
 	};
 
 	// Collapsed by default; expand individual data previews. Keyed by the event's stable

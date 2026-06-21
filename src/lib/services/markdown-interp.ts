@@ -1,4 +1,5 @@
 import type { Cell } from '$lib/stores/notebook.svelte';
+import { FUNCTIONS as MARKDOC_FUNCTIONS } from './markdoc-interp.js';
 
 // Ref syntax:
 //   {{outputName.count}}              → row count
@@ -8,6 +9,9 @@ import type { Cell } from '$lib/stores/notebook.svelte';
 //   {{outputName[N].columnName}}      → Nth row (negative ok), named column
 //   {{outputName.columnName[N]}}      → Nth row, named column (column-first variant)
 //   {{expr | round(N)}}               → arithmetic expression with round filter
+//   {{percent(expr, N)}}              → any function from the Markdoc registry (markdoc-interp.ts
+//                                        FUNCTIONS) works here too: currency/compact/percent/sign/
+//                                        formatDate/gt/gte/lt/lte — kept in sync automatically.
 
 const REF_RE = /\{\{([^}]+)\}\}/g;
 // Simple ref: name[N].key  or  name.key  or  name.key[N]
@@ -64,6 +68,12 @@ function resolveRefValue(
 	return { value: row[key] };
 }
 
+// Bridges every Markdoc function (markdoc-interp.ts FUNCTIONS) into this expression
+// evaluator's scope, so adding a formatter there makes it usable here automatically —
+// no per-function mirroring to keep in sync.
+const FN_NAMES = Object.keys(MARKDOC_FUNCTIONS);
+const FN_IMPLS = FN_NAMES.map((name) => (...args: unknown[]) => MARKDOC_FUNCTIONS[name]!.transform!(args, {}));
+
 function evaluateCompoundExpr(expr: string, cells: Cell[]): string {
 	let rounder: ((n: number) => string) | null = null;
 	const filterMatch = expr.match(/^([\s\S]*?)\|\s*round\((\d+)\)\s*$/);
@@ -81,17 +91,22 @@ function evaluateCompoundExpr(expr: string, cells: Cell[]): string {
 			errorSpan = `<span class="md-live-ref md-live-ref--missing">[? ${res.error}]</span>`;
 			return '0';
 		}
-		if (typeof res.value === 'number') return String(res.value);
-		errorSpan = `<span class="md-live-ref md-live-ref--missing">[? ${key} is not a number]</span>`;
-		return '0';
+		// JSON.stringify renders any resolved value (number/string/bool/array/null) as a
+		// safely-escaped JS literal, so refs work as function args, not just bare arithmetic.
+		return JSON.stringify(res.value === undefined ? null : res.value);
 	});
 
 	if (errorSpan) return errorSpan;
 
 	try {
 		// eslint-disable-next-line no-new-func
-		const result = Function(`'use strict'; return (${substituted})`)() as number;
-		const formatted = rounder ? rounder(result) : result.toLocaleString();
+		const result = Function(...FN_NAMES, `'use strict'; return (${substituted})`)(...FN_IMPLS);
+		const formatted =
+			typeof result === 'number'
+				? rounder
+					? rounder(result)
+					: result.toLocaleString()
+				: String(result);
 		return `<span class="md-live-ref">${escapeHtml(formatted)}</span>`;
 	} catch {
 		return `<span class="md-live-ref md-live-ref--missing">[? eval error]</span>`;

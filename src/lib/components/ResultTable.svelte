@@ -400,7 +400,7 @@
 			</Table.Header>
 			<Table.Body>
 				{#each table.getRowModel().rows as row (row.id)}
-					<Table.Row class="even:bg-background ">
+					<Table.Row class=" even:bg-background/20 ">
 						{#each row.getVisibleCells() as cell, ci (cell.id)}
 							{@const value = row.original[cell.column.id]}
 							{@const isNull = value === null || value === undefined}

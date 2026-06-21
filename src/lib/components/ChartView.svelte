@@ -1,6 +1,10 @@
 <script lang="ts">
-	import EChart from './EChart.svelte';
-	import type { ChartConfig } from '$lib/types/gui-pipeline';
+	import PlotChart from './PlotChart.svelte';
+	import * as Plot from '@observablehq/plot';
+	import { pie, arc, type PieArcDatum } from 'd3-shape';
+	import { sankey, sankeyLinkHorizontal, sankeyLeft } from 'd3-sankey';
+	import { mode } from 'mode-watcher';
+	import type { ChartConfig, ChartType } from '$lib/types/gui-pipeline';
 	import { coerceNumber } from '$lib/utils';
 
 	interface Props {
@@ -206,54 +210,6 @@
 
 	const colorSplitLineGroups = $derived(enableColorSplitLines ? topGroupKeys(config.colorColumn) : [] as string[]);
 	const colorSplitScatterGroups = $derived(enableColorSplitScatter ? topGroupKeys(config.colorColumn) : [] as string[]);
-
-	// Unique x-categories in appearance order (for category-axis grouped lines)
-	const colorSplitLineXCategories = $derived.by(() => {
-		if (!enableColorSplitLines || xIsMostlyDateLike || xIsMostlyNumeric) return [] as string[];
-		const seen = new Set<string>();
-		const cats: string[] = [];
-		for (const row of rows) {
-			const xv = row[config.xColumn];
-			if (xv == null) continue;
-			const s = String(xv);
-			if (!seen.has(s)) { seen.add(s); cats.push(s); }
-		}
-		return cats;
-	});
-
-	function getColorGroupLineData(groupKey: string): unknown[] {
-		if (!config.xColumn || config.yColumns.length === 0 || !config.colorColumn) return [];
-		const yCol = config.yColumns[0];
-		const groupRows = rows.filter(
-			(r) => r[config.colorColumn!] != null && String(r[config.colorColumn!]) === groupKey && r[config.xColumn] != null
-		);
-		if (xIsMostlyDateLike) {
-			return groupRows.map((r) => [new Date(r[config.xColumn] as string | number | Date).getTime(), coerceNumber(r[yCol])]);
-		}
-		if (xIsMostlyNumeric) {
-			return groupRows.map((r) => [toNumber(r[config.xColumn]) ?? r[config.xColumn], coerceNumber(r[yCol])]);
-		}
-		// Category axis: align values to the shared x-category list
-		const groupMap = new Map<string, number>();
-		for (const r of groupRows) {
-			const xStr = String(r[config.xColumn]);
-			groupMap.set(xStr, (groupMap.get(xStr) ?? 0) + (coerceNumber(r[yCol]) ?? 0));
-		}
-		return colorSplitLineXCategories.map((cat) => groupMap.get(cat) ?? null);
-	}
-
-	function getScatterGroupData(groupKey: string): unknown[] {
-		if (!config.xColumn || config.yColumns.length === 0 || !config.colorColumn) return [];
-		const yCol = config.yColumns[0];
-		const isBubble = config.chartType === 'bubble';
-		return rows
-			.filter((r) => r[config.colorColumn!] != null && String(r[config.colorColumn!]) === groupKey && r[config.xColumn] != null)
-			.map((r) => {
-				const pt: unknown[] = [r[config.xColumn], coerceNumber(r[yCol])];
-				if (isBubble && config.sizeColumn) pt.push(coerceNumber(r[config.sizeColumn]) ?? 1);
-				return pt;
-			});
-	}
 
 	const barSeriesLayout = $derived.by(() => {
 		if (config.seriesMode === 'stacked') return 'stack';
@@ -476,7 +432,7 @@
 	// ── "needs config" guard ───────────────────────────────────────────────────
 	const needsConfig = $derived.by(() => {
 		const t = config.chartType;
-		if (t === 'table' || t === 'big-value' || t === 'value' || t === 'delta') return false;
+		if (t === 'table' || t === 'big-value' || t === 'value' || t === 'delta' || t === 'custom') return false;
 		if (t === 'histogram') return config.yColumns.length === 0;
 		if (t === 'heatmap') return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
 		if (t === 'box-plot') return config.yColumns.length < 5;
@@ -484,38 +440,442 @@
 		return !config.xColumn || config.yColumns.length === 0;
 	});
 
-	// ── ECharts helpers ────────────────────────────────────────────────────────
-	function buildXAxis(forceCategory = false): object {
-		if (!forceCategory && xIsMostlyDateLike) {
-			return { type: 'time', axisLabel: { hideOverlap: true } };
+	const CHART_COLOR_RANGE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+	const PLOT_STYLE = {
+		fontFamily: 'Inter, system-ui, sans-serif',
+		fontSize: '11px',
+		background: 'transparent',
+		color: 'var(--muted-foreground)'
+	};
+
+	// Discrete fill/stroke channels can use raw var(--chart-1) strings — the browser
+	// resolves them at paint time, same as any other CSS. But a *continuous* color
+	// scale (heatmap/calendar-heatmap) needs Plot/d3 to interpolate between the range
+	// endpoints in JS at scale-construction time, which requires an actual parseable
+	// color, not a CSS custom property reference. Resolve to a concrete value instead.
+	function oklchToRgb(l: number, c: number, h: number): string {
+		const hRad = (h * Math.PI) / 180;
+		const a = c * Math.cos(hRad);
+		const b = c * Math.sin(hRad);
+		const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+		const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+		const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+		const ll = l_ ** 3, mm = m_ ** 3, ss = s_ ** 3;
+		const lr = 4.0767416621 * ll - 3.3077115913 * mm + 0.2309699292 * ss;
+		const lg = -1.2684380046 * ll + 2.6097574011 * mm - 0.3413193965 * ss;
+		const lb = -0.0041960863 * ll - 0.7034186147 * mm + 1.707614701 * ss;
+		const gamma = (x: number) => {
+			const v = Math.max(0, Math.min(1, x));
+			return v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+		};
+		return `rgb(${Math.round(gamma(lr) * 255)},${Math.round(gamma(lg) * 255)},${Math.round(gamma(lb) * 255)})`;
+	}
+
+	function resolveCSSColor(varName: string): string {
+		const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+		const m = raw.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+		if (m) return oklchToRgb(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+		return raw;
+	}
+
+	// Coerces a raw x value to the right JS type for Plot's scale inference
+	// (Plot infers scale type from the channel's actual JS value type, unlike
+	// ECharts which took an explicit axis `type` string).
+	function xValue(raw: unknown): unknown {
+		if (xIsMostlyDateLike) return new Date(raw as string | number | Date);
+		if (xIsMostlyNumeric) return toNumber(raw);
+		return String(raw ?? '');
+	}
+
+	// Plot's default ordinal-scale domain is sorted ascending, which scrambles
+	// natural data order (e.g. month names) — pass this as an explicit `domain`
+	// wherever the x/y channel is categorical, to preserve row order like the
+	// old ECharts category axis did.
+	function categoricalDomain(values: unknown[]): string[] {
+		const seen = new Set<string>();
+		for (const v of values) {
+			if (v == null) continue;
+			seen.add(String(v));
 		}
-		if (!forceCategory && xIsMostlyNumeric) {
-			return { type: 'value', axisLabel: { formatter: fmtNum } };
+		return [...seen];
+	}
+
+	// Reshapes a wide {x, [seriesKey]: value}[] dataset into long {x, series, value}[]
+	// rows, which Plot's fill/stroke + facet/stack channels expect for multi-series marks.
+	function meltSeries(
+		data: Record<string, unknown>[],
+		series: { key: string; label: string }[]
+	): { x: string; series: string; value: number | null }[] {
+		const out: { x: string; series: string; value: number | null }[] = [];
+		for (const d of data) {
+			for (const s of series) {
+				out.push({ x: String(d.x ?? ''), series: s.label, value: toNumber(d[s.key]) });
+			}
 		}
-		return {
-			type: 'category',
-			data: chartData.map((d) => String(d.x ?? '')),
-			axisLabel: {
-				rotate: shouldRotateXLabels ? -30 : 0,
-				interval: 'auto',
-				formatter: (v: string) => (v.length > 14 ? v.slice(0, 13) + '…' : v)
+		return out;
+	}
+
+	const SVG_NS = 'http://www.w3.org/2000/svg';
+	const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+	// Plot has no native pie/funnel/sankey mark, so these three build raw SVG
+	// directly — PlotChart's render contract only needs "any DOM Element", not
+	// specifically a Plot.plot() result.
+	function calendarCells(pairs: [string, number][]) {
+		return pairs.map(([dateStr, value]) => {
+			const date = new Date(dateStr);
+			const year = date.getUTCFullYear();
+			const jan1 = new Date(Date.UTC(year, 0, 1));
+			const dayOfYear = Math.floor((date.getTime() - jan1.getTime()) / 86400000);
+			const weekOfYear = Math.floor((dayOfYear + jan1.getUTCDay()) / 7);
+			return { year: String(year), weekOfYear, day: date.getUTCDay(), value, dateStr };
+		});
+	}
+
+	function renderPie(data: { x: string; y: number }[], width: number, height: number): Element {
+		const total = data.reduce((s, d) => s + d.y, 0);
+		const legendH = 32;
+		const svgH = Math.max(40, height - legendH);
+		const radius = Math.min(width, svgH) / 2 - 16;
+		const pieGen = pie<{ x: string; y: number }>().value((d) => d.y).sort(null);
+		const arcGen = arc<PieArcDatum<{ x: string; y: number }>>().innerRadius(radius * 0.55).outerRadius(radius);
+
+		const svg = document.createElementNS(SVG_NS, 'svg');
+		svg.setAttribute('width', String(width));
+		svg.setAttribute('height', String(svgH));
+		svg.setAttribute('viewBox', `0 0 ${width} ${svgH}`);
+		const g = document.createElementNS(SVG_NS, 'g');
+		g.setAttribute('transform', `translate(${width / 2},${svgH / 2})`);
+
+		pieGen(data).forEach((a, i) => {
+			const path = document.createElementNS(SVG_NS, 'path');
+			path.setAttribute('d', arcGen(a) ?? '');
+			path.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
+			const pct = total > 0 ? ((a.data.y / total) * 100).toFixed(1) : '0';
+			const title = document.createElementNS(SVG_NS, 'title');
+			title.textContent = `${a.data.x}: ${fmtNum(a.data.y)} (${pct}%)`;
+			path.appendChild(title);
+			g.appendChild(path);
+
+			if (a.endAngle - a.startAngle > 0.35) {
+				const [lx, ly] = arcGen.centroid(a);
+				const text = document.createElementNS(SVG_NS, 'text');
+				text.setAttribute('x', String(lx));
+				text.setAttribute('y', String(ly));
+				text.setAttribute('text-anchor', 'middle');
+				text.setAttribute('font-size', '10');
+				text.setAttribute('fill', 'var(--popover-foreground)');
+				text.textContent = `${pct}%`;
+				g.appendChild(text);
+			}
+		});
+		svg.appendChild(g);
+
+		const wrap = document.createElement('div');
+		wrap.style.display = 'flex';
+		wrap.style.flexDirection = 'column';
+		wrap.style.height = '100%';
+		wrap.appendChild(svg);
+
+		const legend = document.createElement('div');
+		legend.style.cssText = `display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-size:11px;color:var(--muted-foreground);height:${legendH}px;align-items:center;overflow:hidden`;
+		data.forEach((d, i) => {
+			const item = document.createElement('span');
+			item.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+			const swatch = document.createElement('span');
+			swatch.style.cssText = `width:8px;height:8px;border-radius:2px;background:${CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]}`;
+			item.appendChild(swatch);
+			item.appendChild(document.createTextNode(d.x));
+			legend.appendChild(item);
+		});
+		wrap.appendChild(legend);
+		return wrap;
+	}
+
+	function renderFunnel(data: { x: string; y: number }[], width: number, height: number): Element {
+		const max = Math.max(...data.map((d) => d.y), 1);
+		const first = data[0]?.y || 1;
+		const n = data.length;
+		const gap = 3;
+		const stageH = n > 0 ? (height - gap * (n - 1)) / n : height;
+		const svg = document.createElementNS(SVG_NS, 'svg');
+		svg.setAttribute('width', String(width));
+		svg.setAttribute('height', String(height));
+		const widthFrac = (v: number) => (v / max) * width * 0.84;
+
+		data.forEach((d, i) => {
+			const topW = widthFrac(d.y);
+			const bottomW = i < n - 1 ? widthFrac(data[i + 1].y) : topW;
+			const y0 = i * (stageH + gap);
+			const y1 = y0 + stageH;
+			const x0a = (width - topW) / 2;
+			const x0b = (width + topW) / 2;
+			const x1a = (width - bottomW) / 2;
+			const x1b = (width + bottomW) / 2;
+
+			const path = document.createElementNS(SVG_NS, 'path');
+			path.setAttribute('d', `M${x0a},${y0} L${x0b},${y0} L${x1b},${y1} L${x1a},${y1} Z`);
+			path.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
+			const title = document.createElementNS(SVG_NS, 'title');
+			title.textContent = `${d.x}: ${fmtNum(d.y)} (${((d.y / first) * 100).toFixed(1)}%)`;
+			path.appendChild(title);
+			svg.appendChild(path);
+
+			const text = document.createElementNS(SVG_NS, 'text');
+			text.setAttribute('x', String(width / 2));
+			text.setAttribute('y', String((y0 + y1) / 2));
+			text.setAttribute('text-anchor', 'middle');
+			text.setAttribute('dominant-baseline', 'middle');
+			text.setAttribute('font-size', '11');
+			text.setAttribute('fill', 'var(--popover-foreground)');
+			text.textContent = `${d.x}: ${fmtNum(d.y)}`;
+			svg.appendChild(text);
+		});
+		return svg;
+	}
+
+	interface SankeyNodeIn { name: string }
+	interface SankeyLinkIn { source: string; target: string; value: number }
+
+	function renderSankey(nodesIn: SankeyNodeIn[], linksIn: SankeyLinkIn[], width: number, height: number): Element {
+		const gen = sankey<SankeyNodeIn, Record<string, unknown>>()
+			.nodeId((d) => d.name)
+			.nodeAlign(sankeyLeft)
+			.nodeWidth(14)
+			.nodePadding(10)
+			.extent([
+				[1, 1],
+				[Math.max(2, width - 1), Math.max(2, height - 1)]
+			]);
+		// d3-sankey mutates its inputs in place — copy so Svelte's reactive arrays aren't touched
+		const { nodes, links } = gen({
+			nodes: nodesIn.map((d) => ({ ...d })),
+			links: linksIn.map((d) => ({ ...d }))
+		});
+
+		const svg = document.createElementNS(SVG_NS, 'svg');
+		svg.setAttribute('width', String(width));
+		svg.setAttribute('height', String(height));
+		const linkPath = sankeyLinkHorizontal();
+
+		links.forEach((l, i) => {
+			const path = document.createElementNS(SVG_NS, 'path');
+			path.setAttribute('d', linkPath(l as Parameters<typeof linkPath>[0]) ?? '');
+			path.setAttribute('fill', 'none');
+			path.setAttribute('stroke', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
+			path.setAttribute('stroke-opacity', '0.4');
+			path.setAttribute('stroke-width', String(Math.max(1, l.width ?? 1)));
+			const title = document.createElementNS(SVG_NS, 'title');
+			const sourceName = typeof l.source === 'object' ? (l.source as SankeyNodeIn).name : String(l.source);
+			const targetName = typeof l.target === 'object' ? (l.target as SankeyNodeIn).name : String(l.target);
+			title.textContent = `${sourceName} → ${targetName}: ${fmtNum(l.value)}`;
+			path.appendChild(title);
+			svg.appendChild(path);
+		});
+
+		nodes.forEach((node, i) => {
+			const x0 = node.x0 ?? 0;
+			const x1 = node.x1 ?? 0;
+			const y0 = node.y0 ?? 0;
+			const y1 = node.y1 ?? 0;
+			const rect = document.createElementNS(SVG_NS, 'rect');
+			rect.setAttribute('x', String(x0));
+			rect.setAttribute('y', String(y0));
+			rect.setAttribute('width', String(x1 - x0));
+			rect.setAttribute('height', String(y1 - y0));
+			rect.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
+			svg.appendChild(rect);
+
+			const text = document.createElementNS(SVG_NS, 'text');
+			const onLeft = x0 < width / 2;
+			text.setAttribute('x', String(onLeft ? x1 + 6 : x0 - 6));
+			text.setAttribute('y', String((y0 + y1) / 2));
+			text.setAttribute('text-anchor', onLeft ? 'start' : 'end');
+			text.setAttribute('dominant-baseline', 'middle');
+			text.setAttribute('font-size', '11');
+			text.setAttribute('fill', 'var(--popover-foreground)');
+			text.textContent = node.name;
+			svg.appendChild(text);
+		});
+		return svg;
+	}
+
+	const customRender = $derived.by(() => {
+		if (config.chartType !== 'custom') return null;
+		return (width: number, height: number): Element => {
+			try {
+				// eslint-disable-next-line no-new-func
+				const fn = new Function(
+					'rows', 'columns', 'Plot', 'width', 'height',
+					`'use strict'; ${config.code ?? ''}`
+				);
+				const result = fn(rows, columns, Plot, width, height);
+				return result instanceof Element ? result : Plot.plot(result);
+			} catch (e) {
+				const div = document.createElement('div');
+				div.className = 'text-sm text-destructive p-4';
+				div.textContent = `Plot spec error: ${e instanceof Error ? e.message : String(e)}`;
+				return div;
 			}
 		};
-	}
+	});
 
-	function getSeriesData(key: string): unknown[] {
-		if (xIsMostlyDateLike) {
-			return chartData.map((d) => [new Date(d.x as string | number | Date).getTime(), d[key]]);
-		}
-		if (xIsMostlyNumeric) {
-			return chartData.map((d) => [d.x, d[key]]);
-		}
-		return chartData.map((d) => d[key] ?? null);
-	}
-
-	// ── ECharts option builder ─────────────────────────────────────────────────
-	const echartsOption = $derived.by((): object => {
+	const plotRender = $derived.by((): ((width: number, height: number) => Element) | null => {
 		const t = config.chartType;
+
+		if (t === 'custom') return customRender;
+
+		// ── Histogram ────────────────────────────────────────────────────────
+		if (t === 'histogram') {
+			const bins = histData;
+			const xLabel = config.yColumns[0] ? humanize(config.yColumns[0]) : '';
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					x: { label: xLabel, tickFormat: fmtNum },
+					y: { label: 'Count', tickFormat: fmtNum, grid: true },
+					marks: [
+						Plot.rectY(bins, { x1: 'x0', x2: 'x1', y: 'y', fill: 'var(--chart-1)' }),
+						Plot.ruleY([0])
+					]
+				});
+		}
+
+		// ── Heatmap ──────────────────────────────────────────────────────────
+		if (t === 'heatmap') {
+			const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
+			void mode.current; // re-resolve colors when the theme toggles
+			const colorRange = [resolveCSSColor('--background'), resolveCSSColor('--chart-1')];
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					marginLeft: 90,
+					marginBottom: 60,
+					x: { domain: xLabels },
+					y: { domain: yLabels },
+					color: { type: 'linear', domain: [minVal, maxVal], range: colorRange },
+					marks: [
+						Plot.cell(cells, {
+							x: 'x',
+							y: 'y',
+							fill: 'value',
+							title: (d: { x: string; y: string; value: number | null }) =>
+								`${d.x} / ${d.y}: ${d.value != null ? fmtNum(d.value) : 'N/A'}`
+						})
+					]
+				});
+		}
+
+		// ── Scatter / Bubble ─────────────────────────────────────────────────
+		if (t === 'scatter' || t === 'bubble') {
+			const isBubble = t === 'bubble';
+			const yCol = config.yColumns[0];
+			const colorSplit = enableColorSplitScatter && colorSplitScatterGroups.length > 0;
+			const groups = colorSplitScatterGroups;
+			const colorCol = config.colorColumn;
+
+			const data = colorSplit
+				? rows
+						.filter(
+							(r) =>
+								colorCol != null && r[colorCol] != null && groups.includes(String(r[colorCol])) &&
+								r[config.xColumn] != null && r[yCol] != null
+						)
+						.map((r) => ({
+							x: xValue(r[config.xColumn]),
+							y: coerceNumber(r[yCol]),
+							group: String(r[colorCol as string]),
+							size: isBubble && config.sizeColumn ? coerceNumber(r[config.sizeColumn]) : null
+						}))
+				: chartData
+						.filter((d) => d[yCol] != null)
+						.map((d) => ({ x: xValue(d.x), y: d[yCol] as number | null, group: '', size: (d._size as number | null) ?? null }));
+
+			const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
+			const xDomain = xCategorical ? categoricalDomain(data.map((d) => d.x)) : undefined;
+
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					color: colorSplit ? { type: 'ordinal', range: CHART_COLOR_RANGE } : undefined,
+					r: isBubble ? { range: [4, 30] } : undefined,
+					x: xDomain ? { domain: xDomain } : {},
+					y: { label: humanize(yCol), tickFormat: fmtNum, grid: true },
+					marks: [
+						Plot.dot(data, {
+							x: 'x',
+							y: 'y',
+							r: isBubble ? 'size' : undefined,
+							fill: colorSplit ? 'group' : 'var(--chart-1)',
+							title: (d: { group: string; x: unknown; y: number | null }) =>
+								`${colorSplit ? humanize(d.group) + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
+						})
+					]
+				});
+		}
+
+		// ── Bar / Bar-horizontal ─────────────────────────────────────────────
+		if (t === 'bar' || t === 'bar-horizontal') {
+			const isHoriz = t === 'bar-horizontal';
+			const data = sortedBarData;
+			const seriesDef = barSeriesToRender;
+			const layout = barSeriesLayout;
+			const valueLabel = seriesDef.length === 1 ? seriesDef[0].label : '';
+			const catDomain = categoricalDomain(data.map((d) => (d as Record<string, unknown>).x));
+
+			let marks: Plot.Markish[];
+			const catScale: Record<string, unknown> = {};
+			if (seriesDef.length <= 1) {
+				const key = seriesDef[0]?.key ?? 'x';
+				const flat = data.map((d) => ({
+					x: String((d as Record<string, unknown>).x ?? ''),
+					value: toNumber((d as Record<string, unknown>)[key])
+				}));
+				marks = [
+					isHoriz
+						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)' })
+						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)' })
+				];
+				catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain };
+			} else {
+				const long = meltSeries(data as Record<string, unknown>[], seriesDef);
+				if (layout === 'stack') {
+					marks = [
+						isHoriz
+							? Plot.barX(long, Plot.stackX({ y: 'x', x: 'value', fill: 'series' }))
+							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series' }))
+					];
+					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain };
+				} else {
+					marks = [
+						isHoriz
+							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series' })
+							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series' })
+					];
+					catScale[isHoriz ? 'fy' : 'fx'] = { domain: catDomain };
+				}
+			}
+
+			const valueScale = { label: valueLabel, tickFormat: fmtNum, grid: true };
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					color: { range: CHART_COLOR_RANGE },
+					marginBottom: isHoriz ? 32 : 56,
+					marginLeft: isHoriz ? 90 : 48,
+					...(isHoriz ? { x: valueScale } : { y: valueScale }),
+					...catScale,
+					marks
+				});
+		}
 
 		// ── Line / Area ──────────────────────────────────────────────────────
 		if (t === 'line' || t === 'area') {
@@ -523,374 +883,185 @@
 
 			// ── Grouped by colorColumn ─────────────────────────────────────
 			if (enableColorSplitLines && colorSplitLineGroups.length > 0) {
-				const xAxis = (xIsMostlyDateLike || xIsMostlyNumeric)
-					? buildXAxis()
-					: {
-						type: 'category',
-						data: colorSplitLineXCategories,
-						axisLabel: {
-							rotate: (colorSplitLineXCategories.length > 8 || Math.max(0, ...colorSplitLineXCategories.map((c) => c.length)) > 12) ? -30 : 0,
-							interval: 'auto',
-							formatter: (v: string) => (v.length > 14 ? v.slice(0, 13) + '…' : v)
-						}
-					};
-				const series = colorSplitLineGroups.map((groupKey) => ({
-					type: 'line',
-					name: humanize(groupKey),
-					data: getColorGroupLineData(groupKey),
-					smooth: true,
-					symbol: 'circle',
-					symbolSize: 3,
-					emphasis: { focus: 'series' },
-					...(isArea ? { areaStyle: { opacity: 0.2 } } : {}),
-					...(isArea && areaSeriesLayout === 'stack' ? { stack: 'total' } : {})
-				}));
-				return {
-					tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-					legend: hasSeries ? { bottom: 2 } : { show: false },
-					xAxis,
-					yAxis: [{ type: 'value', axisLabel: { formatter: fmtNum } }],
-					series,
-					...(rows.length > 80 ? { dataZoom: [{ type: 'inside' }] } : {})
-				};
+				const groups = colorSplitLineGroups;
+				const colorCol = config.colorColumn as string;
+				const yCol = config.yColumns[0];
+				const data = rows
+					.filter(
+						(r) =>
+							r[colorCol] != null && groups.includes(String(r[colorCol])) &&
+							r[config.xColumn] != null && r[yCol] != null
+					)
+					.map((r) => ({ x: xValue(r[config.xColumn]), y: coerceNumber(r[yCol]), group: String(r[colorCol]) }));
+				const stacked = isArea && areaSeriesLayout === 'stack';
+				const lineMark = stacked
+					? Plot.lineY(data, Plot.stackY({ x: 'x', y: 'y', stroke: 'group' }))
+					: Plot.lineY(data, { x: 'x', y: 'y', stroke: 'group' });
+				const marks: Plot.Markish[] = isArea
+					? [
+							stacked
+								? Plot.areaY(data, Plot.stackY({ x: 'x', y: 'y', fill: 'group', fillOpacity: 0.2 }))
+								: Plot.areaY(data, { x: 'x', y: 'y', fill: 'group', fillOpacity: 0.2 }),
+							lineMark
+						]
+					: [lineMark];
+				const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
+				const xDomain = xCategorical ? categoricalDomain(data.map((d) => d.x)) : undefined;
+				return (width, height) =>
+					Plot.plot({
+						width,
+						height,
+						style: PLOT_STYLE,
+						color: { type: 'ordinal', range: CHART_COLOR_RANGE },
+						x: xDomain ? { domain: xDomain } : {},
+						y: { tickFormat: fmtNum, grid: true },
+						marks
+					});
 			}
 
-			// ── Multiple Y columns (standard) ──────────────────────────────
-			const yAxes: object[] = [{ type: 'value', axisLabel: { formatter: fmtNum } }];
-			if (hasSecondaryAxis) {
-				yAxes.push({
-					type: 'value',
-					axisLabel: { formatter: fmtNum },
-					splitLine: { show: false }
-				});
-			}
-			const primarySeries = seriesList.map((s) => ({
-				type: 'line',
-				name: s.label,
-				data: getSeriesData(s.key),
-				smooth: true,
-				symbol: 'circle',
-				symbolSize: 3,
-				emphasis: { focus: 'series' },
-				...(isArea ? { areaStyle: { opacity: 0.2 } } : {}),
-				...(isArea && areaSeriesLayout === 'stack' ? { stack: 'total' } : {})
-			}));
-			const secondSeries = secondarySeriesList.map((s) => ({
-				type: 'line',
-				name: s.label,
-				data: getSeriesData(s.key),
-				yAxisIndex: 1,
-				smooth: true,
-				symbol: 'circle',
-				symbolSize: 3,
-				emphasis: { focus: 'series' }
-			}));
-			return {
-				tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-				legend: hasSeries ? { bottom: 2 } : { show: false },
-				xAxis: buildXAxis(),
-				yAxis: yAxes,
-				series: [...primarySeries, ...secondSeries],
-				...(chartData.length > 80 ? { dataZoom: [{ type: 'inside' }] } : {})
-			};
-		}
+			// ── Standard multi-series (+ secondary axis rescaled onto shared scale) ─
+			const primary = seriesList;
+			const secondary = secondarySeriesList;
+			const primaryData = chartData.map((d) => ({ ...d, x: xValue(d.x) }));
 
-		// ── Bar / Bar-horizontal ─────────────────────────────────────────────
-		if (t === 'bar' || t === 'bar-horizontal') {
-			const isHoriz = t === 'bar-horizontal';
-			const catData = sortedBarData.map((d) => String(d.x ?? ''));
-			const catAxis = {
-				type: 'category',
-				data: catData,
-				axisLabel: {
-					rotate: !isHoriz && shouldRotateXLabels ? -30 : 0,
-					interval: 'auto',
-					formatter: (v: string) => (v.length > 14 ? v.slice(0, 13) + '…' : v)
+			const rescaleMap: Record<string, (v: number) => number> = {};
+			if (secondary.length > 0) {
+				const primVals = primary.flatMap((s) =>
+					primaryData.map((d) => toNumber((d as Record<string, unknown>)[s.key])).filter((v): v is number => v != null)
+				);
+				const primaryMin = primVals.length ? Math.min(...primVals) : 0;
+				const primaryMax = primVals.length ? Math.max(...primVals) : 1;
+				for (const s of secondary) {
+					const vals = primaryData
+						.map((d) => toNumber((d as Record<string, unknown>)[s.key]))
+						.filter((v): v is number => v != null);
+					const secMin = vals.length ? Math.min(...vals) : 0;
+					const secMax = vals.length ? Math.max(...vals) : 1;
+					const range = secMax - secMin || 1;
+					const span = primaryMax - primaryMin || 1;
+					rescaleMap[s.key] = (v: number) => primaryMin + ((v - secMin) / range) * span;
 				}
-			};
-			const valAxis = { type: 'value', axisLabel: { formatter: fmtNum } };
-			const series = barSeriesToRender.map((s) => ({
-				type: 'bar',
-				name: s.label,
-				data: sortedBarData.map((d) => ((d as Record<string, unknown>)[s.key] as number) ?? null),
-				barMaxWidth: isHoriz ? 24 : 40,
-				stack: barSeriesLayout === 'stack' ? 'total' : undefined,
-				itemStyle: { borderRadius: isHoriz ? [0, 3, 3, 0] : [3, 3, 0, 0] },
-				emphasis: { focus: 'series' }
-			}));
-			return {
-				tooltip: { trigger: 'axis' },
-				legend: hasSeries ? { bottom: 2 } : { show: false },
-				xAxis: isHoriz ? valAxis : catAxis,
-				yAxis: isHoriz ? { ...catAxis, inverse: false } : valAxis,
-				series,
-				...(sortedBarData.length > 30
-					? { dataZoom: [{ type: 'inside', orient: isHoriz ? 'vertical' : 'horizontal' }] }
-					: {})
-			};
-		}
-
-		// ── Scatter / Bubble ─────────────────────────────────────────────────
-		if (t === 'scatter' || t === 'bubble') {
-			const isBubble = t === 'bubble';
-			const yCol = config.yColumns[0];
-			const tooltipFmt = (p: unknown) => {
-				const params = p as { seriesName?: string; data: unknown[] };
-				const label = params.seriesName ? `${params.seriesName}: ` : '';
-				return `${label}${fmtNum(params.data[0])}, ${fmtNum(params.data[1])}`;
-			};
-			const symbolSizeFn = isBubble && config.sizeColumn
-				? (d: unknown[]) => { const s = Number(d[2]) || 1; return Math.max(4, Math.min(60, Math.sqrt(Math.abs(s)) * 4)); }
-				: undefined;
-
-			// ── Grouped by colorColumn ─────────────────────────────────────
-			if (enableColorSplitScatter && colorSplitScatterGroups.length > 0) {
-				const series = colorSplitScatterGroups.map((groupKey) => ({
-					type: 'scatter',
-					name: humanize(groupKey),
-					data: getScatterGroupData(groupKey),
-					emphasis: { focus: 'series' },
-					...(symbolSizeFn ? { symbolSize: symbolSizeFn } : { symbolSize: 6 })
-				}));
-				return {
-					tooltip: { trigger: 'item', formatter: tooltipFmt },
-					legend: hasSeries ? { bottom: 2 } : { show: false },
-					xAxis: {
-						type: xIsMostlyDateLike ? ('time' as const) : xIsMostlyNumeric ? ('value' as const) : ('category' as const),
-						axisLabel: { formatter: fmtNum }
-					},
-					yAxis: { type: 'value', name: humanize(yCol), axisLabel: { formatter: fmtNum } },
-					series
-				};
 			}
 
-			// ── Single series (no colorColumn) ─────────────────────────────
-			const data = chartData.map((d) => {
-				const pt: unknown[] = [d.x, d[yCol]];
-				if (isBubble && config.sizeColumn) pt.push(d._size ?? 1);
-				return pt;
-			});
-			return {
-				tooltip: { trigger: 'item', formatter: tooltipFmt },
-				xAxis: {
-					type: xIsMostlyDateLike ? ('time' as const) : xIsMostlyNumeric ? ('value' as const) : ('category' as const),
-					axisLabel: { formatter: fmtNum }
-				},
-				yAxis: { type: 'value', name: humanize(yCol), axisLabel: { formatter: fmtNum } },
-				series: [
-					{
-						type: 'scatter',
-						large: true,
-						data,
-						...(symbolSizeFn ? { symbolSize: symbolSizeFn } : { symbolSize: 6 })
-					}
-				]
-			};
+			const marks: Plot.Markish[] = [];
+			for (const s of primary) {
+				if (isArea) marks.push(Plot.areaY(primaryData, { x: 'x', y: s.key, fill: s.color, fillOpacity: 0.2 }));
+				marks.push(
+					Plot.lineY(primaryData, {
+						x: 'x',
+						y: s.key,
+						stroke: s.color,
+						title: (d: Record<string, unknown>) => `${s.label}: ${fmtNum(d[s.key])}`
+					})
+				);
+			}
+			for (const s of secondary) {
+				const rescale = rescaleMap[s.key];
+				const secondaryData = primaryData.map((d) => {
+					const raw = toNumber((d as Record<string, unknown>)[s.key]);
+					return { x: d.x, _orig: raw, _scaled: raw != null ? rescale(raw) : null };
+				});
+				marks.push(
+					Plot.lineY(secondaryData, {
+						x: 'x',
+						y: '_scaled',
+						stroke: s.color,
+						strokeDasharray: '4,3',
+						title: (d: { _orig: number | null }) => `${s.label}: ${d._orig != null ? fmtNum(d._orig) : '—'}`
+					})
+				);
+			}
+
+			const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
+			const xDomain = xCategorical ? categoricalDomain(primaryData.map((d) => d.x)) : undefined;
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					x: xDomain ? { domain: xDomain } : {},
+					y: { tickFormat: fmtNum, grid: true },
+					marks
+				});
 		}
 
-		// ── Pie ──────────────────────────────────────────────────────────────
-		if (t === 'pie') {
-			return {
-				tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-				legend: { type: 'scroll', bottom: 0 },
-				series: [
-					{
-						type: 'pie',
-						radius: '65%',
-						center: ['50%', '46%'],
-						data: pieData.map((d) => ({ name: d.x, value: d.y })),
-						label: { formatter: '{b}: {d}%', fontSize: 11 },
-						emphasis: {
-							itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' },
-							label: { show: true, fontWeight: 'bold' }
-						}
-					}
-				]
-			};
-		}
-
-		// ── Histogram ────────────────────────────────────────────────────────
-		if (t === 'histogram') {
-			return {
-				tooltip: { trigger: 'axis' },
-				xAxis: {
-					type: 'category',
-					data: histData.map((d) => fmtNum(d.x0)),
-					axisLabel: { rotate: -30, interval: 'auto' },
-					name: config.yColumns[0] ? humanize(config.yColumns[0]) : '',
-					nameLocation: 'middle',
-					nameGap: 28
-				},
-				yAxis: { type: 'value', name: 'Count', axisLabel: { formatter: fmtNum } },
-				series: [
-					{
-						type: 'bar',
-						data: histData.map((d) => d.y),
-						barCategoryGap: '2%',
-						itemStyle: { borderRadius: [2, 2, 0, 0] }
-					}
-				]
-			};
-		}
-
-		// ── Heatmap ──────────────────────────────────────────────────────────
-		if (t === 'heatmap') {
-			const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
-			return {
-				tooltip: {
-					formatter: (p: unknown) => {
-						const params = p as { data: [string, string, number | null] };
-						const val = params.data[2];
-						return `${params.data[0]} / ${params.data[1]}: ${val != null ? fmtNum(val) : 'N/A'}`;
-					}
-				},
-				grid: { top: 8, bottom: 68, left: 80, right: 24, containLabel: false },
-				xAxis: {
-					type: 'category',
-					data: xLabels,
-					splitArea: { show: true },
-					axisLabel: { rotate: -30, fontSize: 10, interval: 'auto' }
-				},
-				yAxis: {
-					type: 'category',
-					data: yLabels,
-					splitArea: { show: true },
-					axisLabel: { fontSize: 10 }
-				},
-				visualMap: {
-					min: minVal,
-					max: maxVal,
-					calculable: true,
-					orient: 'horizontal',
-					left: 'center',
-					bottom: 4,
-					itemHeight: 80,
-					textStyle: { fontSize: 10 }
-				},
-				series: [
-					{
-						type: 'heatmap',
-						data: cells.map((c) => [c.x, c.y, c.value]),
-						label: { show: cells.length < 200, fontSize: 9 },
-						emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.25)' } }
-					}
-				]
-			};
+		// ── Box-plot (3-mark composite: Plot.boxY can't accept pre-aggregated quantiles) ─
+		if (t === 'box-plot') {
+			const data = boxPlotData;
+			const xDomain = categoricalDomain(data.map((d) => d.name));
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					x: { domain: xDomain },
+					y: { tickFormat: fmtNum, grid: true },
+					marginBottom: data.length > 6 ? 56 : 36,
+					marks: [
+						Plot.ruleX(data, { x: 'name', y1: 'min', y2: 'max', stroke: 'var(--muted-foreground)' }),
+						Plot.barY(data, {
+							x: 'name',
+							y1: 'q1',
+							y2: 'q3',
+							fill: 'var(--chart-1)',
+							fillOpacity: 0.6,
+							title: (d: { name: string; min: number; q1: number; median: number; q3: number; max: number }) =>
+								`${d.name}\nMax: ${fmtNum(d.max)}\nQ3: ${fmtNum(d.q3)}\nMedian: ${fmtNum(d.median)}\nQ1: ${fmtNum(d.q1)}\nMin: ${fmtNum(d.min)}`
+						}),
+						Plot.tickY(data, { x: 'name', y: 'median', stroke: 'var(--chart-1)', strokeWidth: 2 })
+					]
+				});
 		}
 
 		// ── Calendar heatmap ─────────────────────────────────────────────────
 		if (t === 'calendar-heatmap') {
 			const { pairs, years, minVal, maxVal } = calendarData;
-			if (years.length === 0) return {};
-			return {
-				tooltip: {
-					formatter: (p: unknown) => {
-						const params = p as { data: [string, number] };
-						return `${params.data[0]}: ${fmtNum(params.data[1])}`;
-					}
-				},
-				visualMap: {
-					min: minVal,
-					max: maxVal,
-					show: true,
-					orient: 'horizontal',
-					left: 'center',
-					bottom: 4,
-					itemHeight: 80
-				},
-				calendar: years.map((year, i) => ({
-					range: year,
-					top: 24 + i * 120,
-					left: 56,
-					right: 12,
-					cellSize: ['auto', 13],
-					yearLabel: { show: true, fontSize: 11 },
-					monthLabel: { fontSize: 10 },
-					dayLabel: { fontSize: 9, nameMap: ['S', 'M', 'T', 'W', 'T', 'F', 'S'] }
-				})),
-				series: years.map((year, i) => ({
-					type: 'heatmap',
-					coordinateSystem: 'calendar',
-					calendarIndex: i,
-					data: pairs.filter((p) => p[0].startsWith(year))
-				}))
-			};
+			if (years.length === 0) return null;
+			const cells = calendarCells(pairs);
+			void mode.current; // re-resolve colors when the theme toggles
+			const colorRange = [resolveCSSColor('--background'), resolveCSSColor('--chart-1')];
+			return (width, height) =>
+				Plot.plot({
+					width,
+					height,
+					style: PLOT_STYLE,
+					marginLeft: 28,
+					fy: { domain: years },
+					x: { axis: null },
+					y: { domain: [0, 1, 2, 3, 4, 5, 6], tickFormat: (d: number) => DAY_LABELS[d] },
+					color: { type: 'linear', domain: [minVal, maxVal], range: colorRange },
+					marks: [
+						Plot.cell(cells, {
+							x: 'weekOfYear',
+							y: 'day',
+							fy: 'year',
+							fill: 'value',
+							title: (d: { dateStr: string; value: number }) => `${d.dateStr}: ${fmtNum(d.value)}`
+						})
+					]
+				});
+		}
+
+		// ── Pie ──────────────────────────────────────────────────────────────
+		if (t === 'pie') {
+			const data = pieData;
+			return (width, height) => renderPie(data, width, height);
 		}
 
 		// ── Funnel ───────────────────────────────────────────────────────────
 		if (t === 'funnel') {
-			return {
-				tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-				legend: { type: 'scroll', bottom: 0, orient: 'horizontal' },
-				series: [
-					{
-						type: 'funnel',
-						left: '8%',
-						width: '84%',
-						top: 8,
-						bottom: 36,
-						data: funnelData.map((d) => ({ name: d.x, value: d.y })),
-						gap: 3,
-						label: { position: 'inside', fontSize: 11, formatter: '{b}: {c}' },
-						labelLine: { show: false },
-						emphasis: { focus: 'self', label: { fontSize: 13, fontWeight: 'bold' } }
-					}
-				]
-			};
-		}
-
-		// ── Box-plot ─────────────────────────────────────────────────────────
-		if (t === 'box-plot') {
-			return {
-				tooltip: {
-					trigger: 'item',
-					formatter: (p: unknown) => {
-						const params = p as { name: string; data: number[] };
-						return [
-							params.name,
-							`Max: ${fmtNum(params.data[4])}`,
-							`Q3: ${fmtNum(params.data[3])}`,
-							`Median: ${fmtNum(params.data[2])}`,
-							`Q1: ${fmtNum(params.data[1])}`,
-							`Min: ${fmtNum(params.data[0])}`
-						].join('<br/>');
-					}
-				},
-				xAxis: {
-					type: 'category',
-					data: boxPlotData.map((d) => d.name),
-					axisLabel: { rotate: boxPlotData.length > 6 ? -30 : 0, interval: 'auto' }
-				},
-				yAxis: { type: 'value', axisLabel: { formatter: fmtNum } },
-				series: [
-					{
-						type: 'boxplot',
-						data: boxPlotData.map((d) => [d.min, d.q1, d.median, d.q3, d.max]),
-						itemStyle: { borderWidth: 1.5 }
-					}
-				]
-			};
+			const data = funnelData;
+			return (width, height) => renderFunnel(data, width, height);
 		}
 
 		// ── Sankey ───────────────────────────────────────────────────────────
 		if (t === 'sankey') {
-			return {
-				tooltip: { trigger: 'item', triggerOn: 'mousemove' },
-				series: [
-					{
-						type: 'sankey',
-						emphasis: { focus: 'adjacency' },
-						nodeAlign: 'left',
-						data: sankeyNodes,
-						links: sankeyData.map((d) => ({ source: d.source, target: d.target, value: d.value })),
-						label: { fontSize: 11 },
-						lineStyle: { color: 'gradient', curveness: 0.5 }
-					}
-				]
-			};
+			const nodes = sankeyNodes;
+			const links = sankeyData;
+			return (width, height) => renderSankey(nodes, links, width, height);
 		}
 
-		return {};
+		return null;
 	});
 </script>
 
@@ -1020,8 +1191,8 @@
 				Configure columns to render this chart.
 			{/if}
 		</div>
-	{:else}
-		<EChart option={echartsOption} />
+	{:else if plotRender}
+		<PlotChart render={plotRender} />
 	{/if}
 	</div>
 </div>

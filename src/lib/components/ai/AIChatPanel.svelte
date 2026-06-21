@@ -4,7 +4,8 @@
 	import AIChatInput from './AIChatInput.svelte';
 	import WorkspaceStandards from './WorkspaceStandards.svelte';
 	import SprintBoard from './SprintBoard.svelte';
-	import { setAIChatOpen, getUndoAvailable, clearMessages, getMessages, getCheckpointCount, getConfirmationRequest, resolveConfirmation, getPendingPlanProposal, resolvePlanApproval, setUndoAvailable, setPendingSnapshot, getSprintTasks, isSprintPlanPendingApproval, resolveSprintPlanApproval } from '$lib/stores/ai-chat.svelte.js';
+	import { SPRINT_TASK_STYLE } from './sprint-task-style.js';
+	import { setAIChatOpen, getUndoAvailable, clearMessages, getMessages, getCheckpointCount, getConfirmationRequest, resolveConfirmation, getPendingPlanProposal, resolvePlanApproval, setUndoAvailable, setPendingSnapshot, getSprintTasks, setSprintTasks, isSprintPlanPendingApproval, resolveSprintPlanApproval } from '$lib/stores/ai-chat.svelte.js';
 	import { undoAIChanges, undoLastAIStep, resetAISession } from '$lib/services/ai-chat-client.js';
 
 	interface Props {
@@ -120,6 +121,34 @@
 	<!-- Sprint plan refinement gate — pause before execution so user can iterate on the plan -->
 	{#if sprintPlanPending}
 		<div class="border-b border-primary/30 bg-primary/5 px-3 py-2" data-testid="ai-sprint-plan-gate">
+			<div class="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+				Plan · {sprintTasks.length} task{sprintTasks.length === 1 ? '' : 's'}
+			</div>
+			<ul class="mb-2.5 space-y-1.5">
+				{#each sprintTasks as task (task.id)}
+					{@const style = SPRINT_TASK_STYLE[task.type]}
+					{@const TypeIcon = style.icon}
+					<li class="flex items-start gap-2 rounded border border-border/40 bg-background/40 px-2 py-1.5" data-testid="ai-sprint-plan-task">
+						<span class="mt-0.5 shrink-0" style="color: var({style.colorVar})" title={style.label}>
+							<TypeIcon size={12} />
+						</span>
+						<div class="min-w-0 flex-1">
+							<span class="block text-xs font-medium text-foreground">{task.title}</span>
+							{#if task.successCriteria}
+								<span class="block text-[10px] text-muted-foreground/70">{task.successCriteria}</span>
+							{/if}
+						</div>
+						<button
+							class="mt-0.5 shrink-0 rounded text-muted-foreground/50 transition-colors hover:text-destructive"
+							onclick={() => setSprintTasks(sprintTasks.filter((t) => t.id !== task.id))}
+							title="Remove this task from the plan"
+							aria-label="Remove task"
+						>
+							<X size={11} />
+						</button>
+					</li>
+				{/each}
+			</ul>
 			<textarea
 				bind:value={sprintFeedback}
 				placeholder="Request changes to the plan… or click Start Building"
@@ -135,7 +164,8 @@
 					Refine
 				</button>
 				<button
-					class="text-xs font-medium text-primary underline-offset-2 hover:underline"
+					class="text-xs font-medium text-primary underline-offset-2 hover:underline disabled:opacity-40"
+					disabled={sprintTasks.length === 0}
 					onclick={() => resolveSprintPlanApproval(null)}
 				>
 					Start Building

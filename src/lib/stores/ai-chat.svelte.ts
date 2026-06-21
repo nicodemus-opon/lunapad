@@ -1,4 +1,4 @@
-import type { Cell } from './notebook.svelte.js';
+import type { CellSnapshot } from './notebook.svelte.js';
 import type { WorkspaceNamingRule, SprintTask } from '$lib/types/ai-chat.js';
 import type { PlanAssertion } from '$lib/types/ai-subagents.js';
 
@@ -40,8 +40,7 @@ export interface ChatMessage {
 
 export interface NotebookSnapshot {
 	notebookId: string;
-	/** Structural fields only — no result/status data. */
-	cells: Pick<Cell, 'id' | 'outputName' | 'code' | 'markdown' | 'language' | 'cellType' | 'display' | 'guiStages' | 'editMode' | 'connectionId'>[];
+	cells: CellSnapshot[];
 }
 
 const PANEL_WIDTH_KEY = 'lunapad.aichat.width';
@@ -76,6 +75,9 @@ let _isOpen = $state(false);
 let _panelWidth = $state(DEFAULT_WIDTH);
 let _messages = $state<ChatMessage[]>([]);
 let _isGenerating = $state(false);
+// Human-readable label for the tool currently being called — lets long-running views
+// (e.g. the Sprint board) show what's happening instead of looking frozen.
+let _currentActivityLabel = $state<string | null>(null);
 let _contextCellIds = $state<string[]>([]);
 let _pendingSnapshot = $state<NotebookSnapshot | null>(null);
 let _workspaceStandards = $state<WorkspaceStandards>({ namingRules: [], customInstructions: '' });
@@ -163,12 +165,15 @@ export function setMessageError(id: string): void {
 	_messages = _messages.map((m) => m.id === id ? { ...m, hasError: true } : m);
 }
 
-export function clearMessages(): void { _messages = []; _sprintTasks = []; }
+export function clearMessages(): void { _messages = []; _sprintTasks = []; _currentActivityLabel = null; }
 
 // ── Generation state ──────────────────────────────────────────────────────────
 
 export function getIsGenerating(): boolean { return _isGenerating; }
 export function setIsGenerating(v: boolean): void { _isGenerating = v; }
+
+export function getCurrentActivityLabel(): string | null { return _currentActivityLabel; }
+export function setCurrentActivityLabel(label: string | null): void { _currentActivityLabel = label; }
 
 export function getActiveController(): AbortController | null { return _activeController; }
 export function setActiveController(c: AbortController | null): void { _activeController = c; }
@@ -177,6 +182,7 @@ export function abortGeneration(): void {
 	_activeController?.abort();
 	_activeController = null;
 	_isGenerating = false;
+	_currentActivityLabel = null;
 	// Clear all ghost markers on abort
 	_ghostCellIds = new Set();
 	// Mark any streaming message as stopped so a halted partial answer is clearly

@@ -119,6 +119,31 @@ describe('interpolateMarkdownRefs', () => {
 		const out = interpolateMarkdownRefs('Share: {{(subset.val[0] * 100 / all.rowCount) | round(1)}}', [a, b]);
 		expect(strip(out)).toBe('Share: 625.0');
 	});
+
+	it('evaluates a percent() formatter call over a share-of-total ratio of refs', () => {
+		const a = makeCell('by_level', [{ opportunity_count: 50 }]);
+		const b = makeCell('overall', [{ total_opportunities: 200 }]);
+		// percent() expects an already-0-100-scaled value, so a share-of-total ratio
+		// must be multiplied by 100 first — same convention as the Markdoc renderer.
+		const out = interpolateMarkdownRefs(
+			'{{percent(by_level[0].opportunity_count * 100 / overall.total_opportunities, 1)}}',
+			[a, b]
+		);
+		expect(strip(out)).toBe('25.0%');
+	});
+
+	it('evaluates currency(), compact(), and sign() formatter calls', () => {
+		const cells = [makeCell('orders', [{ revenue: 42000, big: 1500000, delta: -12 }])];
+		expect(strip(interpolateMarkdownRefs('{{currency(orders.revenue)}}', cells))).toBe('$42,000');
+		expect(strip(interpolateMarkdownRefs('{{compact(orders.big)}}', cells))).toBe('1.5M');
+		expect(strip(interpolateMarkdownRefs('{{sign(orders.delta)}}', cells))).toBe('-12');
+	});
+
+	it('evaluates formatDate() over a string-valued ref — any Markdoc function works here, not just numeric ones', () => {
+		const cells = [makeCell('orders', [{ ts: '2026-03-05T00:00:00Z' }])];
+		const out = interpolateMarkdownRefs('{{formatDate(orders.ts, "MMM YYYY")}}', cells);
+		expect(strip(out)).toBe('Mar 2026');
+	});
 });
 
 describe('extractMarkdownRefs', () => {

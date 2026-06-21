@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { CheckCircle, Circle, XCircle, Loader } from '@lucide/svelte';
 	import type { SprintTask } from '$lib/types/ai-chat.js';
+	import { SPRINT_TASK_STYLE } from './sprint-task-style.js';
+	import { getCurrentActivityLabel } from '$lib/stores/ai-chat.svelte.js';
 
 	interface Props {
 		tasks: SprintTask[];
@@ -9,6 +11,7 @@
 	let { tasks }: Props = $props();
 
 	let collapsed = $state(false);
+	let activityLabel = $derived(getCurrentActivityLabel());
 
 	let allDone = $derived(tasks.length > 0 && tasks.every((t) => t.status === 'done' || t.status === 'skipped'));
 </script>
@@ -29,7 +32,21 @@
 	{#if !collapsed}
 		<ul class="pb-2">
 			{#each tasks as task (task.id)}
-				<li class="flex items-start gap-2 px-3 py-0.5">
+				{@const style = SPRINT_TASK_STYLE[task.type]}
+				{@const TypeIcon = style.icon}
+				<li
+					class="flex items-start gap-2 border-l-2 px-2.5 py-0.5"
+					style="border-color: {task.status === 'pending' ? 'transparent' : `var(${style.colorVar})`}"
+				>
+					<!-- Type icon -->
+					<span
+						class="mt-0.5 shrink-0"
+						style="color: var({style.colorVar})"
+						title={style.label}
+					>
+						<TypeIcon size={11} />
+					</span>
+
 					<!-- Status icon -->
 					<span class="mt-0.5 shrink-0">
 						{#if task.status === 'done'}
@@ -54,8 +71,10 @@
 						>
 							{task.title}
 						</span>
-						{#if task.result && task.status === 'done'}
-							<span class="block truncate text-[10px] text-muted-foreground/50">{task.result}</span>
+						{#if task.status === 'active' && activityLabel}
+							<span class="block truncate text-[10px] text-primary/70">{activityLabel}</span>
+						{:else if task.result && (task.status === 'done' || task.status === 'failed')}
+							<span class="block truncate text-[10px] {task.status === 'failed' ? 'text-destructive/70' : 'text-muted-foreground/50'}">{task.result}</span>
 						{/if}
 					</div>
 				</li>

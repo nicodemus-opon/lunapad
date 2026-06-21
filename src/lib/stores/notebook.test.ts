@@ -43,7 +43,12 @@ import {
 	upsertConnection,
 	updateGuiStages,
 	updateCellMarkdown,
-	updateCellCode
+	updateCellCode,
+	getAllCellsAcrossNotebooks,
+	getNotebookFilterValue,
+	setNotebookFilterValue,
+	getNotebookAutoRefresh,
+	setNotebookAutoRefresh
 } from '$lib/stores/notebook.svelte';
 
 describe('notebook store', () => {
@@ -76,6 +81,42 @@ describe('notebook store', () => {
 
 		deleteNotebook(second.id);
 		expect(getOpenResultTabs().some((t) => t.notebookId === second.id)).toBe(false);
+	});
+
+	it('getAllCellsAcrossNotebooks returns cells from every notebook', () => {
+		const notebookA = getNotebooks()[0];
+		addNotebook();
+		const notebookB = getNotebooks()[1];
+		updateCellCode(notebookB.cells[0].id, 'select 1 as x');
+
+		const all = getAllCellsAcrossNotebooks();
+		expect(all.some((c) => c.id === notebookA.cells[0].id)).toBe(true);
+		expect(all.some((c) => c.id === notebookB.cells[0].id)).toBe(true);
+	});
+
+	it('stores and retrieves a notebook-scoped filter value', () => {
+		const nb = getNotebooks()[0];
+		expect(getNotebookFilterValue(nb.id, 'region')).toBe('');
+		setNotebookFilterValue(nb.id, 'region', 'EU');
+		expect(getNotebookFilterValue(nb.id, 'region')).toBe('EU');
+	});
+
+	it('filter values are scoped per notebook', () => {
+		const notebookA = getNotebooks()[0];
+		addNotebook();
+		const notebookB = getNotebooks()[1];
+		setNotebookFilterValue(notebookA.id, 'region', 'EU');
+		expect(getNotebookFilterValue(notebookB.id, 'region')).toBe('');
+	});
+
+	it('stores and retrieves the auto-refresh interval', () => {
+		const nb = getNotebooks()[0];
+		expect(getNotebookAutoRefresh(nb.id)).toBe(0);
+		setNotebookAutoRefresh(nb.id, 30000);
+		expect(getNotebookAutoRefresh(nb.id)).toBe(30000);
+		// Clear the timer so it doesn't keep running past this test.
+		setNotebookAutoRefresh(nb.id, 0);
+		expect(getNotebookAutoRefresh(nb.id)).toBe(0);
 	});
 
 	it('blocks deleting a non-empty folder', () => {

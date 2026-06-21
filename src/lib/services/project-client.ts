@@ -192,6 +192,39 @@ export async function updateProjectSchema(
 	}
 }
 
+export interface PromotePlanItem {
+	outputName: string;
+	code: string;
+	language: 'prql' | 'sql';
+	connectionId: string | null;
+	targetRelPath: string;
+	materialized: 'table' | 'view' | 'incremental' | 'ephemeral';
+	schema: string | null;
+	tags: string[];
+}
+
+export interface PromoteResult {
+	promoted: Array<{ outputName: string; relPath: string }>;
+	errors: string[];
+}
+
+/** Explode cells out of a `.luna` notebook into real dbt model files. `plan`
+ *  must be in topological order (ancestors before dependents). */
+export async function promoteCells(
+	folder: string,
+	notebookFile: string,
+	plan: PromotePlanItem[]
+): Promise<PromoteResult> {
+	const res = await fetch('/api/project/promote', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, notebookFile, plan })
+	});
+	const body = (await res.json()) as { error?: string } & PromoteResult;
+	if (!res.ok) throw new Error(body.error ?? 'Failed to promote cells');
+	return { promoted: body.promoted ?? [], errors: body.errors ?? [] };
+}
+
 // ── dbt routes ───────────────────────────────────────────────────────────────
 
 export async function fetchDbtManifest(folder: string): Promise<DbtModel[]> {
