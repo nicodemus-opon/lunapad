@@ -1183,6 +1183,36 @@ function normalizeResultValue(value: unknown): unknown {
 // downstream cells still see the full relation.
 export const AUTO_LIMIT = 1000;
 
+// Scans a `WITH ...` clause for a top-level `FUNCTION` keyword (a Trino inline
+// UDF spec) without descending into parenthesized CTE/UDF bodies — so a CTE
+// body that merely mentions "function" in a comment or string doesn't false-positive.
+function hasTopLevelFunctionClause(maskedBody: string): boolean {
+	const head = /^\s*with\s+(recursive\s+)?/i.exec(maskedBody);
+	if (!head) return false;
+	let depth = 0;
+	for (let i = head[0].length; i < maskedBody.length; ) {
+		const ch = maskedBody[i];
+		if (ch === '(') {
+			depth++;
+			i++;
+		} else if (ch === ')') {
+			depth--;
+			i++;
+		} else if (depth === 0) {
+			const word = /^\w+/.exec(maskedBody.slice(i));
+			if (word) {
+				if (/^function$/i.test(word[0])) return true;
+				i += word[0].length;
+			} else {
+				i++;
+			}
+		} else {
+			i++;
+		}
+	}
+	return false;
+}
+
 export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean } {
 	const body = sql.trim().replace(/;\s*$/, '');
 	// Test against the masked body so a Trino UDF's dollar-quoted Python source
@@ -1191,6 +1221,13 @@ export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean 
 	const maskedBody = maskDollarQuotedBlocks(body);
 	// Only wrap a single SELECT-like statement — leave EXPLAIN/PRAGMA/multi-statement SQL alone.
 	if (!/^\s*(select|with|values)\b/i.test(maskedBody) || maskedBody.includes(';')) {
+		return { sql, wrapped: false };
+	}
+	// Trino only allows an inline `WITH FUNCTION ...` UDF definition at the root
+	// of a query — subquery-wrapping it as `SELECT * FROM (WITH FUNCTION ...) t`
+	// moves it into a derived table, which Trino's grammar rejects. Skip wrapping
+	// (and thus auto-limiting) when the WITH list defines a UDF.
+	if (hasTopLevelFunctionClause(maskedBody)) {
 		return { sql, wrapped: false };
 	}
 	return {

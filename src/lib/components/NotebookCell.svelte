@@ -20,6 +20,7 @@
 	} from '$lib/services/gui-prql';
 	import { compilePRQL } from '$lib/services/prql';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
+	import type { CompletionEntry } from '$lib/monaco/completions';
 	import {
 		runCell,
 		cancelCell,
@@ -320,36 +321,50 @@
 		}
 	}
 
-	const editorCompletions = $derived.by(() => {
+	const editorCompletions = $derived.by((): CompletionEntry[] => {
 		if (!isQueryCell || cell.editMode !== 'prql' || collapsed || codeHidden) return [];
 
-		const values = new Set<string>(PRQL_KEYWORDS);
+		// text → detail (e.g. column type), in insertion order; Map dedupes by text.
+		const entries = new Map<string, string | undefined>();
+		for (const kw of PRQL_KEYWORDS) entries.set(kw, undefined);
+
 		for (const table of guiTables) {
-			if (values.size >= EDITOR_COMPLETION_LIMIT) break;
-			values.add(table.name);
-			for (const column of table.columns) {
-				if (values.size >= EDITOR_COMPLETION_LIMIT) break;
-				values.add(`${table.name}.${column}`);
+			if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
+			entries.set(table.name, undefined);
+			for (let i = 0; i < table.columns.length; i++) {
+				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
+				entries.set(`${table.name}.${table.columns[i]}`, table.columnTypes?.[i]);
 			}
 		}
 
 		for (const source of prevCellSources) {
-			if (values.size >= EDITOR_COMPLETION_LIMIT) break;
-			values.add(source.name);
+			if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
+			entries.set(source.name, undefined);
 			for (const column of source.columns) {
-				if (values.size >= EDITOR_COMPLETION_LIMIT) break;
-				values.add(column);
+				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
+				entries.set(column, undefined);
 			}
 		}
 
 		if (cell.language === 'sql') {
 			for (const c of getAllCellsAcrossNotebooks()) {
-				if (values.size >= EDITOR_COMPLETION_LIMIT) break;
-				if (c.cellType === 'udf' && c.outputName) values.add(c.outputName);
+				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
+				if (c.cellType === 'udf' && c.outputName) entries.set(c.outputName, undefined);
 			}
 		}
 
-		return Array.from(values);
+		return Array.from(entries, ([text, detail]) => ({ text, detail }));
+	});
+
+	// Names of UDF cells visible to this cell, told to the SQL formatter so it
+	// doesn't add a space before their call parens (see Editor.svelte).
+	const udfFunctionNames = $derived.by((): string[] => {
+		if (cell.language !== 'sql') return [];
+		const names: string[] = [];
+		for (const c of getAllCellsAcrossNotebooks()) {
+			if (c.cellType === 'udf' && c.outputName) names.push(c.outputName);
+		}
+		return names;
 	});
 	const runImpact = $derived(getRunImpact(cell.id));
 	const runTooltipText = $derived.by(() => {
@@ -907,6 +922,7 @@
 								<Editor
 									bind:this={editorRef}
 									code={cell.udfBody}
+									errors={cell.errors}
 									language="python"
 									{dark}
 									onchange={(c) => updateCellUdfBody(cell.id, c)}
@@ -988,6 +1004,8 @@
 									completions={editorCompletions}
 									language={cell.language}
 									sqlDialect={cellSqlDialect}
+									{connectionType}
+									{udfFunctionNames}
 									{dark}
 									onchange={(c) => updateCellCode(cell.id, c)}
 								/>

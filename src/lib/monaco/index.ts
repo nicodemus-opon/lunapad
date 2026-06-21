@@ -11,9 +11,17 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import { registerPRQL } from './prql';
 import { defineThemes } from './themes';
 import { registerCompletions } from './completions';
+import { registerHoverProviders } from './hover';
+import { registerPrqlCodeActions } from './prql-actions';
 
 export { monaco };
-export { setModelCompletions, clearModelCompletions } from './completions';
+export {
+	setModelCompletions,
+	clearModelCompletions,
+	setModelDialect,
+	clearModelDialect
+} from './completions';
+export type { CompletionEntry } from './completions';
 
 let initialized = false;
 
@@ -28,6 +36,8 @@ export function setupMonaco(): typeof monaco {
 	registerPRQL(monaco);
 	defineThemes(monaco);
 	registerCompletions(monaco);
+	registerHoverProviders(monaco);
+	registerPrqlCodeActions(monaco);
 
 	return monaco;
 }

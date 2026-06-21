@@ -2,7 +2,7 @@ import type { Cell } from '$lib/stores/notebook.svelte';
 
 export type UdfScalarType = 'bigint' | 'double' | 'varchar' | 'boolean' | 'date' | 'timestamp';
 
-const PY_TYPE_TO_TRINO: Record<string, UdfScalarType> = {
+export const PY_TYPE_TO_TRINO: Record<string, UdfScalarType> = {
 	int: 'bigint',
 	float: 'double',
 	str: 'varchar',

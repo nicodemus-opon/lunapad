@@ -73,6 +73,17 @@
 		return n !== null ? numericFormatter.format(n) : String(value ?? '');
 	}
 
+	function truncateLabel(value: unknown, maxLen = 14): string {
+		const s = String(value ?? '');
+		return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
+	}
+
+	// Plot calls tickFormat as (value, index) — wrap so the tick index can't be
+	// mistaken for `maxLen` when passed directly as a tickFormat callback.
+	function truncateTick(value: unknown): string {
+		return truncateLabel(value);
+	}
+
 	const xIsMostlyNumeric = $derived.by(() => {
 		if (xValues.length === 0) return false;
 		const sample = xValues.slice(0, 20);
@@ -99,6 +110,24 @@
 	const shouldRotateXLabels = $derived.by(() => {
 		if (xIsMostlyNumeric) return false;
 		return xValues.length > 8 || maxXLabelLength > 12;
+	});
+
+	// Categorical x-axis scale options: truncate long labels (full text still
+	// available via each mark's `title` tooltip) and rotate when there are many
+	// categories or the labels are long, so they don't overlap each other.
+	const categoricalXScale = $derived.by(() => {
+		if (xIsMostlyNumeric || xIsMostlyDateLike) return {};
+		return {
+			tickFormat: truncateTick,
+			...(shouldRotateXLabels ? { tickRotate: -40 } : {})
+		};
+	});
+
+	// Same idea for a categorical axis placed on y (horizontal bars) — no
+	// rotation there since sideways text on a vertical axis reads poorly.
+	const categoricalYScale = $derived.by(() => {
+		if (xIsMostlyNumeric || xIsMostlyDateLike) return {};
+		return { tickFormat: truncateTick };
 	});
 
 	const hasSecondaryAxis = $derived(
@@ -748,15 +777,16 @@
 			const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
 			void mode.current; // re-resolve colors when the theme toggles
 			const colorRange = [resolveCSSColor('--background'), resolveCSSColor('--chart-1')];
+			const rotateHeatmapX = xLabels.length > 8 || xLabels.some((l) => l.length > 12);
 			return (width, height) =>
 				Plot.plot({
 					width,
 					height,
 					style: PLOT_STYLE,
 					marginLeft: 90,
-					marginBottom: 60,
-					x: { domain: xLabels },
-					y: { domain: yLabels },
+					marginBottom: rotateHeatmapX ? 78 : 60,
+					x: { domain: xLabels, tickFormat: truncateTick, ...(rotateHeatmapX ? { tickRotate: -40 } : {}) },
+					y: { domain: yLabels, tickFormat: truncateTick },
 					color: { type: 'linear', domain: [minVal, maxVal], range: colorRange },
 					marks: [
 						Plot.cell(cells, {
@@ -803,9 +833,10 @@
 					width,
 					height,
 					style: PLOT_STYLE,
+					marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
 					color: colorSplit ? { type: 'ordinal', range: CHART_COLOR_RANGE } : undefined,
 					r: isBubble ? { range: [4, 30] } : undefined,
-					x: xDomain ? { domain: xDomain } : {},
+					x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
 					y: { label: humanize(yCol), tickFormat: fmtNum, grid: true },
 					marks: [
 						Plot.dot(data, {
@@ -839,26 +870,33 @@
 				}));
 				marks = [
 					isHoriz
-						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)' })
-						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)' })
+						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)', title: (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}` })
+						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)', title: (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}` })
 				];
-				catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain };
+				catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
 			} else {
 				const long = meltSeries(data as Record<string, unknown>[], seriesDef);
+				const seriesTitle = (d: { x: string; series: string; value: number | null }) =>
+					`${d.series} — ${d.x}: ${fmtNum(d.value)}`;
 				if (layout === 'stack') {
 					marks = [
 						isHoriz
-							? Plot.barX(long, Plot.stackX({ y: 'x', x: 'value', fill: 'series' }))
-							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series' }))
+							? Plot.barX(long, Plot.stackX({ y: 'x', x: 'value', fill: 'series', title: seriesTitle }))
+							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series', title: seriesTitle }))
 					];
-					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain };
+					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
 				} else {
 					marks = [
 						isHoriz
-							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series' })
-							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series' })
+							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series', title: seriesTitle })
+							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series', title: seriesTitle })
 					];
-					catScale[isHoriz ? 'fy' : 'fx'] = { domain: catDomain };
+					catScale[isHoriz ? 'fy' : 'fx'] = { domain: catDomain, tickFormat: truncateTick };
+					// The inner per-bar axis would otherwise print each series name
+					// (e.g. "Order Count", "Total Revenue") under every facet, which
+					// collide into illegible overlapping text — color + legend already
+					// identify the series, so hide this axis instead of trying to fit it.
+					catScale[isHoriz ? 'y' : 'x'] = { axis: null };
 				}
 			}
 
@@ -868,8 +906,8 @@
 					width,
 					height,
 					style: PLOT_STYLE,
-					color: { range: CHART_COLOR_RANGE },
-					marginBottom: isHoriz ? 32 : 56,
+					color: { range: CHART_COLOR_RANGE, legend: seriesDef.length > 1 },
+					marginBottom: isHoriz ? 32 : (shouldRotateXLabels ? 78 : 56),
 					marginLeft: isHoriz ? 90 : 48,
 					...(isHoriz ? { x: valueScale } : { y: valueScale }),
 					...catScale,
@@ -913,7 +951,8 @@
 						height,
 						style: PLOT_STYLE,
 						color: { type: 'ordinal', range: CHART_COLOR_RANGE },
-						x: xDomain ? { domain: xDomain } : {},
+						marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
+						x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
 						y: { tickFormat: fmtNum, grid: true },
 						marks
 					});
@@ -979,7 +1018,8 @@
 					width,
 					height,
 					style: PLOT_STYLE,
-					x: xDomain ? { domain: xDomain } : {},
+					marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
+					x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
 					y: { tickFormat: fmtNum, grid: true },
 					marks
 				});
@@ -994,9 +1034,9 @@
 					width,
 					height,
 					style: PLOT_STYLE,
-					x: { domain: xDomain },
+					x: { domain: xDomain, tickFormat: truncateTick, ...(shouldRotateXLabels ? { tickRotate: -40 } : {}) },
 					y: { tickFormat: fmtNum, grid: true },
-					marginBottom: data.length > 6 ? 56 : 36,
+					marginBottom: shouldRotateXLabels ? 78 : data.length > 6 ? 56 : 36,
 					marks: [
 						Plot.ruleX(data, { x: 'name', y1: 'min', y2: 'max', stroke: 'var(--muted-foreground)' }),
 						Plot.barY(data, {

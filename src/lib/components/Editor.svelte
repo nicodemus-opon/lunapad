@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { format as formatSQL, type SqlLanguage } from 'sql-formatter';
+	import {
+		formatDialect,
+		sql as sqlDialectDef,
+		postgresql as postgresqlDialectDef,
+		trino as trinoDialectDef,
+		type DialectOptions
+	} from 'sql-formatter';
 	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
+	import type { CompletionEntry } from '$lib/monaco/completions';
+	import type { ConnectionType } from '$lib/types/connection';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
 
@@ -13,10 +21,17 @@
 		errors?: PRQLError[];
 		dark?: boolean;
 		readonly?: boolean;
-		completions?: string[];
+		completions?: CompletionEntry[];
 		language?: EditorLanguage;
 		/** SQL dialect for formatter: 'duckdb' | 'postgresql' | 'clickhouse' */
 		sqlDialect?: string;
+		/** Drives dialect-specific SQL function completions/hover */
+		connectionType?: ConnectionType;
+		/** Names of UDFs defined elsewhere in the notebook — told to the SQL
+		 * formatter as known function names so it doesn't add a space before
+		 * their call parens (it otherwise treats unrecognized identifiers as
+		 * plain tokens, not function calls). */
+		udfFunctionNames?: string[];
 	}
 
 	let {
@@ -27,15 +42,23 @@
 		readonly = false,
 		completions = [],
 		language = 'prql',
-		sqlDialect = 'sql'
+		sqlDialect = 'sql',
+		connectionType = 'duckdb-wasm',
+		udfFunctionNames = []
 	}: Props = $props();
 
 	let container: HTMLDivElement;
 	let monaco = $state.raw<typeof Monaco | null>(null);
 	let editor = $state.raw<Monaco.editor.IStandaloneCodeEditor | null>(null);
 	let model: Monaco.editor.ITextModel | null = null;
-	let setModelCompletions: ((m: Monaco.editor.ITextModel, items: string[]) => void) | null = null;
+	let setModelCompletions:
+		| ((m: Monaco.editor.ITextModel, items: CompletionEntry[]) => void)
+		| null = null;
 	let clearModelCompletions: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let setModelDialect:
+		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
+		| null = null;
+	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let suppressUpdate = false;
 	let destroyed = false;
 
@@ -92,14 +115,31 @@
 		const current = model.getValue();
 		if (!current.trim()) return false;
 		try {
-			const dialectMap: Record<string, SqlLanguage> = {
-				'sql.duckdb': 'sql',
-				'sql.trino': 'trino',
-				postgresql: 'postgresql',
-				duckdb: 'sql'
+			const dialectMap: Record<string, DialectOptions> = {
+				'sql.duckdb': sqlDialectDef,
+				'sql.trino': trinoDialectDef,
+				postgresql: postgresqlDialectDef,
+				duckdb: sqlDialectDef
 			};
-			const formatted = formatSQL(current, {
-				language: dialectMap[sqlDialect] ?? 'sql',
+			const baseDialect = dialectMap[sqlDialect] ?? sqlDialectDef;
+			// Tell the formatter about UDFs defined elsewhere in the notebook so it
+			// treats their names as known functions (no space before the call paren) —
+			// otherwise it formats `mult(10)` as `mult (10)` like any other identifier.
+			const dialect: DialectOptions =
+				udfFunctionNames.length === 0
+					? baseDialect
+					: {
+							...baseDialect,
+							tokenizerOptions: {
+								...baseDialect.tokenizerOptions,
+								reservedFunctionNames: [
+									...baseDialect.tokenizerOptions.reservedFunctionNames,
+									...udfFunctionNames
+								]
+							}
+						};
+			const formatted = formatDialect(current, {
+				dialect,
 				tabWidth: 2,
 				keywordCase: 'upper',
 				linesBetweenQueries: 1
@@ -122,6 +162,8 @@
 		monaco = m;
 		setModelCompletions = mod.setModelCompletions;
 		clearModelCompletions = mod.clearModelCompletions;
+		setModelDialect = mod.setModelDialect;
+		clearModelDialect = mod.clearModelDialect;
 
 		model = m.editor.createModel(
 			code,
@@ -129,6 +171,7 @@
 			m.Uri.parse(`inmemory://cell/${crypto.randomUUID()}.${language}`)
 		);
 		setModelCompletions(model, completions);
+		setModelDialect(model, connectionType);
 
 		const ed = m.editor.create(container, {
 			model,
@@ -201,6 +244,7 @@
 	onDestroy(() => {
 		destroyed = true;
 		if (model && clearModelCompletions) clearModelCompletions(model);
+		if (model && clearModelDialect) clearModelDialect(model);
 		editor?.dispose();
 		model?.dispose();
 		editor = null;
@@ -242,6 +286,12 @@
 		setModelCompletions(model, completions);
 	});
 
+	// Sync connection type → per-model SQL dialect registry
+	$effect(() => {
+		if (!model || !setModelDialect) return;
+		setModelDialect(model, connectionType);
+	});
+
 	// Sync errors → markers (span offsets are UTF-16, same as getPositionAt)
 	$effect(() => {
 		if (!monaco || !model) return;
@@ -253,14 +303,15 @@
 			const end = model.getPositionAt(Math.max(from, to));
 			markers.push({
 				severity: monaco.MarkerSeverity.Error,
-				message: e.display ?? e.reason ?? 'Error',
+				// prqlc's hint (e.g. "did you mean `derive`?") is otherwise never shown
+				message: e.hint ? `${e.display ?? e.reason ?? 'Error'}\n\n${e.hint}` : e.display ?? e.reason ?? 'Error',
 				startLineNumber: start.lineNumber,
 				startColumn: start.column,
 				endLineNumber: end.lineNumber,
 				endColumn: end.column
 			});
 		}
-		monaco.editor.setModelMarkers(model, 'prql', markers);
+		monaco.editor.setModelMarkers(model, language === 'sql' ? 'sql' : 'prql', markers);
 	});
 
 	export function focus(): void {
