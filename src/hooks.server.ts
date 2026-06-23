@@ -13,19 +13,39 @@ if (startupFolder) {
 
 // Dev/test-only escape hatch so e2e specs (which have no concept of logging in) can
 // still hit the app. Hard-fails at startup if ever combined with NODE_ENV=production,
-// so it can't accidentally ship disabled-auth to the real deployment.
-const authDisabled = process.env.DISABLE_AUTH === '1';
-if (authDisabled && process.env.NODE_ENV === 'production') {
+// so it can't accidentally ship disabled-auth to the real (Postgres-backed, multi-feature)
+// deployment.
+const testAuthDisabled = process.env.DISABLE_AUTH === '1';
+if (testAuthDisabled && process.env.NODE_ENV === 'production') {
 	throw new Error('DISABLE_AUTH=1 is not allowed when NODE_ENV=production.');
 }
 
+// DEMO_MODE is a separate, deliberate opt-out for a public read-only demo deployment
+// (DuckDB-WASM only, no Postgres/Trino/dbt configured) — it's allowed in production. It
+// skips the login gate, but unlike DISABLE_AUTH it also locks down every server-side
+// feature below so the demo can't be used to reach external connections, the dbt CLI, or
+// project file I/O even via a direct API call.
+const DEMO_MODE = process.env.DEMO_MODE === '1';
+const authDisabled = testAuthDisabled || DEMO_MODE;
+
 const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/login', '/setup'];
+const DEMO_BLOCKED_PREFIXES = ['/api/connections', '/api/dbt', '/api/project', '/api/schedules', '/admin'];
 
 function isPublicPath(pathname: string): boolean {
 	return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isDemoBlockedPath(pathname: string): boolean {
+	return DEMO_BLOCKED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
+	if (DEMO_MODE && isDemoBlockedPath(event.url.pathname)) {
+		return event.url.pathname.startsWith('/api/')
+			? json({ error: 'Not available in demo mode' }, { status: 403 })
+			: new Response('Not available in demo mode', { status: 403 });
+	}
+
 	if (authDisabled) {
 		return resolve(event);
 	}
