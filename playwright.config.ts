@@ -41,6 +41,9 @@ export default defineConfig({
 		command: 'pnpm dev',
 		url: 'http://localhost:5173',
 		reuseExistingServer: true,
-		timeout: 60_000
+		timeout: 60_000,
+		// e2e specs have no login flow — bypass auth gating for the test server only.
+		// hooks.server.ts refuses to start with this combined with NODE_ENV=production.
+		env: { DISABLE_AUTH: '1' }
 	}
 });

@@ -14,7 +14,7 @@
 		dropTable,
 		type FileFormat
 	} from '$lib/services/duckdb';
-	import { addTable, getConnections, getConnectionSecret } from '$lib/stores/notebook.svelte';
+	import { addTable, getConnections } from '$lib/stores/notebook.svelte';
 	import {
 		BUILTIN_DUCKDB_CONNECTION,
 		BUILTIN_DUCKDB_CONNECTION_ID
@@ -189,13 +189,11 @@
 				const { rows: rowObjs } = await executeSQL(`SELECT * FROM "${PREVIEW_TABLE}"`);
 				const rowArrays = rowObjs.map((row) => previewColumns.map((col) => row[col]));
 
-				const secret = getConnectionSecret(connectionId);
 				const res = await fetch('/api/connections/upload', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						connection: selectedConnection,
-						secret,
 						tableName: tableName.trim(),
 						schema: targetSchema.trim() || undefined,
 						columns: previewColumns.map((name, i) => ({ name, type: columnTypes[i] })),

@@ -34,7 +34,6 @@ import {
 	exportJSON,
 	setCellConnection,
 	setNotebookConnection,
-	setConnectionSecret,
 	setCellMaterializeMode,
 	setCellMaterializeTarget,
 	setCellScheduleEnabled,
@@ -167,6 +166,8 @@ describe('notebook store', () => {
 	});
 
 	it('exports connection metadata without persisting secrets', () => {
+		// Secrets live server-side (encrypted, keyed by connection id) and are never
+		// part of client state at all, so there's nothing for exportJSON to leak.
 		const cellId = getCells()[0].id;
 		upsertConnection({
 			id: 'pg-main',
@@ -179,14 +180,13 @@ describe('notebook store', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'super-secret' });
 		setCellConnection(cellId, 'pg-main');
 
 		const snapshot = exportJSON();
 
 		expect(snapshot).toContain('Primary Postgres');
 		expect(snapshot).toContain('"connectionId":"pg-main"');
-		expect(snapshot).not.toContain('super-secret');
+		expect(snapshot).not.toMatch(/password|secret/i);
 	});
 
 	it('applies a notebook-level connection to all query cells only', () => {

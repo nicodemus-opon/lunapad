@@ -28,7 +28,7 @@
 	});
 </script>
 
-<span class="md-metric" data-trend={trend ?? undefined}>
+<span class="md-metric rounded p-4" data-trend={trend ?? undefined}>
 	<span class="md-metric-value">{displayValue}</span>
 	{#if label}<span class="md-metric-label">{label}</span>{/if}
 	{#if trend && deltaPct != null}
@@ -45,8 +45,7 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 0.1rem;
-		padding: 0.4rem 0.7rem;
-		border-radius: 0.5rem;
+
 		background: color-mix(in oklch, currentColor 5%, transparent);
 		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
 		margin: 0.15rem 0.2rem 0.15rem 0;

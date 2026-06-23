@@ -1,6 +1,7 @@
 import { compilePRQL, type PRQLError } from '$lib/services/prql';
 import { buildExecutionCode, buildGlobalExecutionCode, buildSQLExecutionCode, buildSQLGlobalExecutionCode, resolveDependencies, resolveGlobalDependencies } from '$lib/services/cell-deps';
 import { parseUdfSignature } from '$lib/services/udf';
+import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
@@ -61,7 +62,6 @@ import {
 	slugifyCatalogName,
 	type Connection,
 	type ConnectionSecret,
-	type ConnectionSecrets,
 	type MySQLDataSource,
 	type PRQLTarget
 } from '$lib/types/connection';
@@ -282,8 +282,6 @@ const cellRunIds = new Map<string, string>(); // cellId → runId for server-sid
 const MAX_COMPILE_CACHE_SIZE = 200;
 const compileCache = new Map<string, { sql: string | null; errors: PRQLError[] }>();
 const STORAGE_KEY = 'lunapad_notebook';
-const SECRET_STORAGE_KEY = 'lunapad_connection_secrets';
-const REMEMBERED_SECRETS_KEY = 'lunapad_connection_secrets_persistent';
 const PROJECT_FOLDER_KEY = 'lunapad_project_folder';
 let schedulePollTimer: ReturnType<typeof setInterval> | null = null;
 let scheduleRunInFlight = false;
@@ -372,7 +370,7 @@ function parseSQLErrorSpan(message: string, cellCode: string, fullSQL: string): 
 	return [from, to];
 }
 
-function compilePRQLCached(fullCode: string, target: PRQLTarget): { sql: string | null; errors: PRQLError[] } {
+export function compilePRQLCached(fullCode: string, target: PRQLTarget): { sql: string | null; errors: PRQLError[] } {
 	const key = makeCompileCacheKey(fullCode, target);
 	const cached = compileCache.get(key);
 	if (cached) {
@@ -489,6 +487,17 @@ function makeDemoNotebook(): Notebook {
   (['North','South','East','West','Central'])[(range % 5) + 1] AS region
 FROM range(2000)`;
 
+	// target_region (not "region") so the post-join schema has only one
+	// unqualified `region` column — joining on same-named columns leaves both
+	// table's copies in scope and makes `group region (...)` ambiguous.
+	const regionTargetsSQL = `SELECT * FROM (VALUES
+  ('North', 150000.0),
+  ('South', 120000.0),
+  ('East', 130000.0),
+  ('West', 140000.0),
+  ('Central', 100000.0)
+) AS t(target_region, quota)`;
+
 	const monthlyRevenuePRQL = `from orders
 derive {
   month = s"date_trunc('month', order_date)",
@@ -502,6 +511,14 @@ group month (
 )
 sort month`;
 
+	const regionPerformancePRQL = `from o=orders
+derive { revenue = quantity * unit_price }
+join rt=region_targets (this.region==rt.target_region)
+group o.region (
+  aggregate { total_revenue = sum revenue, quota = max rt.quota }
+)
+sort {-total_revenue}`;
+
 	const categoryPRQL = `from orders
 derive revenue = quantity * unit_price
 group category (
@@ -511,6 +528,10 @@ group category (
   }
 )
 sort {-total_revenue}`;
+
+	const orderValueDistributionPRQL = `from orders
+derive revenue = quantity * unit_price
+select { revenue }`;
 
 	const topProductsPRQL = `from orders
 derive revenue = quantity * unit_price
@@ -532,12 +553,26 @@ take 10`;
 FROM monthly_revenue
 ORDER BY month`;
 
+	const regionFilteredOrdersSQL = `SELECT region, product, category, quantity, unit_price, order_date
+FROM orders
+WHERE region = '\${region}'
+ORDER BY order_date DESC
+LIMIT 20`;
+
 	const cells: Cell[] = [
-		makeMarkdownCell(
-			`# Sales Analytics Demo\nThis notebook shows the core features of Lunapad. Run cells from top to bottom — start with the **orders** cell, then explore the analysis cells below.`
-		),
+		{
+			...makeMarkdownCell(
+				`# Sales Analytics Demo\nThis notebook shows the core features of Lunapad. Run cells from top to bottom — start with the **orders** cell, then explore the analysis cells below.\n\n{% callout type="info" %}\nCells reference each other by name — no boilerplate \`WITH\` needed. Charts, the GUI pipeline builder, Markdoc dashboards, and interactive filters are all live below.\n{% /callout %}`
+			),
+			markdownPreview: true
+		},
 		{
 			...makeCell(seedSQL, 'orders', 'sql'),
+			editMode: 'prql',
+			resultViewMode: 'stats'
+		},
+		{
+			...makeCell(regionTargetsSQL, 'region_targets', 'sql'),
 			editMode: 'prql'
 		},
 		{
@@ -553,26 +588,10 @@ ORDER BY month`;
 			} satisfies ChartConfig
 		},
 		{
-			...makeCell(categoryPRQL, 'category_breakdown', 'prql'),
-			editMode: 'prql',
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'bar',
-				xColumn: 'category',
-				yColumns: ['total_revenue', 'order_count'],
-				colorColumn: null,
-				title: 'Revenue by Category'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(
-				`from orders\nderive {\n  revenue = quantity * unit_price\n}\ngroup region (\n  aggregate {\n    total_revenue = sum revenue\n  }\n)\nsort {-total_revenue}`,
-				'regional_breakdown',
-				'prql'
-			),
+			...makeCell(regionPerformancePRQL, 'region_performance', 'prql'),
 			editMode: 'gui',
 			guiStages: [
-				{ type: 'from', table: 'orders' },
+				{ type: 'from', table: 'orders', alias: 'o' },
 				{
 					type: 'derive',
 					columns: [{
@@ -586,19 +605,55 @@ ORDER BY month`;
 					}]
 				},
 				{
+					type: 'join',
+					joinType: 'left',
+					table: 'region_targets',
+					alias: 'rt',
+					conditions: [{ left: 'this.region', right: 'target_region' }]
+				},
+				{
 					type: 'group',
-					by: ['region'],
-					aggregations: [{ name: 'total_revenue', func: 'sum', column: 'revenue' }]
+					by: ['o.region'],
+					aggregations: [
+						{ name: 'total_revenue', func: 'sum', column: 'revenue' },
+						{ name: 'quota', func: 'max', column: 'rt.quota' }
+					]
 				},
 				{ type: 'sort', keys: [{ column: 'total_revenue', dir: 'desc' }] }
 			] as GUIPipelineStage[],
 			resultViewMode: 'chart',
 			resultChartConfig: {
-				chartType: 'pie',
+				chartType: 'bar',
 				xColumn: 'region',
-				yColumns: ['total_revenue'],
+				yColumns: ['total_revenue', 'quota'],
 				colorColumn: null,
-				title: 'Revenue by Region'
+				seriesMode: 'grouped',
+				title: 'Revenue vs Quota by Region'
+			} satisfies ChartConfig
+		},
+		{
+			...makeCell(categoryPRQL, 'category_breakdown', 'prql'),
+			editMode: 'prql',
+			resultViewMode: 'chart',
+			resultChartConfig: {
+				chartType: 'bar',
+				xColumn: 'category',
+				yColumns: ['total_revenue', 'order_count'],
+				colorColumn: null,
+				title: 'Revenue by Category'
+			} satisfies ChartConfig
+		},
+		{
+			...makeCell(orderValueDistributionPRQL, 'order_value_distribution', 'prql'),
+			editMode: 'prql',
+			resultViewMode: 'chart',
+			resultChartConfig: {
+				chartType: 'histogram',
+				xColumn: '',
+				yColumns: ['revenue'],
+				histogramBins: 24,
+				colorColumn: null,
+				title: 'Order Value Distribution'
 			} satisfies ChartConfig
 		},
 		{
@@ -606,7 +661,7 @@ ORDER BY month`;
 			editMode: 'prql',
 			resultViewMode: 'chart',
 			resultChartConfig: {
-				chartType: 'bar',
+				chartType: 'bar-horizontal',
 				xColumn: 'product',
 				yColumns: ['total_revenue'],
 				colorColumn: null,
@@ -618,9 +673,23 @@ ORDER BY month`;
 			editMode: 'prql',
 			resultViewMode: 'table'
 		},
-		makeMarkdownCell(
-			`## What you just ran\n- **PRQL cells** that reference each other as CTEs — no boilerplate \`WITH\` needed\n- **GUI pipeline editor** (cell 5) — click the pencil icon to toggle between code and visual builder\n- **Chart & table views** — use the icons in each cell's result toolbar to switch\n- **Cross-language dependencies** — cell 7 (SQL) references \`monthly_revenue\` from a PRQL cell`
-		)
+		{
+			...makeMarkdownCell(
+				`## Explore by region\n{% filter kind="dropdown" param="region" label="Region" options=["North","South","East","West","Central"] default="North" /%}\n\n{% grid cols=3 %}\n{% metric value=$category_breakdown.total_revenue label="Top Category Revenue" format="currency" /%}\n{% metric value=$region_performance.total_revenue vs=$region_performance.quota label="Top Region vs Quota" format="currency" /%}\n{% metric value=$top_products.total_revenue label="Best-Selling Product Revenue" format="currency" /%}\n{% /grid %}\n\n{% datatable data=$top_products.rows cols=["product","total_revenue","units_sold"] limit=10 /%}`
+			),
+			markdownPreview: true
+		},
+		{
+			...makeCell(regionFilteredOrdersSQL, 'region_filtered_orders', 'sql'),
+			editMode: 'prql',
+			resultViewMode: 'table'
+		},
+		{
+			...makeMarkdownCell(
+				`## What you just ran\n- **PRQL & SQL cells** referencing each other as CTEs — no boilerplate \`WITH\` needed\n- **GUI pipeline editor** (\`region_performance\`) — includes a join, not just filter/derive/group\n- **Stats view** (\`orders\`) — per-column min/max/null/distinct counts, switch back to table anytime\n- **Chart variety** — area, grouped bar, horizontal bar, and histogram via each cell's view toolbar\n- **Markdoc dashboards** — the section above mixes a live filter, metric cards, and a data table in one markdown cell\n- **Interactive filters** — the region dropdown re-runs \`region_filtered_orders\` automatically\n- **UDF cells** also exist (Python, type-hinted) but need a Trino-backed connection (Postgres/ClickHouse/MySQL) — not shown here since this demo runs entirely on the builtin DuckDB engine`
+			),
+			markdownPreview: true
+		}
 	];
 
 	return {
@@ -628,7 +697,8 @@ ORDER BY month`;
 		name: 'Sales Analytics Demo',
 		folderId: null,
 		cells,
-		defaultCellLanguage: 'prql'
+		defaultCellLanguage: 'prql',
+		filters: { region: 'North' }
 	};
 }
 
@@ -695,7 +765,6 @@ let state = $state<NotebookState>({
 	evidenceDevPort: null,
 	evidencePages: []
 });
-let connectionSecrets = $state<ConnectionSecrets>({});
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 type SerializedCell = Omit<Cell, 'errors' | 'needsRun' | 'staleReason' | 'staleSources'> & {
@@ -839,60 +908,6 @@ function sanitizeConnections(raw: unknown): Connection[] {
 function normalizeConnectionId(connectionId: string | null | undefined, connections: Connection[]): string | null {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return null;
 	return connections.some((connection) => connection.id === connectionId) ? connectionId : null;
-}
-
-function loadSecretsFromSessionStorage(): void {
-	if (typeof sessionStorage === 'undefined') return;
-	const raw = sessionStorage.getItem(SECRET_STORAGE_KEY);
-	if (!raw) return;
-	try {
-		const parsed = JSON.parse(raw) as ConnectionSecrets;
-		connectionSecrets = typeof parsed === 'object' && parsed ? parsed : {};
-	} catch {
-		connectionSecrets = {};
-	}
-}
-
-function saveSecretsToSessionStorage(): void {
-	if (typeof sessionStorage === 'undefined') return;
-	sessionStorage.setItem(SECRET_STORAGE_KEY, JSON.stringify(connectionSecrets));
-}
-
-function getRememberedSecrets(): ConnectionSecrets {
-	if (typeof localStorage === 'undefined') return {};
-	const raw = localStorage.getItem(REMEMBERED_SECRETS_KEY);
-	if (!raw) return {};
-	try {
-		const parsed = JSON.parse(raw) as ConnectionSecrets;
-		return typeof parsed === 'object' && parsed ? parsed : {};
-	} catch {
-		return {};
-	}
-}
-
-function setRememberedSecret(connectionId: string, secret: ConnectionSecret | null): void {
-	if (typeof localStorage === 'undefined') return;
-	const remembered = getRememberedSecrets();
-	if (secret) {
-		remembered[connectionId] = secret;
-	} else {
-		delete remembered[connectionId];
-	}
-	localStorage.setItem(REMEMBERED_SECRETS_KEY, JSON.stringify(remembered));
-}
-
-function loadRememberedSecretsFromLocalStorage(): void {
-	const remembered = getRememberedSecrets();
-	// Merge into connectionSecrets; session values (loaded after) take precedence
-	for (const [id, secret] of Object.entries(remembered)) {
-		if (!connectionSecrets[id]) {
-			connectionSecrets[id] = secret;
-		}
-	}
-}
-
-export function isSecretRemembered(connectionId: string): boolean {
-	return connectionId in getRememberedSecrets();
 }
 
 // Reads the persisted display state, falling back to the legacy boolean
@@ -1439,8 +1454,6 @@ export function loadFromStorage(): void {
 			scheduleSave();
 		}
 	}
-	loadRememberedSecretsFromLocalStorage();
-	loadSecretsFromSessionStorage();
 	ensureSchedulePoller();
 	// Restart any auto-refresh timers that were enabled in the saved session.
 	for (const nb of state.notebooks) {
@@ -2096,13 +2109,6 @@ export function setNotebookFilterValue(notebookId: string, paramName: string, va
 	}
 }
 
-// Raw substitution, dbt/Jinja-style: the user wraps ${param} in their own quotes in SQL
-// when they need a string literal (e.g. region = '${region}'). Only escape embedded single
-// quotes so a value like "O'Brien" doesn't break out of a quoted literal.
-function formatFilterValueForCode(value: string): string {
-	return value.replace(/'/g, "''");
-}
-
 /** Substitutes ${paramName} tokens in query cell code with the notebook's current filter values. */
 function applyFilterSubstitution(cells: Cell[], notebookId: string): Cell[] {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
@@ -2110,11 +2116,7 @@ function applyFilterSubstitution(cells: Cell[], notebookId: string): Cell[] {
 	if (!filters || Object.keys(filters).length === 0) return cells;
 	return cells.map((c) => {
 		if (c.cellType !== 'query' || !c.code) return c;
-		let code = c.code;
-		for (const [paramName, value] of Object.entries(filters)) {
-			const token = `\${${paramName}}`;
-			if (code.includes(token)) code = code.split(token).join(formatFilterValueForCode(value));
-		}
+		const code = substituteFilterTokens(c.code, filters);
 		return code === c.code ? c : { ...c, code };
 	});
 }
@@ -2268,10 +2270,6 @@ export function getLastCellId(): string {
 
 export function getConnections(): Connection[] {
 	return state.connections;
-}
-
-export function getConnectionSecret(connectionId: string): ConnectionSecret | undefined {
-	return connectionSecrets[connectionId];
 }
 
 export function getTables(): UploadedTable[] {
@@ -3206,10 +3204,14 @@ export function insertCellBefore(
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
+	// Inherit from the nearest preceding query cell (skipping markdown, which always
+	// has connectionId: null), same rationale as insertCellAfter.
+	const lastQueryCell = nb.cells.slice(0, idx).filter((c) => c.cellType === 'query').at(-1) ?? null;
 	const newCell: Cell = {
 		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
-		editMode: data.editMode
+		editMode: data.editMode,
+		connectionId: lastQueryCell?.connectionId ?? null
 	};
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, newCell);
@@ -3232,8 +3234,11 @@ export function insertCellAfter(
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return '';
 	pushHistoryCheckpoint(nb.id);
-	const base = nb.cells[idx];
-	const inheritedConnection = data.connectionId === undefined ? base?.connectionId ?? null : data.connectionId;
+	// Inherit from the nearest preceding query cell — the anchor itself may be a
+	// markdown cell, which always has connectionId: null and would otherwise force
+	// new cells back to the builtin DuckDB connection.
+	const lastQueryCell = nb.cells.slice(0, idx + 1).filter((c) => c.cellType === 'query').at(-1) ?? null;
+	const inheritedConnection = data.connectionId === undefined ? lastQueryCell?.connectionId ?? null : data.connectionId;
 	const newCell: Cell = {
 		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
@@ -3949,28 +3954,32 @@ export function removeConnection(id: string): void {
 			if (cell.connectionId === id) cell.connectionId = null;
 		}
 	}
-	if (connectionSecrets[id]) {
-		delete connectionSecrets[id];
-		saveSecretsToSessionStorage();
-	}
-	setRememberedSecret(id, null);
+	fetch('/api/connections/secret', {
+		method: 'DELETE',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ connectionId: id })
+	}).catch(() => {});
 	scheduleSave();
 }
 
-export function setConnectionSecret(
-	connectionId: string,
-	secret: ConnectionSecret | null,
-	remember = false
-): void {
+// Persists a connection's password server-side (encrypted), shared by everyone on this
+// instance. Pass null to clear it. There is no corresponding "get" — secrets are
+// write-only from the client once saved.
+export async function setConnectionSecret(connectionId: string, secret: ConnectionSecret | null): Promise<void> {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
 	if (!secret || Object.keys(secret).length === 0) {
-		delete connectionSecrets[connectionId];
-		setRememberedSecret(connectionId, null);
-	} else {
-		connectionSecrets[connectionId] = secret;
-		setRememberedSecret(connectionId, remember ? secret : null);
+		await fetch('/api/connections/secret', {
+			method: 'DELETE',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ connectionId })
+		});
+		return;
 	}
-	saveSecretsToSessionStorage();
+	await fetch('/api/connections/secret', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ connectionId, secret })
+	});
 }
 
 export function setExternalConnectionSchema(
@@ -4128,6 +4137,36 @@ function getExecutionCode(cells: Cell[], idx: number): string {
 	return buildGlobalExecutionCode(effectiveCells, idx, extractCells());
 }
 
+/**
+ * Like getExecutionCode, but skips ${paramName} filter substitution so the result
+ * still contains literal ${paramName} tokens. Used when publishing a share: the final
+ * SQL (CTEs inlined) is captured once at publish time, and a public viewer's own filter
+ * choices are substituted into it later, server-side, on each live run.
+ */
+export function getExecutionCodeForTemplate(cells: Cell[], idx: number): string {
+	const cell = cells[idx];
+	if (!cell || cell.cellType !== 'query') return '';
+	const connection = getCellConnection(cell);
+	if (checkUdfCompatibility(cells, idx, connection)) return '';
+	const target = getPRQLTargetForConnection(connection);
+
+	const extractCells = (): Map<string, Cell> =>
+		new Map([...getGlobalOutputRegistry()].map(([n, { cell: c }]) => [n, c] as [string, Cell]));
+
+	if (cell.language === 'sql') {
+		const compile = (prql: string): string | null => compilePRQLCached(prql, target).sql;
+		if (isBuiltinDuckDBConnection(connection)) {
+			return buildSQLExecutionCode(cells, idx, compile);
+		}
+		return buildSQLGlobalExecutionCode(cells, idx, extractCells(), compile);
+	}
+
+	if (isBuiltinDuckDBConnection(connection)) {
+		return buildExecutionCode(cells, idx);
+	}
+	return buildGlobalExecutionCode(cells, idx, extractCells());
+}
+
 async function _runCell(cell: Cell, fullCode: string, prevViewName: string | null, signal?: AbortSignal, runId?: string): Promise<void> {
 	const context = findCellContext(cell.id);
 	if (!context) return;
@@ -4197,7 +4236,7 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 		const limited = wrapWithAutoLimit(sql);
 		const rawResult = isBuiltin
 			? await executeSQL(limited.sql)
-			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), limited.sql, signal, runId);
+			: await queryConnectionSQL(connection, limited.sql, signal, runId);
 		if (signal?.aborted) {
 			cell.status = 'idle';
 			return;
@@ -4295,7 +4334,7 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 	}
 }
 
-function getCellConnection(cell: Cell): Connection {
+export function getCellConnection(cell: Cell): Connection {
 	return resolveConnection(state.connections, cell.connectionId);
 }
 
@@ -4582,7 +4621,7 @@ export async function runGuiStagePreview(
 		const limited = wrapWithAutoLimit(sql);
 		const result = isBuiltin
 			? await executeSQL(limited.sql)
-			: await queryConnectionSQL(connection, getConnectionSecret(connection.id), limited.sql);
+			: await queryConnectionSQL(connection, limited.sql);
 		return applyAutoLimit(normalizeQueryResult(result), limited.wrapped);
 	} catch (err: unknown) {
 		return { error: (err as Error).message ?? String(err) };
@@ -4684,14 +4723,7 @@ export async function materializeCell(id: string): Promise<void> {
 		const dbMode = cell.materializeMode as DBMaterializationMode;
 		const relation = isBuiltin
 			? await materializeRelation(targetName, sql, dbMode)
-			: await materializeConnectionRelation(
-					connection,
-					getConnectionSecret(connection.id),
-					targetName,
-					sql,
-					dbMode,
-					targetSchema
-			  );
+			: await materializeConnectionRelation(connection, targetName, sql, dbMode, targetSchema);
 		cell.materializeStatus = 'success';
 		cell.materializeError = null;
 		cell.materializedRelationType = relation.type;
@@ -4807,7 +4839,6 @@ export function __resetStateForTests(): void {
 		evidenceDevPort: null,
 		evidencePages: []
 	};
-	connectionSecrets = {};
 }
 
 // ── Table actions ─────────────────────────────────────────────────────────────

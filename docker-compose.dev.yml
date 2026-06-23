@@ -1,0 +1,36 @@
+# Full dev stack with live reload — same services as docker-compose.yml (db, trino,
+# inngest, app), just with `app` running Vite dev instead of the production build.
+#
+# Usage: docker compose -f docker-compose.dev.yml up
+# (single file — `include` below pulls in db/trino/inngest from docker-compose.yml,
+# so this isn't a partial override you have to combine with -f -f.)
+#
+# Source is bind-mounted, so edits on the host hot-reload inside the container.
+include:
+  - docker-compose.yml
+
+services:
+  app:
+    build:
+      target: dev
+    ports:
+      - "5173:5173"
+    environment:
+      # Dev server runs on 5173, not the production container's 3000 — keep ORIGIN
+      # in sync or better-auth's cookie/origin checks will reject every request.
+      ORIGIN: http://localhost:5173
+      # Tells vite.config.ts to poll for file changes (see comment there) — Docker
+      # Desktop's bind mounts don't reliably forward inotify events into the container.
+      VITE_DOCKER_DEV: "1"
+    volumes:
+      - .:/app
+      # Anonymous volumes shadow the bind mount for these paths so the container's
+      # own (Linux) install isn't clobbered by the host's (e.g. macOS) node_modules.
+      - /app/node_modules
+      - /app/.svelte-kit
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5173/api/setup > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s

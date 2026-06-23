@@ -2,7 +2,6 @@ import type { Connection, ConnectionSecret } from '$lib/types/connection';
 
 interface QueryConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 	sql: string;
 	runId?: string;
 }
@@ -17,7 +16,6 @@ export type ExternalRelationType = 'table' | 'view';
 
 interface MaterializeConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 	targetName: string;
 	targetSchema?: string;
 	sql: string;
@@ -55,14 +53,12 @@ async function postJSON<T>(url: string, body: unknown, signal?: AbortSignal): Pr
 
 export async function queryConnectionSQL(
 	connection: Connection,
-	secret: ConnectionSecret | undefined,
 	sql: string,
 	signal?: AbortSignal,
 	runId?: string
 ): Promise<QueryConnectionResponse> {
 	return postJSON<QueryConnectionResponse>('/api/connections/query', {
 		connection,
-		secret,
 		sql,
 		runId
 	} satisfies QueryConnectionRequest, signal);
@@ -87,14 +83,12 @@ export async function testConnection(
 }
 
 export async function fetchConnectionSchema(
-	connection: Connection,
-	secret?: ConnectionSecret
+	connection: Connection
 ): Promise<{ tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }> }> {
 	return postJSON<{ tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }> }>(
 		'/api/connections/schema',
 		{
-			connection,
-			secret
+			connection
 		}
 	);
 }
@@ -109,7 +103,6 @@ export async function removeConnectionSource(connection: Connection): Promise<vo
 
 export async function materializeConnectionRelation(
 	connection: Connection,
-	secret: ConnectionSecret | undefined,
 	targetName: string,
 	sql: string,
 	mode: ExternalMaterializationMode,
@@ -117,7 +110,6 @@ export async function materializeConnectionRelation(
 ): Promise<MaterializeConnectionResponse> {
 	return postJSON<MaterializeConnectionResponse>('/api/connections/materialize', {
 		connection,
-		secret,
 		targetName,
 		targetSchema,
 		sql,

@@ -60,6 +60,11 @@ services:
       TRINO_CATALOG_DIR: /trino-catalog
       # Postgres (pgvector) — use service name, not localhost, inside Docker network.
       DATABASE_URL: postgresql://lunapad:lunapad@db:5432/lunapad
+      # Auth (better-auth) — set real random values before deploying for real.
+      # BETTER_AUTH_SECRET signs session tokens; SECRETS_ENCRYPTION_KEY (32 random
+      # bytes, base64) encrypts stored connection passwords. Never reuse one for the other.
+      BETTER_AUTH_SECRET: change-me-to-a-random-32-byte-secret
+      SECRETS_ENCRYPTION_KEY: change-me-to-a-random-32-byte-base64-key
       # Ollama runs on the host machine. host.docker.internal resolves to the host
       # on Docker Desktop (Mac/Windows). On Linux, extra_hosts adds the route.
       OLLAMA_BASE_URL: http://host.docker.internal:11434

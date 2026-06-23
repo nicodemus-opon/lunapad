@@ -5,7 +5,6 @@
 		getTables,
 		getExternalSchemaTables,
 		getConnections,
-		getConnectionSecret,
 		setExternalConnectionSchema
 	} from '$lib/stores/notebook.svelte';
 	import { fetchConnectionSchema } from '$lib/services/connections';
@@ -86,8 +85,7 @@
 		if (!connection || connection.type === 'duckdb-wasm') return;
 		refreshingIds = new Set([...refreshingIds, connectionId]);
 		try {
-			const secret = getConnectionSecret(connectionId);
-			const result = await fetchConnectionSchema(connection, secret);
+			const result = await fetchConnectionSchema(connection);
 			setExternalConnectionSchema(connection.id, connection.name, result.tables);
 		} catch {
 			// stale schema stays visible
@@ -129,8 +127,7 @@
 		const connections = getConnections().filter((c) => c.type !== 'duckdb-wasm');
 		for (const connection of connections) {
 			try {
-				const secret = getConnectionSecret(connection.id);
-				const result = await fetchConnectionSchema(connection, secret);
+				const result = await fetchConnectionSchema(connection);
 				setExternalConnectionSchema(connection.id, connection.name, result.tables);
 			} catch {
 				// keep stale schema

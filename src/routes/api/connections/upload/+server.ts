@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { Connection, ConnectionSecret } from '$lib/types/connection';
+import type { Connection } from '$lib/types/connection';
 import { uploadToExternalConnection } from '$lib/server/connections';
+import { getSecret } from '$lib/server/connection-secrets';
 
 interface UploadConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 	tableName: string;
 	schema?: string;
 	columns: { name: string; type: string }[];
@@ -23,9 +23,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const mode = body.mode === 'append' ? 'append' : 'replace';
 
 	try {
+		const secret = await getSecret(body.connection.id);
 		const result = await uploadToExternalConnection(
 			body.connection,
-			body.secret,
+			secret ?? undefined,
 			body.tableName,
 			body.schema,
 			body.columns,

@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { Connection, ConnectionSecret } from '$lib/types/connection';
+import type { Connection } from '$lib/types/connection';
 import { fetchExternalConnectionSchema } from '$lib/server/connections';
+import { getSecret } from '$lib/server/connection-secrets';
 
 interface SchemaConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -15,7 +15,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
 
-		const result = await fetchExternalConnectionSchema(body.connection, body.secret);
+		const secret = await getSecret(body.connection.id);
+		const result = await fetchExternalConnectionSchema(body.connection, secret ?? undefined);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to fetch schema.';

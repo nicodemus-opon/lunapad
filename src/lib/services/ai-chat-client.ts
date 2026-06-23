@@ -20,7 +20,6 @@ import {
 	moveCell,
 	reorderCell,
 	getConnections,
-	getConnectionSecret,
 	getAllCellsAcrossNotebooks,
 	type CellSnapshot,
 	type CellMaterializationMode
@@ -281,25 +280,43 @@ export function resetAISession(): void {
 
 const DATA_TOOL_NAMES = new Set(['query_data', 'sample_data', 'profile_column']);
 
-function getDefaultConnection(): { isBuiltin: boolean; connection: Connection; secret: ReturnType<typeof getConnectionSecret> } {
+function getDefaultConnection(): { isBuiltin: boolean; connection: Connection } {
 	const cells = getCells();
 	const connections = getConnections();
 	const externalId = cells.find((c) => c.connectionId && c.connectionId !== BUILTIN_DUCKDB_CONNECTION_ID)?.connectionId;
 	if (externalId) {
 		const conn = connections.find((c) => c.id === externalId);
 		if (conn && !isBuiltinDuckDBConnection(conn)) {
-			return { isBuiltin: false, connection: conn, secret: getConnectionSecret(externalId) };
+			return { isBuiltin: false, connection: conn };
 		}
 	}
-	return { isBuiltin: true, connection: BUILTIN_DUCKDB_CONNECTION, secret: undefined };
+	return { isBuiltin: true, connection: BUILTIN_DUCKDB_CONNECTION };
 }
 
-async function runRawQuery(sql: string): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
-	const { isBuiltin, connection, secret } = getDefaultConnection();
+// Resolves the connection a specific table actually lives on, rather than guessing
+// from notebook cells. Without this, profile_column/sample_data on an external table
+// would silently run against DuckDB whenever the notebook's cells happened not to
+// reveal an external connection (e.g. a fresh notebook, or all cells anchored after
+// a markdown cell — see insertCellAfter).
+function getConnectionForTable(table: string): { isBuiltin: boolean; connection: Connection } | null {
+	const norm = (s: string) => s.toLowerCase().replace(/^"(.+)"$/, '$1');
+	const target = norm(table);
+	const match = getExternalSchemaTables().find((t) => {
+		const qualified = t.schema ? `${t.schema}.${t.name}` : t.name;
+		return norm(qualified) === target || norm(t.name) === target;
+	});
+	if (!match) return null;
+	const conn = getConnections().find((c) => c.id === match.connectionId);
+	if (!conn) return null;
+	return { isBuiltin: false, connection: conn };
+}
+
+async function runRawQuery(sql: string, table?: string): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
+	const { isBuiltin, connection } = (table && getConnectionForTable(table)) || getDefaultConnection();
 	if (isBuiltin) {
 		return executeSQL(sql);
 	}
-	return queryConnectionSQL(connection, secret, sql);
+	return queryConnectionSQL(connection, sql);
 }
 
 function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
@@ -376,14 +393,14 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 					};
 				}
 				const safeN = Math.min(n ?? 10, 50);
-				const { isBuiltin, connection } = getDefaultConnection();
+				const { isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection();
 				const qt = quoteIdent(table);
 				const sampleSql = isBuiltin
 					? `SELECT * FROM ${qt} USING SAMPLE ${safeN} ROWS`
 					: connection.type === 'clickhouse'
 					? `SELECT * FROM ${qt} ORDER BY rand() LIMIT ${safeN}`
 					: `SELECT * FROM ${qt} ORDER BY RANDOM() LIMIT ${safeN}`;
-				const result = await runRawQuery(sampleSql);
+				const result = await runRawQuery(sampleSql, table);
 				const csv = toCsv(result.columns, result.rows);
 				const preview = toMarkdownTable(result.columns, result.rows);
 				const summary = `${result.rows.length} rows sampled, columns: ${result.columns.join(', ')}`;
@@ -410,9 +427,9 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 				const qCol = quoteIdent(column);
 				const qTable = quoteIdent(table);
 				const [nullRes, statsRes, topRes] = await Promise.all([
-					runRawQuery(`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`),
-					runRawQuery(`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`),
-					runRawQuery(`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`)
+					runRawQuery(`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`, table),
+					runRawQuery(`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`, table),
+					runRawQuery(`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`, table)
 				]);
 				const total = Number(nullRes.rows[0]?.['_total'] ?? 0);
 				const nonNull = Number(nullRes.rows[0]?.['_non_null'] ?? 0);
@@ -494,8 +511,7 @@ async function runPreflightProfiles(): Promise<void> {
 	const externalWork = [...byConn.entries()].flatMap(([connId, tables]) => {
 		const conn = connections.find((c) => c.id === connId);
 		if (!conn || isBuiltinDuckDBConnection(conn)) return [];
-		const secret = getConnectionSecret(connId);
-		const query = (sql: string) => queryConnectionSQL(conn, secret, sql);
+		const query = (sql: string) => queryConnectionSQL(conn, sql);
 		return tables.slice(0, 6).map((t) => {
 			const cacheKey = t.schema ? `${t.schema}.${t.name}` : t.name;
 			return profileTable(cacheKey, t.columns, t.columnTypes, query, 3000);
@@ -559,8 +575,7 @@ async function runIdlePreflightExpansion(): Promise<void> {
 	const externalRemainder = [...byConn.entries()].flatMap(([connId, tables]) => {
 		const conn = connections.find((c) => c.id === connId);
 		if (!conn || isBuiltinDuckDBConnection(conn)) return [];
-		const secret = getConnectionSecret(connId);
-		const query = (sql: string) => queryConnectionSQL(conn, secret, sql);
+		const query = (sql: string) => queryConnectionSQL(conn, sql);
 		return tables.slice(6, 20).map((t) => {
 			const cacheKey = t.schema ? `${t.schema}.${t.name}` : t.name;
 			return profileTable(cacheKey, t.columns, t.columnTypes, query, 4000);

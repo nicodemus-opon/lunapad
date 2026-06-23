@@ -5450,7 +5450,6 @@ export async function fetchAndProfileExternalTable(input: {
 	connectionId: string;
 	sourceTable: string;
 	connection: { id: string; type: string; [key: string]: unknown };
-	secret?: Record<string, string>;
 }): Promise<void> {
 	if (input.connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
 	if (!input.sourceTable) return;
@@ -5468,7 +5467,6 @@ export async function fetchAndProfileExternalTable(input: {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				connection: input.connection,
-				secret: input.secret,
 				sql: `SELECT * FROM "${input.sourceTable.replace(/"/g, '""')}" LIMIT 2000`
 			})
 		});

@@ -44,3 +44,28 @@ ENV NODE_ENV=production
 EXPOSE 3000
 
 CMD ["node", "build/index.js"]
+
+
+# ---- Dev stage (live reload via docker-compose.dev.yml) ----
+# Same base as the production runner so dbt/python behave identically; source is
+# bind-mounted at runtime (see docker-compose.dev.yml), this just bakes the toolchain in.
+FROM node:22-bookworm-slim AS dev
+WORKDIR /app
+
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-venv \
+    git \
+    curl \
+  && pip install dbt-postgres --break-system-packages \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@11 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN sed -i '/^store-dir/d' .npmrc
+RUN pnpm install --frozen-lockfile
+
+EXPOSE 5173
+
+CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173"]

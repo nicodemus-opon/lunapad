@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Maximize2, X } from '@lucide/svelte';
+	import * as Table from '$lib/components/ui/table';
 
 	interface Props {
 		data?: Record<string, unknown>[];
@@ -21,20 +22,20 @@
 </script>
 
 {#snippet table(rowsToShow: Record<string, unknown>[])}
-	<table class="md-datatable">
-		<thead>
-			<tr>
-				{#each columns as col (col)}<th>{col}</th>{/each}
-			</tr>
-		</thead>
-		<tbody>
+	<Table.Root containerClass="rounded-md " class="text-xs">
+		<Table.Header>
+			<Table.Row>
+				{#each columns as col (col)}<Table.Head class="h-7 px-2">{col}</Table.Head>{/each}
+			</Table.Row>
+		</Table.Header>
+		<Table.Body>
 			{#each rowsToShow as row, i (i)}
-				<tr>
-					{#each columns as col (col)}<td>{fmt(row[col])}</td>{/each}
-				</tr>
+				<Table.Row>
+					{#each columns as col (col)}<Table.Cell class="h-7 px-2">{fmt(row[col])}</Table.Cell>{/each}
+				</Table.Row>
 			{/each}
-		</tbody>
-	</table>
+		</Table.Body>
+	</Table.Root>
 {/snippet}
 
 {#if rows.length}
@@ -72,22 +73,6 @@
 <style>
 	.md-datatable-wrap {
 		position: relative;
-	}
-	.md-datatable {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.85em;
-		margin: 0.4rem 0;
-	}
-	.md-datatable th,
-	.md-datatable td {
-		padding: 0.3rem 0.6rem;
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		text-align: left;
-	}
-	.md-datatable th {
-		font-weight: 600;
-		background: color-mix(in oklch, currentColor 4%, transparent);
 	}
 	.md-datatable-truncated,
 	.md-datatable-empty {

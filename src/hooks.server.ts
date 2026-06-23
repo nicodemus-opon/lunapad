@@ -1,5 +1,8 @@
-import type { Handle } from '@sveltejs/kit';
+import { json, type Handle } from '@sveltejs/kit';
+import { building } from '$app/environment';
+import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { setCurrentFolder } from '$lib/server/dbt-schedules';
+import { auth, ensureAuthTablesOnce, hasAnyUser, promoteSoleUserToAdmin, SIGN_UP_PATH } from '$lib/server/auth';
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -8,8 +11,65 @@ if (startupFolder) {
 	setCurrentFolder(startupFolder);
 }
 
+// Dev/test-only escape hatch so e2e specs (which have no concept of logging in) can
+// still hit the app. Hard-fails at startup if ever combined with NODE_ENV=production,
+// so it can't accidentally ship disabled-auth to the real deployment.
+const authDisabled = process.env.DISABLE_AUTH === '1';
+if (authDisabled && process.env.NODE_ENV === 'production') {
+	throw new Error('DISABLE_AUTH=1 is not allowed when NODE_ENV=production.');
+}
+
+const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/login', '/setup'];
+
+function isPublicPath(pathname: string): boolean {
+	return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
-	const response = await resolve(event);
+	if (authDisabled) {
+		return resolve(event);
+	}
+
+	await ensureAuthTablesOnce();
+
+	// Email/password sign-up is left enabled in better-auth's own config (disableSignUp
+	// blocks it unconditionally, even from server code — see auth.ts), so it's gated here
+	// instead: open only for the very first account, then permanently closed. Whoever
+	// completes it is promoted to admin below; from then on only an admin can create
+	// further accounts (via /admin, using the admin plugin's createUser endpoint).
+	const isSignUpAttempt = event.url.pathname === SIGN_UP_PATH && event.request.method === 'POST';
+	if (isSignUpAttempt && (await hasAnyUser())) {
+		return json({ error: 'Sign-up is closed — an admin account already exists.' }, { status: 403 });
+	}
+
+	const session = await auth.api.getSession({ headers: event.request.headers });
+	event.locals.user = session?.user ?? null;
+	event.locals.session = session?.session ?? null;
+
+	const path = event.url.pathname;
+	if (!event.locals.user && !isPublicPath(path)) {
+		if (path.startsWith('/api/')) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+		// No account exists yet (fresh instance) — send to /setup instead of /login,
+		// since /login has no signup form and no link to /setup.
+		if (!(await hasAnyUser())) {
+			return new Response(null, { status: 303, headers: { location: '/setup' } });
+		}
+		const redirectTo = encodeURIComponent(path + event.url.search);
+		return new Response(null, { status: 303, headers: { location: `/login?redirectTo=${redirectTo}` } });
+	}
+
+	if (path.startsWith('/admin') && event.locals.user?.role !== 'admin') {
+		return new Response('Forbidden', { status: 403 });
+	}
+
+	const response = await svelteKitHandler({ event, resolve, auth, building });
+
+	if (isSignUpAttempt && response.status === 200) {
+		await promoteSoleUserToAdmin();
+	}
+
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 	// 'credentialless' (like require-corp) enables crossOriginIsolated/SharedArrayBuffer
 	// but does NOT require CORP headers on same-origin resources (require-corp does, which

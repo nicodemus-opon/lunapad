@@ -1,4 +1,7 @@
-import Markdoc, { Tag } from '@markdoc/markdoc';
+// Named import of `Tag` breaks under Vite's SSR module runner (@markdoc/markdoc is CJS) —
+// go through the default export instead, which works in both SSR and client bundles.
+import Markdoc from '@markdoc/markdoc';
+const { Tag } = Markdoc;
 import type { Config, ConfigFunction, RenderableTreeNode, Schema } from '@markdoc/markdoc';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import type { ChartConfig } from '$lib/types/gui-pipeline';

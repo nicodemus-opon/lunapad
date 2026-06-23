@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { initDB } from '$lib/services/duckdb';
 	import { initPRQL } from '$lib/services/prql';
 	import { withTimeout } from '$lib/services/async';
+	import { authClient } from '$lib/auth-client';
 	import Logo from '$lib/assets/logo.svelte';
 
 	import {
@@ -40,8 +42,6 @@
 		setTheme,
 		getAutoRun,
 		setAutoRun,
-		getLLMConfig,
-		setLLMConfig,
 		exportJSON,
 		importJSON,
 		loadFromStorage,
@@ -88,20 +88,20 @@
 	import { fade } from 'svelte/transition';
 	import DatabaseTree from '$lib/components/DatabaseTree.svelte';
 	import FileImporter from '$lib/components/FileImporter.svelte';
-	import ConnectionManager from '$lib/components/ConnectionManager.svelte';
+	import SettingsDialog from '$lib/components/settings/SettingsDialog.svelte';
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
+	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ResultView from '$lib/components/ResultView.svelte';
 	import TableView from '$lib/components/TableView.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
 	import DbtLineageView from '$lib/components/DbtLineageView.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from 'svelte-sonner';
@@ -113,9 +113,6 @@
 		Plus,
 		ChevronDown,
 		ChevronRight,
-		Sun,
-		Moon,
-		Monitor,
 		Database,
 		Orbit,
 		X,
@@ -147,7 +144,10 @@
 		ChevronsUpDown,
 		Keyboard,
 		Bug,
-		Sparkles
+		Sparkles,
+		Share2,
+		LogOut,
+		ShieldUser
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -168,7 +168,6 @@
 	const connections = $derived(getConnections());
 	const theme = $derived(getTheme());
 	const autoRun = $derived(getAutoRun());
-	const llmConfig = $derived(getLLMConfig());
 	const notebooks = $derived(getOpenNotebookTabs());
 	const allNotebooks = $derived(getNotebooks());
 	const openResultTabs = $derived(getOpenResultTabs());
@@ -269,8 +268,27 @@
 	// ── Init ─────────────────────────────────────────────────────────────────
 	let dbReady = $state(false);
 	let dbError = $state<string | null>(null);
-	let llmSettingsOpen = $state(false);
+	let settingsOpen = $state(false);
+	let settingsTab = $state<'general' | 'account' | 'ai' | 'connections' | 'team'>('general');
 	let shortcutsOpen = $state(false);
+
+	// ── Auth ─────────────────────────────────────────────────────────────────
+	const session = authClient.useSession();
+
+	function userInitials(name: string | undefined, email: string | undefined): string {
+		const trimmed = (name ?? '').trim();
+		if (trimmed) {
+			const parts = trimmed.split(/\s+/);
+			return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+		}
+		return (email?.[0] ?? '?').toUpperCase();
+	}
+
+	async function handleLogout(): Promise<void> {
+		await authClient.signOut();
+		await goto('/login');
+	}
+	let shareDialogOpen = $state(false);
 	let commandPaletteOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
 	let uploadDialogOpen = $state(false);
@@ -705,7 +723,7 @@
 		>
 			<div
 				class="flex items-center justify-between py-2 px-2"
-				
+				style="padding-right: calc(var(--titlebar-inset-right, 0px) + 0.5rem)"
 			>
 				<div class="flex items-center gap-2">
 					<div class="flex shrink-0 items-center gap-2">
@@ -869,27 +887,17 @@
 								>
 									Report view
 								</DropdownMenu.CheckboxItem>
+								<DropdownMenu.Item disabled={!activeNotebook} onclick={() => (shareDialogOpen = true)}>
+									<Share2 class="h-3.5 w-3.5" /> Share…
+								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
-								<DropdownMenu.RadioGroup
-									value={theme}
-									onValueChange={(value) => {
-										if (value === 'system' || value === 'light' || value === 'dark')
-											setTheme(value);
+								<DropdownMenu.Item
+									onclick={() => {
+										settingsTab = 'general';
+										settingsOpen = true;
 									}}
 								>
-									<DropdownMenu.RadioItem value="system"
-										><Monitor class="h-3.5 w-3.5" /> System theme</DropdownMenu.RadioItem
-									>
-									<DropdownMenu.RadioItem value="light"
-										><Sun class="h-3.5 w-3.5" /> Light theme</DropdownMenu.RadioItem
-									>
-									<DropdownMenu.RadioItem value="dark"
-										><Moon class="h-3.5 w-3.5" /> Dark theme</DropdownMenu.RadioItem
-									>
-								</DropdownMenu.RadioGroup>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => (llmSettingsOpen = true)}>
-									<Settings class="h-3.5 w-3.5" /> LLM settings…
+									<Settings class="h-3.5 w-3.5" /> Settings…
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
@@ -923,43 +931,85 @@
 					</div>
 				</div>
 
-				{#if isNotebookTab}
+				<div class="flex items-center gap-2">
+					{#if isNotebookTab}
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<button
+									class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+									onclick={() => setAIChatOpen(!getAIChatOpen())}
+									aria-pressed={aiChatOpen}
+									aria-label="Toggle AI chat"
+									data-testid="ai-toggle"
+								>
+									<Sparkles class="h-3.5 w-3.5" />
+									<span class="hidden sm:inline">AI</span>
+								</button>
+							</Tooltip.Trigger>
+							<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
+						</Tooltip.Root>
+					{/if}
+
 					<Tooltip.Root>
-						<Tooltip.Trigger>
-							<button
-								class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
-								onclick={() => setAIChatOpen(!getAIChatOpen())}
-								aria-pressed={aiChatOpen}
-								aria-label="Toggle AI chat"
-								data-testid="ai-toggle"
-							>
-								<Sparkles class="h-3.5 w-3.5" />
-								<span class="hidden sm:inline">AI</span>
-							</button>
+						<Tooltip.Trigger
+							aria-label="Upload file"
+							onclick={() => (uploadDialogOpen = true)}
+						>
+							<Button variant="secondary" size="sm">
+								<Upload class="h-3.5 w-3.5" />Upload
+							</Button>
 						</Tooltip.Trigger>
-						<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
+						<Tooltip.Content side="bottom">Upload file</Tooltip.Content>
 					</Tooltip.Root>
-				{/if}
 
-				<Tooltip.Root>
-					<Tooltip.Trigger
-						aria-label="Upload file"
-						onclick={() => (uploadDialogOpen = true)}
-					>
-						<Button variant="secondary" size="sm">
-							<Upload class="h-3.5 w-3.5" />Upload
-						</Button>
-					</Tooltip.Trigger>
-					<Tooltip.Content side="bottom">Upload file</Tooltip.Content>
-				</Tooltip.Root>
+					{#if $session.data?.user}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								class="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-2xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								aria-label="Account menu"
+							>
+								{userInitials($session.data.user.name, $session.data.user.email)}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="end" class="w-48">
+								<div class="px-2 py-1.5">
+									<p class="truncate text-xs font-medium text-foreground">{$session.data.user.name}</p>
+									<p class="truncate text-2xs text-muted-foreground">{$session.data.user.email}</p>
+								</div>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									onclick={() => {
+										settingsTab = 'account';
+										settingsOpen = true;
+									}}
+								>
+									<Settings class="h-3.5 w-3.5" /> Settings
+								</DropdownMenu.Item>
+								{#if $session.data.user.role === 'admin'}
+									<DropdownMenu.Item
+										onclick={() => {
+											settingsTab = 'team';
+											settingsOpen = true;
+										}}
+									>
+										<ShieldUser class="h-3.5 w-3.5" /> Admin
+									</DropdownMenu.Item>
+								{/if}
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item variant="destructive" onclick={() => void handleLogout()}>
+									<LogOut class="h-3.5 w-3.5" /> Log out
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{/if}
 
-				<input
-					id="import-notebook-input"
-					type="file"
-					accept=".json"
-					class="hidden"
-					onchange={onImportFile}
-				/>
+					<input
+						id="import-notebook-input"
+						type="file"
+						accept=".json"
+						class="hidden"
+						onchange={onImportFile}
+					/>
+				</div>
 			</div>
 			{#if isDesktop && (platformOS.value === 'windows' || platformOS.value === 'linux')}
 				<div class="pointer-events-auto absolute top-0 right-0 h-full">
@@ -1121,7 +1171,20 @@
 								</div>
 								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 									<FileImporter />
-									<ConnectionManager />
+									<div class="flex items-center justify-between gap-2 border-b border-border/60 p-2">
+										<span class="text-xs font-semibold text-foreground/80">Data Sources</span>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-6 px-2 text-2xs"
+											onclick={() => {
+												settingsTab = 'connections';
+												settingsOpen = true;
+											}}
+										>
+											Manage
+										</Button>
+									</div>
 									<div class="min-h-0 flex-1 overflow-y-auto">
 										<DatabaseTree />
 									</div>
@@ -1352,7 +1415,7 @@
 					</button>
 				</div>
 				{#if isNotebookTab}
-				<div class="flex min-h-0 flex-1 overflow-hidden">
+				<div class="flex min-h-0 flex-1 overflow-hidden font-serif">
 					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
 						<div class=" mx-auto px-10 pt-8 pb-32">
 							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
@@ -1615,61 +1678,7 @@
 	onToggleSidebar={toggleSidebarCollapsed}
 />
 
-<Dialog.Root bind:open={llmSettingsOpen}>
-	<Dialog.Content class="space-y-4 p-6">
-		<h2 class="text-sm font-semibold">LLM settings</h2>
-		<div class="space-y-3">
-			<div class="space-y-1">
-				<label for="llm-provider" class="text-xs text-muted-foreground">Provider</label>
-				<Select.Root
-					type="single"
-					value={llmConfig.provider}
-					onValueChange={(value) =>
-						setLLMConfig({ provider: value as 'openapi-compatible' | 'ollama' })}
-				>
-					<Select.Trigger id="llm-provider" class="h-8 font-mono text-xs">
-						{llmConfig.provider === 'ollama' ? 'Ollama (OpenAI-compatible)' : 'OpenAPI-compatible'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="openapi-compatible" class="text-xs">OpenAPI-compatible</Select.Item>
-						<Select.Item value="ollama" class="text-xs">Ollama</Select.Item>
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="space-y-1">
-				<label for="llm-base-url" class="text-xs text-muted-foreground">Base URL</label>
-				<Input
-					id="llm-base-url"
-					class="h-8 font-mono text-xs"
-					value={llmConfig.baseUrl}
-					oninput={(e: Event) => setLLMConfig({ baseUrl: (e.target as HTMLInputElement).value })}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label for="llm-api-key" class="text-xs text-muted-foreground">API key <span class="opacity-50">(optional)</span></label>
-				<Input
-					id="llm-api-key"
-					type="password"
-					class="h-8 font-mono text-xs"
-					value={llmConfig.apiKey ?? ''}
-					oninput={(e: Event) => setLLMConfig({ apiKey: (e.target as HTMLInputElement).value || undefined })}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label for="llm-model" class="text-xs text-muted-foreground">Model</label>
-				<Input
-					id="llm-model"
-					class="h-8 font-mono text-xs"
-					value={llmConfig.model}
-					oninput={(e: Event) => setLLMConfig({ model: (e.target as HTMLInputElement).value })}
-				/>
-			</div>
-			<p class="text-xs text-muted-foreground">
-				Used by the AI chat panel. For Ollama: <span class="font-mono">qwen3:1.7b</span> (fast) or <span class="font-mono">qwen3:4b</span> (better quality).
-			</p>
-		</div>
-	</Dialog.Content>
-</Dialog.Root>
+<SettingsDialog bind:open={settingsOpen} bind:tab={settingsTab} onLogout={() => void handleLogout()} />
 
 <Dialog.Root bind:open={shortcutsOpen}>
 	<Dialog.Content class="max-h-[85vh] max-w-2xl overflow-y-auto p-6">
@@ -1798,6 +1807,7 @@
 {/if}
 
 <UploadDialog bind:open={uploadDialogOpen} />
+<ShareDialog bind:open={shareDialogOpen} notebook={activeNotebook} />
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>

@@ -64,10 +64,12 @@
   --motion-ease-flow: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Semantic z-index scale */
-  --z-dropdown: 30;
   --z-sticky: 40;
   --z-overlay: 50;
   --z-modal: 60;
+  /* Above --z-modal so dropdowns/selects/popovers opened from within a dialog aren't
+     painted behind it (Dialog.Content sits at --z-modal). */
+  --z-dropdown: 65;
   --z-toast: 70;
   --z-tooltip: 80;
 

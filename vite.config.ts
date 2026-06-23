@@ -115,6 +115,11 @@ export default defineConfig({
 		headers: {
 			'Cross-Origin-Opener-Policy': 'same-origin',
 			'Cross-Origin-Embedder-Policy': 'credentialless'
-		}
+		},
+		// Docker Desktop's bind-mount file sharing (macOS/Windows) doesn't reliably forward
+		// inotify events into the container, so chokidar's native watcher never fires.
+		// Polling is the standard workaround — only enabled for the dockerized dev server
+		// (see docker-compose.dev.yml), not local `pnpm dev`, since polling burns more CPU.
+		watch: process.env.VITE_DOCKER_DEV ? { usePolling: true, interval: 300 } : undefined
 	}
 });

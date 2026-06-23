@@ -22,7 +22,7 @@
 		type PromptStageGenerationPlan
 	} from '$lib/services/stage-catalog';
 	import { getLLMPlanningContext } from '$lib/services/intelligence-db';
-	import { getLLMConfig, getTables, getConnections, getConnectionSecret } from '$lib/stores/notebook.svelte';
+	import { getLLMConfig, getTables, getConnections } from '$lib/stores/notebook.svelte';
 	import { inferPromptStageSuggestionWithLLM, generateFullPRQLWithLLM, cancelActiveGenerate, type FullPRQLGenerationResult } from '$lib/services/prompt-llm';
 	import { fetchAndProfileExternalTable } from '$lib/services/intelligence-db';
 	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
@@ -603,8 +603,7 @@
 							void fetchAndProfileExternalTable({
 								connectionId,
 								sourceTable: extTable,
-								connection: extConn as unknown as Record<string, unknown> & { id: string; type: string },
-								secret: getConnectionSecret(connectionId) as Record<string, string> | undefined
+								connection: extConn as unknown as Record<string, unknown> & { id: string; type: string }
 							}).catch(() => {});
 						}
 					}

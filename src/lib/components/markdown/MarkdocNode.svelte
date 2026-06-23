@@ -1,6 +1,10 @@
 <script lang="ts">
-	import type { RenderableTreeNode } from '@markdoc/markdoc';
-	import { Tag } from '@markdoc/markdoc';
+	import type { RenderableTreeNode, Tag } from '@markdoc/markdoc';
+	// Named *value* import of `Tag` breaks under Vite's SSR module runner (@markdoc/markdoc is
+	// CJS) — go through the default export for the runtime value instead. The type import above
+	// is unaffected (type-only imports are erased before this matters).
+	import Markdoc from '@markdoc/markdoc';
+	const TagImpl = Markdoc.Tag;
 	import MarkdocNode from './MarkdocNode.svelte';
 	import MetricWidget from './MetricWidget.svelte';
 	import ChartWidget from './ChartWidget.svelte';
@@ -18,7 +22,7 @@
 
 	const { node, notebookId = '' }: Props = $props();
 
-	const isTag = $derived(Tag.isTag(node));
+	const isTag = $derived(TagImpl.isTag(node));
 	const tag = $derived(isTag ? (node as Tag) : null);
 </script>
 

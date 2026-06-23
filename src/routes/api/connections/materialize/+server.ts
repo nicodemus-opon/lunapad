@@ -1,14 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { Connection, ConnectionSecret } from '$lib/types/connection';
+import type { Connection } from '$lib/types/connection';
 import {
 	materializeExternalConnection,
 	type ExternalMaterializationMode
 } from '$lib/server/connections';
+import { getSecret } from '$lib/server/connection-secrets';
 
 interface MaterializeConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 	targetName: string;
 	targetSchema?: string;
 	sql: string;
@@ -32,9 +32,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Materialization mode is invalid.' }, { status: 400 });
 		}
 
+		const secret = await getSecret(body.connection.id);
 		const result = await materializeExternalConnection(
 			body.connection,
-			body.secret,
+			secret ?? undefined,
 			body.targetName,
 			typeof body.targetSchema === 'string' ? body.targetSchema : undefined,
 			body.sql,

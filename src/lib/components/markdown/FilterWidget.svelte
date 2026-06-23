@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
 	import { getNotebookFilterValue, setNotebookFilterValue } from '$lib/stores/notebook.svelte';
+	import { FILTER_CONTEXT_KEY, type FilterContextValue } from './filter-context';
 
 	interface Props {
 		notebookId?: string;
@@ -13,6 +15,17 @@
 
 	const { notebookId = '', kind = 'dropdown', param = '', label, options, optionsColumn, defaultValue }: Props = $props();
 
+	// Falls back to the global notebook store when no context is provided (the main app
+	// never sets this context, so existing in-app behavior is unchanged). A public report
+	// page sets its own per-viewer-scoped context instead, so a stranger's filter choice
+	// never touches the owner's actual notebook.
+	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
+	const ctx: FilterContextValue =
+		filterCtx ?? {
+			getValue: (p) => getNotebookFilterValue(notebookId, p),
+			setValue: (p, v) => setNotebookFilterValue(notebookId, p, v)
+		};
+
 	const effectiveOptions = $derived.by((): string[] => {
 		if (!Array.isArray(options)) return [];
 		return options
@@ -24,10 +37,10 @@
 			.filter((v): v is string => v !== null && v !== '');
 	});
 
-	const value = $derived(notebookId && param ? getNotebookFilterValue(notebookId, param) || defaultValue || '' : defaultValue || '');
+	const value = $derived(param ? ctx.getValue(param) || defaultValue || '' : defaultValue || '');
 
 	function onChange(v: string) {
-		if (notebookId && param) setNotebookFilterValue(notebookId, param, v);
+		if (param) ctx.setValue(param, v);
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;

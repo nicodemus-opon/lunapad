@@ -50,7 +50,6 @@ import {
 	runCell,
 	setCellConnection,
 	setExternalConnectionSchema,
-	setConnectionSecret,
 	upsertConnection
 } from '$lib/stores/notebook.svelte';
 
@@ -203,7 +202,6 @@ describe('notebook cell execution', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'top-secret' });
 		setCellConnection(cell.id, 'pg-main');
 		queryConnectionSQLMock.mockResolvedValue({
 			rows: [{ name: 'Ada' }],
@@ -215,7 +213,6 @@ describe('notebook cell execution', () => {
 		expect(compilePRQLMock).toHaveBeenCalledWith('from employees', 'sql.trino');
 		expect(queryConnectionSQLMock).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
-			{ password: 'top-secret' },
 			`SELECT * FROM (SELECT * FROM employees) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
 			expect.anything(), // AbortSignal
 			expect.any(String) // runId
@@ -242,7 +239,6 @@ describe('notebook cell execution', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'top-secret' });
 		setCellConnection(cell.id, 'pg-main');
 		queryConnectionSQLMock.mockResolvedValue({
 			rows: [{ amount: '\\"1200\\"', text: '\\"north\\"' }],
@@ -292,7 +288,6 @@ describe('notebook cell execution', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'top-secret' });
 
 		const notebook = getNotebooks()[0];
 		notebook.cells[0].outputName = 'employees_raw';
@@ -342,7 +337,6 @@ describe('notebook cell execution', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'top-secret' });
 
 		executeSQLMock.mockResolvedValue({ rows: [], columns: [] });
 		queryConnectionSQLMock.mockResolvedValue({ rows: [], columns: [] });
@@ -371,7 +365,6 @@ describe('notebook cell execution', () => {
 			username: 'nico',
 			ssl: false
 		});
-		setConnectionSecret('pg-main', { password: 'top-secret' });
 		setCellConnection(cell.id, 'pg-main');
 		setExternalConnectionSchema('pg-main', 'Primary Postgres', [
 			{ name: 'orders', schema: 'analytics', columns: ['id'], columnTypes: ['int4'] }
@@ -381,7 +374,6 @@ describe('notebook cell execution', () => {
 
 		expect(materializeConnectionRelationMock).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
-			{ password: 'top-secret' },
 			expect.any(String),
 			'SELECT * FROM employees',
 			'table',

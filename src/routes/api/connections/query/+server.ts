@@ -1,12 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { Connection, ConnectionSecret } from '$lib/types/connection';
+import type { Connection } from '$lib/types/connection';
 import { queryExternalConnection } from '$lib/server/connections';
+import { getSecret } from '$lib/server/connection-secrets';
 import { registerQuery, unregisterQuery } from '$lib/server/query-registry';
 
 interface QueryConnectionRequest {
 	connection: Connection;
-	secret?: ConnectionSecret;
 	sql: string;
 	runId?: string;
 }
@@ -20,7 +20,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { runId } = body;
 	const controller = runId ? registerQuery(runId) : new AbortController();
 	try {
-		const result = await queryExternalConnection(body.connection, body.secret, body.sql, controller.signal);
+		const secret = await getSecret(body.connection.id);
+		const result = await queryExternalConnection(body.connection, secret ?? undefined, body.sql, controller.signal);
 		return json(result);
 	} catch (err) {
 		if ((err as Error)?.name === 'AbortError') {

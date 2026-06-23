@@ -3,5 +3,8 @@ onlyBuiltDependencies:
   - esbuild
   - protobufjs
 allowBuilds:
+  # Optional peer deps of better-auth (Prisma/sqlite adapters) — unused, we use the pg/Kysely adapter.
+  '@prisma/client': false
+  better-sqlite3: false
   esbuild: true
   protobufjs: true
