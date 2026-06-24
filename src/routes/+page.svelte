@@ -939,13 +939,13 @@
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item
-									onclick={() => window.open('https://prql-lang.org/book/', '_blank')}
+									onclick={() => window.open('https://lunapad.dev/docs', '_blank')}
 								>
-									<BookOpen class="h-3.5 w-3.5" /> PRQL documentation
+									<BookOpen class="h-3.5 w-3.5" /> Documentation
 									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
-									onclick={() => window.open('https://github.com/PRQL/prql/issues', '_blank')}
+									onclick={() => window.open('https://github.com/nicodemus-opon/lunapad/issues', '_blank')}
 								>
 									<Bug class="h-3.5 w-3.5" /> Report an issue
 									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
@@ -1839,9 +1839,9 @@
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>
-	<Dialog.Content class="max-w-sm">
+	<Dialog.Content class="max-w-sm p-4">
 		<div class="mb-4 flex items-center gap-2">
-			<Database class="h-4 w-4 text-primary" />
+			<Logo class="h-5 w-5 text-foreground" />
 			<h2 class="text-[15px] font-semibold">Lunapad</h2>
 		</div>
 		<div class="flex flex-col gap-3 text-sm text-muted-foreground">
@@ -1851,7 +1851,7 @@
 			</p>
 			<div class="space-y-1 rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs">
 				<div class="flex justify-between">
-					<span>Engine</span><span class="text-foreground">DuckDB WASM</span>
+					<span>Engine</span><span class="text-foreground">DuckDB WASM/ Trino</span>
 				</div>
 				<div class="flex justify-between">
 					<span>Language</span><span class="text-foreground">SQL / PRQL</span>
@@ -1863,9 +1863,9 @@
 			<div class="flex gap-2 pt-1">
 				<button
 					class="flex items-center gap-1.5 text-xs text-primary hover:underline"
-					onclick={() => window.open('https://prql-lang.org', '_blank')}
+					onclick={() => window.open('https://lunapad.dev/docs', '_blank')}
 				>
-					<ExternalLink class="h-3 w-3" /> prql-lang.org
+					<ExternalLink class="h-3 w-3" /> lunapad.dev/docs
 				</button>
 			</div>
 		</div>

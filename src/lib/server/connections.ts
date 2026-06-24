@@ -191,114 +191,90 @@ async function trinoExec(sql: string, catalogName: string, schema = 'public'): P
 	await trinoRequest(sql, catalogName, schema);
 }
 
-// ── Catalog file management + Trino restart ───────────────────────────────────
-// Trino 481 loads catalogs from .properties files at startup (catalog.management=dynamic).
-// Adding a new catalog requires writing the file and restarting Trino.
-// Trino's graceful shutdown API (PUT /v1/info/state) combined with Docker's
-// restart: unless-stopped handles this automatically.
+// ── Catalog registration via Trino's dynamic catalog SQL ──────────────────────
+// Trino 481 (catalog.management=dynamic, catalog.store=file) persists a catalog's
+// config once it's created. A plain restart reloads that persisted state rather
+// than re-reading the .properties file, so writing the file and restarting Trino
+// (the previous approach) never actually applies edits to an existing catalog —
+// only brand-new catalogs pick up correctly. CREATE/DROP CATALOG SQL applies
+// immediately and is the only way edits reliably take effect; Trino itself keeps
+// the .properties file on disk in sync (and removes it on DROP CATALOG).
 
-function escapePropertiesValue(value: string): string {
-	return value
-		.replace(/\\/g, '\\\\')
-		.replace(/\r?\n/g, '\\n')
-		.replace(/\t/g, '\\t')
-		.replace(/[=:#!]/g, (c) => `\\${c}`);
+interface CatalogSpec {
+	connectorName: string;
+	properties: Record<string, string>;
 }
 
-async function buildCatalogFileContent(
+async function buildCatalogSpec(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
 	secret: ConnectionSecret | undefined,
 	catalogDir: string
-): Promise<string> {
-	const pass = escapePropertiesValue(secret?.password ?? '');
+): Promise<CatalogSpec> {
+	const pass = secret?.password ?? '';
 
 	if (connection.type === 'postgres') {
 		// sslMode: 'require' = SSL without cert check; 'verify-full' = full chain + hostname
 		const pgSslMode = connection.sslMode ?? 'require';
 		const sslParam = connection.ssl ? `?ssl=true&sslmode=${pgSslMode}` : '';
-		return (
-			[
-				'connector.name=postgresql',
-				`connection-url=jdbc:postgresql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:postgresql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'postgresql', properties };
 	}
 
 	if (connection.type === 'clickhouse') {
 		// sslmode=none skips cert verification — standard for private/self-signed ClickHouse deployments
 		const sslParam = connection.secure ? '?ssl=true&sslmode=none' : '';
-		return (
-			[
-				'connector.name=clickhouse',
-				`connection-url=jdbc:clickhouse://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:clickhouse://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'clickhouse', properties };
 	}
 
 	if (connection.type === 'mysql') {
 		// trustServerCertificate=true allows self-signed certs on private MySQL instances
 		const sslParam = connection.ssl ? '?useSSL=true&trustServerCertificate=true' : '';
-		return (
-			[
-				'connector.name=mysql',
-				`connection-url=jdbc:mysql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:mysql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'mysql', properties };
 	}
 
 	if (connection.type === 'mariadb') {
 		const sslParam = connection.ssl ? '?useSsl=true&trustServerCertificate=true' : '';
-		return (
-			[
-				'connector.name=mariadb',
-				`connection-url=jdbc:mariadb://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:mariadb://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'mariadb', properties };
 	}
 
 	if (connection.type === 'redshift') {
 		// Redshift JDBC uses semicolon-delimited URL params, not a `?key=value` query string.
 		const sslParam = connection.ssl ? ';SSL=TRUE;' : '';
-		return (
-			[
-				'connector.name=redshift',
-				`connection-url=jdbc:redshift://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:redshift://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'redshift', properties };
 	}
 
 	if (connection.type === 'singlestore') {
 		const sslParam = connection.ssl ? '?useSsl=true' : '';
-		return (
-			[
-				'connector.name=singlestore',
-				`connection-url=jdbc:singlestore://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:singlestore://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'singlestore', properties };
 	}
 
 	if (connection.type === 'mongodb') {
@@ -307,44 +283,32 @@ async function buildCatalogFileContent(
 			: '';
 		const tlsParam = connection.ssl ? '?tls=true' : '';
 		const connectionUrl = `mongodb://${auth}${connection.host}:${connection.port}/${connection.database}${tlsParam}`;
-		return (
-			[
-				'connector.name=mongodb',
-				`mongodb.connection-url=${escapePropertiesValue(connectionUrl)}`
-			].join('\n') + '\n'
-		);
+		return { connectorName: 'mongodb', properties: { 'mongodb.connection-url': connectionUrl } };
 	}
 
 	if (connection.type === 'elasticsearch') {
-		const lines = [
-			'connector.name=elasticsearch',
-			`elasticsearch.host=${escapePropertiesValue(connection.host)}`,
-			`elasticsearch.port=${connection.port}`,
-			`elasticsearch.default-schema-name=${escapePropertiesValue(connection.database)}`
-		];
+		const properties: Record<string, string> = {
+			'elasticsearch.host': connection.host,
+			'elasticsearch.port': String(connection.port),
+			'elasticsearch.default-schema-name': connection.database
+		};
 		if (connection.username) {
-			lines.push(
-				'elasticsearch.security=PASSWORD',
-				`elasticsearch.auth.user=${escapePropertiesValue(connection.username)}`,
-				pass ? `elasticsearch.auth.password=${pass}` : ''
-			);
+			properties['elasticsearch.security'] = 'PASSWORD';
+			properties['elasticsearch.auth.user'] = connection.username;
+			if (pass) properties['elasticsearch.auth.password'] = pass;
 		}
-		return lines.filter(Boolean).join('\n') + '\n';
+		return { connectorName: 'elasticsearch', properties };
 	}
 
 	if (connection.type === 'sqlserver') {
 		const encrypt = connection.encrypt ? 'true' : 'false';
 		const trustCert = connection.trustServerCertificate ? 'true' : 'false';
-		return (
-			[
-				'connector.name=sqlserver',
-				`connection-url=jdbc:sqlserver://${connection.host}:${connection.port};databaseName=${connection.database};encrypt=${encrypt};trustServerCertificate=${trustCert}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:sqlserver://${connection.host}:${connection.port};databaseName=${connection.database};encrypt=${encrypt};trustServerCertificate=${trustCert}`,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'sqlserver', properties };
 	}
 
 	if (connection.type === 'oracle') {
@@ -352,50 +316,39 @@ async function buildCatalogFileContent(
 			connection.identifierType === 'sid'
 				? `jdbc:oracle:thin:@${connection.host}:${connection.port}:${connection.serviceName}`
 				: `jdbc:oracle:thin:@//${connection.host}:${connection.port}/${connection.serviceName}`;
-		return (
-			[
-				'connector.name=oracle',
-				`connection-url=${url}`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': url,
+			'connection-user': connection.username
+		};
+		if (pass) properties['connection-password'] = pass;
+		return { connectorName: 'oracle', properties };
 	}
 
 	if (connection.type === 'snowflake') {
-		return (
-			[
-				'connector.name=snowflake',
-				`connection-url=jdbc:snowflake://${connection.account}.snowflakecomputing.com`,
-				`connection-user=${escapePropertiesValue(connection.username)}`,
-				pass ? `connection-password=${pass}` : '',
-				`snowflake.account=${escapePropertiesValue(connection.account)}`,
-				`snowflake.database=${escapePropertiesValue(connection.database)}`,
-				`snowflake.warehouse=${escapePropertiesValue(connection.warehouse)}`,
-				connection.role ? `snowflake.role=${escapePropertiesValue(connection.role)}` : ''
-			]
-				.filter(Boolean)
-				.join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'connection-url': `jdbc:snowflake://${connection.account}.snowflakecomputing.com`,
+			'connection-user': connection.username,
+			'snowflake.account': connection.account,
+			'snowflake.database': connection.database,
+			'snowflake.warehouse': connection.warehouse
+		};
+		if (pass) properties['connection-password'] = pass;
+		if (connection.role) properties['snowflake.role'] = connection.role;
+		return { connectorName: 'snowflake', properties };
 	}
 
 	if (connection.type === 'cassandra') {
-		const lines = [
-			'connector.name=cassandra',
-			`cassandra.contact-points=${escapePropertiesValue(connection.contactPoints)}`,
-			`cassandra.native-protocol-port=${connection.port}`,
-			`cassandra.load-policy.dc-aware.local-dc=${escapePropertiesValue(connection.localDatacenter)}`
-		];
+		const properties: Record<string, string> = {
+			'cassandra.contact-points': connection.contactPoints,
+			'cassandra.native-protocol-port': String(connection.port),
+			'cassandra.load-policy.dc-aware.local-dc': connection.localDatacenter
+		};
 		if (connection.username) {
-			lines.push(
-				'cassandra.security=PASSWORD',
-				`cassandra.username=${escapePropertiesValue(connection.username)}`,
-				pass ? `cassandra.password=${pass}` : ''
-			);
+			properties['cassandra.security'] = 'PASSWORD';
+			properties['cassandra.username'] = connection.username;
+			if (pass) properties['cassandra.password'] = pass;
 		}
-		return lines.filter(Boolean).join('\n') + '\n';
+		return { connectorName: 'cassandra', properties };
 	}
 
 	if (connection.type === 'gsheets') {
@@ -405,13 +358,13 @@ async function buildCatalogFileContent(
 			secret,
 			catalogDir
 		);
-		return (
-			[
-				'connector.name=gsheets',
-				`gsheets.metadata-sheet-id=${escapePropertiesValue(connection.metadataSheetId)}`,
-				`gsheets.credentials-path=${escapePropertiesValue(credentialsPath)}`
-			].join('\n') + '\n'
-		);
+		return {
+			connectorName: 'gsheets',
+			properties: {
+				'gsheets.metadata-sheet-id': connection.metadataSheetId,
+				'gsheets.credentials-path': credentialsPath
+			}
+		};
 	}
 
 	if (connection.type === 'bigquery') {
@@ -421,108 +374,26 @@ async function buildCatalogFileContent(
 			secret,
 			catalogDir
 		);
-		return (
-			[
-				'connector.name=bigquery',
-				`bigquery.project-id=${escapePropertiesValue(connection.projectId)}`,
-				connection.parentProjectId
-					? `bigquery.parent-project-id=${escapePropertiesValue(connection.parentProjectId)}`
-					: '',
-				`bigquery.credentials-file=${escapePropertiesValue(credentialsPath)}`
-			].filter(Boolean).join('\n') + '\n'
-		);
+		const properties: Record<string, string> = {
+			'bigquery.project-id': connection.projectId,
+			'bigquery.credentials-file': credentialsPath
+		};
+		if (connection.parentProjectId) properties['bigquery.parent-project-id'] = connection.parentProjectId;
+		return { connectorName: 'bigquery', properties };
 	}
 
 	throw new Error(`Unsupported connection type: ${(connection as Connection).type}`);
 }
 
-async function writeCatalogFile(
-	connection: Exclude<Connection, DuckDBWASMConnection>,
-	secret: ConnectionSecret | undefined,
-	catalogDir: string
-): Promise<{ changed: boolean }> {
-	const content = await buildCatalogFileContent(connection, secret, catalogDir);
-	const filePath = path.join(catalogDir, `${connection.catalogName}.properties`);
-
-	// Read existing file to detect credential changes. If content differs, the
-	// caller must restart Trino even when the catalog is already active —
-	// otherwise the new credentials won't take effect until the next restart.
-	let changed = true;
-	try {
-		const existing = await fs.readFile(filePath, 'utf-8');
-		changed = existing !== content;
-	} catch {
-		// ENOENT or any read error → treat as new file
-	}
-
-	try {
-		await fs.mkdir(catalogDir, { recursive: true });
-		await fs.writeFile(filePath, content, 'utf-8');
-	} catch (err) {
-		const code = (err as NodeJS.ErrnoException).code;
-		if (code === 'EACCES' || code === 'EPERM') {
-			throw new Error(
-				`Cannot write to catalog directory "${catalogDir}". ` +
-					`Set TRINO_CATALOG_DIR to the path mounted into the Trino container.`
-			);
-		}
-		throw err;
-	}
-
-	return { changed };
+function buildDropCatalogSQL(catalogName: string): string {
+	return `DROP CATALOG IF EXISTS ${quoteTrinoIdent(catalogName)}`;
 }
 
-async function isCatalogActive(catalogName: string): Promise<boolean> {
-	try {
-		const result = await trinoRequest('SHOW CATALOGS');
-		return result.rows.some(
-			(r) => String(Object.values(r)[0] ?? '').toLowerCase() === catalogName.toLowerCase()
-		);
-	} catch {
-		return false;
-	}
-}
-
-async function triggerTrinoRestart(): Promise<void> {
-	// Graceful shutdown — Docker's restart:unless-stopped brings Trino back up
-	await fetch(`${TRINO_URL}/v1/info/state`, {
-		method: 'PUT',
-		headers: { 'X-Trino-User': 'lunapad', 'Content-Type': 'text/plain' },
-		body: 'SHUTTING_DOWN'
-	}).catch(() => {}); // ignore if already shutting down
-}
-
-// Wait for Trino to go offline before polling for it to come back up.
-// Without this, waitForTrinoReady() may pick up the OLD Trino instance still
-// in its graceful-shutdown window and return prematurely, before the new instance
-// with the freshly-written catalog files has started.
-async function waitForTrinoDown(timeoutMs = 30_000): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		try {
-			await fetch(`${TRINO_URL}/v1/info`, { signal: AbortSignal.timeout(2_000) });
-			// Still responding — keep waiting
-		} catch {
-			return; // Connection refused or timeout: Trino is down
-		}
-		await new Promise((r) => setTimeout(r, 1_000));
-	}
-	// Timed out without detecting shutdown — proceed anyway (may already be restarting)
-}
-
-async function waitForTrinoReady(timeoutMs = 60_000): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		try {
-			const resp = await fetch(`${TRINO_URL}/v1/info`);
-			if (resp.ok) {
-				const info = (await resp.json()) as { starting?: boolean };
-				if (!info.starting) return;
-			}
-		} catch {}
-		await new Promise((r) => setTimeout(r, 2_000));
-	}
-	throw new Error('Query engine did not come back online. Run: docker compose logs trino');
+function buildCreateCatalogSQL(catalogName: string, spec: CatalogSpec): string {
+	const withClause = Object.entries(spec.properties)
+		.map(([key, value]) => `${quoteTrinoIdent(key)} = ${quoteLiteral(value)}`)
+		.join(', ');
+	return `CREATE CATALOG ${quoteTrinoIdent(catalogName)} USING ${spec.connectorName} WITH (${withClause})`;
 }
 
 export async function registerCatalog(
@@ -543,40 +414,21 @@ export async function registerCatalog(
 		);
 	}
 
-	const { changed } = await writeCatalogFile(connection, secret, catalogDir);
+	const spec = await buildCatalogSpec(connection, secret, catalogDir);
 
-	// Skip restart only when the catalog is already active AND the file content
-	// didn't change. If credentials were updated we must restart so Trino picks
-	// up the new catalog file — Trino reads properties only at startup.
-	if (!changed && (await isCatalogActive(connection.catalogName))) return;
-
-	// Trigger graceful restart so Trino picks up the new catalog file.
-	// Wait for the old instance to go offline first — otherwise waitForTrinoReady
-	// may return while polling the still-running old instance (which doesn't have
-	// the new catalog), causing a false "not loaded" error.
-	await triggerTrinoRestart();
-	await waitForTrinoDown();
-	await waitForTrinoReady();
-
-	if (!(await isCatalogActive(connection.catalogName))) {
-		throw new Error(
-			`Catalog "${connection.catalogName}" was not loaded after restart. ` +
-				`Check the connection settings and run: docker compose logs trino`
-		);
-	}
+	// DROP + CREATE so edits to an already-registered catalog (host, port, database,
+	// credentials, ...) actually take effect — see comment above.
+	await trinoRequest(buildDropCatalogSQL(connection.catalogName));
+	await trinoRequest(buildCreateCatalogSQL(connection.catalogName, spec));
 }
 
 export async function unregisterCatalog(catalogName: string): Promise<void> {
-	// Remove the catalog file. The catalog remains active until the next Trino restart.
+	await trinoRequest(buildDropCatalogSQL(catalogName)).catch(() => {});
+
+	// Google-auth connectors write service-account credentials alongside the catalog
+	// file — clean up to avoid orphaned secrets sitting on disk after removal.
 	const delDir = getCatalogDir();
 	if (delDir) {
-		try {
-			await fs.unlink(path.join(delDir, `${catalogName}.properties`));
-		} catch (err) {
-			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-		}
-		// Google-auth connectors write service-account credentials alongside the catalog
-		// file — clean up both to avoid orphaned secrets sitting on disk after removal.
 		for (const suffix of ['gsheets', 'bigquery']) {
 			try {
 				await fs.unlink(serviceAccountCredentialsPath(delDir, catalogName, suffix));

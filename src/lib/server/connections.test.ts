@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Connection, ConnectionSecret } from '$lib/types/connection';
 
-const { fetchMock, mkdirMock, writeFileMock, readFileMock, unlinkMock } = vi.hoisted(() => ({
+const { fetchMock, mkdirMock, writeFileMock, unlinkMock } = vi.hoisted(() => ({
 	fetchMock: vi.fn(),
 	mkdirMock: vi.fn(),
 	writeFileMock: vi.fn(),
-	readFileMock: vi.fn(),
 	unlinkMock: vi.fn()
 }));
 
 vi.mock('node:fs/promises', () => ({
-	default: { mkdir: mkdirMock, writeFile: writeFileMock, readFile: readFileMock, unlink: unlinkMock }
+	default: { mkdir: mkdirMock, writeFile: writeFileMock, unlink: unlinkMock }
 }));
 
 vi.stubGlobal('fetch', fetchMock);
@@ -56,210 +55,103 @@ function trinoPage(columns: { name: string; type?: string }[], data: unknown[][]
 	);
 }
 
-/** SHOW CATALOGS response including the given catalog names. */
-function trinoShowCatalogs(...names: string[]): Response {
-	return trinoPage([{ name: 'Catalog' }], names.map((n) => [n]));
+/** A bare successful Trino response for DDL statements (DROP/CREATE CATALOG) with no result rows. */
+function trinoOK(): Response {
+	return new Response(JSON.stringify({ id: 'q1', stats: { state: 'FINISHED' } }), { status: 200 });
 }
 
 /**
- * Registers a catalog via the full restart sequence (catalog not yet active),
- * driving fake timers through the wait loops, and returns the written
- * `.properties` content. Avoids needing to hand-compute exact prior file
- * content just to take the "unchanged, skip restart" shortcut.
+ * Registers a catalog (DROP CATALOG IF EXISTS, then CREATE CATALOG ... USING ... WITH (...))
+ * and returns the CREATE CATALOG SQL text sent to Trino, for asserting on its WITH-clause properties.
  */
 async function registerAndCapture(
 	conn: Exclude<Connection, { type: 'duckdb-wasm' }>,
 	secret: ConnectionSecret | undefined
 ): Promise<string> {
-	vi.useFakeTimers();
-	fetchMock
-		.mockResolvedValueOnce(trinoShowCatalogs('tpch')) // SHOW CATALOGS: not active yet
-		.mockResolvedValueOnce(new Response('', { status: 200 })) // PUT /v1/info/state
-		.mockRejectedValueOnce(new Error('ECONNREFUSED')) // GET /v1/info: down
-		.mockResolvedValueOnce(new Response(JSON.stringify({ starting: false }), { status: 200 })) // GET /v1/info: ready
-		.mockResolvedValueOnce(trinoShowCatalogs('tpch', conn.catalogName)); // SHOW CATALOGS: active after restart
-	const promise = registerCatalog(conn, secret);
-	await vi.advanceTimersByTimeAsync(6_000);
-	await promise;
-	vi.useRealTimers();
-	const catalogCall = writeFileMock.mock.calls.find(
-		(c) => String(c[0]).endsWith('.properties') && String(c[0]).includes(conn.catalogName)
+	fetchMock.mockResolvedValueOnce(trinoOK()); // DROP CATALOG IF EXISTS
+	fetchMock.mockResolvedValueOnce(trinoOK()); // CREATE CATALOG ... USING ... WITH (...)
+	await registerCatalog(conn, secret);
+	const createCall = fetchMock.mock.calls.find((c) =>
+		String(c[1]?.body ?? '').startsWith('CREATE CATALOG')
 	);
-	return catalogCall?.[1] as string;
+	return createCall?.[1]?.body as string;
 }
-
-// Pre-built catalog file content for the test connections (mirrors buildCatalogFileContent).
-// Used by readFileMock to simulate "file unchanged" so tests that only care about content
-// don't need to mock the full Trino restart sequence.
-const PG_CATALOG_CONTENT_PW = [
-	'connector.name=postgresql',
-	'connection-url=jdbc:postgresql://localhost:5432/jobs',
-	'connection-user=postgres',
-	'connection-password=pw'
-].join('\n') + '\n';
-
-const CH_CATALOG_CONTENT_SECRET = [
-	'connector.name=clickhouse',
-	'connection-url=jdbc:clickhouse://127.0.0.1:8123/analytics',
-	'connection-user=default',
-	'connection-password=secret'
-].join('\n') + '\n';
-
-// Postgres with verify-full SSL
-const PG_CATALOG_CONTENT_VERIFY_FULL = [
-	'connector.name=postgresql',
-	'connection-url=jdbc:postgresql://localhost:5432/jobs?ssl=true&sslmode=verify-full',
-	'connection-user=postgres',
-	'connection-password=pw'
-].join('\n') + '\n';
 
 beforeEach(() => {
 	fetchMock.mockReset();
 	mkdirMock.mockReset().mockResolvedValue(undefined);
 	writeFileMock.mockReset().mockResolvedValue(undefined);
-	// Default: catalog file does not exist yet → content is always "changed"
-	readFileMock.mockReset().mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 	unlinkMock.mockReset().mockResolvedValue(undefined);
 	process.env.TRINO_CATALOG_DIR = '/tmp/test-catalog';
 });
 
 describe('registerCatalog', () => {
-	it('skips restart when catalog is active and file is unchanged', async () => {
-		// readFile returns identical content → changed = false
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW);
-		fetchMock.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'));
+	it('drops then creates the catalog via SQL', async () => {
+		const content = await registerAndCapture(postgresConnection, { password: 'pw' });
 
-		await registerCatalog(postgresConnection, { password: 'pw' });
-
-		expect(writeFileMock).toHaveBeenCalledWith(
-			expect.stringContaining('primary_postgres.properties'),
-			expect.stringContaining('connector.name=postgresql'),
-			'utf-8'
-		);
-		// Only SHOW CATALOGS — no restart
-		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0]?.[1]?.body).toBe('DROP CATALOG IF EXISTS "primary_postgres"');
+		expect(content).toContain('CREATE CATALOG "primary_postgres" USING postgresql WITH (');
+		expect(content).toContain(`"connection-url" = 'jdbc:postgresql://localhost:5432/jobs'`);
+		expect(content).toContain(`"connection-user" = 'postgres'`);
+		expect(content).toContain(`"connection-password" = 'pw'`);
 	});
 
-	it('restarts when catalog is active but credentials changed', async () => {
-		vi.useFakeTimers();
-		// readFile returns OLD content (different password) → changed = true
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW.replace('connection-password=pw', 'connection-password=old'));
-		fetchMock
-			// SHOW CATALOGS: active with old creds
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'))
-			// PUT /v1/info/state
-			.mockResolvedValueOnce(new Response('', { status: 200 }))
-			// GET /v1/info: Trino down
-			.mockRejectedValueOnce(new Error('ECONNREFUSED'))
-			// GET /v1/info: Trino ready
-			.mockResolvedValueOnce(new Response(JSON.stringify({ starting: false }), { status: 200 }))
-			// SHOW CATALOGS: still active after restart
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'));
-
-		const promise = registerCatalog(postgresConnection, { password: 'pw' });
-		await vi.advanceTimersByTimeAsync(6_000);
-		await expect(promise).resolves.toBeUndefined();
-		vi.useRealTimers();
-
-		const stateCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/v1/info/state'));
-		expect(stateCall).toBeTruthy();
-	});
-
-	it('writes file, triggers restart, waits for ready when catalog not active', async () => {
-		vi.useFakeTimers();
-		// readFile throws ENOENT (default) → changed = true; catalog not active → restart
-		fetchMock
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch'))
-			.mockResolvedValueOnce(new Response('', { status: 200 }))
-			.mockRejectedValueOnce(new Error('ECONNREFUSED'))
-			.mockResolvedValueOnce(new Response(JSON.stringify({ starting: true }), { status: 200 }))
-			.mockResolvedValueOnce(new Response(JSON.stringify({ starting: false }), { status: 200 }))
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'));
-
-		const promise = registerCatalog(postgresConnection, { password: 'pw' });
-		await vi.advanceTimersByTimeAsync(6_000);
-		await expect(promise).resolves.toBeUndefined();
-		vi.useRealTimers();
-
-		const stateCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/v1/info/state'));
-		expect(stateCall).toBeTruthy();
-		expect(stateCall?.[1]?.body).toBe('SHUTTING_DOWN');
-	});
-
-	it('rejects invalid catalogName before writing', async () => {
+	it('rejects invalid catalogName before issuing any SQL', async () => {
 		const bad = { ...postgresConnection, catalogName: 'INVALID!' };
 		await expect(registerCatalog(bad, {})).rejects.toThrow('Invalid source ID');
-		expect(writeFileMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('writes correct JDBC URL for ClickHouse (no SSL)', async () => {
-		readFileMock.mockResolvedValueOnce(CH_CATALOG_CONTENT_SECRET);
-		fetchMock.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_clickhouse'));
-
-		await registerCatalog(clickHouseConnection, { password: 'secret' });
-
-		const content = writeFileMock.mock.calls[0]?.[1] as string;
-		expect(content).toContain('connector.name=clickhouse');
+		const content = await registerAndCapture(clickHouseConnection, { password: 'secret' });
+		expect(content).toContain('USING clickhouse');
 		expect(content).toContain('jdbc:clickhouse://127.0.0.1:8123/analytics');
 		expect(content).not.toContain('ssl');
-		expect(content).toContain('connection-password=secret');
+		expect(content).toContain(`"connection-password" = 'secret'`);
 	});
 
 	it('adds sslmode=none for secure ClickHouse', async () => {
 		const secureConn = { ...clickHouseConnection, secure: true };
-		const secureContent = CH_CATALOG_CONTENT_SECRET.replace(
-			'jdbc:clickhouse://127.0.0.1:8123/analytics',
-			'jdbc:clickhouse://127.0.0.1:8123/analytics?ssl=true&sslmode=none'
-		);
-		readFileMock.mockResolvedValueOnce(secureContent);
-		fetchMock.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_clickhouse'));
-
-		await registerCatalog(secureConn, { password: 'secret' });
-
-		const content = writeFileMock.mock.calls[0]?.[1] as string;
-		expect(content).toContain('?ssl=true&sslmode=none');
+		const content = await registerAndCapture(secureConn, { password: 'secret' });
+		expect(content).toContain('jdbc:clickhouse://127.0.0.1:8123/analytics?ssl=true&sslmode=none');
 	});
 
 	it('uses sslMode=verify-full for Postgres when set', async () => {
 		const verifyConn = { ...postgresConnection, ssl: true, sslMode: 'verify-full' as const };
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_VERIFY_FULL);
-		fetchMock.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'));
-
-		await registerCatalog(verifyConn, { password: 'pw' });
-
-		const content = writeFileMock.mock.calls[0]?.[1] as string;
+		const content = await registerAndCapture(verifyConn, { password: 'pw' });
 		expect(content).toContain('sslmode=verify-full');
 		expect(content).not.toContain('sslmode=require');
 	});
 
-	it('escapes special chars in password', async () => {
-		const escaped = PG_CATALOG_CONTENT_PW.replace('connection-password=pw', 'connection-password=p@ss\\=word\\#1\\!');
-		readFileMock.mockResolvedValueOnce(escaped);
-		fetchMock.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'));
-
-		await registerCatalog(postgresConnection, { password: 'p@ss=word#1!' });
-
-		const content = writeFileMock.mock.calls[0]?.[1] as string;
-		expect(content).toContain('p@ss\\=word\\#1\\!');
+	it('doubles single quotes in the password as SQL string literal escaping', async () => {
+		const content = await registerAndCapture(postgresConnection, { password: `p'word` });
+		expect(content).toContain(`"connection-password" = 'p''word'`);
 	});
 });
 
 describe('unregisterCatalog', () => {
-	it('deletes the catalog file', async () => {
+	it('drops the catalog via SQL', async () => {
+		fetchMock.mockResolvedValueOnce(trinoOK());
 		await unregisterCatalog('primary_postgres');
-		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('primary_postgres.properties'));
+		expect(fetchMock.mock.calls[0]?.[1]?.body).toBe('DROP CATALOG IF EXISTS "primary_postgres"');
 	});
 
-	it('silently ignores ENOENT', async () => {
-		unlinkMock.mockRejectedValueOnce(Object.assign(new Error(), { code: 'ENOENT' }));
+	it('silently ignores a failed drop (e.g. catalog never existed)', async () => {
+		fetchMock.mockRejectedValueOnce(new Error('boom'));
 		await expect(unregisterCatalog('nonexistent')).resolves.toBeUndefined();
 	});
 
 	it('also deletes the Google Sheets and BigQuery credentials files', async () => {
+		fetchMock.mockResolvedValueOnce(trinoOK());
 		await unregisterCatalog('my_gsheets_source');
-		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('my_gsheets_source.properties'));
 		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('secrets/my_gsheets_source-gsheets.json'));
 		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('secrets/my_gsheets_source-bigquery.json'));
+	});
+
+	it('silently ignores ENOENT when deleting credential files', async () => {
+		fetchMock.mockResolvedValueOnce(trinoOK());
+		unlinkMock.mockRejectedValue(Object.assign(new Error(), { code: 'ENOENT' }));
+		await expect(unregisterCatalog('nonexistent')).resolves.toBeUndefined();
 	});
 });
 
@@ -270,9 +162,9 @@ describe('new connector catalog content', () => {
 			host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=mariadb');
+		expect(content).toContain('USING mariadb');
 		expect(content).toContain('jdbc:mariadb://localhost:3306/mydb?useSsl=true&trustServerCertificate=true');
-		expect(content).toContain('connection-password=pw');
+		expect(content).toContain(`"connection-password" = 'pw'`);
 	});
 
 	it('writes Redshift JDBC URL with semicolon-delimited SSL param', async () => {
@@ -281,7 +173,7 @@ describe('new connector catalog content', () => {
 			host: 'redshift.example.com', port: 5439, database: 'dev', username: 'awsuser', ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=redshift');
+		expect(content).toContain('USING redshift');
 		expect(content).toContain('jdbc:redshift://redshift.example.com:5439/dev;SSL=TRUE;');
 	});
 
@@ -291,7 +183,7 @@ describe('new connector catalog content', () => {
 			host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=singlestore');
+		expect(content).toContain('USING singlestore');
 		expect(content).toContain('jdbc:singlestore://localhost:3306/mydb?useSsl=true');
 	});
 
@@ -301,10 +193,8 @@ describe('new connector catalog content', () => {
 			host: 'localhost', port: 27017, database: 'mydb', username: 'appuser', ssl: false
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=mongodb');
-		// Colons are escaped per Java .properties value rules — only the property KEY/VALUE
-		// separator semantics require this, the connector still parses the unescaped URL.
-		expect(content).toContain('mongodb.connection-url=mongodb\\://appuser\\:pw@localhost\\:27017/mydb');
+		expect(content).toContain('USING mongodb');
+		expect(content).toContain(`"mongodb.connection-url" = 'mongodb://appuser:pw@localhost:27017/mydb'`);
 	});
 
 	it('URI-encodes special characters in MongoDB username/password', async () => {
@@ -323,13 +213,13 @@ describe('new connector catalog content', () => {
 			host: 'es.example.com', port: 9200, database: 'default', username: 'elastic'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=elasticsearch');
-		expect(content).toContain('elasticsearch.host=es.example.com');
-		expect(content).toContain('elasticsearch.port=9200');
-		expect(content).toContain('elasticsearch.default-schema-name=default');
-		expect(content).toContain('elasticsearch.security=PASSWORD');
-		expect(content).toContain('elasticsearch.auth.user=elastic');
-		expect(content).toContain('elasticsearch.auth.password=pw');
+		expect(content).toContain('USING elasticsearch');
+		expect(content).toContain(`"elasticsearch.host" = 'es.example.com'`);
+		expect(content).toContain(`"elasticsearch.port" = '9200'`);
+		expect(content).toContain(`"elasticsearch.default-schema-name" = 'default'`);
+		expect(content).toContain(`"elasticsearch.security" = 'PASSWORD'`);
+		expect(content).toContain(`"elasticsearch.auth.user" = 'elastic'`);
+		expect(content).toContain(`"elasticsearch.auth.password" = 'pw'`);
 	});
 
 	it('omits Elasticsearch auth properties when no username is set', async () => {
@@ -349,7 +239,7 @@ describe('new connector catalog content', () => {
 			encrypt: true, trustServerCertificate: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=sqlserver');
+		expect(content).toContain('USING sqlserver');
 		expect(content).toContain(
 			'jdbc:sqlserver://sql.example.com:1433;databaseName=master;encrypt=true;trustServerCertificate=true'
 		);
@@ -372,8 +262,8 @@ describe('new connector catalog content', () => {
 			identifierType: 'service_name', serviceName: 'ORCLPDB1'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=oracle');
-		expect(content).toContain('connection-url=jdbc:oracle:thin:@//ora.example.com:1521/ORCLPDB1');
+		expect(content).toContain('USING oracle');
+		expect(content).toContain("jdbc:oracle:thin:@//ora.example.com:1521/ORCLPDB1");
 	});
 
 	it('writes Oracle SID URL (colon syntax)', async () => {
@@ -383,7 +273,7 @@ describe('new connector catalog content', () => {
 			identifierType: 'sid', serviceName: 'ORCL'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connection-url=jdbc:oracle:thin:@ora.example.com:1521:ORCL');
+		expect(content).toContain('jdbc:oracle:thin:@ora.example.com:1521:ORCL');
 	});
 
 	it('writes Snowflake properties with account/warehouse/database as separate keys, with role', async () => {
@@ -393,13 +283,13 @@ describe('new connector catalog content', () => {
 			username: 'svc_user', role: 'ANALYST'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('connector.name=snowflake');
-		expect(content).toContain('connection-url=jdbc:snowflake://xy12345.us-east-1.snowflakecomputing.com');
+		expect(content).toContain('USING snowflake');
+		expect(content).toContain("jdbc:snowflake://xy12345.us-east-1.snowflakecomputing.com");
 		expect(content).not.toContain('?warehouse'); // not a URL param
-		expect(content).toContain('snowflake.account=xy12345.us-east-1');
-		expect(content).toContain('snowflake.database=MYDB');
-		expect(content).toContain('snowflake.warehouse=COMPUTE_WH');
-		expect(content).toContain('snowflake.role=ANALYST');
+		expect(content).toContain(`"snowflake.account" = 'xy12345.us-east-1'`);
+		expect(content).toContain(`"snowflake.database" = 'MYDB'`);
+		expect(content).toContain(`"snowflake.warehouse" = 'COMPUTE_WH'`);
+		expect(content).toContain(`"snowflake.role" = 'ANALYST'`);
 	});
 
 	it('omits Snowflake role property when not set', async () => {
@@ -417,10 +307,10 @@ describe('new connector catalog content', () => {
 			contactPoints: '10.0.0.1,10.0.0.2', port: 9042, localDatacenter: 'datacenter1'
 		};
 		const content = await registerAndCapture(conn, undefined);
-		expect(content).toContain('connector.name=cassandra');
-		expect(content).toContain('cassandra.contact-points=10.0.0.1,10.0.0.2');
-		expect(content).toContain('cassandra.native-protocol-port=9042');
-		expect(content).toContain('cassandra.load-policy.dc-aware.local-dc=datacenter1');
+		expect(content).toContain('USING cassandra');
+		expect(content).toContain(`"cassandra.contact-points" = '10.0.0.1,10.0.0.2'`);
+		expect(content).toContain(`"cassandra.native-protocol-port" = '9042'`);
+		expect(content).toContain(`"cassandra.load-policy.dc-aware.local-dc" = 'datacenter1'`);
 		expect(content).not.toContain('cassandra.security');
 	});
 
@@ -430,9 +320,9 @@ describe('new connector catalog content', () => {
 			contactPoints: '10.0.0.1', port: 9042, localDatacenter: 'datacenter1', username: 'cassandra_user'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
-		expect(content).toContain('cassandra.security=PASSWORD');
-		expect(content).toContain('cassandra.username=cassandra_user');
-		expect(content).toContain('cassandra.password=pw');
+		expect(content).toContain(`"cassandra.security" = 'PASSWORD'`);
+		expect(content).toContain(`"cassandra.username" = 'cassandra_user'`);
+		expect(content).toContain(`"cassandra.password" = 'pw'`);
 	});
 
 	it('writes Google Sheets credentials file and references its path in the catalog properties', async () => {
@@ -446,9 +336,9 @@ describe('new connector catalog content', () => {
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
 		expect(credsCall?.[2]).toMatchObject({ mode: 0o600 });
 
-		expect(content).toContain('connector.name=gsheets');
-		expect(content).toContain('gsheets.metadata-sheet-id=sheet123');
-		expect(content).toContain('gsheets.credentials-path=');
+		expect(content).toContain('USING gsheets');
+		expect(content).toContain(`"gsheets.metadata-sheet-id" = 'sheet123'`);
+		expect(content).toContain('gsheets.credentials-path');
 		expect(content).toContain('my_gsheets_source-gsheets.json');
 	});
 
@@ -458,7 +348,7 @@ describe('new connector catalog content', () => {
 			metadataSheetId: 'sheet123'
 		};
 		await expect(registerCatalog(conn, undefined)).rejects.toThrow('requires a service-account credentials JSON');
-		expect(writeFileMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects Google Sheets registration with invalid JSON', async () => {
@@ -469,7 +359,7 @@ describe('new connector catalog content', () => {
 		await expect(registerCatalog(conn, { credentialsJson: 'not json' })).rejects.toThrow(
 			'must be valid JSON'
 		);
-		expect(writeFileMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('writes BigQuery credentials file and references it via bigquery.credentials-file', async () => {
@@ -483,10 +373,10 @@ describe('new connector catalog content', () => {
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
 		expect(credsCall?.[2]).toMatchObject({ mode: 0o600 });
 
-		expect(content).toContain('connector.name=bigquery');
-		expect(content).toContain('bigquery.project-id=my-gcp-project');
-		expect(content).toContain('bigquery.parent-project-id=billing-project');
-		expect(content).toContain('bigquery.credentials-file=');
+		expect(content).toContain('USING bigquery');
+		expect(content).toContain(`"bigquery.project-id" = 'my-gcp-project'`);
+		expect(content).toContain(`"bigquery.parent-project-id" = 'billing-project'`);
+		expect(content).toContain('bigquery.credentials-file');
 		expect(content).toContain('my_bigquery_source-bigquery.json');
 	});
 
@@ -505,7 +395,7 @@ describe('new connector catalog content', () => {
 			projectId: 'my-gcp-project'
 		};
 		await expect(registerCatalog(conn, undefined)).rejects.toThrow('requires a service-account credentials JSON');
-		expect(writeFileMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects BigQuery registration with invalid JSON', async () => {
@@ -514,28 +404,27 @@ describe('new connector catalog content', () => {
 			projectId: 'my-gcp-project'
 		};
 		await expect(registerCatalog(conn, { credentialsJson: 'not json' })).rejects.toThrow('must be valid JSON');
-		expect(writeFileMock).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
 
 describe('testExternalConnection', () => {
 	it('succeeds when probe returns rows', async () => {
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW);
 		fetchMock
-			.mockResolvedValueOnce(trinoShowCatalogs('primary_postgres'))
-			.mockResolvedValueOnce(trinoPage([{ name: '1' }], [[1]]));
+			.mockResolvedValueOnce(trinoOK()) // DROP CATALOG IF EXISTS
+			.mockResolvedValueOnce(trinoOK()) // CREATE CATALOG ...
+			.mockResolvedValueOnce(trinoPage([{ name: '1' }], [[1]])); // probe
 
 		await expect(testExternalConnection(postgresConnection, { password: 'pw' })).resolves.toEqual({ ok: true });
-		expect(writeFileMock).toHaveBeenCalled();
 
-		const probeBody = fetchMock.mock.calls[1]?.[1]?.body as string;
+		const probeBody = fetchMock.mock.calls[2]?.[1]?.body as string;
 		expect(probeBody).toContain('information_schema.schemata');
 	});
 
 	it('throws when probe returns 0 rows (database unreachable)', async () => {
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW);
 		fetchMock
-			.mockResolvedValueOnce(trinoShowCatalogs('primary_postgres'))
+			.mockResolvedValueOnce(trinoOK())
+			.mockResolvedValueOnce(trinoOK())
 			// Trino returns empty result when it can't reach the underlying DB
 			.mockResolvedValueOnce(trinoPage([{ name: '1' }], []));
 
@@ -560,8 +449,6 @@ describe('queryExternalConnection', () => {
 	});
 
 	it('auto-registers on catalog-not-found then retries', async () => {
-		// readFile returns same content → changed=false → no restart, just re-register
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW);
 		fetchMock
 			// First query fails: catalog not found
 			.mockResolvedValueOnce(
@@ -570,8 +457,9 @@ describe('queryExternalConnection', () => {
 					{ status: 200 }
 				)
 			)
-			// SHOW CATALOGS: already active (no restart needed)
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'))
+			// Re-register: DROP then CREATE
+			.mockResolvedValueOnce(trinoOK())
+			.mockResolvedValueOnce(trinoOK())
 			// Retry query succeeds
 			.mockResolvedValueOnce(trinoPage([{ name: 'id' }], [[1]]));
 
@@ -668,8 +556,6 @@ describe('fetchExternalConnectionSchema', () => {
 	});
 
 	it('auto-registers on catalog-not-found then retries', async () => {
-		// readFile returns same content → changed=false → no restart on re-register
-		readFileMock.mockResolvedValueOnce(PG_CATALOG_CONTENT_PW);
 		fetchMock
 			// First schema query fails: catalog not found
 			.mockResolvedValueOnce(
@@ -678,8 +564,9 @@ describe('fetchExternalConnectionSchema', () => {
 					{ status: 200 }
 				)
 			)
-			// SHOW CATALOGS: already active
-			.mockResolvedValueOnce(trinoShowCatalogs('tpch', 'primary_postgres'))
+			// Re-register: DROP then CREATE
+			.mockResolvedValueOnce(trinoOK())
+			.mockResolvedValueOnce(trinoOK())
 			// Retry returns columns
 			.mockResolvedValueOnce(
 				trinoPage(
