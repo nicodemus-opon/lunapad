@@ -47,3 +47,5 @@ generated_datasets_round2/
 .vscode/
 
 src-tauri/
+demo-assets/
+FEATURES.md

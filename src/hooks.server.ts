@@ -6,7 +6,8 @@ import { auth, ensureAuthTablesOnce, hasAnyUser, promoteSoleUserToAdmin, SIGN_UP
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
-const startupFolder = process.env.DBT_PROJECT_FOLDER;
+// (The frontend also reads this in +page.server.ts to auto-open/scaffold it.)
+const startupFolder = process.env.PROJECT_FOLDER;
 if (startupFolder) {
 	setCurrentFolder(startupFolder);
 }

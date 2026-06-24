@@ -161,6 +161,9 @@
 		initWorkspaceStandards
 	} from '$lib/stores/ai-chat.svelte';
 	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 
 	// ── Reactive state ──────────────────────────────────────────────────────
 	const cells = $derived(getCells());
@@ -427,7 +430,7 @@
 		initAIChatWidth();
 		initWorkspaceStandards();
 		try {
-			loadFromStorage();
+			loadFromStorage(data.defaultProjectFolder);
 		} catch {
 			toast.error('Stored workspace state is invalid and was ignored.');
 		}

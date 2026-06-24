@@ -19,6 +19,7 @@ import {
 	auditProject,
 	backfillSchemaFromManifest,
 	promoteCells,
+	scaffoldProject,
 	type PromotePlanItem,
 	type PromoteResult
 } from '$lib/services/project-client';
@@ -1441,7 +1442,7 @@ function deserialize(raw: string): void {
 	}
 }
 
-export function loadFromStorage(): void {
+export function loadFromStorage(defaultProjectFolder?: string | null): void {
 	if (typeof localStorage === 'undefined') return;
 	const raw = localStorage.getItem(STORAGE_KEY);
 	if (raw) deserialize(raw);
@@ -1466,6 +1467,21 @@ export function loadFromStorage(): void {
 			// Folder may have moved — clear it silently
 			localStorage.removeItem(PROJECT_FOLDER_KEY);
 		});
+	} else if (defaultProjectFolder) {
+		// No project chosen yet this browser — open the deployment's default folder
+		// (e.g. PROJECT_FOLDER in Docker). If it's empty, scaffold a real dbt project
+		// into it first so the default isn't just an empty filesystem-mode shell.
+		void openProject(defaultProjectFolder)
+			.then(async () => {
+				if (!state.isDbtProject) {
+					const name = defaultProjectFolder.split('/').filter(Boolean).pop() || 'project';
+					await scaffoldProject(defaultProjectFolder, name);
+					await openProject(defaultProjectFolder);
+				}
+			})
+			.catch(() => {
+				// Permissions issue, etc. — fall back to local/in-memory mode silently.
+			});
 	}
 }
 

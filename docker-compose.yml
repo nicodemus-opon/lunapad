@@ -74,12 +74,17 @@ services:
       INNGEST_BASE_URL: http://inngest:8288
       INNGEST_EVENT_KEY: local
       INNGEST_SIGNING_KEY: local
+      # Default dbt project folder — auto-opened (and scaffolded into a dbt-best-practices
+      # project if empty) on first load, and used by the Inngest scheduler. Bind-mounted
+      # below so it persists on the host and survives `down`/`up`.
+      PROJECT_FOLDER: /app/project
     extra_hosts:
       # On Linux, Docker does not resolve host.docker.internal by default.
       # This maps it to the host gateway so Ollama is reachable from the container.
       - "host.docker.internal:host-gateway"
     volumes:
       - ./trino/catalog:/trino-catalog
+      - ./project:/app/project
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/ > /dev/null"]
       interval: 5s
@@ -108,7 +113,9 @@ services:
 # - Built-in tpch sample data is always available:
 #   use tpch.tiny.nation, tpch.tiny.orders, etc. in any cell right away.
 # - Scheduling: the Inngest UI is available at http://localhost:8267
-# - To auto-init schedules on startup, set: DBT_PROJECT_FOLDER=/path/to/project
+# - PROJECT_FOLDER (set to /app/project, bind-mounted from ./project) is auto-opened on
+#   startup; if it's empty, a dbt-best-practices project is scaffolded into it automatically.
+#   Point it elsewhere to use a different default, or just open a different folder from the UI.
 
 volumes:
   pgdata:

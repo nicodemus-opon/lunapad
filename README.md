@@ -86,7 +86,7 @@ Required environment variables when running outside Docker:
 | `INNGEST_BASE_URL` | — | Inngest dev server URL (omit to disable scheduling) |
 | `INNGEST_EVENT_KEY` | — | Set to `local` for dev |
 | `INNGEST_SIGNING_KEY` | — | Set to `local` for dev |
-| `DBT_PROJECT_FOLDER` | — | Pre-open a dbt project folder on startup |
+| `PROJECT_FOLDER` | — | Default dbt project folder, auto-opened on startup. If the folder is empty, a dbt-best-practices project is scaffolded into it automatically. |
 
 For local dev pointing at the Docker infra:
 
@@ -164,10 +164,14 @@ Existing catalog files in `./trino/catalog/` survive restarts. The `tpch.propert
 
 ## dbt integration
 
-Open a dbt project folder via **File → Open project**. When a project is open:
+Open a dbt project folder via **File → Open project**, or let the deployment's default
+folder open automatically (see `PROJECT_FOLDER` below). When a project is open:
 
 - Models are compiled with `dbt compile` and the manifest is used for schema and lineage
 - Run/test buttons appear per-cell for dbt models
 - Scheduled materializations use Inngest functions (`dbt run --select model`)
 
-Set `DBT_PROJECT_FOLDER` in the environment to pre-open a project on container start.
+In Docker, `PROJECT_FOLDER=/app/project` (bind-mounted from `./project` on the host) is
+auto-opened on first load; if empty, a dbt-best-practices project (staging/intermediate/marts
+layout, `profiles.yml`, etc.) is scaffolded into it automatically. Opening a different folder
+from the UI always takes precedence over the default on later reloads.
