@@ -10,6 +10,34 @@ import type {
 	PostgresConnection
 } from '$lib/types/connection';
 
+// Service-account JSON credentials are shared across all Google-auth connectors
+// (Google Sheets, BigQuery) — each gets its own file, named by suffix, alongside
+// the catalog's .properties file.
+function serviceAccountCredentialsPath(catalogDir: string, catalogName: string, suffix: string): string {
+	return path.join(catalogDir, 'secrets', `${catalogName}-${suffix}.json`);
+}
+
+async function writeServiceAccountCredentialsFile(
+	catalogName: string,
+	suffix: string,
+	secret: ConnectionSecret | undefined,
+	catalogDir: string
+): Promise<string> {
+	if (!secret?.credentialsJson) {
+		throw new Error('This connection requires a service-account credentials JSON.');
+	}
+	try {
+		JSON.parse(secret.credentialsJson);
+	} catch {
+		throw new Error('Service-account credentials must be valid JSON.');
+	}
+
+	const filePath = serviceAccountCredentialsPath(catalogDir, catalogName, suffix);
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
+	await fs.writeFile(filePath, secret.credentialsJson, { encoding: 'utf-8', mode: 0o600 });
+	return filePath;
+}
+
 export type ExternalMaterializationMode = 'table' | 'view' | 'incremental';
 export type ExternalRelationType = 'table' | 'view';
 
@@ -108,15 +136,21 @@ async function trinoRequest(
 			if (page.columns && columns.length === 0) columns = page.columns;
 			if (page.data && columns.length > 0) {
 				for (const row of page.data) {
-					allRows.push(Object.fromEntries(
-						columns.map((col, i) => {
-							let value = (row as unknown[])[i];
-							if (col.type?.startsWith('varbinary') && typeof value === 'string') {
-								try { value = Buffer.from(value, 'base64').toString('utf8'); } catch { /* keep original */ }
-							}
-							return [col.name, value];
-						})
-					));
+					allRows.push(
+						Object.fromEntries(
+							columns.map((col, i) => {
+								let value = (row as unknown[])[i];
+								if (col.type?.startsWith('varbinary') && typeof value === 'string') {
+									try {
+										value = Buffer.from(value, 'base64').toString('utf8');
+									} catch {
+										/* keep original */
+									}
+								}
+								return [col.name, value];
+							})
+						)
+					);
 				}
 			}
 		};
@@ -171,44 +205,232 @@ function escapePropertiesValue(value: string): string {
 		.replace(/[=:#!]/g, (c) => `\\${c}`);
 }
 
-function buildCatalogFileContent(
+async function buildCatalogFileContent(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
-	secret: ConnectionSecret | undefined
-): string {
+	secret: ConnectionSecret | undefined,
+	catalogDir: string
+): Promise<string> {
 	const pass = escapePropertiesValue(secret?.password ?? '');
 
 	if (connection.type === 'postgres') {
 		// sslMode: 'require' = SSL without cert check; 'verify-full' = full chain + hostname
 		const pgSslMode = connection.sslMode ?? 'require';
 		const sslParam = connection.ssl ? `?ssl=true&sslmode=${pgSslMode}` : '';
-		return [
-			'connector.name=postgresql',
-			`connection-url=jdbc:postgresql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-			`connection-user=${escapePropertiesValue(connection.username)}`,
-			pass ? `connection-password=${pass}` : ''
-		].filter(Boolean).join('\n') + '\n';
+		return (
+			[
+				'connector.name=postgresql',
+				`connection-url=jdbc:postgresql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
 	}
 
 	if (connection.type === 'clickhouse') {
 		// sslmode=none skips cert verification — standard for private/self-signed ClickHouse deployments
 		const sslParam = connection.secure ? '?ssl=true&sslmode=none' : '';
-		return [
-			'connector.name=clickhouse',
-			`connection-url=jdbc:clickhouse://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-			`connection-user=${escapePropertiesValue(connection.username)}`,
-			pass ? `connection-password=${pass}` : ''
-		].filter(Boolean).join('\n') + '\n';
+		return (
+			[
+				'connector.name=clickhouse',
+				`connection-url=jdbc:clickhouse://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
 	}
 
 	if (connection.type === 'mysql') {
 		// trustServerCertificate=true allows self-signed certs on private MySQL instances
 		const sslParam = connection.ssl ? '?useSSL=true&trustServerCertificate=true' : '';
-		return [
-			'connector.name=mysql',
-			`connection-url=jdbc:mysql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
-			`connection-user=${escapePropertiesValue(connection.username)}`,
-			pass ? `connection-password=${pass}` : ''
-		].filter(Boolean).join('\n') + '\n';
+		return (
+			[
+				'connector.name=mysql',
+				`connection-url=jdbc:mysql://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'mariadb') {
+		const sslParam = connection.ssl ? '?useSsl=true&trustServerCertificate=true' : '';
+		return (
+			[
+				'connector.name=mariadb',
+				`connection-url=jdbc:mariadb://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'redshift') {
+		// Redshift JDBC uses semicolon-delimited URL params, not a `?key=value` query string.
+		const sslParam = connection.ssl ? ';SSL=TRUE;' : '';
+		return (
+			[
+				'connector.name=redshift',
+				`connection-url=jdbc:redshift://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'singlestore') {
+		const sslParam = connection.ssl ? '?useSsl=true' : '';
+		return (
+			[
+				'connector.name=singlestore',
+				`connection-url=jdbc:singlestore://${connection.host}:${connection.port}/${connection.database}${sslParam}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'mongodb') {
+		const auth = connection.username
+			? `${encodeURIComponent(connection.username)}:${encodeURIComponent(secret?.password ?? '')}@`
+			: '';
+		const tlsParam = connection.ssl ? '?tls=true' : '';
+		const connectionUrl = `mongodb://${auth}${connection.host}:${connection.port}/${connection.database}${tlsParam}`;
+		return (
+			[
+				'connector.name=mongodb',
+				`mongodb.connection-url=${escapePropertiesValue(connectionUrl)}`
+			].join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'elasticsearch') {
+		const lines = [
+			'connector.name=elasticsearch',
+			`elasticsearch.host=${escapePropertiesValue(connection.host)}`,
+			`elasticsearch.port=${connection.port}`,
+			`elasticsearch.default-schema-name=${escapePropertiesValue(connection.database)}`
+		];
+		if (connection.username) {
+			lines.push(
+				'elasticsearch.security=PASSWORD',
+				`elasticsearch.auth.user=${escapePropertiesValue(connection.username)}`,
+				pass ? `elasticsearch.auth.password=${pass}` : ''
+			);
+		}
+		return lines.filter(Boolean).join('\n') + '\n';
+	}
+
+	if (connection.type === 'sqlserver') {
+		const encrypt = connection.encrypt ? 'true' : 'false';
+		const trustCert = connection.trustServerCertificate ? 'true' : 'false';
+		return (
+			[
+				'connector.name=sqlserver',
+				`connection-url=jdbc:sqlserver://${connection.host}:${connection.port};databaseName=${connection.database};encrypt=${encrypt};trustServerCertificate=${trustCert}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'oracle') {
+		const url =
+			connection.identifierType === 'sid'
+				? `jdbc:oracle:thin:@${connection.host}:${connection.port}:${connection.serviceName}`
+				: `jdbc:oracle:thin:@//${connection.host}:${connection.port}/${connection.serviceName}`;
+		return (
+			[
+				'connector.name=oracle',
+				`connection-url=${url}`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'snowflake') {
+		return (
+			[
+				'connector.name=snowflake',
+				`connection-url=jdbc:snowflake://${connection.account}.snowflakecomputing.com`,
+				`connection-user=${escapePropertiesValue(connection.username)}`,
+				pass ? `connection-password=${pass}` : '',
+				`snowflake.account=${escapePropertiesValue(connection.account)}`,
+				`snowflake.database=${escapePropertiesValue(connection.database)}`,
+				`snowflake.warehouse=${escapePropertiesValue(connection.warehouse)}`,
+				connection.role ? `snowflake.role=${escapePropertiesValue(connection.role)}` : ''
+			]
+				.filter(Boolean)
+				.join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'cassandra') {
+		const lines = [
+			'connector.name=cassandra',
+			`cassandra.contact-points=${escapePropertiesValue(connection.contactPoints)}`,
+			`cassandra.native-protocol-port=${connection.port}`,
+			`cassandra.load-policy.dc-aware.local-dc=${escapePropertiesValue(connection.localDatacenter)}`
+		];
+		if (connection.username) {
+			lines.push(
+				'cassandra.security=PASSWORD',
+				`cassandra.username=${escapePropertiesValue(connection.username)}`,
+				pass ? `cassandra.password=${pass}` : ''
+			);
+		}
+		return lines.filter(Boolean).join('\n') + '\n';
+	}
+
+	if (connection.type === 'gsheets') {
+		const credentialsPath = await writeServiceAccountCredentialsFile(
+			connection.catalogName,
+			'gsheets',
+			secret,
+			catalogDir
+		);
+		return (
+			[
+				'connector.name=gsheets',
+				`gsheets.metadata-sheet-id=${escapePropertiesValue(connection.metadataSheetId)}`,
+				`gsheets.credentials-path=${escapePropertiesValue(credentialsPath)}`
+			].join('\n') + '\n'
+		);
+	}
+
+	if (connection.type === 'bigquery') {
+		const credentialsPath = await writeServiceAccountCredentialsFile(
+			connection.catalogName,
+			'bigquery',
+			secret,
+			catalogDir
+		);
+		return (
+			[
+				'connector.name=bigquery',
+				`bigquery.project-id=${escapePropertiesValue(connection.projectId)}`,
+				connection.parentProjectId
+					? `bigquery.parent-project-id=${escapePropertiesValue(connection.parentProjectId)}`
+					: '',
+				`bigquery.credentials-file=${escapePropertiesValue(credentialsPath)}`
+			].filter(Boolean).join('\n') + '\n'
+		);
 	}
 
 	throw new Error(`Unsupported connection type: ${(connection as Connection).type}`);
@@ -219,7 +441,7 @@ async function writeCatalogFile(
 	secret: ConnectionSecret | undefined,
 	catalogDir: string
 ): Promise<{ changed: boolean }> {
-	const content = buildCatalogFileContent(connection, secret);
+	const content = await buildCatalogFileContent(connection, secret, catalogDir);
 	const filePath = path.join(catalogDir, `${connection.catalogName}.properties`);
 
 	// Read existing file to detect credential changes. If content differs, the
@@ -241,7 +463,7 @@ async function writeCatalogFile(
 		if (code === 'EACCES' || code === 'EPERM') {
 			throw new Error(
 				`Cannot write to catalog directory "${catalogDir}". ` +
-				`Set TRINO_CATALOG_DIR to the path mounted into the Trino container.`
+					`Set TRINO_CATALOG_DIR to the path mounted into the Trino container.`
 			);
 		}
 		throw err;
@@ -253,8 +475,8 @@ async function writeCatalogFile(
 async function isCatalogActive(catalogName: string): Promise<boolean> {
 	try {
 		const result = await trinoRequest('SHOW CATALOGS');
-		return result.rows.some((r) =>
-			String(Object.values(r)[0] ?? '').toLowerCase() === catalogName.toLowerCase()
+		return result.rows.some(
+			(r) => String(Object.values(r)[0] ?? '').toLowerCase() === catalogName.toLowerCase()
 		);
 	} catch {
 		return false;
@@ -317,7 +539,7 @@ export async function registerCatalog(
 	if (!catalogDir) {
 		throw new Error(
 			'External connections require the Docker Compose stack. ' +
-			'Run `docker compose up` to start Trino, then retry.'
+				'Run `docker compose up` to start Trino, then retry.'
 		);
 	}
 
@@ -326,7 +548,7 @@ export async function registerCatalog(
 	// Skip restart only when the catalog is already active AND the file content
 	// didn't change. If credentials were updated we must restart so Trino picks
 	// up the new catalog file — Trino reads properties only at startup.
-	if (!changed && await isCatalogActive(connection.catalogName)) return;
+	if (!changed && (await isCatalogActive(connection.catalogName))) return;
 
 	// Trigger graceful restart so Trino picks up the new catalog file.
 	// Wait for the old instance to go offline first — otherwise waitForTrinoReady
@@ -339,7 +561,7 @@ export async function registerCatalog(
 	if (!(await isCatalogActive(connection.catalogName))) {
 		throw new Error(
 			`Catalog "${connection.catalogName}" was not loaded after restart. ` +
-			`Check the connection settings and run: docker compose logs trino`
+				`Check the connection settings and run: docker compose logs trino`
 		);
 	}
 }
@@ -352,6 +574,15 @@ export async function unregisterCatalog(catalogName: string): Promise<void> {
 			await fs.unlink(path.join(delDir, `${catalogName}.properties`));
 		} catch (err) {
 			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+		}
+		// Google-auth connectors write service-account credentials alongside the catalog
+		// file — clean up both to avoid orphaned secrets sitting on disk after removal.
+		for (const suffix of ['gsheets', 'bigquery']) {
+			try {
+				await fs.unlink(serviceAccountCredentialsPath(delDir, catalogName, suffix));
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+			}
 		}
 	}
 }
@@ -390,7 +621,9 @@ function normalizeExternalRelationName(name: string): string {
 	const normalized = name.trim();
 	if (!normalized) throw new Error('Materialization target name is required.');
 	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(normalized)) {
-		throw new Error('Materialization target name must be a simple identifier (letters, digits, underscore).');
+		throw new Error(
+			'Materialization target name must be a simple identifier (letters, digits, underscore).'
+		);
 	}
 	return normalized;
 }
@@ -399,7 +632,9 @@ function normalizeExternalSchemaName(name: string): string {
 	const normalized = name.trim();
 	if (!normalized) throw new Error('Materialization target schema is required.');
 	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(normalized)) {
-		throw new Error('Materialization target schema must be a simple identifier (letters, digits, underscore).');
+		throw new Error(
+			'Materialization target schema must be a simple identifier (letters, digits, underscore).'
+		);
 	}
 	return normalized;
 }
@@ -407,7 +642,8 @@ function normalizeExternalSchemaName(name: string): string {
 function normalizeMaterializeSQL(sql: string): string {
 	const normalized = stripTrailingSemicolon(sql);
 	if (!normalized) throw new Error('Materialization SQL is required.');
-	if (normalized.includes(';')) throw new Error('Only a single SQL statement is allowed for materialization SQL.');
+	if (normalized.includes(';'))
+		throw new Error('Only a single SQL statement is allowed for materialization SQL.');
 	return normalized;
 }
 
@@ -429,6 +665,14 @@ function quoteLiteral(value: string): string {
 
 function defaultSchema(connection: Exclude<Connection, DuckDBWASMConnection>): string {
 	if (connection.type === 'postgres') return 'public';
+	// Oracle maps schema to "Oracle database", which has no clean static default from
+	// our fields, Cassandra has no keyspace concept on the connection type at all, and
+	// BigQuery's schema is a dataset with no single default — returning '' lets
+	// buildTrinoHeaders omit the schema header safely and forces an explicit schema for
+	// materialize, rather than guessing wrong.
+	if (connection.type === 'oracle' || connection.type === 'cassandra' || connection.type === 'bigquery') return '';
+	if (connection.type === 'gsheets') return 'default';
+	if (connection.type === 'snowflake') return connection.database;
 	return connection.database;
 }
 
@@ -536,7 +780,7 @@ export async function testExternalConnection(
 	if (probe.rows.length === 0) {
 		throw new Error(
 			`Connected to Trino but got no response from the ${connection.type} database. ` +
-			`Check the host, port, and that the database is accepting TCP/IP connections.`
+				`Check the host, port, and that the database is accepting TCP/IP connections.`
 		);
 	}
 	return { ok: true };
@@ -628,17 +872,28 @@ export async function fetchExternalConnectionSchema(
 function duckdbTypeToTrino(type: string): string {
 	const t = type.toUpperCase().split('(')[0].trim();
 	const map: Record<string, string> = {
-		BIGINT: 'BIGINT', INT8: 'BIGINT', HUGEINT: 'BIGINT',
-		INTEGER: 'INTEGER', INT4: 'INTEGER', INT: 'INTEGER',
-		SMALLINT: 'SMALLINT', INT2: 'SMALLINT',
-		TINYINT: 'TINYINT', INT1: 'TINYINT',
-		DOUBLE: 'DOUBLE', FLOAT8: 'DOUBLE',
-		FLOAT: 'REAL', FLOAT4: 'REAL', REAL: 'REAL',
-		BOOLEAN: 'BOOLEAN', BOOL: 'BOOLEAN',
+		BIGINT: 'BIGINT',
+		INT8: 'BIGINT',
+		HUGEINT: 'BIGINT',
+		INTEGER: 'INTEGER',
+		INT4: 'INTEGER',
+		INT: 'INTEGER',
+		SMALLINT: 'SMALLINT',
+		INT2: 'SMALLINT',
+		TINYINT: 'TINYINT',
+		INT1: 'TINYINT',
+		DOUBLE: 'DOUBLE',
+		FLOAT8: 'DOUBLE',
+		FLOAT: 'REAL',
+		FLOAT4: 'REAL',
+		REAL: 'REAL',
+		BOOLEAN: 'BOOLEAN',
+		BOOL: 'BOOLEAN',
 		DATE: 'DATE',
 		TIMESTAMP: 'TIMESTAMP(6)',
 		BLOB: 'VARBINARY',
-		DECIMAL: 'DECIMAL(38,18)', NUMERIC: 'DECIMAL(38,18)',
+		DECIMAL: 'DECIMAL(38,18)',
+		NUMERIC: 'DECIMAL(38,18)'
 	};
 	return map[t] ?? 'VARCHAR';
 }
@@ -660,7 +915,9 @@ async function uploadTrinoTable(
 ): Promise<{ rowsInserted: number }> {
 	const catalogName = connection.catalogName;
 	const ident = quoteTrinoPath(catalogName, targetSchema, targetName);
-	const colDefs = columns.map((c) => `${quoteTrinoIdent(c.name)} ${duckdbTypeToTrino(c.type)}`).join(', ');
+	const colDefs = columns
+		.map((c) => `${quoteTrinoIdent(c.name)} ${duckdbTypeToTrino(c.type)}`)
+		.join(', ');
 	const colNames = columns.map((c) => quoteTrinoIdent(c.name)).join(', ');
 
 	if (mode === 'replace') {
@@ -701,7 +958,14 @@ export async function uploadToExternalConnection(
 	const normalizedSchema = normalizeExternalSchemaName(schema ?? defaultSchema(connection));
 
 	try {
-		return await uploadTrinoTable(connection, normalizedSchema, normalizedName, columns, rows, mode);
+		return await uploadTrinoTable(
+			connection,
+			normalizedSchema,
+			normalizedName,
+			columns,
+			rows,
+			mode
+		);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
 			await registerCatalog(connection, secret);

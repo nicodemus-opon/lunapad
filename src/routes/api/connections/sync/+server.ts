@@ -1,0 +1,22 @@
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import type { Connection } from '$lib/types/connection';
+import { upsertConnectionMetadata } from '$lib/server/connections-store';
+
+interface SyncConnectionRequest {
+	connection: Connection;
+}
+
+export const POST: RequestHandler = async ({ request }) => {
+	try {
+		const body = (await request.json()) as Partial<SyncConnectionRequest>;
+		if (!body?.connection) {
+			return json({ error: 'Connection payload is required.' }, { status: 400 });
+		}
+		await upsertConnectionMetadata(body.connection);
+		return json({ ok: true });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Failed to sync connection metadata.';
+		return json({ error: message }, { status: 400 });
+	}
+};

@@ -120,6 +120,11 @@ export default defineConfig({
 		// inotify events into the container, so chokidar's native watcher never fires.
 		// Polling is the standard workaround — only enabled for the dockerized dev server
 		// (see docker-compose.dev.yml), not local `pnpm dev`, since polling burns more CPU.
-		watch: process.env.VITE_DOCKER_DEV ? { usePolling: true, interval: 300 } : undefined
+		watch: process.env.VITE_DOCKER_DEV ? { usePolling: true, interval: 300 } : undefined,
+		// Vite's Host header check otherwise 403s any request whose Host isn't localhost —
+		// the inngest container reaches this server via the Docker Compose service name
+		// ("app"), so it must be allow-listed or Inngest's dev server can never sync/invoke
+		// functions ("can't find your application" in the Inngest UI).
+		allowedHosts: process.env.VITE_DOCKER_DEV ? ['app'] : undefined
 	}
 });

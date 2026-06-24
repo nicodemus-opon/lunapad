@@ -60,7 +60,11 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 		statusMap.set(result.unique_id, result.status === 'success' ? 'pass' : 'error');
 	}
 
-	const models: DbtModel[] = [];
+	// Keyed by `path` (not `name`) — dbt model names must be unique project-wide,
+	// but a stale manifest can transiently contain two nodes with the same name
+	// (e.g. mid-rename); a duplicate `name` would crash Svelte's keyed each-blocks
+	// in DbtLineageView. `path` is the one field guaranteed unique per model file.
+	const models = new Map<string, DbtModel>();
 	for (const [nodeId, node] of Object.entries(manifest.nodes ?? {})) {
 		if (node.resource_type !== 'model') continue;
 
@@ -80,7 +84,7 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 			tests: []
 		}));
 
-		models.push({
+		models.set(node.path ?? nodeId, {
 			name: node.name,
 			schema: node.schema ?? '',
 			description: node.description ?? null,
@@ -92,7 +96,7 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 		});
 	}
 
-	return models;
+	return Array.from(models.values());
 }
 
 /**

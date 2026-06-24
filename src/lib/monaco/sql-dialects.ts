@@ -97,7 +97,18 @@ const BY_CONNECTION: Record<ConnectionType, SqlFunctionDoc[]> = {
 	'duckdb-wasm': DUCKDB,
 	postgres: TRINO,
 	clickhouse: TRINO,
-	mysql: TRINO
+	mysql: TRINO,
+	mariadb: TRINO,
+	sqlserver: TRINO,
+	oracle: TRINO,
+	redshift: TRINO,
+	snowflake: TRINO,
+	singlestore: TRINO,
+	cassandra: TRINO,
+	gsheets: TRINO,
+	mongodb: TRINO,
+	elasticsearch: TRINO,
+	bigquery: TRINO
 };
 
 const indexByDialect = new Map<ConnectionType, Map<string, SqlFunctionDoc>>();

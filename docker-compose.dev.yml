@@ -34,3 +34,9 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
+
+  # Override the command inherited from docker-compose.yml: the dev app listens on
+  # 5173 (Vite), not the production container's 3000, so Inngest must sync against
+  # that port or it can never find the app ("can't find your application" in the UI).
+  inngest:
+    command: inngest dev -u http://app:5173/api/inngest --no-discovery

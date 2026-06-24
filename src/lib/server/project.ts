@@ -6,6 +6,32 @@ import { parseLunaFile, type LunaEntry, type LunaQueryEntry } from '$lib/service
 import { parseUdfSignature } from '$lib/services/udf';
 import type { Cell, CellLanguage, Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
 import { readSchemaFile, findSchemaFile, upsertModelEntry, writeSchemaFile } from './dbt-schema.js';
+import { deconflictName } from '$lib/utils/deconflict';
+
+/** Resolves `name` against `used` (deconflicting with `_copy`, `_copy2`, ... if
+ *  already taken) and reserves the resolved name in `used`. Models discovered
+ *  while walking a project must have project-wide unique outputNames — dbt
+ *  itself requires globally unique model names for `ref()` to resolve. */
+function claimOutputName(used: Set<string>, name: string): string {
+	if (!name) return name;
+	const claimed = deconflictName(used, name);
+	used.add(claimed);
+	return claimed;
+}
+
+/** Mutates `cell` in place so its id/outputName/materializeTarget agree after
+ *  a (possible) `claimOutputName` rename. No-op for cells with no outputName
+ *  (e.g. markdown cells, or UDF/query cells that already fell back to a
+ *  crypto.randomUUID() id because their name couldn't be parsed). */
+function claimCellOutputName(used: Set<string>, cell: Cell): void {
+	if (!cell.outputName) return;
+	const claimed = claimOutputName(used, cell.outputName);
+	if (claimed !== cell.outputName) {
+		cell.outputName = claimed;
+		cell.id = claimed;
+		cell.materializeTarget = claimed;
+	}
+}
 
 export interface AuditResult {
 	stubsAdded: string[];
@@ -187,6 +213,14 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	const notebooks: Notebook[] = [];
 	const folders: NotebookFolder[] = [];
 
+	// Tracks every outputName claimed so far across the whole project (not just
+	// the current notebook) — dbt model names must be globally unique, and the
+	// app's own dependency resolution (cell-deps.ts, getGlobalOutputRegistry)
+	// resolves outputNames project-wide too. Collisions found while walking
+	// (e.g. two files with the same name in different folders) are deconflicted
+	// here, at load time, rather than silently producing duplicate cell ids.
+	const usedOutputNames = new Set<string>();
+
 	// Collected during the walk: cells that belong to another notebook via @notebook header.
 	// Appended in a post-processing pass after all standalone notebooks are built.
 	const secondaryCells: Array<{ targetNotebookId: string; cell: Cell }> = [];
@@ -237,9 +271,10 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 					// Secondary cell: belongs to another notebook via @notebook annotation
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
 				} else {
+					claimCellOutputName(usedOutputNames, cell);
 					const notebook: Notebook = {
 						id: notebookId,
-						name: outputName,
+						name: cell.outputName,
 						folderId: parentFolderId,
 						defaultCellLanguage: cell.language,
 						cells: [cell]
@@ -261,9 +296,10 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 				if (targetNbId) {
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
 				} else {
+					claimCellOutputName(usedOutputNames, cell);
 					const notebook: Notebook = {
 						id: notebookId,
-						name: outputName,
+						name: cell.outputName,
 						folderId: parentFolderId,
 						defaultCellLanguage: cell.language,
 						cells: [cell]
@@ -295,7 +331,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	await walkDir(path.join(folder, 'models'), 'models', null);
 
 	// Notebooks section: `.luna` multi-cell notebooks, parallel to models/analyses.
-	await walkNotebooksDirectory(folder, notebooks, folders);
+	await walkNotebooksDirectory(folder, notebooks, folders, usedOutputNames);
 
 	// Post-process: append secondary cells to their target notebooks.
 	// Files with a -- @notebook header belong to a multi-cell notebook rather than
@@ -303,6 +339,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	for (const { targetNotebookId, cell } of secondaryCells) {
 		const targetNb = notebooks.find((n) => n.id === targetNotebookId);
 		if (targetNb) {
+			claimCellOutputName(usedOutputNames, cell);
 			targetNb.cells.push(cell);
 		}
 		// If the target notebook doesn't exist (e.g. its primary file is missing),
@@ -314,7 +351,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	// This covers dbt projects where .sql source files were deleted or never
 	// committed — the raw_code in the manifest is the original source SQL.
 	const notebookIds = new Set(notebooks.map((n) => n.id));
-	await loadMissingModelsFromManifest(folder, notebookIds, notebooks, folders);
+	await loadMissingModelsFromManifest(folder, notebookIds, notebooks, folders, usedOutputNames);
 
 	return { notebooks, folders };
 }
@@ -339,7 +376,8 @@ async function loadMissingModelsFromManifest(
 	folder: string,
 	existingNotebookIds: Set<string>,
 	notebooks: Notebook[],
-	folders: NotebookFolder[]
+	folders: NotebookFolder[],
+	usedOutputNames: Set<string>
 ): Promise<void> {
 	let manifest: { nodes?: Record<string, ManifestNode> };
 	try {
@@ -372,7 +410,7 @@ async function loadMissingModelsFromManifest(
 		};
 		const mat = matMap[node.config?.materialized ?? ''] ?? 'table';
 
-		const outputName = node.name;
+		const outputName = claimOutputName(usedOutputNames, node.name);
 		// folderId = parent directory of the model (e.g. "models/staging/links")
 		const parts = notebookId.split('/');
 		const folderId = parts.length > 2 ? parts.slice(0, -1).join('/') : null;
@@ -461,7 +499,12 @@ async function loadMissingModelsFromManifest(
  * `-- @notebook` annotation hack, scoped to its own directory so it never
  * collides with dbt's `models/**\/*.sql` discovery.
  */
-async function walkNotebooksDirectory(folder: string, notebooks: Notebook[], folders: NotebookFolder[]): Promise<void> {
+async function walkNotebooksDirectory(
+	folder: string,
+	notebooks: Notebook[],
+	folders: NotebookFolder[],
+	usedOutputNames: Set<string>
+): Promise<void> {
 	const notebooksDir = path.join(folder, 'notebooks');
 	let hasContent = false;
 	try {
@@ -501,7 +544,7 @@ async function walkNotebooksDirectory(folder: string, notebooks: Notebook[], fol
 			const notebookId = `${relDir}/${name}`;
 			try {
 				const content = await fs.readFile(path.join(absDir, file.name), 'utf-8');
-				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder);
+				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder, usedOutputNames);
 				notebooks.push({
 					id: notebookId,
 					name,
@@ -549,7 +592,11 @@ async function findModelFilePath(projectFolder: string, modelName: string): Prom
 /** Convert parsed `.luna` entries into Cells, hydrating `model` ref placeholders
  *  from the real model file so they participate in dependency resolution
  *  (cell-deps.ts) exactly like any other cell. */
-async function hydrateLunaEntries(entries: LunaEntry[], projectRoot: string): Promise<Cell[]> {
+async function hydrateLunaEntries(
+	entries: LunaEntry[],
+	projectRoot: string,
+	usedOutputNames: Set<string>
+): Promise<Cell[]> {
 	const cells: Cell[] = [];
 	for (const entry of entries) {
 		if (entry.kind === 'markdown') {
@@ -557,14 +604,21 @@ async function hydrateLunaEntries(entries: LunaEntry[], projectRoot: string): Pr
 			continue;
 		}
 		if (entry.kind === 'query') {
-			cells.push(buildQueryCellFromLuna(entry));
+			const cell = buildQueryCellFromLuna(entry);
+			claimCellOutputName(usedOutputNames, cell);
+			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'udf') {
-			cells.push(buildUdfCellFromLuna(entry.udfBody));
+			const cell = buildUdfCellFromLuna(entry.udfBody);
+			claimCellOutputName(usedOutputNames, cell);
+			cells.push(cell);
 			continue;
 		}
-		// modelRef: hydrate the real cell from its promoted model file.
+		// modelRef: hydrate the real cell from its promoted model file. This
+		// intentionally mirrors the same outputName/id as the standalone model
+		// cell elsewhere in the project — it's the same logical model, not a
+		// collision — so it's deliberately NOT passed through claimCellOutputName.
 		const relPath = await findModelFilePath(projectRoot, entry.ref);
 		if (relPath) {
 			try {
@@ -577,20 +631,19 @@ async function hydrateLunaEntries(entries: LunaEntry[], projectRoot: string): Pr
 			}
 		}
 		// Model file missing — keep a stub so the notebook doesn't silently lose the cell.
-		cells.push({
-			...buildQueryCellFromLuna({
-				kind: 'query',
-				name: entry.ref,
-				lang: 'sql',
-				connection: null,
-				materialized: 'table',
-				schema: null,
-				tags: [],
-				meta: {},
-				code: ''
-			}),
-			promotedModelPath: relPath ?? ''
+		const stub = buildQueryCellFromLuna({
+			kind: 'query',
+			name: entry.ref,
+			lang: 'sql',
+			connection: null,
+			materialized: 'table',
+			schema: null,
+			tags: [],
+			meta: {},
+			code: ''
 		});
+		claimCellOutputName(usedOutputNames, stub);
+		cells.push({ ...stub, promotedModelPath: relPath ?? '' });
 	}
 	return cells;
 }
@@ -903,6 +956,13 @@ export async function deleteCellFile(filePath: string): Promise<void> {
  * Rename or move a `.prql` file, carrying its companion `.sql` artifact along.
  */
 export async function renameCellFile(oldPath: string, newPath: string): Promise<void> {
+	if (path.resolve(oldPath) !== path.resolve(newPath)) {
+		const exists = await fs.stat(newPath).then(
+			() => true,
+			() => false
+		);
+		if (exists) throw new Error(`A file already exists at "${path.basename(newPath)}"`);
+	}
 	await fs.mkdir(path.dirname(newPath), { recursive: true });
 	await fs.rename(oldPath, newPath);
 	if (oldPath.endsWith('.prql') && newPath.endsWith('.prql')) {

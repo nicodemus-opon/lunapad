@@ -1,8 +1,16 @@
 import { compilePRQL, type PRQLError } from '$lib/services/prql';
-import { buildExecutionCode, buildGlobalExecutionCode, buildSQLExecutionCode, buildSQLGlobalExecutionCode, resolveDependencies, resolveGlobalDependencies } from '$lib/services/cell-deps';
+import {
+	buildExecutionCode,
+	buildGlobalExecutionCode,
+	buildSQLExecutionCode,
+	buildSQLGlobalExecutionCode,
+	resolveDependencies,
+	resolveGlobalDependencies
+} from '$lib/services/cell-deps';
 import { parseUdfSignature } from '$lib/services/udf';
 import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
+import { deconflictName } from '$lib/utils/deconflict';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
 import {
@@ -25,7 +33,12 @@ import {
 } from '$lib/services/project-client';
 import type { DbtModel } from '$lib/server/dbt';
 import type { DbtSchedule } from '$lib/types/schedule';
-import { cancelConnectionQuery, materializeConnectionRelation, queryConnectionSQL } from '$lib/services/connections';
+import {
+	cancelConnectionQuery,
+	materializeConnectionRelation,
+	queryConnectionSQL,
+	syncConnectionMetadata
+} from '$lib/services/connections';
 import {
 	executeSQL,
 	createView,
@@ -61,10 +74,21 @@ import {
 	isBuiltinDuckDBConnection,
 	resolveConnection,
 	slugifyCatalogName,
+	type BigQueryConnection,
+	type CassandraConnection,
 	type Connection,
 	type ConnectionSecret,
+	type ElasticsearchConnection,
+	type GoogleSheetsConnection,
+	type MariaDBConnection,
+	type MongoDBConnection,
 	type MySQLDataSource,
-	type PRQLTarget
+	type OracleConnection,
+	type PRQLTarget,
+	type RedshiftConnection,
+	type SingleStoreConnection,
+	type SnowflakeConnection,
+	type SQLServerConnection
 } from '$lib/types/connection';
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
@@ -314,7 +338,11 @@ function cloneErrors(errors: PRQLError[]): PRQLError[] {
  * Postgres format:  "ERROR: ... LINE N: ..."  (caret on next line)
  * ClickHouse format: "... (line N, col M)."
  */
-function parseSQLErrorSpan(message: string, cellCode: string, fullSQL: string): [number, number] | null {
+function parseSQLErrorSpan(
+	message: string,
+	cellCode: string,
+	fullSQL: string
+): [number, number] | null {
 	let errorLine: number | null = null;
 	let errorCol: number | null = null;
 
@@ -371,7 +399,10 @@ function parseSQLErrorSpan(message: string, cellCode: string, fullSQL: string): 
 	return [from, to];
 }
 
-export function compilePRQLCached(fullCode: string, target: PRQLTarget): { sql: string | null; errors: PRQLError[] } {
+export function compilePRQLCached(
+	fullCode: string,
+	target: PRQLTarget
+): { sql: string | null; errors: PRQLError[] } {
 	const key = makeCompileCacheKey(fullCode, target);
 	const cached = compileCache.get(key);
 	if (cached) {
@@ -595,15 +626,17 @@ LIMIT 20`;
 				{ type: 'from', table: 'orders', alias: 'o' },
 				{
 					type: 'derive',
-					columns: [{
-						name: 'revenue',
-						expr: {
-							mode: 'binary',
-							left: { kind: 'column', value: 'quantity' },
-							op: '*',
-							right: { kind: 'column', value: 'unit_price' }
+					columns: [
+						{
+							name: 'revenue',
+							expr: {
+								mode: 'binary',
+								left: { kind: 'column', value: 'quantity' },
+								op: '*',
+								right: { kind: 'column', value: 'unit_price' }
+							}
 						}
-					}]
+					]
 				},
 				{
 					type: 'join',
@@ -789,7 +822,11 @@ function serializeCell(c: Cell, persistResults = true): SerializedCell {
 		const rowCount = c.result.rows?.length ?? 0;
 		let withinCap = rowCount <= PERSIST_RESULT_ROW_CAP;
 		if (withinCap) {
-			try { withinCap = JSON.stringify(c.result).length <= PERSIST_RESULT_BYTE_CAP; } catch { withinCap = false; }
+			try {
+				withinCap = JSON.stringify(c.result).length <= PERSIST_RESULT_BYTE_CAP;
+			} catch {
+				withinCap = false;
+			}
 		}
 		if (withinCap) {
 			result = c.result;
@@ -848,7 +885,10 @@ function sanitizeConnections(raw: unknown): Connection[] {
 				id: candidate.id,
 				name: candidate.name,
 				type: 'postgres',
-				catalogName: typeof rawCatalogName === 'string' && rawCatalogName ? rawCatalogName : slugifyCatalogName(candidate.name),
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
 				host: candidate.host,
 				port: candidate.port,
 				database: candidate.database,
@@ -871,7 +911,10 @@ function sanitizeConnections(raw: unknown): Connection[] {
 				id: candidate.id,
 				name: candidate.name,
 				type: 'clickhouse',
-				catalogName: typeof rawCatalogName === 'string' && rawCatalogName ? rawCatalogName : slugifyCatalogName(candidate.name),
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
 				host: candidate.host,
 				port: candidate.port,
 				database: candidate.database,
@@ -893,20 +936,274 @@ function sanitizeConnections(raw: unknown): Connection[] {
 				id: candidate.id,
 				name: candidate.name,
 				type: 'mysql',
-				catalogName: typeof rawCatalogName === 'string' && rawCatalogName ? rawCatalogName : slugifyCatalogName(candidate.name),
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
 				host: candidate.host,
 				port: candidate.port,
 				database: candidate.database,
 				username: candidate.username,
 				ssl: Boolean((candidate as Partial<MySQLDataSource>).ssl)
 			} satisfies MySQLDataSource);
+			continue;
+		}
+
+		if (
+			(candidate.type === 'mariadb' ||
+				candidate.type === 'redshift' ||
+				candidate.type === 'singlestore') &&
+			typeof candidate.host === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof candidate.database === 'string' &&
+			typeof candidate.username === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const catalogName =
+				typeof rawCatalogName === 'string' && rawCatalogName
+					? rawCatalogName
+					: slugifyCatalogName(candidate.name);
+			const ssl = Boolean((candidate as Record<string, unknown>).ssl);
+			if (candidate.type === 'mariadb') {
+				connections.push({
+					id: candidate.id,
+					name: candidate.name,
+					type: 'mariadb',
+					catalogName,
+					host: candidate.host,
+					port: candidate.port,
+					database: candidate.database,
+					username: candidate.username,
+					ssl
+				} satisfies MariaDBConnection);
+			} else if (candidate.type === 'redshift') {
+				connections.push({
+					id: candidate.id,
+					name: candidate.name,
+					type: 'redshift',
+					catalogName,
+					host: candidate.host,
+					port: candidate.port,
+					database: candidate.database,
+					username: candidate.username,
+					ssl
+				} satisfies RedshiftConnection);
+			} else {
+				connections.push({
+					id: candidate.id,
+					name: candidate.name,
+					type: 'singlestore',
+					catalogName,
+					host: candidate.host,
+					port: candidate.port,
+					database: candidate.database,
+					username: candidate.username,
+					ssl
+				} satisfies SingleStoreConnection);
+			}
+			continue;
+		}
+
+		if (
+			candidate.type === 'mongodb' &&
+			typeof candidate.host === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof candidate.database === 'string' &&
+			typeof candidate.username === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'mongodb',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				host: candidate.host,
+				port: candidate.port,
+				database: candidate.database,
+				username: candidate.username,
+				ssl: Boolean((candidate as Record<string, unknown>).ssl)
+			} satisfies MongoDBConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'elasticsearch' &&
+			typeof candidate.host === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof candidate.database === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const rawUsername = (candidate as Record<string, unknown>).username;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'elasticsearch',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				host: candidate.host,
+				port: candidate.port,
+				database: candidate.database,
+				username: typeof rawUsername === 'string' && rawUsername ? rawUsername : undefined
+			} satisfies ElasticsearchConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'sqlserver' &&
+			typeof candidate.host === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof candidate.database === 'string' &&
+			typeof candidate.username === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'sqlserver',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				host: candidate.host,
+				port: candidate.port,
+				database: candidate.database,
+				username: candidate.username,
+				encrypt: Boolean((candidate as Record<string, unknown>).encrypt),
+				trustServerCertificate: Boolean(
+					(candidate as Record<string, unknown>).trustServerCertificate
+				)
+			} satisfies SQLServerConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'oracle' &&
+			typeof candidate.host === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof candidate.username === 'string' &&
+			typeof (candidate as Record<string, unknown>).serviceName === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const identifierType = (candidate as Record<string, unknown>).identifierType;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'oracle',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				host: candidate.host,
+				port: candidate.port,
+				username: candidate.username,
+				identifierType: identifierType === 'sid' ? 'sid' : 'service_name',
+				serviceName: (candidate as Record<string, unknown>).serviceName as string
+			} satisfies OracleConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'snowflake' &&
+			typeof (candidate as Record<string, unknown>).account === 'string' &&
+			typeof (candidate as Record<string, unknown>).warehouse === 'string' &&
+			typeof candidate.database === 'string' &&
+			typeof candidate.username === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const rawRole = (candidate as Record<string, unknown>).role;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'snowflake',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				account: (candidate as Record<string, unknown>).account as string,
+				warehouse: (candidate as Record<string, unknown>).warehouse as string,
+				database: candidate.database,
+				username: candidate.username,
+				role: typeof rawRole === 'string' && rawRole ? rawRole : undefined
+			} satisfies SnowflakeConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'cassandra' &&
+			typeof (candidate as Record<string, unknown>).contactPoints === 'string' &&
+			typeof candidate.port === 'number' &&
+			typeof (candidate as Record<string, unknown>).localDatacenter === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const rawUsername = (candidate as Record<string, unknown>).username;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'cassandra',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				contactPoints: (candidate as Record<string, unknown>).contactPoints as string,
+				port: candidate.port,
+				localDatacenter: (candidate as Record<string, unknown>).localDatacenter as string,
+				username: typeof rawUsername === 'string' && rawUsername ? rawUsername : undefined
+			} satisfies CassandraConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'gsheets' &&
+			typeof (candidate as Record<string, unknown>).metadataSheetId === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'gsheets',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				metadataSheetId: (candidate as Record<string, unknown>).metadataSheetId as string
+			} satisfies GoogleSheetsConnection);
+			continue;
+		}
+
+		if (
+			candidate.type === 'bigquery' &&
+			typeof (candidate as Record<string, unknown>).projectId === 'string'
+		) {
+			const rawCatalogName = (candidate as Record<string, unknown>).catalogName;
+			const rawParentProjectId = (candidate as Record<string, unknown>).parentProjectId;
+			connections.push({
+				id: candidate.id,
+				name: candidate.name,
+				type: 'bigquery',
+				catalogName:
+					typeof rawCatalogName === 'string' && rawCatalogName
+						? rawCatalogName
+						: slugifyCatalogName(candidate.name),
+				projectId: (candidate as Record<string, unknown>).projectId as string,
+				parentProjectId:
+					typeof rawParentProjectId === 'string' && rawParentProjectId ? rawParentProjectId : undefined
+			} satisfies BigQueryConnection);
+			continue;
 		}
 	}
 
 	return connections;
 }
 
-function normalizeConnectionId(connectionId: string | null | undefined, connections: Connection[]): string | null {
+function normalizeConnectionId(
+	connectionId: string | null | undefined,
+	connections: Connection[]
+): string | null {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return null;
 	return connections.some((connection) => connection.id === connectionId) ? connectionId : null;
 }
@@ -920,18 +1217,25 @@ function normalizeCellDisplay(c: unknown): CellDisplay {
 }
 
 function deserializeCell(c: Cell, i: number): Cell {
-	const guiStages: GUIPipelineStage[] = Array.isArray(c.guiStages) && c.guiStages.length > 0
-		? c.guiStages
-		: [{ type: 'from', table: '' } as GUIPipelineStage];
+	const guiStages: GUIPipelineStage[] =
+		Array.isArray(c.guiStages) && c.guiStages.length > 0
+			? c.guiStages
+			: [{ type: 'from', table: '' } as GUIPipelineStage];
 	const language: CellLanguage = (c as Partial<Cell>).language === 'sql' ? 'sql' : 'prql';
 	const editMode: CellEditMode = language === 'sql' || c.editMode === 'prql' ? 'prql' : 'gui';
 	const persistedViewMode = (c as Partial<Cell>).resultViewMode;
 	const persistedCellType = (c as Partial<Cell>).cellType;
 	const cellType: CellType =
 		persistedCellType === 'markdown' || persistedCellType === 'udf' ? persistedCellType : 'query';
-	const markdown = typeof (c as Partial<Cell>).markdown === 'string' ? (c as Partial<Cell>).markdown as string : '';
+	const markdown =
+		typeof (c as Partial<Cell>).markdown === 'string'
+			? ((c as Partial<Cell>).markdown as string)
+			: '';
 	const markdownPreview = Boolean((c as Partial<Cell>).markdownPreview);
-	const udfBody = typeof (c as Partial<Cell>).udfBody === 'string' ? (c as Partial<Cell>).udfBody as string : '';
+	const udfBody =
+		typeof (c as Partial<Cell>).udfBody === 'string'
+			? ((c as Partial<Cell>).udfBody as string)
+			: '';
 	const resultViewMode: ResultViewMode =
 		persistedViewMode === 'chart' || persistedViewMode === 'stats' || persistedViewMode === 'table'
 			? persistedViewMode
@@ -953,7 +1257,10 @@ function deserializeCell(c: Cell, i: number): Cell {
 		// Restore persisted (capped) result so output survives reload/HMR.
 		result: (c as Partial<Cell>).result ?? null,
 		status: (c as Partial<Cell>).result ? 'success' : 'idle',
-		executionMs: typeof (c as Partial<Cell>).executionMs === 'number' ? ((c as Partial<Cell>).executionMs as number) : null,
+		executionMs:
+			typeof (c as Partial<Cell>).executionMs === 'number'
+				? ((c as Partial<Cell>).executionMs as number)
+				: null,
 		needsRun: (c as Partial<Cell>).result ? false : Boolean((c as Partial<Cell>).needsRun),
 		display: normalizeCellDisplay(c),
 		stageResultsCollapsed: Array.isArray((c as Partial<Cell>).stageResultsCollapsed)
@@ -1059,9 +1366,29 @@ function inferMaterializeTargetSchema(cell: Cell, connection: Connection): strin
 		return availableSchemas[0] ?? connection.database;
 	}
 
-	if (connection.type === 'mysql') {
+	if (
+		connection.type === 'mysql' ||
+		connection.type === 'mariadb' ||
+		connection.type === 'redshift' ||
+		connection.type === 'singlestore' ||
+		connection.type === 'mongodb' ||
+		connection.type === 'elasticsearch' ||
+		connection.type === 'sqlserver' ||
+		connection.type === 'snowflake'
+	) {
 		if (availableSchemas.includes(connection.database)) return connection.database;
 		return availableSchemas[0] ?? connection.database;
+	}
+
+	if (connection.type === 'gsheets') {
+		if (availableSchemas.includes('default')) return 'default';
+		return availableSchemas[0] ?? 'default';
+	}
+
+	// Oracle, Cassandra, and BigQuery have no static schema-equivalent field to guess
+	// from — only return a schema once one has actually been discovered.
+	if (connection.type === 'oracle' || connection.type === 'cassandra' || connection.type === 'bigquery') {
+		return availableSchemas[0];
 	}
 
 	return undefined;
@@ -1156,7 +1483,10 @@ function tryDecodeHugeIntLike(value: unknown): number | string | null {
 
 	if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
 		const arr = Array.from(value as unknown as ArrayLike<unknown>);
-		if (arr.length === 4 && arr.every((entry) => typeof entry === 'number' && Number.isInteger(entry))) {
+		if (
+			arr.length === 4 &&
+			arr.every((entry) => typeof entry === 'number' && Number.isInteger(entry))
+		) {
 			limbs = arr as number[];
 		}
 	} else if (isPlainObject(value)) {
@@ -1185,10 +1515,9 @@ function normalizeResultValue(value: unknown): unknown {
 		return value.map((entry) => normalizeResultValue(entry));
 	}
 	if (isPlainObject(value)) {
-		const normalizedEntries = Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-			key,
-			normalizeResultValue(entry)
-		]);
+		const normalizedEntries = Object.entries(value as Record<string, unknown>).map(
+			([key, entry]) => [key, normalizeResultValue(entry)]
+		);
 		return Object.fromEntries(normalizedEntries);
 	}
 	return value;
@@ -1260,10 +1589,7 @@ function applyAutoLimit(
 	return { columns: result.columns, rows: result.rows.slice(0, AUTO_LIMIT), truncated: true };
 }
 
-function normalizeQueryResult(result: {
-	rows: Record<string, unknown>[];
-	columns: string[];
-}): {
+function normalizeQueryResult(result: { rows: Record<string, unknown>[]; columns: string[] }): {
 	rows: Record<string, unknown>[];
 	columns: string[];
 } {
@@ -1300,27 +1626,29 @@ function deserialize(raw: string): void {
 			state.connections = connections;
 			state.externalSchemaTables = Array.isArray(data.externalSchemaTables)
 				? (data.externalSchemaTables as ExternalSchemaTable[])
-					.filter((entry) =>
-						typeof entry.connectionId === 'string' &&
-						typeof entry.connectionName === 'string' &&
-						typeof entry.name === 'string' &&
-						Array.isArray(entry.columns) &&
-						Array.isArray(entry.columnTypes)
-					)
-					.map((entry) => ({
-						connectionId: entry.connectionId,
-						connectionName: entry.connectionName,
-						name: entry.name,
-						schema: typeof entry.schema === 'string' ? entry.schema : undefined,
-						columns: entry.columns,
-						columnTypes: entry.columnTypes
-					}))
+						.filter(
+							(entry) =>
+								typeof entry.connectionId === 'string' &&
+								typeof entry.connectionName === 'string' &&
+								typeof entry.name === 'string' &&
+								Array.isArray(entry.columns) &&
+								Array.isArray(entry.columnTypes)
+						)
+						.map((entry) => ({
+							connectionId: entry.connectionId,
+							connectionName: entry.connectionName,
+							name: entry.name,
+							schema: typeof entry.schema === 'string' ? entry.schema : undefined,
+							columns: entry.columns,
+							columnTypes: entry.columnTypes
+						}))
 				: [];
 			state.notebooks = (data.notebooks as Notebook[]).map((n) => ({
 				id: n.id ?? makeId(),
 				name: n.name || 'Notebook',
 				folderId: typeof n.folderId === 'string' ? n.folderId : null,
-				defaultCellLanguage: (n as Partial<Notebook>).defaultCellLanguage === 'sql' ? 'sql' : 'prql',
+				defaultCellLanguage:
+					(n as Partial<Notebook>).defaultCellLanguage === 'sql' ? 'sql' : 'prql',
 				reportView: Boolean((n as Partial<Notebook>).reportView),
 				filters:
 					(n as Partial<Notebook>).filters && typeof (n as Partial<Notebook>).filters === 'object'
@@ -1333,9 +1661,12 @@ function deserialize(raw: string): void {
 				cells:
 					Array.isArray(n.cells) && n.cells.length > 0
 						? (n.cells as Cell[]).map((cell, idx) => ({
-							...deserializeCell(cell, idx),
-							connectionId: normalizeConnectionId((cell as Partial<Cell>).connectionId, connections)
-						}))
+								...deserializeCell(cell, idx),
+								connectionId: normalizeConnectionId(
+									(cell as Partial<Cell>).connectionId,
+									connections
+								)
+							}))
 						: [makeCell('', 'result1')]
 			}));
 		} else {
@@ -1394,8 +1725,8 @@ function deserialize(raw: string): void {
 		}
 
 		if (Array.isArray(data.openResultTabs)) {
-			state.openResultTabs = (data.openResultTabs as ResultTabInfo[]).filter(
-				(t) => notebookIds.has(t.notebookId)
+			state.openResultTabs = (data.openResultTabs as ResultTabInfo[]).filter((t) =>
+				notebookIds.has(t.notebookId)
 			);
 		}
 
@@ -1407,7 +1738,7 @@ function deserialize(raw: string): void {
 		state.activeTabId =
 			typeof data.activeTabId === 'string' && allTabIds.has(data.activeTabId)
 				? data.activeTabId
-				: state.openNotebookTabIds[0] ?? state.notebooks[0].id;
+				: (state.openNotebookTabIds[0] ?? state.notebooks[0].id);
 
 		if (data.theme) state.theme = data.theme as NotebookState['theme'];
 		if (typeof data.autoRun === 'boolean') state.autoRun = data.autoRun;
@@ -1429,12 +1760,12 @@ function deserialize(raw: string): void {
 			};
 		}
 		state.notebookEvents = Array.isArray(data.notebookEvents)
-			? (data.notebookEvents as NotebookEvent[])
-				.filter((event) =>
-					typeof event.id === 'string' &&
-					typeof event.cellId === 'string' &&
-					typeof event.connectionId === 'string' &&
-					typeof event.eventType === 'string'
+			? (data.notebookEvents as NotebookEvent[]).filter(
+					(event) =>
+						typeof event.id === 'string' &&
+						typeof event.cellId === 'string' &&
+						typeof event.connectionId === 'string' &&
+						typeof event.eventType === 'string'
 				)
 			: [];
 	} catch {
@@ -1506,7 +1837,9 @@ export function scheduleSave(): void {
 			// rest of the workspace state still saves. Output is recomputed by re-running.
 			try {
 				localStorage.setItem(STORAGE_KEY, serialize(false));
-			} catch { /* give up silently — nothing else we can do */ }
+			} catch {
+				/* give up silently — nothing else we can do */
+			}
 		}
 	}, 500);
 }
@@ -1585,7 +1918,9 @@ function scheduleLunaNotebookSave(notebookId: string): void {
 			const nb = state.notebooks.find((n) => n.id === notebookId);
 			if (!nb || !state.projectFolder) return;
 			const content = serializeLunaFile(nb.cells);
-			writeProjectFile(state.projectFolder, `${nb.id}.luna`, content, state.isDbtProject).catch(() => {});
+			writeProjectFile(state.projectFolder, `${nb.id}.luna`, content, state.isDbtProject).catch(
+				() => {}
+			);
 		}, 500)
 	);
 }
@@ -1752,7 +2087,7 @@ export async function loadProjectNotebooks(): Promise<void> {
 					scheduleLastRunAt: prev.scheduleLastRunAt,
 					scheduleNextRunAt: prev.scheduleNextRunAt,
 					scheduleLastError: prev.scheduleLastError,
-					intelligence: prev.intelligence,
+					intelligence: prev.intelligence
 				};
 			});
 
@@ -1773,8 +2108,37 @@ export async function loadProjectNotebooks(): Promise<void> {
 			state.openNotebookTabIds = [notebooks[0].id];
 			state.activeTabId = notebooks[0].id;
 		}
+
+		if (import.meta.env.DEV) warnOnDuplicateCellIds();
 	} catch {
 		// ignore — keep current state
+	}
+}
+
+/** Dev-only: a duplicate cell id (== outputName for file-backed cells) anywhere
+ *  in the project corrupts NotebookTree's keyed each-blocks, this function's own
+ *  merge-by-id above, and cell-deps.ts's outputName lookups. The loaders in
+ *  project.ts deconflict on load, so this should never fire — if it does, it's
+ *  a regression, not expected/corrupted user data, hence the loud console.error.
+ *
+ *  Cells with `promotedModelPath` set are deliberately excluded: a `.luna`
+ *  notebook's `model` ref intentionally mirrors a standalone model cell's
+ *  id/outputName elsewhere in the project (see hydrateLunaEntries in
+ *  project.ts) — that's a feature, not a collision. */
+function warnOnDuplicateCellIds(): void {
+	const seen = new Map<string, string>(); // id -> notebookId
+	for (const nb of state.notebooks) {
+		for (const c of nb.cells) {
+			if (c.promotedModelPath) continue;
+			const prevNotebookId = seen.get(c.id);
+			if (prevNotebookId !== undefined) {
+				console.error(
+					`[lunapad] duplicate cell id "${c.id}" in notebooks "${prevNotebookId}" and "${nb.id}" — this indicates a missing dedup guard, not corrupted project data.`
+				);
+			} else {
+				seen.set(c.id, nb.id);
+			}
+		}
 	}
 }
 
@@ -1792,14 +2156,30 @@ export async function refreshDbtManifest(): Promise<void> {
 }
 
 /** Getters for project state. */
-export function getProjectFolder(): string | null { return state.projectFolder; }
-export function getIsDbtProject(): boolean { return state.isDbtProject; }
-export function getDbtModels(): DbtModel[] { return state.dbtModels; }
-export function getDbtRunningJobId(): string | null { return state.dbtRunningJobId; }
-export function getDbtLastCompileAt(): number | null { return state.dbtLastCompileAt; }
-export function getStorageMode(): 'local' | 'filesystem' { return state.storageMode; }
-export function setDbtRunningJobId(jobId: string | null): void { state.dbtRunningJobId = jobId; }
-export function getDbtSchedules(): DbtSchedule[] { return state.dbtSchedules; }
+export function getProjectFolder(): string | null {
+	return state.projectFolder;
+}
+export function getIsDbtProject(): boolean {
+	return state.isDbtProject;
+}
+export function getDbtModels(): DbtModel[] {
+	return state.dbtModels;
+}
+export function getDbtRunningJobId(): string | null {
+	return state.dbtRunningJobId;
+}
+export function getDbtLastCompileAt(): number | null {
+	return state.dbtLastCompileAt;
+}
+export function getStorageMode(): 'local' | 'filesystem' {
+	return state.storageMode;
+}
+export function setDbtRunningJobId(jobId: string | null): void {
+	state.dbtRunningJobId = jobId;
+}
+export function getDbtSchedules(): DbtSchedule[] {
+	return state.dbtSchedules;
+}
 
 export async function loadDbtSchedules(): Promise<void> {
 	if (!state.projectFolder) return;
@@ -1824,7 +2204,9 @@ export async function saveDbtSchedule(schedule: DbtSchedule): Promise<void> {
 	// Update local state
 	const idx = state.dbtSchedules.findIndex((s) => s.id === body.schedule!.id);
 	if (idx !== -1) {
-		state.dbtSchedules = state.dbtSchedules.map((s) => (s.id === body.schedule!.id ? body.schedule! : s));
+		state.dbtSchedules = state.dbtSchedules.map((s) =>
+			s.id === body.schedule!.id ? body.schedule! : s
+		);
 	} else {
 		state.dbtSchedules = [...state.dbtSchedules, body.schedule!];
 	}
@@ -1832,23 +2214,36 @@ export async function saveDbtSchedule(schedule: DbtSchedule): Promise<void> {
 
 export async function deleteDbtSchedule(id: string): Promise<void> {
 	if (!state.projectFolder) return;
-	await fetch(`/api/schedules?folder=${encodeURIComponent(state.projectFolder)}&id=${encodeURIComponent(id)}`, {
-		method: 'DELETE'
-	});
+	await fetch(
+		`/api/schedules?folder=${encodeURIComponent(state.projectFolder)}&id=${encodeURIComponent(id)}`,
+		{
+			method: 'DELETE'
+		}
+	);
 	state.dbtSchedules = state.dbtSchedules.filter((s) => s.id !== id);
 }
 
 // ── Evidence.dev project functions ────────────────────────────────────────────
-export function getIsEvidenceProject(): boolean { return state.isEvidenceProject; }
-export function getEvidenceDevPort(): number | null { return state.evidenceDevPort; }
-export function getEvidencePages(): string[] { return state.evidencePages; }
-export function getEvidenceRunningJobId(): string | null { return state.evidenceRunningJobId; }
+export function getIsEvidenceProject(): boolean {
+	return state.isEvidenceProject;
+}
+export function getEvidenceDevPort(): number | null {
+	return state.evidenceDevPort;
+}
+export function getEvidencePages(): string[] {
+	return state.evidencePages;
+}
+export function getEvidenceRunningJobId(): string | null {
+	return state.evidenceRunningJobId;
+}
 
 export async function refreshEvidencePages(): Promise<void> {
 	if (!state.projectFolder) return;
 	try {
-		const res = await fetch(`/api/evidence/pages?folder=${encodeURIComponent(state.projectFolder)}`);
-		const body = await res.json() as { pages?: string[] };
+		const res = await fetch(
+			`/api/evidence/pages?folder=${encodeURIComponent(state.projectFolder)}`
+		);
+		const body = (await res.json()) as { pages?: string[] };
 		state.evidencePages = body.pages ?? [];
 	} catch {
 		// ignore
@@ -1863,7 +2258,7 @@ export async function startEvidenceServer(): Promise<string | null> {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ folder: state.projectFolder })
 		});
-		const body = await res.json() as { jobId?: string };
+		const body = (await res.json()) as { jobId?: string };
 		if (body.jobId) {
 			state.evidenceRunningJobId = body.jobId;
 			return body.jobId;
@@ -2026,7 +2421,9 @@ export function isCellPromotable(cellId: string): boolean {
 	if (state.storageMode !== 'filesystem') return false;
 	const ctx = findCellContext(cellId);
 	if (!ctx) return false;
-	return ctx.notebook.format === 'luna' && ctx.cell.cellType === 'query' && !ctx.cell.promotedModelPath;
+	return (
+		ctx.notebook.format === 'luna' && ctx.cell.cellType === 'query' && !ctx.cell.promotedModelPath
+	);
 }
 
 /**
@@ -2045,7 +2442,9 @@ export function getPromotionChain(cellId: string): PromotionChainItem[] {
 	const globalRegistry = new Map<string, Cell>();
 	for (const [name, { cell: c }] of getGlobalOutputRegistry()) globalRegistry.set(name, c);
 
-	const ancestors = resolveGlobalDependencies(notebook.cells, idx, globalRegistry).filter((c) => !c.promotedModelPath);
+	const ancestors = resolveGlobalDependencies(notebook.cells, idx, globalRegistry).filter(
+		(c) => !c.promotedModelPath
+	);
 	const chain = [...ancestors, cell];
 
 	const defaultDir =
@@ -2066,7 +2465,12 @@ export async function promoteCellChain(
 	cellId: string,
 	overrides: Map<
 		string,
-		{ targetRelPath?: string; materialized?: CellMaterializationMode; schema?: string | null; tags?: string[] }
+		{
+			targetRelPath?: string;
+			materialized?: CellMaterializationMode;
+			schema?: string | null;
+			tags?: string[];
+		}
 	> = new Map()
 ): Promise<PromoteResult> {
 	if (!state.projectFolder) throw new Error('No project open');
@@ -2097,7 +2501,9 @@ export async function promoteCellChain(
 	if (result.promoted.length > 0) {
 		const promotedMap = new Map(result.promoted.map((p) => [p.outputName, p.relPath]));
 		notebook.cells = notebook.cells.map((c) =>
-			promotedMap.has(c.outputName) ? { ...c, promotedModelPath: promotedMap.get(c.outputName)! } : c
+			promotedMap.has(c.outputName)
+				? { ...c, promotedModelPath: promotedMap.get(c.outputName)! }
+				: c
 		);
 		if (state.isDbtProject) void refreshDbtManifest();
 	}
@@ -2449,7 +2855,8 @@ export function addNotebookInFolder(folderId: string | null): void {
 function getNextActiveTabId(closedNotebookId?: string): string {
 	const notebookTabIds = state.openNotebookTabIds.filter((id) => id !== closedNotebookId);
 	if (notebookTabIds.length > 0) return notebookTabIds[notebookTabIds.length - 1];
-	if (state.openResultTabs.length > 0) return state.openResultTabs[state.openResultTabs.length - 1].id;
+	if (state.openResultTabs.length > 0)
+		return state.openResultTabs[state.openResultTabs.length - 1].id;
 	if (state.openExtraTabs.length > 0) return state.openExtraTabs[state.openExtraTabs.length - 1].id;
 	const fallback = state.notebooks.find((n) => n.id !== closedNotebookId) ?? state.notebooks[0];
 	if (!fallback) return '';
@@ -2495,8 +2902,7 @@ export function closeOtherNotebookTabs(keepId: string): void {
 export function closeAllNotebookTabs(): void {
 	// Keep at least 1 — prefer the active notebook tab, otherwise the first open one
 	const keepId =
-		state.openNotebookTabIds.find((id) => id === state.activeTabId) ??
-		state.openNotebookTabIds[0];
+		state.openNotebookTabIds.find((id) => id === state.activeTabId) ?? state.openNotebookTabIds[0];
 	if (!keepId) return;
 	state.openNotebookTabIds = [keepId];
 	state.activeTabId = keepId;
@@ -2550,7 +2956,8 @@ export function deleteNotebook(id: string): void {
 		const viewName = getCellOutputReference(cell);
 		dropView(viewName).catch(() => {});
 		// Cells in other notebooks that referenced this output are now broken
-		if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+		if (cell.outputName)
+			markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 	}
 
 	// In filesystem mode, delete all cell files from disk.
@@ -2572,7 +2979,9 @@ export function deleteNotebook(id: string): void {
 	state.openNotebookTabIds = state.openNotebookTabIds.filter((tabId) => tabId !== id);
 	state.notebooks = state.notebooks.filter((n) => n.id !== id);
 	if (state.openNotebookTabIds.length === 0 && state.notebooks.length > 0) {
-		state.openNotebookTabIds = [state.notebooks[Math.max(0, Math.min(idx, state.notebooks.length - 1))].id];
+		state.openNotebookTabIds = [
+			state.notebooks[Math.max(0, Math.min(idx, state.notebooks.length - 1))].id
+		];
 	}
 	if (
 		state.activeTabId === id ||
@@ -2620,7 +3029,11 @@ export function duplicateNotebook(id: string): void {
 export function createFolder(name: string, parentId: string | null = null): string {
 	let id: string;
 	if (state.storageMode === 'filesystem') {
-		const safe = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'folder';
+		const safe =
+			name
+				.toLowerCase()
+				.replace(/\s+/g, '_')
+				.replace(/[^a-z0-9_]/g, '') || 'folder';
 		const parent = parentId ?? 'models';
 		id = `${parent}/${safe}`;
 		let n = 1;
@@ -2662,7 +3075,11 @@ export function renameFolder(id: string, name: string): void {
 	folder.name = name;
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const parts = id.split('/');
-		const safe = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'folder';
+		const safe =
+			name
+				.toLowerCase()
+				.replace(/\s+/g, '_')
+				.replace(/[^a-z0-9_]/g, '') || 'folder';
 		parts[parts.length - 1] = safe;
 		const newId = parts.join('/');
 		if (newId !== id) {
@@ -2683,7 +3100,9 @@ export function isFolderEmpty(id: string): boolean {
 export function deleteFolderIfEmpty(id: string): boolean {
 	if (!isFolderEmpty(id)) return false;
 	state.folders = state.folders.filter((f) => f.id !== id);
-	state.expandedNotebookFolderIds = state.expandedNotebookFolderIds.filter((folderId) => folderId !== id);
+	state.expandedNotebookFolderIds = state.expandedNotebookFolderIds.filter(
+		(folderId) => folderId !== id
+	);
 	scheduleSave();
 	return true;
 }
@@ -2851,8 +3270,10 @@ export function closeOtherResultTabs(keepId: string): void {
 
 export function closeAllResultTabs(): void {
 	state.openResultTabs = [];
-	if (!state.openNotebookTabIds.includes(state.activeTabId) &&
-		!state.openExtraTabs.find((t) => t.id === state.activeTabId)) {
+	if (
+		!state.openNotebookTabIds.includes(state.activeTabId) &&
+		!state.openExtraTabs.find((t) => t.id === state.activeTabId)
+	) {
 		state.activeTabId = state.openNotebookTabIds[0] ?? state.notebooks[0].id;
 	}
 	scheduleSave();
@@ -2866,7 +3287,14 @@ export function openTableViewTab(tableName: string): void {
 		state.activeTabId = existing.id;
 		return;
 	}
-	const tab: ExtraTab = { id: makeId(), type: 'table-view', tableName, name: tableName, viewMode: 'table', chartConfig: null };
+	const tab: ExtraTab = {
+		id: makeId(),
+		type: 'table-view',
+		tableName,
+		name: tableName,
+		viewMode: 'table',
+		chartConfig: null
+	};
 	state.openExtraTabs = [...state.openExtraTabs, tab];
 	state.activeTabId = tab.id;
 }
@@ -2879,7 +3307,14 @@ export function openProfileTab(tableName: string): void {
 		state.activeTabId = existing.id;
 		return;
 	}
-	const tab: ExtraTab = { id: makeId(), type: 'profile', tableName, name: `Profile: ${tableName}`, viewMode: 'table', chartConfig: null };
+	const tab: ExtraTab = {
+		id: makeId(),
+		type: 'profile',
+		tableName,
+		name: `Profile: ${tableName}`,
+		viewMode: 'table',
+		chartConfig: null
+	};
 	state.openExtraTabs = [...state.openExtraTabs, tab];
 	state.activeTabId = tab.id;
 }
@@ -2887,7 +3322,8 @@ export function openProfileTab(tableName: string): void {
 export function openLineageTab(focusedModelName?: string): void {
 	const existing = state.openExtraTabs.find((t) => t.type === 'lineage');
 	if (existing) {
-		if (focusedModelName) (existing as ExtraTab & { focusedModelName?: string }).focusedModelName = focusedModelName;
+		if (focusedModelName)
+			(existing as ExtraTab & { focusedModelName?: string }).focusedModelName = focusedModelName;
 		state.activeTabId = existing.id;
 		return;
 	}
@@ -2928,8 +3364,10 @@ export function closeOtherExtraTabs(keepId: string): void {
 
 export function closeAllExtraTabs(): void {
 	state.openExtraTabs = [];
-	if (!state.openNotebookTabIds.includes(state.activeTabId) &&
-		!state.openResultTabs.find((t) => t.id === state.activeTabId)) {
+	if (
+		!state.openNotebookTabIds.includes(state.activeTabId) &&
+		!state.openResultTabs.find((t) => t.id === state.activeTabId)
+	) {
 		state.activeTabId = state.openNotebookTabIds[0] ?? state.notebooks[0].id;
 	}
 }
@@ -3018,7 +3456,7 @@ export function addCellWithLanguage(lang: CellLanguage): void {
 		const outputName = generateUniqueOutputName();
 		const newCell: Cell = {
 			...makeCell(code, outputName, lang),
-			id: outputName,            // filesystem cells use outputName as stable id
+			id: outputName, // filesystem cells use outputName as stable id
 			connectionId: previousQueryCell?.connectionId ?? null,
 			guiStages,
 			editMode: lang === 'sql' ? 'prql' : 'gui'
@@ -3085,7 +3523,7 @@ export function addUdfCell(): void {
 	const nb = getActiveNotebook();
 	pushHistoryCheckpoint(nb.id);
 	const cell = makeUdfCell();
-	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	cell.outputName = deconflictOutputName(cell.outputName);
 	nb.cells = [...nb.cells, cell];
 	scheduleSave();
 	scheduleFileSave(nb.id, cell.id);
@@ -3098,7 +3536,7 @@ export function insertUdfCellAfter(id: string): void {
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makeUdfCell();
-	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, cell);
 	nb.cells = cells;
@@ -3113,7 +3551,7 @@ export function insertUdfCellBefore(id: string): void {
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makeUdfCell();
-	cell.outputName = deconflictOutputName(nb, cell.outputName);
+	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
 	nb.cells = cells;
@@ -3133,7 +3571,8 @@ export function appendCellAtEnd(data: {
 }): string {
 	const nb = getActiveNotebook();
 	const lastQueryCell = nb.cells.filter((c) => c.cellType === 'query').at(-1) ?? null;
-	const inheritedConnection = data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
+	const inheritedConnection =
+		data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
 	let newCell: Cell;
 	if (data.markdown !== undefined) {
 		newCell = { ...makeMarkdownCell(data.markdown), outputName: data.outputName };
@@ -3214,7 +3653,13 @@ export function addCellAfter(id: string): void {
 
 export function insertCellBefore(
 	id: string,
-	data: { outputName: string; code: string; guiStages: GUIPipelineStage[]; editMode: CellEditMode; language?: CellLanguage }
+	data: {
+		outputName: string;
+		code: string;
+		guiStages: GUIPipelineStage[];
+		editMode: CellEditMode;
+		language?: CellLanguage;
+	}
 ): void {
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === id);
@@ -3222,7 +3667,11 @@ export function insertCellBefore(
 	pushHistoryCheckpoint(nb.id);
 	// Inherit from the nearest preceding query cell (skipping markdown, which always
 	// has connectionId: null), same rationale as insertCellAfter.
-	const lastQueryCell = nb.cells.slice(0, idx).filter((c) => c.cellType === 'query').at(-1) ?? null;
+	const lastQueryCell =
+		nb.cells
+			.slice(0, idx)
+			.filter((c) => c.cellType === 'query')
+			.at(-1) ?? null;
 	const newCell: Cell = {
 		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
@@ -3253,8 +3702,13 @@ export function insertCellAfter(
 	// Inherit from the nearest preceding query cell — the anchor itself may be a
 	// markdown cell, which always has connectionId: null and would otherwise force
 	// new cells back to the builtin DuckDB connection.
-	const lastQueryCell = nb.cells.slice(0, idx + 1).filter((c) => c.cellType === 'query').at(-1) ?? null;
-	const inheritedConnection = data.connectionId === undefined ? lastQueryCell?.connectionId ?? null : data.connectionId;
+	const lastQueryCell =
+		nb.cells
+			.slice(0, idx + 1)
+			.filter((c) => c.cellType === 'query')
+			.at(-1) ?? null;
+	const inheritedConnection =
+		data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
 	const newCell: Cell = {
 		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
@@ -3514,14 +3968,14 @@ function checkpointCoalesced(notebookId: string, cellId: string, field: string):
 const CLIPBOARD_MIME_MARKER = '__lunaCell';
 let cellClipboard = $state<CellSnapshot | null>(null);
 
-function deconflictOutputName(nb: Notebook, baseName: string): string {
-	if (!baseName) return baseName;
-	const existing = new Set(nb.cells.map((c) => c.outputName).filter(Boolean));
-	if (!existing.has(baseName)) return baseName;
-	let candidate = `${baseName}_copy`;
-	let i = 2;
-	while (existing.has(candidate)) candidate = `${baseName}_copy${i++}`;
-	return candidate;
+/** Deconflicts against outputNames across the whole project, not just one
+ *  notebook — dbt requires model names to be globally unique, and
+ *  getGlobalOutputRegistry()/cell-deps.ts resolve outputNames project-wide. */
+function deconflictOutputName(baseName: string): string {
+	const existing = new Set(
+		state.notebooks.flatMap((nb) => nb.cells.map((c) => c.outputName)).filter(Boolean)
+	);
+	return deconflictName(existing, baseName);
 }
 
 /** Clone a cell and insert the clone immediately after it. */
@@ -3531,7 +3985,7 @@ export function duplicateCell(id: string): string {
 	if (idx === -1) return '';
 	pushHistoryCheckpoint(nb.id);
 	const source = nb.cells[idx];
-	const outputName = deconflictOutputName(nb, source.outputName);
+	const outputName = deconflictOutputName(source.outputName);
 	const clone: Cell = {
 		...source,
 		id: makeId(),
@@ -3559,7 +4013,11 @@ export function copyCellToClipboard(id: string): void {
 	if (!cell) return;
 	cellClipboard = cellToSnapshot(cell);
 	if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-		const payload = JSON.stringify({ [CLIPBOARD_MIME_MARKER]: true, version: 1, cell: cellClipboard });
+		const payload = JSON.stringify({
+			[CLIPBOARD_MIME_MARKER]: true,
+			version: 1,
+			cell: cellClipboard
+		});
 		navigator.clipboard.writeText(payload).catch(() => {});
 	}
 }
@@ -3573,7 +4031,11 @@ async function readClipboardSnapshot(): Promise<CellSnapshot | null> {
 		try {
 			const text = await navigator.clipboard.readText();
 			const parsed = JSON.parse(text);
-			if (isPlainObject(parsed) && parsed[CLIPBOARD_MIME_MARKER] === true && isPlainObject(parsed.cell)) {
+			if (
+				isPlainObject(parsed) &&
+				parsed[CLIPBOARD_MIME_MARKER] === true &&
+				isPlainObject(parsed.cell)
+			) {
 				return parsed.cell as unknown as CellSnapshot;
 			}
 		} catch {
@@ -3591,7 +4053,7 @@ export async function pasteCellAfter(afterId: string | null): Promise<string> {
 	const snap = await readClipboardSnapshot();
 	if (!snap) return '';
 	pushHistoryCheckpoint(nb.id);
-	const outputName = deconflictOutputName(nb, snap.outputName);
+	const outputName = deconflictOutputName(snap.outputName);
 	const newCell: Cell = {
 		...makeCell(snap.code, outputName, snap.language),
 		cellType: snap.cellType,
@@ -3612,7 +4074,8 @@ export async function pasteCellAfter(afterId: string | null): Promise<string> {
 	cells.splice((insertAt === -1 ? nb.cells.length - 1 : insertAt) + 1, 0, newCell);
 	nb.cells = cells;
 	scheduleSave();
-	if (state.storageMode === 'filesystem' && state.projectFolder) scheduleFileSave(nb.id, newCell.id);
+	if (state.storageMode === 'filesystem' && state.projectFolder)
+		scheduleFileSave(nb.id, newCell.id);
 	return newCell.id;
 }
 
@@ -3681,13 +4144,24 @@ export function updateCellUdfBody(id: string, udfBody: string): void {
 	cell.udfBody = udfBody;
 	const sig = parseUdfSignature(udfBody);
 	if ('error' in sig) {
-		cell.errors = [{ kind: 'udf', code: null, reason: sig.error, hint: null, span: null, display: sig.error, location: null }];
+		cell.errors = [
+			{
+				kind: 'udf',
+				code: null,
+				reason: sig.error,
+				hint: null,
+				span: null,
+				display: sig.error,
+				location: null
+			}
+		];
 	} else {
 		cell.errors = [];
-		const newName = sig.name === oldName ? oldName : deconflictOutputName(nb, sig.name);
+		const newName = sig.name === oldName ? oldName : deconflictOutputName(sig.name);
 		cell.outputName = newName;
 		cell.materializeTarget = newName;
-		if (oldName && oldName !== newName) markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
+		if (oldName && oldName !== newName)
+			markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
 	}
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
@@ -3701,10 +4175,17 @@ export function setCellMarkdownPreview(id: string, preview: boolean): void {
 	scheduleSave();
 }
 
-export function updateCellName(id: string, name: string): void {
+export function updateCellName(id: string, name: string): { ok: true } | { ok: false; error: string } {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
-	if (!cell) return;
+	if (!cell) return { ok: false, error: 'Cell not found' };
+	if (
+		name &&
+		name !== cell.outputName &&
+		state.notebooks.some((n) => n.cells.some((c) => c.id !== cell.id && c.outputName === name))
+	) {
+		return { ok: false, error: `"${name}" is already used by another model in this project` };
+	}
 	const oldName = cell.outputName;
 	// In filesystem mode, rename the .prql file and keep notebook/tab IDs in sync.
 	if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName) {
@@ -3733,7 +4214,9 @@ export function updateCellName(id: string, name: string): void {
 				cell.outputName = oldName;
 				cell.materializeTarget = oldName;
 				if (nb.id !== oldNbId) {
-					state.openNotebookTabIds = state.openNotebookTabIds.map((t) => (t === nb.id ? oldNbId : t));
+					state.openNotebookTabIds = state.openNotebookTabIds.map((t) =>
+						t === nb.id ? oldNbId : t
+					);
 					if (state.activeTabId === nb.id) state.activeTabId = oldNbId;
 					nb.id = oldNbId;
 					nb.name = oldName;
@@ -3750,8 +4233,10 @@ export function updateCellName(id: string, name: string): void {
 		cell.materializeTarget = name;
 	}
 	// Old dependents referenced the old name — they're now broken
-	if (oldName && oldName !== name) markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
+	if (oldName && oldName !== name)
+		markDownstreamStale(oldName, 'upstream-changed', new Set(), cell.id);
 	scheduleSave();
+	return { ok: true };
 }
 
 export function setTheme(theme: 'light' | 'dark' | 'system'): void {
@@ -3800,10 +4285,13 @@ export function setCellLanguage(id: string, language: CellLanguage): void {
 	scheduleFileSave(nb.id, id);
 }
 
-
 export function setCellDbtConfig(
 	id: string,
-	config: { materializeMode?: CellMaterializationMode; dbtSchema?: string | null; dbtTags?: string[] }
+	config: {
+		materializeMode?: CellMaterializationMode;
+		dbtSchema?: string | null;
+		dbtTags?: string[];
+	}
 ): void {
 	const context = findCellContext(id);
 	if (!context) return;
@@ -3950,21 +4438,24 @@ export function upsertConnection(connection: Connection): void {
 	if (connection.type === 'duckdb-wasm') return;
 	state.connections = [
 		BUILTIN_DUCKDB_CONNECTION,
-		...state.connections.filter((entry) => entry.id !== connection.id && entry.type !== 'duckdb-wasm'),
+		...state.connections.filter(
+			(entry) => entry.id !== connection.id && entry.type !== 'duckdb-wasm'
+		),
 		connection
 	];
 	state.externalSchemaTables = state.externalSchemaTables.map((table) =>
-		table.connectionId === connection.id
-			? { ...table, connectionName: connection.name }
-			: table
+		table.connectionId === connection.id ? { ...table, connectionName: connection.name } : table
 	);
+	void syncConnectionMetadata(connection);
 	scheduleSave();
 }
 
 export function removeConnection(id: string): void {
 	if (id === BUILTIN_DUCKDB_CONNECTION_ID) return;
 	state.connections = state.connections.filter((connection) => connection.id !== id);
-	state.externalSchemaTables = state.externalSchemaTables.filter((table) => table.connectionId !== id);
+	state.externalSchemaTables = state.externalSchemaTables.filter(
+		(table) => table.connectionId !== id
+	);
 	for (const notebook of state.notebooks) {
 		for (const cell of notebook.cells) {
 			if (cell.connectionId === id) cell.connectionId = null;
@@ -3981,7 +4472,10 @@ export function removeConnection(id: string): void {
 // Persists a connection's password server-side (encrypted), shared by everyone on this
 // instance. Pass null to clear it. There is no corresponding "get" — secrets are
 // write-only from the client once saved.
-export async function setConnectionSecret(connectionId: string, secret: ConnectionSecret | null): Promise<void> {
+export async function setConnectionSecret(
+	connectionId: string,
+	secret: ConnectionSecret | null
+): Promise<void> {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
 	if (!secret || Object.keys(secret).length === 0) {
 		await fetch('/api/connections/secret', {
@@ -4025,7 +4519,9 @@ export function setExternalConnectionSchema(
 
 export function clearExternalConnectionSchema(connectionId: string): void {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
-	state.externalSchemaTables = state.externalSchemaTables.filter((table) => table.connectionId !== connectionId);
+	state.externalSchemaTables = state.externalSchemaTables.filter(
+		(table) => table.connectionId !== connectionId
+	);
 	scheduleSave();
 }
 
@@ -4073,7 +4569,15 @@ export function setStageResultCollapsed(id: string, stageIdx: number, collapsed:
  * PRQL cells: the execution code is compiled via prqlc.
  */
 function makeUdfError(reason: string): PRQLError {
-	return { kind: 'udf', code: null, reason, hint: null, span: null, display: reason, location: null };
+	return {
+		kind: 'udf',
+		code: null,
+		reason,
+		hint: null,
+		span: null,
+		display: reason,
+		location: null
+	};
 }
 
 /**
@@ -4082,7 +4586,11 @@ function makeUdfError(reason: string): PRQLError {
  * as a CTE, and DuckDB WASM has no Python UDF support at all. Both cases must be
  * caught before compilation, not surfaced as a confusing downstream SQL/compile error.
  */
-function checkUdfCompatibility(cells: Cell[], idx: number, connection: Connection): PRQLError | null {
+function checkUdfCompatibility(
+	cells: Cell[],
+	idx: number,
+	connection: Connection
+): PRQLError | null {
 	const cell = cells[idx];
 	if (!cell) return null;
 	const isBuiltin = isBuiltinDuckDBConnection(connection);
@@ -4183,10 +4691,19 @@ export function getExecutionCodeForTemplate(cells: Cell[], idx: number): string 
 	return buildGlobalExecutionCode(cells, idx, extractCells());
 }
 
-async function _runCell(cell: Cell, fullCode: string, prevViewName: string | null, signal?: AbortSignal, runId?: string): Promise<void> {
+async function _runCell(
+	cell: Cell,
+	fullCode: string,
+	prevViewName: string | null,
+	signal?: AbortSignal,
+	runId?: string
+): Promise<void> {
 	const context = findCellContext(cell.id);
 	if (!context) return;
-	if (signal?.aborted) { cell.status = 'idle'; return; }
+	if (signal?.aborted) {
+		cell.status = 'idle';
+		return;
+	}
 	const notebookId = context.notebook.id;
 	cell.status = 'running';
 	cell.errors = [];
@@ -4228,21 +4745,23 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 			schemaTables: getSchemaTablesForConnection(cell)
 		});
 		recordNotebookEvent(notebookId, cell, 'run-error', fullCode);
-		void Promise.resolve(recordCellExecutionMetadata({
-			runId: makeId(),
-			notebookId,
-			cellId: cell.id,
-			connectionId: connectionIdForCell(cell),
-			status: 'error',
-			runtimeMs: cell.executionMs,
-			rowCount: cell.result?.rows.length ?? 0,
-			columnCount: cell.result?.columns.length ?? 0,
-			tablesTouched: extractTablesTouched(fullCode),
-			resultColumns: cell.result?.columns ?? [],
-			resultRows: cell.result?.rows ?? [],
-			outputName: outputRelationNameForCell(cell),
-			stages: cell.guiStages
-		})).catch(() => {});
+		void Promise.resolve(
+			recordCellExecutionMetadata({
+				runId: makeId(),
+				notebookId,
+				cellId: cell.id,
+				connectionId: connectionIdForCell(cell),
+				status: 'error',
+				runtimeMs: cell.executionMs,
+				rowCount: cell.result?.rows.length ?? 0,
+				columnCount: cell.result?.columns.length ?? 0,
+				tablesTouched: extractTablesTouched(fullCode),
+				resultColumns: cell.result?.columns ?? [],
+				resultRows: cell.result?.rows ?? [],
+				outputName: outputRelationNameForCell(cell),
+				stages: cell.guiStages
+			})
+		).catch(() => {});
 		return;
 	}
 
@@ -4270,7 +4789,8 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 			await createView(viewName, sql);
 		}
 		// View was refreshed — mark downstream cells stale so they rerun with new data
-		if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+		if (cell.outputName)
+			markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 		cell.intelligence = buildNotebookIntelligence({
 			connectionId: connectionIdForCell(cell),
 			code: fullCode,
@@ -4281,21 +4801,23 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 			schemaTables: getSchemaTablesForConnection(cell)
 		});
 		recordNotebookEvent(notebookId, cell, 'run-success', fullCode);
-		void Promise.resolve(recordCellExecutionMetadata({
-			runId: makeId(),
-			notebookId,
-			cellId: cell.id,
-			connectionId: connectionIdForCell(cell),
-			status: 'success',
-			runtimeMs: cell.executionMs,
-			rowCount: result.rows.length,
-			columnCount: result.columns.length,
-			tablesTouched: extractTablesTouched(fullCode),
-			resultColumns: result.columns,
-			resultRows: result.rows,
-			outputName: outputRelationNameForCell(cell),
-			stages: cell.guiStages
-		})).catch(() => {});
+		void Promise.resolve(
+			recordCellExecutionMetadata({
+				runId: makeId(),
+				notebookId,
+				cellId: cell.id,
+				connectionId: connectionIdForCell(cell),
+				status: 'success',
+				runtimeMs: cell.executionMs,
+				rowCount: result.rows.length,
+				columnCount: result.columns.length,
+				tablesTouched: extractTablesTouched(fullCode),
+				resultColumns: result.columns,
+				resultRows: result.rows,
+				outputName: outputRelationNameForCell(cell),
+				stages: cell.guiStages
+			})
+		).catch(() => {});
 	} catch (err: unknown) {
 		if ((err as Error)?.name === 'AbortError') {
 			cell.status = 'idle';
@@ -4308,9 +4830,8 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 		cell.staleSources = [];
 		cell.lastRunAt = Date.now();
 		const errMessage = (err as Error).message ?? String(err);
-		const errSpan = (cell.language === 'sql' && sql)
-			? parseSQLErrorSpan(errMessage, cell.code, sql)
-			: null;
+		const errSpan =
+			cell.language === 'sql' && sql ? parseSQLErrorSpan(errMessage, cell.code, sql) : null;
 		cell.errors = [
 			{
 				kind: 'Error',
@@ -4332,21 +4853,23 @@ async function _runCell(cell: Cell, fullCode: string, prevViewName: string | nul
 			schemaTables: getSchemaTablesForConnection(cell)
 		});
 		recordNotebookEvent(notebookId, cell, 'run-error', fullCode);
-		void Promise.resolve(recordCellExecutionMetadata({
-			runId: makeId(),
-			notebookId,
-			cellId: cell.id,
-			connectionId: connectionIdForCell(cell),
-			status: 'error',
-			runtimeMs: cell.executionMs,
-			rowCount: cell.result?.rows.length ?? 0,
-			columnCount: cell.result?.columns.length ?? 0,
-			tablesTouched: extractTablesTouched(fullCode),
-			resultColumns: cell.result?.columns ?? [],
-			resultRows: cell.result?.rows ?? [],
-			outputName: outputRelationNameForCell(cell),
-			stages: cell.guiStages
-		})).catch(() => {});
+		void Promise.resolve(
+			recordCellExecutionMetadata({
+				runId: makeId(),
+				notebookId,
+				cellId: cell.id,
+				connectionId: connectionIdForCell(cell),
+				status: 'error',
+				runtimeMs: cell.executionMs,
+				rowCount: cell.result?.rows.length ?? 0,
+				columnCount: cell.result?.columns.length ?? 0,
+				tablesTouched: extractTablesTouched(fullCode),
+				resultColumns: cell.result?.columns ?? [],
+				resultRows: cell.result?.rows ?? [],
+				outputName: outputRelationNameForCell(cell),
+				stages: cell.guiStages
+			})
+		).catch(() => {});
 	}
 }
 
@@ -4419,7 +4942,9 @@ export function getPrecedingCodeForCell(id: string): string {
 	if (idx === -1) return '';
 	const cell = nb.cells[idx];
 	const connection = getCellConnection(cell);
-	const globalReg = new Map([...getGlobalOutputRegistry()].map(([n, { cell: c }]) => [n, c] as [string, Cell]));
+	const globalReg = new Map(
+		[...getGlobalOutputRegistry()].map(([n, { cell: c }]) => [n, c] as [string, Cell])
+	);
 	const deps = isBuiltinDuckDBConnection(connection)
 		? resolveDependencies(nb.cells, idx)
 		: resolveGlobalDependencies(nb.cells, idx, globalReg);
@@ -4471,16 +4996,19 @@ async function _runDownstreamCells(
 	visited: Set<string>
 ): Promise<void> {
 	// Pre-compile regexps for all refreshed output names once before scanning cells.
-	const reMap = new Map([...refreshedOutputNames].map((name) => [
-		name,
-		new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-	]));
+	const reMap = new Map(
+		[...refreshedOutputNames].map((name) => [
+			name,
+			new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+		])
+	);
 
 	const nextRound: { outputName: string; notebookId: string }[] = [];
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
 			// Only cascade to cells that have been run before; skip brand-new unrun cells
-			if (cell.cellType !== 'query' || !cell.needsRun || !cell.lastRunAt || visited.has(cell.id)) continue;
+			if (cell.cellType !== 'query' || !cell.needsRun || !cell.lastRunAt || visited.has(cell.id))
+				continue;
 			// Same-notebook cells that continue a pipeline (don't start with `from`) already
 			// get fresh data when run via CTE chaining — skip them here
 			if (nb.id === sourceNotebookId && !startsWithFrom(cell.code)) continue;
@@ -4506,7 +5034,11 @@ export async function runCell(id: string): Promise<void> {
 	if (idx === -1) {
 		for (const n of state.notebooks) {
 			const i = n.cells.findIndex((c) => c.id === id);
-			if (i !== -1) { nb = n; idx = i; break; }
+			if (i !== -1) {
+				nb = n;
+				idx = i;
+				break;
+			}
 		}
 	}
 	if (idx === -1) return;
@@ -4558,7 +5090,10 @@ export function cancelCell(id: string): void {
 	// Immediate UI update — _runCell will also set idle when it catches AbortError.
 	for (const nb of state.notebooks) {
 		const cell = nb.cells.find((c) => c.id === id);
-		if (cell) { cell.status = 'idle'; break; }
+		if (cell) {
+			cell.status = 'idle';
+			break;
+		}
 	}
 }
 
@@ -4863,10 +5398,12 @@ export function addTable(table: UploadedTable): void {
 		...state.tables.filter((t) => t.name !== table.name),
 		{ ...table, relationType: table.relationType ?? 'table' }
 	];
-	void Promise.resolve(recordUploadedTableMetadata({
-		connectionId: BUILTIN_DUCKDB_CONNECTION_ID,
-		table
-	})).catch(() => {});
+	void Promise.resolve(
+		recordUploadedTableMetadata({
+			connectionId: BUILTIN_DUCKDB_CONNECTION_ID,
+			table
+		})
+	).catch(() => {});
 	scheduleSave();
 	if (state.autoRun) {
 		markCellsReferencingTableStale(table.name);

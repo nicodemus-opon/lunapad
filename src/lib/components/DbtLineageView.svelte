@@ -220,7 +220,7 @@
 				width={canvasW}
 				height={canvasH}
 			>
-				{#each edges as edge (`${edge.from.model.name}->${edge.to.model.name}`)}
+				{#each edges as edge (`${edge.from.model.path}->${edge.to.model.path}`)}
 					{@const focused = isFocusedEdge(edge)}
 					{@const x2 = edge.to.x}
 					{@const y2 = edge.to.y + MID_Y}
@@ -240,7 +240,7 @@
 			</svg>
 
 			<!-- HTML node cards -->
-			{#each layout as node (node.model.name)}
+			{#each layout as node (node.model.path)}
 				{@const st = getStatus(node.model)}
 				{@const StatusIcon = st.icon}
 				{@const isFocused = node.model.name === focusedModelName}

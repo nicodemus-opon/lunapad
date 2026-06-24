@@ -6,6 +6,7 @@
 	import { authClient } from '$lib/auth-client';
 	import { getTheme, setTheme, getLLMConfig, setLLMConfig } from '$lib/stores/notebook.svelte';
 	import ConnectionsSettings from './ConnectionsSettings.svelte';
+	import ApiKeysSettings from './ApiKeysSettings.svelte';
 	import TeamSettings from '$lib/components/TeamSettings.svelte';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -13,6 +14,7 @@
 		User,
 		Sparkles,
 		Database,
+		KeyRound,
 		ShieldUser,
 		Monitor,
 		Sun,
@@ -20,7 +22,7 @@
 		LogOut
 	} from '@lucide/svelte';
 
-	type SettingsTab = 'general' | 'account' | 'ai' | 'connections' | 'team';
+	type SettingsTab = 'general' | 'account' | 'ai' | 'connections' | 'api-keys' | 'team';
 
 	interface Props {
 		open: boolean;
@@ -93,15 +95,14 @@
 		}
 	}
 
-	const navItems = $derived(
-		[
-			{ id: 'general' as const, label: 'General', icon: Settings },
-			{ id: 'account' as const, label: 'Account', icon: User },
-			{ id: 'ai' as const, label: 'AI', icon: Sparkles },
-			{ id: 'connections' as const, label: 'Connections', icon: Database },
-			...(isAdmin ? [{ id: 'team' as const, label: 'Team', icon: ShieldUser }] : [])
-		]
-	);
+	const navItems = $derived([
+		{ id: 'general' as const, label: 'General', icon: Settings },
+		{ id: 'account' as const, label: 'Account', icon: User },
+		{ id: 'ai' as const, label: 'AI', icon: Sparkles },
+		{ id: 'connections' as const, label: 'Connections', icon: Database },
+		{ id: 'api-keys' as const, label: 'API Keys', icon: KeyRound },
+		...(isAdmin ? [{ id: 'team' as const, label: 'Team', icon: ShieldUser }] : [])
+	]);
 </script>
 
 <Dialog.Root bind:open>
@@ -174,7 +175,12 @@
 								<label for="account-name" class="text-xs text-muted-foreground">Name</label>
 								<div class="flex gap-1.5">
 									<Input id="account-name" class="h-8 flex-1 text-xs" bind:value={accountName} />
-									<Button size="sm" class="h-8 text-xs" disabled={savingProfile} onclick={saveProfile}>
+									<Button
+										size="sm"
+										class="h-8 text-xs"
+										disabled={savingProfile}
+										onclick={saveProfile}
+									>
 										{savingProfile ? 'Saving…' : 'Save'}
 									</Button>
 								</div>
@@ -290,7 +296,8 @@
 									id="llm-model"
 									class="h-8 font-mono text-xs"
 									value={llmConfig.model}
-									oninput={(e: Event) => setLLMConfig({ model: (e.target as HTMLInputElement).value })}
+									oninput={(e: Event) =>
+										setLLMConfig({ model: (e.target as HTMLInputElement).value })}
 								/>
 							</div>
 							<p class="text-xs text-muted-foreground">
@@ -301,6 +308,8 @@
 					</div>
 				{:else if tab === 'connections'}
 					<ConnectionsSettings />
+				{:else if tab === 'api-keys'}
+					<ApiKeysSettings />
 				{:else if tab === 'team' && isAdmin}
 					<TeamSettings />
 				{/if}

@@ -57,11 +57,15 @@ export async function queryConnectionSQL(
 	signal?: AbortSignal,
 	runId?: string
 ): Promise<QueryConnectionResponse> {
-	return postJSON<QueryConnectionResponse>('/api/connections/query', {
-		connection,
-		sql,
-		runId
-	} satisfies QueryConnectionRequest, signal);
+	return postJSON<QueryConnectionResponse>(
+		'/api/connections/query',
+		{
+			connection,
+			sql,
+			runId
+		} satisfies QueryConnectionRequest,
+		signal
+	);
 }
 
 export async function cancelConnectionQuery(runId: string): Promise<void> {
@@ -84,17 +88,29 @@ export async function testConnection(
 
 export async function fetchConnectionSchema(
 	connection: Connection
-): Promise<{ tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }> }> {
-	return postJSON<{ tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }> }>(
-		'/api/connections/schema',
-		{
-			connection
-		}
-	);
+): Promise<{
+	tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }>;
+}> {
+	return postJSON<{
+		tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }>;
+	}>('/api/connections/schema', {
+		connection
+	});
 }
 
 export async function removeConnectionSource(connection: Connection): Promise<void> {
 	await fetch('/api/connections/remove', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ connection })
+	}).catch(() => {});
+}
+
+// Syncs connection metadata (host/port/catalog/etc — never secrets) server-side so the
+// public API and MCP server have a source of truth independent of any browser tab's
+// localStorage. Best-effort: a transient failure here shouldn't block local editing.
+export async function syncConnectionMetadata(connection: Connection): Promise<void> {
+	await fetch('/api/connections/sync', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ connection })

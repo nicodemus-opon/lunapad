@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { compilePRQLMock, createViewMock, dropTableMock, dropViewMock, executeSQLMock, queryConnectionSQLMock, materializeConnectionRelationMock, setPrevViewMock } = vi.hoisted(() => ({
+const {
+	compilePRQLMock,
+	createViewMock,
+	dropTableMock,
+	dropViewMock,
+	executeSQLMock,
+	queryConnectionSQLMock,
+	materializeConnectionRelationMock,
+	setPrevViewMock
+} = vi.hoisted(() => ({
 	compilePRQLMock: vi.fn(),
 	createViewMock: vi.fn(),
 	dropTableMock: vi.fn(),
@@ -30,7 +39,8 @@ vi.mock('$lib/services/duckdb', () => ({
 
 vi.mock('$lib/services/connections', () => ({
 	queryConnectionSQL: queryConnectionSQLMock,
-	materializeConnectionRelation: materializeConnectionRelationMock
+	materializeConnectionRelation: materializeConnectionRelationMock,
+	syncConnectionMetadata: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('$lib/services/intelligence-db', () => ({
@@ -127,7 +137,10 @@ describe('notebook cell execution', () => {
 			rows: [{ name: 'Grace' }],
 			columns: ['name']
 		});
-		expect(createViewMock).toHaveBeenCalledWith(cell.outputName || `_cell_${cell.id}`, 'SELECT * FROM employees');
+		expect(createViewMock).toHaveBeenCalledWith(
+			cell.outputName || `_cell_${cell.id}`,
+			'SELECT * FROM employees'
+		);
 	});
 
 	it('records intelligence and event memory for built-in execution', async () => {
@@ -435,7 +448,10 @@ describe('wrapWithAutoLimit', () => {
 	});
 
 	it('leaves EXPLAIN and PRAGMA statements unwrapped', () => {
-		expect(wrapWithAutoLimit('EXPLAIN SELECT 1')).toEqual({ sql: 'EXPLAIN SELECT 1', wrapped: false });
+		expect(wrapWithAutoLimit('EXPLAIN SELECT 1')).toEqual({
+			sql: 'EXPLAIN SELECT 1',
+			wrapped: false
+		});
 		expect(wrapWithAutoLimit('PRAGMA table_info(t)').wrapped).toBe(false);
 	});
 

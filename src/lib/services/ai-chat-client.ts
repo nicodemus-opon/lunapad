@@ -1252,11 +1252,12 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			if (args.code !== undefined) updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
 			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
 			if (args.outputName !== undefined) {
+				const renameResult = updateCellName(cellId, args.outputName);
+				if (!renameResult.ok) return `update_cell: ${renameResult.error}`;
 				// Keep _outputNameToId in sync with renames so stall-recovery nudges
 				// and duplicate-create checks reference the correct (new) cell name.
 				if (oldName && oldName !== args.outputName) _outputNameToId.delete(oldName);
 				_outputNameToId.set(args.outputName, cellId);
-				updateCellName(cellId, args.outputName);
 			}
 			_updatedCellIds.add(cellId);
 			const newCode = args.code !== undefined ? stripTrailingSemicolons(args.code) : undefined;

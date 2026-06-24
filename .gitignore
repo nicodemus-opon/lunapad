@@ -49,3 +49,5 @@ generated_datasets_round2/
 src-tauri/
 demo-assets/
 FEATURES.md
+project/
+.pnpm-store/

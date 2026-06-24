@@ -8,6 +8,7 @@ declare global {
 		interface Locals {
 			user: typeof auth.$Infer.Session.user | null;
 			session: typeof auth.$Infer.Session.session | null;
+			apiKeyId: string | null;
 		}
 		// interface PageData {}
 		// interface PageState {}

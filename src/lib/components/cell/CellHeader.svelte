@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Clock, ChevronsUpDown, XCircle, Eye, EyeOff, BrainCircuit } from '@lucide/svelte';
@@ -97,7 +98,11 @@
 					}}
 					onblur={() => {
 						nameInputFocused = false;
-						updateCellName(cell.id, nameInputValue);
+						const result = updateCellName(cell.id, nameInputValue);
+						if (!result.ok) {
+							toast.error(result.error);
+							nameInputValue = cell.outputName;
+						}
 					}}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {

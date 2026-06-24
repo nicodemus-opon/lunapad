@@ -66,6 +66,7 @@
 		"@clickhouse/client": "^1.19.0",
 		"@duckdb/duckdb-wasm": "1.32.0",
 		"@markdoc/markdoc": "^0.5.7",
+		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@observablehq/plot": "^0.6.17",
 		"@tanstack/table-core": "^8.21.3",
 		"@tauri-apps/api": "^2.11.0",
@@ -81,6 +82,7 @@
 		"pg": "^8.21.0",
 		"prqlc": "^0.13.12",
 		"sortablejs": "^1.15.7",
-		"sql-formatter": "^15.8.1"
+		"sql-formatter": "^15.8.1",
+		"zod": "^4.4.3"
 	}
 }

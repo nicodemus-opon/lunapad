@@ -2,7 +2,14 @@ import { json, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { setCurrentFolder } from '$lib/server/dbt-schedules';
-import { auth, ensureAuthTablesOnce, hasAnyUser, promoteSoleUserToAdmin, SIGN_UP_PATH } from '$lib/server/auth';
+import {
+	auth,
+	ensureAuthTablesOnce,
+	hasAnyUser,
+	promoteSoleUserToAdmin,
+	SIGN_UP_PATH
+} from '$lib/server/auth';
+import { ensureApiKeyTableOnce, verifyApiKey, getUserById } from '$lib/server/api-keys';
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -29,8 +36,22 @@ if (testAuthDisabled && process.env.NODE_ENV === 'production') {
 const DEMO_MODE = process.env.DEMO_MODE === '1';
 const authDisabled = testAuthDisabled || DEMO_MODE;
 
-const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/login', '/setup'];
-const DEMO_BLOCKED_PREFIXES = ['/api/connections', '/api/dbt', '/api/project', '/api/schedules', '/admin'];
+// /api/inngest is excluded from the session gate: Inngest's own serve() handler verifies
+// requests via INNGEST_SIGNING_KEY (or INNGEST_DEV), not browser cookies, so the dev/prod
+// Inngest server (running outside the browser session) needs to reach it unauthenticated.
+const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/login', '/setup'];
+// /api/v1 and /api/mcp reach external connections and the dbt CLI exactly like
+// /api/connections and /api/dbt already do — DEMO_MODE exists specifically to close
+// that door, so they must be blocked here too even though they're a separate surface.
+const DEMO_BLOCKED_PREFIXES = [
+	'/api/connections',
+	'/api/dbt',
+	'/api/project',
+	'/api/schedules',
+	'/admin',
+	'/api/v1',
+	'/api/mcp'
+];
 
 function isPublicPath(pathname: string): boolean {
 	return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -52,6 +73,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	await ensureAuthTablesOnce();
+	await ensureApiKeyTableOnce();
 
 	// Email/password sign-up is left enabled in better-auth's own config (disableSignUp
 	// blocks it unconditionally, even from server code — see auth.ts), so it's gated here
@@ -66,6 +88,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const session = await auth.api.getSession({ headers: event.request.headers });
 	event.locals.user = session?.user ?? null;
 	event.locals.session = session?.session ?? null;
+	event.locals.apiKeyId = null;
+
+	// API-key fallback for non-browser callers (the /api/v1 and /api/mcp surfaces) —
+	// only checked when no session cookie already authenticated the request, so
+	// browser auth behavior above is completely unaffected.
+	if (!event.locals.user) {
+		const presentedKey = event.request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+		if (presentedKey) {
+			const verified = await verifyApiKey(presentedKey);
+			if (verified) {
+				const user = await getUserById(verified.userId);
+				if (user && !user.banned) {
+					event.locals.user = user;
+					event.locals.apiKeyId = verified.apiKeyId;
+				}
+			}
+		}
+	}
 
 	const path = event.url.pathname;
 	if (!event.locals.user && !isPublicPath(path)) {
@@ -78,7 +118,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 			return new Response(null, { status: 303, headers: { location: '/setup' } });
 		}
 		const redirectTo = encodeURIComponent(path + event.url.search);
-		return new Response(null, { status: 303, headers: { location: `/login?redirectTo=${redirectTo}` } });
+		return new Response(null, {
+			status: 303,
+			headers: { location: `/login?redirectTo=${redirectTo}` }
+		});
 	}
 
 	if (path.startsWith('/admin') && event.locals.user?.role !== 'admin') {
