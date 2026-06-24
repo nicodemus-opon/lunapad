@@ -46,8 +46,8 @@
 		align-items: flex-start;
 		gap: 0.1rem;
 
-		background: color-mix(in oklch, currentColor 5%, transparent);
-		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		background: transparent;
+		border: 1px var(--border) solid;
 		margin: 0.15rem 0.2rem 0.15rem 0;
 		vertical-align: top;
 	}

@@ -200,11 +200,16 @@ export interface ProjectNotebooks {
 }
 
 /**
- * Walk `models/` and `analyses/` directories, parse each `.prql` file as a
- * cell, and return a notebook/folder tree mirroring the directory structure.
+ * Walk `models/` and `analyses/` directories and return a notebook/folder
+ * tree mirroring the directory structure.
  *
  * Layout rules:
- * Each `.prql` file → single-cell notebook in its parent folder.
+ * Each `.prql`/standalone `.sql` file → single-cell ("flat") notebook in its
+ * parent folder — this is the compiled-out representation for cells promoted
+ * to a standalone dbt model.
+ * Each `.luna` file → a multi-cell ("luna") notebook in its parent folder —
+ * the default authoring format (prose + query cells, document order). No
+ * name collision with flat files since the extension differs.
  * Directories → `NotebookFolder` entries. Folder IDs are relative paths from
  * the project root (e.g. `models/staging`), making them stable and path-resolvable.
  * Notebook IDs follow the same convention (`models/staging/stg_orders`).
@@ -251,6 +256,12 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 		const prqlBaseNames = new Set(prqlFiles.map((e) => e.name.replace(/\.prql$/, '')));
 		const sqlOnlyFiles = entries
 			.filter((e) => e.isFile() && e.name.endsWith('.sql') && !prqlBaseNames.has(e.name.replace(/\.sql$/, '')))
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		// `.luna` multi-cell notebooks — the default authoring format, living
+		// alongside flat .prql/.sql files (no name collision since the extension differs).
+		const lunaFiles = entries
+			.filter((e) => e.isFile() && e.name.endsWith('.luna'))
 			.sort((a, b) => a.name.localeCompare(b.name));
 
 		// Each subdirectory → NotebookFolder + recurse
@@ -310,6 +321,26 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 				// skip unreadable files
 			}
 		}
+
+		// Each `.luna` file → a single multi-cell notebook (cell order = document order)
+		for (const file of lunaFiles) {
+			const name = file.name.replace(/\.luna$/, '');
+			const notebookId = `${relDir}/${name}`;
+			try {
+				const content = await fs.readFile(path.join(absDir, file.name), 'utf-8');
+				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder, usedOutputNames);
+				notebooks.push({
+					id: notebookId,
+					name,
+					folderId: parentFolderId,
+					format: 'luna',
+					defaultCellLanguage: cells.find((c) => c.cellType === 'query')?.language ?? 'prql',
+					cells
+				});
+			} catch {
+				// skip unreadable/unparseable files
+			}
+		}
 	}
 
 	// Analyses section: create a root "analyses" folder if the dir has content
@@ -318,7 +349,9 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	try {
 		const ae = await fs.readdir(analysesDir, { withFileTypes: true });
 		hasAnalysesContent = ae.some(
-			(e) => (e.isFile() && (e.name.endsWith('.prql') || e.name.endsWith('.sql'))) || (e.isDirectory() && !e.name.startsWith('.'))
+			(e) =>
+				(e.isFile() && (e.name.endsWith('.prql') || e.name.endsWith('.sql') || e.name.endsWith('.luna'))) ||
+				(e.isDirectory() && !e.name.startsWith('.'))
 		);
 	} catch { /* no analyses dir */ }
 
@@ -494,10 +527,11 @@ async function loadMissingModelsFromManifest(
 // ── `.luna` multi-cell notebooks ─────────────────────────────────────────────
 
 /**
- * Walk `notebooks/`, parsing each `.luna` file as a single multi-cell notebook
- * (cell order = document order). This is the replacement for the old
- * `-- @notebook` annotation hack, scoped to its own directory so it never
- * collides with dbt's `models/**\/*.sql` discovery.
+ * Walk the legacy `notebooks/` directory, parsing each `.luna` file as a
+ * single multi-cell notebook (cell order = document order). `.luna` files are
+ * now primarily authored directly inside `models/**`/`analyses/**` (see
+ * `walkDir` above) — this dedicated directory only remains for backward
+ * compatibility with `.luna` files already placed here before that.
  */
 async function walkNotebooksDirectory(
 	folder: string,

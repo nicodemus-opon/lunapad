@@ -45,6 +45,8 @@
 		exportJSON,
 		importJSON,
 		loadFromStorage,
+		initWorkspaceMode,
+		getWorkspaceSyncStatus,
 		updateCellCode,
 		setEditMode,
 		updateGuiStages,
@@ -429,6 +431,7 @@
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		initAIChatWidth();
 		initWorkspaceStandards();
+		initWorkspaceMode(data.demoMode);
 		try {
 			loadFromStorage(data.defaultProjectFolder);
 		} catch {
@@ -463,6 +466,28 @@
 		window.removeEventListener('pointerup', onSidebarPointerUp);
 		window.removeEventListener('pointermove', onAIPanelPointerMove);
 		window.removeEventListener('pointerup', onAIPanelPointerUp);
+	});
+
+	// Persistent (non-auto-dismissing) notice when the Postgres-backed workspace load/save
+	// is degraded — never a hard fail, edits keep working against the localStorage cache
+	// and retry automatically (see scheduleSave/loadFromServer in notebook.svelte.ts).
+	let workspaceSyncToastId: string | number | undefined;
+	$effect(() => {
+		const status = getWorkspaceSyncStatus();
+		if (status === 'offline') {
+			workspaceSyncToastId = toast.warning(
+				"Showing offline copy — couldn't reach the workspace server.",
+				{ id: workspaceSyncToastId, duration: Infinity }
+			);
+		} else if (status === 'error') {
+			workspaceSyncToastId = toast.warning("Couldn't save changes — retrying…", {
+				id: workspaceSyncToastId,
+				duration: Infinity
+			});
+		} else if (workspaceSyncToastId !== undefined) {
+			toast.dismiss(workspaceSyncToastId);
+			workspaceSyncToastId = undefined;
+		}
 	});
 
 	// ── Run All ──────────────────────────────────────────────────────────────

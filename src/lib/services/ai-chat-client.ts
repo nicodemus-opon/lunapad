@@ -21,6 +21,7 @@ import {
 	reorderCell,
 	getConnections,
 	getAllCellsAcrossNotebooks,
+	scheduleSave,
 	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
@@ -2185,6 +2186,7 @@ async function runSprintLoop(
 				const date = new Date().toLocaleDateString();
 				const learned = lastIssues.slice(0, 3).map((issue) => `• ${issue} [learned ${date}]`).join('\n');
 				setWorkspaceStandards({ ...existing, customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n') });
+				scheduleSave();
 			}
 			break;
 		}
@@ -2426,6 +2428,7 @@ async function runSubagentPipeline(
 					...existing,
 					customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n')
 				});
+				scheduleSave();
 			}
 			break;
 		}

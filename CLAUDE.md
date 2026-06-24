@@ -32,6 +32,10 @@ Run a single test file: `pnpm vitest run src/lib/services/cell-deps.test.ts`
 
 Lunapad is a **notebook-style dbt IDE** that runs entirely as a SvelteKit SPA. Each notebook cell is a dbt model (PRQL or SQL). Cells reference each other by `outputName` and are assembled into a `WITH` CTE chain at query time — no actual dbt invocations happen for interactive runs.
 
+When a dbt project is open, notebooks are persisted to disk in one of two formats (`Notebook.format` in `notebook.svelte.ts`):
+- **`luna`** (default for new notebooks) — one `<name>.luna` file under `models/**`/`analyses/**` holding the whole multi-cell notebook (prose + query cells, document order). Cells here are interactive/inline and aren't dbt models until explicitly promoted.
+- **`flat`** (unset) — one `.prql`/`.sql` file per cell. This is either a pre-existing model file loaded from disk, or the result of "Promote to dbt model" (`promoteCellChain` in `notebook.svelte.ts`), which explodes a `.luna` cell (and its un-promoted upstream chain) into real model files dbt can compile/run.
+
 ### Data flow for cell execution
 
 1. User writes PRQL or SQL in a cell (`Editor.svelte` / CodeMirror 6).

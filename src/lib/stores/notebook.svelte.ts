@@ -93,6 +93,11 @@ import {
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 import type { ResultViewMode } from '$lib/types/gui-pipeline';
+import {
+	getWorkspaceStandards,
+	setWorkspaceStandards,
+	type WorkspaceStandards
+} from './ai-chat.svelte';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
@@ -208,8 +213,11 @@ export interface Notebook {
 	cells: Cell[];
 	defaultCellLanguage: CellLanguage;
 	// 'luna' notebooks are backed by a single `<id>.luna` file (multi-cell, Markdoc-
-	// flavored prose + query cells in document order). Unset/'flat' notebooks keep
-	// the legacy one-file-per-cell `.prql`/`.sql` representation.
+	// flavored prose + query cells in document order) — this is the default
+	// authoring format for new notebooks. Unset/'flat' notebooks keep the
+	// one-file-per-cell `.prql`/`.sql` representation: either a pre-existing model
+	// file loaded from disk, or the result of explicitly promoting a `.luna` cell
+	// to a standalone dbt model (see `promoteCellChain`).
 	format?: 'luna' | 'flat';
 	// Presentation flag: render every query cell as output-only with chrome
 	// hidden (errors excepted). Does not mutate per-cell display.
@@ -282,6 +290,9 @@ interface NotebookState {
 	autoRun: boolean;
 	llmConfig: LLMConfig;
 	notebookEvents: NotebookEvent[];
+	// 'idle' until initWorkspaceMode() runs; otherwise reflects the last /api/workspace/*
+	// load or save attempt — drives the "offline copy" / "couldn't save, retrying" banner.
+	workspaceSyncStatus: 'idle' | 'synced' | 'offline' | 'error';
 	// ── Filesystem / dbt project mode ──
 	storageMode: 'local' | 'filesystem';
 	projectFolder: string | null;
@@ -310,6 +321,16 @@ const STORAGE_KEY = 'lunapad_notebook';
 const PROJECT_FOLDER_KEY = 'lunapad_project_folder';
 let schedulePollTimer: ReturnType<typeof setInterval> | null = null;
 let scheduleRunInFlight = false;
+
+// Whether to treat Postgres (via /api/workspace/*) as the source of truth for workspace
+// content, with localStorage as a cache/offline fallback, instead of localStorage alone.
+// False in demo mode (DEMO_MODE=1 — no auth, no Postgres at all) and by default until
+// +page.svelte calls initWorkspaceMode() with the server-supplied demoMode flag, since
+// DEMO_MODE is a server-only env var the client has no other way to see.
+let useServerWorkspace = false;
+export function initWorkspaceMode(demoMode: boolean): void {
+	useServerWorkspace = !demoMode;
+}
 
 function clampScheduleIntervalMinutes(value: number): number {
 	if (!Number.isFinite(value)) return MIN_SCHEDULE_INTERVAL_MINUTES;
@@ -787,6 +808,7 @@ let state = $state<NotebookState>({
 		model: 'qwen3:4b'
 	},
 	notebookEvents: [],
+	workspaceSyncStatus: 'idle',
 	storageMode: 'local',
 	projectFolder: null,
 	isDbtProject: false,
@@ -858,7 +880,8 @@ function serialize(persistResults = true): string {
 		theme: state.theme,
 		autoRun: state.autoRun,
 		llmConfig: state.llmConfig,
-		notebookEvents: state.notebookEvents
+		notebookEvents: state.notebookEvents,
+		workspaceStandards: getWorkspaceStandards()
 	});
 }
 
@@ -1768,6 +1791,14 @@ function deserialize(raw: string): void {
 						typeof event.eventType === 'string'
 				)
 			: [];
+		if (data.workspaceStandards && typeof data.workspaceStandards === 'object') {
+			const standards = data.workspaceStandards as Partial<WorkspaceStandards>;
+			setWorkspaceStandards({
+				namingRules: Array.isArray(standards.namingRules) ? standards.namingRules : [],
+				customInstructions:
+					typeof standards.customInstructions === 'string' ? standards.customInstructions : ''
+			});
+		}
 	} catch {
 		// ignore corrupt state
 	}
@@ -1775,8 +1806,42 @@ function deserialize(raw: string): void {
 
 export function loadFromStorage(defaultProjectFolder?: string | null): void {
 	if (typeof localStorage === 'undefined') return;
+	if (useServerWorkspace) {
+		void loadFromServer(defaultProjectFolder);
+		return;
+	}
 	const raw = localStorage.getItem(STORAGE_KEY);
 	if (raw) deserialize(raw);
+	finishLoad(defaultProjectFolder);
+}
+
+// Postgres-backed hydration for full (authenticated, non-demo) mode. Seeds from the
+// localStorage cache first for an instant paint, then overwrites with the server's
+// copy once it resolves — Postgres is authoritative, localStorage is just the cache.
+// On failure, the cached copy stays and workspaceSyncStatus flips to 'offline' so the
+// UI can show a "showing offline copy" notice instead of silently looking normal.
+async function loadFromServer(defaultProjectFolder?: string | null): Promise<void> {
+	const cached = localStorage.getItem(STORAGE_KEY);
+	if (cached) deserialize(cached);
+	try {
+		const res = await fetch('/api/workspace/load');
+		if (!res.ok) throw new Error(`Workspace load failed: ${res.status}`);
+		const body = (await res.json()) as { data: unknown };
+		if (body.data) {
+			deserialize(JSON.stringify(body.data));
+			localStorage.setItem(STORAGE_KEY, serialize());
+		}
+		state.workspaceSyncStatus = 'synced';
+	} catch {
+		state.workspaceSyncStatus = 'offline';
+	}
+	finishLoad(defaultProjectFolder);
+}
+
+// Post-processing shared by both the local-only and server-backed load paths — runs
+// once the final notebook state for this load is settled, regardless of where it came
+// from.
+function finishLoad(defaultProjectFolder?: string | null): void {
 	// Migrate any notebooks that were saved without a folderId (local mode only).
 	if (state.storageMode === 'local') {
 		const unfoldered = state.notebooks.filter((nb) => !nb.folderId);
@@ -1830,18 +1895,51 @@ export function scheduleSave(): void {
 	if (typeof localStorage === 'undefined') return;
 	if (saveTimer) clearTimeout(saveTimer);
 	saveTimer = setTimeout(() => {
+		let json = serialize();
 		try {
-			localStorage.setItem(STORAGE_KEY, serialize());
+			localStorage.setItem(STORAGE_KEY, json);
 		} catch {
 			// Quota exceeded (persisted results too large) — retry without results so the
 			// rest of the workspace state still saves. Output is recomputed by re-running.
+			json = serialize(false);
 			try {
-				localStorage.setItem(STORAGE_KEY, serialize(false));
+				localStorage.setItem(STORAGE_KEY, json);
 			} catch {
 				/* give up silently — nothing else we can do */
 			}
 		}
+		// localStorage always gets written above, even in full mode — it's the cache that
+		// loadFromServer() seeds from instantly, and the only persistence at all if a
+		// Postgres outage makes saveToServer keep failing.
+		if (useServerWorkspace) void saveToServer(json);
 	}, 500);
+}
+
+let workspaceSaveRetryTimer: ReturnType<typeof setTimeout> | null = null;
+async function saveToServer(serializedJson: string): Promise<void> {
+	try {
+		const res = await fetch('/api/workspace/save', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ data: JSON.parse(serializedJson) })
+		});
+		if (!res.ok) throw new Error(`Workspace save failed: ${res.status}`);
+		state.workspaceSyncStatus = 'synced';
+		if (workspaceSaveRetryTimer) {
+			clearTimeout(workspaceSaveRetryTimer);
+			workspaceSaveRetryTimer = null;
+		}
+	} catch {
+		state.workspaceSyncStatus = 'error';
+		// Retry once after 5s. If the user keeps editing in the meantime, scheduleSave's
+		// own debounce will fire a fresher saveToServer call first, making this one moot.
+		if (workspaceSaveRetryTimer) clearTimeout(workspaceSaveRetryTimer);
+		workspaceSaveRetryTimer = setTimeout(() => scheduleSave(), 5000);
+	}
+}
+
+export function getWorkspaceSyncStatus(): 'idle' | 'synced' | 'offline' | 'error' {
+	return state.workspaceSyncStatus;
 }
 
 // ── Filesystem project file saves ────────────────────────────────────────────
@@ -2593,6 +2691,28 @@ export function getCrossNotebookUsageCount(outputName: string, ownNotebookId: st
 }
 
 /**
+ * Counts cells in the same notebook (other than ownCellId) whose code references
+ * outputName as a whole word. This is the actual "who references this output"
+ * count — distinct from getRunImpact's contiguous rerun-segment heuristic.
+ */
+export function getSameNotebookUsageCount(
+	outputName: string,
+	notebookId: string,
+	ownCellId: string
+): number {
+	if (!outputName) return 0;
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return 0;
+	const re = new RegExp(`\\b${outputName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+	let count = 0;
+	for (const cell of nb.cells) {
+		if (cell.id === ownCellId) continue;
+		if (cell.cellType === 'query' && re.test(cell.code)) count++;
+	}
+	return count;
+}
+
+/**
  * Marks all query cells (except sourceId) that reference outputName as needsRun,
  * then recurses transitively. sourceId excludes the cell that just ran from being
  * marked stale by its own output (e.g. a cell named "orders" with code "from orders").
@@ -2789,10 +2909,16 @@ function _createNotebook(folderId: string | null): Notebook {
 	n.folderId = folderId;
 
 	if (state.storageMode === 'filesystem') {
-		// ID = relative path (without .prql) so getRelativeCellPath can derive the file path
+		// New notebooks default to the `.luna` format (one file, many cells) — the
+		// source-of-truth authoring format. Flat per-cell `.prql`/`.sql` files only
+		// come from cells explicitly promoted to a standalone dbt model.
+		n.format = 'luna';
+		// ID = relative path (without extension) so getRelativeCellPath/scheduleLunaNotebookSave
+		// can derive the on-disk path.
 		const dir = folderId ?? 'models';
-		// dbt requires model names to be globally unique across the entire project.
-		// Check all notebooks (any directory), not just the current folder.
+		// dbt requires model names to be globally unique across the entire project, and
+		// cross-notebook CTE resolution (cell-deps.ts) resolves outputNames project-wide
+		// too — check all notebooks (any directory), not just the current folder.
 		let name = 'new_model';
 		let counter = 1;
 		while (state.notebooks.some((nb) => nb.cells.some((c) => c.outputName === name))) {
@@ -2816,14 +2942,16 @@ function _createNotebook(folderId: string | null): Notebook {
 
 export function addNotebook(): void {
 	// Always place new notebooks in a folder. For filesystem mode, only consider
-	// folders under models/ so we never create dbt model files outside the
-	// configured model-paths directory.
+	// folders under models/ so we never create files outside the configured
+	// model-paths directory. Prefer models/staging — the conventional home for
+	// new (unpromoted) work in a freshly scaffolded dbt project.
 	let folderId: string;
 	if (state.storageMode === 'filesystem') {
-		const modelsFolder = state.folders.find(
+		const stagingFolder = state.folders.find((f) => f.id === 'models/staging');
+		const anyModelsFolder = state.folders.find(
 			(f) => f.parentId === null && f.id.startsWith('models/')
 		);
-		folderId = modelsFolder?.id ?? ensureDefaultFolder();
+		folderId = stagingFolder?.id ?? anyModelsFolder?.id ?? ensureDefaultFolder();
 	} else {
 		folderId = ensureDefaultFolder();
 	}
@@ -2960,16 +3088,34 @@ export function deleteNotebook(id: string): void {
 			markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 	}
 
-	// In filesystem mode, delete all cell files from disk.
-	// PRQL cells: delete the .prql source + the sibling .sql (dbt-compiled output).
-	// SQL cells: delete the .sql source only.
+	// In filesystem mode, delete the notebook's file(s) from disk.
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		for (const cell of nb.cells) {
-			const rel = getRelativeCellPath(nb, cell);
-			if (rel) {
-				deleteProjectFile(state.projectFolder, rel).catch(() => {});
-				if (cell.language !== 'sql') {
-					deleteProjectFile(state.projectFolder, rel.replace(/\.prql$/, '.sql')).catch(() => {});
+		if (nb.format === 'luna') {
+			// Cancel any pending whole-file save first so it can't recreate the
+			// file right after we delete it.
+			const lunaTimer = lunaSaveTimers.get(nb.id);
+			if (lunaTimer) {
+				clearTimeout(lunaTimer);
+				lunaSaveTimers.delete(nb.id);
+			}
+			deleteProjectFile(state.projectFolder, `${nb.id}.luna`).catch(() => {});
+		} else {
+			// Flat format: each cell has its own file(s) on disk.
+			// PRQL cells: delete the .prql source + the sibling .sql (dbt-compiled output).
+			// SQL cells: delete the .sql source only.
+			for (const cell of nb.cells) {
+				const key = `${nb.id}:${cell.id}`;
+				const pending = fileSaveTimers.get(key);
+				if (pending) {
+					clearTimeout(pending);
+					fileSaveTimers.delete(key);
+				}
+				const rel = getRelativeCellPath(nb, cell);
+				if (rel) {
+					deleteProjectFile(state.projectFolder, rel).catch(() => {});
+					if (cell.language !== 'sql') {
+						deleteProjectFile(state.projectFolder, rel.replace(/\.prql$/, '.sql')).catch(() => {});
+					}
 				}
 			}
 		}
@@ -3573,19 +3719,24 @@ export function appendCellAtEnd(data: {
 	const lastQueryCell = nb.cells.filter((c) => c.cellType === 'query').at(-1) ?? null;
 	const inheritedConnection =
 		data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
+	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
+	const outputName = data.outputName || (inFsMode ? generateUniqueOutputName() : data.outputName);
 	let newCell: Cell;
 	if (data.markdown !== undefined) {
-		newCell = { ...makeMarkdownCell(data.markdown), outputName: data.outputName };
+		newCell = { ...makeMarkdownCell(data.markdown), outputName };
 	} else {
 		newCell = {
-			...makeCell(data.code, data.outputName, data.language),
+			...makeCell(data.code, outputName, data.language),
 			guiStages: data.guiStages,
 			editMode: data.editMode,
 			connectionId: inheritedConnection
 		};
 	}
+	// Filesystem cells use outputName as the stable id (see addCellWithLanguage/addMarkdownCell).
+	if (inFsMode) newCell.id = outputName;
 	nb.cells = [...nb.cells, newCell];
 	scheduleSave();
+	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
 	return newCell.id;
 }
 
@@ -3672,16 +3823,21 @@ export function insertCellBefore(
 			.slice(0, idx)
 			.filter((c) => c.cellType === 'query')
 			.at(-1) ?? null;
+	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
+	const outputName = data.outputName || (inFsMode ? generateUniqueOutputName() : data.outputName);
 	const newCell: Cell = {
-		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
+		...makeCell(data.code, outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
 		editMode: data.editMode,
 		connectionId: lastQueryCell?.connectionId ?? null
 	};
+	// Filesystem cells use outputName as the stable id (see addCellWithLanguage/addMarkdownCell).
+	if (inFsMode) newCell.id = outputName;
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, newCell);
 	nb.cells = cells;
 	scheduleSave();
+	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
 }
 
 export function insertCellAfter(
@@ -3709,16 +3865,21 @@ export function insertCellAfter(
 			.at(-1) ?? null;
 	const inheritedConnection =
 		data.connectionId === undefined ? (lastQueryCell?.connectionId ?? null) : data.connectionId;
+	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
+	const outputName = data.outputName || (inFsMode ? generateUniqueOutputName() : data.outputName);
 	const newCell: Cell = {
-		...makeCell(data.code, data.outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
+		...makeCell(data.code, outputName, data.language ?? nb.defaultCellLanguage ?? 'sql'),
 		guiStages: data.guiStages,
 		editMode: data.editMode,
 		connectionId: inheritedConnection
 	};
+	// Filesystem cells use outputName as the stable id (see addCellWithLanguage/addMarkdownCell).
+	if (inFsMode) newCell.id = outputName;
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, newCell);
 	nb.cells = cells;
 	scheduleSave();
+	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
 	return newCell.id;
 }
 
@@ -3730,9 +3891,33 @@ export function removeCell(id: string): void {
 		clearGuiCompileTimer(id);
 		const viewName = cell.outputName || `_cell_${cell.id}`;
 		dropView(viewName).catch(() => {});
+
+		if (state.storageMode === 'filesystem' && state.projectFolder) {
+			if (nb.format !== 'luna') {
+				// Flat format: the cell has its own file(s) on disk. Cancel any
+				// in-flight debounced save first so it can't resurrect the file
+				// after we delete it.
+				const key = `${nb.id}:${id}`;
+				const pending = fileSaveTimers.get(key);
+				if (pending) {
+					clearTimeout(pending);
+					fileSaveTimers.delete(key);
+				}
+				const rel = getRelativeCellPath(nb, cell);
+				if (rel) {
+					deleteProjectFile(state.projectFolder, rel).catch(() => {});
+					if (cell.language !== 'sql') {
+						deleteProjectFile(state.projectFolder, rel.replace(/\.prql$/, '.sql')).catch(() => {});
+					}
+				}
+			}
+		}
 	}
 	nb.cells = nb.cells.filter((c) => c.id !== id);
 	scheduleSave();
+	if (state.storageMode === 'filesystem' && nb.format === 'luna') {
+		scheduleLunaNotebookSave(nb.id);
+	}
 }
 
 export interface CellSnapshot {
@@ -4092,6 +4277,7 @@ export function reorderCell(id: string, toIndex: number): void {
 	cells.splice(target, 0, cell);
 	nb.cells = cells;
 	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) scheduleFileSave(nb.id, id);
 }
 
 export function moveCell(id: string, direction: 'up' | 'down'): void {
@@ -4105,6 +4291,7 @@ export function moveCell(id: string, direction: 'up' | 'down'): void {
 	[cells[idx], cells[newIdx]] = [cells[newIdx], cells[idx]];
 	nb.cells = cells;
 	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) scheduleFileSave(nb.id, id);
 }
 
 export function updateCellCode(id: string, code: string): void {
@@ -5378,6 +5565,7 @@ export function __resetStateForTests(): void {
 			model: 'qwen3:4b'
 		},
 		notebookEvents: [],
+		workspaceSyncStatus: 'idle',
 		storageMode: 'local',
 		projectFolder: null,
 		isDbtProject: false,

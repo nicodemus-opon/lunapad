@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Plus, Trash2 } from '@lucide/svelte';
 	import { getWorkspaceStandards, setWorkspaceStandards } from '$lib/stores/ai-chat.svelte.js';
+	import { scheduleSave } from '$lib/stores/notebook.svelte.js';
 	import type { WorkspaceNamingRule } from '$lib/types/ai-chat.js';
 
 	const MATERIALIZE_OPTIONS = ['ephemeral', 'view', 'table', 'incremental'] as const;
@@ -12,20 +13,24 @@
 			...standards,
 			namingRules: [...standards.namingRules, { prefix: '', description: '', materialization: 'ephemeral' }]
 		});
+		scheduleSave();
 	}
 
 	function removeRule(i: number) {
 		const next = standards.namingRules.filter((_, idx) => idx !== i);
 		setWorkspaceStandards({ ...standards, namingRules: next });
+		scheduleSave();
 	}
 
 	function updateRule(i: number, field: keyof WorkspaceNamingRule, value: string) {
 		const next = standards.namingRules.map((r, idx) => idx === i ? { ...r, [field]: value } : r);
 		setWorkspaceStandards({ ...standards, namingRules: next });
+		scheduleSave();
 	}
 
 	function updateInstructions(value: string) {
 		setWorkspaceStandards({ ...standards, customInstructions: value });
+		scheduleSave();
 	}
 </script>
 

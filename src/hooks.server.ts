@@ -43,11 +43,16 @@ const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/login', '/
 // /api/v1 and /api/mcp reach external connections and the dbt CLI exactly like
 // /api/connections and /api/dbt already do — DEMO_MODE exists specifically to close
 // that door, so they must be blocked here too even though they're a separate surface.
+// /api/workspace persists the shared-workspace notebook content (cells, tabs, etc.) to
+// Postgres — block it even though the client is coded to never call it in demo mode,
+// since a direct request would otherwise be the first crack in demo mode's "no Postgres
+// involvement at all" guarantee.
 const DEMO_BLOCKED_PREFIXES = [
 	'/api/connections',
 	'/api/dbt',
 	'/api/project',
 	'/api/schedules',
+	'/api/workspace',
 	'/admin',
 	'/api/v1',
 	'/api/mcp'

@@ -64,7 +64,8 @@
 		getAllCellsAcrossNotebooks,
 		type CellLanguage,
 		type Cell,
-		getCrossNotebookUsageCount
+		getCrossNotebookUsageCount,
+		getSameNotebookUsageCount
 	} from '$lib/stores/notebook.svelte';
 	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
 	import { updateProjectSchema } from '$lib/services/project-client';
@@ -768,6 +769,11 @@
 			? getCrossNotebookUsageCount(cell.outputName, notebookId)
 			: 0
 	);
+	const sameNotebookUsageCount = $derived(
+		isQueryCell && cell.outputName && notebookId
+			? getSameNotebookUsageCount(cell.outputName, notebookId, cell.id)
+			: 0
+	);
 
 	// Combined cell mode: collapses language + editMode into a single concept
 	const cellMode = $derived<'prql' | 'visual' | 'sql'>(
@@ -902,7 +908,7 @@
 					{revealed}
 					hidden={isMarkdownPreviewMode}
 					{prevCellNames}
-					downstreamCount={runImpact.downstreamCount}
+					downstreamCount={sameNotebookUsageCount}
 					{crossNotebookUsageCount}
 					{cellMode}
 					aiChatOpen={onShareWithAI !== undefined}

@@ -6,6 +6,8 @@ A notebook-style IDE for [PRQL](https://prql-lang.org/) and SQL that runs entire
 - **DuckDB WASM** — built-in, zero config, runs in the browser
 - **Trino** — used for all external data sources (Postgres, ClickHouse, MySQL)
 
+**Using Lunapad?** See the [user guide](docs/guide/README.md) for a full walkthrough: notebooks, queries, data sources, dashboards, the AI assistant, the API/MCP server, and self-hosting. This README covers running and developing Lunapad itself.
+
 ---
 
 ## Docker (recommended)
