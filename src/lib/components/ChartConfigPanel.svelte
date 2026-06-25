@@ -7,6 +7,7 @@
 	import type { ChartConfig, ChartType, ChartSortOrder } from '$lib/types/gui-pipeline';
 	import { coerceNumber, inferSmartChartConfig, inferSmartChartConfigForType, normalizeChartConfig, DEFAULT_CUSTOM_CHART_CODE } from '$lib/utils';
 	import Editor from '$lib/components/Editor.svelte';
+	import { CUSTOM_CHART_GLOBALS_DTS } from '$lib/services/plot-cell';
 
 	interface Props {
 		config: ChartConfig;
@@ -160,6 +161,7 @@
 				<Editor
 					code={config.code ?? DEFAULT_CUSTOM_CHART_CODE}
 					language="javascript"
+					plotGlobalsDts={CUSTOM_CHART_GLOBALS_DTS}
 					onchange={(code) => update({ code })}
 				/>
 			</div>

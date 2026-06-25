@@ -132,9 +132,25 @@
 		img.src = url;
 	}
 
+	// PlotChart briefly keeps both the outgoing and incoming chart mounted while
+	// crossfading between them (see PlotChart.svelte's `data-mid-transition`
+	// marker), with the new one appended last. Capture the *last* matching <svg>
+	// (the settled/incoming chart, not a stale outgoing one mid-removal), and if
+	// a crossfade is still in flight, wait briefly for it to finish so the PNG
+	// isn't taken from a half-faded frame.
 	function downloadChartPng() {
-		const svg = chartContainerEl?.querySelector('svg');
-		if (svg) downloadSvgPng(svg);
+		const container = chartContainerEl;
+		if (!container) return;
+		const capture = () => {
+			const svgs = container.querySelectorAll('svg');
+			const svg = svgs[svgs.length - 1];
+			if (svg) downloadSvgPng(svg);
+		};
+		if (container.querySelector('[data-mid-transition]')) {
+			setTimeout(capture, 300);
+		} else {
+			capture();
+		}
 	}
 
 	function onKeydown(e: KeyboardEvent) {

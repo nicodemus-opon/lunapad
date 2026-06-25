@@ -23,6 +23,11 @@
 		readonly?: boolean;
 		completions?: CompletionEntry[];
 		language?: EditorLanguage;
+		/** Ambient .d.ts text declaring this editor's JS sandbox globals (e.g. an
+		 * upstream cell's outputName → {rows, columns}, for plot cells) — only
+		 * meaningful when language is 'javascript'. See $lib/monaco/plot-globals.ts
+		 * for why only the focused JS editor's globals are ever live. */
+		plotGlobalsDts?: string;
 		/** SQL dialect for formatter: 'duckdb' | 'postgresql' | 'clickhouse' */
 		sqlDialect?: string;
 		/** Drives dialect-specific SQL function completions/hover */
@@ -44,7 +49,8 @@
 		language = 'prql',
 		sqlDialect = 'sql',
 		connectionType = 'duckdb-wasm',
-		udfFunctionNames = []
+		udfFunctionNames = [],
+		plotGlobalsDts
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -59,6 +65,11 @@
 		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
 		| null = null;
 	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let setModelPlotGlobals:
+		| ((m: Monaco.editor.ITextModel, dts: string) => void)
+		| null = null;
+	let clearModelPlotGlobals: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let activatePlotGlobals: ((modelUri: string) => void) | null = null;
 	let suppressUpdate = false;
 	let destroyed = false;
 
@@ -164,6 +175,9 @@
 		clearModelCompletions = mod.clearModelCompletions;
 		setModelDialect = mod.setModelDialect;
 		clearModelDialect = mod.clearModelDialect;
+		setModelPlotGlobals = mod.setModelPlotGlobals;
+		clearModelPlotGlobals = mod.clearModelPlotGlobals;
+		activatePlotGlobals = mod.activatePlotGlobals;
 
 		model = m.editor.createModel(
 			code,
@@ -172,6 +186,13 @@
 		);
 		setModelCompletions(model, completions);
 		setModelDialect(model, connectionType);
+		if (plotGlobalsDts != null) {
+			setModelPlotGlobals(model, plotGlobalsDts);
+			// Make this editor's globals live immediately on mount rather than
+			// waiting for an explicit focus click — most plot cells are mounted
+			// because the user just opened/added them.
+			if (language === 'javascript' && activatePlotGlobals) activatePlotGlobals(model.uri.toString());
+		}
 
 		const ed = m.editor.create(container, {
 			model,
@@ -221,6 +242,15 @@
 			formatCurrentSQL();
 		});
 
+		// JS sandbox globals (plot cells, and the `custom` chart-config code box)
+		// share one live extraLib across all JS editors — make this one active
+		// whenever it's focused. See $lib/monaco/plot-globals.ts.
+		ed.onDidFocusEditorWidget(() => {
+			if (language === 'javascript' && activatePlotGlobals && model) {
+				activatePlotGlobals(model.uri.toString());
+			}
+		});
+
 		ed.onKeyDown((e) => {
 			const be = e.browserEvent;
 			if (!shouldForwardKey(be)) return;
@@ -245,6 +275,7 @@
 		destroyed = true;
 		if (model && clearModelCompletions) clearModelCompletions(model);
 		if (model && clearModelDialect) clearModelDialect(model);
+		if (model && clearModelPlotGlobals) clearModelPlotGlobals(model);
 		editor?.dispose();
 		model?.dispose();
 		editor = null;
@@ -290,6 +321,13 @@
 	$effect(() => {
 		if (!model || !setModelDialect) return;
 		setModelDialect(model, connectionType);
+	});
+
+	// Sync sandbox-globals dts → per-model registry (and the live extraLib, if
+	// this editor happens to be the currently-focused one)
+	$effect(() => {
+		if (!model || !setModelPlotGlobals) return;
+		setModelPlotGlobals(model, plotGlobalsDts ?? '');
 	});
 
 	// Sync errors → markers (span offsets are UTF-16, same as getPositionAt)

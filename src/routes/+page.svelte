@@ -73,6 +73,9 @@
 		addUdfCell,
 		insertUdfCellBefore,
 		canAddUdfCell,
+		addPlotCell,
+		insertPlotCellBefore,
+		canAddPlotCell,
 		reorderCell,
 		setAllCellsDisplay,
 		setNotebookReportView,
@@ -219,13 +222,15 @@
 	}
 
 	// Divider above the cell at `index`: insert before it.
-	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf', index: number) {
+	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot', index: number) {
 		const target = cells[index];
 		if (!target) return;
 		if (kind === 'markdown') {
 			insertMarkdownCellBefore(target.id);
 		} else if (kind === 'udf') {
 			insertUdfCellBefore(target.id);
+		} else if (kind === 'plot') {
+			insertPlotCellBefore(target.id);
 		} else {
 			const lang = kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind;
 			insertCellBefore(target.id, {
@@ -239,11 +244,13 @@
 		focusCellAt(index);
 	}
 
-	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf') {
+	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot') {
 		if (kind === 'markdown') {
 			addMarkdownCell();
 		} else if (kind === 'udf') {
 			addUdfCell();
+		} else if (kind === 'plot') {
+			addPlotCell();
 		} else {
 			addCellWithLanguage(
 				kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind
@@ -783,6 +790,11 @@
 								{#if canAddUdfCell()}
 									<DropdownMenu.Item onclick={() => addUdfCell()}>
 										<FileCode2 class="h-3.5 w-3.5" /> New Python UDF cell
+									</DropdownMenu.Item>
+								{/if}
+								{#if canAddPlotCell()}
+									<DropdownMenu.Item onclick={() => addPlotCell()}>
+										<BarChart2 class="h-3.5 w-3.5" /> New plot cell
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
@@ -1585,6 +1597,7 @@
 													<AddCellDivider
 														onAdd={(kind) => insertBeforeCell(kind, idx)}
 														showUdf={canAddUdfCell()}
+														showPlot={canAddPlotCell()}
 													/>
 												</div>
 											{/if}
@@ -1613,7 +1626,7 @@
 
 								{#if !reportView}
 									<div class="mt-2 pl-(--cell-gutter)">
-										<AddCellDivider persistent onAdd={appendCell} showUdf={canAddUdfCell()} />
+										<AddCellDivider persistent onAdd={appendCell} showUdf={canAddUdfCell()} showPlot={canAddPlotCell()} />
 									</div>
 								{/if}
 							{/if}

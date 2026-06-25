@@ -43,6 +43,8 @@ const QUERY_CLOSE_RE = /^\{%\s*\/query\s*%\}\s*$/;
 const MODEL_REF_RE = /^\{%\s*model\s+ref="([^"]*)"\s*\/%\}\s*$/;
 const UDF_OPEN_RE = /^\{%\s*udf\s*%\}\s*$/;
 const UDF_CLOSE_RE = /^\{%\s*\/udf\s*%\}\s*$/;
+const PLOT_OPEN_RE = /^\{%\s*plot\s+([^%]*?)\s*%\}\s*$/;
+const PLOT_CLOSE_RE = /^\{%\s*\/plot\s*%\}\s*$/;
 
 const MATERIALIZE_MODES: CellMaterializationMode[] = ['table', 'view', 'incremental', 'ephemeral'];
 
@@ -74,7 +76,8 @@ export type LunaEntry =
 	| { kind: 'markdown'; markdown: string }
 	| LunaQueryEntry
 	| { kind: 'modelRef'; ref: string }
-	| { kind: 'udf'; udfBody: string };
+	| { kind: 'udf'; udfBody: string }
+	| { kind: 'plot'; name: string; code: string };
 
 export interface LunaDocument {
 	entries: LunaEntry[];
@@ -139,6 +142,7 @@ export function parseLunaFile(content: string): LunaDocument {
 		const openMatch = line.match(QUERY_OPEN_RE);
 		const modelMatch = line.match(MODEL_REF_RE);
 		const udfOpenMatch = line.match(UDF_OPEN_RE);
+		const plotOpenMatch = line.match(PLOT_OPEN_RE);
 
 		if (udfOpenMatch) {
 			flushProse();
@@ -149,6 +153,20 @@ export function parseLunaFile(content: string): LunaDocument {
 				i++;
 			}
 			entries.push({ kind: 'udf', udfBody: bodyLines.join('\n').trim() });
+			i++; // skip closing marker (no-op if body ran to EOF unterminated)
+			continue;
+		}
+
+		if (plotOpenMatch) {
+			flushProse();
+			const attrs = parseAttrs(plotOpenMatch[1]);
+			const bodyLines: string[] = [];
+			i++;
+			while (i < lines.length && !PLOT_CLOSE_RE.test(lines[i])) {
+				bodyLines.push(lines[i]);
+				i++;
+			}
+			entries.push({ kind: 'plot', name: attrs.name ?? '', code: bodyLines.join('\n').trim() });
 			i++; // skip closing marker (no-op if body ran to EOF unterminated)
 			continue;
 		}
@@ -204,7 +222,7 @@ export function parseLunaFile(content: string): LunaDocument {
 /** Minimal shape needed to serialize one cell — kept separate from the store's
  *  `Cell` type so this module has no runtime dependency on notebook.svelte.ts. */
 export interface SerializableCell {
-	cellType: 'query' | 'markdown' | 'udf';
+	cellType: 'query' | 'markdown' | 'udf' | 'plot';
 	markdown: string;
 	udfBody: string;
 	outputName: string;
@@ -300,6 +318,8 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			blocks.push(cell.markdown.trim());
 		} else if (cell.cellType === 'udf') {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
+		} else if (cell.cellType === 'plot') {
+			blocks.push(`{% plot name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /plot %}`);
 		} else if (cell.promotedModelPath) {
 			blocks.push(`{% model ref="${cell.outputName}" /%}`);
 		} else {

@@ -5,13 +5,16 @@
 	let {
 		onAdd,
 		persistent = false,
-		showUdf = false
+		showUdf = false,
+		showPlot = false
 	}: {
-		onAdd: (kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf') => void;
+		onAdd: (kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot') => void;
 		/** Trailing divider at the end of the cell list stays visible. */
 		persistent?: boolean;
 		/** Python UDF cells only make sense in .luna-format notebooks. */
 		showUdf?: boolean;
+		/** Plot cells only make sense in .luna-format notebooks. */
+		showPlot?: boolean;
 	} = $props();
 
 	let menuOpen = $state(false);
@@ -51,6 +54,9 @@
 				<DropdownMenu.Item onclick={() => onAdd('markdown')}>Markdown cell</DropdownMenu.Item>
 				{#if showUdf}
 					<DropdownMenu.Item onclick={() => onAdd('udf')}>Python UDF cell</DropdownMenu.Item>
+				{/if}
+				{#if showPlot}
+					<DropdownMenu.Item onclick={() => onAdd('plot')}>Plot cell</DropdownMenu.Item>
 				{/if}
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>

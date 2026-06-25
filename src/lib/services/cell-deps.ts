@@ -243,6 +243,34 @@ export function buildSQLExecutionCode(
 }
 
 /**
+ * Returns the upstream **query** cells a plot cell references by outputName as
+ * a whole word in its code (e.g. `top_products.rows`). Unlike
+ * `resolveDependencies`, this is deliberately *not* transitive and the order
+ * doesn't matter: a plot cell reading `top_products.rows` needs that cell's
+ * already-computed `.result`, not `top_products`'s own upstream SQL
+ * dependencies, since nothing is being concatenated into a query — it's a
+ * direct read of a finished value. UDF cells are excluded (unlike
+ * `resolveDependencies`, which includes them for SQL/PRQL CTE purposes) since
+ * they have no `{rows, columns}`-shaped `.result` to bind.
+ */
+export function resolvePlotDataRefs(cells: Cell[], idx: number): Cell[] {
+	const target = cells[idx];
+	if (!target || target.cellType !== 'plot') return [];
+
+	const byName = new Map<string, Cell>();
+	for (let i = 0; i < idx; i++) {
+		const c = cells[i];
+		if (c.cellType === 'query' && c.outputName) byName.set(c.outputName, c);
+	}
+
+	const refs: Cell[] = [];
+	for (const [name, cell] of byName) {
+		if (new RegExp(`\\b${escapeRegExp(name)}\\b`).test(target.code)) refs.push(cell);
+	}
+	return refs;
+}
+
+/**
  * Like `resolveDependencies` but also searches a global registry of cells from
  * other notebooks. Used for external connections (Postgres, ClickHouse) where
  * DuckDB views don't exist — all upstream cells from any notebook are inlined as

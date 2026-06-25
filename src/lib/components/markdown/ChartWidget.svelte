@@ -1,4 +1,7 @@
 <script lang="ts">
+	// Renders the same ChartView (and therefore PlotChart) used by inline cell
+	// results, so crossfade animations and Plot.tip tooltips apply here too with
+	// no extra work.
 	import ChartView from '../ChartView.svelte';
 	import type { ChartConfig, ChartType, ChartSeriesMode, ChartSortOrder } from '$lib/types/gui-pipeline';
 	import { Maximize2, X } from '@lucide/svelte';

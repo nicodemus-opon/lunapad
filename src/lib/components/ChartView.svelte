@@ -507,6 +507,18 @@
 		return raw;
 	}
 
+	// Pairs a chart's primary mark with a floating, pointer-following tooltip
+	// using Plot's own Plot.tip/Plot.pointer — renders inside the same SVG Plot
+	// returns, so it needs no overlay/z-index management and is automatically
+	// captured by PNG export. Only used for Plot.plot-rendered chart types; the
+	// hand-rolled SVG charts (pie/funnel/sankey) keep their native <title> tooltips.
+	function tipMark<T>(
+		data: T[],
+		opts: { x?: string; y?: string; fx?: string; fy?: string; title: (d: T) => string }
+	): Plot.Markish {
+		return Plot.tip(data, Plot.pointer(opts));
+	}
+
 	// Coerces a raw x value to the right JS type for Plot's scale inference
 	// (Plot infers scale type from the channel's actual JS value type, unlike
 	// ECharts which took an explicit axis `type` string).
@@ -758,6 +770,7 @@
 		if (t === 'histogram') {
 			const bins = histData;
 			const xLabel = config.yColumns[0] ? humanize(config.yColumns[0]) : '';
+			const binsWithMid = bins.map((b) => ({ ...b, xmid: (b.x0 + b.x1) / 2 }));
 			return (width, height) =>
 				Plot.plot({
 					width,
@@ -767,7 +780,12 @@
 					y: { label: 'Count', tickFormat: fmtNum, grid: true },
 					marks: [
 						Plot.rectY(bins, { x1: 'x0', x2: 'x1', y: 'y', fill: 'var(--chart-1)' }),
-						Plot.ruleY([0])
+						Plot.ruleY([0]),
+						tipMark(binsWithMid, {
+							x: 'xmid',
+							y: 'y',
+							title: (d) => `${fmtNum(d.x0)}–${fmtNum(d.x1)}: ${fmtNum(d.y)}`
+						})
 					]
 				});
 		}
@@ -795,6 +813,11 @@
 							fill: 'value',
 							title: (d: { x: string; y: string; value: number | null }) =>
 								`${d.x} / ${d.y}: ${d.value != null ? fmtNum(d.value) : 'N/A'}`
+						}),
+						tipMark(cells, {
+							x: 'x',
+							y: 'y',
+							title: (d) => `${d.x} / ${d.y}: ${d.value != null ? fmtNum(d.value) : 'N/A'}`
 						})
 					]
 				});
@@ -846,6 +869,11 @@
 							fill: colorSplit ? 'group' : 'var(--chart-1)',
 							title: (d: { group: string; x: unknown; y: number | null }) =>
 								`${colorSplit ? humanize(d.group) + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
+						}),
+						tipMark(data, {
+							x: 'x',
+							y: 'y',
+							title: (d) => `${colorSplit ? humanize(d.group) + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
 						})
 					]
 				});
@@ -868,10 +896,12 @@
 					x: String((d as Record<string, unknown>).x ?? ''),
 					value: toNumber((d as Record<string, unknown>)[key])
 				}));
+				const flatTitle = (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}`;
 				marks = [
 					isHoriz
-						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)', title: (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}` })
-						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)', title: (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}` })
+						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)', title: flatTitle })
+						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)', title: flatTitle }),
+					tipMark(flat, isHoriz ? { y: 'x', x: 'value', title: flatTitle } : { x: 'x', y: 'value', title: flatTitle })
 				];
 				catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
 			} else {
@@ -879,13 +909,21 @@
 				const seriesTitle = (d: { x: string; series: string; value: number | null }) =>
 					`${d.series} — ${d.x}: ${fmtNum(d.value)}`;
 				if (layout === 'stack') {
+					// Plot.pointer is given the unstacked x/value channels here (not the
+					// stack-transformed positions) — close enough to find the nearest bar
+					// segment along the categorical axis for tooltip purposes without
+					// needing to re-derive the stack's cumulative y-extents.
 					marks = [
 						isHoriz
 							? Plot.barX(long, Plot.stackX({ y: 'x', x: 'value', fill: 'series', title: seriesTitle }))
-							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series', title: seriesTitle }))
+							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series', title: seriesTitle })),
+						tipMark(long, isHoriz ? { y: 'x', x: 'value', title: seriesTitle } : { x: 'x', y: 'value', title: seriesTitle })
 					];
 					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
 				} else {
+					// No tip mark here: Plot.pointer doesn't have a clean way to target
+					// a specific facet cell for a grouped (non-stacked) layout — each
+					// bar already has a native <title> tooltip from the mark above.
 					marks = [
 						isHoriz
 							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series', title: seriesTitle })
@@ -943,6 +981,9 @@
 							lineMark
 						]
 					: [lineMark];
+				marks.push(
+					tipMark(data, { x: 'x', y: 'y', title: (d) => `${humanize(d.group)}: ${fmtNum(d.y)}` })
+				);
 				const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
 				const xDomain = xCategorical ? categoricalDomain(data.map((d) => d.x)) : undefined;
 				return (width, height) =>
@@ -994,6 +1035,21 @@
 					})
 				);
 			}
+			// One combined tooltip listing every primary series' value at the
+			// hovered x, rather than one tip per series (which would stack several
+			// floating boxes on top of each other for multi-series charts). Anchored
+			// to the first series for vertical positioning; secondary-axis series
+			// (rescaled onto a shared visual scale below) are intentionally left out
+			// since their tooltip value would need the original, unscaled number.
+			if (primary.length > 0) {
+				marks.push(
+					tipMark(primaryData, {
+						x: 'x',
+						y: primary[0].key,
+						title: (d) => primary.map((s) => `${s.label}: ${fmtNum((d as Record<string, unknown>)[s.key])}`).join('\n')
+					})
+				);
+			}
 			for (const s of secondary) {
 				const rescale = rescaleMap[s.key];
 				const secondaryData = primaryData.map((d) => {
@@ -1029,6 +1085,8 @@
 		if (t === 'box-plot') {
 			const data = boxPlotData;
 			const xDomain = categoricalDomain(data.map((d) => d.name));
+			const boxTitle = (d: { name: string; min: number; q1: number; median: number; q3: number; max: number }) =>
+				`${d.name}\nMax: ${fmtNum(d.max)}\nQ3: ${fmtNum(d.q3)}\nMedian: ${fmtNum(d.median)}\nQ1: ${fmtNum(d.q1)}\nMin: ${fmtNum(d.min)}`;
 			return (width, height) =>
 				Plot.plot({
 					width,
@@ -1045,10 +1103,10 @@
 							y2: 'q3',
 							fill: 'var(--chart-1)',
 							fillOpacity: 0.6,
-							title: (d: { name: string; min: number; q1: number; median: number; q3: number; max: number }) =>
-								`${d.name}\nMax: ${fmtNum(d.max)}\nQ3: ${fmtNum(d.q3)}\nMedian: ${fmtNum(d.median)}\nQ1: ${fmtNum(d.q1)}\nMin: ${fmtNum(d.min)}`
+							title: boxTitle
 						}),
-						Plot.tickY(data, { x: 'name', y: 'median', stroke: 'var(--chart-1)', strokeWidth: 2 })
+						Plot.tickY(data, { x: 'name', y: 'median', stroke: 'var(--chart-1)', strokeWidth: 2 }),
+						tipMark(data, { x: 'name', y: 'median', title: boxTitle })
 					]
 				});
 		}
@@ -1077,6 +1135,12 @@
 							fy: 'year',
 							fill: 'value',
 							title: (d: { dateStr: string; value: number }) => `${d.dateStr}: ${fmtNum(d.value)}`
+						}),
+						tipMark(cells, {
+							x: 'weekOfYear',
+							y: 'day',
+							fy: 'year',
+							title: (d) => `${d.dateStr}: ${fmtNum(d.value)}`
 						})
 					]
 				});

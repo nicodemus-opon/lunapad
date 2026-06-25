@@ -5,8 +5,10 @@ import {
 	buildSQLExecutionCode,
 	buildSQLGlobalExecutionCode,
 	resolveDependencies,
-	resolveGlobalDependencies
+	resolveGlobalDependencies,
+	resolvePlotDataRefs
 } from '$lib/services/cell-deps';
+import { buildPlotScope, runPlotCode } from '$lib/services/plot-cell';
 import { parseUdfSignature } from '$lib/services/udf';
 import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
@@ -101,7 +103,9 @@ import {
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
-export type CellType = 'query' | 'markdown' | 'udf';
+// 'plot' cells are never promotable to dbt models — getPromotionChain already
+// guards on `cellType !== 'query'`, so this is automatic, not something to "fix".
+export type CellType = 'query' | 'markdown' | 'udf' | 'plot';
 export type CellMaterializationMode = DBMaterializationMode | 'ephemeral';
 export type CellMaterializationStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellScheduleStatus = 'idle' | 'running' | 'success' | 'error';
@@ -512,6 +516,25 @@ function makeUdfCell(udfBody = DEFAULT_UDF_BODY): Cell {
 		...makeCell('', outputName, 'sql'),
 		cellType: 'udf',
 		udfBody,
+		editMode: 'prql'
+	};
+}
+
+const DEFAULT_PLOT_CODE = `// Reference an upstream cell by its output name, e.g. my_query.rows
+return Plot.plot({
+  marks: [
+    // Plot.dot(my_query.rows, { x: "column_a", y: "column_b" })
+  ]
+})
+`;
+
+// Plot cells are JS code (reuse the existing `code` field, same as query cells'
+// PRQL/SQL) evaluated against rows/columns pulled from upstream cells referenced
+// by name — see resolvePlotDataRefs in cell-deps.ts and runPlotCell below.
+function makePlotCell(code = DEFAULT_PLOT_CODE): Cell {
+	return {
+		...makeCell(code, 'chart'),
+		cellType: 'plot',
 		editMode: 'prql'
 	};
 }
@@ -3705,6 +3728,58 @@ export function insertUdfCellBefore(id: string): void {
 	scheduleFileSave(nb.id, cell.id);
 }
 
+/** Plot cells (Observable Plot JS, evaluated against upstream cells' results)
+ *  have no .prql/.sql file mapping either — same filesystem-mode restriction
+ *  as UDF cells (see canAddUdfCell). */
+export function canAddPlotCell(): boolean {
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		const nb = getActiveNotebook();
+		return nb.format === 'luna';
+	}
+	return true;
+}
+
+export function addPlotCell(): void {
+	if (!canAddPlotCell()) return;
+	const nb = getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePlotCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	nb.cells = [...nb.cells, cell];
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertPlotCellAfter(id: string): void {
+	if (!canAddPlotCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePlotCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertPlotCellBefore(id: string): void {
+	if (!canAddPlotCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePlotCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
 /** Append a query or markdown cell at the end of the active notebook; returns the new cell id. */
 export function appendCellAtEnd(data: {
 	outputName: string;
@@ -4318,6 +4393,16 @@ export function updateCellMarkdown(id: string, markdown: string): void {
 	if (!cell || cell.cellType !== 'markdown') return;
 	checkpointCoalesced(nb.id, id, 'markdown');
 	cell.markdown = markdown;
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+}
+
+export function updatePlotCellCode(id: string, code: string): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || cell.cellType !== 'plot') return;
+	checkpointCoalesced(nb.id, id, 'code');
+	cell.code = code;
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
 }
@@ -5260,6 +5345,48 @@ export async function runCell(id: string): Promise<void> {
 		if (cellRunControllers.get(id) === controller) cellRunControllers.delete(id);
 		if (cellRunIds.get(id) === runId) cellRunIds.delete(id);
 	}
+}
+
+/** Validates a plot cell's JS against its currently-resolved upstream cells,
+ *  surfacing a thrown error via cell.status/cell.errors (reusing the same
+ *  fields query cells use, rather than inventing plot-specific ones). The
+ *  rendered chart element itself isn't persisted — PlotCellOutput.svelte
+ *  recomputes it reactively from cell.code + the deps' live `.result`, the
+ *  same way ChartView's `plotRender` is a derived value, not stored state.
+ *  This mainly exists to give plot cells a "Run" affordance consistent with
+ *  query cells and to eagerly surface errors rather than only on render. */
+export function runPlotCell(id: string): void {
+	let nb = getActiveNotebook();
+	let idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) {
+		for (const n of state.notebooks) {
+			const i = n.cells.findIndex((c) => c.id === id);
+			if (i !== -1) {
+				nb = n;
+				idx = i;
+				break;
+			}
+		}
+	}
+	if (idx === -1) return;
+	const cell = nb.cells[idx];
+	if (cell.cellType !== 'plot') return;
+	cell.status = 'running';
+	try {
+		const deps = resolvePlotDataRefs(nb.cells, idx);
+		const scope = buildPlotScope(deps);
+		runPlotCode(cell.code, scope, 300, 200);
+		cell.status = 'success';
+		cell.errors = [];
+	} catch (e) {
+		cell.status = 'error';
+		const message = e instanceof Error ? e.message : String(e);
+		cell.errors = [
+			{ kind: 'plot', code: null, reason: message, hint: null, span: null, display: message, location: null }
+		];
+	}
+	cell.lastRunAt = Date.now();
+	scheduleSave();
 }
 
 export function cancelCell(id: string): void {

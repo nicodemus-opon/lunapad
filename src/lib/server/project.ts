@@ -649,6 +649,12 @@ async function hydrateLunaEntries(
 			cells.push(cell);
 			continue;
 		}
+		if (entry.kind === 'plot') {
+			const cell = buildPlotCellFromLuna(entry.name, entry.code);
+			claimCellOutputName(usedOutputNames, cell);
+			cells.push(cell);
+			continue;
+		}
 		// modelRef: hydrate the real cell from its promoted model file. This
 		// intentionally mirrors the same outputName/id as the standalone model
 		// cell elsewhere in the project — it's the same logical model, not a
@@ -708,6 +714,55 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
 		materializeTarget: outputName,
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		description: null,
+		dbtSchema: null,
+		dbtTags: [],
+		promotedModelPath: null,
+		dbtTestStatus: 'idle',
+		dbtTestResults: [],
+		dbtTestLog: [],
+		scheduleEnabled: false,
+		scheduleIntervalMinutes: 60,
+		scheduleScope: 'cell',
+		scheduleStatus: 'idle',
+		scheduleLastRunAt: null,
+		scheduleNextRunAt: null,
+		scheduleLastError: null,
+		intelligence: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null
+	};
+}
+
+function buildPlotCellFromLuna(name: string, code: string): Cell {
+	return {
+		id: name || crypto.randomUUID(),
+		cellType: 'plot',
+		language: 'prql',
+		connectionId: null,
+		outputName: name,
+		code,
+		markdown: '',
+		markdownPreview: false,
+		udfBody: '',
+		status: 'idle',
+		result: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		resultViewMode: 'table',
+		resultChartConfig: null,
+		display: 'full',
+		stageResultsCollapsed: [],
+		materializeMode: 'table',
+		materializeTarget: '',
 		materializeStatus: 'idle',
 		materializeError: null,
 		materializedRelationType: null,

@@ -47,6 +47,8 @@
 		setCellResultChartConfig,
 		updateCellMarkdown,
 		updateCellUdfBody,
+		updatePlotCellCode,
+		runPlotCell,
 		setCellMarkdownPreview,
 		duplicateCell,
 		copyCellToClipboard,
@@ -69,6 +71,10 @@
 	} from '$lib/stores/notebook.svelte';
 	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
 	import { updateProjectSchema } from '$lib/services/project-client';
+	import { resolvePlotDataRefs } from '$lib/services/cell-deps';
+	import { buildSandboxGlobalsDts } from '$lib/services/plot-cell';
+	import { PLOT_TEMPLATES } from '$lib/services/plot-templates';
+	import PlotCellOutput from './PlotCellOutput.svelte';
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
@@ -166,6 +172,11 @@
 	const isQueryCell = $derived(cell.cellType === 'query');
 	const isUdfCell = $derived(cell.cellType === 'udf');
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
+	const isPlotCell = $derived(cell.cellType === 'plot');
+	const plotDeps = $derived(
+		isPlotCell ? resolvePlotDataRefs(getCells(), getCells().findIndex((c) => c.id === cell.id)) : []
+	);
+	const plotCellGlobalsDts = $derived(buildSandboxGlobalsDts(plotDeps));
 	// Report view renders query cells as output-only, unless they are explicitly
 	// collapsed — collapsed cells are hidden entirely in report mode.
 	const effectiveDisplay = $derived(
@@ -933,6 +944,37 @@
 									{dark}
 									onchange={(c) => updateCellUdfBody(cell.id, c)}
 								/>
+							{:else if isPlotCell}
+								<div class="mb-1 flex justify-end">
+									<select
+										class="h-6 rounded-md border border-input bg-background px-1.5 text-2xs text-muted-foreground"
+										value=""
+										onchange={(e) => {
+											const select = e.target as HTMLSelectElement;
+											const tpl = PLOT_TEMPLATES.find((t) => t.id === select.value);
+											if (tpl) editorRef?.insertAtCursor(tpl.code);
+											select.value = '';
+										}}
+									>
+										<option value="" disabled selected>Insert template…</option>
+										{#each PLOT_TEMPLATES as tpl (tpl.id)}
+											<option value={tpl.id}>{tpl.label}</option>
+										{/each}
+									</select>
+								</div>
+								<Editor
+									bind:this={editorRef}
+									code={cell.code}
+									errors={cell.errors}
+									language="javascript"
+									plotGlobalsDts={plotCellGlobalsDts}
+									{dark}
+									onchange={(c) => updatePlotCellCode(cell.id, c)}
+								/>
+								<p class="mt-1 text-2xs text-muted-foreground">
+									Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
+									<code>return Plot.plot(...)</code>.
+								</p>
 							{:else if !isQueryCell}
 								<div class="group/markdown relative">
 									{#if isMarkdownPreviewMode}
@@ -1024,8 +1066,9 @@
 						<CellSqlPreview sql={cell.compiledSQL} />
 					{/if}
 
-					<!-- Errors — quiet inline annotation bar -->
-					{#if cell.errors.length > 0}
+					<!-- Errors — quiet inline annotation bar (plot cells show errors inline
+					     in their own output area instead, via PlotCellOutput below) -->
+					{#if !isPlotCell && cell.errors.length > 0}
 						<div class="space-y-0.5 pl-0.5" in:fly={{ y: -4, duration: 130 }}>
 							{#each cell.errors as error, errorIdx (errorIdx)}
 								<div class="rounded-r-sm border-destructive/80 py-2">
@@ -1042,6 +1085,15 @@
 							<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
 								{cell.materializeError}
 							</p>
+						</div>
+					{/if}
+
+					<!-- Plot cell output: rendered reactively from cell.code + its
+					     resolved upstream cells' .result, same as ChartView's plotRender
+					     derived — not stored state, so it stays live as you type. -->
+					{#if isPlotCell}
+						<div in:fade={{ duration: 220 }} class="min-h-64">
+							<PlotCellOutput {cell} deps={plotDeps} />
 						</div>
 					{/if}
 
