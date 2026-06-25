@@ -39,7 +39,14 @@ const authDisabled = testAuthDisabled || DEMO_MODE;
 // /api/inngest is excluded from the session gate: Inngest's own serve() handler verifies
 // requests via INNGEST_SIGNING_KEY (or INNGEST_DEV), not browser cookies, so the dev/prod
 // Inngest server (running outside the browser session) needs to reach it unauthenticated.
-const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/login', '/setup'];
+// /r and /s are published reports/sites — the whole point of "publish a link" is that
+// people without a Lunapad account can open it. Per-report/per-site `requireAuth` is
+// enforced inside each route's own load function instead, not here, since /r and /s must
+// be reachable before we know which specific report someone's asking for.
+const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/login', '/setup', '/r', '/s'];
+// The live-cell run endpoint a published report's page calls client-side — same
+// public-by-default, per-report-gated reasoning as /r and /s above.
+const PUBLIC_PATH_PATTERNS = [/^\/api\/shares\/[^/]+\/run$/];
 // /api/v1 and /api/mcp reach external connections and the dbt CLI exactly like
 // /api/connections and /api/dbt already do — DEMO_MODE exists specifically to close
 // that door, so they must be blocked here too even though they're a separate surface.
@@ -59,7 +66,8 @@ const DEMO_BLOCKED_PREFIXES = [
 ];
 
 function isPublicPath(pathname: string): boolean {
-	return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+	if (PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return true;
+	return PUBLIC_PATH_PATTERNS.some((re) => re.test(pathname));
 }
 
 function isDemoBlockedPath(pathname: string): boolean {

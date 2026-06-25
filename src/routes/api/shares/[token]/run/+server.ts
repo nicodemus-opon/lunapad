@@ -11,12 +11,13 @@ interface RunRequest {
 	filters?: Record<string, string>;
 }
 
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const token = params.token;
 	if (isRateLimited(token)) return json({ error: 'Too many requests' }, { status: 429 });
 
 	const share = await getShareByToken(token);
 	if (!share || share.revoked) return json({ error: 'Not found' }, { status: 410 });
+	if (share.requireAuth && !locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
 
 	const body = (await request.json()) as Partial<RunRequest>;
 	if (!body?.cellId) return json({ error: 'cellId is required.' }, { status: 400 });
@@ -36,7 +37,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const sql = substituteFilterTokens(cell.sqlTemplate, body.filters ?? {});
 
 	try {
-		const result = await queryExternalConnection(record.connection, record.secret ?? undefined, sql);
+		const result = await queryExternalConnection(
+			record.connection,
+			record.secret ?? undefined,
+			sql
+		);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to run query.';

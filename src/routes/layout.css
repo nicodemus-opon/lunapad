@@ -24,6 +24,10 @@
   --border: oklch(0.8690 0.0050 56.3660);
   --input: oklch(0.9220 0 0);
   --ring: oklch(0.5540 0.0460 257.4170);
+  /* Observable Plot's Plot.tip() reads this var directly for its tooltip
+     background; it's otherwise undefined, so tips render with the SVG fill
+     initial value (black) in both themes instead of a themed surface. */
+  --plot-background: var(--popover);
   --chart-1: oklch(0.8090 0.1050 251.8130);
   --chart-2: oklch(0.8110 0.1110 293.5710);
   --chart-3: oklch(0.8816 0.0276 93.1280);

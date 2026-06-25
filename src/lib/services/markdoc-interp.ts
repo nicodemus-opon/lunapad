@@ -62,7 +62,10 @@ const currencyFmt = new Intl.NumberFormat(undefined, {
 	currency: 'USD',
 	maximumFractionDigits: 0
 });
-const compactFmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+const compactFmt = new Intl.NumberFormat(undefined, {
+	notation: 'compact',
+	maximumFractionDigits: 1
+});
 
 function fmtCurrency(v: unknown): string {
 	const n = toNum(v);
@@ -116,9 +119,22 @@ export const FUNCTIONS: Record<string, ConfigFunction> = {
 
 // ── Custom tags ──────────────────────────────────────────────────────────────
 
-const CONTAINER_CHILDREN = ['tag', 'paragraph', 'list', 'heading', 'blockquote', 'fence', 'hr', 'image', 'table'];
+const CONTAINER_CHILDREN = [
+	'tag',
+	'paragraph',
+	'list',
+	'heading',
+	'blockquote',
+	'fence',
+	'hr',
+	'image',
+	'table'
+];
 
-function metricTrend(value: unknown, vs: unknown): { deltaPct: number | null; trend: 'up' | 'down' | 'flat' | null } {
+function metricTrend(
+	value: unknown,
+	vs: unknown
+): { deltaPct: number | null; trend: 'up' | 'down' | 'flat' | null } {
 	const v = toNum(value);
 	const ref = toNum(vs);
 	if (v === null || ref === null || ref === 0) return { deltaPct: null, trend: null };
@@ -134,22 +150,48 @@ const metricTag: Schema = {
 		value: { type: [Number, String] },
 		label: { type: String },
 		vs: { type: [Number, String] },
-		format: { type: String, matches: ['number', 'currency', 'compact', 'percent'], default: 'number' }
+		format: {
+			type: String,
+			matches: ['number', 'currency', 'compact', 'percent'],
+			default: 'number'
+		}
 	},
 	transform(node, config) {
 		const attrs = node.transformAttributes(config);
 		const { deltaPct, trend } = metricTrend(attrs.value, attrs.vs);
 		return new Tag(
 			'metric',
-			{ value: attrs.value, label: attrs.label, format: attrs.format, vs: attrs.vs, deltaPct, trend },
+			{
+				value: attrs.value,
+				label: attrs.label,
+				format: attrs.format,
+				vs: attrs.vs,
+				deltaPct,
+				trend
+			},
 			[]
 		);
 	}
 };
 
 const CHART_TYPES = [
-	'table', 'big-value', 'delta', 'value', 'line', 'bar', 'bar-horizontal', 'area',
-	'scatter', 'bubble', 'pie', 'histogram', 'heatmap', 'calendar-heatmap', 'funnel', 'box-plot', 'sankey',
+	'table',
+	'big-value',
+	'delta',
+	'value',
+	'line',
+	'bar',
+	'bar-horizontal',
+	'area',
+	'scatter',
+	'bubble',
+	'pie',
+	'histogram',
+	'heatmap',
+	'calendar-heatmap',
+	'funnel',
+	'box-plot',
+	'sankey',
 	'custom'
 ];
 
@@ -254,14 +296,28 @@ const datatableTag: Schema = {
 };
 
 const columnsTag: Schema = { render: 'columns', children: CONTAINER_CHILDREN };
-const columnTag: Schema = { render: 'column', children: CONTAINER_CHILDREN, attributes: { width: { type: [Number, String] } } };
-const gridTag: Schema = { render: 'grid', children: CONTAINER_CHILDREN, attributes: { cols: { type: Number, default: 3 } } };
+const columnTag: Schema = {
+	render: 'column',
+	children: CONTAINER_CHILDREN,
+	attributes: { width: { type: [Number, String] } }
+};
+const gridTag: Schema = {
+	render: 'grid',
+	children: CONTAINER_CHILDREN,
+	attributes: { cols: { type: Number, default: 3 } }
+};
 const calloutTag: Schema = {
 	render: 'callout',
 	children: CONTAINER_CHILDREN,
-	attributes: { type: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' } }
+	attributes: {
+		type: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' }
+	}
 };
-const cardTag: Schema = { render: 'card', children: CONTAINER_CHILDREN, attributes: { title: { type: String } } };
+const cardTag: Schema = {
+	render: 'card',
+	children: CONTAINER_CHILDREN,
+	attributes: { title: { type: String } }
+};
 const detailsTag: Schema = {
 	render: 'details',
 	children: CONTAINER_CHILDREN,
@@ -284,7 +340,11 @@ const filterTag: Schema = {
 	render: 'filter',
 	selfClosing: true,
 	attributes: {
-		kind: { type: String, matches: ['dropdown', 'text-input', 'date-range', 'button-group'], default: 'dropdown' },
+		kind: {
+			type: String,
+			matches: ['dropdown', 'text-input', 'date-range', 'button-group'],
+			default: 'dropdown'
+		},
 		param: { type: String, required: true },
 		label: { type: String },
 		options: { type: Array },
@@ -349,4 +409,20 @@ export function extractMarkdocRefs(markdown: string): string[] {
 	};
 	for (const node of ast.walk()) collect(node.attributes);
 	return [...names];
+}
+
+/** Returns the `param` attribute of every `{% filter %}` widget declared in a markdown string. */
+export function extractFilterParams(markdown: string): string[] {
+	const params = new Set<string>();
+	const ast = Markdoc.parse(markdown);
+	for (const node of ast.walk()) {
+		if (
+			node.tag === 'filter' &&
+			typeof node.attributes.param === 'string' &&
+			node.attributes.param
+		) {
+			params.add(node.attributes.param);
+		}
+	}
+	return [...params];
 }

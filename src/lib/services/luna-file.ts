@@ -45,6 +45,12 @@ const UDF_OPEN_RE = /^\{%\s*udf\s*%\}\s*$/;
 const UDF_CLOSE_RE = /^\{%\s*\/udf\s*%\}\s*$/;
 const PLOT_OPEN_RE = /^\{%\s*plot\s+([^%]*?)\s*%\}\s*$/;
 const PLOT_CLOSE_RE = /^\{%\s*\/plot\s*%\}\s*$/;
+// Forces a markdown-cell boundary that would otherwise be invisible: between two
+// adjacent markdown cells (which would silently merge into one prose blob), or
+// in place of a markdown cell whose content is empty (which would otherwise be
+// indistinguishable from ordinary blank-line spacing between blocks and vanish).
+const CELL_BREAK_RE = /^<!--\s*lunapad:cell\s*-->\s*$/;
+const CELL_BREAK = '<!--lunapad:cell-->';
 
 const MATERIALIZE_MODES: CellMaterializationMode[] = ['table', 'view', 'incremental', 'ephemeral'];
 
@@ -130,10 +136,12 @@ export function parseLunaFile(content: string): LunaDocument {
 	const entries: LunaEntry[] = [];
 	let prose: string[] = [];
 
-	function flushProse(): void {
+	function flushProse(): boolean {
 		const text = prose.join('\n').replace(/^\n+|\n+$/g, '');
-		if (text.trim() !== '') entries.push({ kind: 'markdown', markdown: text });
 		prose = [];
+		if (text.trim() === '') return false;
+		entries.push({ kind: 'markdown', markdown: text });
+		return true;
 	}
 
 	let i = 0;
@@ -143,6 +151,14 @@ export function parseLunaFile(content: string): LunaDocument {
 		const modelMatch = line.match(MODEL_REF_RE);
 		const udfOpenMatch = line.match(UDF_OPEN_RE);
 		const plotOpenMatch = line.match(PLOT_OPEN_RE);
+
+		if (CELL_BREAK_RE.test(line)) {
+			// If there was no real prose to flush, this break marker stands for an
+			// explicit empty markdown cell in its own right — record it as such.
+			if (!flushProse()) entries.push({ kind: 'markdown', markdown: '' });
+			i++;
+			continue;
+		}
 
 		if (udfOpenMatch) {
 			flushProse();
@@ -313,9 +329,13 @@ export function replaceCellWithModelRef(content: string, outputName: string): st
 
 export function serializeLunaFile(cells: SerializableCell[]): string {
 	const blocks: string[] = [];
-	for (const cell of cells) {
+	for (let i = 0; i < cells.length; i++) {
+		const cell = cells[i];
 		if (cell.cellType === 'markdown') {
-			blocks.push(cell.markdown.trim());
+			// Two markdown cells back-to-back would otherwise merge into one prose
+			// blob on the next parse — force a boundary between them.
+			if (cells[i - 1]?.cellType === 'markdown') blocks.push(CELL_BREAK);
+			blocks.push(cell.markdown.trim() === '' ? CELL_BREAK : cell.markdown.trim());
 		} else if (cell.cellType === 'udf') {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
 		} else if (cell.cellType === 'plot') {

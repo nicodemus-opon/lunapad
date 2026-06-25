@@ -152,6 +152,24 @@ describe('serializeLunaFile', () => {
 		expect(doc.entries.map((e) => e.kind)).toEqual(['markdown', 'query']);
 	});
 
+	it('round-trips two adjacent markdown cells without merging them (regression)', () => {
+		const content = serializeLunaFile([markdownCell('First cell'), markdownCell('Second cell')]);
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([
+			{ kind: 'markdown', markdown: 'First cell' },
+			{ kind: 'markdown', markdown: 'Second cell' }
+		]);
+	});
+
+	it('round-trips an emptied markdown cell instead of losing it (regression)', () => {
+		const content = serializeLunaFile([markdownCell('Some content'), markdownCell('')]);
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([
+			{ kind: 'markdown', markdown: 'Some content' },
+			{ kind: 'markdown', markdown: '' }
+		]);
+	});
+
 	it('round-trips a udf cell', () => {
 		const body = 'def my_udf(x: int) -> float:\n    return x * 1.5';
 		const content = serializeLunaFile([udfCell(body)]);

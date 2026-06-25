@@ -632,9 +632,14 @@ async function hydrateLunaEntries(
 	usedOutputNames: Set<string>
 ): Promise<Cell[]> {
 	const cells: Cell[] = [];
-	for (const entry of entries) {
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
 		if (entry.kind === 'markdown') {
-			cells.push(buildMarkdownCell(entry.markdown));
+			// Markdown cells have no user-given name to derive a stable id from
+			// (unlike query/udf/plot cells, keyed by outputName) — fall back to
+			// document position so the id survives a save+reparse round-trip and
+			// the in-memory merge in loadProjectNotebooks() can still match it up.
+			cells.push(buildMarkdownCell(entry.markdown, i));
 			continue;
 		}
 		if (entry.kind === 'query') {
@@ -788,9 +793,9 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 	};
 }
 
-function buildMarkdownCell(markdown: string): Cell {
+function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 	return {
-		id: crypto.randomUUID(),
+		id: `md-${entryIndex}`,
 		cellType: 'markdown',
 		language: 'prql',
 		connectionId: null,

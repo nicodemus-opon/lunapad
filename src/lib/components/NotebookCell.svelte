@@ -8,6 +8,7 @@
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
 	import RefPickerMenu from './markdown/RefPickerMenu.svelte';
+	import FilterPickerMenu from './markdown/FilterPickerMenu.svelte';
 	import GUIEditor from './gui/GUIEditor.svelte';
 	import InlineResultView from './InlineResultView.svelte';
 	import MaterializeDialog from './MaterializeDialog.svelte';
@@ -174,7 +175,12 @@
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	const isPlotCell = $derived(cell.cellType === 'plot');
 	const plotDeps = $derived(
-		isPlotCell ? resolvePlotDataRefs(getCells(), getCells().findIndex((c) => c.id === cell.id)) : []
+		isPlotCell
+			? resolvePlotDataRefs(
+					getCells(),
+					getCells().findIndex((c) => c.id === cell.id)
+				)
+			: []
 	);
 	const plotCellGlobalsDts = $derived(buildSandboxGlobalsDts(plotDeps));
 	// Report view renders query cells as output-only, unless they are explicitly
@@ -242,19 +248,22 @@
 			.map((c) => ({ cellName: c.outputName, columns: c.result!.columns }))
 	);
 
-	function insertMarkdownRef(cellName: string, column: string) {
-		const token = isMarkdocCell ? `$${cellName}.${column}` : `{{${cellName}.${column}}}`;
+	function insertMarkdownSnippet(snippet: string) {
 		const text = cell.markdown ?? '';
 		const start = markdownTextareaEl?.selectionStart ?? text.length;
 		const end = markdownTextareaEl?.selectionEnd ?? text.length;
-		const next = text.slice(0, start) + token + text.slice(end);
+		const next = text.slice(0, start) + snippet + text.slice(end);
 		updateCellMarkdown(cell.id, next);
-		const pos = start + token.length;
+		const pos = start + snippet.length;
 		tick().then(() => {
 			markdownTextareaEl?.focus();
 			markdownTextareaEl?.setSelectionRange(pos, pos);
 			adjustMarkdownHeight();
 		});
+	}
+
+	function insertMarkdownRef(cellName: string, column: string) {
+		insertMarkdownSnippet(isMarkdocCell ? `$${cellName}.${column}` : `{{${cellName}.${column}}}`);
 	}
 
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
@@ -537,7 +546,9 @@
 	}
 
 	function focusCellById(id: string) {
-		document.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)?.focus();
+		document
+			.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)
+			?.focus();
 	}
 
 	function enterEditMode() {
@@ -1002,7 +1013,13 @@
 										</button>
 									{:else}
 										<!-- Edit mode: minimal textarea, blur → preview -->
-										<div class="mb-1 flex justify-end">
+										<div class="mb-1 flex justify-end gap-1.5">
+											{#if isMarkdocCell}
+												<FilterPickerMenu
+													entries={refPickerEntries}
+													onInsert={insertMarkdownSnippet}
+												/>
+											{/if}
 											<RefPickerMenu entries={refPickerEntries} onSelect={insertMarkdownRef} />
 										</div>
 										<Textarea

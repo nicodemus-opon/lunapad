@@ -516,7 +516,11 @@
 		data: T[],
 		opts: { x?: string; y?: string; fx?: string; fy?: string; title: (d: T) => string }
 	): Plot.Markish {
-		return Plot.tip(data, Plot.pointer(opts));
+		// className hooks the `.plot-tip text` rule below — Plot's Tip mark hardcodes
+		// the text fill to currentColor via setAttribute, bypassing the plot's own
+		// `color` style (var(--muted-foreground), tuned for axis labels), so a real
+		// CSS rule is the only way to give tip text its own better-contrast color.
+		return Plot.tip(data, Plot.pointer({ ...opts, stroke: 'var(--border)', className: 'plot-tip' }));
 	}
 
 	// Coerces a raw x value to the right JS type for Plot's scale inference
@@ -921,13 +925,16 @@
 					];
 					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
 				} else {
-					// No tip mark here: Plot.pointer doesn't have a clean way to target
-					// a specific facet cell for a grouped (non-stacked) layout — each
-					// bar already has a native <title> tooltip from the mark above.
 					marks = [
 						isHoriz
 							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series', title: seriesTitle })
-							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series', title: seriesTitle })
+							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series', title: seriesTitle }),
+						tipMark(
+							long,
+							isHoriz
+								? { fy: 'x', y: 'series', x: 'value', title: seriesTitle }
+								: { fx: 'x', x: 'series', y: 'value', title: seriesTitle }
+						)
 					];
 					catScale[isHoriz ? 'fy' : 'fx'] = { domain: catDomain, tickFormat: truncateTick };
 					// The inner per-bar axis would otherwise print each series name
@@ -1300,3 +1307,13 @@
 	{/if}
 	</div>
 </div>
+
+<style>
+	/* Plot.tip() hardcodes its text fill to currentColor via a direct
+	   setAttribute, bypassing the plot's own `color` style — this is the only
+	   way to give tooltip text a themed, readable color independent of the
+	   muted axis-label color the rest of the plot uses. */
+	:global(.plot-tip text) {
+		fill: var(--popover-foreground);
+	}
+</style>
