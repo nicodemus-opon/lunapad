@@ -9,7 +9,12 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { Download, X, Copy, Check, ArrowUp, ArrowDown, Filter, MessageSquare } from '@lucide/svelte';
+	import {
+		Download, X, Copy, Check, ArrowUp, ArrowDown, Filter, MessageSquare,
+		Hash, Calendar, CalendarClock, ToggleLeft, AtSign, Link2, Tag, KeyRound, Type, Percent, DollarSign
+	} from '@lucide/svelte';
+	import FormattedCell from '$lib/components/FormattedCell.svelte';
+	import { detectColumnFormat, type ColumnFormat, type ColumnFormatKind } from '$lib/services/column-format';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -104,17 +109,32 @@
 	}
 
 	let statsMap = $state<Record<string, ColStats>>({});
+	let formatMap = $state<Record<string, ColumnFormat>>({});
+
+	const KIND_ICON: Record<ColumnFormatKind, typeof Hash> = {
+		boolean: ToggleLeft,
+		id: KeyRound,
+		email: AtSign,
+		url: Link2,
+		datetime: CalendarClock,
+		date: Calendar,
+		percentage: Percent,
+		currency: DollarSign,
+		number: Hash,
+		category: Tag,
+		text: Type
+	};
 
 	$effect(() => {
-		if (headerInsights !== 'full') {
-			statsMap = {};
-			return;
-		}
 		// Capture reactive values before the async gap so the effect re-runs when they change.
 		const localRows = rows;
 		const localCols = [...columns];
 		const id = setTimeout(() => {
-			statsMap = Object.fromEntries(localCols.map((col) => [col, computeColStats(localRows, col)]));
+			formatMap = Object.fromEntries(localCols.map((col) => [col, detectColumnFormat(localRows, col)]));
+			statsMap =
+				headerInsights === 'full'
+					? Object.fromEntries(localCols.map((col) => [col, computeColStats(localRows, col)]))
+					: {};
 		}, 0);
 		return () => clearTimeout(id);
 	});
@@ -248,12 +268,11 @@
 									? 'sticky top-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
 									: 'sticky top-0 z-20'}">
 								{#if s && headerInsights === 'full'}
+									{@const Icon = formatMap[s.col] ? KIND_ICON[formatMap[s.col].kind] : (s.isNumeric ? Hash : Type)}
 									<div class="flex min-w-22.5 flex-col gap-0.5">
 										<!-- Type icon + column name + action buttons -->
 										<div class="flex items-center gap-1 group/col">
-											<span class="font-mono text-[10px] leading-none text-muted-foreground">
-												{s.isNumeric ? '#' : 'A'}
-											</span>
+											<Icon class="w-3 h-3 shrink-0 text-muted-foreground" />
 											<span class="truncate text-xs font-semibold leading-none flex-1" title={columnDescriptions[s.col] || undefined}>{s.col}</span>
 											{#if onColumnDescriptionChange || columnDescriptions[s.col]}
 												<div class="relative">
@@ -404,14 +423,18 @@
 						{#each row.getVisibleCells() as cell, ci (cell.id)}
 							{@const value = row.original[cell.column.id]}
 							{@const isNull = value === null || value === undefined}
+							{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
 							<Table.Cell
 								class="max-w-70 truncate p-2 cursor-pointer hover:bg-muted/50 transition-colors
-									{ci === 0 ? 'stickyv left-0v even:bg-background   shadow-[1px_0_0_0_hsl(var(--border))]' : ''}"
+									{ci === 0 ? 'stickyv left-0v even:bg-background   shadow-[1px_0_0_0_hsl(var(--border))]' : ''}
+									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage') ? 'text-right' : ''}"
 								onclick={() => { selectedCell = { col: cell.column.id, value }; copied = false; }}
 							>
-								<span class="font-mono text-xs {isNull ? 'text-muted-foreground' : ''}">
-									{formatCell(value)}
-								</span>
+								{#if isNull}
+									<span class="font-mono text-xs text-muted-foreground">—</span>
+								{:else}
+									<FormattedCell {value} format={fmt} plainText={formatCell(value)} />
+								{/if}
 							</Table.Cell>
 						{/each}
 					</Table.Row>
