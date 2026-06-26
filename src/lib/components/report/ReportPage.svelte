@@ -153,7 +153,7 @@
 	});
 </script>
 
-<div class="report-page font-serif">
+<div class="report-page">
 	<header class="report-header">
 		<h1>{data.notebookName}</h1>
 		{#if liveCells.length > 0}
