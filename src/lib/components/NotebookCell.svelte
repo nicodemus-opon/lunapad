@@ -4,7 +4,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { marked } from 'marked';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
 	import RefPickerMenu from './markdown/RefPickerMenu.svelte';
@@ -53,6 +52,9 @@
 		runPlotCell,
 		updatePythonCellCode,
 		runPythonCell,
+		insertPythonCellAfter,
+		insertCellAfter,
+		getPythonAvailable,
 		setCellMarkdownPreview,
 		duplicateCell,
 		copyCellToClipboard,
@@ -73,6 +75,7 @@
 		getCrossNotebookUsageCount,
 		getSameNotebookUsageCount
 	} from '$lib/stores/notebook.svelte';
+	import InlinePromptBar from './cell/InlinePromptBar.svelte';
 	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
 	import { updateProjectSchema } from '$lib/services/project-client';
 	import { resolvePlotDataRefs } from '$lib/services/cell-deps';
@@ -95,12 +98,7 @@
 		getPRQLTargetForConnection,
 		resolveConnection
 	} from '$lib/types/connection';
-	import { interpolateMarkdownRefs, extractMarkdownRefs } from '$lib/services/markdown-interp';
-	import {
-		hasMarkdocSyntax,
-		renderMarkdocCell,
-		extractMarkdocRefs
-	} from '$lib/services/markdoc-interp';
+	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
 
 	interface Props {
 		cell: Cell;
@@ -119,6 +117,8 @@
 		onShareWithAI?: () => void;
 		/** Called when the user clicks "Fix with AI" in the error popover. */
 		onFixWithAI?: (errorMsg: string) => void;
+		/** Called from the inline AI prompt's "Continue in AI chat" link. */
+		onContinueWithAI?: (instruction: string) => void;
 		onOpenResultTab?: (
 			cellId: string,
 			notebookId: string,
@@ -140,10 +140,13 @@
 		isGhost = false,
 		onShareWithAI,
 		onFixWithAI,
+		onContinueWithAI,
 		onOpenResultTab
 	}: Props = $props();
 
 	let editorRef: Editor | undefined = $state();
+	let inlinePromptOpen = $state(false);
+	let inlinePromptPreset = $state<string | null>(null);
 	let sqlExpanded = $state(false);
 	let entering = $state(true);
 	onMount(() => {
@@ -160,6 +163,38 @@
 	let overlayCount = $state(0);
 	function handleOverlayChange(open: boolean) {
 		overlayCount = Math.max(0, overlayCount + (open ? 1 : -1));
+	}
+
+	// "Fix with AI" from the error popover — prefer the fast inline path when this cell
+	// supports it; otherwise fall back to whatever the parent wired up (sidebar chat).
+	function handleFixWithAI(errorMsg: string) {
+		if (canInlinePrompt) {
+			inlinePromptPreset = `Fix this error: ${errorMsg}`;
+			inlinePromptOpen = true;
+			return;
+		}
+		onFixWithAI?.(errorMsg);
+	}
+
+	// Inline AI prompt applied the suggested alternative cell type — insert a new cell
+	// right after this one rather than mutating it (the original stays untouched).
+	function handleCreateAlternative(alt: {
+		cellType: 'query' | 'python';
+		language?: 'sql' | 'prql';
+		code: string;
+	}) {
+		if (alt.cellType === 'python') {
+			const newId = insertPythonCellAfter(cell.id);
+			if (newId) updatePythonCellCode(newId, alt.code);
+			return;
+		}
+		insertCellAfter(cell.id, {
+			outputName: '',
+			code: alt.code,
+			guiStages: [{ type: 'from', table: '' }],
+			editMode: 'prql',
+			language: alt.language ?? 'sql'
+		});
 	}
 	const EDITOR_COMPLETION_LIMIT = 600;
 	const PRQL_KEYWORDS = [
@@ -180,6 +215,9 @@
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	const isPlotCell = $derived(cell.cellType === 'plot');
 	const isPythonCell = $derived(cell.cellType === 'python');
+	// Raw-code editor cells the inline "Tell AI what to do" prompt supports — GUI-mode
+	// query cells have their own AI entry via AddStageMenu instead.
+	const canInlinePrompt = $derived((isQueryCell && cell.editMode !== 'gui') || isPythonCell);
 	const plotDeps = $derived(
 		isPlotCell
 			? resolvePlotDataRefs(
@@ -221,32 +259,15 @@
 	const showResult = $derived(
 		!collapsed && Boolean(cell.result) && (cell.status === 'success' || cell.status === 'running')
 	);
-	const isMarkdocCell = $derived(isMarkdownCell && hasMarkdocSyntax(cell.markdown ?? ''));
 	const markdocResult = $derived.by(() => {
-		if (!isMarkdocCell) return null;
+		if (!isMarkdownCell || !cell.markdown?.trim()) return null;
 		return renderMarkdocCell(cell.markdown ?? '', getAllCellsAcrossNotebooks());
-	});
-	const renderedMarkdown = $derived.by(() => {
-		if (!isMarkdownCell || isMarkdocCell) return '';
-		const markdown = (cell.markdown || '').trim();
-		if (!markdown) return '';
-		const interpolated = interpolateMarkdownRefs(markdown, getCells());
-		return marked.parse(interpolated, { async: false, breaks: true, gfm: true });
-	});
-	const safeMarkdown = $derived.by(() => {
-		if (!renderedMarkdown) return '';
-		return String(renderedMarkdown)
-			.replace(/<script[\s\S]*?<\/script>/gi, '')
-			.replace(/on[a-z]+="[^"]*"/gi, '');
 	});
 	const isMarkdownPreviewMode = $derived(
 		isMarkdownCell && cell.markdownPreview && !!cell.markdown?.trim()
 	);
 	const hasLiveRefs = $derived(
-		isMarkdownCell &&
-			(isMarkdocCell
-				? extractMarkdocRefs(cell.markdown ?? '').length > 0
-				: extractMarkdownRefs(cell.markdown ?? '').length > 0)
+		isMarkdownCell && extractMarkdocRefs(cell.markdown ?? '').length > 0
 	);
 	const refPickerEntries = $derived(
 		getAllCellsAcrossNotebooks()
@@ -269,7 +290,7 @@
 	}
 
 	function insertMarkdownRef(cellName: string, column: string) {
-		insertMarkdownSnippet(isMarkdocCell ? `$${cellName}.${column}` : `{{${cellName}.${column}}}`);
+		insertMarkdownSnippet(`$${cellName}.${column}`);
 	}
 
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
@@ -277,6 +298,14 @@
 	const externalSchemaTables = $derived(getExternalSchemaTables());
 	const connections = $derived(getConnections());
 	const connectionValue = $derived(cell.connectionId ?? BUILTIN_DUCKDB_CONNECTION_ID);
+
+	// Coarse "what tables exist" context for the inline AI prompt — not pipeline-resolved
+	// like guiTables below, just enough so the model doesn't invent table/column names.
+	const inlinePromptTables = $derived(
+		[...tables, ...externalSchemaTables]
+			.slice(0, 8)
+			.map((t) => ({ name: t.name, columns: t.columns, columnTypes: t.columnTypes }))
+	);
 
 	const connectionType = $derived.by(() => {
 		const connection = connections.find((entry) => entry.id === connectionValue);
@@ -621,6 +650,20 @@
 			return;
 		}
 
+		// ⌘K: open the inline "Tell AI what to do" prompt for this cell (raw code editor
+		// cells only — GUI-mode query cells have their own AI entry via AddStageMenu's "/").
+		if (
+			canInlinePrompt &&
+			(e.metaKey || e.ctrlKey) &&
+			!e.shiftKey &&
+			e.key === 'k' &&
+			!isNativeInputTarget(e.target)
+		) {
+			e.preventDefault();
+			inlinePromptOpen = true;
+			return;
+		}
+
 		// ⌘Z / ⌘⇧Z / ⌘Y: notebook-level undo/redo. Global (not command-mode gated) so it
 		// works while the cell container has focus but the editor doesn't — but Monaco
 		// swallows these keys itself while it has focus, so its own text-undo takes over there.
@@ -870,13 +913,15 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
-	class="notebook-cell group relative border-l-4 border-transparent p-4 text-foreground outline-none {entering
+	class="notebook-cell group relative border-l-4 p-4 text-foreground outline-none {entering
 		? 'is-entering'
-		: ''} {reportView
+		: ''} {cellFocused ? 'border-secondary' : 'border-transparent'} {reportView
 		? ''
 		: running
 			? 'bg-muted/30'
-			: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
+			: cellFocused
+				? ''
+				: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
 		? 'cell-ai-ghost bg-primary/5 ring-1 ring-primary/30'
 		: ''}"
 	hidden={reportView && collapsed}
@@ -923,6 +968,7 @@
 						onOpenPromote={() => (promoteDialogOpen = true)}
 						onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
 						onRunTests={() => void testCell(cell.id)}
+						onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
 					/>
 				{/snippet}
 			</CellGutter>
@@ -945,7 +991,8 @@
 					onModeChange={setCellMode}
 					onOverlayChange={handleOverlayChange}
 					{onShareWithAI}
-					{onFixWithAI}
+					onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+					onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
 				/>
 			{/if}
 
@@ -954,12 +1001,31 @@
 					<!-- Editor (GUI or PRQL mode) -->
 					{#if !codeHidden}
 						<div onfocusin={onEditorFocus}>
+							{#if canInlinePrompt}
+								<InlinePromptBar
+									bind:open={inlinePromptOpen}
+									cellId={cell.id}
+									cellType={isPythonCell ? 'python' : 'query'}
+									language={isPythonCell ? undefined : cell.language}
+									code={cell.code}
+									outputName={cell.outputName}
+									pythonAvailable={getPythonAvailable()}
+									otherTables={inlinePromptTables}
+									autoSubmitInstruction={inlinePromptPreset}
+									onAutoSubmitConsumed={() => (inlinePromptPreset = null)}
+									onApply={(code) =>
+										isPythonCell ? updatePythonCellCode(cell.id, code) : updateCellCode(cell.id, code)}
+									onCreateAlternative={handleCreateAlternative}
+									onContinueInChat={onContinueWithAI}
+								/>
+							{/if}
 							{#if isUdfCell}
 								<Editor
 									bind:this={editorRef}
 									code={cell.udfBody}
 									errors={cell.errors}
 									language="python"
+									pythonContext={{ kind: 'udf' }}
 									{dark}
 									onchange={(c) => updateCellUdfBody(cell.id, c)}
 								/>
@@ -1000,6 +1066,7 @@
 									code={cell.code}
 									errors={cell.errors}
 									language="python"
+									pythonContext={{ kind: 'data', notebookId }}
 									{dark}
 									onchange={(c) => updatePythonCellCode(cell.id, c)}
 								/>
@@ -1023,8 +1090,6 @@
 													errors={markdocResult.errors}
 													{notebookId}
 												/>
-											{:else}
-												{@html safeMarkdown}
 											{/if}
 										</div>
 										<button
@@ -1036,12 +1101,10 @@
 									{:else}
 										<!-- Edit mode: minimal textarea, blur → preview -->
 										<div class="mb-1 flex justify-end gap-1.5">
-											{#if isMarkdocCell}
-												<FilterPickerMenu
-													entries={refPickerEntries}
-													onInsert={insertMarkdownSnippet}
-												/>
-											{/if}
+											<FilterPickerMenu
+												entries={refPickerEntries}
+												onInsert={insertMarkdownSnippet}
+											/>
 											<RefPickerMenu entries={refPickerEntries} onSelect={insertMarkdownRef} />
 										</div>
 										<Textarea
@@ -1334,34 +1397,5 @@
 	.markdown-body :global(img) {
 		max-width: 100%;
 		border-radius: 0.25rem;
-	}
-	/* :not([data-slot]) excludes tables rendered by the shared ui/table components
-	   (used for Markdoc-parsed pipe tables), which bring their own Tailwind styling
-	   and shouldn't be double-styled by these rules — only the legacy `marked`-rendered
-	   raw HTML table path (non-Markdoc prose cells) needs them. */
-	.markdown-body :global(table:not([data-slot])) {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.85em;
-		margin: 0 0 0.5rem;
-	}
-	.markdown-body :global(th:not([data-slot])),
-	.markdown-body :global(td:not([data-slot])) {
-		padding: 0.3rem 0.6rem;
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		text-align: left;
-	}
-	.markdown-body :global(th:not([data-slot])) {
-		font-weight: 600;
-		background: color-mix(in oklch, currentColor 4%, transparent);
-	}
-	.markdown-body :global(.md-live-ref) {
-		border-bottom: 1px dashed color-mix(in oklch, currentColor 35%, transparent);
-		padding-bottom: 1px;
-	}
-	.markdown-body :global(.md-live-ref--missing) {
-		color: color-mix(in oklch, currentColor 45%, transparent);
-		font-style: italic;
-		border-bottom-style: dotted;
 	}
 </style>

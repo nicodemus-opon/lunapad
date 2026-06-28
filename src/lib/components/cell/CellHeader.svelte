@@ -3,7 +3,15 @@
 	import { toast } from 'svelte-sonner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Clock, ChevronsUpDown, XCircle, Eye, EyeOff, BrainCircuit } from '@lucide/svelte';
+	import {
+		Clock,
+		ChevronsUpDown,
+		XCircle,
+		Eye,
+		EyeOff,
+		BrainCircuit,
+		Sparkles
+	} from '@lucide/svelte';
 	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
 
 	let {
@@ -21,7 +29,8 @@
 		onModeChange,
 		onOverlayChange,
 		onShareWithAI,
-		onFixWithAI
+		onFixWithAI,
+		onOpenInlinePrompt
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -39,6 +48,9 @@
 		onOverlayChange?: (open: boolean) => void;
 		onShareWithAI?: () => void;
 		onFixWithAI?: (errorMsg: string) => void;
+		/** Opens the inline "Tell AI what to do" prompt for this cell — independent of the
+		 *  sidebar chat, so it's offered whenever the cell type supports it. */
+		onOpenInlinePrompt?: () => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -76,61 +88,61 @@
 	onclick={onRowClick}
 >
 	<div class="flex min-w-0 flex-1 items-center gap-1.5">
-	{#if !codeHidden}
-		<Tooltip.Root>
-			<Tooltip.Trigger class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'}">
-				<input
-					class="cell-name-input text-inherit h-6 min-w-0 {collapsed
-						? 'w-auto max-w-48'
-						: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
-					placeholder={cell.cellType === 'udf'
-						? 'untitled udf…'
-						: isQueryCell
-							? 'model name…'
-							: 'note title…'}
-					value={nameInputValue}
-					disabled={cell.cellType === 'udf'}
-					onfocus={() => {
-						nameInputFocused = true;
-					}}
-					oninput={(e) => {
-						nameInputValue = (e.target as HTMLInputElement).value;
-					}}
-					onblur={() => {
-						nameInputFocused = false;
-						const result = updateCellName(cell.id, nameInputValue);
-						if (!result.ok) {
-							toast.error(result.error);
-							nameInputValue = cell.outputName;
-						}
-					}}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							e.preventDefault();
-							(e.target as HTMLInputElement).blur();
-						}
-					}}
-				/>
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				{#if cell.cellType === 'udf'}
-					<p class="text-xs">Name is derived from the function's <code>def</code> line.</p>
-				{:else if isQueryCell}
-					<p class="text-xs">
-						Name this cell's output. Reference it from other cells with <code
-							>from {cell.outputName || 'name'}</code
-						>.
-					</p>
-				{:else}
-					<p class="text-xs">Optional heading for this markdown note.</p>
-				{/if}
-				{#if isQueryCell && prevCellNames.length > 0}
-					<p class="mt-1 text-xs text-muted-foreground">
-						← available: <code>{prevCellNames.join(', ')}</code>
-					</p>
-				{/if}
-			</Tooltip.Content>
-		</Tooltip.Root>
+		{#if !codeHidden}
+			<Tooltip.Root>
+				<Tooltip.Trigger class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'}">
+					<input
+						class="cell-name-input h-6 min-w-0 text-inherit {collapsed
+							? 'w-auto max-w-48'
+							: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
+						placeholder={cell.cellType === 'udf'
+							? 'untitled udf…'
+							: isQueryCell
+								? 'model name…'
+								: 'note title…'}
+						value={nameInputValue}
+						disabled={cell.cellType === 'udf'}
+						onfocus={() => {
+							nameInputFocused = true;
+						}}
+						oninput={(e) => {
+							nameInputValue = (e.target as HTMLInputElement).value;
+						}}
+						onblur={() => {
+							nameInputFocused = false;
+							const result = updateCellName(cell.id, nameInputValue);
+							if (!result.ok) {
+								toast.error(result.error);
+								nameInputValue = cell.outputName;
+							}
+						}}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								(e.target as HTMLInputElement).blur();
+							}
+						}}
+					/>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					{#if cell.cellType === 'udf'}
+						<p class="text-xs">Name is derived from the function's <code>def</code> line.</p>
+					{:else if isQueryCell}
+						<p class="text-xs">
+							Name this cell's output. Reference it from other cells with <code
+								>from {cell.outputName || 'name'}</code
+							>.
+						</p>
+					{:else}
+						<p class="text-xs">Optional heading for this markdown note.</p>
+					{/if}
+					{#if isQueryCell && prevCellNames.length > 0}
+						<p class="mt-1 text-xs text-muted-foreground">
+							← available: <code>{prevCellNames.join(', ')}</code>
+						</p>
+					{/if}
+				</Tooltip.Content>
+			</Tooltip.Root>
 		{/if}
 		{#if !codeHidden && isQueryCell && downstreamTotal > 0}
 			<Popover.Root onOpenChange={onOverlayChange}>
@@ -180,7 +192,7 @@
 			{#if errorCount > 0}
 				<Popover.Root onOpenChange={onOverlayChange}>
 					<Popover.Trigger
-						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/55 bg-destructive/12 px-1.5 text-2xs font-semibold text-destructive transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50 shadow-2xs"
+						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/55 bg-destructive/12 px-1.5 text-2xs font-semibold text-destructive shadow-2xs transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
 						aria-label="Show errors"
 					>
 						<XCircle class="h-2.5 w-2.5" />
@@ -195,10 +207,16 @@
 							<pre
 								class="font-mono text-xs whitespace-pre-wrap text-destructive">{cell.materializeError}</pre>
 						{/if}
-						{#if aiChatOpen && onFixWithAI}
+						{#if onFixWithAI}
 							<button
 								class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary/30 bg-primary/8 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
-								onclick={() => onFixWithAI!(cell.errors[0]?.display ?? cell.errors[0]?.reason ?? cell.materializeError ?? 'unknown error')}
+								onclick={() =>
+									onFixWithAI!(
+										cell.errors[0]?.display ??
+											cell.errors[0]?.reason ??
+											cell.materializeError ??
+											'unknown error'
+									)}
 							>
 								<BrainCircuit class="h-3 w-3" />
 								Fix with AI
@@ -237,27 +255,55 @@
 						</button>
 					</Tooltip.Trigger>
 					<Tooltip.Content
-						><p class="text-xs">Hide code — show result only (⇧C in command mode)</p></Tooltip.Content
+						><p class="text-xs">
+							Hide code — show result only (⇧C in command mode)
+						</p></Tooltip.Content
 					>
 				</Tooltip.Root>
 			{/if}
-			<div class="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5 gap-px ">
+			<div
+				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
+			>
 				<button
-					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'prql' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					'prql'
+						? 'bg-secondary text-secondary-foreground  '
+						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
 					onclick={() => onModeChange('prql')}
 					title="PRQL code mode">PRQL</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'visual' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					'visual'
+						? 'bg-secondary text-secondary-foreground  '
+						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					onclick={() => onModeChange('visual')}
 					title="Visual pipeline editor">Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5  text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode === 'sql' ? 'bg-secondary text-secondary-foreground  ' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					'sql'
+						? 'bg-secondary text-secondary-foreground  '
+						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					onclick={() => onModeChange('sql')}
 					title="SQL mode">SQL</button
 				>
 			</div>
+		{/if}
+
+		{#if onOpenInlinePrompt}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-primary/20 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+						onclick={onOpenInlinePrompt}
+						aria-label="Tell AI what to do"
+					>
+						<Sparkles class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Tell AI what to do (⌘K)</p></Tooltip.Content>
+			</Tooltip.Root>
 		{/if}
 
 		{#if aiChatOpen && onShareWithAI}
@@ -301,9 +347,10 @@
 		padding: 0;
 		outline: none;
 		box-shadow: none;
-		transition: background var(--motion-fast) var(--motion-ease-out),
-		            border-color var(--motion-fast) var(--motion-ease-out),
-		            padding var(--motion-fast) var(--motion-ease-out);
+		transition:
+			background var(--motion-fast) var(--motion-ease-out),
+			border-color var(--motion-fast) var(--motion-ease-out),
+			padding var(--motion-fast) var(--motion-ease-out);
 	}
 	.cell-name-input:focus {
 		background: var(--input);
@@ -311,7 +358,8 @@
 		border-radius: var(--radius-sm);
 		padding: 0 0.375rem;
 		outline: none;
-		box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.06),
-		            0 0 0 2px oklch(from var(--ring) l c h / 0.15);
+		box-shadow:
+			inset 0 1px 2px oklch(0 0 0 / 0.06),
+			0 0 0 2px oklch(from var(--ring) l c h / 0.15);
 	}
 </style>

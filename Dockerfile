@@ -27,7 +27,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres pandas numpy pyarrow plotly --break-system-packages \
+  && pip install dbt-postgres pandas numpy pyarrow plotly jedi --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@11 --activate
@@ -59,7 +59,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres pandas numpy pyarrow plotly --break-system-packages \
+  && pip install dbt-postgres pandas numpy pyarrow plotly jedi --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@11 --activate

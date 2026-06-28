@@ -4,6 +4,26 @@ import { PRQL_KEYWORDS, PRQL_BUILTINS, PRQL_DOCS } from './prql';
 import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
 import { getSqlFunctionDocs } from './sql-dialects';
 import type { ConnectionType } from '$lib/types/connection';
+import { completePython } from '$lib/services/python-client';
+
+// Both UDF cells and Python data cells use Monaco language id 'python', but
+// want very different completions (UDF: fixed type-hint skeleton; data cell:
+// jedi-backed completion against that notebook's warm worker) — keyed by
+// model URI like dialectByModel below.
+export type PythonCellContext = { kind: 'udf' } | { kind: 'data'; notebookId: string };
+const pythonContextByModel = new Map<string, PythonCellContext>();
+
+export function setModelPythonContext(model: Monaco.editor.ITextModel, context: PythonCellContext): void {
+	pythonContextByModel.set(model.uri.toString(), context);
+}
+
+export function clearModelPythonContext(model: Monaco.editor.ITextModel): void {
+	pythonContextByModel.delete(model.uri.toString());
+}
+
+export function getModelPythonContext(model: Monaco.editor.ITextModel): PythonCellContext | undefined {
+	return pythonContextByModel.get(model.uri.toString());
+}
 
 // A completion candidate from the per-cell registry: "table.column" pairs or
 // bare table/cell names, optionally carrying a type to show as completion detail.
@@ -219,10 +239,44 @@ const PRQL_SNIPPETS = [
 // the six Trino-mappable type hints and a starter snippet are worth suggesting.
 const UDF_TYPE_HINTS = Object.keys(PY_TYPE_TO_TRINO);
 
+// Available from the first keystroke, before the notebook's worker has ever
+// run (jedi needs a live worker — see completePython) and merged alongside
+// jedi's results afterwards.
+const PY_KEYWORDS = [
+	'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else',
+	'except', 'False', 'finally', 'for', 'from', 'if', 'import', 'in', 'is', 'lambda',
+	'None', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield'
+];
+const PY_DATA_CELL_BARE = ['pd', 'go', 'result'];
+
+function jediKindToMonaco(
+	type: string,
+	kinds: typeof Monaco.languages.CompletionItemKind
+): Monaco.languages.CompletionItemKind {
+	switch (type) {
+		case 'function':
+			return kinds.Function;
+		case 'class':
+			return kinds.Class;
+		case 'module':
+			return kinds.Module;
+		case 'keyword':
+			return kinds.Keyword;
+		case 'param':
+			return kinds.Variable;
+		case 'property':
+			return kinds.Field;
+		case 'statement':
+		case 'instance':
+		default:
+			return kinds.Variable;
+	}
+}
+
 function registerPythonCompletions(monaco: typeof Monaco): void {
 	monaco.languages.registerCompletionItemProvider('python', {
-		triggerCharacters: [':', ' '],
-		provideCompletionItems(model, position) {
+		triggerCharacters: [':', ' ', '.'],
+		async provideCompletionItems(model, position, _context, token) {
 			const word = model.getWordUntilPosition(position);
 			const range: Monaco.IRange = {
 				startLineNumber: position.lineNumber,
@@ -232,33 +286,74 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 			};
 			const kinds = monaco.languages.CompletionItemKind;
 			const lineBefore = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
+			const context = getModelPythonContext(model);
 
-			// Param type hint (`x:`) or return type (`->`) position — only the six
-			// UDF-compatible types are ever valid here.
-			if (/(:|->)\s*[\w.]*$/.test(lineBefore)) {
+			if (!context || context.kind === 'udf') {
+				// Param type hint (`x:`) or return type (`->`) position — only the
+				// six UDF-compatible types are ever valid here.
+				if (/(:|->)\s*[\w.]*$/.test(lineBefore)) {
+					return {
+						suggestions: UDF_TYPE_HINTS.map((t) => ({
+							label: t,
+							kind: kinds.TypeParameter,
+							insertText: t,
+							detail: `→ ${PY_TYPE_TO_TRINO[t]}`,
+							range
+						}))
+					};
+				}
+
 				return {
-					suggestions: UDF_TYPE_HINTS.map((t) => ({
-						label: t,
-						kind: kinds.TypeParameter,
-						insertText: t,
-						detail: `→ ${PY_TYPE_TO_TRINO[t]}`,
-						range
-					}))
+					suggestions: [
+						{
+							label: 'def',
+							kind: kinds.Snippet,
+							insertText: 'def ${1:my_udf}(${2:x}: ${3:int}) -> ${4:float}:\n\t${0:return ...}',
+							insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+							detail: 'UDF function skeleton',
+							range
+						}
+					]
 				};
 			}
 
-			return {
-				suggestions: [
-					{
-						label: 'def',
-						kind: kinds.Snippet,
-						insertText: 'def ${1:my_udf}(${2:x}: ${3:int}) -> ${4:float}:\n\t${0:return ...}',
-						insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-						detail: 'UDF function skeleton',
-						range
-					}
-				]
+			// Python data cell: static baseline (instant, before any run) + a
+			// real jedi-backed completion against the notebook's warm worker
+			// (sees actual bound DataFrames/imports once a cell has run there).
+			const suggestions: Monaco.languages.CompletionItem[] = [];
+			const seen = new Set<string>();
+			const push = (
+				label: string,
+				kind: Monaco.languages.CompletionItemKind,
+				sortPrefix: string,
+				detail?: string,
+				documentation?: string
+			) => {
+				if (seen.has(label)) return;
+				seen.add(label);
+				suggestions.push({ label, kind, insertText: label, detail, documentation, range, sortText: sortPrefix + label });
 			};
+			for (const name of PY_DATA_CELL_BARE) push(name, kinds.Variable, '0');
+			for (const kw of PY_KEYWORDS) push(kw, kinds.Keyword, '3');
+
+			const controller = new AbortController();
+			token.onCancellationRequested(() => controller.abort());
+			try {
+				const items = await completePython(
+					context.notebookId,
+					model.getValue(),
+					position.lineNumber,
+					position.column - 1,
+					controller.signal
+				);
+				for (const item of items) {
+					push(item.name, jediKindToMonaco(item.type, kinds), '1', item.detail, item.doc);
+				}
+			} catch {
+				// worker unavailable/cancelled — static baseline above still stands
+			}
+
+			return { suggestions };
 		}
 	});
 }

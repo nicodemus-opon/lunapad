@@ -10,7 +10,7 @@
 	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
-	import type { CompletionEntry } from '$lib/monaco/completions';
+	import type { CompletionEntry, PythonCellContext } from '$lib/monaco/completions';
 	import type { ConnectionType } from '$lib/types/connection';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
@@ -23,6 +23,10 @@
 		readonly?: boolean;
 		completions?: CompletionEntry[];
 		language?: EditorLanguage;
+		/** Only meaningful when language is 'python' — distinguishes UDF cells
+		 * (fixed type-hint skeleton) from Python data cells (jedi-backed
+		 * completion/hover against that notebook's warm worker). */
+		pythonContext?: PythonCellContext;
 		/** Ambient .d.ts text declaring this editor's JS sandbox globals (e.g. an
 		 * upstream cell's outputName → {rows, columns}, for plot cells) — only
 		 * meaningful when language is 'javascript'. See $lib/monaco/plot-globals.ts
@@ -50,7 +54,8 @@
 		sqlDialect = 'sql',
 		connectionType = 'duckdb-wasm',
 		udfFunctionNames = [],
-		plotGlobalsDts
+		plotGlobalsDts,
+		pythonContext
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -65,6 +70,10 @@
 		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
 		| null = null;
 	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let setModelPythonContext:
+		| ((m: Monaco.editor.ITextModel, context: PythonCellContext) => void)
+		| null = null;
+	let clearModelPythonContext: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelPlotGlobals:
 		| ((m: Monaco.editor.ITextModel, dts: string) => void)
 		| null = null;
@@ -84,6 +93,9 @@
 		if (be.key === 'Enter' && (be.shiftKey || mod)) return true;
 		if (mod && be.shiftKey && (be.key.toLowerCase() === 'l' || be.key.toLowerCase() === 't'))
 			return true;
+		// ⌘K: opens the inline "Tell AI what to do" prompt — Monaco's own keybinding
+		// service captures this chord-prefix key even with no bound command.
+		if (mod && !be.shiftKey && be.key.toLowerCase() === 'k') return true;
 		if (be.key === 'Escape' && !monacoWidgetOpen()) return true;
 		return false;
 	}
@@ -175,6 +187,8 @@
 		clearModelCompletions = mod.clearModelCompletions;
 		setModelDialect = mod.setModelDialect;
 		clearModelDialect = mod.clearModelDialect;
+		setModelPythonContext = mod.setModelPythonContext;
+		clearModelPythonContext = mod.clearModelPythonContext;
 		setModelPlotGlobals = mod.setModelPlotGlobals;
 		clearModelPlotGlobals = mod.clearModelPlotGlobals;
 		activatePlotGlobals = mod.activatePlotGlobals;
@@ -186,6 +200,7 @@
 		);
 		setModelCompletions(model, completions);
 		setModelDialect(model, connectionType);
+		if (pythonContext) setModelPythonContext(model, pythonContext);
 		if (plotGlobalsDts != null) {
 			setModelPlotGlobals(model, plotGlobalsDts);
 			// Make this editor's globals live immediately on mount rather than
@@ -275,6 +290,7 @@
 		destroyed = true;
 		if (model && clearModelCompletions) clearModelCompletions(model);
 		if (model && clearModelDialect) clearModelDialect(model);
+		if (model && clearModelPythonContext) clearModelPythonContext(model);
 		if (model && clearModelPlotGlobals) clearModelPlotGlobals(model);
 		editor?.dispose();
 		model?.dispose();
@@ -321,6 +337,12 @@
 	$effect(() => {
 		if (!model || !setModelDialect) return;
 		setModelDialect(model, connectionType);
+	});
+
+	// Sync python cell kind (udf vs data) → per-model registry
+	$effect(() => {
+		if (!model || !setModelPythonContext || !pythonContext) return;
+		setModelPythonContext(model, pythonContext);
 	});
 
 	// Sync sandbox-globals dts → per-model registry (and the live extraLib, if

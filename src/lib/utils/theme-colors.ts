@@ -33,11 +33,19 @@ export function oklchToRgb(l: number, c: number, h: number): string {
 
 /** Resolves a CSS custom property (e.g. `--chart-1`) on `:root` to a concrete
  *  color string — converts an `oklch(...)` value via oklchToRgb, passes
- *  anything else through unchanged. */
+ *  anything else through unchanged.
+ *
+ *  Lightness may come back as a bare 0-1 fraction (`oklch(0.746 .16 232.661)`,
+ *  what dev serves unminified) or as a percentage (`oklch(74.6% .16 232.661)`,
+ *  what the production CSS minifier rewrites it to) — both are valid oklch()
+ *  syntax, so the regex has to accept the optional `%` and rescale. */
 export function resolveCSSColor(varName: string): string {
 	const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-	const m = raw.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-	if (m) return oklchToRgb(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+	const m = raw.match(/^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+([\d.]+)/);
+	if (m) {
+		const l = parseFloat(m[1]) / (m[2] ? 100 : 1);
+		return oklchToRgb(l, parseFloat(m[3]), parseFloat(m[4]));
+	}
 	return raw;
 }
 

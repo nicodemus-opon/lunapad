@@ -6,9 +6,9 @@ import type { Config, ConfigFunction, RenderableTreeNode, Schema } from '@markdo
 import type { Cell } from '$lib/stores/notebook.svelte';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 
-// Markdoc cells: a richer alternative to the legacy {{outputName.field}} syntax
-// in markdown-interp.ts. Detected by the presence of `{%` — if absent, callers
-// should keep using the legacy renderer for backward compatibility.
+// Markdoc cells: the sole markdown rendering pipeline for the app (notebook
+// markdown cells, AI chat messages, shared reports) — every markdown string
+// is parsed/transformed here, whether or not it uses any of the syntax below.
 //
 // Syntax notes (verified against @markdoc/markdoc 0.5.7, which has NO pipe
 // operator and NO arithmetic/comparison operators — only function calls):
@@ -28,10 +28,6 @@ import type { ChartConfig } from '$lib/types/gui-pipeline';
 //     parameterizes query cells that contain ${region} in their code (notebook-scoped).
 //     Substitution is raw text (dbt/Jinja-style) — wrap it in your own quotes for a
 //     string literal: WHERE region = '${region}'. Embedded single quotes are escaped.
-
-export function hasMarkdocSyntax(markdown: string): boolean {
-	return /\{%\s*[/$a-zA-Z]/.test(markdown);
-}
 
 export function buildMarkdocVariables(cells: Cell[]): Record<string, unknown> {
 	const vars: Record<string, unknown> = {};
@@ -103,8 +99,6 @@ function fmtDate(v: unknown, pattern?: string): string {
 		.replace('D', String(d.getDate()));
 }
 
-// Exported so markdown-interp.ts (the legacy {{ }} renderer) can call the exact same
-// formatters instead of hand-maintaining a second copy that silently drifts out of sync.
 export const FUNCTIONS: Record<string, ConfigFunction> = {
 	currency: { transform: (p) => fmtCurrency(p[0]) },
 	compact: { transform: (p) => fmtCompact(p[0]) },

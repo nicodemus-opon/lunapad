@@ -1,14 +1,9 @@
-<script module>
-	import { marked } from 'marked';
-	marked.setOptions({ breaks: true, gfm: true });
-</script>
-
 <script lang="ts">
 	import { BotMessageSquare, User, SquarePlay, Square, PencilLine, ChartBar, Trash2, RefreshCw, Database, ChevronDown, ChevronRight, ArrowUpDown } from '@lucide/svelte';
-	import DOMPurify from 'dompurify';
 	import type { ChatMessage } from '$lib/stores/ai-chat.svelte.js';
 	import { getCells } from '$lib/stores/notebook.svelte.js';
-	import { interpolateMarkdownRefs } from '$lib/services/markdown-interp.js';
+	import { renderMarkdocCell } from '$lib/services/markdoc-interp.js';
+	import MarkdocRenderer from '$lib/components/markdown/MarkdocRenderer.svelte';
 
 	interface Props {
 		message: ChatMessage;
@@ -103,13 +98,12 @@
 		}
 	});
 
-	const renderedText = $derived.by(() => {
-		if (message.role !== 'assistant' || !message.text) return '';
+	const renderedMessage = $derived.by(() => {
+		if (message.role !== 'assistant' || !message.text) return null;
 		try {
-			const interpolated = interpolateMarkdownRefs(message.text, getCells());
-			return DOMPurify.sanitize(marked.parse(interpolated) as string);
+			return renderMarkdocCell(message.text, getCells());
 		} catch {
-			return DOMPurify.sanitize(message.text);
+			return null;
 		}
 	});
 </script>
@@ -161,8 +155,12 @@
 				</div>
 			{:else}
 				<div class="ai-prose max-w-full wrap-break-word border-l-2 border-border/25 pl-3 text-sm text-foreground" data-testid="ai-message-text">
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					{@html renderedText}{#if message.isStreaming}<span class="ai-text-cursor">▋</span>{/if}
+					{#if renderedMessage}
+						<MarkdocRenderer content={renderedMessage.tree} errors={renderedMessage.errors} />
+					{:else}
+						{message.text}
+					{/if}
+					{#if message.isStreaming}<span class="ai-text-cursor">▋</span>{/if}
 				</div>
 			{/if}
 		{/if}
@@ -362,14 +360,5 @@
 		color: var(--color-primary);
 		text-decoration: underline;
 		text-underline-offset: 2px;
-	}
-	:global(.ai-prose .md-live-ref) {
-		border-bottom: 1px dashed color-mix(in oklch, currentColor 35%, transparent);
-		padding-bottom: 1px;
-	}
-	:global(.ai-prose .md-live-ref--missing) {
-		color: color-mix(in oklch, currentColor 45%, transparent);
-		font-style: italic;
-		border-bottom-style: dotted;
 	}
 </style>

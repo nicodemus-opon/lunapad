@@ -13,13 +13,15 @@ import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
 function formatCellGraph(c: AIChatCell): string {
-	const parts: string[] = [`${c.outputName}(${c.language},${c.status})`];
+	const lang = c.cellType === 'python' ? 'python' : c.language;
+	const parts: string[] = [`${c.outputName}(${lang},${c.status})`];
 	if (c.upstream?.length) parts.push(`←[${c.upstream.join(',')}]`);
 	if (c.downstream?.length) parts.push(`→[${c.downstream.join(',')}]`);
 	if (c.criticalityScore && c.criticalityScore >= 3) {
 		parts.push(`[HIGH IMPACT — ${c.criticalityScore} dependents]`);
 	}
 	if (c.errorMessage) parts.push(`[ERROR: ${c.errorMessage}]`);
+	if (c.pythonError) parts.push(`[ERROR: ${c.pythonError}]`);
 	return parts.join(' ');
 }
 
@@ -116,7 +118,8 @@ function buildSystemPromptOllama(
 	sessionPlanContext?: string[],
 	schemaChangeNote?: string,
 	connectionDialect = 'duckdb',
-	isSmall = false
+	isSmall = false,
+	pythonAvailable = false
 ): string {
 	const cellList = cells.length > 0 ? cells.map(formatCellGraph).join(', ') : 'none';
 
@@ -216,7 +219,7 @@ RULES:
 6. End with <done>{"suggestions":["short 1","short 2","short 3"]}</done> — but NEVER in the same response as run_cells or sample_data (you will receive their results first).
 
 Other tools: list_cells{}, search_workspace{query}, create_cell markdown: {outputName,cellType:"markdown",markdown:"# Title\\nText"}
-${contractNote}${buildDialectSection(connectionDialect)}
+${contractNote}${buildDialectSection(connectionDialect)}${pythonAvailable ? '' : '\nNo Python cells available — SQL only.'}
 
 Cells: ${cellList}
 Schema:
@@ -251,7 +254,14 @@ You MAY write 1–2 sentences of explanation before tool calls.
 
 Notebook cells: ${cellList}
 Schema:
-  ${schemaList}${memNote}${dataNote}${planNote}${schemaChangeNote2}${contractNote}${buildDialectSection(connectionDialect)}`;
+  ${schemaList}${memNote}${dataNote}${planNote}${schemaChangeNote2}${contractNote}${buildDialectSection(connectionDialect)}${buildToolSelectionSection(pythonAvailable)}`;
+}
+
+function buildToolSelectionSection(pythonAvailable: boolean): string {
+	if (pythonAvailable) {
+		return `\n\n## Tool selection\nUse SQL for relational transforms (joins, filters, aggregations, window functions). Use create_cell with cellType:"python" for statistics, ML, text/regex processing, or custom visualization beyond what set_chart/pick_chart support. When a different cell type would serve the request better than an existing cell, create a new cell (afterCellId set to the current one) rather than forcing a mismatched language via update_cell — leave the original cell unchanged.`;
+	}
+	return `\n\n## Tool selection\nPython cells are not available in this environment — always use SQL, even for tasks that would normally suit Python (statistics, ML, text processing).`;
 }
 
 function buildWorkspaceContractSection(contract: WorkspaceContract | undefined): string {
@@ -289,7 +299,8 @@ function buildSystemPromptXML(
 	sessionPlanContext?: string[],
 	schemaChangeNote?: string,
 	connectionDialect = 'duckdb',
-	useNativeTools = false
+	useNativeTools = false,
+	pythonAvailable = false
 ): string {
 	const cellList =
 		cells.length > 0
@@ -305,8 +316,13 @@ function buildSystemPromptXML(
 							(c.criticalityScore ?? 0) >= 3
 								? ` [HIGH IMPACT — ${c.criticalityScore} dependents]`
 								: '';
-						const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
-						return `  id=${c.id} name="${c.outputName}" status=${c.status}${active}${impact}${up}${down}${chart}${err}`;
+						const lang = c.cellType === 'python' ? ' lang=python' : '';
+						const err = c.errorMessage
+							? ` [ERROR: ${c.errorMessage}]`
+							: c.pythonError
+								? ` [ERROR: ${c.pythonError}]`
+								: '';
+						return `  id=${c.id} name="${c.outputName}" status=${c.status}${lang}${active}${impact}${up}${down}${chart}${err}`;
 					})
 					.join('\n')
 			: '  (none)';
@@ -423,9 +439,9 @@ ${buildMarkdocSyntaxBlock()}
 - Keep explanations tight — the notebook cells speak for themselves
 
 ## Tools (action)
-- create_cell: {outputName:string, code:string, language:"sql", cellType?:"query"|"markdown", markdown?:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}
+- create_cell: {outputName:string, code:string, language:"sql", cellType?:"query"|"markdown"${pythonAvailable ? '|"python"' : ''}, markdown?:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}
   - For markdown cells use short descriptive outputNames: intro, overview, summary, insights, methodology, findings
-  - For SQL cells use snake_case names describing the query: revenue_by_month, top_customers, order_funnel
+  - For SQL cells use snake_case names describing the query: revenue_by_month, top_customers, order_funnel${pythonAvailable ? '\n  - For Python cells (cellType:"python") omit language — write Python source directly in code. See Tool selection below for when to use Python over SQL.' : ''}
   - Set materializeMode per workspace conventions (or omit for ephemeral/ad-hoc)
   - ⚠ NEVER put SQL code blocks inside a markdown cell's content — the \`markdown\` field must contain prose only. SQL belongs exclusively in the \`code\` field of query (cellType:"query") cells.
 - **pick_chart: {cellId:string}** — PREFERRED. Call after run_cells. Reads actual result and auto-selects the correct chart type. Use this for every query cell.
@@ -461,7 +477,7 @@ Notebook cells show name, status, and topology. Use search_workspace to retrieve
 Notebook:
 ${cellList}
 Schema:
-${schemaList}${memSection}${dataSection}${planSection}${schemaChangeSection}${contractSection}${buildDialectSection(connectionDialect)}
+${schemaList}${memSection}${dataSection}${planSection}${schemaChangeSection}${contractSection}${buildDialectSection(connectionDialect)}${buildToolSelectionSection(pythonAvailable)}
 
 Respond with concise prose and inline tool calls. Make the notebook beautiful.`;
 }
@@ -918,28 +934,30 @@ const NATIVE_TOOLS = [
 		function: {
 			name: 'create_cell',
 			description:
-				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
+				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). For statistics/ML/text-processing/custom viz (only when Python is available — see Tool selection): cellType="python", Python source in "code", omit "language". Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL/Python outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
 			parameters: {
 				type: 'object',
 				properties: {
 					outputName: {
 						type: 'string',
 						description:
-							'For markdown: short word (intro, summary, findings). For SQL: snake_case description (revenue_by_month, top_customers).'
+							'For markdown: short word (intro, summary, findings). For SQL/Python: snake_case description (revenue_by_month, top_customers).'
 					},
 					cellType: {
 						type: 'string',
-						enum: ['query', 'markdown'],
-						description: 'query for SQL, markdown for explanatory prose'
+						enum: ['query', 'markdown', 'python'],
+						description:
+							'query for SQL, markdown for explanatory prose, python for stats/ML/text-processing (only if Python is available in this environment — see Tool selection section)'
 					},
 					code: {
 						type: 'string',
-						description: 'Complete SQL for query cells. Omit for markdown cells.'
+						description:
+							'Complete SQL or Python source for query/python cells. Omit for markdown cells.'
 					},
 					markdown: {
 						type: 'string',
 						description:
-							'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with {{outputName.field}} (e.g. {{orders.count}}, {{top_month.revenue}}) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %} — any cell containing {% is rendered with Markdoc. Values update automatically when cells re-run.'
+							'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with $outputName.field (e.g. $orders.count, $top_month.revenue) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %}. Values update automatically when cells re-run.'
 					},
 					language: { type: 'string', enum: ['sql'], description: 'Always "sql" for query cells.' },
 					materializeMode: {
@@ -1769,11 +1787,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	const {
 		cells,
 		connectionSchema,
-		connectionDialect = 'duckdb'
+		connectionDialect = 'duckdb',
+		pythonAvailable = false
 	} = req.notebookContext ?? {
 		cells: [],
 		connectionSchema: [],
-		connectionDialect: 'duckdb' as const
+		connectionDialect: 'duckdb' as const,
+		pythonAvailable: false
 	};
 	const workspaceMemory = req.workspaceMemory;
 	const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
@@ -1816,7 +1836,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					sessionPlanContext,
 					schemaChangeNote,
 					connectionDialect,
-					isSmall
+					isSmall,
+					pythonAvailable
 				)
 			: buildSystemPromptXML(
 					cells,
@@ -1827,7 +1848,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					sessionPlanContext,
 					schemaChangeNote,
 					connectionDialect,
-					useNativeTools
+					useNativeTools,
+					pythonAvailable
 				);
 	const enhancedLastUserContent = buildUserContent(cells, req.messages);
 

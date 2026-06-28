@@ -26,6 +26,59 @@ export async function runPython(
 	return body.jobId!;
 }
 
+export interface PythonCompletionItem {
+	name: string;
+	type: string;
+	detail: string;
+	doc: string;
+}
+
+/** jedi-backed completion against a notebook's already-warm worker (so it
+ * reflects real bound DataFrames/imports, not a static guess). Returns
+ * empty if the notebook has no worker yet (i.e. no cell has run there) —
+ * intentionally never triggers env provisioning from a completion request. */
+export async function completePython(
+	notebookId: string,
+	code: string,
+	line: number,
+	column: number,
+	signal?: AbortSignal
+): Promise<PythonCompletionItem[]> {
+	try {
+		const res = await fetch('/api/python/complete', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ notebookId, code, line, column }),
+			signal
+		});
+		const body = (await res.json()) as { completions?: PythonCompletionItem[] };
+		return body.completions ?? [];
+	} catch {
+		return [];
+	}
+}
+
+export async function hoverPython(
+	notebookId: string,
+	code: string,
+	line: number,
+	column: number,
+	signal?: AbortSignal
+): Promise<{ signature: string; doc: string } | null> {
+	try {
+		const res = await fetch('/api/python/hover', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ notebookId, code, line, column }),
+			signal
+		});
+		const body = (await res.json()) as { hover?: { signature: string; doc: string } | null };
+		return body.hover ?? null;
+	} catch {
+		return null;
+	}
+}
+
 export interface PythonPackage {
 	name: string;
 	version: string;

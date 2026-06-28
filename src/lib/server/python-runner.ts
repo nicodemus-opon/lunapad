@@ -39,7 +39,10 @@ function makeId(): string {
 //     static binary that fetches its own portable Python build when needed),
 //     installing the curated package set into a cache-dir venv on first use.
 
-export const CURATED_PACKAGES = ['pandas', 'numpy', 'pyarrow', 'plotly'];
+// jedi powers Python-cell intellisense (src/lib/monaco/completions.ts /
+// hover.ts) — same library IPython/Jupyter itself uses for completion, run
+// against the warm worker's live namespace (see WORKER_SCRIPT below).
+export const CURATED_PACKAGES = ['pandas', 'numpy', 'pyarrow', 'plotly', 'jedi'];
 const LUNAPAD_HOME = path.join(os.homedir(), '.lunapad');
 const UV_BIN_DIR = path.join(LUNAPAD_HOME, 'bin');
 const VENV_DIR = path.join(LUNAPAD_HOME, 'python-venv');
@@ -292,6 +295,10 @@ try:
     go.Figure.show = lambda self, *a, **kw: None
 except Exception:
     go = None
+try:
+    import jedi
+except Exception:
+    jedi = None
 
 ns: dict = {'pd': pd, 'go': go}
 
@@ -374,20 +381,73 @@ def run_one(req):
         }
     return out
 
+# complete_one/hover_one are read-only static analysis against the live ns
+# (jedi never executes the cell) — that's what makes them safe to run between
+# real cell executions and what makes them see real bound DataFrames/imports
+# instead of a static guess.
+def complete_one(req):
+    if jedi is None:
+        return {'error': 'jedi not installed', 'completions': []}
+    try:
+        interp = jedi.Interpreter(req['code'], namespaces=[ns])
+        completions = interp.complete(req.get('line', 1), req.get('column', 0))
+        out = []
+        for c in completions[:50]:
+            try:
+                doc = c.docstring(raw=True, fast=True)
+            except Exception:
+                doc = ''
+            out.append({
+                'name': c.name,
+                'type': c.type,
+                'detail': (c.description or '')[:200],
+                'doc': (doc or '')[:500]
+            })
+        return {'error': None, 'completions': out}
+    except Exception:
+        return {'error': traceback.format_exc(), 'completions': []}
+
+def hover_one(req):
+    if jedi is None:
+        return {'error': 'jedi not installed', 'hover': None}
+    try:
+        interp = jedi.Interpreter(req['code'], namespaces=[ns])
+        helps = interp.help(req.get('line', 1), req.get('column', 0))
+        if not helps:
+            return {'error': None, 'hover': None}
+        d = helps[0]
+        try:
+            doc = d.docstring(raw=True, fast=True)
+        except Exception:
+            doc = ''
+        return {'error': None, 'hover': {'signature': d.description or d.name, 'doc': (doc or '')[:1000]}}
+    except Exception:
+        return {'error': traceback.format_exc(), 'hover': None}
+
 for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
     req = json.loads(line)
+    rtype = req.get('type')
     try:
-        out = run_one(req)
+        if rtype == 'complete':
+            out = complete_one(req)
+        elif rtype == 'hover':
+            out = hover_one(req)
+        else:
+            out = run_one(req)
     except Exception:
         out = {'error': traceback.format_exc(), 'missingModule': None, 'figures': [], 'dataframe': None}
     print('${RESULT_MARKER}' + json.dumps({'id': req['id'], **out}), flush=True)
 `;
 
+type PythonWorkerRequest =
+	| { id: string; code: string; tables: Record<string, PythonTable> }
+	| { id: string; type: 'complete' | 'hover'; code: string; line: number; column: number };
+
 interface QueueItem {
-	req: { id: string; code: string; tables: Record<string, PythonTable> };
+	req: PythonWorkerRequest;
 	jobId: string;
 }
 
@@ -401,6 +461,20 @@ interface WorkerHandle {
 
 const workers = new Map<string, WorkerHandle>();
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+// One-shot request/response RPCs (complete/hover) share the run-job queue —
+// completions correctly queue behind an in-flight cell execution, matching a
+// real kernel's busy semantics — but resolve via a plain Promise instead of
+// the jobs map + SSE machinery `spawnPythonCell`/`watchPythonLogs` use.
+const intelResolvers = new Map<string, (result: Record<string, unknown>) => void>();
+
+function settleIntel(id: string, result: Record<string, unknown>): boolean {
+	const resolve = intelResolvers.get(id);
+	if (!resolve) return false;
+	intelResolvers.delete(id);
+	resolve(result);
+	return true;
+}
 
 function clearIdleTimer(worker: WorkerHandle): void {
 	if (worker.idleTimer) clearTimeout(worker.idleTimer);
@@ -453,8 +527,11 @@ function spawnWorker(notebookId: string, pythonBin: string): WorkerHandle {
 	proc.on('exit', () => {
 		if (workers.get(notebookId) === worker) workers.delete(notebookId);
 		failPending(worker, 'Python worker process exited unexpectedly');
-		for (const item of worker.queue)
-			failJob(item.jobId, 'Python worker process exited unexpectedly');
+		for (const item of worker.queue) {
+			if (!settleIntel(item.jobId, { error: 'Python worker process exited unexpectedly' })) {
+				failJob(item.jobId, 'Python worker process exited unexpectedly');
+			}
+		}
 		worker.queue = [];
 	});
 
@@ -463,7 +540,9 @@ function spawnWorker(notebookId: string, pythonBin: string): WorkerHandle {
 
 function failPending(worker: WorkerHandle, message: string): void {
 	if (!worker.pending) return;
-	failJob(worker.pending.jobId, message);
+	if (!settleIntel(worker.pending.jobId, { error: message })) {
+		failJob(worker.pending.jobId, message);
+	}
 	worker.pending = null;
 }
 
@@ -478,9 +557,12 @@ function failJob(jobId: string, message: string): void {
 
 function handleWorkerLine(notebookId: string, worker: WorkerHandle, line: string): void {
 	if (line.startsWith(RESULT_MARKER)) {
-		let parsed: { id: string } & PythonRunResult;
+		let parsed: { id: string } & Record<string, unknown>;
 		try {
-			parsed = JSON.parse(line.slice(RESULT_MARKER.length)) as { id: string } & PythonRunResult;
+			parsed = JSON.parse(line.slice(RESULT_MARKER.length)) as { id: string } & Record<
+				string,
+				unknown
+			>;
 		} catch {
 			failPending(worker, 'Failed to parse python worker result');
 			pump(notebookId, worker);
@@ -489,7 +571,9 @@ function handleWorkerLine(notebookId: string, worker: WorkerHandle, line: string
 		const pending = worker.pending;
 		worker.pending = null;
 		if (pending && pending.jobId) {
-			completeJob(pending.jobId, parsed);
+			if (!settleIntel(pending.jobId, parsed)) {
+				completeJob(pending.jobId, parsed as unknown as PythonRunResult);
+			}
 		}
 		pump(notebookId, worker);
 		return;
@@ -612,6 +696,30 @@ export function spawnPythonCell(
 
 export function getPythonJob(id: string): PythonJob | undefined {
 	return jobs.get(id);
+}
+
+/** Runs jedi-backed completion/hover against a notebook's already-warm worker
+ *  (read-only static analysis against the live `ns` — never executes the
+ *  cell). Deliberately does NOT call `getOrSpawnWorker`: a completion request
+ *  must never trigger a cold venv bootstrap just because the user typed in a
+ *  cell that's never been run — if there's no worker yet, resolve empty. */
+export async function requestPythonIntel(
+	notebookId: string,
+	type: 'complete' | 'hover',
+	code: string,
+	line: number,
+	column: number
+): Promise<Record<string, unknown>> {
+	const worker = workers.get(notebookId);
+	if (!worker) return type === 'complete' ? { completions: [] } : { hover: null };
+
+	const id = makeId();
+	const req: PythonWorkerRequest = { id, type, code, line, column };
+	return new Promise((resolve) => {
+		intelResolvers.set(id, resolve);
+		worker.queue.push({ req, jobId: id });
+		pump(notebookId, worker);
+	});
 }
 
 /** Cancels a running/queued Python cell job: kills the notebook's warm worker

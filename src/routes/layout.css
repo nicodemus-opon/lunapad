@@ -279,14 +279,17 @@
 }
 
 
-/* ─── Ambient focus dimming (Notion-like) ────────────────────────────────── */
-/* When any cell in the notebook is focused, dim all unfocused sibling cells  */
+/* ─── Active cell affordance (chic, seamless) ────────────────────────────── */
+/* Ambient focus dimming — softened to reinforcement only; the focused cell  */
+/* now carries its own left border (see NotebookCell.svelte), so this is no  */
+/* longer the sole "this cell is active" signal.                            */
 .notebook-scroll:has(.notebook-cell[data-focused="true"]) .notebook-cell:not([data-focused="true"]) {
-  opacity: 0.7;
+  opacity: 0.94;
 }
 .notebook-cell {
   transition: opacity var(--motion-medium) var(--motion-ease-out),
-              background-color var(--motion-fast) var(--motion-ease-out);
+              background-color var(--motion-fast) var(--motion-ease-out),
+              border-color var(--motion-fast) var(--motion-ease-out);
 }
 
 /* ─── Run button state animations ────────────────────────────────────────── */

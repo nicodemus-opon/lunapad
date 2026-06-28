@@ -1,5 +1,5 @@
 // Heuristic check that nudges the AI away from pasting static numbers into
-// markdown cells instead of using live refs ({{cell.field}} / {% metric ... %}).
+// markdown cells instead of using live refs ($cell.field / {% metric ... %}).
 // Imperfect by design — false positives are expected and acceptable since the
 // result is surfaced as a soft hint (like validateColumnRefs), not a hard error.
 
@@ -26,7 +26,9 @@ function isLikelyYear(token: string): boolean {
 	return n >= 1900 && n <= 2099;
 }
 
-/** Strips live-ref syntax ({{...}} and {%...%}) — anything inside is intentionally dynamic. */
+/** Strips Markdoc tag syntax ({%...%}) — anything inside is intentionally dynamic.
+ *  Also strips the old {{...}} ref syntax so numbers left over in pre-migration
+ *  notebooks aren't flagged as freshly hardcoded. */
 function stripRefs(markdown: string): string {
 	return markdown.replace(/\{\{[^}]*\}\}/g, ' ').replace(/\{%[^%]*%\}/g, ' ');
 }
@@ -53,7 +55,7 @@ export function detectHardcodedValues(markdown: string): string | null {
 		.sort((a, b) => a.start - b.start)
 		.map((m) => m.text)
 		.slice(0, 5);
-	return `found ${samples.map((s) => `"${s}"`).join(', ')} — replace with {{cellName.field}} or {% metric value=$cellName.field /%} so this stays live`;
+	return `found ${samples.map((s) => `"${s}"`).join(', ')} — replace with $cellName.field or {% metric value=$cellName.field /%} so this stays live`;
 }
 
 // Generic words that are too common to be useful signal, even when they happen to
@@ -121,7 +123,7 @@ export function detectHardcodedTextValues(markdown: string, cells: Cell[]): stri
 		.sort((a, b) => a.start - b.start)
 		.map((m) => m.text)
 		.slice(0, 5);
-	return `found text ${samples.map((s) => `"${s}"`).join(', ')} matching real query-result values — replace with {{cellName.field}} or $cellName.field so this stays accurate if the data changes`;
+	return `found text ${samples.map((s) => `"${s}"`).join(', ')} matching real query-result values — replace with $cellName.field so this stays accurate if the data changes`;
 }
 
 /** Combined numeric + text hardcoding check — numeric runs first since it's cheaper. */

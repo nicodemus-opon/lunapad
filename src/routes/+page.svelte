@@ -165,6 +165,7 @@
 		setAIChatPanelWidth,
 		getGhostCellIds,
 		addContextCell,
+		setPendingSuggestion,
 		initAIChatWidth,
 		initWorkspaceStandards
 	} from '$lib/stores/ai-chat.svelte';
@@ -1649,6 +1650,11 @@
 																);
 															}
 														: undefined}
+													onContinueWithAI={(instruction) => {
+														addContextCell(cell.id);
+														setAIChatOpen(true);
+														setPendingSuggestion(instruction);
+													}}
 													onOpenResultTab={handleOpenResultTab}
 												/>
 											</div>

@@ -17,7 +17,8 @@
 		ClipboardPaste,
 		CopyPlus,
 		Trash2,
-		FileSpreadsheet
+		FileSpreadsheet,
+		Sparkles
 	} from '@lucide/svelte';
 	import {
 		moveCell,
@@ -48,7 +49,8 @@
 		onOpenMaterialize,
 		onOpenPromote,
 		onOpenPromoteSeed,
-		onRunTests
+		onRunTests,
+		onOpenInlinePrompt
 	}: {
 		cell: Cell;
 		notebookId?: string;
@@ -65,6 +67,7 @@
 		onOpenPromote?: () => void;
 		onOpenPromoteSeed?: () => void;
 		onRunTests: () => void;
+		onOpenInlinePrompt?: () => void;
 	} = $props();
 
 	const codeHidden = $derived(cell.display === 'output');
@@ -81,6 +84,13 @@
 		<GripVertical class="h-3.5 w-3.5" />
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content side="bottom" align="start" class="min-w-48">
+		{#if onOpenInlinePrompt}
+			<DropdownMenu.Item onclick={onOpenInlinePrompt}>
+				<Sparkles class="h-3.5 w-3.5" /> Tell AI what to do
+				<DropdownMenu.Shortcut>⌘K</DropdownMenu.Shortcut>
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+		{/if}
 		{#if isQueryCell}
 			{#if cell.display !== 'collapsed'}
 				<DropdownMenu.Item onclick={() => setCellDisplay(cell.id, codeHidden ? 'full' : 'output')}>

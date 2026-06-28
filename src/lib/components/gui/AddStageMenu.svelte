@@ -944,15 +944,15 @@
 				<div class="max-h-[70vh] overflow-auto px-3 pb-3 pt-2">
 					{#if normalizedQuery.length > 0}
 						{#if llmFullQuery}
-							<div class="mb-2 rounded-lg border border-violet-500/40 bg-violet-500/[0.07] px-2.5 py-2">
+							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
 								<div class="flex items-center justify-between gap-2 flex-wrap">
-									<p class="text-[11px] text-violet-400 font-medium flex items-center gap-1.5">
+									<p class="text-[11px] text-primary font-medium flex items-center gap-1.5">
 										<Sparkles class="h-3 w-3" />
 										AI full query — window / join / analytics
 									</p>
 									<div class="flex items-center gap-2">
-										<span class="add-stage-badge bg-violet-500/15 text-violet-300 border-violet-500/30">AI</span>
-										<Button variant="outline" size="sm" class="h-7 px-2 text-[10px] border-violet-500/40 hover:bg-violet-500/10" onclick={applyLLMFullQuery}>
+										<span class="add-stage-badge bg-primary/15 text-primary border-primary/30">AI</span>
+										<Button variant="outline" size="sm" class="h-7 px-2 text-[10px] border-primary/30 hover:bg-primary/10" onclick={applyLLMFullQuery}>
 											Apply
 										</Button>
 									</div>

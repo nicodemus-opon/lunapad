@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy, setContext } from 'svelte';
 	import { replaceState } from '$app/navigation';
-	import { marked } from 'marked';
 	import MarkdocRenderer from '$lib/components/markdown/MarkdocRenderer.svelte';
 	import {
 		FILTER_CONTEXT_KEY,
 		type FilterContextValue
 	} from '$lib/components/markdown/filter-context';
-	import { interpolateMarkdownRefs } from '$lib/services/markdown-interp';
-	import { hasMarkdocSyntax, renderMarkdocCell } from '$lib/services/markdoc-interp';
+	import { renderMarkdocCell } from '$lib/services/markdoc-interp';
 	import ReportCell from './ReportCell.svelte';
 	import type { PublicShareView, PublicShareCell } from '$lib/server/shared-reports';
 	import type { Cell } from '$lib/stores/notebook.svelte';
@@ -141,12 +139,6 @@
 			document.removeEventListener('visibilitychange', handleVisibilityChange);
 	});
 
-	function renderLegacyMarkdown(markdown: string): string {
-		const interpolated = interpolateMarkdownRefs(markdown.trim(), markdocCells);
-		const html = marked.parse(interpolated, { async: false, breaks: true, gfm: true }) as string;
-		return html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on[a-z]+="[^"]*"/gi, '');
-	}
-
 	const secondsAgo = $derived.by(() => {
 		if (!lastUpdatedAt) return null;
 		return Math.max(0, Math.round((Date.now() - lastUpdatedAt) / 1000));
@@ -167,14 +159,10 @@
 		{#each data.cells as cell (cell.id)}
 			{#if cell.cellType === 'markdown'}
 				{#if cell.display !== 'collapsed' && cell.markdown?.trim()}
-					{#if hasMarkdocSyntax(cell.markdown)}
-						{@const result = renderMarkdocCell(cell.markdown, markdocCells)}
-						<div class="report-markdown">
-							<MarkdocRenderer content={result.tree} errors={result.errors} notebookId="" />
-						</div>
-					{:else}
-						<div class="report-markdown">{@html renderLegacyMarkdown(cell.markdown)}</div>
-					{/if}
+					{@const result = renderMarkdocCell(cell.markdown, markdocCells)}
+					<div class="report-markdown">
+						<MarkdocRenderer content={result.tree} errors={result.errors} notebookId="" />
+					</div>
 				{/if}
 			{:else if cell.cellType === 'query'}
 				<ReportCell

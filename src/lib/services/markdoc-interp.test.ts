@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Markdoc, { Tag } from '@markdoc/markdoc';
-import { hasMarkdocSyntax, buildMarkdocVariables, renderMarkdocCell, extractMarkdocRefs } from './markdoc-interp.js';
+import { buildMarkdocVariables, renderMarkdocCell, extractMarkdocRefs } from './markdoc-interp.js';
 import type { Cell } from '$lib/stores/notebook.svelte';
 
 function makeCell(outputName: string, rows: Record<string, unknown>[], columns?: string[]): Cell {
@@ -31,17 +31,6 @@ function textOf(nodes: unknown): string {
 	return '';
 }
 
-describe('hasMarkdocSyntax', () => {
-	it('detects markdoc tags', () => {
-		expect(hasMarkdocSyntax('{% $orders.count %}')).toBe(true);
-		expect(hasMarkdocSyntax('{% metric value=$x /%}')).toBe(true);
-	});
-
-	it('does not flag legacy {{}} refs or plain text', () => {
-		expect(hasMarkdocSyntax('{{orders.count}}')).toBe(false);
-		expect(hasMarkdocSyntax('plain text')).toBe(false);
-	});
-});
 
 describe('buildMarkdocVariables', () => {
 	it('maps cell results to a variables object', () => {

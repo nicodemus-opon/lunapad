@@ -32,8 +32,12 @@ describe('detectHardcodedValues', () => {
 		expect(hint).toContain('84213');
 	});
 
-	it('does not flag legacy {{}} live refs', () => {
+	it('does not flag pre-migration {{}} content (still stripped for old notebooks)', () => {
 		expect(detectHardcodedValues('Revenue: {{orders.revenue}} this month.')).toBeNull();
+	});
+
+	it('does not flag bare $var live refs', () => {
+		expect(detectHardcodedValues('Revenue: $orders.revenue this month.')).toBeNull();
 	});
 
 	it('does not flag Markdoc tags', () => {
@@ -62,7 +66,7 @@ describe('detectHardcodedValues', () => {
 	});
 
 	it('mixed content: live refs pass through untouched, hardcoded numbers still flagged', () => {
-		const hint = detectHardcodedValues('Orders: {{orders.count}}. Revenue: $99,999 (hardcoded).');
+		const hint = detectHardcodedValues('Orders: $orders.count. Revenue: $99,999 (hardcoded).');
 		expect(hint).toContain('$99,999');
 		expect(hint).not.toContain('orders.count');
 	});
@@ -83,7 +87,7 @@ describe('detectHardcodedTextValues', () => {
 
 	it('does not flag live refs', () => {
 		const cells = [makeCell('accounts', [{ status: 'delinquent' }])];
-		expect(detectHardcodedTextValues('Status: {{accounts.status}}.', cells)).toBeNull();
+		expect(detectHardcodedTextValues('Status: $accounts.status.', cells)).toBeNull();
 		expect(detectHardcodedTextValues('{% badge value=$accounts.status /%}', cells)).toBeNull();
 	});
 

@@ -23,9 +23,11 @@ export {
 	setModelCompletions,
 	clearModelCompletions,
 	setModelDialect,
-	clearModelDialect
+	clearModelDialect,
+	setModelPythonContext,
+	clearModelPythonContext
 } from './completions';
-export type { CompletionEntry } from './completions';
+export type { CompletionEntry, PythonCellContext } from './completions';
 export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from './plot-globals';
 
 let initialized = false;

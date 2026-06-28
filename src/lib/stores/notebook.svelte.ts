@@ -319,6 +319,10 @@ interface NotebookState {
 	// ── Filesystem / dbt project mode ──
 	storageMode: 'local' | 'filesystem';
 	projectFolder: string | null;
+	// Whether the server-side Python worker (system python3 or self-provisioned uv venv —
+	// see python-runner.ts) is actually ready to run cells. Refreshed on project open;
+	// gates both the "Python cell" add option and AI's willingness to create/use one.
+	pythonAvailable: boolean;
 	isDbtProject: boolean;
 	dbtModels: DbtModel[];
 	dbtLastCompileAt: number | null;
@@ -877,6 +881,7 @@ let state = $state<NotebookState>({
 	workspaceSyncStatus: 'idle',
 	storageMode: 'local',
 	projectFolder: null,
+	pythonAvailable: false,
 	isDbtProject: false,
 	dbtModels: [],
 	dbtLastCompileAt: null,
@@ -2175,6 +2180,12 @@ export async function openProject(folder: string): Promise<void> {
 	state.isEvidenceProject = info.isEvidenceProject;
 	state.storageMode = 'filesystem';
 
+	// Non-blocking — Python readiness shouldn't hold up project open. First open
+	// may report false while the uv-provisioned venv is still being set up.
+	void isPythonEnvReady().then((ready) => {
+		state.pythonAvailable = ready;
+	});
+
 	await loadProjectNotebooks();
 
 	// Load dbt manifest if available
@@ -2216,6 +2227,7 @@ export function closeProject(): void {
 	_fsWatcherUnsubscribe = null;
 	state.storageMode = 'local';
 	state.projectFolder = null;
+	state.pythonAvailable = false;
 	state.isDbtProject = false;
 	state.dbtModels = [];
 	state.dbtLastCompileAt = null;
@@ -3877,13 +3889,22 @@ export function insertPlotCellBefore(id: string): void {
 
 /** Python cells run server-side (see python-runner.ts) and need a real project
  *  folder on disk — there's no in-browser-only mode for them, unlike plot/udf
- *  cells which are pure client-side sandboxes. */
+ *  cells which are pure client-side sandboxes. Also requires the Python worker
+ *  to have actually resolved an interpreter (see state.pythonAvailable) — otherwise
+ *  this offers a cell type that can't run yet. */
 export function canAddPythonCell(): boolean {
-	return state.storageMode === 'filesystem' && !!state.projectFolder;
+	return state.storageMode === 'filesystem' && !!state.projectFolder && state.pythonAvailable;
 }
 
-export function addPythonCell(): void {
-	if (!canAddPythonCell()) return;
+/** Whether the server-side Python worker is ready to run cells — see
+ *  state.pythonAvailable. Used to gate both the add-cell menu and the AI
+ *  agent's willingness to create/target Python cells. */
+export function getPythonAvailable(): boolean {
+	return state.pythonAvailable;
+}
+
+export function addPythonCell(): string | null {
+	if (!canAddPythonCell()) return null;
 	const nb = getActiveNotebook();
 	pushHistoryCheckpoint(nb.id);
 	const cell = makePythonCell();
@@ -3891,13 +3912,14 @@ export function addPythonCell(): void {
 	nb.cells = [...nb.cells, cell];
 	scheduleSave();
 	scheduleFileSave(nb.id, cell.id);
+	return cell.id;
 }
 
-export function insertPythonCellAfter(id: string): void {
-	if (!canAddPythonCell()) return;
+export function insertPythonCellAfter(id: string): string | null {
+	if (!canAddPythonCell()) return null;
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return null;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makePythonCell();
 	cell.outputName = deconflictOutputName(cell.outputName);
@@ -3906,6 +3928,7 @@ export function insertPythonCellAfter(id: string): void {
 	nb.cells = cells;
 	scheduleSave();
 	scheduleFileSave(nb.id, cell.id);
+	return cell.id;
 }
 
 export function insertPythonCellBefore(id: string): void {
@@ -6110,6 +6133,7 @@ export function __resetStateForTests(): void {
 		workspaceSyncStatus: 'idle',
 		storageMode: 'local',
 		projectFolder: null,
+		pythonAvailable: false,
 		isDbtProject: false,
 		dbtModels: [],
 		dbtLastCompileAt: null,

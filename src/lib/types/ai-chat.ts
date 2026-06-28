@@ -30,6 +30,8 @@ export interface AIChatCell {
 	id: string;
 	outputName: string;
 	language: 'prql' | 'sql';
+	/** 'query'|'markdown' cells use `language` for dialect; 'python' cells ignore it. */
+	cellType?: 'query' | 'markdown' | 'python';
 	code: string;
 	resultColumns: string[];
 	status: string;
@@ -43,6 +45,10 @@ export interface AIChatCell {
 	criticalityScore?: number;
 	/** First error message when status === 'error' — lets the LLM know what to fix */
 	errorMessage?: string;
+	/** Python cells only — last run's captured stdout (truncated) */
+	pythonStdout?: string;
+	/** Python cells only — last run's error, if any (truncated) */
+	pythonError?: string;
 }
 
 export interface AIChatSchemaTable {
@@ -60,6 +66,8 @@ export interface AIChatRequest {
 		connectionSchema: AIChatSchemaTable[];
 		activeConnectionId: string | null;
 		connectionDialect: 'duckdb' | 'trino';
+		/** Whether the server-side Python worker is ready — gates Python tool guidance/use. */
+		pythonAvailable: boolean;
 	};
 	llmConfig: { provider: string; baseUrl: string; model: string; apiKey?: string };
 	workspaceMemory?: string;
@@ -98,7 +106,7 @@ export type AIChatToolName =
 export interface CreateCellArgs {
 	afterCellId?: string;
 	outputName: string;
-	cellType?: 'query' | 'markdown';
+	cellType?: 'query' | 'markdown' | 'python';
 	language?: 'sql' | 'prql';
 	editMode?: 'prql' | 'gui';
 	code?: string;

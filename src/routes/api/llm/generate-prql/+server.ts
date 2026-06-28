@@ -2,6 +2,14 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { PromptLLMConfig } from '$lib/services/prompt-llm';
 import { compile as compileNodePrql, CompileOptions as NodeCompileOptions } from 'prqlc/dist/node/prqlc_js';
+import {
+	normalizeTimeoutMs,
+	normalizeBaseUrl,
+	quoteIdent as quotePrqlIdent,
+	buildSchemaBlock,
+	rankColumnsByRelevance,
+	callLLMJson
+} from '$lib/server/ai-schema-context';
 
 export interface GeneratePRQLRequest {
 	query: string;
@@ -34,34 +42,6 @@ export interface GeneratePRQLResponse {
 	prql: string;
 	reasoning?: string;
 	error?: string;
-}
-
-interface OpenAIChatCompletionResponse {
-	choices?: Array<{
-		message?: {
-			content?: string;
-		};
-	}>;
-}
-
-const DEFAULT_TIMEOUT_MS = 60_000;
-const MIN_TIMEOUT_MS = 10_000;
-const MAX_TIMEOUT_MS = 180_000;
-
-function normalizeTimeoutMs(value: unknown): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
-	return Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, Math.round(value)));
-}
-
-function quotePrqlIdent(name: string): string {
-	if (/[^A-Za-z0-9_.]/.test(name)) return `\`${name}\``;
-	return name;
-}
-
-function normalizeBaseUrl(baseUrl: string): string {
-	const trimmed = baseUrl.trim().replace(/\/+$/, '');
-	if (/\/v\d+$/i.test(trimmed)) return trimmed;
-	return `${trimmed}/v1`;
 }
 
 function extractPRQLFromResponse(content: string): { prql: string; reasoning?: string } | null {
@@ -136,7 +116,9 @@ function stripLeadingFromClause(prql: string, sourceTable: string): string {
 	return prql;
 }
 
-function sqlTypeMismatchCast(dataKind: string, sqlType: string | undefined): string | null {
+/** PRQL-specific cast guidance (s-string syntax) — passed to the shared buildSchemaBlock,
+ *  which otherwise defaults to a generic, language-agnostic cast hint. */
+function prqlCastNote(dataKind: string, sqlType: string | undefined): string | null {
 	if (!sqlType) return null;
 	const sql = sqlType.toUpperCase();
 	if (dataKind === 'date' && (sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))) {
@@ -149,84 +131,6 @@ function sqlTypeMismatchCast(dataKind: string, sqlType: string | undefined): str
 		return 'stored as text — cast with CAST({col} AS DOUBLE) inside s"..."';
 	}
 	return null;
-}
-
-function buildSchemaBlock(
-	sourceTable: string,
-	columns: GeneratePRQLRequest['columns'],
-	otherTables?: GeneratePRQLRequest['otherTables']
-): string {
-	const colLines = columns.map((col) => {
-		const typePart = `${col.dataKind}${col.semanticType ? `/${col.semanticType}` : ''}${col.sqlType ? `, sql:${col.sqlType}` : ''}`;
-		const castNote = sqlTypeMismatchCast(col.dataKind, col.sqlType);
-		const extras: string[] = [];
-
-		if (col.minVal != null && col.maxVal != null) {
-			extras.push(`range: ${col.minVal}–${col.maxVal}`);
-		} else if (col.sampleValues && col.sampleValues.length > 0) {
-			extras.push(`samples: ${col.sampleValues.slice(0, 4).map((v) => JSON.stringify(v)).join(', ')}`);
-		}
-
-		if (col.p50Val != null) extras.push(`median: ${col.p50Val}`);
-		if (col.dateGranularity) extras.push(`granularity: ${col.dateGranularity}`);
-
-		if (col.topValues && col.topValues.length > 0) {
-			const topStr = col.topValues
-				.slice(0, 5)
-				.map((t) => `${JSON.stringify(t.v)}(${Math.round(t.pct * 100)}%)`)
-				.join(', ');
-			extras.push(`top: ${topStr}`);
-		}
-
-		if (castNote) extras.unshift(`⚠ ${castNote}`);
-		const detail = extras.length > 0 ? ` — ${extras.join(', ')}` : '';
-		return `  ${quotePrqlIdent(col.name)} (${typePart})${detail}`;
-	});
-
-	const mainTableBlock = [
-		`TABLE: ${sourceTable}`,
-		...colLines
-	].join('\n');
-
-	if (!otherTables || otherTables.length === 0) return mainTableBlock;
-
-	const otherBlocks = otherTables.map((t) => {
-		const typedCols = t.columns.map((c, i) => `  ${quotePrqlIdent(c)} (${t.columnTypes[i] ?? 'text'})`).join('\n');
-		return `TABLE: ${t.name}\n${typedCols}`;
-	});
-
-	return [mainTableBlock, ...otherBlocks].join('\n\n');
-}
-
-/** Rank columns by relevance: word overlap + semantic type + kind + distinctCount (grouping) + nullRatio penalty. */
-function rankColumnsByRelevance(
-	query: string,
-	columns: GeneratePRQLRequest['columns'],
-	maxColumns = 20
-): GeneratePRQLRequest['columns'] {
-	if (columns.length <= maxColumns) return columns;
-
-	const queryTokens = new Set(
-		query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1)
-	);
-	const isGroupingQuery = /(group|by|per|each|breakdown|segment|categor|type|top\s*\d|rank)/i.test(query);
-
-	const scored = columns.map((col) => {
-		const colTokens = col.name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/);
-		const nameOverlap = colTokens.filter((t) => queryTokens.has(t)).length;
-		const semanticBoost = col.semanticType && queryTokens.has(col.semanticType.toLowerCase()) ? 1 : 0;
-		const kindBoost = col.dataKind === 'numeric' || col.dataKind === 'date' ? 0.5 : 0;
-
-		const distinctCount = col.distinctCount ?? 0;
-		const nullRatio = col.nullRatio ?? 0;
-		const distinctBoost = isGroupingQuery && distinctCount > 3 && distinctCount < 500 ? 0.5 : 0;
-		const nullPenalty = nullRatio > 0.5 ? -0.5 : nullRatio > 0.3 ? -0.25 : 0;
-
-		return { col, score: nameOverlap + semanticBoost + kindBoost + distinctBoost + nullPenalty };
-	});
-
-	scored.sort((a, b) => b.score - a.score);
-	return scored.slice(0, maxColumns).map((s) => s.col);
 }
 
 /** Build a single concrete example from the actual schema to ground the model. */
@@ -326,7 +230,7 @@ function buildUserPrompt(request: GeneratePRQLRequest): string {
 		`Question: ${request.query}`,
 		'',
 		'Schema:',
-		buildSchemaBlock(request.sourceTable, relevantColumns, request.otherTables),
+		buildSchemaBlock(request.sourceTable, relevantColumns, request.otherTables, prqlCastNote),
 		'',
 		`The query pipeline starts with: from ${request.sourceTable}`,
 		'Generate the PRQL continuation stages that answer the question precisely and completely.',
@@ -354,50 +258,6 @@ function tryCompilePRQL(sourceTable: string, prql: string): string | null {
 			return String(err);
 		}
 	}
-}
-
-async function callLLM(input: {
-	completionUrl: string;
-	llmConfig: PromptLLMConfig;
-	systemPrompt: string;
-	userPrompt: string;
-	signal: AbortSignal;
-}): Promise<string> {
-	const modelName = input.llmConfig.model ?? '';
-	const isQwen3 = /qwen3/i.test(modelName);
-	const systemContent = isQwen3
-		? input.systemPrompt + '\n/no_think'
-		: input.systemPrompt;
-
-	const response = await fetch(input.completionUrl, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			model: modelName,
-			temperature: 0.2,
-			top_p: 0.9,
-			frequency_penalty: 0.0,
-			presence_penalty: 0.0,
-			stream: false,
-			response_format: { type: 'json_object' },
-			...(isQwen3 ? { options: { think: false } } : {}),
-			messages: [
-				{ role: 'system', content: systemContent },
-				{ role: 'user', content: input.userPrompt }
-			]
-		}),
-		signal: input.signal
-	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`LLM request failed (${response.status}): ${text.slice(0, 400)}`);
-	}
-
-	const payload = (await response.json()) as OpenAIChatCompletionResponse;
-	const content = payload.choices?.[0]?.message?.content ?? '';
-	if (!content.trim()) throw new Error('LLM returned empty content');
-	return content;
 }
 
 function postProcessPRQL(prql: string, sourceTable: string, columns: GeneratePRQLRequest['columns'], otherTables?: GeneratePRQLRequest['otherTables']): string {
@@ -506,9 +366,9 @@ export const POST: RequestHandler = async ({ request }) => {
 				const userPrompt = buildUserPrompt(req);
 
 				send({ type: 'status', message: 'Generating PRQL…' });
-				const firstContent = await callLLM({
+				const firstContent = await callLLMJson({
 					completionUrl,
-					llmConfig: req.llmConfig,
+					model: req.llmConfig.model,
 					systemPrompt,
 					userPrompt,
 					signal: controller.signal
@@ -539,9 +399,9 @@ export const POST: RequestHandler = async ({ request }) => {
 						'Fix the error and return corrected JSON only.'
 					].join('\n');
 
-					const repairContent = await callLLM({
+					const repairContent = await callLLMJson({
 						completionUrl,
-						llmConfig: req.llmConfig,
+						model: req.llmConfig.model,
 						systemPrompt,
 						userPrompt: repairUserPrompt,
 						signal: controller.signal

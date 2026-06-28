@@ -12,6 +12,11 @@ import {
 	updateCellName,
 	removeCell,
 	runCell,
+	runPythonCell,
+	insertPythonCellAfter,
+	addPythonCell,
+	updatePythonCellCode,
+	getPythonAvailable,
 	setCellResultChartConfig,
 	setCellResultViewMode,
 	setCellMarkdownPreview,
@@ -1057,10 +1062,19 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					? (c.errors?.[0]?.display ?? c.errors?.[0]?.reason)?.slice(0, 200)
 					: undefined;
 
+				// Python cells: dataframe shape already lands in c.result (same as query
+				// cells), but stdout/error live separately in pythonOutput.
+				const pythonError =
+					c.cellType === 'python' ? c.pythonOutput?.error?.slice(0, 200) : undefined;
+				const pythonStdout =
+					c.cellType === 'python' && isContext ? c.pythonOutput?.stdout?.slice(0, 400) : undefined;
+
 				return {
 					id: c.id,
 					outputName: c.outputName,
 					language: c.language,
+					cellType:
+						c.cellType === 'python' ? 'python' : c.cellType === 'markdown' ? 'markdown' : 'query',
 					code: codeSnippet,
 					// Only include result columns for context cells — non-context columns duplicate schema info
 					resultColumns: isContext ? (c.result?.columns ?? []) : [],
@@ -1073,12 +1087,15 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					// #4 — Include criticality score so system prompt can flag high-impact cells
 					...(criticalityScore > 0 && { criticalityScore }),
 					// Pass error message so LLM knows what to fix without calling run_cells first
-					...(errorMessage && { errorMessage })
+					...(errorMessage && { errorMessage }),
+					...(pythonError && { pythonError }),
+					...(pythonStdout && { pythonStdout })
 				};
 			}),
 			connectionSchema: allSchemaTables,
 			activeConnectionId: defaultConn.isBuiltin ? null : (defaultConn.connection.id ?? null),
-			connectionDialect: defaultConn.isBuiltin ? 'duckdb' : 'trino'
+			connectionDialect: defaultConn.isBuiltin ? 'duckdb' : 'trino',
+			pythonAvailable: getPythonAvailable()
 		},
 		llmConfig: {
 			provider: llmConfig.provider,
@@ -1135,7 +1152,7 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 		}
 
 		case 'list_cells': {
-			const queryCells = cells.filter((c) => c.cellType === 'query');
+			const queryCells = cells.filter((c) => c.cellType === 'query' || c.cellType === 'python');
 			if (queryCells.length === 0) {
 				const text = '**Cells:** (none)';
 				updateMessageText(aiMsgId, `\n\n${text}\n\n`);
@@ -1144,7 +1161,7 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 			const summary = queryCells
 				.map(
 					(c) =>
-						`- \`${c.outputName}\` (${c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`
+						`- \`${c.outputName}\` (${c.cellType === 'python' ? 'python' : c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`
 				)
 				.join('\n');
 			const text = `**Cells:**\n${summary}`;
@@ -1282,6 +1299,39 @@ async function executeToolCallWithResult(
 			const cells = getCells();
 			const anchor = args.afterCellId ?? (cells.length > 0 ? cells[cells.length - 1].id : '');
 
+			if (args.cellType === 'python') {
+				if (!getPythonAvailable()) {
+					return 'create_cell: Python is not available in this environment — use a SQL cell instead.';
+				}
+				const existingId = resolveCellId(outputName);
+				if (existingId) {
+					updatePythonCellCode(existingId, args.code ?? '');
+					_updatedCellIds.add(existingId);
+					_outputNameToId.set(outputName, existingId);
+					if (call.callId) _callIdToId.set(call.callId, existingId);
+					appendActionEvent(aiMsgId, {
+						tool: 'update_cell',
+						label: `Edited cell \`${outputName}\``,
+						cellId: existingId
+					});
+					return `Cell '${outputName}' updated (create_cell redirected — cell already exists)`;
+				}
+				const pyCellId = anchor ? insertPythonCellAfter(anchor) : addPythonCell();
+				if (!pyCellId) return 'create_cell: failed to create Python cell';
+				updatePythonCellCode(pyCellId, args.code ?? '');
+				const renameResult = updateCellName(pyCellId, outputName);
+				if (!renameResult.ok) return `create_cell: ${renameResult.error}`;
+				markGhostCell(pyCellId);
+				appendActionEvent(aiMsgId, {
+					tool: 'create_cell',
+					label: `Created Python cell \`${outputName}\``,
+					cellId: pyCellId
+				});
+				_outputNameToId.set(outputName, pyCellId);
+				if (call.callId) _callIdToId.set(call.callId, pyCellId);
+				return `Cell '${outputName}' created (id: ${pyCellId}, type: python)`;
+			}
+
 			let newCellId: string;
 			// Detect markdown: explicit cellType, explicit markdown field, or model accidentally
 			// put markdown prose (# headings, **bold**) in the code field instead of markdown field.
@@ -1418,8 +1468,15 @@ async function executeToolCallWithResult(
 			const cellBeforeUpdate = getCells().find((c) => c.id === cellId);
 			const oldCode = cellBeforeUpdate?.code;
 			const oldName = cellBeforeUpdate?.outputName;
-			if (args.code !== undefined)
-				updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
+			if (args.code !== undefined) {
+				// Route by the target's actual cellType — sanitizeSQL/stripTrailingSemicolons
+				// are SQL-specific and would corrupt Python source.
+				if (cellBeforeUpdate?.cellType === 'python') {
+					updatePythonCellCode(cellId, args.code);
+				} else {
+					updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
+				}
+			}
 			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
 			if (args.outputName !== undefined) {
 				const renameResult = updateCellName(cellId, args.outputName);
@@ -1609,7 +1666,9 @@ async function executeToolCallWithResult(
 				Promise.all(
 					layer.map((id) => {
 						_alreadyRanIds.add(id);
-						return runCell(id).catch(() => {
+						const targetCell = allCellsList.find((c) => c.id === id);
+						const run = targetCell?.cellType === 'python' ? runPythonCell(id) : runCell(id);
+						return run.catch(() => {
 							/* error surfaced via cell.status below */
 						});
 					})
@@ -1627,7 +1686,7 @@ async function executeToolCallWithResult(
 			if (failedAfterRun.length > 0) {
 				const toHeal = failedAfterRun.filter((id) => {
 					const cell = getCells().find((c) => c.id === id);
-					if (!cell) return false;
+					if (!cell || cell.cellType === 'python') return false;
 					const fixed = sanitizeSQL(cell.code);
 					if (fixed === cell.code) return false;
 					updateCellCode(id, fixed);
@@ -1644,6 +1703,12 @@ async function executeToolCallWithResult(
 			const resultLines = resolvedIds.map((id) => {
 				const cell = getCells().find((c) => c.id === id);
 				if (!cell) return `${id}: not found`;
+				if (cell.status === 'error' && cell.cellType === 'python') {
+					// Python errors are tracebacks, not SQL — skip the column/table/syntax
+					// categorization below, which doesn't apply.
+					const pyErrMsg = cell.pythonOutput?.error ?? 'unknown error';
+					return `${cell.outputName ?? id}: RUN FAILED — ${pyErrMsg}`;
+				}
 				if (cell.status === 'error') {
 					const errMsg = cell.errors?.[0]?.display ?? cell.errors?.[0]?.reason ?? 'unknown error';
 
@@ -2342,7 +2407,7 @@ async function runSprintLoop(
 		// Snapshot the current cell set so we can tell which cells this task creates
 		const cellsBefore = new Set(
 			getCells()
-				.filter((c) => c.cellType === 'query')
+				.filter((c) => c.cellType === 'query' || c.cellType === 'python')
 				.map((c) => c.id)
 		);
 
@@ -2456,7 +2521,7 @@ async function runSprintLoop(
 
 		// Auto-verify: check that cells created by this task all ran successfully
 		const newCellIds = getCells()
-			.filter((c) => c.cellType === 'query' && !cellsBefore.has(c.id))
+			.filter((c) => (c.cellType === 'query' || c.cellType === 'python') && !cellsBefore.has(c.id))
 			.map((c) => c.id);
 
 		const isPassing =
@@ -2774,11 +2839,11 @@ async function runSubagentPipeline(
 						: unrun.length > 0
 							? `Cells created but not yet executed. Call run_cells with cellIds: ${JSON.stringify(unrun)} to validate them, then continue.`
 							: charts.length > 0 && !hasFindingsNow
-								? `Cells run clean. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") — use \`{{outputName.field}}\` live refs for all key numbers (e.g. \`{{orders.count}} orders processed\`, \`{{top.revenue}}\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) output <done> with follow-up suggestions.`
+								? `Cells run clean. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") — use \`$outputName.field\` live refs for all key numbers (e.g. \`$orders.count orders processed\`, \`$top.revenue\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) output <done> with follow-up suggestions.`
 								: charts.length > 0
 									? `Cells run clean. Call pick_chart for: ${charts.join(', ')}, then output <done> with follow-up suggestions.`
 									: !hasFindingsNow
-										? 'Cells run clean. Write a findings markdown cell (cellType:"markdown", outputName:"findings") — use `{{outputName.field}}` live refs for all key numbers so the summary updates when data refreshes. Then output <done> with follow-up suggestions.'
+										? 'Cells run clean. Write a findings markdown cell (cellType:"markdown", outputName:"findings") — use `$outputName.field` live refs for all key numbers so the summary updates when data refreshes. Then output <done> with follow-up suggestions.'
 										: 'All done. Output <done> with follow-up suggestions.';
 			sqlInjection = {
 				role: 'user',
