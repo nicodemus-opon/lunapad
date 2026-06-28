@@ -1,11 +1,11 @@
 <script lang="ts">
-	import PlotChart from './PlotChart.svelte';
-	import * as Plot from '@observablehq/plot';
-	import { pie, arc, type PieArcDatum } from 'd3-shape';
-	import { sankey, sankeyLinkHorizontal, sankeyLeft } from 'd3-sankey';
-	import { mode } from 'mode-watcher';
+	import PlotlyMount from './PlotlyMount.svelte';
 	import type { ChartConfig, ChartType } from '$lib/types/gui-pipeline';
 	import { coerceNumber } from '$lib/utils';
+	import { resolveCSSColor, resolveChartColorway } from '$lib/utils/theme-colors';
+	import { watchTheme } from '$lib/services/plotly-render.svelte';
+	import { evaluateCustomChartCode, type PlotCellFigure } from '$lib/services/plot-cell';
+	import type { Data, Layout } from 'plotly.js-dist-min';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -15,6 +15,8 @@
 	}
 
 	const { rows, columns, config, height = 384 }: Props = $props();
+
+	type Figure = PlotCellFigure;
 
 	function humanize(col: string): string {
 		return col.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -26,16 +28,16 @@
 		return rows
 			.filter((r) => r[config.xColumn] !== null && r[config.xColumn] !== undefined)
 			.map((r) => {
-			const point: Record<string, unknown> = { x: r[config.xColumn] };
-			for (const y of config.yColumns) {
-				point[y] = coerceNumber(r[y]);
-			}
-			for (const y of config.yColumnsSecondary ?? []) {
-				point[y] = coerceNumber(r[y]);
-			}
-			if (config.colorColumn) point._color = r[config.colorColumn];
-			if (config.sizeColumn) point._size = coerceNumber(r[config.sizeColumn]);
-			return point;
+				const point: Record<string, unknown> = { x: r[config.xColumn] };
+				for (const y of config.yColumns) {
+					point[y] = coerceNumber(r[y]);
+				}
+				for (const y of config.yColumnsSecondary ?? []) {
+					point[y] = coerceNumber(r[y]);
+				}
+				if (config.colorColumn) point._color = r[config.colorColumn];
+				if (config.sizeColumn) point._size = coerceNumber(r[config.sizeColumn]);
+				return point;
 			});
 	});
 
@@ -78,8 +80,6 @@
 		return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
 	}
 
-	// Plot calls tickFormat as (value, index) — wrap so the tick index can't be
-	// mistaken for `maxLen` when passed directly as a tickFormat callback.
 	function truncateTick(value: unknown): string {
 		return truncateLabel(value);
 	}
@@ -112,27 +112,34 @@
 		return xValues.length > 8 || maxXLabelLength > 12;
 	});
 
-	// Categorical x-axis scale options: truncate long labels (full text still
-	// available via each mark's `title` tooltip) and rotate when there are many
-	// categories or the labels are long, so they don't overlap each other.
-	const categoricalXScale = $derived.by(() => {
-		if (xIsMostlyNumeric || xIsMostlyDateLike) return {};
-		return {
-			tickFormat: truncateTick,
-			...(shouldRotateXLabels ? { tickRotate: -40 } : {})
-		};
-	});
+	// Coerces a raw x value to the right JS type for Plotly's axis-type
+	// inference (Plotly infers date/numeric axes from the data's actual JS
+	// value type — Date objects for date axes, numbers for linear axes).
+	function xValue(raw: unknown): unknown {
+		if (xIsMostlyDateLike) return new Date(raw as string | number | Date);
+		if (xIsMostlyNumeric) return toNumber(raw);
+		return String(raw ?? '');
+	}
 
-	// Same idea for a categorical axis placed on y (horizontal bars) — no
-	// rotation there since sideways text on a vertical axis reads poorly.
-	const categoricalYScale = $derived.by(() => {
-		if (xIsMostlyNumeric || xIsMostlyDateLike) return {};
-		return { tickFormat: truncateTick };
-	});
+	// Categorical-axis options: explicit category order (`categoryorder` +
+	// `categoryarray`) plus truncated display labels (`tickvals`/`ticktext` —
+	// full text still available via each trace's hovertemplate), rotated when
+	// there are many categories or the labels are long so they don't overlap.
+	function categoricalAxisOpts(domain: string[], rotate: boolean): Record<string, unknown> {
+		return {
+			type: 'category',
+			categoryorder: 'array',
+			categoryarray: domain,
+			tickmode: 'array',
+			tickvals: domain,
+			ticktext: domain.map(truncateTick),
+			...(rotate ? { tickangle: -40 } : {})
+		};
+	}
 
 	const hasSecondaryAxis = $derived(
 		(config.yColumnsSecondary?.length ?? 0) > 0 &&
-		(config.chartType === 'line' || config.chartType === 'area')
+			(config.chartType === 'line' || config.chartType === 'area')
 	);
 
 	const seriesList = $derived(
@@ -151,24 +158,27 @@
 		}))
 	);
 
-	const enableColorSplitBars = $derived.by(() =>
-		(config.chartType === 'bar' || config.chartType === 'bar-horizontal') &&
-		Boolean(config.colorColumn) &&
-		config.yColumns.length === 1
+	const enableColorSplitBars = $derived.by(
+		() =>
+			(config.chartType === 'bar' || config.chartType === 'bar-horizontal') &&
+			Boolean(config.colorColumn) &&
+			config.yColumns.length === 1
 	);
 
 	// ── Grouped color-split lines (line/area + colorColumn + single Y) ─────────
-	const enableColorSplitLines = $derived.by(() =>
-		(config.chartType === 'line' || config.chartType === 'area') &&
-		Boolean(config.colorColumn) &&
-		config.yColumns.length === 1
+	const enableColorSplitLines = $derived.by(
+		() =>
+			(config.chartType === 'line' || config.chartType === 'area') &&
+			Boolean(config.colorColumn) &&
+			config.yColumns.length === 1
 	);
 
 	// ── Grouped color-split scatter (scatter/bubble + colorColumn) ─────────────
-	const enableColorSplitScatter = $derived.by(() =>
-		(config.chartType === 'scatter' || config.chartType === 'bubble') &&
-		Boolean(config.colorColumn) &&
-		config.yColumns.length >= 1
+	const enableColorSplitScatter = $derived.by(
+		() =>
+			(config.chartType === 'scatter' || config.chartType === 'bubble') &&
+			Boolean(config.colorColumn) &&
+			config.yColumns.length >= 1
 	);
 
 	const colorSplitSpec = $derived.by(() => {
@@ -200,7 +210,13 @@
 	});
 
 	const colorSplitBarData = $derived.by(() => {
-		if (!enableColorSplitBars || !config.colorColumn || !config.xColumn || config.yColumns.length === 0) return [];
+		if (
+			!enableColorSplitBars ||
+			!config.colorColumn ||
+			!config.xColumn ||
+			config.yColumns.length === 0
+		)
+			return [];
 		const metric = config.yColumns[0];
 		const grouped = new Map<string, Record<string, unknown>>();
 		const allow = new Set(colorSplitSpec.labels);
@@ -213,7 +229,9 @@
 			const label: string = String(cRaw);
 			const seriesKey = allow.has(label)
 				? colorSplitSpec.keyByLabel[label]
-				: (colorSplitSpec.hasOther ? colorSplitSpec.keyByLabel.__other__ : null);
+				: colorSplitSpec.hasOther
+					? colorSplitSpec.keyByLabel.__other__
+					: null;
 			if (!seriesKey) continue;
 			const y = coerceNumber(row[metric]) ?? 0;
 			if (!grouped.has(x)) grouped.set(x, { x });
@@ -234,11 +252,18 @@
 			if (raw == null) continue;
 			counts.set(String(raw), (counts.get(String(raw)) ?? 0) + 1);
 		}
-		return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxGroups).map(([k]) => k);
+		return [...counts.entries()]
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, maxGroups)
+			.map(([k]) => k);
 	}
 
-	const colorSplitLineGroups = $derived(enableColorSplitLines ? topGroupKeys(config.colorColumn) : [] as string[]);
-	const colorSplitScatterGroups = $derived(enableColorSplitScatter ? topGroupKeys(config.colorColumn) : [] as string[]);
+	const colorSplitLineGroups = $derived(
+		enableColorSplitLines ? topGroupKeys(config.colorColumn) : ([] as string[])
+	);
+	const colorSplitScatterGroups = $derived(
+		enableColorSplitScatter ? topGroupKeys(config.colorColumn) : ([] as string[])
+	);
 
 	const barSeriesLayout = $derived.by(() => {
 		if (config.seriesMode === 'stacked') return 'stack';
@@ -261,7 +286,8 @@
 	}
 
 	const sortedBarData = $derived.by(() => {
-		const base = enableColorSplitBars && colorSplitSeriesList.length > 0 ? colorSplitBarData : chartData;
+		const base =
+			enableColorSplitBars && colorSplitSeriesList.length > 0 ? colorSplitBarData : chartData;
 		if (!config.sortOrder || config.sortOrder === 'none') return base;
 		const yKey = config.yColumns[0] ?? 'y';
 		return applySortOrder(base as { x: unknown }[], yKey);
@@ -304,13 +330,15 @@
 	});
 
 	// ── Histogram bins ─────────────────────────────────────────────────────────
-	interface BinDatum { x0: number; x1: number; y: number }
+	interface BinDatum {
+		x0: number;
+		x1: number;
+		y: number;
+	}
 	const histData = $derived.by((): BinDatum[] => {
 		if (config.yColumns.length === 0) return [];
 		const col = config.yColumns[0];
-		const vals = rows
-			.map((r) => coerceNumber(r[col]))
-			.filter((v): v is number => v !== null);
+		const vals = rows.map((r) => coerceNumber(r[col])).filter((v): v is number => v !== null);
 		if (vals.length === 0) return [];
 		const min = Math.min(...vals);
 		const max = Math.max(...vals);
@@ -425,10 +453,12 @@
 		const comp = compCol ? (coerceNumber(row[compCol]) ?? null) : null;
 		const sparkCol = config.colorColumn;
 		const sparkPoints = sparkCol
-			? rows.map((r) => ({
-					date: r[sparkCol],
-					val: coerceNumber(r[config.xColumn]) ?? 0
-			  })).filter((p) => p.date != null)
+			? rows
+					.map((r) => ({
+						date: r[sparkCol],
+						val: coerceNumber(r[config.xColumn]) ?? 0
+					}))
+					.filter((p) => p.date != null)
 			: [];
 		return { val, comp, compCol, sparkPoints };
 	});
@@ -461,111 +491,44 @@
 	// ── "needs config" guard ───────────────────────────────────────────────────
 	const needsConfig = $derived.by(() => {
 		const t = config.chartType;
-		if (t === 'table' || t === 'big-value' || t === 'value' || t === 'delta' || t === 'custom') return false;
+		if (t === 'table' || t === 'big-value' || t === 'value' || t === 'delta' || t === 'custom')
+			return false;
 		if (t === 'histogram') return config.yColumns.length === 0;
-		if (t === 'heatmap') return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
+		if (t === 'heatmap')
+			return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
 		if (t === 'box-plot') return config.yColumns.length < 5;
-		if (t === 'sankey') return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
+		if (t === 'sankey')
+			return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
 		return !config.xColumn || config.yColumns.length === 0;
 	});
 
-	const CHART_COLOR_RANGE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
-	const PLOT_STYLE = {
-		fontFamily: 'Inter, system-ui, sans-serif',
-		fontSize: '11px',
-		background: 'transparent',
-		color: 'var(--muted-foreground)'
-	};
+	const CHART_COLOR_RANGE = [
+		'var(--chart-1)',
+		'var(--chart-2)',
+		'var(--chart-3)',
+		'var(--chart-4)',
+		'var(--chart-5)'
+	];
 
-	// Discrete fill/stroke channels can use raw var(--chart-1) strings — the browser
-	// resolves them at paint time, same as any other CSS. But a *continuous* color
-	// scale (heatmap/calendar-heatmap) needs Plot/d3 to interpolate between the range
-	// endpoints in JS at scale-construction time, which requires an actual parseable
-	// color, not a CSS custom property reference. Resolve to a concrete value instead.
-	function oklchToRgb(l: number, c: number, h: number): string {
-		const hRad = (h * Math.PI) / 180;
-		const a = c * Math.cos(hRad);
-		const b = c * Math.sin(hRad);
-		const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-		const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-		const s_ = l - 0.0894841775 * a - 1.291485548 * b;
-		const ll = l_ ** 3, mm = m_ ** 3, ss = s_ ** 3;
-		const lr = 4.0767416621 * ll - 3.3077115913 * mm + 0.2309699292 * ss;
-		const lg = -1.2684380046 * ll + 2.6097574011 * mm - 0.3413193965 * ss;
-		const lb = -0.0041960863 * ll - 0.7034186147 * mm + 1.707614701 * ss;
-		const gamma = (x: number) => {
-			const v = Math.max(0, Math.min(1, x));
-			return v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
-		};
-		return `rgb(${Math.round(gamma(lr) * 255)},${Math.round(gamma(lg) * 255)},${Math.round(gamma(lb) * 255)})`;
+	// Resolved (concrete rgb(...)) chart colors — needed wherever a color has
+	// to be alpha-blended (area fills) or interpolated (continuous heatmap
+	// scales), since CSS `var(--chart-N)` references can't be combined with an
+	// alpha channel client-side the way a concrete color can. Discrete
+	// fill/stroke channels elsewhere use the literal `var(--chart-N)` strings
+	// above instead — the browser resolves those at paint time same as any
+	// other CSS, no JS-side resolution needed.
+	const resolvedChartColors = $derived.by(() => {
+		void watchTheme(); // re-resolve when the theme toggles
+		return resolveChartColorway();
+	});
+
+	function areaFillColor(resolvedColor: string, alpha = 0.2): string {
+		const m = resolvedColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+		return m ? `rgba(${m[1]},${m[2]},${m[3]},${alpha})` : resolvedColor;
 	}
 
-	function resolveCSSColor(varName: string): string {
-		const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-		const m = raw.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-		if (m) return oklchToRgb(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
-		return raw;
-	}
-
-	// Pairs a chart's primary mark with a floating, pointer-following tooltip
-	// using Plot's own Plot.tip/Plot.pointer — renders inside the same SVG Plot
-	// returns, so it needs no overlay/z-index management and is automatically
-	// captured by PNG export. Only used for Plot.plot-rendered chart types; the
-	// hand-rolled SVG charts (pie/funnel/sankey) keep their native <title> tooltips.
-	function tipMark<T>(
-		data: T[],
-		opts: { x?: string; y?: string; fx?: string; fy?: string; title: (d: T) => string }
-	): Plot.Markish {
-		// className hooks the `.plot-tip text` rule below — Plot's Tip mark hardcodes
-		// the text fill to currentColor via setAttribute, bypassing the plot's own
-		// `color` style (var(--muted-foreground), tuned for axis labels), so a real
-		// CSS rule is the only way to give tip text its own better-contrast color.
-		return Plot.tip(data, Plot.pointer({ ...opts, stroke: 'var(--border)', className: 'plot-tip' }));
-	}
-
-	// Coerces a raw x value to the right JS type for Plot's scale inference
-	// (Plot infers scale type from the channel's actual JS value type, unlike
-	// ECharts which took an explicit axis `type` string).
-	function xValue(raw: unknown): unknown {
-		if (xIsMostlyDateLike) return new Date(raw as string | number | Date);
-		if (xIsMostlyNumeric) return toNumber(raw);
-		return String(raw ?? '');
-	}
-
-	// Plot's default ordinal-scale domain is sorted ascending, which scrambles
-	// natural data order (e.g. month names) — pass this as an explicit `domain`
-	// wherever the x/y channel is categorical, to preserve row order like the
-	// old ECharts category axis did.
-	function categoricalDomain(values: unknown[]): string[] {
-		const seen = new Set<string>();
-		for (const v of values) {
-			if (v == null) continue;
-			seen.add(String(v));
-		}
-		return [...seen];
-	}
-
-	// Reshapes a wide {x, [seriesKey]: value}[] dataset into long {x, series, value}[]
-	// rows, which Plot's fill/stroke + facet/stack channels expect for multi-series marks.
-	function meltSeries(
-		data: Record<string, unknown>[],
-		series: { key: string; label: string }[]
-	): { x: string; series: string; value: number | null }[] {
-		const out: { x: string; series: string; value: number | null }[] = [];
-		for (const d of data) {
-			for (const s of series) {
-				out.push({ x: String(d.x ?? ''), series: s.label, value: toNumber(d[s.key]) });
-			}
-		}
-		return out;
-	}
-
-	const SVG_NS = 'http://www.w3.org/2000/svg';
 	const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-	// Plot has no native pie/funnel/sankey mark, so these three build raw SVG
-	// directly — PlotChart's render contract only needs "any DOM Element", not
-	// specifically a Plot.plot() result.
 	function calendarCells(pairs: [string, number][]) {
 		return pairs.map(([dateStr, value]) => {
 			const date = new Date(dateStr);
@@ -577,743 +540,755 @@
 		});
 	}
 
-	function renderPie(data: { x: string; y: number }[], width: number, height: number): Element {
-		const total = data.reduce((s, d) => s + d.y, 0);
-		const legendH = 32;
-		const svgH = Math.max(40, height - legendH);
-		const radius = Math.min(width, svgH) / 2 - 16;
-		const pieGen = pie<{ x: string; y: number }>().value((d) => d.y).sort(null);
-		const arcGen = arc<PieArcDatum<{ x: string; y: number }>>().innerRadius(radius * 0.55).outerRadius(radius);
-
-		const svg = document.createElementNS(SVG_NS, 'svg');
-		svg.setAttribute('width', String(width));
-		svg.setAttribute('height', String(svgH));
-		svg.setAttribute('viewBox', `0 0 ${width} ${svgH}`);
-		const g = document.createElementNS(SVG_NS, 'g');
-		g.setAttribute('transform', `translate(${width / 2},${svgH / 2})`);
-
-		pieGen(data).forEach((a, i) => {
-			const path = document.createElementNS(SVG_NS, 'path');
-			path.setAttribute('d', arcGen(a) ?? '');
-			path.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
-			const pct = total > 0 ? ((a.data.y / total) * 100).toFixed(1) : '0';
-			const title = document.createElementNS(SVG_NS, 'title');
-			title.textContent = `${a.data.x}: ${fmtNum(a.data.y)} (${pct}%)`;
-			path.appendChild(title);
-			g.appendChild(path);
-
-			if (a.endAngle - a.startAngle > 0.35) {
-				const [lx, ly] = arcGen.centroid(a);
-				const text = document.createElementNS(SVG_NS, 'text');
-				text.setAttribute('x', String(lx));
-				text.setAttribute('y', String(ly));
-				text.setAttribute('text-anchor', 'middle');
-				text.setAttribute('font-size', '10');
-				text.setAttribute('fill', 'var(--popover-foreground)');
-				text.textContent = `${pct}%`;
-				g.appendChild(text);
-			}
-		});
-		svg.appendChild(g);
-
-		const wrap = document.createElement('div');
-		wrap.style.display = 'flex';
-		wrap.style.flexDirection = 'column';
-		wrap.style.height = '100%';
-		wrap.appendChild(svg);
-
-		const legend = document.createElement('div');
-		legend.style.cssText = `display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-size:11px;color:var(--muted-foreground);height:${legendH}px;align-items:center;overflow:hidden`;
-		data.forEach((d, i) => {
-			const item = document.createElement('span');
-			item.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
-			const swatch = document.createElement('span');
-			swatch.style.cssText = `width:8px;height:8px;border-radius:2px;background:${CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]}`;
-			item.appendChild(swatch);
-			item.appendChild(document.createTextNode(d.x));
-			legend.appendChild(item);
-		});
-		wrap.appendChild(legend);
-		return wrap;
+	// Builds an explicit category order from a column of raw values — Plotly's
+	// default category ordering is alphabetical, which scrambles natural data
+	// order (e.g. month names); pass this as `categoryarray` wherever the
+	// axis is categorical, to preserve row order instead.
+	function categoricalDomain(values: unknown[]): string[] {
+		const seen = new Set<string>();
+		for (const v of values) {
+			if (v == null) continue;
+			seen.add(String(v));
+		}
+		return [...seen];
 	}
 
-	function renderFunnel(data: { x: string; y: number }[], width: number, height: number): Element {
-		const max = Math.max(...data.map((d) => d.y), 1);
-		const first = data[0]?.y || 1;
-		const n = data.length;
-		const gap = 3;
-		const stageH = n > 0 ? (height - gap * (n - 1)) / n : height;
-		const svg = document.createElementNS(SVG_NS, 'svg');
-		svg.setAttribute('width', String(width));
-		svg.setAttribute('height', String(height));
-		const widthFrac = (v: number) => (v / max) * width * 0.84;
-
-		data.forEach((d, i) => {
-			const topW = widthFrac(d.y);
-			const bottomW = i < n - 1 ? widthFrac(data[i + 1].y) : topW;
-			const y0 = i * (stageH + gap);
-			const y1 = y0 + stageH;
-			const x0a = (width - topW) / 2;
-			const x0b = (width + topW) / 2;
-			const x1a = (width - bottomW) / 2;
-			const x1b = (width + bottomW) / 2;
-
-			const path = document.createElementNS(SVG_NS, 'path');
-			path.setAttribute('d', `M${x0a},${y0} L${x0b},${y0} L${x1b},${y1} L${x1a},${y1} Z`);
-			path.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
-			const title = document.createElementNS(SVG_NS, 'title');
-			title.textContent = `${d.x}: ${fmtNum(d.y)} (${((d.y / first) * 100).toFixed(1)}%)`;
-			path.appendChild(title);
-			svg.appendChild(path);
-
-			const text = document.createElementNS(SVG_NS, 'text');
-			text.setAttribute('x', String(width / 2));
-			text.setAttribute('y', String((y0 + y1) / 2));
-			text.setAttribute('text-anchor', 'middle');
-			text.setAttribute('dominant-baseline', 'middle');
-			text.setAttribute('font-size', '11');
-			text.setAttribute('fill', 'var(--popover-foreground)');
-			text.textContent = `${d.x}: ${fmtNum(d.y)}`;
-			svg.appendChild(text);
-		});
-		return svg;
-	}
-
-	interface SankeyNodeIn { name: string }
-	interface SankeyLinkIn { source: string; target: string; value: number }
-
-	function renderSankey(nodesIn: SankeyNodeIn[], linksIn: SankeyLinkIn[], width: number, height: number): Element {
-		const gen = sankey<SankeyNodeIn, Record<string, unknown>>()
-			.nodeId((d) => d.name)
-			.nodeAlign(sankeyLeft)
-			.nodeWidth(14)
-			.nodePadding(10)
-			.extent([
-				[1, 1],
-				[Math.max(2, width - 1), Math.max(2, height - 1)]
-			]);
-		// d3-sankey mutates its inputs in place — copy so Svelte's reactive arrays aren't touched
-		const { nodes, links } = gen({
-			nodes: nodesIn.map((d) => ({ ...d })),
-			links: linksIn.map((d) => ({ ...d }))
-		});
-
-		const svg = document.createElementNS(SVG_NS, 'svg');
-		svg.setAttribute('width', String(width));
-		svg.setAttribute('height', String(height));
-		const linkPath = sankeyLinkHorizontal();
-
-		links.forEach((l, i) => {
-			const path = document.createElementNS(SVG_NS, 'path');
-			path.setAttribute('d', linkPath(l as Parameters<typeof linkPath>[0]) ?? '');
-			path.setAttribute('fill', 'none');
-			path.setAttribute('stroke', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
-			path.setAttribute('stroke-opacity', '0.4');
-			path.setAttribute('stroke-width', String(Math.max(1, l.width ?? 1)));
-			const title = document.createElementNS(SVG_NS, 'title');
-			const sourceName = typeof l.source === 'object' ? (l.source as SankeyNodeIn).name : String(l.source);
-			const targetName = typeof l.target === 'object' ? (l.target as SankeyNodeIn).name : String(l.target);
-			title.textContent = `${sourceName} → ${targetName}: ${fmtNum(l.value)}`;
-			path.appendChild(title);
-			svg.appendChild(path);
-		});
-
-		nodes.forEach((node, i) => {
-			const x0 = node.x0 ?? 0;
-			const x1 = node.x1 ?? 0;
-			const y0 = node.y0 ?? 0;
-			const y1 = node.y1 ?? 0;
-			const rect = document.createElementNS(SVG_NS, 'rect');
-			rect.setAttribute('x', String(x0));
-			rect.setAttribute('y', String(y0));
-			rect.setAttribute('width', String(x1 - x0));
-			rect.setAttribute('height', String(y1 - y0));
-			rect.setAttribute('fill', CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]);
-			svg.appendChild(rect);
-
-			const text = document.createElementNS(SVG_NS, 'text');
-			const onLeft = x0 < width / 2;
-			text.setAttribute('x', String(onLeft ? x1 + 6 : x0 - 6));
-			text.setAttribute('y', String((y0 + y1) / 2));
-			text.setAttribute('text-anchor', onLeft ? 'start' : 'end');
-			text.setAttribute('dominant-baseline', 'middle');
-			text.setAttribute('font-size', '11');
-			text.setAttribute('fill', 'var(--popover-foreground)');
-			text.textContent = node.name;
-			svg.appendChild(text);
-		});
-		return svg;
-	}
-
-	const customRender = $derived.by(() => {
-		if (config.chartType !== 'custom') return null;
-		return (width: number, height: number): Element => {
-			try {
-				// eslint-disable-next-line no-new-func
-				const fn = new Function(
-					'rows', 'columns', 'Plot', 'width', 'height',
-					`'use strict'; ${config.code ?? ''}`
-				);
-				const result = fn(rows, columns, Plot, width, height);
-				return result instanceof Element ? result : Plot.plot(result);
-			} catch (e) {
-				const div = document.createElement('div');
-				div.className = 'text-sm text-destructive p-4';
-				div.textContent = `Plot spec error: ${e instanceof Error ? e.message : String(e)}`;
-				return div;
+	// ── Histogram ────────────────────────────────────────────────────────────
+	const histogramFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'histogram') return null;
+		const bins = histData;
+		if (bins.length === 0) return null;
+		const xLabel = config.yColumns[0] ? humanize(config.yColumns[0]) : '';
+		const xs = bins.map((b) => (b.x0 + b.x1) / 2);
+		const widths = bins.map((b) => b.x1 - b.x0);
+		const customdata = bins.map((b) => `${fmtNum(b.x0)}–${fmtNum(b.x1)}: ${fmtNum(b.y)}`);
+		return {
+			data: [
+				{
+					type: 'bar',
+					x: xs,
+					y: bins.map((b) => b.y),
+					width: widths,
+					marker: { color: 'var(--chart-1)' },
+					customdata,
+					hovertemplate: '%{customdata}<extra></extra>'
+				} as unknown as Data
+			],
+			layout: {
+				bargap: 0,
+				xaxis: { title: { text: xLabel }, tickformat: '~s' } as Partial<Layout['xaxis']>,
+				yaxis: { title: { text: 'Count' }, tickformat: '~s' } as Partial<Layout['yaxis']>
 			}
 		};
 	});
 
-	const plotRender = $derived.by((): ((width: number, height: number) => Element) | null => {
-		const t = config.chartType;
-
-		if (t === 'custom') return customRender;
-
-		// ── Histogram ────────────────────────────────────────────────────────
-		if (t === 'histogram') {
-			const bins = histData;
-			const xLabel = config.yColumns[0] ? humanize(config.yColumns[0]) : '';
-			const binsWithMid = bins.map((b) => ({ ...b, xmid: (b.x0 + b.x1) / 2 }));
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					x: { label: xLabel, tickFormat: fmtNum },
-					y: { label: 'Count', tickFormat: fmtNum, grid: true },
-					marks: [
-						Plot.rectY(bins, { x1: 'x0', x2: 'x1', y: 'y', fill: 'var(--chart-1)' }),
-						Plot.ruleY([0]),
-						tipMark(binsWithMid, {
-							x: 'xmid',
-							y: 'y',
-							title: (d) => `${fmtNum(d.x0)}–${fmtNum(d.x1)}: ${fmtNum(d.y)}`
-						})
-					]
-				});
-		}
-
-		// ── Heatmap ──────────────────────────────────────────────────────────
-		if (t === 'heatmap') {
-			const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
-			void mode.current; // re-resolve colors when the theme toggles
-			const colorRange = [resolveCSSColor('--background'), resolveCSSColor('--chart-1')];
-			const rotateHeatmapX = xLabels.length > 8 || xLabels.some((l) => l.length > 12);
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					marginLeft: 90,
-					marginBottom: rotateHeatmapX ? 78 : 60,
-					x: { domain: xLabels, tickFormat: truncateTick, ...(rotateHeatmapX ? { tickRotate: -40 } : {}) },
-					y: { domain: yLabels, tickFormat: truncateTick },
-					color: { type: 'linear', domain: [minVal, maxVal], range: colorRange },
-					marks: [
-						Plot.cell(cells, {
-							x: 'x',
-							y: 'y',
-							fill: 'value',
-							title: (d: { x: string; y: string; value: number | null }) =>
-								`${d.x} / ${d.y}: ${d.value != null ? fmtNum(d.value) : 'N/A'}`
-						}),
-						tipMark(cells, {
-							x: 'x',
-							y: 'y',
-							title: (d) => `${d.x} / ${d.y}: ${d.value != null ? fmtNum(d.value) : 'N/A'}`
-						})
-					]
-				});
-		}
-
-		// ── Scatter / Bubble ─────────────────────────────────────────────────
-		if (t === 'scatter' || t === 'bubble') {
-			const isBubble = t === 'bubble';
-			const yCol = config.yColumns[0];
-			const colorSplit = enableColorSplitScatter && colorSplitScatterGroups.length > 0;
-			const groups = colorSplitScatterGroups;
-			const colorCol = config.colorColumn;
-
-			const data = colorSplit
-				? rows
-						.filter(
-							(r) =>
-								colorCol != null && r[colorCol] != null && groups.includes(String(r[colorCol])) &&
-								r[config.xColumn] != null && r[yCol] != null
-						)
-						.map((r) => ({
-							x: xValue(r[config.xColumn]),
-							y: coerceNumber(r[yCol]),
-							group: String(r[colorCol as string]),
-							size: isBubble && config.sizeColumn ? coerceNumber(r[config.sizeColumn]) : null
-						}))
-				: chartData
-						.filter((d) => d[yCol] != null)
-						.map((d) => ({ x: xValue(d.x), y: d[yCol] as number | null, group: '', size: (d._size as number | null) ?? null }));
-
-			const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
-			const xDomain = xCategorical ? categoricalDomain(data.map((d) => d.x)) : undefined;
-
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
-					color: colorSplit ? { type: 'ordinal', range: CHART_COLOR_RANGE } : undefined,
-					r: isBubble ? { range: [4, 30] } : undefined,
-					x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
-					y: { label: humanize(yCol), tickFormat: fmtNum, grid: true },
-					marks: [
-						Plot.dot(data, {
-							x: 'x',
-							y: 'y',
-							r: isBubble ? 'size' : undefined,
-							fill: colorSplit ? 'group' : 'var(--chart-1)',
-							title: (d: { group: string; x: unknown; y: number | null }) =>
-								`${colorSplit ? humanize(d.group) + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
-						}),
-						tipMark(data, {
-							x: 'x',
-							y: 'y',
-							title: (d) => `${colorSplit ? humanize(d.group) + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
-						})
-					]
-				});
-		}
-
-		// ── Bar / Bar-horizontal ─────────────────────────────────────────────
-		if (t === 'bar' || t === 'bar-horizontal') {
-			const isHoriz = t === 'bar-horizontal';
-			const data = sortedBarData;
-			const seriesDef = barSeriesToRender;
-			const layout = barSeriesLayout;
-			const valueLabel = seriesDef.length === 1 ? seriesDef[0].label : '';
-			const catDomain = categoricalDomain(data.map((d) => (d as Record<string, unknown>).x));
-
-			let marks: Plot.Markish[];
-			const catScale: Record<string, unknown> = {};
-			if (seriesDef.length <= 1) {
-				const key = seriesDef[0]?.key ?? 'x';
-				const flat = data.map((d) => ({
-					x: String((d as Record<string, unknown>).x ?? ''),
-					value: toNumber((d as Record<string, unknown>)[key])
-				}));
-				const flatTitle = (d: { x: string; value: number | null }) => `${d.x}: ${fmtNum(d.value)}`;
-				marks = [
-					isHoriz
-						? Plot.barX(flat, { y: 'x', x: 'value', fill: 'var(--chart-1)', title: flatTitle })
-						: Plot.barY(flat, { x: 'x', y: 'value', fill: 'var(--chart-1)', title: flatTitle }),
-					tipMark(flat, isHoriz ? { y: 'x', x: 'value', title: flatTitle } : { x: 'x', y: 'value', title: flatTitle })
-				];
-				catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
-			} else {
-				const long = meltSeries(data as Record<string, unknown>[], seriesDef);
-				const seriesTitle = (d: { x: string; series: string; value: number | null }) =>
-					`${d.series} — ${d.x}: ${fmtNum(d.value)}`;
-				if (layout === 'stack') {
-					// Plot.pointer is given the unstacked x/value channels here (not the
-					// stack-transformed positions) — close enough to find the nearest bar
-					// segment along the categorical axis for tooltip purposes without
-					// needing to re-derive the stack's cumulative y-extents.
-					marks = [
-						isHoriz
-							? Plot.barX(long, Plot.stackX({ y: 'x', x: 'value', fill: 'series', title: seriesTitle }))
-							: Plot.barY(long, Plot.stackY({ x: 'x', y: 'value', fill: 'series', title: seriesTitle })),
-						tipMark(long, isHoriz ? { y: 'x', x: 'value', title: seriesTitle } : { x: 'x', y: 'value', title: seriesTitle })
-					];
-					catScale[isHoriz ? 'y' : 'x'] = { domain: catDomain, ...(isHoriz ? categoricalYScale : categoricalXScale) };
-				} else {
-					marks = [
-						isHoriz
-							? Plot.barX(long, { fy: 'x', y: 'series', x: 'value', fill: 'series', title: seriesTitle })
-							: Plot.barY(long, { fx: 'x', x: 'series', y: 'value', fill: 'series', title: seriesTitle }),
-						tipMark(
-							long,
-							isHoriz
-								? { fy: 'x', y: 'series', x: 'value', title: seriesTitle }
-								: { fx: 'x', x: 'series', y: 'value', title: seriesTitle }
-						)
-					];
-					catScale[isHoriz ? 'fy' : 'fx'] = { domain: catDomain, tickFormat: truncateTick };
-					// The inner per-bar axis would otherwise print each series name
-					// (e.g. "Order Count", "Total Revenue") under every facet, which
-					// collide into illegible overlapping text — color + legend already
-					// identify the series, so hide this axis instead of trying to fit it.
-					catScale[isHoriz ? 'y' : 'x'] = { axis: null };
-				}
+	// ── Heatmap ──────────────────────────────────────────────────────────────
+	const heatmapFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'heatmap') return null;
+		const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
+		if (cells.length === 0) return null;
+		void watchTheme(); // re-resolve colors when the theme toggles
+		const colorLow = resolveCSSColor('--background');
+		const colorHigh = resolveCSSColor('--chart-1');
+		const rotateHeatmapX = xLabels.length > 8 || xLabels.some((l) => l.length > 12);
+		const customdata = cells.map(
+			(c) => `${c.x} / ${c.y}: ${c.value != null ? fmtNum(c.value) : 'N/A'}`
+		);
+		return {
+			data: [
+				{
+					type: 'heatmap',
+					x: cells.map((c) => c.x),
+					y: cells.map((c) => c.y),
+					z: cells.map((c) => c.value),
+					zmin: minVal,
+					zmax: maxVal,
+					colorscale: [
+						[0, colorLow],
+						[1, colorHigh]
+					],
+					customdata,
+					hovertemplate: '%{customdata}<extra></extra>'
+				} as unknown as Data
+			],
+			layout: {
+				margin: { l: 90, b: rotateHeatmapX ? 78 : 60 },
+				xaxis: categoricalAxisOpts(xLabels, rotateHeatmapX) as Partial<Layout['xaxis']>,
+				yaxis: categoricalAxisOpts(yLabels, false) as Partial<Layout['yaxis']>
 			}
+		};
+	});
 
-			const valueScale = { label: valueLabel, tickFormat: fmtNum, grid: true };
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					color: { range: CHART_COLOR_RANGE, legend: seriesDef.length > 1 },
-					marginBottom: isHoriz ? 32 : (shouldRotateXLabels ? 78 : 56),
-					marginLeft: isHoriz ? 90 : 48,
-					...(isHoriz ? { x: valueScale } : { y: valueScale }),
-					...catScale,
-					marks
-				});
+	// ── Scatter / Bubble ─────────────────────────────────────────────────────
+	const scatterFigure = $derived.by((): Figure | null => {
+		const t = config.chartType;
+		if (t !== 'scatter' && t !== 'bubble') return null;
+		const isBubble = t === 'bubble';
+		const yCol = config.yColumns[0];
+		if (!yCol) return null;
+		const colorSplit = enableColorSplitScatter && colorSplitScatterGroups.length > 0;
+		const groups = colorSplit ? colorSplitScatterGroups : [''];
+		const colorCol = config.colorColumn;
+
+		interface Pt {
+			x: unknown;
+			y: number | null;
+			group: string;
+			size: number | null;
 		}
 
-		// ── Line / Area ──────────────────────────────────────────────────────
-		if (t === 'line' || t === 'area') {
-			const isArea = t === 'area';
-
-			// ── Grouped by colorColumn ─────────────────────────────────────
-			if (enableColorSplitLines && colorSplitLineGroups.length > 0) {
-				const groups = colorSplitLineGroups;
-				const colorCol = config.colorColumn as string;
-				const yCol = config.yColumns[0];
-				const data = rows
+		const allData: Pt[] = colorSplit
+			? rows
 					.filter(
 						(r) =>
-							r[colorCol] != null && groups.includes(String(r[colorCol])) &&
-							r[config.xColumn] != null && r[yCol] != null
+							colorCol != null &&
+							r[colorCol] != null &&
+							colorSplitScatterGroups.includes(String(r[colorCol])) &&
+							r[config.xColumn] != null &&
+							r[yCol] != null
 					)
-					.map((r) => ({ x: xValue(r[config.xColumn]), y: coerceNumber(r[yCol]), group: String(r[colorCol]) }));
-				const stacked = isArea && areaSeriesLayout === 'stack';
-				const lineMark = stacked
-					? Plot.lineY(data, Plot.stackY({ x: 'x', y: 'y', stroke: 'group' }))
-					: Plot.lineY(data, { x: 'x', y: 'y', stroke: 'group' });
-				const marks: Plot.Markish[] = isArea
-					? [
-							stacked
-								? Plot.areaY(data, Plot.stackY({ x: 'x', y: 'y', fill: 'group', fillOpacity: 0.2 }))
-								: Plot.areaY(data, { x: 'x', y: 'y', fill: 'group', fillOpacity: 0.2 }),
-							lineMark
-						]
-					: [lineMark];
-				marks.push(
-					tipMark(data, { x: 'x', y: 'y', title: (d) => `${humanize(d.group)}: ${fmtNum(d.y)}` })
-				);
-				const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
-				const xDomain = xCategorical ? categoricalDomain(data.map((d) => d.x)) : undefined;
-				return (width, height) =>
-					Plot.plot({
-						width,
-						height,
-						style: PLOT_STYLE,
-						color: { type: 'ordinal', range: CHART_COLOR_RANGE },
-						marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
-						x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
-						y: { tickFormat: fmtNum, grid: true },
-						marks
-					});
-			}
+					.map((r) => ({
+						x: xValue(r[config.xColumn]),
+						y: coerceNumber(r[yCol]),
+						group: String(r[colorCol as string]),
+						size: isBubble && config.sizeColumn ? coerceNumber(r[config.sizeColumn]) : null
+					}))
+			: chartData
+					.filter((d) => d[yCol] != null)
+					.map((d) => ({
+						x: xValue(d.x),
+						y: d[yCol] as number | null,
+						group: '',
+						size: (d._size as number | null) ?? null
+					}));
 
-			// ── Standard multi-series (+ secondary axis rescaled onto shared scale) ─
-			const primary = seriesList;
-			const secondary = secondarySeriesList;
-			const primaryData = chartData.map((d) => ({ ...d, x: xValue(d.x) }));
+		if (allData.length === 0) return null;
 
-			const rescaleMap: Record<string, (v: number) => number> = {};
-			if (secondary.length > 0) {
-				const primVals = primary.flatMap((s) =>
-					primaryData.map((d) => toNumber((d as Record<string, unknown>)[s.key])).filter((v): v is number => v != null)
-				);
-				const primaryMin = primVals.length ? Math.min(...primVals) : 0;
-				const primaryMax = primVals.length ? Math.max(...primVals) : 1;
-				for (const s of secondary) {
-					const vals = primaryData
-						.map((d) => toNumber((d as Record<string, unknown>)[s.key]))
-						.filter((v): v is number => v != null);
-					const secMin = vals.length ? Math.min(...vals) : 0;
-					const secMax = vals.length ? Math.max(...vals) : 1;
-					const range = secMax - secMin || 1;
-					const span = primaryMax - primaryMin || 1;
-					rescaleMap[s.key] = (v: number) => primaryMin + ((v - secMin) / range) * span;
-				}
-			}
+		const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
+		const xDomain = xCategorical ? categoricalDomain(allData.map((d) => d.x)) : undefined;
 
-			const marks: Plot.Markish[] = [];
-			for (const s of primary) {
-				if (isArea) marks.push(Plot.areaY(primaryData, { x: 'x', y: s.key, fill: s.color, fillOpacity: 0.2 }));
-				marks.push(
-					Plot.lineY(primaryData, {
-						x: 'x',
-						y: s.key,
-						stroke: s.color,
-						title: (d: Record<string, unknown>) => `${s.label}: ${fmtNum(d[s.key])}`
-					})
-				);
+		const allSizes = isBubble ? allData.map((d) => d.size ?? 0) : [];
+		const maxSize = allSizes.length ? Math.max(...allSizes, 1) : 1;
+		// Approximates Plot's `r: {range:[4,30]}` marker-radius scale — Plotly
+		// has no direct equivalent, so `sizeref` is derived from the documented
+		// area-mode formula (sizeref = 2*max(size)/desiredMaxDiameterPx**2) to
+		// land in roughly the same visual diameter range.
+		const MAX_MARKER_PX = 60;
+		const sizeref = isBubble ? (2 * maxSize) / MAX_MARKER_PX ** 2 : undefined;
+
+		const traces: Data[] = groups.map((g, i) => {
+			const groupData = colorSplit ? allData.filter((d) => d.group === g) : allData;
+			const label = colorSplit ? humanize(g) : '';
+			return {
+				type: 'scatter',
+				mode: 'markers',
+				name: colorSplit ? label : undefined,
+				x: groupData.map((d) => d.x),
+				y: groupData.map((d) => d.y),
+				marker: {
+					color: colorSplit ? CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length] : 'var(--chart-1)',
+					size: isBubble ? groupData.map((d) => d.size ?? 0) : undefined,
+					sizemode: isBubble ? 'area' : undefined,
+					sizeref
+				},
+				customdata: groupData.map(
+					(d) => `${colorSplit ? label + ': ' : ''}${fmtNum(d.x)}, ${fmtNum(d.y)}`
+				),
+				hovertemplate: '%{customdata}<extra></extra>'
+			} as unknown as Data;
+		});
+
+		return {
+			data: traces,
+			layout: {
+				showlegend: colorSplit,
+				margin: { b: xCategorical && shouldRotateXLabels ? 78 : 36 },
+				xaxis: (xDomain ? categoricalAxisOpts(xDomain, shouldRotateXLabels) : {}) as Partial<
+					Layout['xaxis']
+				>,
+				yaxis: { title: { text: humanize(yCol) }, tickformat: '~s' } as Partial<Layout['yaxis']>
 			}
-			// One combined tooltip listing every primary series' value at the
-			// hovered x, rather than one tip per series (which would stack several
-			// floating boxes on top of each other for multi-series charts). Anchored
-			// to the first series for vertical positioning; secondary-axis series
-			// (rescaled onto a shared visual scale below) are intentionally left out
-			// since their tooltip value would need the original, unscaled number.
-			if (primary.length > 0) {
-				marks.push(
-					tipMark(primaryData, {
-						x: 'x',
-						y: primary[0].key,
-						title: (d) => primary.map((s) => `${s.label}: ${fmtNum((d as Record<string, unknown>)[s.key])}`).join('\n')
-					})
-				);
+		};
+	});
+
+	// ── Bar / Bar-horizontal ─────────────────────────────────────────────────
+	const barFigure = $derived.by((): Figure | null => {
+		const t = config.chartType;
+		if (t !== 'bar' && t !== 'bar-horizontal') return null;
+		const isHoriz = t === 'bar-horizontal';
+		const data = sortedBarData;
+		const seriesDef = barSeriesToRender;
+		if (data.length === 0 || seriesDef.length === 0) return null;
+		const layout = barSeriesLayout;
+		const valueLabel = seriesDef.length === 1 ? seriesDef[0].label : '';
+		const catDomain = categoricalDomain(data.map((d) => (d as Record<string, unknown>).x));
+
+		const traces: Data[] = seriesDef.map((s, i) => {
+			const xs = data.map((d) => String((d as Record<string, unknown>).x ?? ''));
+			const values = data.map((d) => toNumber((d as Record<string, unknown>)[s.key]));
+			const customdata = xs.map((x, idx) => `${s.label} — ${x}: ${fmtNum(values[idx])}`);
+			return {
+				type: 'bar',
+				name: s.label,
+				orientation: isHoriz ? 'h' : 'v',
+				...(isHoriz ? { y: xs, x: values } : { x: xs, y: values }),
+				marker: {
+					color:
+						seriesDef.length === 1
+							? 'var(--chart-1)'
+							: CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]
+				},
+				customdata,
+				hovertemplate: '%{customdata}<extra></extra>'
+			} as unknown as Data;
+		});
+
+		const valueAxis = { title: { text: valueLabel }, tickformat: '~s' };
+		const catAxis = categoricalAxisOpts(catDomain, !isHoriz && shouldRotateXLabels);
+
+		return {
+			data: traces,
+			layout: {
+				barmode: layout === 'stack' ? 'stack' : seriesDef.length > 1 ? 'group' : undefined,
+				showlegend: seriesDef.length > 1,
+				margin: { l: isHoriz ? 90 : 48, b: isHoriz ? 32 : shouldRotateXLabels ? 78 : 56 },
+				...(isHoriz
+					? {
+							xaxis: valueAxis as Partial<Layout['xaxis']>,
+							yaxis: catAxis as Partial<Layout['yaxis']>
+						}
+					: {
+							xaxis: catAxis as Partial<Layout['xaxis']>,
+							yaxis: valueAxis as Partial<Layout['yaxis']>
+						})
 			}
-			for (const s of secondary) {
-				const rescale = rescaleMap[s.key];
-				const secondaryData = primaryData.map((d) => {
-					const raw = toNumber((d as Record<string, unknown>)[s.key]);
-					return { x: d.x, _orig: raw, _scaled: raw != null ? rescale(raw) : null };
-				});
-				marks.push(
-					Plot.lineY(secondaryData, {
-						x: 'x',
-						y: '_scaled',
-						stroke: s.color,
-						strokeDasharray: '4,3',
-						title: (d: { _orig: number | null }) => `${s.label}: ${d._orig != null ? fmtNum(d._orig) : '—'}`
-					})
+		};
+	});
+
+	// ── Line / Area ──────────────────────────────────────────────────────────
+	const lineFigure = $derived.by((): Figure | null => {
+		const t = config.chartType;
+		if (t !== 'line' && t !== 'area') return null;
+		const isArea = t === 'area';
+
+		// ── Grouped by colorColumn ─────────────────────────────────────────
+		if (enableColorSplitLines && colorSplitLineGroups.length > 0) {
+			const groups = colorSplitLineGroups;
+			const colorCol = config.colorColumn as string;
+			const yCol = config.yColumns[0];
+			const stacked = isArea && areaSeriesLayout === 'stack';
+
+			const traces: Data[] = groups.map((g, i) => {
+				const groupRows = rows.filter(
+					(r) =>
+						r[colorCol] != null &&
+						String(r[colorCol]) === g &&
+						r[config.xColumn] != null &&
+						r[yCol] != null
 				);
-			}
+				const xs = groupRows.map((r) => xValue(r[config.xColumn]));
+				const ys = groupRows.map((r) => coerceNumber(r[yCol]));
+				const resolvedColor = resolvedChartColors[i % resolvedChartColors.length];
+				return {
+					type: 'scatter',
+					mode: 'lines',
+					name: humanize(g),
+					x: xs,
+					y: ys,
+					line: { color: CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length] },
+					...(isArea
+						? {
+								fill: stacked ? 'tonexty' : 'tozeroy',
+								fillcolor: areaFillColor(resolvedColor),
+								stackgroup: stacked ? 'primary' : undefined
+							}
+						: {}),
+					customdata: ys.map((y) => `${humanize(g)}: ${fmtNum(y)}`),
+					hovertemplate: '%{customdata}<extra></extra>'
+				} as unknown as Data;
+			});
 
 			const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
-			const xDomain = xCategorical ? categoricalDomain(primaryData.map((d) => d.x)) : undefined;
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					marginBottom: xCategorical && shouldRotateXLabels ? 78 : 36,
-					x: xDomain ? { domain: xDomain, ...categoricalXScale } : {},
-					y: { tickFormat: fmtNum, grid: true },
-					marks
-				});
+			const xDomain = xCategorical
+				? categoricalDomain(traces.flatMap((tr) => (tr as { x: unknown[] }).x))
+				: undefined;
+
+			return {
+				data: traces,
+				layout: {
+					showlegend: true,
+					hovermode: 'x unified',
+					margin: { b: xCategorical && shouldRotateXLabels ? 78 : 36 },
+					xaxis: (xDomain ? categoricalAxisOpts(xDomain, shouldRotateXLabels) : {}) as Partial<
+						Layout['xaxis']
+					>,
+					yaxis: { tickformat: '~s' } as Partial<Layout['yaxis']>
+				}
+			};
 		}
 
-		// ── Box-plot (3-mark composite: Plot.boxY can't accept pre-aggregated quantiles) ─
-		if (t === 'box-plot') {
-			const data = boxPlotData;
-			const xDomain = categoricalDomain(data.map((d) => d.name));
-			const boxTitle = (d: { name: string; min: number; q1: number; median: number; q3: number; max: number }) =>
-				`${d.name}\nMax: ${fmtNum(d.max)}\nQ3: ${fmtNum(d.q3)}\nMedian: ${fmtNum(d.median)}\nQ1: ${fmtNum(d.q1)}\nMin: ${fmtNum(d.min)}`;
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					x: { domain: xDomain, tickFormat: truncateTick, ...(shouldRotateXLabels ? { tickRotate: -40 } : {}) },
-					y: { tickFormat: fmtNum, grid: true },
-					marginBottom: shouldRotateXLabels ? 78 : data.length > 6 ? 56 : 36,
-					marks: [
-						Plot.ruleX(data, { x: 'name', y1: 'min', y2: 'max', stroke: 'var(--muted-foreground)' }),
-						Plot.barY(data, {
-							x: 'name',
-							y1: 'q1',
-							y2: 'q3',
-							fill: 'var(--chart-1)',
-							fillOpacity: 0.6,
-							title: boxTitle
-						}),
-						Plot.tickY(data, { x: 'name', y: 'median', stroke: 'var(--chart-1)', strokeWidth: 2 }),
-						tipMark(data, { x: 'name', y: 'median', title: boxTitle })
-					]
-				});
+		// ── Standard multi-series (+ secondary axis rescaled onto shared scale) ─
+		const primary = seriesList;
+		const secondary = secondarySeriesList;
+		if (primary.length === 0) return null;
+		const primaryData = chartData.map((d) => ({ ...d, x: xValue(d.x) }));
+
+		const rescaleMap: Record<string, (v: number) => number> = {};
+		if (secondary.length > 0) {
+			const primVals = primary.flatMap((s) =>
+				primaryData
+					.map((d) => toNumber((d as Record<string, unknown>)[s.key]))
+					.filter((v): v is number => v != null)
+			);
+			const primaryMin = primVals.length ? Math.min(...primVals) : 0;
+			const primaryMax = primVals.length ? Math.max(...primVals) : 1;
+			for (const s of secondary) {
+				const vals = primaryData
+					.map((d) => toNumber((d as Record<string, unknown>)[s.key]))
+					.filter((v): v is number => v != null);
+				const secMin = vals.length ? Math.min(...vals) : 0;
+				const secMax = vals.length ? Math.max(...vals) : 1;
+				const range = secMax - secMin || 1;
+				const span = primaryMax - primaryMin || 1;
+				rescaleMap[s.key] = (v: number) => primaryMin + ((v - secMin) / range) * span;
+			}
 		}
 
-		// ── Calendar heatmap ─────────────────────────────────────────────────
-		if (t === 'calendar-heatmap') {
-			const { pairs, years, minVal, maxVal } = calendarData;
-			if (years.length === 0) return null;
-			const cells = calendarCells(pairs);
-			void mode.current; // re-resolve colors when the theme toggles
-			const colorRange = [resolveCSSColor('--background'), resolveCSSColor('--chart-1')];
-			return (width, height) =>
-				Plot.plot({
-					width,
-					height,
-					style: PLOT_STYLE,
-					marginLeft: 28,
-					fy: { domain: years },
-					x: { axis: null },
-					y: { domain: [0, 1, 2, 3, 4, 5, 6], tickFormat: (d: number) => DAY_LABELS[d] },
-					color: { type: 'linear', domain: [minVal, maxVal], range: colorRange },
-					marks: [
-						Plot.cell(cells, {
-							x: 'weekOfYear',
-							y: 'day',
-							fy: 'year',
-							fill: 'value',
-							title: (d: { dateStr: string; value: number }) => `${d.dateStr}: ${fmtNum(d.value)}`
-						}),
-						tipMark(cells, {
-							x: 'weekOfYear',
-							y: 'day',
-							fy: 'year',
-							title: (d) => `${d.dateStr}: ${fmtNum(d.value)}`
-						})
-					]
-				});
+		const isStackedArea = isArea && areaSeriesLayout === 'stack';
+		const traces: Data[] = [];
+		primary.forEach((s, i) => {
+			const ys = primaryData.map((d) => toNumber((d as Record<string, unknown>)[s.key]));
+			const resolvedColor = resolvedChartColors[i % resolvedChartColors.length];
+			traces.push({
+				type: 'scatter',
+				mode: 'lines',
+				name: s.label,
+				x: primaryData.map((d) => d.x),
+				y: ys,
+				line: { color: s.color },
+				...(isArea
+					? {
+							fill: isStackedArea ? 'tonexty' : 'tozeroy',
+							fillcolor: areaFillColor(resolvedColor),
+							stackgroup: isStackedArea ? 'primary' : undefined
+						}
+					: {}),
+				customdata: ys.map((y) => `${s.label}: ${fmtNum(y)}`),
+				hovertemplate: '%{customdata}<extra></extra>'
+			} as unknown as Data);
+		});
+		for (const s of secondary) {
+			const rescale = rescaleMap[s.key];
+			const origVals = primaryData.map((d) => toNumber((d as Record<string, unknown>)[s.key]));
+			const scaledVals = origVals.map((v) => (v != null ? rescale(v) : null));
+			traces.push({
+				type: 'scatter',
+				mode: 'lines',
+				name: s.label,
+				x: primaryData.map((d) => d.x),
+				y: scaledVals,
+				line: { color: s.color, dash: 'dash' },
+				customdata: origVals.map((v) => `${s.label}: ${v != null ? fmtNum(v) : '—'}`),
+				hovertemplate: '%{customdata}<extra></extra>'
+			} as unknown as Data);
 		}
 
-		// ── Pie ──────────────────────────────────────────────────────────────
-		if (t === 'pie') {
-			const data = pieData;
-			return (width, height) => renderPie(data, width, height);
-		}
+		const xCategorical = !xIsMostlyDateLike && !xIsMostlyNumeric;
+		const xDomain = xCategorical ? categoricalDomain(primaryData.map((d) => d.x)) : undefined;
 
-		// ── Funnel ───────────────────────────────────────────────────────────
-		if (t === 'funnel') {
-			const data = funnelData;
-			return (width, height) => renderFunnel(data, width, height);
-		}
+		return {
+			data: traces,
+			layout: {
+				showlegend: hasSeries,
+				hovermode: primary.length > 1 ? 'x unified' : 'closest',
+				margin: { b: xCategorical && shouldRotateXLabels ? 78 : 36 },
+				xaxis: (xDomain ? categoricalAxisOpts(xDomain, shouldRotateXLabels) : {}) as Partial<
+					Layout['xaxis']
+				>,
+				yaxis: { tickformat: '~s' } as Partial<Layout['yaxis']>
+			}
+		};
+	});
 
-		// ── Sankey ───────────────────────────────────────────────────────────
-		if (t === 'sankey') {
-			const nodes = sankeyNodes;
-			const links = sankeyData;
-			return (width, height) => renderSankey(nodes, links, width, height);
-		}
+	// ── Box-plot (Plotly's quartile-override fields, since this data is
+	// pre-aggregated min/q1/median/q3/max — not raw samples) ──────────────────
+	const boxPlotFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'box-plot') return null;
+		const data = boxPlotData;
+		if (data.length === 0) return null;
+		const xDomain = categoricalDomain(data.map((d) => d.name));
+		const customdata = data.map(
+			(d) =>
+				`${d.name}<br>Max: ${fmtNum(d.max)}<br>Q3: ${fmtNum(d.q3)}<br>Median: ${fmtNum(d.median)}<br>Q1: ${fmtNum(d.q1)}<br>Min: ${fmtNum(d.min)}`
+		);
+		return {
+			data: [
+				{
+					type: 'box',
+					x: data.map((d) => d.name),
+					q1: data.map((d) => d.q1),
+					median: data.map((d) => d.median),
+					q3: data.map((d) => d.q3),
+					lowerfence: data.map((d) => d.min),
+					upperfence: data.map((d) => d.max),
+					boxpoints: false,
+					marker: { color: 'var(--chart-1)' },
+					customdata,
+					hovertemplate: '%{customdata}<extra></extra>'
+				} as unknown as Data
+			],
+			layout: {
+				margin: { b: shouldRotateXLabels ? 78 : data.length > 6 ? 56 : 36 },
+				xaxis: categoricalAxisOpts(xDomain, shouldRotateXLabels) as Partial<Layout['xaxis']>,
+				yaxis: { tickformat: '~s' } as Partial<Layout['yaxis']>
+			}
+		};
+	});
 
+	// ── Calendar heatmap (no native Plotly faceting — one heatmap trace per
+	// year on its own xaxis{N}/yaxis{N}, sliced into row domains via
+	// layout.grid) ─────────────────────────────────────────────────────────────
+	const calendarHeatmapFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'calendar-heatmap') return null;
+		const { pairs, years, minVal, maxVal } = calendarData;
+		if (years.length === 0) return null;
+		const cells = calendarCells(pairs);
+		void watchTheme(); // re-resolve colors when the theme toggles
+		const colorLow = resolveCSSColor('--background');
+		const colorHigh = resolveCSSColor('--chart-1');
+		const border = resolveCSSColor('--border');
+		const mutedForeground = resolveCSSColor('--muted-foreground');
+
+		const traces: Data[] = years.map((year, i) => {
+			const cellsForYear = cells.filter((c) => c.year === year);
+			const axisSuffix = i === 0 ? '' : String(i + 1);
+			return {
+				type: 'heatmap',
+				x: cellsForYear.map((c) => c.weekOfYear),
+				y: cellsForYear.map((c) => c.day),
+				z: cellsForYear.map((c) => c.value),
+				xaxis: `x${axisSuffix}`,
+				yaxis: `y${axisSuffix}`,
+				zmin: minVal,
+				zmax: maxVal,
+				colorscale: [
+					[0, colorLow],
+					[1, colorHigh]
+				],
+				showscale: i === 0,
+				customdata: cellsForYear.map((c) => `${c.dateStr}: ${fmtNum(c.value)}`),
+				hovertemplate: '%{customdata}<extra></extra>'
+			} as unknown as Data;
+		});
+
+		const rowHeight = 1 / years.length;
+		const rowGap = years.length > 1 ? 0.08 : 0;
+		const layout: Record<string, unknown> = {
+			grid: { rows: years.length, columns: 1, pattern: 'independent' },
+			margin: { l: 28 },
+			showlegend: false
+		};
+		years.forEach((_year, i) => {
+			const axisSuffix = i === 0 ? '' : String(i + 1);
+			const top = 1 - i * rowHeight;
+			const bottom = top - rowHeight + (i < years.length - 1 ? rowGap : 0);
+			layout[`yaxis${axisSuffix}`] = {
+				domain: [Math.max(0, bottom), Math.min(1, top)],
+				tickmode: 'array',
+				tickvals: [0, 1, 2, 3, 4, 5, 6],
+				ticktext: DAY_LABELS,
+				autorange: 'reversed',
+				gridcolor: border,
+				color: mutedForeground
+			};
+			layout[`xaxis${axisSuffix}`] = {
+				domain: [0, 1],
+				showticklabels: i === years.length - 1,
+				gridcolor: border,
+				color: mutedForeground
+			};
+		});
+
+		return { data: traces, layout: layout as Partial<Layout> };
+	});
+
+	// ── Pie ──────────────────────────────────────────────────────────────────
+	const pieFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'pie') return null;
+		const data = pieData;
+		if (data.length === 0) return null;
+		return {
+			data: [
+				{
+					type: 'pie',
+					labels: data.map((d) => d.x),
+					values: data.map((d) => d.y),
+					hole: 0.55,
+					marker: { colors: data.map((_, i) => CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]) },
+					textinfo: 'percent',
+					textposition: 'inside',
+					hovertemplate: '%{label}: %{value} (%{percent})<extra></extra>'
+				} as unknown as Data
+			],
+			layout: { showlegend: true, legend: { orientation: 'h', y: -0.15 } } as Partial<Layout>
+		};
+	});
+
+	// ── Funnel ───────────────────────────────────────────────────────────────
+	const funnelFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'funnel') return null;
+		const data = funnelData;
+		if (data.length === 0) return null;
+		return {
+			data: [
+				{
+					type: 'funnel',
+					y: data.map((d) => d.x),
+					x: data.map((d) => d.y),
+					marker: { color: data.map((_, i) => CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]) },
+					textinfo: 'label+value+percent initial',
+					hovertemplate: '%{label}: %{value}<extra></extra>'
+				} as unknown as Data
+			],
+			layout: {}
+		};
+	});
+
+	// ── Sankey ───────────────────────────────────────────────────────────────
+	const sankeyFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'sankey') return null;
+		const nodes = sankeyNodes;
+		const links = sankeyData;
+		if (nodes.length === 0 || links.length === 0) return null;
+		const indexByName = new Map(nodes.map((n, i) => [n.name, i]));
+		return {
+			data: [
+				{
+					type: 'sankey',
+					node: {
+						label: nodes.map((n) => n.name),
+						color: nodes.map((_, i) => CHART_COLOR_RANGE[i % CHART_COLOR_RANGE.length]),
+						pad: 10,
+						thickness: 14
+					},
+					link: {
+						source: links.map((l) => indexByName.get(l.source) ?? 0),
+						target: links.map((l) => indexByName.get(l.target) ?? 0),
+						value: links.map((l) => l.value),
+						color: 'rgba(128,128,128,0.3)'
+					}
+				} as unknown as Data
+			],
+			layout: {}
+		};
+	});
+
+	// ── Custom (user-written JS sandbox, same POJO contract as plot cells) ───
+	const customResult = $derived.by((): { figure: Figure | null; error: string | null } => {
+		if (config.chartType !== 'custom') return { figure: null, error: null };
+		return evaluateCustomChartCode(config.code ?? '', rows, columns);
+	});
+
+	const figure = $derived.by((): Figure | null => {
+		const t = config.chartType;
+		if (t === 'histogram') return histogramFigure;
+		if (t === 'heatmap') return heatmapFigure;
+		if (t === 'scatter' || t === 'bubble') return scatterFigure;
+		if (t === 'bar' || t === 'bar-horizontal') return barFigure;
+		if (t === 'line' || t === 'area') return lineFigure;
+		if (t === 'box-plot') return boxPlotFigure;
+		if (t === 'calendar-heatmap') return calendarHeatmapFigure;
+		if (t === 'pie') return pieFigure;
+		if (t === 'funnel') return funnelFigure;
+		if (t === 'sankey') return sankeyFigure;
+		if (t === 'custom') return customResult.figure;
 		return null;
 	});
+
+	let plotlyMountRef: { exportPng: (filename: string) => Promise<void> } | undefined = $state();
+
+	const NON_CHART_TYPES: ChartType[] = ['table', 'big-value', 'value', 'delta'];
+
+	export async function exportPng(filename: string): Promise<void> {
+		if (NON_CHART_TYPES.includes(config.chartType)) {
+			throw new Error('This chart type has no image export.');
+		}
+		await plotlyMountRef?.exportPng(filename);
+	}
 </script>
 
-<div class="w-full px-8 py-8 border bg-background rounded-md flex flex-col " style="height:{height}px">
+<div
+	class="flex w-full flex-col rounded-md border bg-background px-8 py-8"
+	style="height:{height}px"
+>
 	{#if config.title}
-		<div class="mb-1 px-1 shrink-0">
-			<p class="text-sm font-medium text-foreground leading-tight">{config.title}</p>
+		<div class="mb-1 shrink-0 px-1">
+			<p class="text-sm leading-tight font-medium text-foreground">{config.title}</p>
 			{#if config.description}<p class="text-xs text-muted-foreground">{config.description}</p>{/if}
 		</div>
 	{/if}
-	<div class="flex-1 min-h-0">
-	{#if config.chartType === 'table'}
-		{@const displayCols = columns.length > 0 ? columns : (rows[0] ? Object.keys(rows[0]) : [])}
-		<div class="w-full h-full overflow-auto rounded-md border border-border/60 text-xs">
-			<table class="w-full border-collapse">
-				<thead class="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
-					<tr>
-						{#each displayCols as col (col)}
-							<th class="px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap border-b border-border/60 first:pl-3 last:pr-3">
-								{col}
-							</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each rows.slice(0, 200) as row, i (i)}
-						<tr class="border-b border-border/30 hover:bg-muted/30 transition-colors">
+	<div class="min-h-0 flex-1">
+		{#if config.chartType === 'table'}
+			{@const displayCols = columns.length > 0 ? columns : rows[0] ? Object.keys(rows[0]) : []}
+			<div class="h-full w-full overflow-auto rounded-md border border-border/60 text-xs">
+				<table class="w-full border-collapse">
+					<thead class="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+						<tr>
 							{#each displayCols as col (col)}
-								<td class="px-2 py-1 text-foreground/90 whitespace-nowrap max-w-48 truncate first:pl-3 last:pr-3" title={String(row[col] ?? '')}>
-									{row[col] ?? ''}
-								</td>
+								<th
+									class="border-b border-border/60 px-2 py-1.5 text-left font-medium whitespace-nowrap text-muted-foreground first:pl-3 last:pr-3"
+								>
+									{col}
+								</th>
 							{/each}
 						</tr>
-					{/each}
-					{#if rows.length > 200}
-						<tr>
-							<td colspan={displayCols.length} class="px-3 py-1.5 text-center text-muted-foreground italic">
-								Showing 200 of {rows.length} rows
-							</td>
-						</tr>
-					{/if}
-				</tbody>
-			</table>
-		</div>
-	{:else if config.chartType === 'big-value'}
-		{#if !config.xColumn}
-			<div class="flex items-center justify-center h-full text-sm text-muted-foreground">Configure a Value column (X).</div>
-		{:else if bigValueData}
-			{@const d = bigValueData}
-			<div class="flex flex-col items-start justify-center h-full px-4 gap-1">
-				{#if config.title}
-					<p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">{config.title}</p>
-				{/if}
-				<p class="text-5xl font-bold text-foreground tabular-nums leading-none">
-					{typeof d.val === 'number' ? numericFormatter.format(d.val) : String(d.val ?? '—')}
-				</p>
-				{#if d.comp !== null && d.compCol}
-					{@const positive = d.comp >= 0}
-					<p class="text-sm font-medium {positive ? 'text-green-500' : 'text-red-500'} flex items-center gap-0.5">
-						<span>{positive ? '▲' : '▼'}</span>
-						<span>{numericFormatter.format(Math.abs(d.comp))}</span>
-						<span class="text-muted-foreground font-normal ml-1">{d.compCol}</span>
-					</p>
-				{/if}
-				{#if d.sparkPoints.length > 1}
-					{@const sparkVals = d.sparkPoints.map((p) => p.val)}
-					{@const sparkMin = Math.min(...sparkVals)}
-					{@const sparkMax = Math.max(...sparkVals)}
-					{@const sparkRange = sparkMax - sparkMin || 1}
-					{@const W = 120}
-					{@const H = 32}
-					<svg width={W} height={H} class="mt-1 opacity-60">
-						<polyline
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.5"
-							points={d.sparkPoints.map((p, i) => `${(i / (d.sparkPoints.length - 1)) * W},${H - ((p.val - sparkMin) / sparkRange) * H}`).join(' ')}
-						/>
-					</svg>
-				{/if}
+					</thead>
+					<tbody>
+						{#each rows.slice(0, 200) as row, i (i)}
+							<tr class="border-b border-border/30 transition-colors hover:bg-muted/30">
+								{#each displayCols as col (col)}
+									<td
+										class="max-w-48 truncate px-2 py-1 whitespace-nowrap text-foreground/90 first:pl-3 last:pr-3"
+										title={String(row[col] ?? '')}
+									>
+										{row[col] ?? ''}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+						{#if rows.length > 200}
+							<tr>
+								<td
+									colspan={displayCols.length}
+									class="px-3 py-1.5 text-center text-muted-foreground italic"
+								>
+									Showing 200 of {rows.length} rows
+								</td>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
 			</div>
-		{:else}
-			<div class="flex items-center justify-center h-full text-sm text-muted-foreground">No data.</div>
-		{/if}
-	{:else if config.chartType === 'value'}
-		{#if !config.xColumn}
-			<div class="flex items-center justify-center h-full text-sm text-muted-foreground">Configure a Value column (X).</div>
-		{:else}
-			{@const row = rows[config.valueRow ?? 0] ?? rows[0]}
-			{@const val = row ? (coerceNumber(row[config.xColumn]) ?? row[config.xColumn]) : null}
-			<div class="flex items-center justify-center h-full">
-				<div class="flex flex-col items-center gap-1">
-					{#if config.title}
-						<p class="text-xs text-muted-foreground uppercase tracking-wide">{config.title}</p>
-					{/if}
-					<p class="text-3xl font-semibold text-foreground tabular-nums">
-						{typeof val === 'number' ? numericFormatter.format(val) : String(val ?? '—')}
-					</p>
+		{:else if config.chartType === 'big-value'}
+			{#if !config.xColumn}
+				<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					Configure a Value column (X).
 				</div>
-			</div>
-		{/if}
-	{:else if config.chartType === 'delta'}
-		{#if !config.xColumn}
-			<div class="flex items-center justify-center h-full text-sm text-muted-foreground">Configure a Delta column (X).</div>
-		{:else if deltaData !== null}
-			{@const positive = config.deltaDownIsGood ? deltaData <= 0 : deltaData >= 0}
-			{@const neutral = deltaData === 0}
-			<div class="flex items-center justify-center h-full">
-				<div class="flex flex-col items-center gap-1">
+			{:else if bigValueData}
+				{@const d = bigValueData}
+				<div class="flex h-full flex-col items-start justify-center gap-1 px-4">
 					{#if config.title}
-						<p class="text-xs text-muted-foreground uppercase tracking-wide">{config.title}</p>
+						<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+							{config.title}
+						</p>
 					{/if}
-					<p class="text-4xl font-bold tabular-nums flex items-center gap-2 {neutral ? 'text-muted-foreground' : positive ? 'text-green-500' : 'text-red-500'}">
-						<span class="text-2xl">{neutral ? '—' : positive ? '▲' : '▼'}</span>
-						<span>{numericFormatter.format(Math.abs(deltaData))}</span>
+					<p class="text-5xl leading-none font-bold text-foreground tabular-nums">
+						{typeof d.val === 'number' ? numericFormatter.format(d.val) : String(d.val ?? '—')}
 					</p>
+					{#if d.comp !== null && d.compCol}
+						{@const positive = d.comp >= 0}
+						<p
+							class="text-sm font-medium {positive
+								? 'text-green-500'
+								: 'text-red-500'} flex items-center gap-0.5"
+						>
+							<span>{positive ? '▲' : '▼'}</span>
+							<span>{numericFormatter.format(Math.abs(d.comp))}</span>
+							<span class="ml-1 font-normal text-muted-foreground">{d.compCol}</span>
+						</p>
+					{/if}
+					{#if d.sparkPoints.length > 1}
+						{@const sparkVals = d.sparkPoints.map((p) => p.val)}
+						{@const sparkMin = Math.min(...sparkVals)}
+						{@const sparkMax = Math.max(...sparkVals)}
+						{@const sparkRange = sparkMax - sparkMin || 1}
+						{@const W = 120}
+						{@const H = 32}
+						<svg width={W} height={H} class="mt-1 opacity-60">
+							<polyline
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								points={d.sparkPoints
+									.map(
+										(p, i) =>
+											`${(i / (d.sparkPoints.length - 1)) * W},${H - ((p.val - sparkMin) / sparkRange) * H}`
+									)
+									.join(' ')}
+							/>
+						</svg>
+					{/if}
 				</div>
-			</div>
-		{:else}
-			<div class="flex items-center justify-center h-full text-sm text-muted-foreground">No data.</div>
-		{/if}
-	{:else if needsConfig}
-		<div class="flex items-center justify-center h-full text-sm text-muted-foreground">
-			{#if config.chartType === 'box-plot'}
-				Box plot requires 5 Y columns: Min, Q1, Median, Q3, Max.
 			{:else}
-				Configure columns to render this chart.
+				<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					No data.
+				</div>
 			{/if}
-		</div>
-	{:else if plotRender}
-		<PlotChart render={plotRender} />
-	{/if}
+		{:else if config.chartType === 'value'}
+			{#if !config.xColumn}
+				<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					Configure a Value column (X).
+				</div>
+			{:else}
+				{@const row = rows[config.valueRow ?? 0] ?? rows[0]}
+				{@const val = row ? (coerceNumber(row[config.xColumn]) ?? row[config.xColumn]) : null}
+				<div class="flex h-full items-center justify-center">
+					<div class="flex flex-col items-center gap-1">
+						{#if config.title}
+							<p class="text-xs tracking-wide text-muted-foreground uppercase">{config.title}</p>
+						{/if}
+						<p class="text-3xl font-semibold text-foreground tabular-nums">
+							{typeof val === 'number' ? numericFormatter.format(val) : String(val ?? '—')}
+						</p>
+					</div>
+				</div>
+			{/if}
+		{:else if config.chartType === 'delta'}
+			{#if !config.xColumn}
+				<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					Configure a Delta column (X).
+				</div>
+			{:else if deltaData !== null}
+				{@const positive = config.deltaDownIsGood ? deltaData <= 0 : deltaData >= 0}
+				{@const neutral = deltaData === 0}
+				<div class="flex h-full items-center justify-center">
+					<div class="flex flex-col items-center gap-1">
+						{#if config.title}
+							<p class="text-xs tracking-wide text-muted-foreground uppercase">{config.title}</p>
+						{/if}
+						<p
+							class="flex items-center gap-2 text-4xl font-bold tabular-nums {neutral
+								? 'text-muted-foreground'
+								: positive
+									? 'text-green-500'
+									: 'text-red-500'}"
+						>
+							<span class="text-2xl">{neutral ? '—' : positive ? '▲' : '▼'}</span>
+							<span>{numericFormatter.format(Math.abs(deltaData))}</span>
+						</p>
+					</div>
+				</div>
+			{:else}
+				<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					No data.
+				</div>
+			{/if}
+		{:else if needsConfig}
+			<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+				{#if config.chartType === 'box-plot'}
+					Box plot requires 5 Y columns: Min, Q1, Median, Q3, Max.
+				{:else}
+					Configure columns to render this chart.
+				{/if}
+			</div>
+		{:else if figure}
+			<PlotlyMount bind:this={plotlyMountRef} {figure} />
+		{:else if config.chartType === 'custom' && customResult.error}
+			<div
+				class="flex h-full items-center justify-center p-4 text-center text-sm whitespace-pre-wrap text-destructive"
+			>
+				{customResult.error}
+			</div>
+		{/if}
 	</div>
 </div>
-
-<style>
-	/* Plot.tip() hardcodes its text fill to currentColor via a direct
-	   setAttribute, bypassing the plot's own `color` style — this is the only
-	   way to give tooltip text a themed, readable color independent of the
-	   muted axis-label color the rest of the plot uses. */
-	:global(.plot-tip text) {
-		fill: var(--popover-foreground);
-	}
-</style>

@@ -6,6 +6,7 @@
 	import { Loader2, Play, Database, CheckCircle2, XCircle, Copy, Trash2 } from '@lucide/svelte';
 	import {
 		materializeCell,
+		materializePythonCell,
 		refreshTablesFromCatalog,
 		setCellDbtConfig,
 		setCellDescription,
@@ -31,13 +32,20 @@
 	}
 
 	let { cell, isDbtProject, open = $bindable() }: Props = $props();
+	// Python cells have no compiled SQL — dbt model materialization
+	// modes/settings and `dbt run --select` don't apply; "materialize" for them
+	// just means "re-run and re-register the resulting table" (see
+	// materializePythonCell). They keep the schedule section below unchanged.
+	let isPythonCell = $derived(cell.cellType === 'python');
 
 	let dbtRunning = $state(false);
 	let dbtRunSelect = $state('');
 	let dbtLogs = $state<string[]>([]);
 	let dbtExitCode = $state<number | null>(null);
 	let materializing = $derived(cell.materializeStatus === 'running');
-	let scheduleCronInput = $state(untrack(() => intervalMinutesToCron(cell.scheduleIntervalMinutes)));
+	let scheduleCronInput = $state(
+		untrack(() => intervalMinutesToCron(cell.scheduleIntervalMinutes))
+	);
 	let scheduleCronError = $state<string | null>(null);
 	let logEl = $state<HTMLPreElement | undefined>();
 
@@ -124,16 +132,22 @@
 			if (!inManifest) {
 				const compileJobId = await dbtCompile(projectFolder);
 				await new Promise<void>((resolve) => {
-					watchDbtLogs(compileJobId, () => {}, (code) => {
-						if (code === 0) void refreshDbtManifest();
-						resolve();
-					});
+					watchDbtLogs(
+						compileJobId,
+						() => {},
+						(code) => {
+							if (code === 0) void refreshDbtManifest();
+							resolve();
+						}
+					);
 				});
 			}
 			const jobId = await dbtRun(projectFolder, select);
 			watchDbtLogs(
 				jobId,
-				(line) => { dbtLogs = [...dbtLogs, line]; },
+				(line) => {
+					dbtLogs = [...dbtLogs, line];
+				},
 				(code) => {
 					dbtRunning = false;
 					dbtRunSelect = '';
@@ -166,78 +180,91 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-w-sm p-0 gap-0 overflow-hidden">
+	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
 		<!-- Header -->
-		<div class="flex items-center justify-between px-4 py-3 border-b">
+		<div class="flex items-center justify-between border-b px-4 py-3">
 			<div>
 				<p class="text-xs font-semibold">{isDbtProject ? 'Deploy' : 'Materialize'}</p>
 				{#if cell.outputName}
-					<p class="text-[11px] font-mono text-muted-foreground mt-0.5">{cell.outputName}</p>
+					<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">{cell.outputName}</p>
 				{/if}
 			</div>
 		</div>
 
-		<div class="px-4 py-3 space-y-4 max-h-[80vh] overflow-y-auto">
-			<!-- Materialization mode -->
-			<div class="space-y-1.5">
-				<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Materialize as</p>
-				<div class="flex flex-wrap gap-1.5">
-					{#each modes as mode}
-						<button
-							class="rounded border px-2.5 py-1 text-[11px] font-medium transition-colors {cell.materializeMode === mode
-								? modeColors[mode] ?? 'bg-primary/10 text-primary border-primary/30'
-								: 'border-border text-muted-foreground hover:bg-accent'}"
-							onclick={() => isDbtProject
-								? setCellDbtConfig(cell.id, { materializeMode: mode })
-								: setCellMaterializeMode(cell.id, mode)}
-						>
-							{mode}
-						</button>
-					{/each}
+		<div class="max-h-[80vh] space-y-4 overflow-y-auto px-4 py-3">
+			{#if !isPythonCell}
+				<!-- Materialization mode -->
+				<div class="space-y-1.5">
+					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+						Materialize as
+					</p>
+					<div class="flex flex-wrap gap-1.5">
+						{#each modes as mode}
+							<button
+								class="rounded border px-2.5 py-1 text-[11px] font-medium transition-colors {cell.materializeMode ===
+								mode
+									? (modeColors[mode] ?? 'border-primary/30 bg-primary/10 text-primary')
+									: 'border-border text-muted-foreground hover:bg-accent'}"
+								onclick={() =>
+									isDbtProject
+										? setCellDbtConfig(cell.id, { materializeMode: mode })
+										: setCellMaterializeMode(cell.id, mode)}
+							>
+								{mode}
+							</button>
+						{/each}
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<!-- dbt settings -->
-			{#if isDbtProject}
+			{#if isDbtProject && !isPythonCell}
 				<div class="space-y-1.5">
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">dbt settings</p>
+					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+						dbt settings
+					</p>
 					<textarea
-						class="w-full rounded border border-input bg-background px-2.5 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/40 placeholder:text-muted-foreground/40 resize-none"
+						class="w-full resize-none rounded border border-input bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
 						placeholder="Describe this model…"
 						rows={2}
 						value={cell.description ?? ''}
-						oninput={(e) => setCellDescription(cell.id, (e.target as HTMLTextAreaElement).value || null)}
-						onblur={(e) => setCellDescription(cell.id, (e.target as HTMLTextAreaElement).value || null)}
+						oninput={(e) =>
+							setCellDescription(cell.id, (e.target as HTMLTextAreaElement).value || null)}
+						onblur={(e) =>
+							setCellDescription(cell.id, (e.target as HTMLTextAreaElement).value || null)}
 					></textarea>
 					<Input
-						class="h-7 text-[11px] font-mono"
+						class="h-7 font-mono text-[11px]"
 						placeholder="Schema override"
 						value={cell.dbtSchema ?? ''}
-						oninput={(e) => setCellDbtConfig(cell.id, { dbtSchema: (e.target as HTMLInputElement).value || null })}
+						oninput={(e) =>
+							setCellDbtConfig(cell.id, {
+								dbtSchema: (e.target as HTMLInputElement).value || null
+							})}
 					/>
 					<Input
-						class="h-7 text-[11px] font-mono"
+						class="h-7 font-mono text-[11px]"
 						placeholder="Tags (comma-separated)"
 						value={cell.dbtTags?.join(', ') ?? ''}
-						oninput={(e) => setCellDbtConfig(cell.id, {
-							dbtTags: (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean)
-						})}
+						oninput={(e) =>
+							setCellDbtConfig(cell.id, {
+								dbtTags: (e.target as HTMLInputElement).value
+									.split(',')
+									.map((t) => t.trim())
+									.filter(Boolean)
+							})}
 					/>
 				</div>
 			{/if}
 
 			<!-- Actions -->
 			<div class="space-y-1.5">
-				<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Run</p>
-				{#if isDbtProject}
+				<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">Run</p>
+				{#if isDbtProject && !isPythonCell}
 					<div class="grid grid-cols-3 gap-1.5">
-						{#each [
-							{ label: 'Model only', select: cell.outputName, title: `dbt run --select ${cell.outputName}` },
-							{ label: 'With deps', select: '+' + cell.outputName, title: `dbt run --select +${cell.outputName}` },
-							{ label: 'With all', select: cell.outputName + '+', title: `dbt run --select ${cell.outputName}+` }
-						] as { label, select, title }}
+						{#each [{ label: 'Model only', select: cell.outputName, title: `dbt run --select ${cell.outputName}` }, { label: 'With deps', select: '+' + cell.outputName, title: `dbt run --select +${cell.outputName}` }, { label: 'With all', select: cell.outputName + '+', title: `dbt run --select ${cell.outputName}+` }] as { label, select, title }}
 							<button
-								class="flex flex-col items-center gap-1 rounded border border-border px-2 py-2 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+								class="flex flex-col items-center gap-1 rounded border border-border px-2 py-2 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
 								disabled={dbtRunning || !cell.outputName}
 								{title}
 								onclick={() => void runDbtWithSelect(select)}
@@ -253,19 +280,26 @@
 					</div>
 				{/if}
 				<button
-					class="flex w-full items-center gap-2 rounded border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					class="flex w-full items-center gap-2 rounded border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
 					disabled={materializing || cell.status === 'running'}
-					onclick={async () => materializeCell(cell.id)}
-					title="Materialize {cell.outputName ?? 'cell'} to database"
+					onclick={async () =>
+						isPythonCell ? materializePythonCell(cell.id) : materializeCell(cell.id)}
+					title={isPythonCell
+						? `Re-run "${cell.outputName ?? 'cell'}" and register its result table`
+						: `Materialize ${cell.outputName ?? 'cell'} to database`}
 				>
 					{#if materializing}
-						<Loader2 class="h-3.5 w-3.5 animate-spin shrink-0" />
+						<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 					{:else if cell.materializeStatus === 'success'}
 						<CheckCircle2 class="h-3.5 w-3.5 shrink-0 text-chart-1" />
 					{:else}
 						<Database class="h-3.5 w-3.5 shrink-0" />
 					{/if}
-					Materialize {cell.outputName ? `"${cell.outputName}"` : 'cell'} locally
+					{#if isPythonCell}
+						Re-run {cell.outputName ? `"${cell.outputName}"` : 'cell'} &amp; register table
+					{:else}
+						Materialize {cell.outputName ? `"${cell.outputName}"` : 'cell'} locally
+					{/if}
 				</button>
 			</div>
 
@@ -273,10 +307,16 @@
 			{#if dbtLogs.length > 0 || dbtRunning}
 				<div class="space-y-1">
 					<div class="flex items-center justify-between">
-						<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Output</p>
+						<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+							Output
+						</p>
 						<div class="flex items-center gap-1.5">
 							{#if dbtExitCode !== null}
-								<span class="flex items-center gap-1 text-[10px] font-medium {dbtExitCode === 0 ? 'text-chart-1' : 'text-destructive'}">
+								<span
+									class="flex items-center gap-1 text-[10px] font-medium {dbtExitCode === 0
+										? 'text-chart-1'
+										: 'text-destructive'}"
+								>
 									{#if dbtExitCode === 0}
 										<CheckCircle2 class="h-3 w-3" />
 									{:else}
@@ -287,16 +327,19 @@
 							{/if}
 							{#if dbtLogs.length > 0}
 								<button
-									class="rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+									class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 									title="Copy output"
 									onclick={copyLogs}
 								>
 									<Copy class="h-3 w-3" />
 								</button>
 								<button
-									class="rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+									class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 									title="Clear output"
-									onclick={() => { dbtLogs = []; dbtExitCode = null; }}
+									onclick={() => {
+										dbtLogs = [];
+										dbtExitCode = null;
+									}}
 								>
 									<Trash2 class="h-3 w-3" />
 								</button>
@@ -305,19 +348,22 @@
 					</div>
 					<pre
 						bind:this={logEl}
-						class="max-h-48 overflow-y-auto rounded border border-border bg-muted/40 px-2.5 py-2 text-[10px] font-mono leading-relaxed whitespace-pre-wrap break-all"
-					>{dbtLogs.join('\n')}{#if dbtRunning}
-▌{/if}</pre>
+						class="max-h-48 overflow-y-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-[10px] leading-relaxed break-all whitespace-pre-wrap">{dbtLogs.join(
+							'\n'
+						)}{#if dbtRunning}
+							▌{/if}</pre>
 				</div>
 			{/if}
 
 			<!-- Schedule -->
 			<div class="space-y-2">
 				<div class="flex items-center justify-between">
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Auto-materialize</p>
+					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+						Auto-materialize
+					</p>
 					<button
 						class="rounded border px-2 py-0.5 text-[11px] font-medium transition-colors {cell.scheduleEnabled
-							? 'bg-primary/10 text-primary border-primary/30'
+							? 'border-primary/30 bg-primary/10 text-primary'
 							: 'border-border text-muted-foreground hover:bg-accent'}"
 						onclick={() => setCellScheduleEnabled(cell.id, !cell.scheduleEnabled)}
 					>
@@ -325,7 +371,7 @@
 					</button>
 				</div>
 				<div class="flex items-center gap-2">
-					<span class="text-[11px] text-muted-foreground shrink-0">Every</span>
+					<span class="shrink-0 text-[11px] text-muted-foreground">Every</span>
 					<Input
 						type="number"
 						min="1"
@@ -335,18 +381,27 @@
 						onchange={(e) => onIntervalInput((e.target as HTMLInputElement).value)}
 						disabled={!cell.scheduleEnabled}
 					/>
-					<span class="text-[11px] text-muted-foreground shrink-0">min</span>
+					<span class="shrink-0 text-[11px] text-muted-foreground">min</span>
 				</div>
 				<div class="flex items-center gap-1.5">
-					<span class="text-[11px] text-muted-foreground shrink-0">Cron</span>
+					<span class="shrink-0 text-[11px] text-muted-foreground">Cron</span>
 					<Input
 						value={scheduleCronInput}
-						class="h-7 text-xs font-mono"
+						class="h-7 font-mono text-xs"
 						placeholder="*/15 * * * *"
-						oninput={(e) => { scheduleCronInput = (e.target as HTMLInputElement).value; scheduleCronError = null; }}
+						oninput={(e) => {
+							scheduleCronInput = (e.target as HTMLInputElement).value;
+							scheduleCronError = null;
+						}}
 						disabled={!cell.scheduleEnabled}
 					/>
-					<Button variant="outline" size="sm" class="h-7 px-2 text-[11px] shrink-0" onclick={applyCron} disabled={!cell.scheduleEnabled}>
+					<Button
+						variant="outline"
+						size="sm"
+						class="h-7 shrink-0 px-2 text-[11px]"
+						onclick={applyCron}
+						disabled={!cell.scheduleEnabled}
+					>
 						Apply
 					</Button>
 				</div>
@@ -356,8 +411,9 @@
 				<div class="flex items-center gap-1">
 					{#each ['cell', 'segment'] as scope}
 						<button
-							class="rounded border px-2.5 py-1 text-[11px] transition-colors {cell.scheduleScope === scope
-								? 'bg-accent text-foreground border-border'
+							class="rounded border px-2.5 py-1 text-[11px] transition-colors {cell.scheduleScope ===
+							scope
+								? 'border-border bg-accent text-foreground'
 								: 'border-transparent text-muted-foreground hover:bg-accent/50'}"
 							disabled={!cell.scheduleEnabled}
 							onclick={() => setCellScheduleScope(cell.id, scope as CellScheduleScope)}
@@ -366,13 +422,15 @@
 						</button>
 					{/each}
 					<button
-						class="ml-auto rounded border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-accent transition-colors"
+						class="ml-auto rounded border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent"
 						onclick={async () => processScheduledMaterializations()}
 					>
 						Run due
 					</button>
 				</div>
-				<p class="text-[10px] text-muted-foreground">Next run: {formatNextRun(cell.scheduleNextRunAt)}</p>
+				<p class="text-[10px] text-muted-foreground">
+					Next run: {formatNextRun(cell.scheduleNextRunAt)}
+				</p>
 			</div>
 		</div>
 	</Dialog.Content>

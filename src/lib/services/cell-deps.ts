@@ -260,7 +260,36 @@ export function resolvePlotDataRefs(cells: Cell[], idx: number): Cell[] {
 	const byName = new Map<string, Cell>();
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if (c.cellType === 'query' && c.outputName) byName.set(c.outputName, c);
+		// 'python' included so a plot cell can chart a Python cell's DataFrame
+		// result directly — buildPlotScope only reads `.result.rows/columns`,
+		// which is cellType-agnostic.
+		if ((c.cellType === 'query' || c.cellType === 'python') && c.outputName)
+			byName.set(c.outputName, c);
+	}
+
+	const refs: Cell[] = [];
+	for (const [name, cell] of byName) {
+		if (new RegExp(`\\b${escapeRegExp(name)}\\b`).test(target.code)) refs.push(cell);
+	}
+	return refs;
+}
+
+/**
+ * Returns the upstream **query** and **python** cells a python cell references
+ * by outputName as a whole word in its code — e.g. `top_products.groupby(...)`.
+ * Non-transitive and order-independent, same rationale as `resolvePlotDataRefs`:
+ * a python cell reading `top_products` needs that cell's already-computed
+ * `.result` (to bind as a DataFrame), not its own upstream SQL/PRQL dependencies.
+ */
+export function resolvePythonDataRefs(cells: Cell[], idx: number): Cell[] {
+	const target = cells[idx];
+	if (!target || target.cellType !== 'python') return [];
+
+	const byName = new Map<string, Cell>();
+	for (let i = 0; i < idx; i++) {
+		const c = cells[i];
+		if ((c.cellType === 'query' || c.cellType === 'python') && c.outputName)
+			byName.set(c.outputName, c);
 	}
 
 	const refs: Cell[] = [];

@@ -24,15 +24,23 @@
   --border: oklch(0.8690 0.0050 56.3660);
   --input: oklch(0.9220 0 0);
   --ring: oklch(0.5540 0.0460 257.4170);
-  /* Observable Plot's Plot.tip() reads this var directly for its tooltip
-     background; it's otherwise undefined, so tips render with the SVG fill
-     initial value (black) in both themes instead of a themed surface. */
-  --plot-background: var(--popover) !important;
   --chart-1: oklch(0.8090 0.1050 251.8130);
   --chart-2: oklch(0.8110 0.1110 293.5710);
   --chart-3: oklch(0.8816 0.0276 93.1280);
   --chart-4: oklch(0.7040 0.0400 256.7880);
   --chart-5: oklch(0.5880 0.1580 241.9660);
+  /* Categorical chip/tag palette — distinct from --chart-* (tuned for chart fills/lines).
+     These are tuned for use as flat foreground text on a light tint of themselves, so
+     lightness/chroma are picked for legible text contrast against --background, not for
+     chart-area fills. */
+  --tag-1: oklch(0.5200 0.1850 25.0000);
+  --tag-2: oklch(0.5300 0.1500 70.0000);
+  --tag-3: oklch(0.5100 0.1400 140.0000);
+  --tag-4: oklch(0.5200 0.1300 195.0000);
+  --tag-5: oklch(0.4900 0.1700 255.0000);
+  --tag-6: oklch(0.4900 0.1900 300.0000);
+  --tag-7: oklch(0.5200 0.1900 340.0000);
+  --tag-8: oklch(0.4500 0.0300 60.0000);
   --sidebar: oklch(0.9663 0.0080 98.8792);
   --sidebar-foreground: oklch(0.2680 0.0070 34.2980);
   --sidebar-primary: oklch(0.5540 0.0460 257.4170);
@@ -126,6 +134,14 @@
   --chart-3: oklch(0.9230 0.0030 48.7170);
   --chart-4: oklch(0.5540 0.0460 257.4170);
   --chart-5: oklch(0.9560 0.0450 203.3880);
+  --tag-1: oklch(0.7600 0.1600 25.0000);
+  --tag-2: oklch(0.7800 0.1400 70.0000);
+  --tag-3: oklch(0.7700 0.1300 140.0000);
+  --tag-4: oklch(0.7800 0.1200 195.0000);
+  --tag-5: oklch(0.7700 0.1400 255.0000);
+  --tag-6: oklch(0.7700 0.1500 300.0000);
+  --tag-7: oklch(0.7800 0.1600 340.0000);
+  --tag-8: oklch(0.7700 0.0150 60.0000);
   --sidebar: oklch(0.2357 0.0024 67.7077);
   --sidebar-foreground: oklch(0.8074 0.0142 93.0137);
   --sidebar-primary: oklch(0.3250 0 0);
@@ -134,7 +150,6 @@
   --sidebar-accent-foreground: oklch(0.8074 0.0142 93.0137);
   --sidebar-border: oklch(0.3200 0.0080 100.0000);
   --sidebar-ring: oklch(0.7731 0 0);
-  --plot-background: var(--popover) !important;
   --font-sans: 'IBM Plex Sans',ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-serif: 'IBM Plex Serif',ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: 'IBM Plex Mono',ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -182,6 +197,14 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-tag-1: var(--tag-1);
+  --color-tag-2: var(--tag-2);
+  --color-tag-3: var(--tag-3);
+  --color-tag-4: var(--tag-4);
+  --color-tag-5: var(--tag-5);
+  --color-tag-6: var(--tag-6);
+  --color-tag-7: var(--tag-7);
+  --color-tag-8: var(--tag-8);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

@@ -14,6 +14,7 @@
 	import ProgressWidget from './ProgressWidget.svelte';
 	import DetailsWidget from './DetailsWidget.svelte';
 	import TabsWidget from './TabsWidget.svelte';
+	import * as Table from '$lib/components/ui/table';
 
 	interface Props {
 		node: RenderableTreeNode;
@@ -69,6 +70,30 @@
 	<TabsWidget tabs={tag.children as Tag[]} {notebookId} />
 {:else if tag?.name === 'pre'}
 	<pre {...tag.attributes}><code>{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}</code></pre>
+{:else if tag?.name === 'table'}
+	<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Root>
+{:else if tag?.name === 'thead'}
+	<Table.Header {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Header>
+{:else if tag?.name === 'tbody'}
+	<Table.Body {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Body>
+{:else if tag?.name === 'tr'}
+	<Table.Row {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Row>
+{:else if tag?.name === 'th'}
+	<Table.Head class="p-2 align-middle bg-background text-xs font-semibold" {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Head>
+{:else if tag?.name === 'td'}
+	<Table.Cell class="p-2 align-middle font-mono text-xs" {...tag.attributes}>
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+	</Table.Cell>
 {:else}
 	<svelte:element this={tag?.name} {...tag?.attributes}>
 		{#each tag?.children ?? [] as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}

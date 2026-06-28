@@ -76,6 +76,9 @@
 		addPlotCell,
 		insertPlotCellBefore,
 		canAddPlotCell,
+		addPythonCell,
+		insertPythonCellBefore,
+		canAddPythonCell,
 		reorderCell,
 		setAllCellsDisplay,
 		setNotebookReportView,
@@ -222,7 +225,10 @@
 	}
 
 	// Divider above the cell at `index`: insert before it.
-	function insertBeforeCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot', index: number) {
+	function insertBeforeCell(
+		kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python',
+		index: number
+	) {
 		const target = cells[index];
 		if (!target) return;
 		if (kind === 'markdown') {
@@ -231,6 +237,8 @@
 			insertUdfCellBefore(target.id);
 		} else if (kind === 'plot') {
 			insertPlotCellBefore(target.id);
+		} else if (kind === 'python') {
+			insertPythonCellBefore(target.id);
 		} else {
 			const lang = kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind;
 			insertCellBefore(target.id, {
@@ -244,13 +252,15 @@
 		focusCellAt(index);
 	}
 
-	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot') {
+	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python') {
 		if (kind === 'markdown') {
 			addMarkdownCell();
 		} else if (kind === 'udf') {
 			addUdfCell();
 		} else if (kind === 'plot') {
 			addPlotCell();
+		} else if (kind === 'python') {
+			addPythonCell();
 		} else {
 			addCellWithLanguage(
 				kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind
@@ -291,7 +301,9 @@
 		const trimmed = (name ?? '').trim();
 		if (trimmed) {
 			const parts = trimmed.split(/\s+/);
-			return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+			return (
+				(parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')
+			).toUpperCase();
 		}
 		return (email?.[0] ?? '?').toUpperCase();
 	}
@@ -757,7 +769,7 @@
 			data-tauri-drag-region={isDesktop ? '' : undefined}
 		>
 			<div
-				class="flex items-center justify-between py-2 px-2"
+				class="flex items-center justify-between px-2 py-2"
 				style="padding-right: calc(var(--titlebar-inset-right, 0px) + 0.5rem)"
 			>
 				<div class="flex items-center gap-2">
@@ -795,6 +807,11 @@
 								{#if canAddPlotCell()}
 									<DropdownMenu.Item onclick={() => addPlotCell()}>
 										<BarChart2 class="h-3.5 w-3.5" /> New plot cell
+									</DropdownMenu.Item>
+								{/if}
+								{#if canAddPythonCell()}
+									<DropdownMenu.Item onclick={() => addPythonCell()}>
+										<FileCode2 class="h-3.5 w-3.5" /> New Python cell
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
@@ -927,7 +944,10 @@
 								>
 									Report view
 								</DropdownMenu.CheckboxItem>
-								<DropdownMenu.Item disabled={!activeNotebook} onclick={() => (shareDialogOpen = true)}>
+								<DropdownMenu.Item
+									disabled={!activeNotebook}
+									onclick={() => (shareDialogOpen = true)}
+								>
 									<Share2 class="h-3.5 w-3.5" /> Share…
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
@@ -957,7 +977,8 @@
 									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
-									onclick={() => window.open('https://github.com/nicodemus-opon/lunapad/issues', '_blank')}
+									onclick={() =>
+										window.open('https://github.com/nicodemus-opon/lunapad/issues', '_blank')}
 								>
 									<Bug class="h-3.5 w-3.5" /> Report an issue
 									<ExternalLink class="ml-auto h-3.5 w-3.5 text-muted-foreground" />
@@ -976,7 +997,9 @@
 						<Tooltip.Root>
 							<Tooltip.Trigger>
 								<button
-									class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+									class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen
+										? 'bg-primary/15 text-primary'
+										: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
 									onclick={() => setAIChatOpen(!getAIChatOpen())}
 									aria-pressed={aiChatOpen}
 									aria-label="Toggle AI chat"
@@ -991,11 +1014,8 @@
 					{/if}
 
 					<Tooltip.Root>
-						<Tooltip.Trigger
-							aria-label="Upload file"
-							onclick={() => (uploadDialogOpen = true)}
-						>
-							<Button variant="secondary" size="sm">
+						<Tooltip.Trigger aria-label="Upload file" onclick={() => (uploadDialogOpen = true)}>
+							<Button variant="outline" size="sm">
 								<Upload class="h-3.5 w-3.5" />Upload
 							</Button>
 						</Tooltip.Trigger>
@@ -1005,14 +1025,16 @@
 					{#if $session.data?.user}
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger
-								class="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-2xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-2xs font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 								aria-label="Account menu"
 							>
 								{userInitials($session.data.user.name, $session.data.user.email)}
 							</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="end" class="w-48">
 								<div class="px-2 py-1.5">
-									<p class="truncate text-xs font-medium text-foreground">{$session.data.user.name}</p>
+									<p class="truncate text-xs font-medium text-foreground">
+										{$session.data.user.name}
+									</p>
 									<p class="truncate text-2xs text-muted-foreground">{$session.data.user.email}</p>
 								</div>
 								<DropdownMenu.Separator />
@@ -1063,7 +1085,7 @@
 				<Tooltip.Trigger
 					class="flex  h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
 					panel
-						? 'bg-accent border border-border/50 text-foreground'
+						? 'border border-border/50 bg-accent text-foreground'
 						: 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'}"
 					onclick={() => selectSidebarPanel(panel)}
 					aria-label={tooltipLabel}
@@ -1136,7 +1158,9 @@
 
 				<!-- Panel content (fixed width so collapse slides instead of reflowing) -->
 				<div
-					class="flex shrink-0 flex-col overflow-hidden transition-opacity duration-(--motion-fast) {sidebarCollapsed ? 'opacity-0' : 'opacity-100'}"
+					class="flex shrink-0 flex-col overflow-hidden transition-opacity duration-(--motion-fast) {sidebarCollapsed
+						? 'opacity-0'
+						: 'opacity-100'}"
 					style={`width: ${sidebarWidth - RAIL_WIDTH}px`}
 					inert={sidebarCollapsed}
 				>
@@ -1211,7 +1235,9 @@
 								</div>
 								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 									<FileImporter />
-									<div class="flex items-center justify-between gap-2 border-b border-border/60 p-2">
+									<div
+										class="flex items-center justify-between gap-2 border-b border-border/60 p-2"
+									>
 										<span class="text-xs font-semibold text-foreground/80">Data Sources</span>
 										<Button
 											variant="outline"
@@ -1360,7 +1386,7 @@
 				{/snippet}
 
 				<div
-					class="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-2 scroll-smooth"
+					class="flex shrink-0 items-center gap-0.5 overflow-x-auto scroll-smooth border-b border-border/60 bg-background px-2"
 					role="tablist"
 				>
 					{#each notebooks as nb (nb.id)}
@@ -1455,187 +1481,198 @@
 					</button>
 				</div>
 				{#if isNotebookTab}
-				<div class="flex min-h-0 flex-1 overflow-hidden">
-					<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
-						<div class=" mx-auto px-10 pt-8 pb-32">
-							<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
-								<input
-									class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
-									placeholder="Untitled notebook"
-									value={activeNotebook?.name ?? ''}
-									onblur={(e) => {
-										const next = (e.target as HTMLInputElement).value.trim();
-										if (activeNotebook && next && next !== activeNotebook.name)
-											renameNotebook(activeNotebook.id, next);
-									}}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') {
-											e.preventDefault();
-											(e.target as HTMLInputElement).blur();
-										}
-									}}
-								/>
-								
-								<Select.Root
-									type="single"
-									disabled={connections.length === 0}
-									value={activeNotebookConnectionValue}
-									onValueChange={(value) => {
-										if (!activeNotebook || value === '__mixed__') return;
-										setNotebookConnection(
-											activeNotebook.id,
-											value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
-										);
-									}}
-								>
-									<Select.Trigger  class="h-7 min-w-44 font-mono text-xs">
-										{#if activeNotebookConnectionValue === '__mixed__'}
-											Mixed connections
-										{:else}
-											{connections.find(
-												(connection) => connection.id === activeNotebookConnectionValue
-											)?.name ?? 'DuckDB (built-in)'}
-										{/if}
-									</Select.Trigger>
-									<Select.Content>
-										{#if activeNotebookConnectionValue === '__mixed__'}
-											<Select.Item value="__mixed__" class="font-mono text-xs"
-												>Mixed connections</Select.Item
-											>
-										{/if}
-										{#each connections as connection (connection.id)}
-											<Select.Item value={connection.id} class="font-mono text-xs"
-												>{connection.name}</Select.Item
-											>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+					<div class="flex min-h-0 flex-1 overflow-hidden">
+						<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
+							<div class=" mx-auto px-10 pt-8 pb-32">
+								<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
+									<input
+										class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+										placeholder="Untitled notebook"
+										value={activeNotebook?.name ?? ''}
+										onblur={(e) => {
+											const next = (e.target as HTMLInputElement).value.trim();
+											if (activeNotebook && next && next !== activeNotebook.name)
+												renameNotebook(activeNotebook.id, next);
+										}}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') {
+												e.preventDefault();
+												(e.target as HTMLInputElement).blur();
+											}
+										}}
+									/>
 
-								<Select.Root
-									type="single"
-									value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
-									onValueChange={(value) => {
-										if (!activeNotebook) return;
-										setNotebookAutoRefresh(activeNotebook.id, Number(value));
-									}}
-								>
-									<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
-										<RefreshCw class="h-3 w-3" />
-										{#if !activeNotebook?.autoRefreshIntervalMs}
-											Off
-										{:else if activeNotebook.autoRefreshIntervalMs === 30000}
-											30s
-										{:else if activeNotebook.autoRefreshIntervalMs === 60000}
-											1m
-										{:else}
-											5m
-										{/if}
-									</Select.Trigger>
-									<Select.Content>
-										<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
-										<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
-										<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
-										<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
-									</Select.Content>
-								</Select.Root>
-							</div>
-
-							{#if cells.length === 0}
-								<div class="flex flex-col items-center gap-4 py-16 text-center">
-									<div class="flex flex-col items-center gap-2">
-										<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
-										<p class="max-w-xs text-xs text-muted-foreground">
-											Add a query cell to start exploring your data. Reference upstream cells by
-											name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
-												>from cell_name</code
-											>.
-										</p>
-									</div>
-									<div class="flex w-full max-w-xs flex-col gap-2">
-										<Button
-											variant="default"
-											size="sm"
-											class="h-8 w-full gap-2 text-xs"
-											onclick={() => addCellWithLanguage('prql')}
-										>
-											<Plus class="h-3.5 w-3.5" />
-											Add PRQL Cell
-											<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
-										</Button>
-										<Button
-											variant="outline"
-											size="sm"
-											class="h-8 w-full gap-2 text-xs"
-											onclick={() => addCellWithLanguage('sql')}
-										>
-											<Plus class="h-3.5 w-3.5" />
-											Add SQL Cell
-										</Button>
-										<Button
-											variant="outline"
-											size="sm"
-											class="h-8 w-full gap-2 text-xs"
-											onclick={addMarkdownCell}
-										>
-											<Info class="h-3.5 w-3.5" />
-											Add Markdown Cell
-											<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
-										</Button>
-									</div>
-									<div class="space-y-0.5 text-2xs text-muted-foreground">
-										<p>
-											Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
-										</p>
-									</div>
-								</div>
-							{:else}
-								<div bind:this={cellListEl}>
-									{#each cells as cell, idx (cell.id)}
-										<div data-cell-id={cell.id}>
-											{#if !reportView}
-												<div class="pl-(--cell-gutter)">
-													<AddCellDivider
-														onAdd={(kind) => insertBeforeCell(kind, idx)}
-														showUdf={canAddUdfCell()}
-														showPlot={canAddPlotCell()}
-													/>
-												</div>
+									<Select.Root
+										type="single"
+										disabled={connections.length === 0}
+										value={activeNotebookConnectionValue}
+										onValueChange={(value) => {
+											if (!activeNotebook || value === '__mixed__') return;
+											setNotebookConnection(
+												activeNotebook.id,
+												value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
+											);
+										}}
+									>
+										<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
+											{#if activeNotebookConnectionValue === '__mixed__'}
+												Mixed connections
+											{:else}
+												{connections.find(
+													(connection) => connection.id === activeNotebookConnectionValue
+												)?.name ?? 'DuckDB (built-in)'}
 											{/if}
-											<NotebookCell
-												{cell}
-												index={idx}
-												isFirst={idx === 0}
-												isLast={idx === cells.length - 1}
-												dark={isDark}
-												prevCellSources={prevSourcesForCell(idx)}
-												notebookId={activeTabId}
-												{autoRun}
-												{reportView}
-												isGhost={ghostCellIds.has(cell.id)}
-												onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
-												onFixWithAI={aiChatOpen ? (errorMsg) => {
-													addContextCell(cell.id);
-													setAIChatOpen(true);
-													void submitAIMessage(`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`);
-												} : undefined}
-												onOpenResultTab={handleOpenResultTab}
+										</Select.Trigger>
+										<Select.Content>
+											{#if activeNotebookConnectionValue === '__mixed__'}
+												<Select.Item value="__mixed__" class="font-mono text-xs"
+													>Mixed connections</Select.Item
+												>
+											{/if}
+											{#each connections as connection (connection.id)}
+												<Select.Item value={connection.id} class="font-mono text-xs"
+													>{connection.name}</Select.Item
+												>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+
+									<Select.Root
+										type="single"
+										value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
+										onValueChange={(value) => {
+											if (!activeNotebook) return;
+											setNotebookAutoRefresh(activeNotebook.id, Number(value));
+										}}
+									>
+										<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
+											<RefreshCw class="h-3 w-3" />
+											{#if !activeNotebook?.autoRefreshIntervalMs}
+												Off
+											{:else if activeNotebook.autoRefreshIntervalMs === 30000}
+												30s
+											{:else if activeNotebook.autoRefreshIntervalMs === 60000}
+												1m
+											{:else}
+												5m
+											{/if}
+										</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
+											<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
+											<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
+											<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
+										</Select.Content>
+									</Select.Root>
+								</div>
+
+								{#if cells.length === 0}
+									<div class="flex flex-col items-center gap-4 py-16 text-center">
+										<div class="flex flex-col items-center gap-2">
+											<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
+											<p class="max-w-xs text-xs text-muted-foreground">
+												Add a query cell to start exploring your data. Reference upstream cells by
+												name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
+													>from cell_name</code
+												>.
+											</p>
+										</div>
+										<div class="flex w-full max-w-xs flex-col gap-2">
+											<Button
+												variant="default"
+												size="sm"
+												class="h-8 w-full gap-2 text-xs"
+												onclick={() => addCellWithLanguage('prql')}
+											>
+												<Plus class="h-3.5 w-3.5" />
+												Add PRQL Cell
+												<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-8 w-full gap-2 text-xs"
+												onclick={() => addCellWithLanguage('sql')}
+											>
+												<Plus class="h-3.5 w-3.5" />
+												Add SQL Cell
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-8 w-full gap-2 text-xs"
+												onclick={addMarkdownCell}
+											>
+												<Info class="h-3.5 w-3.5" />
+												Add Markdown Cell
+												<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
+											</Button>
+										</div>
+										<div class="space-y-0.5 text-2xs text-muted-foreground">
+											<p>
+												Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
+											</p>
+										</div>
+									</div>
+								{:else}
+									<div bind:this={cellListEl}>
+										{#each cells as cell, idx (cell.id)}
+											<div data-cell-id={cell.id}>
+												{#if !reportView}
+													<div class="pl-(--cell-gutter)">
+														<AddCellDivider
+															onAdd={(kind) => insertBeforeCell(kind, idx)}
+															showUdf={canAddUdfCell()}
+															showPlot={canAddPlotCell()}
+															showPython={canAddPythonCell()}
+														/>
+													</div>
+												{/if}
+												<NotebookCell
+													{cell}
+													index={idx}
+													isFirst={idx === 0}
+													isLast={idx === cells.length - 1}
+													dark={isDark}
+													prevCellSources={prevSourcesForCell(idx)}
+													notebookId={activeTabId}
+													{autoRun}
+													{reportView}
+													isGhost={ghostCellIds.has(cell.id)}
+													onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
+													onFixWithAI={aiChatOpen
+														? (errorMsg) => {
+																addContextCell(cell.id);
+																setAIChatOpen(true);
+																void submitAIMessage(
+																	`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
+																);
+															}
+														: undefined}
+													onOpenResultTab={handleOpenResultTab}
+												/>
+											</div>
+										{/each}
+									</div>
+
+									{#if !reportView}
+										<div class="mt-2 pl-(--cell-gutter)">
+											<AddCellDivider
+												persistent
+												onAdd={appendCell}
+												showUdf={canAddUdfCell()}
+												showPlot={canAddPlotCell()}
+												showPython={canAddPythonCell()}
 											/>
 										</div>
-									{/each}
-								</div>
-
-								{#if !reportView}
-									<div class="mt-2 pl-(--cell-gutter)">
-										<AddCellDivider persistent onAdd={appendCell} showUdf={canAddUdfCell()} showPlot={canAddPlotCell()} />
-									</div>
+									{/if}
 								{/if}
-							{/if}
-						</div>
-					</main>
-					{#if aiChatOpen}
-						<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
-					{/if}
-				</div>
+							</div>
+						</main>
+						{#if aiChatOpen}
+							<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
+						{/if}
+					</div>
 				{:else if activeExtraTab}
 					{#if activeExtraTab.type === 'lineage'}
 						<!-- Lineage fills the full remaining height with no scroll/padding -->
@@ -1719,7 +1756,11 @@
 	onToggleSidebar={toggleSidebarCollapsed}
 />
 
-<SettingsDialog bind:open={settingsOpen} bind:tab={settingsTab} onLogout={() => void handleLogout()} />
+<SettingsDialog
+	bind:open={settingsOpen}
+	bind:tab={settingsTab}
+	onLogout={() => void handleLogout()}
+/>
 
 <Dialog.Root bind:open={shortcutsOpen}>
 	<Dialog.Content class="max-h-[85vh] max-w-2xl overflow-y-auto p-6">

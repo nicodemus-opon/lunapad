@@ -19,13 +19,15 @@ RUN pnpm build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
-# Install Python + dbt-postgres
+# Install Python + dbt-postgres + the curated package set Python cells run
+# against (see src/lib/server/python-runner.ts) — baked in so Python cells
+# need zero setup in this image, no uv/venv bootstrap required.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres --break-system-packages \
+  && pip install dbt-postgres pandas numpy pyarrow plotly --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@11 --activate
@@ -57,7 +59,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres --break-system-packages \
+  && pip install dbt-postgres pandas numpy pyarrow plotly --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@11 --activate

@@ -11,12 +11,15 @@ describe('ChartView label styling', () => {
 	it('disables LayerChart axis text stroke styling', () => {
 		const source = readFileSync(sourcePath, 'utf8');
 
-		// ECharts fully replaced by Observable Plot — these must never come back
+		// ECharts and Observable Plot were both fully replaced by Plotly —
+		// these must never come back
 		expect(source).not.toContain('echartsOption');
 		expect(source).not.toContain('EChart');
+		expect(source).not.toContain('@observablehq/plot');
+		expect(source).not.toContain('import * as Plot');
 
-		// Plot-based rendering, including the previously-deferred types
-		expect(source).toContain('plotRender');
+		// Plotly-based rendering, including the previously-deferred types
+		expect(source).toContain('const figure = $derived.by');
 		expect(source).toContain("t === 'pie'");
 		expect(source).toContain("t === 'sankey'");
 		expect(source).toContain("t === 'funnel'");
@@ -45,5 +48,8 @@ describe('ChartView label styling', () => {
 
 		// Size column for bubble/scatter
 		expect(source).toContain('sizeColumn');
+
+		// PNG export forwarding to the mounted PlotlyMount
+		expect(source).toContain('export async function exportPng');
 	});
 });

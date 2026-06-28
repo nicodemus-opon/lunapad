@@ -62,9 +62,7 @@ async function instantiateBundle(
 	// workers whose script lacks a COEP header (dev server and sirv don't add it).
 	const workerScriptUrl = new URL(bundle.mainWorker!, globalThis.location.href).href;
 	const workerScript = await fetch(workerScriptUrl).then((r) => r.text());
-	const workerBlobUrl = URL.createObjectURL(
-		new Blob([workerScript], { type: 'text/javascript' })
-	);
+	const workerBlobUrl = URL.createObjectURL(new Blob([workerScript], { type: 'text/javascript' }));
 	try {
 		worker = new Worker(workerBlobUrl);
 		const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
@@ -72,9 +70,17 @@ async function instantiateBundle(
 		// Race instantiation against an immediate worker crash so we don't wait the full
 		// timeout when the worker fails to start (e.g. WASM load error, CORS, CSP).
 		const workerCrash = new Promise<never>((_, reject) => {
-			worker!.addEventListener('error', (e) => {
-				reject(new Error(`DuckDB worker failed: ${e.message || `check browser console (worker url: ${bundle.mainWorker})`}`));
-			}, { once: true });
+			worker!.addEventListener(
+				'error',
+				(e) => {
+					reject(
+						new Error(
+							`DuckDB worker failed: ${e.message || `check browser console (worker url: ${bundle.mainWorker})`}`
+						)
+					);
+				},
+				{ once: true }
+			);
 		});
 		// Absolutize the WASM URL: the worker resolves relative URLs against its own
 		// base, which is an opaque blob: URL here, so path-relative fetches would fail.
@@ -110,7 +116,11 @@ export async function initDB(): Promise<void> {
 				await instantiateBundle(selectedBundle, 60_000, 12_000);
 			} catch {
 				await resetDBState();
-				await instantiateBundle(LOCAL_BUNDLES[fallbackVariant] as duckdb.DuckDBBundle, 60_000, 12_000);
+				await instantiateBundle(
+					LOCAL_BUNDLES[fallbackVariant] as duckdb.DuckDBBundle,
+					60_000,
+					12_000
+				);
 			}
 		} catch (err: unknown) {
 			await resetDBState();
@@ -133,7 +143,7 @@ export const FILE_FORMAT_EXTENSIONS: Record<FileFormat, string[]> = {
 	tsv: ['.tsv'],
 	parquet: ['.parquet', '.pq'],
 	json: ['.json'],
-	ndjson: ['.ndjson', '.jsonl'],
+	ndjson: ['.ndjson', '.jsonl']
 };
 
 export const ACCEPT_ALL_FORMATS = Object.values(FILE_FORMAT_EXTENSIONS).flat().join(',');
@@ -307,7 +317,8 @@ export async function listMainSchemaRelations(): Promise<RelationCatalogEntry[]>
 	const entries: RelationCatalogEntry[] = [];
 	for (const row of relResult.toArray()) {
 		const name = String(row.table_name);
-		const relationType: RelationType = String(row.table_type).toUpperCase() === 'VIEW' ? 'view' : 'table';
+		const relationType: RelationType =
+			String(row.table_type).toUpperCase() === 'VIEW' ? 'view' : 'table';
 
 		const colsResult = await c.query(
 			`SELECT column_name, data_type
@@ -327,7 +338,9 @@ export async function listMainSchemaRelations(): Promise<RelationCatalogEntry[]>
 	return entries;
 }
 
-export async function executeSQL(sql: string): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
+export async function executeSQL(
+	sql: string
+): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
 	const c = assertConn();
 	const result = await c.query(sql);
 	const schema = result.schema;
@@ -464,6 +477,52 @@ export async function loadRowsForProfiling(
 	await db!.registerFileBuffer(fileName, new TextEncoder().encode(ndjson));
 	await c.query(
 		`CREATE OR REPLACE TEMP TABLE "_p_${safeName}" AS SELECT * FROM read_ndjson_auto('${fileName}')`
+	);
+}
+
+/**
+ * Registers a Python cell's resulting DataFrame as a real, permanent DuckDB
+ * table named after the cell's `outputName` — same NDJSON-registration
+ * technique as `loadRowsForProfiling`, but a durable named table instead of a
+ * `_p_`-prefixed temp one, so downstream SQL/PRQL/plot/python cells can
+ * reference it with a plain `FROM name` like any other table (Phase 3 of
+ * Python cell support).
+ */
+export async function registerPythonResultTable(
+	name: string,
+	rows: Record<string, unknown>[],
+	columns: string[]
+): Promise<void> {
+	const c = assertConn();
+	const safeName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+	if (rows.length === 0) {
+		// No rows to infer a schema from — make an empty table with the right
+		// columns (typed VARCHAR; callers only need it queryable/joinable, not
+		// strictly typed) so downstream references don't fail outright.
+		const colList = columns.length > 0 ? columns : ['_empty'];
+		const ddl = colList.map((col) => `"${col.replace(/"/g, '""')}" VARCHAR`).join(', ');
+		await c.query(`CREATE OR REPLACE TABLE "${safeName}" (${ddl})`);
+		return;
+	}
+	const ndjson = rows
+		.map((r) => {
+			const clean: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries(r)) {
+				if (v instanceof Date) {
+					clean[k] = v.toISOString();
+				} else if (typeof v === 'bigint') {
+					clean[k] = Number(v);
+				} else {
+					clean[k] = v;
+				}
+			}
+			return JSON.stringify(clean);
+		})
+		.join('\n');
+	const fileName = `_pyresult_${safeName}.ndjson`;
+	await db!.registerFileBuffer(fileName, new TextEncoder().encode(ndjson));
+	await c.query(
+		`CREATE OR REPLACE TABLE "${safeName}" AS SELECT * FROM read_ndjson_auto('${fileName}')`
 	);
 }
 

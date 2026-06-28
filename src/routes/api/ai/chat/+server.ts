@@ -1,5 +1,12 @@
 import type { RequestHandler } from './$types';
-import type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable, WorkspaceContract } from '$lib/types/ai-chat.js';
+import type {
+	AIChatRequest,
+	AIChatToolCall,
+	AIChatToolName,
+	AIChatCell,
+	AIChatSchemaTable,
+	WorkspaceContract
+} from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 
@@ -99,46 +106,74 @@ function buildDialectSection(dialect: string): string {
 - Column reference: write t."My Column" NOT t["My Column"] — bracket subscript is array access, not column access.`;
 }
 
-function buildSystemPromptOllama(cells: AIChatCell[], schema: AIChatSchemaTable[], workspaceMemory?: string, sessionDataContext?: Record<string, string>, nativeTools = false, workspaceContract?: WorkspaceContract, sessionPlanContext?: string[], schemaChangeNote?: string, connectionDialect = 'duckdb', isSmall = false): string {
-	const cellList = cells.length > 0
-		? cells.map(formatCellGraph).join(', ')
-		: 'none';
+function buildSystemPromptOllama(
+	cells: AIChatCell[],
+	schema: AIChatSchemaTable[],
+	workspaceMemory?: string,
+	sessionDataContext?: Record<string, string>,
+	nativeTools = false,
+	workspaceContract?: WorkspaceContract,
+	sessionPlanContext?: string[],
+	schemaChangeNote?: string,
+	connectionDialect = 'duckdb',
+	isSmall = false
+): string {
+	const cellList = cells.length > 0 ? cells.map(formatCellGraph).join(', ') : 'none';
 
 	// Prioritize schema tables referenced by active cells; truncate more aggressively for small models
 	const prioritizedSchema = prioritizeSchema(schema, cells, isSmall ? 10 : 20, isSmall ? 8 : 15);
-	const schemaList = prioritizedSchema.length > 0
-		? prioritizedSchema.map((t) => {
-			const cols = t.columns.map((col, i) => {
-				const raw = t.columnTypes?.[i] ?? '';
-				const type = raw.match(/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL/i) ? 'NUM'
-					: raw.match(/DATE|TIME/i) ? 'DATE'
-					: raw.match(/BOOL/i) ? 'BOOL'
-					: raw ? 'TEXT' : '';
-				const quotedCol = col.includes(' ') ? `"${col}"` : col;
-				return type ? `${quotedCol}:${type}` : quotedCol;
-			}).join(', ');
-			const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
-			// Skip column profiles for small models to save tokens
-			const profiles = !isSmall && t.columnProfiles
-				? Object.entries(t.columnProfiles).map(([col, summary]) => `    ${col}: ${summary}`).join('\n')
-				: '';
-			return `${t.name}(${cols})${rowNote}${profiles ? '\n' + profiles : ''}`;
-		}).join('\n  ')
-		: 'none — ask the user to upload data first';
+	const schemaList =
+		prioritizedSchema.length > 0
+			? prioritizedSchema
+					.map((t) => {
+						const cols = t.columns
+							.map((col, i) => {
+								const raw = t.columnTypes?.[i] ?? '';
+								const type = raw.match(/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL/i)
+									? 'NUM'
+									: raw.match(/DATE|TIME/i)
+										? 'DATE'
+										: raw.match(/BOOL/i)
+											? 'BOOL'
+											: raw
+												? 'TEXT'
+												: '';
+								const quotedCol = col.includes(' ') ? `"${col}"` : col;
+								return type ? `${quotedCol}:${type}` : quotedCol;
+							})
+							.join(', ');
+						const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
+						// Skip column profiles for small models to save tokens
+						const profiles =
+							!isSmall && t.columnProfiles
+								? Object.entries(t.columnProfiles)
+										.map(([col, summary]) => `    ${col}: ${summary}`)
+										.join('\n')
+								: '';
+						return `${t.name}(${cols})${rowNote}${profiles ? '\n' + profiles : ''}`;
+					})
+					.join('\n  ')
+			: 'none — ask the user to upload data first';
 
 	const memNote = workspaceMemory ? `\nWorkspace history: ${workspaceMemory}` : '';
-	const dataNote = sessionDataContext && Object.keys(sessionDataContext).length > 0
-		? '\n\nData already investigated this session:\n' +
-		  Object.entries(sessionDataContext).map(([k, v]) => `- ${k}: ${v}`).join('\n')
-		: '';
-	const planNote = sessionPlanContext && sessionPlanContext.length > 0
-		? '\n\nEstablished decisions (do not re-investigate):\n' +
-		  sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
-		: '';
+	const dataNote =
+		sessionDataContext && Object.keys(sessionDataContext).length > 0
+			? '\n\nData already investigated this session:\n' +
+				Object.entries(sessionDataContext)
+					.map(([k, v]) => `- ${k}: ${v}`)
+					.join('\n')
+			: '';
+	const planNote =
+		sessionPlanContext && sessionPlanContext.length > 0
+			? '\n\nEstablished decisions (do not re-investigate):\n' +
+				sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
+			: '';
 	const schemaChangeNote2 = schemaChangeNote ? `\n\n⚠ ${schemaChangeNote}` : '';
 	const contractNote = buildWorkspaceContractSection(workspaceContract);
 
-	const formatSection = nativeTools ? '' : `
+	const formatSection = nativeTools
+		? ''
+		: `
 TOOL CALL FORMAT — args always nested under "args":
 SQL cell:        <tool_call>{"tool":"create_cell","callId":"C1","args":{"outputName":"cell_name","cellType":"query","code":"SELECT ...","materializeMode":"table"}}</tool_call>
 Markdown cell:   <tool_call>{"tool":"create_cell","callId":"C2","args":{"outputName":"intro","cellType":"markdown","markdown":"## Title\\n\\nText."}}</tool_call>
@@ -158,9 +193,10 @@ Record decision: <tool_call>{"tool":"record_decision","callId":"R1","args":{"dec
 
 	// Small models (≤8B): compact prompt — one-shot format example first, 6 critical rules, trimmed context
 	if (isSmall) {
-		const smallPlanNote = sessionPlanContext && sessionPlanContext.length > 0
-			? '\nDecisions: ' + sessionPlanContext.slice(-3).join('; ')
-			: '';
+		const smallPlanNote =
+			sessionPlanContext && sessionPlanContext.length > 0
+				? '\nDecisions: ' + sessionPlanContext.slice(-3).join('; ')
+				: '';
 		return `TOOL FORMAT — use exactly:
 <tool_call>{"tool":"create_cell","callId":"C1","args":{"outputName":"sales_by_month","cellType":"query","code":"SELECT month, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 1"}}</tool_call>
 <tool_call>{"tool":"run_cells","callId":"R1","args":{"cellIds":["C1"]}}</tool_call>
@@ -223,12 +259,16 @@ function buildWorkspaceContractSection(contract: WorkspaceContract | undefined):
 	const parts: string[] = [];
 
 	if (contract.namingRules.length > 0) {
-		const rows = contract.namingRules.map((r) => `  ${r.prefix.padEnd(10)} → ${r.description.padEnd(22)} → ${r.materialization}`).join('\n');
+		const rows = contract.namingRules
+			.map((r) => `  ${r.prefix.padEnd(10)} → ${r.description.padEnd(22)} → ${r.materialization}`)
+			.join('\n');
 		parts.push(`Naming conventions:\n${rows}`);
 	}
 
 	if (contract.topReusableModels.length > 0) {
-		const rows = contract.topReusableModels.map((m) => `  ${m.name}  — ${m.downstreamCount} downstream`).join('\n');
+		const rows = contract.topReusableModels
+			.map((m) => `  ${m.name}  — ${m.downstreamCount} downstream`)
+			.join('\n');
 		parts.push(`Top reusable models:\n${rows}`);
 	}
 
@@ -240,45 +280,79 @@ function buildWorkspaceContractSection(contract: WorkspaceContract | undefined):
 	return `\n\n## Workspace Contract\n${parts.join('\n\n')}`;
 }
 
-function buildSystemPromptXML(cells: AIChatCell[], schema: AIChatSchemaTable[], workspaceMemory?: string, sessionDataContext?: Record<string, string>, workspaceContract?: WorkspaceContract, sessionPlanContext?: string[], schemaChangeNote?: string, connectionDialect = 'duckdb', useNativeTools = false): string {
-	const cellList = cells.length > 0
-		? cells.map((c) => {
-			const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
-			const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
-			const chart = c.resultChartConfig ? ` chart=${c.resultChartConfig.chartType}(x=${c.resultChartConfig.xColumn},y=[${c.resultChartConfig.yColumns?.join(',')}])` : '';
-			const active = c.isActiveNotebook ? ' [active]' : '';
-			const impact = (c.criticalityScore ?? 0) >= 3 ? ` [HIGH IMPACT — ${c.criticalityScore} dependents]` : '';
-			const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
-			return `  id=${c.id} name="${c.outputName}" status=${c.status}${active}${impact}${up}${down}${chart}${err}`;
-		}).join('\n')
-		: '  (none)';
+function buildSystemPromptXML(
+	cells: AIChatCell[],
+	schema: AIChatSchemaTable[],
+	workspaceMemory?: string,
+	sessionDataContext?: Record<string, string>,
+	workspaceContract?: WorkspaceContract,
+	sessionPlanContext?: string[],
+	schemaChangeNote?: string,
+	connectionDialect = 'duckdb',
+	useNativeTools = false
+): string {
+	const cellList =
+		cells.length > 0
+			? cells
+					.map((c) => {
+						const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
+						const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
+						const chart = c.resultChartConfig
+							? ` chart=${c.resultChartConfig.chartType}(x=${c.resultChartConfig.xColumn},y=[${c.resultChartConfig.yColumns?.join(',')}])`
+							: '';
+						const active = c.isActiveNotebook ? ' [active]' : '';
+						const impact =
+							(c.criticalityScore ?? 0) >= 3
+								? ` [HIGH IMPACT — ${c.criticalityScore} dependents]`
+								: '';
+						const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
+						return `  id=${c.id} name="${c.outputName}" status=${c.status}${active}${impact}${up}${down}${chart}${err}`;
+					})
+					.join('\n')
+			: '  (none)';
 
-	const schemaList = schema.length > 0
-		? schema.slice(0, 30).map((t) => {
-			const colList = t.columns.slice(0, 15).map((col) => col.includes(' ') ? `"${col}"` : col).join(', ');
-			const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
-			const profiles = t.columnProfiles
-				? '\n' + Object.entries(t.columnProfiles).map(([col, summary]) => `    ${col}: ${summary}`).join('\n')
-				: '';
-			return `  ${t.name}: ${colList}${rowNote}${profiles}`;
-		}).join('\n')
-		: '  (none)';
+	const schemaList =
+		schema.length > 0
+			? schema
+					.slice(0, 30)
+					.map((t) => {
+						const colList = t.columns
+							.slice(0, 15)
+							.map((col) => (col.includes(' ') ? `"${col}"` : col))
+							.join(', ');
+						const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
+						const profiles = t.columnProfiles
+							? '\n' +
+								Object.entries(t.columnProfiles)
+									.map(([col, summary]) => `    ${col}: ${summary}`)
+									.join('\n')
+							: '';
+						return `  ${t.name}: ${colList}${rowNote}${profiles}`;
+					})
+					.join('\n')
+			: '  (none)';
 
 	const memSection = workspaceMemory ? `\nWorkspace history: ${workspaceMemory}` : '';
-	const dataSection = sessionDataContext && Object.keys(sessionDataContext).length > 0
-		? '\n\n## Data already investigated this session\n' +
-		  Object.entries(sessionDataContext).map(([k, v]) => `- ${k}: ${v}`).join('\n')
-		: '';
+	const dataSection =
+		sessionDataContext && Object.keys(sessionDataContext).length > 0
+			? '\n\n## Data already investigated this session\n' +
+				Object.entries(sessionDataContext)
+					.map(([k, v]) => `- ${k}: ${v}`)
+					.join('\n')
+			: '';
 	// #3 — Modeling decisions recorded via record_decision this session
-	const planSection = sessionPlanContext && sessionPlanContext.length > 0
-		? '\n\n## Established modeling decisions (do not re-investigate)\n' +
-		  sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
-		: '';
+	const planSection =
+		sessionPlanContext && sessionPlanContext.length > 0
+			? '\n\n## Established modeling decisions (do not re-investigate)\n' +
+				sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
+			: '';
 	// #9 — Schema-change warning
 	const schemaChangeSection = schemaChangeNote ? `\n\n⚠ ${schemaChangeNote}` : '';
 	const contractSection = buildWorkspaceContractSection(workspaceContract);
 
-	const toolFmtSection = useNativeTools ? '' : `
+	const toolFmtSection = useNativeTools
+		? ''
+		: `
 Emit tool calls inline in your response using this exact format:
 <tool_call>{"tool":"TOOL_NAME","callId":"C1","args":{...}}</tool_call>
 
@@ -393,7 +467,16 @@ Respond with concise prose and inline tool calls. Make the notebook beautiful.`;
 }
 
 function buildSubagentSystemPrompt(
-	type: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning' | 'documentation',
+	type:
+		| 'discovery'
+		| 'modeling'
+		| 'sql-gen'
+		| 'sql-review'
+		| 'debug'
+		| 'dashboard'
+		| 'investigation'
+		| 'sprint_planning'
+		| 'documentation',
 	cells: AIChatCell[],
 	schema: AIChatSchemaTable[],
 	sessionDataContext: Record<string, string> | undefined,
@@ -403,20 +486,30 @@ function buildSubagentSystemPrompt(
 	isOllama: boolean,
 	isSmall: boolean
 ): string {
-	const cellList = cells.length > 0
-		? cells.map((c) => {
-			const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
-			const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
-			const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
-			return `  ${c.outputName} (${c.language}, ${c.status})${up}${down}${err}`;
-		}).join('\n')
-		: '  (none)';
+	const cellList =
+		cells.length > 0
+			? cells
+					.map((c) => {
+						const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
+						const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
+						const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
+						return `  ${c.outputName} (${c.language}, ${c.status})${up}${down}${err}`;
+					})
+					.join('\n')
+			: '  (none)';
 
-	const schemaList = schema.slice(0, 20).map((t) => {
-		const cols = t.columns.slice(0, 15).map((col) => col.includes(' ') ? `"${col}"` : col).join(', ');
-		const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
-		return `  ${t.name}: ${cols}${rowNote}`;
-	}).join('\n') || '  (none)';
+	const schemaList =
+		schema
+			.slice(0, 20)
+			.map((t) => {
+				const cols = t.columns
+					.slice(0, 15)
+					.map((col) => (col.includes(' ') ? `"${col}"` : col))
+					.join(', ');
+				const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
+				return `  ${t.name}: ${cols}${rowNote}`;
+			})
+			.join('\n') || '  (none)';
 
 	const planNote = sessionPlanContext?.length
 		? '\n\nEstablished decisions:\n' + sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
@@ -509,9 +602,31 @@ ${cellList}${planNote}${contractNote}${dialectNote}`;
 			// Use the standard XML prompt for cloud models; skip Step 1 — Discover since
 			// discovery was already completed and is injected in the user message.
 			const base = isOllama
-				? buildSystemPromptOllama(cells, schema, undefined, sessionDataContext, false, workspaceContract, sessionPlanContext, undefined, connectionDialect, isSmall)
-				: buildSystemPromptXML(cells, schema, undefined, sessionDataContext, workspaceContract, sessionPlanContext, undefined, connectionDialect, true);
-			const skipNote = '\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After cells run clean (Step 4 — Validate), write a findings markdown cell (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell\'s outputName as your upstream reference.\n';
+				? buildSystemPromptOllama(
+						cells,
+						schema,
+						undefined,
+						sessionDataContext,
+						false,
+						workspaceContract,
+						sessionPlanContext,
+						undefined,
+						connectionDialect,
+						isSmall
+					)
+				: buildSystemPromptXML(
+						cells,
+						schema,
+						undefined,
+						sessionDataContext,
+						workspaceContract,
+						sessionPlanContext,
+						undefined,
+						connectionDialect,
+						true
+					);
+			const skipNote =
+				"\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After cells run clean (Step 4 — Validate), write a findings markdown cell (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell's outputName as your upstream reference.\n";
 			return skipNote + base;
 		}
 
@@ -603,19 +718,28 @@ Notebook:
 ${cellList}${planNote}${contractNote}`;
 
 		case 'debug': {
-			const debugCellList = cells.length > 0
-				? cells.map((c) => {
-					const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
-					const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
-					const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
-					const cols = c.resultColumns?.length ? `\n    result_columns: ${c.resultColumns.join(', ')}` : '';
-					const code = c.code ? `\n    code: ${c.code.slice(0, 800)}` : '';
-					return `  id=${c.id} name="${c.outputName}" (${c.language}, ${c.status})${up}${down}${err}${cols}${code}`;
-				}).join('\n')
-				: '  (none)';
-			const dataNote = sessionDataContext && Object.keys(sessionDataContext).length > 0
-				? '\n\nData investigated this session:\n' + Object.entries(sessionDataContext).map(([k, v]) => `- ${k}: ${v}`).join('\n')
-				: '';
+			const debugCellList =
+				cells.length > 0
+					? cells
+							.map((c) => {
+								const up = c.upstream?.length ? ` depends_on=[${c.upstream.join(', ')}]` : '';
+								const down = c.downstream?.length ? ` feeds_into=[${c.downstream.join(', ')}]` : '';
+								const err = c.errorMessage ? ` [ERROR: ${c.errorMessage}]` : '';
+								const cols = c.resultColumns?.length
+									? `\n    result_columns: ${c.resultColumns.join(', ')}`
+									: '';
+								const code = c.code ? `\n    code: ${c.code.slice(0, 800)}` : '';
+								return `  id=${c.id} name="${c.outputName}" (${c.language}, ${c.status})${up}${down}${err}${cols}${code}`;
+							})
+							.join('\n')
+					: '  (none)';
+			const dataNote =
+				sessionDataContext && Object.keys(sessionDataContext).length > 0
+					? '\n\nData investigated this session:\n' +
+						Object.entries(sessionDataContext)
+							.map(([k, v]) => `- ${k}: ${v}`)
+							.join('\n')
+					: '';
 			return `You are a SQL debugging agent. Your only job is to diagnose and fix a failing cell.
 
 Principle: fix only what is broken — preserve the original grain and layer conventions (stg_/dim_/fct_/mart_).
@@ -793,16 +917,37 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'create_cell',
-			description: 'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
+			description:
+				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
 			parameters: {
 				type: 'object',
 				properties: {
-					outputName: { type: 'string', description: 'For markdown: short word (intro, summary, findings). For SQL: snake_case description (revenue_by_month, top_customers).' },
-					cellType: { type: 'string', enum: ['query', 'markdown'], description: 'query for SQL, markdown for explanatory prose' },
-					code: { type: 'string', description: 'Complete SQL for query cells. Omit for markdown cells.' },
-					markdown: { type: 'string', description: 'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with {{outputName.field}} (e.g. {{orders.count}}, {{top_month.revenue}}) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %} — any cell containing {% is rendered with Markdoc. Values update automatically when cells re-run.' },
+					outputName: {
+						type: 'string',
+						description:
+							'For markdown: short word (intro, summary, findings). For SQL: snake_case description (revenue_by_month, top_customers).'
+					},
+					cellType: {
+						type: 'string',
+						enum: ['query', 'markdown'],
+						description: 'query for SQL, markdown for explanatory prose'
+					},
+					code: {
+						type: 'string',
+						description: 'Complete SQL for query cells. Omit for markdown cells.'
+					},
+					markdown: {
+						type: 'string',
+						description:
+							'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with {{outputName.field}} (e.g. {{orders.count}}, {{top_month.revenue}}) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %} — any cell containing {% is rendered with Markdoc. Values update automatically when cells re-run.'
+					},
 					language: { type: 'string', enum: ['sql'], description: 'Always "sql" for query cells.' },
-					materializeMode: { type: 'string', enum: ['ephemeral', 'view', 'table', 'incremental'], description: 'How to materialize this model. Set per workspace naming conventions: dim_→table, fct_→incremental, stg_→view, metric_→incremental. Omit for ephemeral ad-hoc queries.' }
+					materializeMode: {
+						type: 'string',
+						enum: ['ephemeral', 'view', 'table', 'incremental'],
+						description:
+							'How to materialize this model. Set per workspace naming conventions: dim_→table, fct_→incremental, stg_→view, metric_→incremental. Omit for ephemeral ad-hoc queries.'
+					}
 				},
 				required: ['outputName', 'cellType']
 			}
@@ -812,11 +957,16 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'pick_chart',
-			description: 'PREFERRED chart tool. Call after run_cells — reads actual result rows/columns and selects the best chart type, or falls back to table view when no numeric data is present. Always call pick_chart after run_cells; only fall back to set_chart when you need a specific type (e.g. area for cumulative, pie for proportions, scatter).',
+			description:
+				'PREFERRED chart tool. Call after run_cells — reads actual result rows/columns and selects the best chart type, or falls back to table view when no numeric data is present. Always call pick_chart after run_cells; only fall back to set_chart when you need a specific type (e.g. area for cumulative, pie for proportions, scatter).',
 			parameters: {
 				type: 'object',
 				properties: {
-					cellId: { type: 'string', description: 'The cell to chart. Use the same callId or outputName you used in run_cells.' }
+					cellId: {
+						type: 'string',
+						description:
+							'The cell to chart. Use the same callId or outputName you used in run_cells.'
+					}
 				},
 				required: ['cellId']
 			}
@@ -826,7 +976,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'set_chart',
-			description: 'Explicitly configure a chart when you need a specific type that pick_chart would not choose (e.g. area for cumulative revenue, pie for proportions, scatter with colorColumn). For all other cases, prefer pick_chart after run_cells. Use chartType "custom" with a `code` snippet for chart shapes none of the other types can express — code receives `rows`, `columns`, `Plot` (the Observable Plot API), `width`, `height` and should return a Plot spec object or call Plot.plot(...) itself; xColumn/yColumns can be left empty for "custom".',
+			description:
+				'Explicitly configure a chart when you need a specific type that pick_chart would not choose (e.g. area for cumulative revenue, pie for proportions, scatter with colorColumn). For all other cases, prefer pick_chart after run_cells. Use chartType "custom" with a `code` snippet for chart shapes none of the other types can express — code receives `rows`, `columns` and should return a Plotly figure object: `{ data: [...], layout: {...} }`; xColumn/yColumns can be left empty for "custom".',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -834,14 +985,54 @@ const NATIVE_TOOLS = [
 					chartConfig: {
 						type: 'object',
 						properties: {
-							chartType: { type: 'string', enum: ['bar', 'bar-horizontal', 'line', 'area', 'scatter', 'bubble', 'pie', 'histogram', 'heatmap', 'big-value', 'value', 'delta', 'funnel', 'box-plot', 'calendar-heatmap', 'sankey', 'custom'] },
-							xColumn: { type: 'string', description: 'Dimension / date / category / value column' },
-							yColumns: { type: 'array', items: { type: 'string' }, description: 'One or more measure columns. List all numeric measures for grouped/stacked charts.' },
-							colorColumn: { type: 'string', description: 'Optional: split series by this column (grouped bars, scatter color)' },
-							seriesMode: { type: 'string', enum: ['auto', 'grouped', 'stacked'], description: 'Use grouped or stacked when yColumns has multiple entries' },
+							chartType: {
+								type: 'string',
+								enum: [
+									'bar',
+									'bar-horizontal',
+									'line',
+									'area',
+									'scatter',
+									'bubble',
+									'pie',
+									'histogram',
+									'heatmap',
+									'big-value',
+									'value',
+									'delta',
+									'funnel',
+									'box-plot',
+									'calendar-heatmap',
+									'sankey',
+									'custom'
+								]
+							},
+							xColumn: {
+								type: 'string',
+								description: 'Dimension / date / category / value column'
+							},
+							yColumns: {
+								type: 'array',
+								items: { type: 'string' },
+								description:
+									'One or more measure columns. List all numeric measures for grouped/stacked charts.'
+							},
+							colorColumn: {
+								type: 'string',
+								description: 'Optional: split series by this column (grouped bars, scatter color)'
+							},
+							seriesMode: {
+								type: 'string',
+								enum: ['auto', 'grouped', 'stacked'],
+								description: 'Use grouped or stacked when yColumns has multiple entries'
+							},
 							sortOrder: { type: 'string', enum: ['none', 'asc', 'desc'] },
 							title: { type: 'string' },
-							code: { type: 'string', description: 'Required when chartType is "custom": a JS Observable Plot spec, see description above.' }
+							code: {
+								type: 'string',
+								description:
+									'Required when chartType is "custom": a JS Plotly figure spec, see description above.'
+							}
 						},
 						required: ['chartType', 'xColumn', 'yColumns']
 					}
@@ -883,10 +1074,13 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'get_lineage',
-			description: 'Returns upstream (depends_on) and downstream (feeds_into) cells for a given outputName, plus dashboard usage. Call before modifying a cell to understand impact.',
+			description:
+				'Returns upstream (depends_on) and downstream (feeds_into) cells for a given outputName, plus dashboard usage. Call before modifying a cell to understand impact.',
 			parameters: {
 				type: 'object',
-				properties: { outputName: { type: 'string', description: 'The cell outputName to inspect' } },
+				properties: {
+					outputName: { type: 'string', description: 'The cell outputName to inspect' }
+				},
 				required: ['outputName']
 			}
 		}
@@ -895,7 +1089,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'list_cells',
-			description: 'Lists all query cells with status and row counts. Use when you need a full inventory of existing cells.',
+			description:
+				'Lists all query cells with status and row counts. Use when you need a full inventory of existing cells.',
 			parameters: { type: 'object', properties: {} }
 		}
 	},
@@ -903,7 +1098,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'search_workspace',
-			description: 'Semantic search over existing cells and schema tables. Use before generating SQL to find relevant existing models.',
+			description:
+				'Semantic search over existing cells and schema tables. Use before generating SQL to find relevant existing models.',
 			parameters: {
 				type: 'object',
 				properties: { query: { type: 'string', description: 'Natural language search query' } },
@@ -915,11 +1111,15 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'query_data',
-			description: 'Run a read-only SELECT against the active database. Use BEFORE writing SQL to verify column values, date formats, join keys, and value ranges. Never invent values — inspect them first.',
+			description:
+				'Run a read-only SELECT against the active database. Use BEFORE writing SQL to verify column values, date formats, join keys, and value ranges. Never invent values — inspect them first.',
 			parameters: {
 				type: 'object',
 				properties: {
-					sql: { type: 'string', description: 'A read-only SELECT statement. No WITH clauses needed.' },
+					sql: {
+						type: 'string',
+						description: 'A read-only SELECT statement. No WITH clauses needed.'
+					},
 					limit: { type: 'number', description: 'Max rows to return (default 20, max 50).' }
 				},
 				required: ['sql']
@@ -930,7 +1130,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'sample_data',
-			description: 'Fetch a random sample of rows from a named table. Use to understand data shape before writing queries.',
+			description:
+				'Fetch a random sample of rows from a named table. Use to understand data shape before writing queries.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -945,7 +1146,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'profile_column',
-			description: 'Get null rate, distinct count, min/max, and top 5 values for a column. Use before GROUP BY or JOIN to understand cardinality.',
+			description:
+				'Get null rate, distinct count, min/max, and top 5 values for a column. Use before GROUP BY or JOIN to understand cardinality.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -960,7 +1162,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'get_cell_result',
-			description: 'Read an already-run cell\'s result data without re-executing the query. Use when explaining existing results or building a chart from data already in memory.',
+			description:
+				"Read an already-run cell's result data without re-executing the query. Use when explaining existing results or building a chart from data already in memory.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -980,7 +1183,11 @@ const NATIVE_TOOLS = [
 				type: 'object',
 				properties: {
 					cellId: { type: 'string', description: 'Cell id or outputName to move.' },
-					direction: { type: 'string', enum: ['up', 'down'], description: 'Move one step up or down.' },
+					direction: {
+						type: 'string',
+						enum: ['up', 'down'],
+						description: 'Move one step up or down.'
+					},
 					toIndex: { type: 'number', description: 'Move to exact 0-based index position.' }
 				},
 				required: ['cellId']
@@ -991,11 +1198,16 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'record_decision',
-			description: 'Record a modeling decision that should persist across turns. Call when you resolve something non-obvious: confirmed primary key, join key, grain choice, data quality issue fixed, business rule applied. These are re-injected in every subsequent turn so you never re-investigate a resolved question.',
+			description:
+				'Record a modeling decision that should persist across turns. Call when you resolve something non-obvious: confirmed primary key, join key, grain choice, data quality issue fixed, business rule applied. These are re-injected in every subsequent turn so you never re-investigate a resolved question.',
 			parameters: {
 				type: 'object',
 				properties: {
-					decision: { type: 'string', description: 'Concise statement of what was decided and why (e.g. "treating email as FK to customers — id not present in source").' }
+					decision: {
+						type: 'string',
+						description:
+							'Concise statement of what was decided and why (e.g. "treating email as FK to customers — id not present in source").'
+					}
 				},
 				required: ['decision']
 			}
@@ -1005,7 +1217,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'validate_result',
-			description: 'Assert that a cell\'s result meets expectations. Use after run_cells to verify correctness. Returns PASS or a list of FAIL messages.',
+			description:
+				"Assert that a cell's result meets expectations. Use after run_cells to verify correctness. Returns PASS or a list of FAIL messages.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1013,7 +1226,11 @@ const NATIVE_TOOLS = [
 					assertNotEmpty: { type: 'boolean', description: 'Fail if result has 0 rows.' },
 					expectedRowCount: { type: 'number', description: 'Exact expected row count.' },
 					minRowCount: { type: 'number', description: 'Minimum acceptable row count.' },
-					expectedColumns: { type: 'array', items: { type: 'string' }, description: 'Column names that must be present in the result.' }
+					expectedColumns: {
+						type: 'array',
+						items: { type: 'string' },
+						description: 'Column names that must be present in the result.'
+					}
 				},
 				required: ['cellId']
 			}
@@ -1023,7 +1240,8 @@ const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'compare_cells',
-			description: 'Compare the row counts and column schemas of two cells. Useful for verifying a refactored cell produces the same output as the original.',
+			description:
+				'Compare the row counts and column schemas of two cells. Useful for verifying a refactored cell produces the same output as the original.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1036,7 +1254,10 @@ const NATIVE_TOOLS = [
 	}
 ];
 
-function buildUserContent(cells: AIChatCell[], messages: Array<{ role: string; content: string }>): string {
+function buildUserContent(
+	cells: AIChatCell[],
+	messages: Array<{ role: string; content: string }>
+): string {
 	// Attach full code for cells referenced in recent user messages
 	const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 	const referencedOutputNames = new Set(
@@ -1112,7 +1333,9 @@ function flushDoneBlocks(buffer: string, onDone: (suggestions: string[]) => void
 		try {
 			const payload = JSON.parse(raw) as { suggestions?: string[] };
 			if (Array.isArray(payload.suggestions)) onDone(payload.suggestions);
-		} catch { /* skip malformed */ }
+		} catch {
+			/* skip malformed */
+		}
 		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
 		searchFrom = start;
 	}
@@ -1124,7 +1347,10 @@ function flushDoneBlocks(buffer: string, onDone: (suggestions: string[]) => void
  * Fallback for models (typically cloud/native-tool) that output suggestions JSON
  * without <done> tags. Applied after flushDoneBlocks so proper <done> blocks win.
  */
-function flushBareSuggestionsJson(buffer: string, onSuggestions: (suggestions: string[]) => void): string {
+function flushBareSuggestionsJson(
+	buffer: string,
+	onSuggestions: (suggestions: string[]) => void
+): string {
 	const re = /\{"suggestions"\s*:/g;
 	let match: RegExpExecArray | null;
 	const ranges: [number, number][] = [];
@@ -1135,7 +1361,13 @@ function flushBareSuggestionsJson(buffer: string, onSuggestions: (suggestions: s
 		let end = -1;
 		for (let i = start; i < buffer.length; i++) {
 			if (buffer[i] === '{') depth++;
-			else if (buffer[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+			else if (buffer[i] === '}') {
+				depth--;
+				if (depth === 0) {
+					end = i + 1;
+					break;
+				}
+			}
 		}
 		if (end === -1) continue; // incomplete — skip, stripOpenTag holds it back
 		const raw = buffer.slice(start, end);
@@ -1145,7 +1377,9 @@ function flushBareSuggestionsJson(buffer: string, onSuggestions: (suggestions: s
 				onSuggestions(payload.suggestions);
 				ranges.push([start, end]);
 			}
-		} catch { /* skip malformed */ }
+		} catch {
+			/* skip malformed */
+		}
 	}
 
 	// Remove matched ranges in reverse so slice indices stay valid
@@ -1293,10 +1527,7 @@ function normalizeToolCallArgs(obj: Record<string, unknown>): Record<string, unk
  * Handles flat, nested (args/arguments), and mixed formats.
  * Prose before/after the JSON is preserved.
  */
-function extractRawJsonToolCalls(
-	text: string,
-	onToolCall: (raw: string) => void
-): string {
+function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) => void): string {
 	let result = text;
 
 	while (true) {
@@ -1305,12 +1536,16 @@ function extractRawJsonToolCalls(
 		if (matchIdx === -1) break;
 
 		// Find balanced braces starting from matchIdx
-		let depth = 0, end = -1;
+		let depth = 0,
+			end = -1;
 		for (let i = matchIdx; i < result.length; i++) {
 			if (result[i] === '{') depth++;
 			else if (result[i] === '}') {
 				depth--;
-				if (depth === 0) { end = i; break; }
+				if (depth === 0) {
+					end = i;
+					break;
+				}
 			}
 		}
 		if (end === -1) break; // incomplete JSON — leave in buffer
@@ -1334,22 +1569,35 @@ function extractRawJsonToolCalls(
  * Handles any key order and finds objects via balanced-brace scanning.
  * Emits a plan_delta event for each stripped object.
  */
-function stripBarePlanJson(text: string, onPlan: (plan: { tables?: string[]; cells?: string[]; approach?: string }) => void): string {
+function stripBarePlanJson(
+	text: string,
+	onPlan: (plan: { tables?: string[]; cells?: string[]; approach?: string }) => void
+): string {
 	let result = text;
 	while (true) {
 		// Find the start of any bare plan JSON — either {"tables": or {"cells": (any order)
 		const matchTables = result.search(/\{"tables"\s*:/);
 		const matchCells = result.search(/\{"cells"\s*:/);
-		const idx = matchTables === -1 ? matchCells
-			: matchCells === -1 ? matchTables
-			: Math.min(matchTables, matchCells);
+		const idx =
+			matchTables === -1
+				? matchCells
+				: matchCells === -1
+					? matchTables
+					: Math.min(matchTables, matchCells);
 		if (idx === -1) break;
 
 		// Find the balanced closing brace
-		let depth = 0, end = -1;
+		let depth = 0,
+			end = -1;
 		for (let i = idx; i < result.length; i++) {
 			if (result[i] === '{') depth++;
-			else if (result[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+			else if (result[i] === '}') {
+				depth--;
+				if (depth === 0) {
+					end = i;
+					break;
+				}
+			}
 		}
 		if (end === -1) break; // incomplete — leave in buffer
 
@@ -1361,7 +1609,9 @@ function stripBarePlanJson(text: string, onPlan: (plan: { tables?: string[]; cel
 				result = result.slice(0, idx) + result.slice(end + 1);
 				continue;
 			}
-		} catch { /* not valid JSON — skip past this start */ }
+		} catch {
+			/* not valid JSON — skip past this start */
+		}
 		break;
 	}
 	return result;
@@ -1447,7 +1697,10 @@ function stripOpenTag(text: string): string {
 		let depth = 0;
 		for (let i = jsonIdx; i < text.length; i++) {
 			if (text[i] === '{') depth++;
-			else if (text[i] === '}') { depth--; if (depth === 0) break; }
+			else if (text[i] === '}') {
+				depth--;
+				if (depth === 0) break;
+			}
 		}
 		if (depth > 0) return text.slice(0, jsonIdx); // incomplete — hold back
 	}
@@ -1460,7 +1713,10 @@ function stripOpenTag(text: string): string {
 		let depth = 0;
 		for (let i = planJsonIdx; i < text.length; i++) {
 			if (text[i] === '{') depth++;
-			else if (text[i] === '}') { depth--; if (depth === 0) break; }
+			else if (text[i] === '}') {
+				depth--;
+				if (depth === 0) break;
+			}
 		}
 		if (depth > 0) return text.slice(0, planJsonIdx); // incomplete — hold back
 	}
@@ -1473,7 +1729,10 @@ function stripOpenTag(text: string): string {
 		let depth = 0;
 		for (let i = suggestionsJsonIdx; i < text.length; i++) {
 			if (text[i] === '{') depth++;
-			else if (text[i] === '}') { depth--; if (depth === 0) break; }
+			else if (text[i] === '}') {
+				depth--;
+				if (depth === 0) break;
+			}
 		}
 		if (depth > 0) return text.slice(0, suggestionsJsonIdx); // incomplete — hold back
 	}
@@ -1490,19 +1749,32 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	if (!body.llmConfig?.baseUrl?.trim() || !body.llmConfig?.model?.trim()) {
-		return new Response(JSON.stringify({ error: 'llmConfig with baseUrl and model is required' }), { status: 400 });
+		return new Response(JSON.stringify({ error: 'llmConfig with baseUrl and model is required' }), {
+			status: 400
+		});
 	}
 	try {
 		normalizeBaseUrl(body.llmConfig.baseUrl);
 	} catch (err) {
-		return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid baseUrl' }), { status: 400 });
+		return new Response(
+			JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid baseUrl' }),
+			{ status: 400 }
+		);
 	}
 	if (!Array.isArray(body.messages) || body.messages.length === 0) {
 		return new Response(JSON.stringify({ error: 'messages array is required' }), { status: 400 });
 	}
 
 	const req = body as AIChatRequest;
-	const { cells, connectionSchema, connectionDialect = 'duckdb' } = req.notebookContext ?? { cells: [], connectionSchema: [], connectionDialect: 'duckdb' as const };
+	const {
+		cells,
+		connectionSchema,
+		connectionDialect = 'duckdb'
+	} = req.notebookContext ?? {
+		cells: [],
+		connectionSchema: [],
+		connectionDialect: 'duckdb' as const
+	};
 	const workspaceMemory = req.workspaceMemory;
 	const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
 
@@ -1522,10 +1794,41 @@ export const POST: RequestHandler = async ({ request }) => {
 	const workspaceContract = req.workspaceContract;
 	const schemaChangeNote = req.schemaChangeNote;
 	const systemPrompt = req.subagentType
-		? buildSubagentSystemPrompt(req.subagentType, cells, connectionSchema, sessionDataContext, workspaceContract, sessionPlanContext, connectionDialect, isOllama, isSmall)
-		: (isOllama
-			? buildSystemPromptOllama(cells, connectionSchema, workspaceMemory, sessionDataContext, useNativeTools, workspaceContract, sessionPlanContext, schemaChangeNote, connectionDialect, isSmall)
-			: buildSystemPromptXML(cells, connectionSchema, workspaceMemory, sessionDataContext, workspaceContract, sessionPlanContext, schemaChangeNote, connectionDialect, useNativeTools));
+		? buildSubagentSystemPrompt(
+				req.subagentType,
+				cells,
+				connectionSchema,
+				sessionDataContext,
+				workspaceContract,
+				sessionPlanContext,
+				connectionDialect,
+				isOllama,
+				isSmall
+			)
+		: isOllama
+			? buildSystemPromptOllama(
+					cells,
+					connectionSchema,
+					workspaceMemory,
+					sessionDataContext,
+					useNativeTools,
+					workspaceContract,
+					sessionPlanContext,
+					schemaChangeNote,
+					connectionDialect,
+					isSmall
+				)
+			: buildSystemPromptXML(
+					cells,
+					connectionSchema,
+					workspaceMemory,
+					sessionDataContext,
+					workspaceContract,
+					sessionPlanContext,
+					schemaChangeNote,
+					connectionDialect,
+					useNativeTools
+				);
 	const enhancedLastUserContent = buildUserContent(cells, req.messages);
 
 	// Build message list.
@@ -1534,11 +1837,16 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Also strip empty-content assistant placeholders left over from prior turns in subagent
 	// loops — providers like Anthropic reject messages with empty assistant content.
 	// Merge consecutive same-role messages that result from the removal.
-	const rawOlderMessages = req.messages.slice(0, -2).map((m) => ({
-		role: m.role as 'user' | 'assistant',
-		content: m.content
-	})).filter((m) => m.content.trim().length > 0);
-	const allOlderMessages = rawOlderMessages.reduce<Array<{ role: 'user' | 'assistant'; content: string }>>((acc, m) => {
+	const rawOlderMessages = req.messages
+		.slice(0, -2)
+		.map((m) => ({
+			role: m.role as 'user' | 'assistant',
+			content: m.content
+		}))
+		.filter((m) => m.content.trim().length > 0);
+	const allOlderMessages = rawOlderMessages.reduce<
+		Array<{ role: 'user' | 'assistant'; content: string }>
+	>((acc, m) => {
 		const prev = acc[acc.length - 1];
 		if (prev && prev.role === m.role) {
 			prev.content += '\n\n' + m.content;
@@ -1579,15 +1887,19 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Adaptive token budget: small local models get 4k (enough for a full multi-cell response),
 	// large Ollama models get 8k. The old 1024 "simple request" cap caused hard truncation on
 	// short but complex prompts ("build a dashboard") and is removed.
-	const adaptedMaxTokens = isOllama
-		? (isSmall ? 4096 : 8192)
-		: 16384;
+	const adaptedMaxTokens = isOllama ? (isSmall ? 4096 : 8192) : 16384;
 
 	const stream = new ReadableStream({
 		async start(sc) {
 			const ctrl: SSEController = {
 				enqueue: (data) => sc.enqueue(encoder.encode(data)),
-				close: () => { try { sc.close(); } catch { /* already closed */ } }
+				close: () => {
+					try {
+						sc.close();
+					} catch {
+						/* already closed */
+					}
+				}
 			};
 
 			let buffer = '';
@@ -1595,7 +1907,13 @@ export const POST: RequestHandler = async ({ request }) => {
 			let callCounter = 0;
 			// Stop the LLM stream after the first result-critical tool call so the model sees
 			// real results before deciding its next action (proper one-result-at-a-time agent loop).
-			const STOP_AFTER_TOOLS = new Set(['run_cells', 'sample_data', 'query_data', 'profile_column', 'get_cell_result']);
+			const STOP_AFTER_TOOLS = new Set([
+				'run_cells',
+				'sample_data',
+				'query_data',
+				'profile_column',
+				'get_cell_result'
+			]);
 			let stoppedForResultTool = false;
 
 			try {
@@ -1616,7 +1934,9 @@ export const POST: RequestHandler = async ({ request }) => {
 				// ending the turn before the sprint block is ever output.
 				if (useNativeTools && req.subagentType !== 'sprint_planning') {
 					const activeTools = req.allowedTools
-						? NATIVE_TOOLS.filter((t) => req.allowedTools!.includes(t.function.name as AIChatToolName))
+						? NATIVE_TOOLS.filter((t) =>
+								req.allowedTools!.includes(t.function.name as AIChatToolName)
+							)
 						: NATIVE_TOOLS;
 					llmBody['tools'] = activeTools;
 					llmBody['tool_choice'] = activeTools.length > 0 ? 'auto' : 'none';
@@ -1634,7 +1954,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 				if (!response.ok) {
 					const errText = await response.text();
-					send(ctrl, { type: 'error', error: `LLM error (${response.status}): ${errText.slice(0, 300)}` });
+					send(ctrl, {
+						type: 'error',
+						error: `LLM error (${response.status}): ${errText.slice(0, 300)}`
+					});
 					ctrl.close();
 					return;
 				}
@@ -1664,7 +1987,11 @@ export const POST: RequestHandler = async ({ request }) => {
 						if (data === '[DONE]') continue;
 
 						let parsed: unknown;
-						try { parsed = JSON.parse(data); } catch { continue; }
+						try {
+							parsed = JSON.parse(data);
+						} catch {
+							continue;
+						}
 
 						type DeltaChunk = {
 							choices?: Array<{
@@ -1689,15 +2016,25 @@ export const POST: RequestHandler = async ({ request }) => {
 							for (const tc of choice.delta.tool_calls) {
 								const idx = tc.index ?? 0;
 								if (!nativeToolCallBuf[idx]) {
-									nativeToolCallBuf[idx] = { id: tc.id ?? '', name: tc.function?.name ?? '', argsBuf: '' };
+									nativeToolCallBuf[idx] = {
+										id: tc.id ?? '',
+										name: tc.function?.name ?? '',
+										argsBuf: ''
+									};
 								}
 								if (tc.id) nativeToolCallBuf[idx].id = tc.id;
 								if (tc.function?.name) nativeToolCallBuf[idx].name = tc.function.name;
 								if (tc.function?.arguments) {
 									nativeToolCallBuf[idx].argsBuf += tc.function.arguments;
 									if (nativeToolCallBuf[idx].argsBuf.length > 50_000) {
-										nativeToolCallBuf[idx].argsBuf = nativeToolCallBuf[idx].argsBuf.slice(0, 50_000);
-										send(ctrl, { type: 'error', error: `Tool call arguments for '${nativeToolCallBuf[idx].name}' exceeded 50 000 chars and were truncated — the tool call may fail.` });
+										nativeToolCallBuf[idx].argsBuf = nativeToolCallBuf[idx].argsBuf.slice(
+											0,
+											50_000
+										);
+										send(ctrl, {
+											type: 'error',
+											error: `Tool call arguments for '${nativeToolCallBuf[idx].name}' exceeded 50 000 chars and were truncated — the tool call may fail.`
+										});
 									}
 								}
 							}
@@ -1718,27 +2055,39 @@ export const POST: RequestHandler = async ({ request }) => {
 								});
 								nativeTextBuf = flushPlanBlocks(nativeTextBuf, (rawJson) => {
 									try {
-										const plan = JSON.parse(rawJson) as { tables?: string[]; cells?: string[]; approach?: string };
+										const plan = JSON.parse(rawJson) as {
+											tables?: string[];
+											cells?: string[];
+											approach?: string;
+										};
 										send(ctrl, { type: 'plan_delta', plan });
-									} catch { /* skip malformed plan */ }
+									} catch {
+										/* skip malformed plan */
+									}
 								});
 								nativeTextBuf = flushPlanProposalBlocks(nativeTextBuf, (rawJson) => {
 									try {
 										const proposal = JSON.parse(rawJson);
 										send(ctrl, { type: 'plan_proposal', proposal });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								nativeTextBuf = flushSprintBlocks(nativeTextBuf, (rawJson) => {
 									try {
 										const tasks = JSON.parse(rawJson);
 										send(ctrl, { type: 'sprint_tasks', tasks });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								nativeTextBuf = flushSprintUpdateBlocks(nativeTextBuf, (rawJson) => {
 									try {
 										const tasks = JSON.parse(rawJson);
 										send(ctrl, { type: 'sprint_update', tasks });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								// Extract any complete raw JSON tool calls mid-stream (models that
 								// output {"tool":"...", "arguments":{...}} as text content)
@@ -1756,30 +2105,44 @@ export const POST: RequestHandler = async ({ request }) => {
 								// Extract complete <plan> blocks first
 								buffer = flushPlanBlocks(buffer, (rawJson) => {
 									try {
-										const plan = JSON.parse(rawJson) as { tables?: string[]; cells?: string[]; approach?: string };
+										const plan = JSON.parse(rawJson) as {
+											tables?: string[];
+											cells?: string[];
+											approach?: string;
+										};
 										send(ctrl, { type: 'plan_delta', plan });
-									} catch { /* skip malformed plan */ }
+									} catch {
+										/* skip malformed plan */
+									}
 								});
 								buffer = flushPlanProposalBlocks(buffer, (rawJson) => {
 									try {
 										const proposal = JSON.parse(rawJson);
 										send(ctrl, { type: 'plan_proposal', proposal });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								buffer = flushSprintBlocks(buffer, (rawJson) => {
 									try {
 										const tasks = JSON.parse(rawJson);
 										send(ctrl, { type: 'sprint_tasks', tasks });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								buffer = flushSprintUpdateBlocks(buffer, (rawJson) => {
 									try {
 										const tasks = JSON.parse(rawJson);
 										send(ctrl, { type: 'sprint_update', tasks });
-									} catch { /* skip malformed */ }
+									} catch {
+										/* skip malformed */
+									}
 								});
 								// Some models output bare plan JSON without <plan> tags — strip it.
-								buffer = stripBarePlanJson(buffer, (plan) => send(ctrl, { type: 'plan_delta', plan }));
+								buffer = stripBarePlanJson(buffer, (plan) =>
+									send(ctrl, { type: 'plan_delta', plan })
+								);
 								// Extract complete XML tool calls from buffer. Tool calls run BEFORE
 								// done-blocks so that if the model emits <done> then run_cells in the
 								// same chunk, stoppedForResultTool fires and the inner loop breaks
@@ -1788,13 +2151,15 @@ export const POST: RequestHandler = async ({ request }) => {
 								buffer = flushToolCalls(buffer, (rawJson) => {
 									emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
 									const parsedCall = parseToolCallObject(rawJson);
-									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool))) stoppedForResultTool = true;
+									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool)))
+										stoppedForResultTool = true;
 								});
 								// Also extract bare JSON tool calls (models that skip <tool_call> tags)
 								buffer = extractRawJsonToolCalls(buffer, (rawJson) => {
 									emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
 									const parsedCall = parseToolCallObject(rawJson);
-									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool))) stoppedForResultTool = true;
+									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool)))
+										stoppedForResultTool = true;
 								});
 								// Extract <done> blocks (agent self-termination + suggestions) AFTER
 								// tool calls so stoppedForResultTool can cut us off first.
@@ -1816,7 +2181,10 @@ export const POST: RequestHandler = async ({ request }) => {
 						// will inject its result and start a new turn with real data.
 						if (stoppedForResultTool) break;
 					}
-					if (stoppedForResultTool) { controller.abort(); break; }
+					if (stoppedForResultTool) {
+						controller.abort();
+						break;
+					}
 				}
 
 				// Flush any remaining native text buffer
@@ -1830,21 +2198,39 @@ export const POST: RequestHandler = async ({ request }) => {
 					});
 					nativeTextBuf = flushPlanBlocks(nativeTextBuf, (rawJson) => {
 						try {
-							const plan = JSON.parse(rawJson) as { tables?: string[]; cells?: string[]; approach?: string };
+							const plan = JSON.parse(rawJson) as {
+								tables?: string[];
+								cells?: string[];
+								approach?: string;
+							};
 							send(ctrl, { type: 'plan_delta', plan });
-						} catch { /* skip */ }
+						} catch {
+							/* skip */
+						}
 					});
 					nativeTextBuf = flushPlanProposalBlocks(nativeTextBuf, (rawJson) => {
 						try {
 							const proposal = JSON.parse(rawJson);
 							send(ctrl, { type: 'plan_proposal', proposal });
-						} catch { /* skip malformed */ }
+						} catch {
+							/* skip malformed */
+						}
 					});
 					nativeTextBuf = flushSprintBlocks(nativeTextBuf, (rawJson) => {
-						try { const tasks = JSON.parse(rawJson); send(ctrl, { type: 'sprint_tasks', tasks }); } catch { /* skip */ }
+						try {
+							const tasks = JSON.parse(rawJson);
+							send(ctrl, { type: 'sprint_tasks', tasks });
+						} catch {
+							/* skip */
+						}
 					});
 					nativeTextBuf = flushSprintUpdateBlocks(nativeTextBuf, (rawJson) => {
-						try { const tasks = JSON.parse(rawJson); send(ctrl, { type: 'sprint_update', tasks }); } catch { /* skip */ }
+						try {
+							const tasks = JSON.parse(rawJson);
+							send(ctrl, { type: 'sprint_update', tasks });
+						} catch {
+							/* skip */
+						}
 					});
 					// Fallback: some models emit raw JSON tool calls as text content
 					// rather than using the native tool_calls delta format.
@@ -1860,7 +2246,11 @@ export const POST: RequestHandler = async ({ request }) => {
 					if (req.allowedTools && !req.allowedTools.includes(tc.name as AIChatToolName)) continue;
 					callCounter++;
 					let args: unknown = {};
-					try { args = JSON.parse(tc.argsBuf || '{}'); } catch { /* skip */ }
+					try {
+						args = JSON.parse(tc.argsBuf || '{}');
+					} catch {
+						/* skip */
+					}
 					const toolCall: AIChatToolCall = {
 						callId: tc.id || `auto_${callCounter}`,
 						tool: tc.name as AIChatToolName,
@@ -1879,15 +2269,23 @@ export const POST: RequestHandler = async ({ request }) => {
 					});
 					buffer = flushPlanBlocks(buffer, (rawJson) => {
 						try {
-							const plan = JSON.parse(rawJson) as { tables?: string[]; cells?: string[]; approach?: string };
+							const plan = JSON.parse(rawJson) as {
+								tables?: string[];
+								cells?: string[];
+								approach?: string;
+							};
 							send(ctrl, { type: 'plan_delta', plan });
-						} catch { /* skip */ }
+						} catch {
+							/* skip */
+						}
 					});
 					buffer = flushPlanProposalBlocks(buffer, (rawJson) => {
 						try {
 							const proposal = JSON.parse(rawJson);
 							send(ctrl, { type: 'plan_proposal', proposal });
-						} catch { /* skip malformed */ }
+						} catch {
+							/* skip malformed */
+						}
 					});
 					buffer = stripBarePlanJson(buffer, (plan) => send(ctrl, { type: 'plan_delta', plan }));
 					buffer = flushToolCalls(buffer, (rawJson) => {
@@ -1905,7 +2303,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				send(ctrl, { type: 'done' });
 			} catch (err) {
 				if (!(err instanceof Error && err.name === 'AbortError')) {
-					send(ctrl, { type: 'error', error: err instanceof Error ? err.message : 'Internal error' });
+					send(ctrl, {
+						type: 'error',
+						error: err instanceof Error ? err.message : 'Internal error'
+					});
 				}
 			} finally {
 				ctrl.close();

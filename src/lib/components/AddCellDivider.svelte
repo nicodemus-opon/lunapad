@@ -6,15 +6,18 @@
 		onAdd,
 		persistent = false,
 		showUdf = false,
-		showPlot = false
+		showPlot = false,
+		showPython = false
 	}: {
-		onAdd: (kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot') => void;
+		onAdd: (kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python') => void;
 		/** Trailing divider at the end of the cell list stays visible. */
 		persistent?: boolean;
 		/** Python UDF cells only make sense in .luna-format notebooks. */
 		showUdf?: boolean;
 		/** Plot cells only make sense in .luna-format notebooks. */
 		showPlot?: boolean;
+		/** Python cells run server-side and need a project folder open. */
+		showPython?: boolean;
 	} = $props();
 
 	let menuOpen = $state(false);
@@ -33,7 +36,7 @@
 	></div>
 	<div class="relative flex items-center gap-0.5">
 		<button
-			class="flex p-2 items-center justify-center rounded-full border bg-secondary text-secondary-foreground transition-colors outline-none hover:border-border hover:bg-secondary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
+			class="flex items-center justify-center rounded-full border bg-secondary p-2 text-secondary-foreground transition-colors outline-none hover:border-border hover:bg-secondary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
 			aria-label="Add cell here"
 			title="Add cell"
 			onclick={() => onAdd('default')}
@@ -42,11 +45,10 @@
 		</button>
 		<DropdownMenu.Root bind:open={menuOpen}>
 			<DropdownMenu.Trigger
-				class="flex p-2 items-center rounded-full border bg-accent text-2xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+				class="flex items-center rounded-full border bg-accent p-2 text-2xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 				aria-label="Choose cell type"
 			>
-			<Ellipsis class="h-5 w-5"/>
-				
+				<Ellipsis class="h-5 w-5" />
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content side="bottom" align="center" class="min-w-32">
 				<DropdownMenu.Item onclick={() => onAdd('prql')}>PRQL cell</DropdownMenu.Item>
@@ -57,6 +59,9 @@
 				{/if}
 				{#if showPlot}
 					<DropdownMenu.Item onclick={() => onAdd('plot')}>Plot cell</DropdownMenu.Item>
+				{/if}
+				{#if showPython}
+					<DropdownMenu.Item onclick={() => onAdd('python')}>Python cell</DropdownMenu.Item>
 				{/if}
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>

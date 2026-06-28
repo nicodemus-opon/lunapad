@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { CircleCheck, CircleX, ExternalLink } from '@lucide/svelte';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { coerceNumber } from '$lib/utils';
-	import { truncateMiddle, type ColumnFormat } from '$lib/services/column-format';
+	import { truncateMiddle, paletteSeedForValue, type ColumnFormat } from '$lib/services/column-format';
 
 	interface Props {
 		value: unknown;
@@ -97,13 +96,13 @@
 {:else if (format.kind === 'number' || format.kind === 'currency' || format.kind === 'percentage') && formattedNumber}
 	<span class="font-mono text-xs tabular-nums">{formattedNumber}</span>
 {:else if format.kind === 'category'}
-	<Badge
-		variant="outline"
-		class="text-2xs font-normal py-0 px-1.5 h-5 border-(--pill-color)/30 bg-(--pill-color)/10 text-(--pill-color)"
-		style="--pill-color: var(--chart-{(format.paletteSeed ?? 0) + 1})"
-	>
-		{plainText}
-	</Badge>
+	<span class="inline-flex items-center gap-1.5 text-xs">
+		<span
+			class="h-1.5 w-1.5 shrink-0 rounded-full"
+			style="background-color: var(--tag-{paletteSeedForValue(plainText) + 1})"
+		></span>
+		<span class="truncate">{plainText}</span>
+	</span>
 {:else}
 	<span class="font-mono text-xs">{plainText}</span>
 {/if}

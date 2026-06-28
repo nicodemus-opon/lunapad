@@ -1,5 +1,5 @@
 // Monaco singleton — editor core + SQL/Python Monarch tokenizers + the JS/TS
-// language service (for plot cells' real Plot.* intellisense). Always load
+// language service (for plot cells' Plotly intellisense). Always load
 // this module lazily from the client (await import('$lib/monaco')) — it
 // touches `self` and must never run during SSR/prerender.
 import 'monaco-editor/esm/vs/editor/editor.all.js';
@@ -16,7 +16,7 @@ import { defineThemes } from './themes';
 import { registerCompletions } from './completions';
 import { registerHoverProviders } from './hover';
 import { registerPrqlCodeActions } from './prql-actions';
-import { registerPlotIntellisense } from './plot-intellisense';
+import { registerPlotlyIntellisense } from './plotly-intellisense';
 
 export { monaco };
 export {
@@ -44,7 +44,7 @@ export function setupMonaco(): typeof monaco {
 	registerCompletions(monaco);
 	registerHoverProviders(monaco);
 	registerPrqlCodeActions(monaco);
-	registerPlotIntellisense();
+	registerPlotlyIntellisense();
 
 	return monaco;
 }

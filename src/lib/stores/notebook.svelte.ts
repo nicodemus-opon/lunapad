@@ -6,9 +6,17 @@ import {
 	buildSQLGlobalExecutionCode,
 	resolveDependencies,
 	resolveGlobalDependencies,
-	resolvePlotDataRefs
+	resolvePlotDataRefs,
+	resolvePythonDataRefs
 } from '$lib/services/cell-deps';
 import { buildPlotScope, runPlotCode } from '$lib/services/plot-cell';
+import {
+	runPython,
+	watchPythonLogs,
+	cancelPython,
+	isPythonEnvReady,
+	type PythonTablePayload
+} from '$lib/services/python-client';
 import { parseUdfSignature } from '$lib/services/udf';
 import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
@@ -49,6 +57,7 @@ import {
 	dropRelation,
 	materializeRelation,
 	listMainSchemaRelations,
+	registerPythonResultTable,
 	type MaterializationMode as DBMaterializationMode,
 	type RelationType
 } from '$lib/services/duckdb';
@@ -95,6 +104,7 @@ import {
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 import type { ResultViewMode } from '$lib/types/gui-pipeline';
+import { rowsToCsv } from '$lib/utils';
 import {
 	getWorkspaceStandards,
 	setWorkspaceStandards,
@@ -105,7 +115,7 @@ export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
 // 'plot' cells are never promotable to dbt models — getPromotionChain already
 // guards on `cellType !== 'query'`, so this is automatic, not something to "fix".
-export type CellType = 'query' | 'markdown' | 'udf' | 'plot';
+export type CellType = 'query' | 'markdown' | 'udf' | 'plot' | 'python';
 export type CellMaterializationMode = DBMaterializationMode | 'ephemeral';
 export type CellMaterializationStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellScheduleStatus = 'idle' | 'running' | 'success' | 'error';
@@ -139,6 +149,10 @@ export interface Cell {
 	language: CellLanguage;
 	status: CellStatus;
 	result: { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } | null;
+	// Ephemeral output for cellType 'python' — stdout text, captured Plotly figure
+	// JSON specs (one per fig.show() call), and a traceback on failure. Not
+	// persisted (see SerializedCell), regenerated on each run like `errors`.
+	pythonOutput: { stdout: string; figures: string[]; error: string | null } | null;
 	errors: PRQLError[];
 	compiledSQL: string | null;
 	executionMs: number | null;
@@ -161,6 +175,11 @@ export interface Cell {
 	// real model file (relative path from the project root). Promoted cells render
 	// as a `{% model ref %}` placeholder in the originating .luna source.
 	promotedModelPath: string | null;
+	// Set after a Python cell's result has been exported to a dbt seed CSV
+	// (relative path from the project root). A one-shot export, not a live
+	// link — re-running the cell does not auto-update the seed file (see
+	// promotePythonCellToSeed).
+	promotedSeedPath: string | null;
 	dbtTestStatus: CellTestStatus;
 	dbtTestResults: DbtTestResult[];
 	dbtTestLog: string[];
@@ -319,6 +338,7 @@ const MAX_SCHEDULE_INTERVAL_MINUTES = 24 * 60;
 const guiCompileTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const cellRunControllers = new Map<string, AbortController>();
 const cellRunIds = new Map<string, string>(); // cellId → runId for server-side cancel
+const pythonJobByCellId = new Map<string, { notebookId: string; jobId: string }>();
 const MAX_COMPILE_CACHE_SIZE = 200;
 const compileCache = new Map<string, { sql: string | null; errors: PRQLError[] }>();
 const STORAGE_KEY = 'lunapad_notebook';
@@ -460,6 +480,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		language,
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -479,6 +500,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		dbtSchema: null,
 		dbtTags: [],
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -521,11 +543,12 @@ function makeUdfCell(udfBody = DEFAULT_UDF_BODY): Cell {
 }
 
 const DEFAULT_PLOT_CODE = `// Reference an upstream cell by its output name, e.g. my_query.rows
-return Plot.plot({
-  marks: [
-    // Plot.dot(my_query.rows, { x: "column_a", y: "column_b" })
-  ]
-})
+return {
+  data: [
+    // { type: "scatter", mode: "markers", x: my_query.rows.map(r => r.column_a), y: my_query.rows.map(r => r.column_b) }
+  ],
+  layout: {}
+};
 `;
 
 // Plot cells are JS code (reuse the existing `code` field, same as query cells'
@@ -535,6 +558,26 @@ function makePlotCell(code = DEFAULT_PLOT_CODE): Cell {
 	return {
 		...makeCell(code, 'chart'),
 		cellType: 'plot',
+		editMode: 'prql'
+	};
+}
+
+const DEFAULT_PYTHON_CODE = `# Reference an upstream cell by its output name — it's already a DataFrame.
+# e.g. if an earlier cell's output name is "orders":
+# result = orders.groupby("status").size().reset_index(name="count")
+
+import plotly.express as px
+# fig = px.bar(result, x="status", y="count")
+`;
+
+// Python cells reuse the generic \`code\` field, same as query/plot cells. The
+// last DataFrame-typed value (or a variable named \`result\`) becomes the cell's
+// \`.result\`; a variable named \`fig\` (or any \`fig.show()\` call) becomes a
+// rendered Plotly figure — see python-runner.ts's wrapper script.
+function makePythonCell(code = DEFAULT_PYTHON_CODE): Cell {
+	return {
+		...makeCell(code, 'py_result'),
+		cellType: 'python',
 		editMode: 'prql'
 	};
 }
@@ -846,11 +889,15 @@ let state = $state<NotebookState>({
 });
 
 // ── Persistence ─────────────────────────────────────────────────────────────
-type SerializedCell = Omit<Cell, 'errors' | 'needsRun' | 'staleReason' | 'staleSources'> & {
+type SerializedCell = Omit<
+	Cell,
+	'errors' | 'needsRun' | 'staleReason' | 'staleSources' | 'pythonOutput'
+> & {
 	errors: [];
 	needsRun: boolean;
 	staleReason: null;
 	staleSources: [];
+	pythonOutput: null;
 };
 
 // Caps for persisting query results to localStorage. Results are kept so output survives
@@ -881,7 +928,16 @@ function serializeCell(c: Cell, persistResults = true): SerializedCell {
 			needsRun = true; // result too big to persist — prompt a re-run on reload
 		}
 	}
-	return { ...c, status, result, errors: [], needsRun, staleReason: null, staleSources: [] };
+	return {
+		...c,
+		status,
+		result,
+		errors: [],
+		needsRun,
+		staleReason: null,
+		staleSources: [],
+		pythonOutput: null
+	};
 }
 
 function serialize(persistResults = true): string {
@@ -1237,7 +1293,9 @@ function sanitizeConnections(raw: unknown): Connection[] {
 						: slugifyCatalogName(candidate.name),
 				projectId: (candidate as Record<string, unknown>).projectId as string,
 				parentProjectId:
-					typeof rawParentProjectId === 'string' && rawParentProjectId ? rawParentProjectId : undefined
+					typeof rawParentProjectId === 'string' && rawParentProjectId
+						? rawParentProjectId
+						: undefined
 			} satisfies BigQueryConnection);
 			continue;
 		}
@@ -1272,7 +1330,11 @@ function deserializeCell(c: Cell, i: number): Cell {
 	const persistedViewMode = (c as Partial<Cell>).resultViewMode;
 	const persistedCellType = (c as Partial<Cell>).cellType;
 	const cellType: CellType =
-		persistedCellType === 'markdown' || persistedCellType === 'udf' ? persistedCellType : 'query';
+		persistedCellType === 'markdown' ||
+		persistedCellType === 'udf' ||
+		persistedCellType === 'python'
+			? persistedCellType
+			: 'query';
 	const markdown =
 		typeof (c as Partial<Cell>).markdown === 'string'
 			? ((c as Partial<Cell>).markdown as string)
@@ -1334,6 +1396,10 @@ function deserializeCell(c: Cell, i: number): Cell {
 		promotedModelPath:
 			typeof (c as Partial<Cell>).promotedModelPath === 'string'
 				? ((c as Partial<Cell>).promotedModelPath as string)
+				: null,
+		promotedSeedPath:
+			typeof (c as Partial<Cell>).promotedSeedPath === 'string'
+				? ((c as Partial<Cell>).promotedSeedPath as string)
 				: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
@@ -1433,7 +1499,11 @@ function inferMaterializeTargetSchema(cell: Cell, connection: Connection): strin
 
 	// Oracle, Cassandra, and BigQuery have no static schema-equivalent field to guess
 	// from — only return a schema once one has actually been discovered.
-	if (connection.type === 'oracle' || connection.type === 'cassandra' || connection.type === 'bigquery') {
+	if (
+		connection.type === 'oracle' ||
+		connection.type === 'cassandra' ||
+		connection.type === 'bigquery'
+	) {
 		return availableSchemas[0];
 	}
 
@@ -2632,6 +2702,28 @@ export async function promoteCellChain(
 	return result;
 }
 
+/**
+ * The dbt-native equivalent of "promote to model" for a Python cell: a
+ * Python cell's value is the *data it derived*, not a query, so there's no
+ * SQL to write to a model file. Instead, snapshot its last-run result to a
+ * CSV under `seeds/`, which dbt can load on every adapter (unlike dbt's own
+ * Python models, which only some warehouses support and this project
+ * doesn't target). One-shot export, not a live link — re-running the cell
+ * does not auto-update the seed file.
+ */
+export async function promotePythonCellToSeed(cellId: string, relPath?: string): Promise<void> {
+	const context = findCellContext(cellId);
+	if (!context || !state.projectFolder) return;
+	const { cell } = context;
+	if (cell.cellType !== 'python' || !cell.result) return;
+
+	const targetPath = relPath ?? `seeds/${cell.outputName || cell.id}.csv`;
+	const csv = rowsToCsv(cell.result.columns, cell.result.rows);
+	await writeProjectFile(state.projectFolder, targetPath, csv, state.isDbtProject);
+	cell.promotedSeedPath = targetPath;
+	scheduleSave();
+}
+
 // ── Notebook-scoped filters ({% filter %} tags in markdown cells) ─────────────
 
 export function getNotebookFilterValue(notebookId: string, paramName: string): string {
@@ -2752,7 +2844,10 @@ function markDownstreamStale(
 	const re = new RegExp(`\\b${outputName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
-			if (cell.cellType !== 'query') continue;
+			// Python cells can reference an upstream cell's outputName as a DataFrame
+			// (resolvePythonDataRefs) the same way query cells reference it as a CTE,
+			// so they participate in staleness propagation too.
+			if (cell.cellType !== 'query' && cell.cellType !== 'python') continue;
 			if (cell.id === sourceId) continue; // never mark the source cell stale
 			if (!re.test(cell.code)) continue;
 			cell.needsRun = true;
@@ -3728,9 +3823,9 @@ export function insertUdfCellBefore(id: string): void {
 	scheduleFileSave(nb.id, cell.id);
 }
 
-/** Plot cells (Observable Plot JS, evaluated against upstream cells' results)
- *  have no .prql/.sql file mapping either — same filesystem-mode restriction
- *  as UDF cells (see canAddUdfCell). */
+/** Plot cells (JS evaluated against upstream cells' results, returning a
+ *  Plotly figure) have no .prql/.sql file mapping either — same
+ *  filesystem-mode restriction as UDF cells (see canAddUdfCell). */
 export function canAddPlotCell(): boolean {
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const nb = getActiveNotebook();
@@ -3772,6 +3867,54 @@ export function insertPlotCellBefore(id: string): void {
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makePlotCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+/** Python cells run server-side (see python-runner.ts) and need a real project
+ *  folder on disk — there's no in-browser-only mode for them, unlike plot/udf
+ *  cells which are pure client-side sandboxes. */
+export function canAddPythonCell(): boolean {
+	return state.storageMode === 'filesystem' && !!state.projectFolder;
+}
+
+export function addPythonCell(): void {
+	if (!canAddPythonCell()) return;
+	const nb = getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePythonCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	nb.cells = [...nb.cells, cell];
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertPythonCellAfter(id: string): void {
+	if (!canAddPythonCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePythonCell();
+	cell.outputName = deconflictOutputName(cell.outputName);
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, cell);
+	nb.cells = cells;
+	scheduleSave();
+	scheduleFileSave(nb.id, cell.id);
+}
+
+export function insertPythonCellBefore(id: string): void {
+	if (!canAddPythonCell()) return;
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePythonCell();
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
@@ -4253,6 +4396,7 @@ export function duplicateCell(id: string): string {
 		materializeTarget: outputName || source.materializeTarget,
 		// A duplicate isn't the model that was promoted — it's a fresh, unpromoted copy.
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		// Avoid silently doubling a running schedule — the duplicate starts disabled.
 		scheduleEnabled: false,
 		scheduleNextRunAt: null
@@ -4407,6 +4551,24 @@ export function updatePlotCellCode(id: string, code: string): void {
 	scheduleFileSave(nb.id, id);
 }
 
+/** Unlike plot cells (live-reactive, no explicit run needed), python cells run
+ *  server-side and aren't re-evaluated on every keystroke — editing marks the
+ *  cell stale so the run button surfaces "this needs a fresh run", same as
+ *  query cells. */
+export function updatePythonCellCode(id: string, code: string): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || cell.cellType !== 'python') return;
+	checkpointCoalesced(nb.id, id, 'code');
+	cell.code = code;
+	if (cell.result || cell.pythonOutput) {
+		cell.needsRun = true;
+		cell.staleReason = 'code-changed';
+	}
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+}
+
 export function updateCellUdfBody(id: string, udfBody: string): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
@@ -4447,7 +4609,10 @@ export function setCellMarkdownPreview(id: string, preview: boolean): void {
 	scheduleSave();
 }
 
-export function updateCellName(id: string, name: string): { ok: true } | { ok: false; error: string } {
+export function updateCellName(
+	id: string,
+	name: string
+): { ok: true } | { ok: false; error: string } {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
 	if (!cell) return { ok: false, error: 'Cell not found' };
@@ -4646,7 +4811,7 @@ export function setCellMaterializeTarget(id: string, target: string): void {
 export function setCellScheduleEnabled(id: string, enabled: boolean): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
-	if (!cell || cell.cellType !== 'query') return;
+	if (!cell || (cell.cellType !== 'query' && cell.cellType !== 'python')) return;
 	pushHistoryCheckpoint(nb.id);
 	cell.scheduleEnabled = enabled;
 	cell.scheduleStatus = 'idle';
@@ -4661,7 +4826,7 @@ export function setCellScheduleEnabled(id: string, enabled: boolean): void {
 export function setCellScheduleIntervalMinutes(id: string, intervalMinutes: number): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
-	if (!cell || cell.cellType !== 'query') return;
+	if (!cell || (cell.cellType !== 'query' && cell.cellType !== 'python')) return;
 	cell.scheduleIntervalMinutes = clampScheduleIntervalMinutes(intervalMinutes);
 	if (cell.scheduleEnabled) {
 		cell.scheduleNextRunAt = computeNextRunAt(Date.now(), cell.scheduleIntervalMinutes);
@@ -4672,7 +4837,7 @@ export function setCellScheduleIntervalMinutes(id: string, intervalMinutes: numb
 export function setCellScheduleScope(id: string, scope: CellScheduleScope): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
-	if (!cell || cell.cellType !== 'query') return;
+	if (!cell || (cell.cellType !== 'query' && cell.cellType !== 'python')) return;
 	cell.scheduleScope = scope;
 	scheduleSave();
 }
@@ -5375,21 +5540,213 @@ export function runPlotCell(id: string): void {
 	try {
 		const deps = resolvePlotDataRefs(nb.cells, idx);
 		const scope = buildPlotScope(deps);
-		runPlotCode(cell.code, scope, 300, 200);
+		runPlotCode(cell.code, scope);
 		cell.status = 'success';
 		cell.errors = [];
 	} catch (e) {
 		cell.status = 'error';
 		const message = e instanceof Error ? e.message : String(e);
 		cell.errors = [
-			{ kind: 'plot', code: null, reason: message, hint: null, span: null, display: message, location: null }
+			{
+				kind: 'plot',
+				code: null,
+				reason: message,
+				hint: null,
+				span: null,
+				display: message,
+				location: null
+			}
 		];
 	}
 	cell.lastRunAt = Date.now();
 	scheduleSave();
 }
 
+/** Runs a python cell server-side (see python-runner.ts): resolves its upstream
+ *  query/python cells via resolvePythonDataRefs (same by-outputName binding
+ *  resolvePlotDataRefs uses for plot cells, just serialized across the process
+ *  boundary instead of into a JS closure), streams stdout live, and on
+ *  completion sets cell.result to the captured DataFrame (so the existing
+ *  InlineResultView table/chart rendering picks it up with no changes) and
+ *  cell.pythonOutput to the captured stdout/figures/error for PythonCellOutput. */
+/**
+ * Phase 2 of Python cell support: lets a cell read any table by name —
+ * built-in DuckDB tables/views or external-connection tables — without an
+ * explicit upstream cell dependency, the same whole-word-match technique
+ * `resolvePythonDataRefs` already uses for in-notebook cells. Only matches
+ * names not already covered by `alreadyBound` (explicit deps take priority
+ * and are never re-fetched here).
+ */
+async function resolvePythonCatalogTables(
+	code: string,
+	alreadyBound: Set<string>
+): Promise<Record<string, PythonTablePayload>> {
+	const tables: Record<string, PythonTablePayload> = {};
+	const isReferenced = (name: string): boolean =>
+		new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(code);
+
+	try {
+		const relations = await listMainSchemaRelations();
+		for (const rel of relations) {
+			if (alreadyBound.has(rel.name) || !isReferenced(rel.name)) continue;
+			try {
+				const result = await executeSQL(`SELECT * FROM "${rel.name}" LIMIT ${AUTO_LIMIT}`);
+				tables[rel.name] = { rows: result.rows, columns: result.columns };
+				alreadyBound.add(rel.name);
+			} catch {
+				// table exists but couldn't be read — skip, not fatal to the cell
+			}
+		}
+	} catch {
+		// DuckDB not initialized yet — fine, just no catalog matches this run
+	}
+
+	const connections = getConnections();
+	for (const table of state.externalSchemaTables) {
+		if (alreadyBound.has(table.name) || !isReferenced(table.name)) continue;
+		const connection = connections.find((c) => c.id === table.connectionId);
+		if (!connection) continue;
+		const qualified = table.schema ? `"${table.schema}"."${table.name}"` : `"${table.name}"`;
+		try {
+			const result = await queryConnectionSQL(
+				connection,
+				`SELECT * FROM ${qualified} LIMIT ${AUTO_LIMIT}`
+			);
+			tables[table.name] = { rows: result.rows, columns: result.columns };
+			alreadyBound.add(table.name);
+		} catch {
+			// external connection unreachable/table unreadable — skip
+		}
+	}
+
+	return tables;
+}
+
+export async function runPythonCell(id: string): Promise<void> {
+	let nb = getActiveNotebook();
+	let idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) {
+		for (const n of state.notebooks) {
+			const i = n.cells.findIndex((c) => c.id === id);
+			if (i !== -1) {
+				nb = n;
+				idx = i;
+				break;
+			}
+		}
+	}
+	if (idx === -1) return;
+	const cell = nb.cells[idx];
+	if (cell.cellType !== 'python') return;
+
+	cell.status = 'running';
+	cell.errors = [];
+	const envReady = await isPythonEnvReady();
+	cell.pythonOutput = {
+		stdout: envReady ? '' : 'Setting up Python environment (first run only)…\n',
+		figures: [],
+		error: null
+	};
+
+	const deps = resolvePythonDataRefs(nb.cells, idx);
+	const tables: Record<string, PythonTablePayload> = {};
+	const boundNames = new Set<string>();
+	for (const dep of deps) {
+		if (!dep.result) continue;
+		tables[dep.outputName] = {
+			rows: dep.result.rows.slice(0, AUTO_LIMIT),
+			columns: dep.result.columns
+		};
+		boundNames.add(dep.outputName);
+	}
+	Object.assign(tables, await resolvePythonCatalogTables(cell.code, boundNames));
+
+	const notebookId = nb.id;
+	try {
+		const jobId = await runPython(notebookId, cell.code, tables, state.projectFolder);
+		pythonJobByCellId.set(cell.id, { notebookId, jobId });
+		await new Promise<void>((resolve) => {
+			watchPythonLogs(
+				jobId,
+				(line) => {
+					if (cell.pythonOutput)
+						cell.pythonOutput = {
+							...cell.pythonOutput,
+							stdout: cell.pythonOutput.stdout + line + '\n'
+						};
+				},
+				async (_exitCode, result) => {
+					pythonJobByCellId.delete(cell.id);
+					const stdout = cell.pythonOutput?.stdout ?? '';
+					if (result?.error) {
+						cell.status = 'error';
+						cell.pythonOutput = { stdout, figures: result.figures ?? [], error: result.error };
+					} else {
+						cell.status = 'success';
+						cell.pythonOutput = { stdout, figures: result?.figures ?? [], error: null };
+						if (result?.dataframe) {
+							cell.result = result.dataframe;
+							// Phase 3: register the result as a real DuckDB table so
+							// downstream SQL/PRQL/plot/python cells can read it by name.
+							if (cell.outputName) {
+								try {
+									await registerPythonResultTable(
+										cell.outputName,
+										result.dataframe.rows,
+										result.dataframe.columns
+									);
+									await refreshTablesFromCatalog();
+								} catch {
+									// non-fatal — the cell's own result still rendered fine
+								}
+							}
+						}
+						cell.needsRun = false;
+						cell.staleReason = null;
+						cell.staleSources = [];
+						if (cell.outputName) {
+							markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+						}
+					}
+					cell.lastRunAt = Date.now();
+					scheduleSave();
+					resolve();
+				}
+			);
+		});
+	} catch (err) {
+		pythonJobByCellId.delete(cell.id);
+		cell.status = 'error';
+		cell.pythonOutput = {
+			stdout: cell.pythonOutput?.stdout ?? '',
+			figures: [],
+			error: (err as Error).message
+		};
+		cell.lastRunAt = Date.now();
+		scheduleSave();
+	}
+}
+
 export function cancelCell(id: string): void {
+	const pythonJob = pythonJobByCellId.get(id);
+	if (pythonJob) {
+		pythonJobByCellId.delete(id);
+		void cancelPython(pythonJob.notebookId, pythonJob.jobId);
+		for (const nb of state.notebooks) {
+			const cell = nb.cells.find((c) => c.id === id);
+			if (cell) {
+				cell.status = 'error';
+				cell.pythonOutput = {
+					stdout: cell.pythonOutput?.stdout ?? '',
+					figures: cell.pythonOutput?.figures ?? [],
+					error: 'Cancelled'
+				};
+				break;
+			}
+		}
+		return;
+	}
+
 	const controller = cellRunControllers.get(id);
 	const runId = cellRunIds.get(id);
 	if (!controller && !runId) return;
@@ -5601,10 +5958,66 @@ export async function materializeCell(id: string): Promise<void> {
 	}
 }
 
+/** Materializes a Python cell by re-running it — after Phase 3's DuckDB
+ *  registration, a successful run already *is* the materialization (the
+ *  result table is created/replaced as a side effect of running). */
+export async function materializePythonCell(id: string): Promise<void> {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || cell.cellType !== 'python') return;
+	cell.materializeStatus = 'running';
+	cell.materializeError = null;
+	await runPythonCell(id);
+	if (cell.status === 'error') {
+		cell.materializeStatus = 'error';
+		cell.materializeError = cell.pythonOutput?.error ?? 'Python cell failed';
+	} else {
+		cell.materializeStatus = 'success';
+		cell.materializeError = null;
+		cell.materializedRelationType = 'table';
+	}
+}
+
+/** A Python cell's "downstream" for scheduling purposes: later query/python
+ *  cells in the same notebook that reference its outputName (or a name
+ *  produced by one of those), found the same whole-word way every other
+ *  dependency resolver in this app works. Unlike `collectRunnableSegmentCells`
+ *  (a same-connection SQL chain), this isn't connection-scoped — a Python
+ *  cell's registered table is plain DuckDB, readable from any query cell. */
+function collectPythonDownstreamChain(cells: Cell[], startIdx: number): Cell[] {
+	const start = cells[startIdx];
+	if (!start || start.cellType !== 'python') return [];
+	const chain: Cell[] = [start];
+	if (!start.outputName) return chain;
+	const producedNames = new Set([start.outputName]);
+	for (let i = startIdx + 1; i < cells.length; i++) {
+		const c = cells[i];
+		if ((c.cellType !== 'query' && c.cellType !== 'python') || !c.outputName) continue;
+		const references = [...producedNames].some((name) =>
+			new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(c.code)
+		);
+		if (references) {
+			chain.push(c);
+			producedNames.add(c.outputName);
+		}
+	}
+	return chain;
+}
+
 export async function materializeCellAndDownstream(id: string): Promise<void> {
 	const nb = getActiveNotebook();
 	const startIdx = nb.cells.findIndex((c) => c.id === id);
 	if (startIdx === -1) return;
+
+	if (nb.cells[startIdx].cellType === 'python') {
+		const chain = collectPythonDownstreamChain(nb.cells, startIdx);
+		for (const cell of chain) {
+			if (cell.cellType === 'python') await materializePythonCell(cell.id);
+			else await materializeCell(cell.id);
+		}
+		return;
+	}
+
 	const toMaterialize = collectRunnableSegmentCells(nb.cells, startIdx);
 	for (const cell of toMaterialize) {
 		await materializeCell(cell.id);
@@ -5617,7 +6030,7 @@ export async function processScheduledMaterializations(now = Date.now()): Promis
 	try {
 		for (const notebook of state.notebooks) {
 			for (const cell of notebook.cells) {
-				if (cell.cellType !== 'query') continue;
+				if (cell.cellType !== 'query' && cell.cellType !== 'python') continue;
 				if (!cell.scheduleEnabled) continue;
 				if (cell.scheduleNextRunAt == null || cell.scheduleNextRunAt > now) continue;
 				if (cell.materializeStatus === 'running' || cell.scheduleStatus === 'running') continue;
@@ -5628,6 +6041,8 @@ export async function processScheduledMaterializations(now = Date.now()): Promis
 				try {
 					if (cell.scheduleScope === 'segment') {
 						await materializeCellAndDownstream(cell.id);
+					} else if (cell.cellType === 'python') {
+						await materializePythonCell(cell.id);
 					} else {
 						await materializeCell(cell.id);
 					}

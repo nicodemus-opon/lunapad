@@ -1,8 +1,19 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
+}
+
+export function rowsToCsv(columns: string[], rows: Record<string, unknown>[]): string {
+	const escape = (v: unknown): string => {
+		if (v === null || v === undefined) return '';
+		const s = String(v);
+		return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+	};
+	return [columns.join(','), ...rows.map((r) => columns.map((c) => escape(r[c])).join(','))].join(
+		'\n'
+	);
 }
 
 export function coerceNumber(value: unknown): number | null {
@@ -35,9 +46,9 @@ export function coerceNumber(value: unknown): number | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
+export type WithoutChild<T> = T extends { child?: any } ? Omit<T, 'child'> : T;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type WithoutChildren<T> = T extends { children?: any } ? Omit<T, "children"> : T;
+export type WithoutChildren<T> = T extends { children?: any } ? Omit<T, 'children'> : T;
 export type WithoutChildrenOrChild<T> = WithoutChildren<WithoutChild<T>>;
 export type WithElementRef<T, U extends HTMLElement = HTMLElement> = T & { ref?: U | null };
 
@@ -90,17 +101,14 @@ function isComparisonColName(name: string): boolean {
 	return /prev|last|prior|comparison|delta|diff|change|vs|versus/i.test(name);
 }
 
-export function inferChartConfig(
-	columns: string[],
-	rows: Record<string, unknown>[]
-): ChartConfig {
+export function inferChartConfig(columns: string[], rows: Record<string, unknown>[]): ChartConfig {
 	if (columns.length === 0) return makeConfig({ chartType: 'table' });
 
 	const kinds: Record<string, ColKind> = {};
 	for (const col of columns) kinds[col] = detectColKind(rows, col);
 
 	const dateCols = columns.filter((c) => kinds[c] === 'date');
-	const numCols  = columns.filter((c) => kinds[c] === 'numeric');
+	const numCols = columns.filter((c) => kinds[c] === 'numeric');
 	const textCols = columns.filter((c) => kinds[c] === 'text');
 
 	function cardinality(col: string): number {
@@ -118,7 +126,7 @@ export function inferChartConfig(
 			chartType: 'big-value',
 			xColumn: mainCol,
 			yColumns: compCol && compCol !== mainCol ? [compCol] : [],
-			colorColumn: dateCols[0] ?? null  // sparkline date if available
+			colorColumn: dateCols[0] ?? null // sparkline date if available
 		});
 	}
 
@@ -144,7 +152,8 @@ export function inferChartConfig(
 	let chartType: ChartType = 'bar';
 	if (dateCols.length > 0) chartType = 'line';
 	else if (finalY.length >= 2) chartType = 'line';
-	else if (numCols.length >= 2 && textCols.length === 0 && dateCols.length === 0) chartType = 'scatter';
+	else if (numCols.length >= 2 && textCols.length === 0 && dateCols.length === 0)
+		chartType = 'scatter';
 
 	return makeConfig({
 		chartType,
@@ -177,16 +186,17 @@ export function normalizeChartConfig(config: ChartConfig): ChartConfig {
 		...(config.valueRow !== undefined && { valueRow: config.valueRow }),
 		...(config.tableRows !== undefined && { tableRows: config.tableRows }),
 		...(config.tableSearch !== undefined && { tableSearch: config.tableSearch }),
-		...(config.code !== undefined && { code: config.code }),
+		...(config.code !== undefined && { code: config.code })
 	};
 }
 
-export const DEFAULT_CUSTOM_CHART_CODE = `// rows: the cell's result rows, columns: their names, Plot: the Observable Plot API
-return Plot.plot({
-	marks: [
-		Plot.dot(rows, { x: columns[0], y: columns[1], fill: 'var(--chart-1)' })
-	]
-});`;
+export const DEFAULT_CUSTOM_CHART_CODE = `// rows: the cell's result rows, columns: their names
+return {
+	data: [
+		{ type: 'scatter', mode: 'markers', x: rows.map(r => r[columns[0]]), y: rows.map(r => r[columns[1]]), marker: { color: 'var(--chart-1)' } }
+	],
+	layout: {}
+};`;
 
 function sanitizeColumn(column: string | null | undefined, columns: string[]): string | null {
 	if (!column) return null;
@@ -232,7 +242,9 @@ export function inferSmartChartConfigForType(
 
 	let xColumn = sanitizeColumn(base.xColumn, columns) ?? smart.xColumn;
 	let yColumns = uniqueColumns(base.yColumns).filter((col) => columns.includes(col));
-	let yColumnsSecondary = uniqueColumns(base.yColumnsSecondary ?? []).filter((col) => columns.includes(col));
+	let yColumnsSecondary = uniqueColumns(base.yColumnsSecondary ?? []).filter((col) =>
+		columns.includes(col)
+	);
 	let colorColumn = sanitizeColumn(base.colorColumn ?? null, columns);
 	let sizeColumn = sanitizeColumn(base.sizeColumn ?? null, columns);
 	let seriesMode = base.seriesMode ?? 'auto';
@@ -261,26 +273,35 @@ export function inferSmartChartConfigForType(
 		yColumnsSecondary = [];
 		sizeColumn = null;
 		seriesMode = 'auto';
-	} else if (chartType === 'line' || chartType === 'area' || chartType === 'bar' || chartType === 'bar-horizontal') {
-		const defaultX = chartType === 'bar' || chartType === 'bar-horizontal'
-			? (xColumn ?? textCols[0] ?? dateCols[0])
-			: (xColumn ?? dateCols[0] ?? textCols[0]);
+	} else if (
+		chartType === 'line' ||
+		chartType === 'area' ||
+		chartType === 'bar' ||
+		chartType === 'bar-horizontal'
+	) {
+		const defaultX =
+			chartType === 'bar' || chartType === 'bar-horizontal'
+				? (xColumn ?? textCols[0] ?? dateCols[0])
+				: (xColumn ?? dateCols[0] ?? textCols[0]);
 		xColumn = defaultX;
 		const split = splitSecondaryMetrics(xColumn, numCols, rows);
 		yColumns = split.primary.length > 0 ? split.primary : yColumns;
-		yColumnsSecondary = (chartType === 'line' || chartType === 'area') ? split.secondary : [];
+		yColumnsSecondary = chartType === 'line' || chartType === 'area' ? split.secondary : [];
 		sizeColumn = null;
 		if (chartType === 'bar' || chartType === 'bar-horizontal') {
 			seriesMode = base.seriesMode === 'stacked' ? 'stacked' : 'grouped';
 		} else if (chartType === 'area') {
-			seriesMode = base.seriesMode === 'grouped' ? 'grouped' : (yColumns.length > 1 ? 'stacked' : 'auto');
+			seriesMode =
+				base.seriesMode === 'grouped' ? 'grouped' : yColumns.length > 1 ? 'stacked' : 'auto';
 		} else {
 			seriesMode = base.seriesMode ?? 'grouped';
 		}
 	}
 
 	if (!colorColumn) {
-		const candidate = textCols.find((col) => col !== xColumn && cardinality(rows, col) <= Math.min(20, rows.length / 2));
+		const candidate = textCols.find(
+			(col) => col !== xColumn && cardinality(rows, col) <= Math.min(20, rows.length / 2)
+		);
 		colorColumn = candidate ?? null;
 	}
 
@@ -314,15 +335,19 @@ export function inferSmartChartConfig(
 	const textCols = columns.filter((c) => kinds[c] === 'text');
 
 	const intelligent = recommendIntelligentChartTypes({ columns, rows })[0];
-	const recommended = intelligent?.chartType ?? recommendChartTypes(columns, rows)[0]?.chartType ?? base.chartType;
-	const intelligentX = intelligent?.xColumn && columns.includes(intelligent.xColumn) ? intelligent.xColumn : null;
+	const recommended =
+		intelligent?.chartType ?? recommendChartTypes(columns, rows)[0]?.chartType ?? base.chartType;
+	const intelligentX =
+		intelligent?.xColumn && columns.includes(intelligent.xColumn) ? intelligent.xColumn : null;
 	const intelligentY = (intelligent?.yColumns ?? []).filter((column) => columns.includes(column));
-	const intelligentColor = intelligent?.colorColumn && columns.includes(intelligent.colorColumn)
-		? intelligent.colorColumn
-		: null;
-	const intelligentSize = intelligent?.sizeColumn && columns.includes(intelligent.sizeColumn)
-		? intelligent.sizeColumn
-		: null;
+	const intelligentColor =
+		intelligent?.colorColumn && columns.includes(intelligent.colorColumn)
+			? intelligent.colorColumn
+			: null;
+	const intelligentSize =
+		intelligent?.sizeColumn && columns.includes(intelligent.sizeColumn)
+			? intelligent.sizeColumn
+			: null;
 	let xColumn = base.xColumn;
 	let yColumns = [...base.yColumns];
 	let colorColumn = base.colorColumn;
@@ -361,7 +386,12 @@ export function inferSmartChartConfig(
 		yColumns = [numCols[0]];
 	} else if (recommended === 'pie') {
 		xColumn = intelligentX ?? textCols[0] ?? dateCols[0] ?? base.xColumn;
-		yColumns = intelligentY.length > 0 ? intelligentY.slice(0, 1) : (numCols.length > 0 ? [numCols.find((col) => col !== xColumn) ?? numCols[0]] : []);
+		yColumns =
+			intelligentY.length > 0
+				? intelligentY.slice(0, 1)
+				: numCols.length > 0
+					? [numCols.find((col) => col !== xColumn) ?? numCols[0]]
+					: [];
 	} else if ((recommended === 'line' || recommended === 'area') && numCols.length > 0) {
 		xColumn = intelligentX ?? dateCols[0] ?? textCols[0] ?? numCols[0] ?? base.xColumn;
 		if (intelligentY.length > 0) {
@@ -378,7 +408,10 @@ export function inferSmartChartConfig(
 		seriesMode = recommended === 'area' && yColumns.length > 1 ? 'stacked' : seriesMode;
 	} else if ((recommended === 'bar' || recommended === 'bar-horizontal') && numCols.length > 0) {
 		xColumn = intelligentX ?? textCols[0] ?? dateCols[0] ?? base.xColumn;
-		yColumns = intelligentY.length > 0 ? intelligentY.slice(0, 4) : numCols.filter((col) => col !== xColumn).slice(0, 4);
+		yColumns =
+			intelligentY.length > 0
+				? intelligentY.slice(0, 4)
+				: numCols.filter((col) => col !== xColumn).slice(0, 4);
 		yColumnsSecondary = [];
 		if (yColumns.length === 0) yColumns = [numCols[0]];
 		seriesMode = intelligent?.seriesMode ?? 'grouped';
@@ -395,10 +428,10 @@ export function inferSmartChartConfig(
 		seriesMode,
 		recommendation: intelligent
 			? {
-				reason: intelligent.reason,
-				confidence: intelligent.confidence,
-				signature: intelligent.signature
-			}
+					reason: intelligent.reason,
+					confidence: intelligent.confidence,
+					signature: intelligent.signature
+				}
 			: null
 	});
 }

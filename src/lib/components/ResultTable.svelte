@@ -263,9 +263,9 @@
 					<Table.Row class="border-b-0">
 						{#each headerGroup.headers as header, hi (header.id)}
 							{@const s = statsMap[header.id]}
-							<Table.Head class="border-b p-2 align-top bg-background 
+							<Table.Head class="border-b p-2 align-top bg-background
 								{hi === 0
-									? 'sticky top-0 z-30 shadow-[1px_0_0_0_hsl(var(--border))]'
+									? 'sticky top-0 left-0 z-30'
 									: 'sticky top-0 z-20'}">
 								{#if s && headerInsights === 'full'}
 									{@const Icon = formatMap[s.col] ? KIND_ICON[formatMap[s.col].kind] : (s.isNumeric ? Hash : Type)}
@@ -419,14 +419,14 @@
 			</Table.Header>
 			<Table.Body>
 				{#each table.getRowModel().rows as row (row.id)}
-					<Table.Row class=" even:bg-background/20 ">
+					<Table.Row>
 						{#each row.getVisibleCells() as cell, ci (cell.id)}
 							{@const value = row.original[cell.column.id]}
 							{@const isNull = value === null || value === undefined}
 							{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
 							<Table.Cell
 								class="max-w-70 truncate p-2 cursor-pointer hover:bg-muted/50 transition-colors
-									{ci === 0 ? 'stickyv left-0v even:bg-background   shadow-[1px_0_0_0_hsl(var(--border))]' : ''}
+									{ci === 0 ? 'sticky left-0 z-10 bg-background' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage') ? 'text-right' : ''}"
 								onclick={() => { selectedCell = { col: cell.column.id, value }; copied = false; }}
 							>

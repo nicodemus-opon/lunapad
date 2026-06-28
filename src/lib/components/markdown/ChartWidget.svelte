@@ -1,9 +1,13 @@
 <script lang="ts">
-	// Renders the same ChartView (and therefore PlotChart) used by inline cell
-	// results, so crossfade animations and Plot.tip tooltips apply here too with
-	// no extra work.
+	// Renders the same ChartView (and therefore Plotly) used by inline cell
+	// results, so theming and hover tooltips apply here too with no extra work.
 	import ChartView from '../ChartView.svelte';
-	import type { ChartConfig, ChartType, ChartSeriesMode, ChartSortOrder } from '$lib/types/gui-pipeline';
+	import type {
+		ChartConfig,
+		ChartType,
+		ChartSeriesMode,
+		ChartSortOrder
+	} from '$lib/types/gui-pipeline';
 	import { Maximize2, X } from '@lucide/svelte';
 
 	interface Props {
@@ -24,23 +28,37 @@
 	}
 
 	const {
-		data = [], chartType, xColumn, yColumns, yColumnsSecondary, colorColumn = null,
-		sizeColumn, seriesMode, sortOrder, histogramBins, title, code, compact = false, height = 280
-	}: Props = $props();
-
-	const config = $derived.by((): ChartConfig => ({
-		chartType: chartType ?? 'bar',
-		xColumn: xColumn ?? '',
-		yColumns: yColumns ?? [],
+		data = [],
+		chartType,
+		xColumn,
+		yColumns,
 		yColumnsSecondary,
-		colorColumn,
+		colorColumn = null,
 		sizeColumn,
 		seriesMode,
 		sortOrder,
 		histogramBins,
 		title,
-		code
-	}));
+		code,
+		compact = false,
+		height = 280
+	}: Props = $props();
+
+	const config = $derived.by(
+		(): ChartConfig => ({
+			chartType: chartType ?? 'bar',
+			xColumn: xColumn ?? '',
+			yColumns: yColumns ?? [],
+			yColumnsSecondary,
+			colorColumn,
+			sizeColumn,
+			seriesMode,
+			sortOrder,
+			histogramBins,
+			title,
+			code
+		})
+	);
 
 	const columns = $derived(data[0] ? Object.keys(data[0]) : []);
 	const effectiveHeight = $derived(compact ? 60 : height);
@@ -77,7 +95,11 @@
 	</div>
 {/if}
 
-<svelte:window onkeydown={(e) => { if (fullscreen && e.key === 'Escape') fullscreen = false; }} />
+<svelte:window
+	onkeydown={(e) => {
+		if (fullscreen && e.key === 'Escape') fullscreen = false;
+	}}
+/>
 
 <style>
 	.md-chart {

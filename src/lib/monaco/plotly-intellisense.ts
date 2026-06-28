@@ -3,16 +3,16 @@ import {
 	ScriptTarget,
 	ModuleResolutionKind
 } from 'monaco-editor/esm/vs/language/typescript/monaco.contribution.js';
-import { getPlotExtraLibs } from './plot-dts';
+import { getPlotlyExtraLibs } from './plotly-dts';
 
-/** Wires up real Plot.* autocomplete/hover/signature-help for plot cells (and,
- *  via the shared `custom` chart-config code box, the older single-result
- *  Plot-spec editor). `checkJs` is deliberately left off — plot cells are JS
- *  sketches, not type-checked TS, and we don't want red squiggles for not
- *  satisfying strict typing on what's meant to be quick exploratory code.
+/** Wires up `@types/plotly.js`-backed intellisense for plot cells (and, via
+ *  the shared `custom` chart-config code box, the older single-result figure
+ *  editor). `checkJs` is deliberately left off — this sandbox code is JS
+ *  sketches, not type-checked TS, and returning a plain `{data, layout}`
+ *  literal shouldn't need annotating to avoid red squiggles.
  *  `javascriptDefaults` is a module-level singleton independent of any
  *  `monaco.editor` instance, so this needs no `monaco` argument. */
-export function registerPlotIntellisense(): void {
+export function registerPlotlyIntellisense(): void {
 	javascriptDefaults.setCompilerOptions({
 		allowJs: true,
 		checkJs: false,
@@ -26,7 +26,7 @@ export function registerPlotIntellisense(): void {
 		noSemanticValidation: true,
 		noSuggestionDiagnostics: false
 	});
-	for (const lib of getPlotExtraLibs()) {
+	for (const lib of getPlotlyExtraLibs()) {
 		javascriptDefaults.addExtraLib(lib.content, lib.filePath);
 	}
 }

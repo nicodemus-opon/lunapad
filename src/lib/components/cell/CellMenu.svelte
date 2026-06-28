@@ -16,7 +16,8 @@
 		Copy,
 		ClipboardPaste,
 		CopyPlus,
-		Trash2
+		Trash2,
+		FileSpreadsheet
 	} from '@lucide/svelte';
 	import {
 		moveCell,
@@ -36,6 +37,7 @@
 		cell,
 		notebookId = '',
 		isQueryCell,
+		isPythonCell = false,
 		isFirst,
 		isLast,
 		isDbtProject,
@@ -45,11 +47,13 @@
 		open = $bindable(false),
 		onOpenMaterialize,
 		onOpenPromote,
+		onOpenPromoteSeed,
 		onRunTests
 	}: {
 		cell: Cell;
 		notebookId?: string;
 		isQueryCell: boolean;
+		isPythonCell?: boolean;
 		isFirst: boolean;
 		isLast: boolean;
 		isDbtProject: boolean;
@@ -59,6 +63,7 @@
 		open?: boolean;
 		onOpenMaterialize: () => void;
 		onOpenPromote?: () => void;
+		onOpenPromoteSeed?: () => void;
 		onRunTests: () => void;
 	} = $props();
 
@@ -121,6 +126,8 @@
 					</DropdownMenu.SubContent>
 				</DropdownMenu.Sub>
 			{/if}
+		{/if}
+		{#if isQueryCell || isPythonCell}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={onOpenMaterialize}>
 				<Database class="h-3.5 w-3.5" /> Materialize & schedule…
@@ -128,6 +135,11 @@
 			{#if promotable}
 				<DropdownMenu.Item onclick={onOpenPromote}>
 					<ArrowUpToLine class="h-3.5 w-3.5" /> Promote to dbt model…
+				</DropdownMenu.Item>
+			{/if}
+			{#if isPythonCell && onOpenPromoteSeed}
+				<DropdownMenu.Item onclick={onOpenPromoteSeed}>
+					<FileSpreadsheet class="h-3.5 w-3.5" /> Promote to dbt seed…
 				</DropdownMenu.Item>
 			{/if}
 			<DropdownMenu.Separator />

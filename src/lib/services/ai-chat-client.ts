@@ -63,22 +63,61 @@ import {
 	setCurrentActivityLabel,
 	type NotebookSnapshot
 } from '$lib/stores/ai-chat.svelte.js';
-import type { AIChatRequest, AIChatToolCall, CreateCellArgs, UpdateCellArgs, SetChartArgs, PickChartArgs, SetViewModeArgs, DeleteCellArgs, RunCellsArgs, MoveCellArgs, GetCellResultArgs, GetLineageArgs, SearchWorkspaceArgs, QueryDataArgs, SampleDataArgs, ProfileColumnArgs, RecordDecisionArgs, WorkspaceContract, WorkspaceNamingRule, SprintTask, SprintTaskType } from '$lib/types/ai-chat.js';
-import { classifyIntent, classifyComplexity, buildDiscoverySummary, parseReviewResult, formatReviewFeedback, SUBAGENT_TOOLS, SPRINT_TASK_TOOLS } from '$lib/services/ai-subagents.js';
+import type {
+	AIChatRequest,
+	AIChatToolCall,
+	CreateCellArgs,
+	UpdateCellArgs,
+	SetChartArgs,
+	PickChartArgs,
+	SetViewModeArgs,
+	DeleteCellArgs,
+	RunCellsArgs,
+	MoveCellArgs,
+	GetCellResultArgs,
+	GetLineageArgs,
+	SearchWorkspaceArgs,
+	QueryDataArgs,
+	SampleDataArgs,
+	ProfileColumnArgs,
+	RecordDecisionArgs,
+	WorkspaceContract,
+	WorkspaceNamingRule,
+	SprintTask,
+	SprintTaskType
+} from '$lib/types/ai-chat.js';
+import {
+	classifyIntent,
+	classifyComplexity,
+	buildDiscoverySummary,
+	parseReviewResult,
+	formatReviewFeedback,
+	SUBAGENT_TOOLS,
+	SPRINT_TASK_TOOLS
+} from '$lib/services/ai-subagents.js';
 import type { PlanAssertion } from '$lib/types/ai-subagents.js';
 import { executeSQL } from '$lib/services/duckdb.js';
 import { queryConnectionSQL } from '$lib/services/connections.js';
 import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
-import { type Connection, BUILTIN_DUCKDB_CONNECTION, BUILTIN_DUCKDB_CONNECTION_ID, isBuiltinDuckDBConnection } from '$lib/types/connection.js';
+import { rowsToCsv } from '$lib/utils.js';
+import {
+	type Connection,
+	BUILTIN_DUCKDB_CONNECTION,
+	BUILTIN_DUCKDB_CONNECTION_ID,
+	isBuiltinDuckDBConnection
+} from '$lib/types/connection.js';
 
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function stripTrailingSemicolons(sql: string): string {
-	return sql.trimEnd().replace(/;+\s*$/, '').trimEnd();
+	return sql
+		.trimEnd()
+		.replace(/;+\s*$/, '')
+		.trimEnd();
 }
 
 function fixBacktickIdents(sql: string): string {
@@ -133,14 +172,16 @@ function fixUnquotedSpacedColumns(sql: string): string {
 
 	// Split on any already-quoted token: "ident" or 'string literal'
 	const segments = sql.split(/(\"[^\"]*\"|'[^']*')/);
-	return segments.map((seg, i) => {
-		if (i % 2 === 1) return seg; // inside an existing quoted token — leave alone
-		let result = seg;
-		for (const col of cols) {
-			result = result.replace(new RegExp(escapeRegExp(col), 'g'), `"${col}"`);
-		}
-		return result;
-	}).join('');
+	return segments
+		.map((seg, i) => {
+			if (i % 2 === 1) return seg; // inside an existing quoted token — leave alone
+			let result = seg;
+			for (const col of cols) {
+				result = result.replace(new RegExp(escapeRegExp(col), 'g'), `"${col}"`);
+			}
+			return result;
+		})
+		.join('');
 }
 
 function sanitizeSQL(sql: string): string {
@@ -149,7 +190,10 @@ function sanitizeSQL(sql: string): string {
 
 function quoteIdent(name: string): string {
 	if (name.includes('.')) {
-		return name.split('.').map((p) => `"${p.replace(/"/g, '""')}"`).join('.');
+		return name
+			.split('.')
+			.map((p) => `"${p.replace(/"/g, '""')}"`)
+			.join('.');
 	}
 	return `"${name.replace(/"/g, '""')}"`;
 }
@@ -166,7 +210,8 @@ function validateColumnRefs(
 	if (!sql) return null;
 	const knownColumns = new Set<string>();
 	for (const t of externalTables) for (const col of t.columns) knownColumns.add(col.toLowerCase());
-	for (const t of localTables) for (const col of t.columns ?? []) knownColumns.add(col.toLowerCase());
+	for (const t of localTables)
+		for (const col of t.columns ?? []) knownColumns.add(col.toLowerCase());
 	if (knownColumns.size === 0) return null;
 
 	// Extract bare identifiers from SELECT list (between SELECT and FROM/WHERE/GROUP)
@@ -175,7 +220,9 @@ function validateColumnRefs(
 
 	const selectList = selectMatch[1];
 	// Extract aliases or bare column names; skip *, aggregates, expressions
-	const colRefs = [...selectList.matchAll(/(?:^|,)\s*(?:[a-z_]\w*\.)?(([a-z_]\w*))\s*(?:AS\s+\w+)?\s*(?=,|$)/gi)]
+	const colRefs = [
+		...selectList.matchAll(/(?:^|,)\s*(?:[a-z_]\w*\.)?(([a-z_]\w*))\s*(?:AS\s+\w+)?\s*(?=,|$)/gi)
+	]
 		.map((m) => m[2]?.toLowerCase())
 		.filter((name): name is string => !!name && name !== '*');
 
@@ -226,7 +273,10 @@ let _sessionDataContext = new Map<string, string>();
 // Modeling decisions recorded via record_decision tool — persists across turns
 let _sessionPlanContext: string[] = [];
 // Row count + column profile cache per table — keyed by table name
-let _preflightCache = new Map<string, { rowCount: number; columnProfiles: Record<string, string> }>();
+let _preflightCache = new Map<
+	string,
+	{ rowCount: number; columnProfiles: Record<string, string> }
+>();
 // Skip preflight on subsequent turns once it has run for this session
 let _preflightDone = false;
 // Skip idle expansion once it has fired for this session
@@ -246,7 +296,9 @@ function saveAIMemory(): void {
 			savedAt: Date.now()
 		});
 		localStorage.setItem(AI_MEMORY_KEY, payload);
-	} catch { /* storage full or unavailable */ }
+	} catch {
+		/* storage full or unavailable */
+	}
 }
 
 /** Load persisted session context at startup (max 24h old). */
@@ -262,7 +314,9 @@ function loadAIMemory(): void {
 		if (Date.now() - savedAt > AI_MEMORY_TTL_MS) return;
 		for (const [k, v] of dataContext) _sessionDataContext.set(k, v);
 		_sessionPlanContext.push(...planContext);
-	} catch { /* corrupted or unavailable */ }
+	} catch {
+		/* corrupted or unavailable */
+	}
 }
 
 // Load persisted memory immediately on module init
@@ -284,7 +338,9 @@ const DATA_TOOL_NAMES = new Set(['query_data', 'sample_data', 'profile_column'])
 function getDefaultConnection(): { isBuiltin: boolean; connection: Connection } {
 	const cells = getCells();
 	const connections = getConnections();
-	const externalId = cells.find((c) => c.connectionId && c.connectionId !== BUILTIN_DUCKDB_CONNECTION_ID)?.connectionId;
+	const externalId = cells.find(
+		(c) => c.connectionId && c.connectionId !== BUILTIN_DUCKDB_CONNECTION_ID
+	)?.connectionId;
 	if (externalId) {
 		const conn = connections.find((c) => c.id === externalId);
 		if (conn && !isBuiltinDuckDBConnection(conn)) {
@@ -299,7 +355,9 @@ function getDefaultConnection(): { isBuiltin: boolean; connection: Connection } 
 // would silently run against DuckDB whenever the notebook's cells happened not to
 // reveal an external connection (e.g. a fresh notebook, or all cells anchored after
 // a markdown cell — see insertCellAfter).
-function getConnectionForTable(table: string): { isBuiltin: boolean; connection: Connection } | null {
+function getConnectionForTable(
+	table: string
+): { isBuiltin: boolean; connection: Connection } | null {
 	const norm = (s: string) => s.toLowerCase().replace(/^"(.+)"$/, '$1');
 	const target = norm(table);
 	const match = getExternalSchemaTables().find((t) => {
@@ -312,28 +370,25 @@ function getConnectionForTable(table: string): { isBuiltin: boolean; connection:
 	return { isBuiltin: false, connection: conn };
 }
 
-async function runRawQuery(sql: string, table?: string): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
-	const { isBuiltin, connection } = (table && getConnectionForTable(table)) || getDefaultConnection();
+async function runRawQuery(
+	sql: string,
+	table?: string
+): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
+	const { isBuiltin, connection } =
+		(table && getConnectionForTable(table)) || getDefaultConnection();
 	if (isBuiltin) {
 		return executeSQL(sql);
 	}
 	return queryConnectionSQL(connection, sql);
 }
 
-function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
-	const escape = (v: unknown): string => {
-		if (v === null || v === undefined) return '';
-		const s = String(v);
-		return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-	};
-	return [columns.join(','), ...rows.map((r) => columns.map((c) => escape(r[c])).join(','))].join('\n');
-}
-
 function toMarkdownTable(columns: string[], rows: Record<string, unknown>[]): string {
 	if (rows.length === 0) return '(no rows)';
 	const header = `| ${columns.join(' | ')} |`;
 	const sep = `| ${columns.map(() => '---').join(' | ')} |`;
-	const data = rows.slice(0, 15).map((r) => `| ${columns.map((c) => String(r[c] ?? '')).join(' | ')} |`);
+	const data = rows
+		.slice(0, 15)
+		.map((r) => `| ${columns.map((c) => String(r[c] ?? '')).join(' | ')} |`);
 	return [header, sep, ...data].join('\n');
 }
 
@@ -347,7 +402,9 @@ interface DataToolResult {
 
 function knownTableNames(): string[] {
 	const local = getTables().map((t) => t.name);
-	const external = getExternalSchemaTables().map((t) => t.schema ? `${t.schema}.${t.name}` : t.name);
+	const external = getExternalSchemaTables().map((t) =>
+		t.schema ? `${t.schema}.${t.name}` : t.name
+	);
 	return [...local, ...external];
 }
 
@@ -369,7 +426,7 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 					? sql
 					: `SELECT * FROM (${sql}) _q LIMIT ${safeLimit}`;
 				const result = await runRawQuery(wrappedSql);
-				const csv = toCsv(result.columns, result.rows);
+				const csv = rowsToCsv(result.columns, result.rows);
 				const preview = toMarkdownTable(result.columns, result.rows);
 				const summary = `${result.rows.length} rows, columns: ${result.columns.join(', ')}`;
 				const shortSql = sql.replace(/\s+/g, ' ').slice(0, 80);
@@ -399,10 +456,10 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 				const sampleSql = isBuiltin
 					? `SELECT * FROM ${qt} USING SAMPLE ${safeN} ROWS`
 					: connection.type === 'clickhouse'
-					? `SELECT * FROM ${qt} ORDER BY rand() LIMIT ${safeN}`
-					: `SELECT * FROM ${qt} ORDER BY RANDOM() LIMIT ${safeN}`;
+						? `SELECT * FROM ${qt} ORDER BY rand() LIMIT ${safeN}`
+						: `SELECT * FROM ${qt} ORDER BY RANDOM() LIMIT ${safeN}`;
 				const result = await runRawQuery(sampleSql, table);
-				const csv = toCsv(result.columns, result.rows);
+				const csv = rowsToCsv(result.columns, result.rows);
 				const preview = toMarkdownTable(result.columns, result.rows);
 				const summary = `${result.rows.length} rows sampled, columns: ${result.columns.join(', ')}`;
 				return {
@@ -428,13 +485,22 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 				const qCol = quoteIdent(column);
 				const qTable = quoteIdent(table);
 				const [nullRes, statsRes, topRes] = await Promise.all([
-					runRawQuery(`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`, table),
-					runRawQuery(`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`, table),
-					runRawQuery(`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`, table)
+					runRawQuery(
+						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`,
+						table
+					),
+					runRawQuery(
+						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`,
+						table
+					),
+					runRawQuery(
+						`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
+						table
+					)
 				]);
 				const total = Number(nullRes.rows[0]?.['_total'] ?? 0);
 				const nonNull = Number(nullRes.rows[0]?.['_non_null'] ?? 0);
-				const nullRate = total > 0 ? ((total - nonNull) / total * 100).toFixed(1) + '%' : 'N/A';
+				const nullRate = total > 0 ? (((total - nonNull) / total) * 100).toFixed(1) + '%' : 'N/A';
 				const minVal = statsRes.rows[0]?.['_min'];
 				const maxVal = statsRes.rows[0]?.['_max'];
 				const distinctCount = statsRes.rows[0]?.['_distinct'];
@@ -476,29 +542,42 @@ async function runPreflightProfiles(): Promise<void> {
 	): Promise<void> {
 		if (_preflightCache.has(cacheKey)) return;
 		try {
-			const countResult = await withTimeout(timeoutMs, query(`SELECT COUNT(*) AS _c FROM ${quoteIdent(cacheKey)}`));
+			const countResult = await withTimeout(
+				timeoutMs,
+				query(`SELECT COUNT(*) AS _c FROM ${quoteIdent(cacheKey)}`)
+			);
 			const rowCount = Number(countResult.rows[0]?.['_c'] ?? 0);
-			const textCols = columns.slice(0, 5)
+			const textCols = columns
+				.slice(0, 5)
 				.map((col, i) => ({ col, type: (columnTypes[i] ?? '').toUpperCase() }))
 				.filter(({ type }) => /VARCHAR|TEXT|STRING|CHAR/.test(type) || type === '')
 				.slice(0, 3);
 			const columnProfiles: Record<string, string> = {};
-			await Promise.all(textCols.map(async ({ col }) => {
-				try {
-					const vals = await withTimeout(timeoutMs, query(
-						`SELECT ${quoteIdent(col)}, COUNT(*) AS _cnt FROM ${quoteIdent(cacheKey)} WHERE ${quoteIdent(col)} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
-					));
-					columnProfiles[col] = vals.rows.map((r) => String(r[col])).join(', ');
-				} catch { /* skip column */ }
-			}));
+			await Promise.all(
+				textCols.map(async ({ col }) => {
+					try {
+						const vals = await withTimeout(
+							timeoutMs,
+							query(
+								`SELECT ${quoteIdent(col)}, COUNT(*) AS _cnt FROM ${quoteIdent(cacheKey)} WHERE ${quoteIdent(col)} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
+							)
+						);
+						columnProfiles[col] = vals.rows.map((r) => String(r[col])).join(', ');
+					} catch {
+						/* skip column */
+					}
+				})
+			);
 			_preflightCache.set(cacheKey, { rowCount, columnProfiles });
-		} catch { /* skip table on timeout or error */ }
+		} catch {
+			/* skip table on timeout or error */
+		}
 	}
 
 	// DuckDB tables
-	const duckdbWork = getTables().slice(0, 8).map((t) =>
-		profileTable(t.name, t.columns ?? [], t.columnTypes ?? [], executeSQL, 2000)
-	);
+	const duckdbWork = getTables()
+		.slice(0, 8)
+		.map((t) => profileTable(t.name, t.columns ?? [], t.columnTypes ?? [], executeSQL, 2000));
 
 	// External connection tables — grouped by connection
 	const externalTables = getExternalSchemaTables();
@@ -540,29 +619,42 @@ async function runIdlePreflightExpansion(): Promise<void> {
 	): Promise<void> {
 		if (_preflightCache.has(cacheKey)) return;
 		try {
-			const countResult = await withTimeout(timeoutMs, query(`SELECT COUNT(*) AS _c FROM ${quoteIdent(cacheKey)}`));
+			const countResult = await withTimeout(
+				timeoutMs,
+				query(`SELECT COUNT(*) AS _c FROM ${quoteIdent(cacheKey)}`)
+			);
 			const rowCount = Number(countResult.rows[0]?.['_c'] ?? 0);
-			const textCols = columns.slice(0, 5)
+			const textCols = columns
+				.slice(0, 5)
 				.map((col, i) => ({ col, type: (columnTypes[i] ?? '').toUpperCase() }))
 				.filter(({ type }) => /VARCHAR|TEXT|STRING|CHAR/.test(type) || type === '')
 				.slice(0, 3);
 			const columnProfiles: Record<string, string> = {};
-			await Promise.all(textCols.map(async ({ col }) => {
-				try {
-					const vals = await withTimeout(timeoutMs, query(
-						`SELECT ${quoteIdent(col)}, COUNT(*) AS _cnt FROM ${quoteIdent(cacheKey)} WHERE ${quoteIdent(col)} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
-					));
-					columnProfiles[col] = vals.rows.map((r) => String(r[col])).join(', ');
-				} catch { /* skip column */ }
-			}));
+			await Promise.all(
+				textCols.map(async ({ col }) => {
+					try {
+						const vals = await withTimeout(
+							timeoutMs,
+							query(
+								`SELECT ${quoteIdent(col)}, COUNT(*) AS _cnt FROM ${quoteIdent(cacheKey)} WHERE ${quoteIdent(col)} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
+							)
+						);
+						columnProfiles[col] = vals.rows.map((r) => String(r[col])).join(', ');
+					} catch {
+						/* skip column */
+					}
+				})
+			);
 			_preflightCache.set(cacheKey, { rowCount, columnProfiles });
-		} catch { /* skip on timeout */ }
+		} catch {
+			/* skip on timeout */
+		}
 	}
 
 	// DuckDB: indices 8+ (first 8 already profiled in runPreflightProfiles)
-	const duckdbRemainder = getTables().slice(8, 30).map((t) =>
-		profileTable(t.name, t.columns ?? [], t.columnTypes ?? [], executeSQL, 3000)
-	);
+	const duckdbRemainder = getTables()
+		.slice(8, 30)
+		.map((t) => profileTable(t.name, t.columns ?? [], t.columnTypes ?? [], executeSQL, 3000));
 
 	// External: all connections, tables 6+ per connection
 	const externalTables = getExternalSchemaTables();
@@ -597,32 +689,35 @@ function takeSnapshot(): NotebookSnapshot {
 	const cells = getCells();
 	return {
 		notebookId,
-		cells: cells.map((c) => ({
-			id: c.id,
-			outputName: c.outputName,
-			code: c.code,
-			markdown: c.markdown,
-			udfBody: c.udfBody,
-			language: c.language,
-			cellType: c.cellType,
-			display: c.display,
-			guiStages: c.guiStages,
-			editMode: c.editMode,
-			connectionId: c.connectionId,
-			materializeMode: c.materializeMode,
-			materializeTarget: c.materializeTarget,
-			description: c.description,
-			dbtTags: c.dbtTags,
-			scheduleEnabled: c.scheduleEnabled,
-			scheduleIntervalMinutes: c.scheduleIntervalMinutes,
-			scheduleScope: c.scheduleScope,
-			result: c.result,
-			status: c.status,
-			resultViewMode: c.resultViewMode,
-			resultChartConfig: c.resultChartConfig,
-			executionMs: c.executionMs,
-			errors: c.errors
-		} satisfies CellSnapshot))
+		cells: cells.map(
+			(c) =>
+				({
+					id: c.id,
+					outputName: c.outputName,
+					code: c.code,
+					markdown: c.markdown,
+					udfBody: c.udfBody,
+					language: c.language,
+					cellType: c.cellType,
+					display: c.display,
+					guiStages: c.guiStages,
+					editMode: c.editMode,
+					connectionId: c.connectionId,
+					materializeMode: c.materializeMode,
+					materializeTarget: c.materializeTarget,
+					description: c.description,
+					dbtTags: c.dbtTags,
+					scheduleEnabled: c.scheduleEnabled,
+					scheduleIntervalMinutes: c.scheduleIntervalMinutes,
+					scheduleScope: c.scheduleScope,
+					result: c.result,
+					status: c.status,
+					resultViewMode: c.resultViewMode,
+					resultChartConfig: c.resultChartConfig,
+					executionMs: c.executionMs,
+					errors: c.errors
+				}) satisfies CellSnapshot
+		)
 	};
 }
 
@@ -667,17 +762,23 @@ export function undoLastAIStep(): void {
 // ── Context builder ───────────────────────────────────────────────────────────
 
 const KNOWN_PREFIXES: Record<string, string> = {
-	'stg_': 'staging/cleaning',
-	'dim_': 'entity tables',
-	'fct_': 'event facts',
-	'mart_': 'reporting marts',
-	'metric_': 'business metrics',
-	'feat_': 'feature engineering',
-	'int_': 'intermediate transforms',
-	'rpt_': 'report views'
+	stg_: 'staging/cleaning',
+	dim_: 'entity tables',
+	fct_: 'event facts',
+	mart_: 'reporting marts',
+	metric_: 'business metrics',
+	feat_: 'feature engineering',
+	int_: 'intermediate transforms',
+	rpt_: 'report views'
 };
 
-const VALID_MATERIALIZE_MODES = new Set(['ephemeral', 'view', 'table', 'incremental', 'materialized_view']);
+const VALID_MATERIALIZE_MODES = new Set([
+	'ephemeral',
+	'view',
+	'table',
+	'incremental',
+	'materialized_view'
+]);
 
 function deriveWorkspaceContract(
 	cells: ReturnType<typeof getCells>,
@@ -713,22 +814,33 @@ function deriveWorkspaceContract(
 
 	// Top reusable models: query cells with at least 1 downstream, sorted by downstream count
 	const topReusableModels = cells
-		.filter((c) => c.cellType === 'query' && c.outputName && (downstreamCounts.get(c.outputName) ?? 0) > 0)
-		.sort((a, b) => (downstreamCounts.get(b.outputName) ?? 0) - (downstreamCounts.get(a.outputName) ?? 0))
+		.filter(
+			(c) => c.cellType === 'query' && c.outputName && (downstreamCounts.get(c.outputName) ?? 0) > 0
+		)
+		.sort(
+			(a, b) =>
+				(downstreamCounts.get(b.outputName) ?? 0) - (downstreamCounts.get(a.outputName) ?? 0)
+		)
 		.slice(0, 8)
 		.map((c) => ({
 			name: c.outputName,
 			downstreamCount: downstreamCounts.get(c.outputName) ?? 0
 		}));
 
-	if (namingRules.length === 0 && topReusableModels.length === 0 && !standards.customInstructions.trim()) {
+	if (
+		namingRules.length === 0 &&
+		topReusableModels.length === 0 &&
+		!standards.customInstructions.trim()
+	) {
 		return undefined;
 	}
 
 	return {
 		namingRules,
 		topReusableModels,
-		...(standards.customInstructions.trim() && { customInstructions: standards.customInstructions.trim() })
+		...(standards.customInstructions.trim() && {
+			customInstructions: standards.customInstructions.trim()
+		})
 	};
 }
 
@@ -753,11 +865,7 @@ function compressOldMessage(content: string): string {
 	);
 
 	// All other read-tool blocks fit in a single \n\n-separated paragraph — filter by prefix.
-	const DROP_PREFIXES = [
-		'**Cells:**\n',
-		'**Lineage: `',
-		'**Search unavailable**',
-	];
+	const DROP_PREFIXES = ['**Cells:**\n', '**Lineage: `', '**Search unavailable**'];
 	const paragraphs = result.split('\n\n');
 	const filtered = paragraphs.filter((p) => {
 		const t = p.trimStart();
@@ -792,9 +900,9 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 		);
 		// Intent-anchor: most recent plan-containing message not already in relevant or last6
 		const relevantSet = new Set(relevant);
-		const planMsg = [...older].reverse().find(
-			(m) => m.role === 'assistant' && m.content.includes('<plan>') && !relevantSet.has(m)
-		);
+		const planMsg = [...older]
+			.reverse()
+			.find((m) => m.role === 'assistant' && m.content.includes('<plan>') && !relevantSet.has(m));
 		// Strip verbose read-tool blocks from stale messages; keep the 2 most recent intact
 		// so the current turn's tool results (list_cells, search, etc.) remain fully visible.
 		const compress = (m: (typeof allMsgs)[number]) =>
@@ -817,7 +925,10 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 			columns: t.columns.slice(0, 30),
 			columnTypes: t.columnTypes?.slice(0, 30) ?? [],
 			...(profile?.rowCount != null && { rowCount: profile.rowCount }),
-			...(profile?.columnProfiles && Object.keys(profile.columnProfiles).length > 0 && { columnProfiles: profile.columnProfiles })
+			...(profile?.columnProfiles &&
+				Object.keys(profile.columnProfiles).length > 0 && {
+					columnProfiles: profile.columnProfiles
+				})
 		};
 	});
 	const externalTables = schema.slice(0, 40).map((t) => {
@@ -828,16 +939,23 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 			columns: t.columns.slice(0, 30),
 			columnTypes: t.columnTypes?.slice(0, 30) ?? [],
 			...(profile?.rowCount != null && { rowCount: profile.rowCount }),
-			...(profile?.columnProfiles && Object.keys(profile.columnProfiles).length > 0 && { columnProfiles: profile.columnProfiles })
+			...(profile?.columnProfiles &&
+				Object.keys(profile.columnProfiles).length > 0 && {
+					columnProfiles: profile.columnProfiles
+				})
 		};
 	});
 	const allSchemaTables = [...duckdbTables, ...externalTables].slice(0, 50);
 
 	// #9 — Schema-diff awareness: detect table additions/removals across turns
-	const currentSchemaHash = allSchemaTables.map((t) => `${t.name}:${t.columns.slice(0, 10).join(',')}`).sort().join('|');
-	const schemaChangeNote = _lastSchemaHash !== null && _lastSchemaHash !== currentSchemaHash
-		? 'Schema changed since the previous turn — a table or column was added or removed. Re-verify column names before writing SQL.'
-		: undefined;
+	const currentSchemaHash = allSchemaTables
+		.map((t) => `${t.name}:${t.columns.slice(0, 10).join(',')}`)
+		.sort()
+		.join('|');
+	const schemaChangeNote =
+		_lastSchemaHash !== null && _lastSchemaHash !== currentSchemaHash
+			? 'Schema changed since the previous turn — a table or column was added or removed. Re-verify column names before writing SQL.'
+			: undefined;
 	_lastSchemaHash = currentSchemaHash;
 
 	// Build regex map for whole-word matching of outputNames
@@ -864,32 +982,42 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 	const cellUpstreamNames = new Map<string, string[]>();
 	const cellDownstreamNames = new Map<string, string[]>();
 	for (const c of cells) {
-		cellUpstreamNames.set(c.id, outputNames.filter(
-			(n) => n !== c.outputName && nameRegexes.get(n)!.test(c.code)
-		));
+		cellUpstreamNames.set(
+			c.id,
+			outputNames.filter((n) => n !== c.outputName && nameRegexes.get(n)!.test(c.code))
+		);
 	}
 	for (const c of cells) {
-		cellDownstreamNames.set(c.id, c.outputName
-			? outputNames.filter((n) => {
-					if (n === c.outputName) return false;
-					const dc = cells.find((x) => x.outputName === n);
-					return dc ? nameRegexes.get(c.outputName)!.test(dc.code) : false;
-			  })
-			: []);
+		cellDownstreamNames.set(
+			c.id,
+			c.outputName
+				? outputNames.filter((n) => {
+						if (n === c.outputName) return false;
+						const dc = cells.find((x) => x.outputName === n);
+						return dc ? nameRegexes.get(c.outputName)!.test(dc.code) : false;
+					})
+				: []
+		);
 	}
 
 	// #8 — BFS from context cells to compute dependency depth for each cell.
 	// depth 0 = context cell, depth 1 = direct dep/dependent, depth 2+ = transitive, undefined = unrelated
 	const depthMap = new Map<string, number>();
 	if (contextCellIds.length > 0) {
-		const bfsQueue: Array<{ id: string; depth: number }> = contextCellIds.map((id) => ({ id, depth: 0 }));
+		const bfsQueue: Array<{ id: string; depth: number }> = contextCellIds.map((id) => ({
+			id,
+			depth: 0
+		}));
 		const visited = new Set<string>(contextCellIds);
 		for (const id of contextCellIds) depthMap.set(id, 0);
 		while (bfsQueue.length > 0) {
 			const { id, depth } = bfsQueue.shift()!;
 			const cell = cells.find((c) => c.id === id);
 			if (!cell) continue;
-			const neighborNames = [...(cellUpstreamNames.get(id) ?? []), ...(cellDownstreamNames.get(id) ?? [])];
+			const neighborNames = [
+				...(cellUpstreamNames.get(id) ?? []),
+				...(cellDownstreamNames.get(id) ?? [])
+			];
 			for (const name of neighborNames) {
 				const neighbor = cells.find((c) => c.outputName === name);
 				if (!neighbor || visited.has(neighbor.id)) continue;
@@ -918,11 +1046,12 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				const isContext = contextCellIds.includes(c.id);
 				const isError = c.status === 'error';
 				const depth = depthMap.get(c.id);
-				const codeSnippet = isContext || isError || depth === 1
-					? c.code
-					: depth !== undefined
-					? c.code.slice(0, 200)
-					: c.code.slice(0, 80);
+				const codeSnippet =
+					isContext || isError || depth === 1
+						? c.code
+						: depth !== undefined
+							? c.code.slice(0, 200)
+							: c.code.slice(0, 80);
 
 				const errorMessage = isError
 					? (c.errors?.[0]?.display ?? c.errors?.[0]?.reason)?.slice(0, 200)
@@ -1013,7 +1142,10 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 				return text;
 			}
 			const summary = queryCells
-				.map((c) => `- \`${c.outputName}\` (${c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`)
+				.map(
+					(c) =>
+						`- \`${c.outputName}\` (${c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`
+				)
 				.join('\n');
 			const text = `**Cells:**\n${summary}`;
 			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
@@ -1043,14 +1175,17 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 			}
 			const safeLimit = Math.min(limit, 100);
 			const rows = cell.result.rows.slice(0, safeLimit);
-			const csv = toCsv(cell.result.columns, rows);
+			const csv = rowsToCsv(cell.result.columns, rows);
 			const preview = toMarkdownTable(cell.result.columns, rows);
 			appendActionEvent(aiMsgId, {
 				tool: 'get_cell_result',
 				label: `Read \`${cell.outputName}\` → ${cell.result.rows.length} rows`,
 				preview
 			});
-			_sessionDataContext.set(`result: ${cell.outputName}`, `${cell.result.rows.length} rows, cols: ${cell.result.columns.join(', ')}`);
+			_sessionDataContext.set(
+				`result: ${cell.outputName}`,
+				`${cell.result.rows.length} rows, cols: ${cell.result.columns.join(', ')}`
+			);
 			return `get_cell_result(${cell.outputName}): ${cell.result.rows.length} rows, columns: ${cell.result.columns.join(', ')}\n${csv}`;
 		}
 
@@ -1082,7 +1217,8 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 				updateMessageText(aiMsgId, `\n\n${text}\n`);
 				return text;
 			} catch {
-				const text = '**Search unavailable** — vector index not set up yet. Use list_cells and get_lineage to discover existing models.';
+				const text =
+					'**Search unavailable** — vector index not set up yet. Use list_cells and get_lineage to discover existing models.';
 				updateMessageText(aiMsgId, `\n\n${text}\n\n`);
 				return text;
 			}
@@ -1116,14 +1252,27 @@ function inferMaterializeMode(outputName: string): CellMaterializationMode | nul
 
 // ── Tool call executor ────────────────────────────────────────────────────────
 
-async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string): Promise<string | null> {
+async function executeToolCallWithResult(
+	call: AIChatToolCall,
+	aiMsgId: string
+): Promise<string | null> {
 	// Read-only inspection tools — inject result as text, also return for LLM re-injection
-	if (call.tool === 'get_lineage' || call.tool === 'list_cells' || call.tool === 'search_workspace' || call.tool === 'get_cell_result') {
+	if (
+		call.tool === 'get_lineage' ||
+		call.tool === 'list_cells' ||
+		call.tool === 'search_workspace' ||
+		call.tool === 'get_cell_result'
+	) {
 		return executeReadTool(call, aiMsgId);
 	}
 
 	// All remaining tools mutate the notebook (record_decision/validate_result/compare_cells are read-only)
-	if (call.tool !== 'record_decision' && call.tool !== 'validate_result' && call.tool !== 'compare_cells') _madeNotebookChanges = true;
+	if (
+		call.tool !== 'record_decision' &&
+		call.tool !== 'validate_result' &&
+		call.tool !== 'compare_cells'
+	)
+		_madeNotebookChanges = true;
 
 	switch (call.tool) {
 		case 'create_cell': {
@@ -1136,12 +1285,16 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			let newCellId: string;
 			// Detect markdown: explicit cellType, explicit markdown field, or model accidentally
 			// put markdown prose (# headings, **bold**) in the code field instead of markdown field.
-			const codeIsMarkdown = typeof args.code === 'string'
-				&& /^[ \t]*(#{1,3} |\*\*|>|---)/m.test(args.code.slice(0, 400))
-				&& !/^\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|DROP|EXPLAIN)\b/i.test(args.code.trimStart());
-			const isMarkdown = args.cellType === 'markdown' || args.markdown !== undefined || codeIsMarkdown;
+			const codeIsMarkdown =
+				typeof args.code === 'string' &&
+				/^[ \t]*(#{1,3} |\*\*|>|---)/m.test(args.code.slice(0, 400)) &&
+				!/^\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|DROP|EXPLAIN)\b/i.test(
+					args.code.trimStart()
+				);
+			const isMarkdown =
+				args.cellType === 'markdown' || args.markdown !== undefined || codeIsMarkdown;
 			// When markdown content landed in the code field, use it as the markdown body
-			const markdownContent = args.markdown ?? (codeIsMarkdown ? args.code ?? '' : '');
+			const markdownContent = args.markdown ?? (codeIsMarkdown ? (args.code ?? '') : '');
 
 			// Redirect duplicate SQL cell creates to update_cell. Models sometimes call
 			// create_cell when self-correcting an error instead of calling update_cell,
@@ -1150,18 +1303,24 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				const existingId = resolveCellId(outputName);
 				if (existingId) {
 					const oldCode = getCells().find((c) => c.id === existingId)?.code;
-					if (args.code !== undefined) updateCellCode(existingId, sanitizeSQL(stripTrailingSemicolons(args.code ?? '')));
+					if (args.code !== undefined)
+						updateCellCode(existingId, sanitizeSQL(stripTrailingSemicolons(args.code ?? '')));
 					_updatedCellIds.add(existingId);
 					_outputNameToId.set(outputName, existingId);
 					if (call.callId) _callIdToId.set(call.callId, existingId);
-					const newCode = args.code !== undefined ? sanitizeSQL(stripTrailingSemicolons(args.code)) : undefined;
+					const newCode =
+						args.code !== undefined ? sanitizeSQL(stripTrailingSemicolons(args.code)) : undefined;
 					appendActionEvent(aiMsgId, {
 						tool: 'update_cell',
 						label: `Edited cell \`${outputName}\``,
 						cellId: existingId,
 						...(oldCode !== undefined && newCode !== undefined && { oldCode, newCode })
 					});
-					const colWarning = validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables());
+					const colWarning = validateColumnRefs(
+						newCode ?? oldCode ?? '',
+						getExternalSchemaTables(),
+						getTables()
+					);
 					return `Cell '${outputName}' updated (create_cell redirected — cell already exists)${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}`;
 				}
 			}
@@ -1174,8 +1333,14 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					if (newMarkdown) updateCellMarkdown(existingMarkdownId, newMarkdown);
 					_outputNameToId.set(outputName, existingMarkdownId);
 					if (call.callId) _callIdToId.set(call.callId, existingMarkdownId);
-					appendActionEvent(aiMsgId, { tool: 'update_cell', label: `Edited cell \`${outputName}\``, cellId: existingMarkdownId });
-					const redirectLintHint = newMarkdown ? detectHardcodedContent(newMarkdown, getAllCellsAcrossNotebooks()) : null;
+					appendActionEvent(aiMsgId, {
+						tool: 'update_cell',
+						label: `Edited cell \`${outputName}\``,
+						cellId: existingMarkdownId
+					});
+					const redirectLintHint = newMarkdown
+						? detectHardcodedContent(newMarkdown, getAllCellsAcrossNotebooks())
+						: null;
 					return `Cell '${outputName}' updated (create_cell redirected — markdown cell already exists)${redirectLintHint ? `\n\n⚠ Live-ref hint: ${redirectLintHint}` : ''}`;
 				}
 			}
@@ -1231,10 +1396,13 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				_outputNameToId.set(outputName, newCellId);
 				if (call.callId) _callIdToId.set(call.callId, newCellId);
 				// Lightweight column validation for query cells
-				const createColWarning = !isMarkdown && args.code
-					? validateColumnRefs(args.code, getExternalSchemaTables(), getTables())
+				const createColWarning =
+					!isMarkdown && args.code
+						? validateColumnRefs(args.code, getExternalSchemaTables(), getTables())
+						: null;
+				const createLintHint = isMarkdown
+					? detectHardcodedContent(markdownContent, getAllCellsAcrossNotebooks())
 					: null;
-				const createLintHint = isMarkdown ? detectHardcodedContent(markdownContent, getAllCellsAcrossNotebooks()) : null;
 				return `Cell '${outputName}' created (id: ${newCellId}, type: ${isMarkdown ? 'markdown' : 'query'})${createColWarning ? `\n\n⚠ Column hint: ${createColWarning}` : ''}${createLintHint ? `\n\n⚠ Live-ref hint: ${createLintHint}` : ''}`;
 			}
 			return null;
@@ -1250,7 +1418,8 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			const cellBeforeUpdate = getCells().find((c) => c.id === cellId);
 			const oldCode = cellBeforeUpdate?.code;
 			const oldName = cellBeforeUpdate?.outputName;
-			if (args.code !== undefined) updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
+			if (args.code !== undefined)
+				updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
 			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
 			if (args.outputName !== undefined) {
 				const renameResult = updateCellName(cellId, args.outputName);
@@ -1262,7 +1431,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			}
 			_updatedCellIds.add(cellId);
 			const newCode = args.code !== undefined ? stripTrailingSemicolons(args.code) : undefined;
-			const updateLintHint = args.markdown !== undefined ? detectHardcodedContent(args.markdown, getAllCellsAcrossNotebooks()) : null;
+			const updateLintHint =
+				args.markdown !== undefined
+					? detectHardcodedContent(args.markdown, getAllCellsAcrossNotebooks())
+					: null;
 			appendActionEvent(aiMsgId, {
 				tool: 'update_cell',
 				label: `Edited cell \`${args.outputName ?? args.cellId}\``,
@@ -1270,9 +1442,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				...(oldCode !== undefined && newCode !== undefined && { oldCode, newCode })
 			});
 			// Lightweight column validation warning
-			const colWarning = args.code !== undefined
-				? validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables())
-				: null;
+			const colWarning =
+				args.code !== undefined
+					? validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables())
+					: null;
 			return `Cell '${args.outputName ?? args.cellId}' updated${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}${updateLintHint ? `\n\n⚠ Live-ref hint: ${updateLintHint}` : ''}`;
 		}
 
@@ -1346,11 +1519,19 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			if (!cellId) return `move_cell: cell '${args.cellId}' not found`;
 			if (args.toIndex !== undefined) {
 				reorderCell(cellId, args.toIndex);
-				appendActionEvent(aiMsgId, { tool: 'move_cell', label: `Moved \`${args.cellId}\` to position ${args.toIndex}`, cellId });
+				appendActionEvent(aiMsgId, {
+					tool: 'move_cell',
+					label: `Moved \`${args.cellId}\` to position ${args.toIndex}`,
+					cellId
+				});
 				return `Cell '${args.cellId}' moved to index ${args.toIndex}`;
 			} else if (args.direction) {
 				moveCell(cellId, args.direction);
-				appendActionEvent(aiMsgId, { tool: 'move_cell', label: `Moved \`${args.cellId}\` ${args.direction}`, cellId });
+				appendActionEvent(aiMsgId, {
+					tool: 'move_cell',
+					label: `Moved \`${args.cellId}\` ${args.direction}`,
+					cellId
+				});
 				return `Cell '${args.cellId}' moved ${args.direction}`;
 			}
 			return `move_cell: specify direction ('up'|'down') or toIndex`;
@@ -1361,7 +1542,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			const { decision } = call.args as RecordDecisionArgs;
 			if (decision?.trim()) {
 				_sessionPlanContext.push(decision.trim());
-				appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Noted: ${decision.trim().slice(0, 80)}` });
+				appendActionEvent(aiMsgId, {
+					tool: 'record_decision',
+					label: `Noted: ${decision.trim().slice(0, 80)}`
+				});
 				return `Decision recorded: "${decision.trim()}"`;
 			}
 			return 'record_decision: decision text is required';
@@ -1370,10 +1554,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 		case 'run_cells': {
 			const args = call.args as RunCellsArgs;
 			// cellIds may be undefined/empty — fall back to all ghost cells created this generation
-			const rawIds: string[] = args.cellIds?.length
-				? args.cellIds
-				: [..._outputNameToId.values()];
-			const resolvedIds = rawIds.map((id: string) => resolveCellId(id)).filter((id: string | null): id is string => !!id);
+			const rawIds: string[] = args.cellIds?.length ? args.cellIds : [..._outputNameToId.values()];
+			const resolvedIds = rawIds
+				.map((id: string) => resolveCellId(id))
+				.filter((id: string | null): id is string => !!id);
 			if (resolvedIds.length === 0) return 'run_cells: no cells to run';
 
 			appendActionEvent(aiMsgId, {
@@ -1406,7 +1590,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					const d = cellDepsMap.get(id);
 					return !d || [...d].every((depId) => !remaining.has(depId));
 				});
-				if (layer.length === 0) { layers.push([...remaining]); break; } // cycle guard
+				if (layer.length === 0) {
+					layers.push([...remaining]);
+					break;
+				} // cycle guard
 				layers.push(layer);
 				for (const id of layer) remaining.delete(id);
 			}
@@ -1419,10 +1606,14 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			// The model then emitted <done>, the loop broke, and the cell errored afterwards →
 			// "Couldn't fix all SQL errors" while the AI never saw the error to fix it.
 			const runLayer = (layer: string[]): Promise<void> =>
-				Promise.all(layer.map((id) => {
-					_alreadyRanIds.add(id);
-					return runCell(id).catch(() => { /* error surfaced via cell.status below */ });
-				})).then(() => undefined);
+				Promise.all(
+					layer.map((id) => {
+						_alreadyRanIds.add(id);
+						return runCell(id).catch(() => {
+							/* error surfaced via cell.status below */
+						});
+					})
+				).then(() => undefined);
 
 			for (const layer of layers) await runLayer(layer);
 
@@ -1462,24 +1653,33 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					const snippetLine = `\nFailing SQL (excerpt):\n${sqlSnippet}`;
 
 					// Categorize error so we can give targeted hints rather than generic schema dump
-					const errCategory = /column.*not found|referenced column|cannot be resolved|no such column|unknown column/i.test(errMsg) ? 'column'
-						: /type.*mismatch|conversion error|cannot cast|incompatible type|TYPE_MISMATCH/i.test(errMsg) ? 'type'
-						: /syntax error|parse error|mismatched input|unexpected token/i.test(errMsg) ? 'syntax'
-						: /table.*not found|no such table|does not exist|schema.*not found/i.test(errMsg) ? 'table'
-						: 'other';
+					const errCategory =
+						/column.*not found|referenced column|cannot be resolved|no such column|unknown column/i.test(
+							errMsg
+						)
+							? 'column'
+							: /type.*mismatch|conversion error|cannot cast|incompatible type|TYPE_MISMATCH/i.test(
+										errMsg
+								  )
+								? 'type'
+								: /syntax error|parse error|mismatched input|unexpected token/i.test(errMsg)
+									? 'syntax'
+									: /table.*not found|no such table|does not exist|schema.*not found/i.test(errMsg)
+										? 'table'
+										: 'other';
 
 					// Build enriched schema list with column types and cache key for profile lookup
 					const allSchema = [
 						...getTables().map((t) => ({
 							name: t.name,
 							columns: t.columns,
-							columnTypes: t.columnTypes ?? [] as string[],
+							columnTypes: t.columnTypes ?? ([] as string[]),
 							cacheKey: t.name
 						})),
 						...getExternalSchemaTables().map((t) => ({
 							name: t.schema ? `${t.schema}.${t.name}` : t.name,
 							columns: t.columns,
-							columnTypes: t.columnTypes ?? [] as string[],
+							columnTypes: t.columnTypes ?? ([] as string[]),
 							cacheKey: t.schema ? `${t.schema}.${t.name}` : t.name
 						}))
 					];
@@ -1492,33 +1692,48 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 						.filter((t) => new RegExp(`\\b${escapeRegExp(t.name)}\\b`, 'i').test(cell.code))
 						.slice(0, 3);
 
-					const referencedSchema = referencedTables.map((t) => {
-						// col:TYPE annotations — short type codes so the model can spot type mismatches
-						const cols = t.columns.slice(0, 15).map((col, i) => {
-							const raw = t.columnTypes[i] ?? '';
-							const shortType = raw.match(/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL/i) ? 'NUM'
-								: raw.match(/DATE|TIME/i) ? 'DATE'
-								: raw.match(/BOOL/i) ? 'BOOL'
-								: raw ? 'TEXT' : '';
-							const quoted = col.includes(' ') ? `"${col}"` : col;
-							return shortType ? `${quoted}:${shortType}` : quoted;
-						}).join(', ');
-						// Preflight profiles: top values for text columns — helps fix value mismatches
-						const profile = _preflightCache.get(t.cacheKey);
-						const profileLine = profile && Object.keys(profile.columnProfiles).length > 0
-							? '\n    values: ' + Object.entries(profile.columnProfiles)
-								.map(([col, vals]) => `${col}=[${vals}]`)
-								.join(', ')
-							: '';
-						return `  ${t.name}(${cols})${profileLine}`;
-					}).join('\n');
+					const referencedSchema = referencedTables
+						.map((t) => {
+							// col:TYPE annotations — short type codes so the model can spot type mismatches
+							const cols = t.columns
+								.slice(0, 15)
+								.map((col, i) => {
+									const raw = t.columnTypes[i] ?? '';
+									const shortType = raw.match(/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL/i)
+										? 'NUM'
+										: raw.match(/DATE|TIME/i)
+											? 'DATE'
+											: raw.match(/BOOL/i)
+												? 'BOOL'
+												: raw
+													? 'TEXT'
+													: '';
+									const quoted = col.includes(' ') ? `"${col}"` : col;
+									return shortType ? `${quoted}:${shortType}` : quoted;
+								})
+								.join(', ');
+							// Preflight profiles: top values for text columns — helps fix value mismatches
+							const profile = _preflightCache.get(t.cacheKey);
+							const profileLine =
+								profile && Object.keys(profile.columnProfiles).length > 0
+									? '\n    values: ' +
+										Object.entries(profile.columnProfiles)
+											.map(([col, vals]) => `${col}=[${vals}]`)
+											.join(', ')
+									: '';
+							return `  ${t.name}(${cols})${profileLine}`;
+						})
+						.join('\n');
 
 					const schemaLine = referencedSchema ? `\nAvailable columns:\n${referencedSchema}` : '';
 
 					// Category-specific targeted hint
 					let categoryHint = '';
 					if (errCategory === 'table') {
-						const tableList = allSchema.map((t) => t.name).slice(0, 20).join(', ');
+						const tableList = allSchema
+							.map((t) => t.name)
+							.slice(0, 20)
+							.join(', ');
 						categoryHint = `\n⚠ Table not found. Available tables: ${tableList}`;
 					} else if (errCategory === 'syntax') {
 						const { isBuiltin } = getDefaultConnection();
@@ -1526,10 +1741,12 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 						categoryHint = `\n⚠ ${dialectName} syntax reminder: no trailing semicolons, no backtick identifiers (use double-quotes), no WITH clauses (cell outputNames auto-wrap as CTEs)`;
 					} else if (errCategory === 'column') {
 						// Extract the failing column name and suggest the closest real column
-						const failingColMatch = errMsg.match(
-							/column ['""`]?(\w+)['""`]? (?:not found|referenced|cannot be resolved)/i
-						) ?? errMsg.match(/no such column[:\s]+['""`]?(\w+)/i)
-							?? errMsg.match(/Unknown column '(\w+)'/i);
+						const failingColMatch =
+							errMsg.match(
+								/column ['""`]?(\w+)['""`]? (?:not found|referenced|cannot be resolved)/i
+							) ??
+							errMsg.match(/no such column[:\s]+['""`]?(\w+)/i) ??
+							errMsg.match(/Unknown column '(\w+)'/i);
 						const failingCol = failingColMatch?.[1];
 						if (failingCol) {
 							const closest = findClosestColumn(failingCol, allSchema);
@@ -1547,9 +1764,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					const unquotedInCode = allSpacedCols.filter(
 						(col) => cell.code.includes(col) && !cell.code.includes(`"${col}"`)
 					);
-					const quotingHint = unquotedInCode.length > 0
-						? `\n⚠ Fix: column names with spaces must be double-quoted: ${unquotedInCode.map((c) => `"${c}" not ${c}`).join('; ')}`
-						: '';
+					const quotingHint =
+						unquotedInCode.length > 0
+							? `\n⚠ Fix: column names with spaces must be double-quoted: ${unquotedInCode.map((c) => `"${c}" not ${c}`).join('; ')}`
+							: '';
 
 					return `${cell.outputName ?? id}: RUN FAILED — ${errMsg}${snippetLine}${schemaLine}${categoryHint}${quotingHint}`;
 				}
@@ -1566,7 +1784,11 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 					if (inferredChart) {
 						const currentType = cell.resultChartConfig?.chartType;
 						const isKpiResult = inferredChart.chartType === 'big-value';
-						const wrongType = currentType && currentType !== 'big-value' && currentType !== 'value' && currentType !== 'delta';
+						const wrongType =
+							currentType &&
+							currentType !== 'big-value' &&
+							currentType !== 'value' &&
+							currentType !== 'delta';
 						if (!_chartedCellIds.has(id) || (isKpiResult && wrongType)) {
 							setCellResultChartConfig(id, inferredChart);
 							setCellResultViewMode(id, 'chart');
@@ -1578,16 +1800,19 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				let previewLines = '';
 				if (previewCount < 3 && rows > 0 && cell.result?.columns?.length) {
 					previewCount++;
-					previewLines = '\nPreview:\n' + toMarkdownTable(cell.result.columns, (cell.result.rows ?? []).slice(0, 5));
+					previewLines =
+						'\nPreview:\n' +
+						toMarkdownTable(cell.result.columns, (cell.result.rows ?? []).slice(0, 5));
 				}
 				return `${cell.outputName ?? id}: success (${rows} rows, columns: ${cols})${previewLines}`;
 			});
 
 			// Update the "Running…" action event chip to show the outcome
 			const hasError = resultLines.some((l) => l.includes('ERROR'));
-			const resultLabel = resolvedIds.length === 1
-				? resultLines[0]
-				: `${resolvedIds.length} cells — ${hasError ? 'errors' : 'all succeeded'}`;
+			const resultLabel =
+				resolvedIds.length === 1
+					? resultLines[0]
+					: `${resolvedIds.length} cells — ${hasError ? 'errors' : 'all succeeded'}`;
 			updateLastActionEvent(aiMsgId, {
 				label: resultLabel,
 				...(resolvedIds.length > 1 && { preview: resultLines.join('\n') })
@@ -1597,23 +1822,30 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 		}
 
 		case 'validate_result': {
-			const { cellId, expectedRowCount, minRowCount, expectedColumns, assertNotEmpty } = call.args as import('$lib/types/ai-chat.js').ValidateResultArgs;
+			const { cellId, expectedRowCount, minRowCount, expectedColumns, assertNotEmpty } =
+				call.args as import('$lib/types/ai-chat.js').ValidateResultArgs;
 			const id = resolveCellId(cellId);
 			const cell = id ? getCells().find((c) => c.id === id) : null;
 			if (!cell) return `validate_result: cell "${cellId}" not found`;
-			if (!cell.result) return `validate_result(${cell.outputName}): no result — call run_cells first`;
+			if (!cell.result)
+				return `validate_result(${cell.outputName}): no result — call run_cells first`;
 			const rows = cell.result.rows?.length ?? 0;
 			const cols = cell.result.columns ?? [];
 			const checks: string[] = [];
 			if (assertNotEmpty && rows === 0) checks.push('FAIL: result is empty (0 rows)');
-			if (expectedRowCount !== undefined && rows !== expectedRowCount) checks.push(`FAIL: expected ${expectedRowCount} rows, got ${rows}`);
-			if (minRowCount !== undefined && rows < minRowCount) checks.push(`FAIL: expected ≥${minRowCount} rows, got ${rows}`);
+			if (expectedRowCount !== undefined && rows !== expectedRowCount)
+				checks.push(`FAIL: expected ${expectedRowCount} rows, got ${rows}`);
+			if (minRowCount !== undefined && rows < minRowCount)
+				checks.push(`FAIL: expected ≥${minRowCount} rows, got ${rows}`);
 			if (expectedColumns?.length) {
 				const missing = expectedColumns.filter((c) => !cols.includes(c));
 				if (missing.length) checks.push(`FAIL: missing columns: ${missing.join(', ')}`);
 			}
 			const verdict = checks.length === 0 ? 'PASS: all checks passed' : checks.join('\n');
-			appendActionEvent(aiMsgId, { tool: 'get_cell_result', label: `Validated ${cell.outputName}: ${checks.length === 0 ? 'PASS' : 'FAIL'}` });
+			appendActionEvent(aiMsgId, {
+				tool: 'get_cell_result',
+				label: `Validated ${cell.outputName}: ${checks.length === 0 ? 'PASS' : 'FAIL'}`
+			});
 			return `validate_result(${cell.outputName}): ${verdict}`;
 		}
 
@@ -1623,8 +1855,10 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 			const id2 = resolveCellId(cellId2);
 			const c1 = id1 ? getCells().find((c) => c.id === id1) : null;
 			const c2 = id2 ? getCells().find((c) => c.id === id2) : null;
-			if (!c1 || !c2) return `compare_cells: cell(s) not found (${!c1 ? cellId1 : ''} ${!c2 ? cellId2 : ''})`.trim();
-			if (!c1.result || !c2.result) return `compare_cells: both cells must have results — call run_cells first`;
+			if (!c1 || !c2)
+				return `compare_cells: cell(s) not found (${!c1 ? cellId1 : ''} ${!c2 ? cellId2 : ''})`.trim();
+			if (!c1.result || !c2.result)
+				return `compare_cells: both cells must have results — call run_cells first`;
 			const cols1 = new Set(c1.result.columns ?? []);
 			const cols2 = new Set(c2.result.columns ?? []);
 			const onlyIn1 = [...cols1].filter((c) => !cols2.has(c));
@@ -1638,8 +1872,13 @@ async function executeToolCallWithResult(call: AIChatToolCall, aiMsgId: string):
 				onlyIn1.length ? `Only in ${c1.outputName}: ${onlyIn1.join(', ')}` : null,
 				onlyIn2.length ? `Only in ${c2.outputName}: ${onlyIn2.join(', ')}` : null,
 				rowDiff !== 0 ? `Row diff: ${rowDiff > 0 ? '+' : ''}${rowDiff}` : 'Row counts match'
-			].filter(Boolean).join('\n');
-			appendActionEvent(aiMsgId, { tool: 'get_cell_result', label: `Compared ${c1.outputName} vs ${c2.outputName}` });
+			]
+				.filter(Boolean)
+				.join('\n');
+			appendActionEvent(aiMsgId, {
+				tool: 'get_cell_result',
+				label: `Compared ${c1.outputName} vs ${c2.outputName}`
+			});
 			return `compare_cells:\n${lines}`;
 		}
 
@@ -1672,7 +1911,8 @@ type InferredChartConfig = {
 // Patterns that indicate a date/time column name
 const TIME_RE = /month|week|day|date|year|quarter|period|time|hour|minute|created|updated|ts$/i;
 // Patterns indicating a likely numeric measure column by name
-const MEASURE_NAME_RE = /count|sum|total|avg|average|amount|revenue|cost|price|qty|quantity|sales|orders|rate|pct|percent|score|value|n$|\d$/i;
+const MEASURE_NAME_RE =
+	/count|sum|total|avg|average|amount|revenue|cost|price|qty|quantity|sales|orders|rate|pct|percent|score|value|n$|\d$/i;
 
 /**
  * Infer a chart config from actual result column names and row data.
@@ -1683,7 +1923,12 @@ function inferChartFromColumns(columns: string[], rows: unknown[]): InferredChar
 
 	// Single row with multiple columns → KPI / big-value
 	if (rows.length === 1 && columns.length >= 1) {
-		return { chartType: 'big-value', xColumn: columns[0], yColumns: columns.slice(1), colorColumn: null };
+		return {
+			chartType: 'big-value',
+			xColumn: columns[0],
+			yColumns: columns.slice(1),
+			colorColumn: null
+		};
 	}
 
 	if (columns.length === 1) return null; // need at least x + y
@@ -1693,7 +1938,12 @@ function inferChartFromColumns(columns: string[], rows: unknown[]): InferredChar
 
 	// All look like measures → KPI
 	if (dims.length === 0) {
-		return { chartType: 'big-value', xColumn: columns[0], yColumns: columns.slice(1), colorColumn: null };
+		return {
+			chartType: 'big-value',
+			xColumn: columns[0],
+			yColumns: columns.slice(1),
+			colorColumn: null
+		};
 	}
 
 	const xCol = dims[0];
@@ -1714,7 +1964,12 @@ function inferChartFromColumns(columns: string[], rows: unknown[]): InferredChar
 	const isTime = TIME_RE.test(xCol.toLowerCase());
 	if (isTime) {
 		const isArea = yCols.some((y) => /cumul|total|running|revenue|amount|sales/i.test(y));
-		return { chartType: isArea ? 'area' : 'line', xColumn: xCol, yColumns: yCols, colorColumn: null };
+		return {
+			chartType: isArea ? 'area' : 'line',
+			xColumn: xCol,
+			yColumns: yCols,
+			colorColumn: null
+		};
 	}
 
 	return {
@@ -1775,7 +2030,17 @@ async function streamOneTurn(
 	reqBody: AIChatRequest,
 	aiMsgId: string,
 	signal: AbortSignal
-): Promise<{ allToolResults: string[]; aborted: boolean; signalledDone: boolean; hadDataToolCalls: boolean; wasTruncated: boolean; streamError: boolean; planProposal?: NonNullable<Parameters<typeof requestPlanApproval>[0]>; sprintTasks?: SprintTask[]; sprintUpdate?: SprintTask[] }> {
+): Promise<{
+	allToolResults: string[];
+	aborted: boolean;
+	signalledDone: boolean;
+	hadDataToolCalls: boolean;
+	wasTruncated: boolean;
+	streamError: boolean;
+	planProposal?: NonNullable<Parameters<typeof requestPlanApproval>[0]>;
+	sprintTasks?: SprintTask[];
+	sprintUpdate?: SprintTask[];
+}> {
 	const allToolResults: string[] = [];
 	let hadDataToolCalls = false;
 	let signalledDone = false;
@@ -1795,18 +2060,44 @@ async function streamOneTurn(
 		});
 	} catch (err) {
 		// Network failure before any bytes — abort is a clean stop; anything else is retryable.
-		return { allToolResults, aborted: isAbort(err), signalledDone: false, hadDataToolCalls: false, wasTruncated: false, streamError: !isAbort(err), planProposal };
+		return {
+			allToolResults,
+			aborted: isAbort(err),
+			signalledDone: false,
+			hadDataToolCalls: false,
+			wasTruncated: false,
+			streamError: !isAbort(err),
+			planProposal
+		};
 	}
 
 	if (!response.ok) {
 		const errText = await response.text().catch(() => '');
-		appendErrorMessage(`The AI request failed (${response.status}). ${errText.slice(0, 200)}`.trim());
-		return { allToolResults, aborted: true, signalledDone: false, hadDataToolCalls: false, wasTruncated: false, streamError: false, planProposal };
+		appendErrorMessage(
+			`The AI request failed (${response.status}). ${errText.slice(0, 200)}`.trim()
+		);
+		return {
+			allToolResults,
+			aborted: true,
+			signalledDone: false,
+			hadDataToolCalls: false,
+			wasTruncated: false,
+			streamError: false,
+			planProposal
+		};
 	}
 
 	if (!response.body) {
 		appendErrorMessage('The AI response could not be read (non-streaming response).');
-		return { allToolResults, aborted: true, signalledDone: false, hadDataToolCalls: false, wasTruncated: false, streamError: false, planProposal };
+		return {
+			allToolResults,
+			aborted: true,
+			signalledDone: false,
+			hadDataToolCalls: false,
+			wasTruncated: false,
+			streamError: false,
+			planProposal
+		};
 	}
 	const reader = response.body.getReader();
 	const dec = new TextDecoder();
@@ -1825,7 +2116,11 @@ async function streamOneTurn(
 					hadDataToolCalls = true;
 					const r = await executeDataTool(toolCall);
 					if (r) {
-						appendActionEvent(aiMsgId, { tool: 'query_data', label: r.label, preview: r.previewText });
+						appendActionEvent(aiMsgId, {
+							tool: 'query_data',
+							label: r.label,
+							preview: r.previewText
+						});
 						_sessionDataContext.set(r.contextKey, r.contextSummary.slice(0, 2000));
 						allToolResults.push(r.llmText);
 					}
@@ -1847,7 +2142,9 @@ async function streamOneTurn(
 				break;
 			case 'sprint_tasks':
 				if (Array.isArray(event.tasks)) {
-					const tasks = (event.tasks as Array<{ type?: string; title?: string; successCriteria?: string }>).map((t) => ({
+					const tasks = (
+						event.tasks as Array<{ type?: string; title?: string; successCriteria?: string }>
+					).map((t) => ({
 						id: crypto.randomUUID(),
 						type: (t.type ?? 'build') as SprintTaskType,
 						title: t.title ?? 'Task',
@@ -1860,7 +2157,9 @@ async function streamOneTurn(
 				break;
 			case 'sprint_update':
 				if (Array.isArray(event.tasks)) {
-					const updatedTasks = (event.tasks as Array<{ type?: string; title?: string; successCriteria?: string }>).map((t) => ({
+					const updatedTasks = (
+						event.tasks as Array<{ type?: string; title?: string; successCriteria?: string }>
+					).map((t) => ({
 						id: crypto.randomUUID(),
 						type: (t.type ?? 'build') as SprintTaskType,
 						title: t.title ?? 'Task',
@@ -1873,7 +2172,11 @@ async function streamOneTurn(
 				break;
 			case 'suggestions':
 				if (Array.isArray(event.suggestions)) {
-					try { setMessageSuggestions(aiMsgId, event.suggestions as string[]); } catch { /* HMR staleness guard */ }
+					try {
+						setMessageSuggestions(aiMsgId, event.suggestions as string[]);
+					} catch {
+						/* HMR staleness guard */
+					}
 					signalledDone = true;
 				}
 				break;
@@ -1918,7 +2221,17 @@ async function streamOneTurn(
 		};
 	}
 
-	return { allToolResults, aborted: false, signalledDone, hadDataToolCalls, wasTruncated, streamError: false, planProposal, sprintTasks, sprintUpdate };
+	return {
+		allToolResults,
+		aborted: false,
+		signalledDone,
+		hadDataToolCalls,
+		wasTruncated,
+		streamError: false,
+		planProposal,
+		sprintTasks,
+		sprintUpdate
+	};
 }
 
 // ── Sprint loop ───────────────────────────────────────────────────────────────
@@ -1937,7 +2250,10 @@ async function runSprintLoop(
 		injection?: { role: 'user'; content: string }
 	): AIChatRequest {
 		const req = buildRequest(contextCellIds, workspaceMemory);
-		req.messages = [{ role: 'user', content: userContent }, { role: 'assistant', content: '' }];
+		req.messages = [
+			{ role: 'user', content: userContent },
+			{ role: 'assistant', content: '' }
+		];
 		if (injection) {
 			req.messages = [...req.messages, injection, { role: 'assistant', content: '' }];
 		}
@@ -1958,7 +2274,14 @@ async function runSprintLoop(
 	// If the planning turn produced no tasks, fall back to the standard subagent pipeline
 	if (!plannedTasks || plannedTasks.length === 0) {
 		updateLastActionEvent(aiMsgId, { label: 'Searching workspace...' });
-		await runSubagentPipeline(userText, aiMsgId, contextCellIds, workspaceMemory, signal, 'complex');
+		await runSubagentPipeline(
+			userText,
+			aiMsgId,
+			contextCellIds,
+			workspaceMemory,
+			signal,
+			'complex'
+		);
 		return;
 	}
 
@@ -1974,14 +2297,18 @@ async function runSprintLoop(
 		// Re-run sprint_planning with user's refinement feedback injected
 		appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Refining plan...' });
 		const currentPlanSummary = plannedTasks
-			.map((t, i) => `${i + 1}. ${t.title}${t.successCriteria ? ` (done when: ${t.successCriteria})` : ''}`)
+			.map(
+				(t, i) =>
+					`${i + 1}. ${t.title}${t.successCriteria ? ` (done when: ${t.successCriteria})` : ''}`
+			)
 			.join('\n');
 		const { sprintTasks: refinedTasks, aborted: replanAborted } = await streamOneTurn(
 			buildSprintReq('sprint_planning', userText, SUBAGENT_TOOLS['sprint_planning'], {
 				role: 'user',
 				content: `[User refinement request]: ${feedback}\n\n[Current plan]:\n${currentPlanSummary}\n\nUpdate the plan to incorporate the user's feedback.`
 			}),
-			aiMsgId, signal
+			aiMsgId,
+			signal
 		);
 		if (replanAborted || signal.aborted) return;
 		if (refinedTasks && refinedTasks.length > 0) {
@@ -2013,7 +2340,11 @@ async function runSprintLoop(
 		updateSprintTask(task.id, { status: 'active' });
 
 		// Snapshot the current cell set so we can tell which cells this task creates
-		const cellsBefore = new Set(getCells().filter((c) => c.cellType === 'query').map((c) => c.id));
+		const cellsBefore = new Set(
+			getCells()
+				.filter((c) => c.cellType === 'query')
+				.map((c) => c.id)
+		);
 
 		const taskPrompt = [
 			`Task ${i + 1}/${tasks.length}: ${task.title}`,
@@ -2022,14 +2353,19 @@ async function runSprintLoop(
 			sprintSummary ? `Sprint progress:\n${sprintSummary}` : '',
 			`Discovery:\n${discSummary}`,
 			`\nOriginal goal: ${userText}`
-		].filter(Boolean).join('\n');
+		]
+			.filter(Boolean)
+			.join('\n');
 
 		const taskTools = SPRINT_TASK_TOOLS[task.type];
 		const taskSubagentType: NonNullable<AIChatRequest['subagentType']> =
-			task.type === 'investigate' ? 'discovery'
-			: task.type === 'visualize' || task.type === 'dashboard' ? 'dashboard'
-			: task.type === 'document' ? 'documentation'
-			: 'sql-gen';
+			task.type === 'investigate'
+				? 'discovery'
+				: task.type === 'visualize' || task.type === 'dashboard'
+					? 'dashboard'
+					: task.type === 'document'
+						? 'documentation'
+						: 'sql-gen';
 		const MAX_TASK_DEPTH = 8;
 		let taskDepth = 0;
 		let taskInjection: { role: 'user'; content: string } | null = null;
@@ -2037,8 +2373,14 @@ async function runSprintLoop(
 		let taskStallRetries = 0;
 
 		while (!taskDone && taskDepth < MAX_TASK_DEPTH && !signal.aborted) {
-			const taskReq = buildSprintReq(taskSubagentType, taskPrompt, taskTools, taskInjection ?? undefined);
-			const { allToolResults, aborted, signalledDone, wasTruncated, streamError, sprintUpdate } = await streamOneTurn(taskReq, aiMsgId, signal);
+			const taskReq = buildSprintReq(
+				taskSubagentType,
+				taskPrompt,
+				taskTools,
+				taskInjection ?? undefined
+			);
+			const { allToolResults, aborted, signalledDone, wasTruncated, streamError, sprintUpdate } =
+				await streamOneTurn(taskReq, aiMsgId, signal);
 			if (aborted) return;
 
 			// If the AI emitted a <sprint_update>, replace remaining pending tasks with the updated plan
@@ -2055,7 +2397,10 @@ async function runSprintLoop(
 				continue;
 			}
 
-			if (signalledDone) { taskDone = true; break; }
+			if (signalledDone) {
+				taskDone = true;
+				break;
+			}
 
 			if (allToolResults.length > 0) {
 				taskStallRetries = 0;
@@ -2073,12 +2418,16 @@ async function runSprintLoop(
 				}
 
 				const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
-				const directive = errorLines.length > 0
-					? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
-					: hadRunCells
-						? `Cells ran. Check: ${task.successCriteria ?? 'all cells succeeded'}. If done, output <done>. Otherwise continue.`
-						: 'Continue the task. Call run_cells to validate, then output <done> when complete.';
-				taskInjection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}` };
+				const directive =
+					errorLines.length > 0
+						? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
+						: hadRunCells
+							? `Cells ran. Check: ${task.successCriteria ?? 'all cells succeeded'}. If done, output <done>. Otherwise continue.`
+							: 'Continue the task. Call run_cells to validate, then output <done> when complete.';
+				taskInjection = {
+					role: 'user',
+					content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
+				};
 				taskDepth++;
 				continue;
 			}
@@ -2086,13 +2435,14 @@ async function runSprintLoop(
 			// Stall recovery
 			if (taskStallRetries < 2) {
 				taskStallRetries++;
-				const hint = task.type === 'investigate'
-					? 'Call sample_data or query_data to investigate the data, then output <done>.'
-					: task.type === 'visualize'
-						? 'Call pick_chart on the cell to chart it, then output <done>.'
-						: task.type === 'dashboard'
-							? 'Call create_dashboard and add_dashboard_block to build the dashboard, then output <done>.'
-							: 'Call create_cell with the SQL, then run_cells to validate it, then output <done>.';
+				const hint =
+					task.type === 'investigate'
+						? 'Call sample_data or query_data to investigate the data, then output <done>.'
+						: task.type === 'visualize'
+							? 'Call pick_chart on the cell to chart it, then output <done>.'
+							: task.type === 'dashboard'
+								? 'Call create_dashboard and add_dashboard_block to build the dashboard, then output <done>.'
+								: 'Call create_cell with the SQL, then run_cells to validate it, then output <done>.';
 				taskInjection = { role: 'user', content: `You have not completed the task yet. ${hint}` };
 				taskDepth++;
 				continue;
@@ -2109,9 +2459,13 @@ async function runSprintLoop(
 			.filter((c) => c.cellType === 'query' && !cellsBefore.has(c.id))
 			.map((c) => c.id);
 
-		const isPassing = task.type === 'investigate' || task.type === 'document' || task.type === 'visualize' || task.type === 'dashboard'
-			|| newCellIds.length === 0
-			|| newCellIds.every((id) => getCells().find((c) => c.id === id)?.status === 'success');
+		const isPassing =
+			task.type === 'investigate' ||
+			task.type === 'document' ||
+			task.type === 'visualize' ||
+			task.type === 'dashboard' ||
+			newCellIds.length === 0 ||
+			newCellIds.every((id) => getCells().find((c) => c.id === id)?.status === 'success');
 
 		if (isPassing) {
 			// Build a one-line summary for the next task's context
@@ -2129,23 +2483,35 @@ async function runSprintLoop(
 			sprintSummary += (sprintSummary ? '\n' : '') + `✓ ${resultLine}`;
 		} else {
 			// One retry pass with explicit error context before marking failed
-			const failedIds = newCellIds.filter((id) => getCells().find((c) => c.id === id)?.status === 'error');
-			const errorDetails = failedIds.map((id) => {
-				const c = getCells().find((x) => x.id === id);
-				const err = c?.errors?.[0]?.display ?? c?.errors?.[0]?.reason ?? 'unknown error';
-				return `${c?.outputName ?? id}: ${err}`;
-			}).join('\n');
+			const failedIds = newCellIds.filter(
+				(id) => getCells().find((c) => c.id === id)?.status === 'error'
+			);
+			const errorDetails = failedIds
+				.map((id) => {
+					const c = getCells().find((x) => x.id === id);
+					const err = c?.errors?.[0]?.display ?? c?.errors?.[0]?.reason ?? 'unknown error';
+					return `${c?.outputName ?? id}: ${err}`;
+				})
+				.join('\n');
 
-			appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Retrying task ${i + 1}: ${task.title}` });
+			appendActionEvent(aiMsgId, {
+				tool: 'record_decision',
+				label: `Retrying task ${i + 1}: ${task.title}`
+			});
 			const retryContent = `Task ${i + 1} verification failed.\n${errorDetails}\n\nFix the SQL errors: call update_cell with corrected SQL, then run_cells. Task done when all cells pass.`;
 			const { allToolResults: retryResults, aborted: retryAborted } = await streamOneTurn(
-				buildSprintReq('sql-gen', taskPrompt, SPRINT_TASK_TOOLS['build'], { role: 'user', content: retryContent }),
+				buildSprintReq('sql-gen', taskPrompt, SPRINT_TASK_TOOLS['build'], {
+					role: 'user',
+					content: retryContent
+				}),
 				aiMsgId,
 				signal
 			);
 			if (retryAborted || signal.aborted) return;
 
-			const stillFailing = failedIds.some((id) => getCells().find((c) => c.id === id)?.status === 'error');
+			const stillFailing = failedIds.some(
+				(id) => getCells().find((c) => c.id === id)?.status === 'error'
+			);
 			if (stillFailing) {
 				updateSprintTask(task.id, { status: 'failed', cellIds: newCellIds });
 				sprintSummary += (sprintSummary ? '\n' : '') + `✗ ${task.title}: had errors — continuing`;
@@ -2172,8 +2538,15 @@ async function runSprintLoop(
 
 	for (let reviewCycle = 1; reviewCycle <= MAX_REVIEW_CYCLES; reviewCycle++) {
 		if (signal.aborted) return;
-		appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Reviewing (${reviewCycle}/${MAX_REVIEW_CYCLES})...` });
-		const reviewReq = buildSprintReq('sql-review', `Review these newly created notebook cells: ${createdNames.join(', ')}`, SUBAGENT_TOOLS['sql-review']);
+		appendActionEvent(aiMsgId, {
+			tool: 'record_decision',
+			label: `Reviewing (${reviewCycle}/${MAX_REVIEW_CYCLES})...`
+		});
+		const reviewReq = buildSprintReq(
+			'sql-review',
+			`Review these newly created notebook cells: ${createdNames.join(', ')}`,
+			SUBAGENT_TOOLS['sql-review']
+		);
 		const { allToolResults: reviewResults } = await streamOneTurn(reviewReq, aiMsgId, signal);
 		if (signal.aborted) return;
 
@@ -2184,19 +2557,34 @@ async function runSprintLoop(
 			if (reviewCycle > 1 && lastIssues.length > 0) {
 				const existing = getWorkspaceStandards();
 				const date = new Date().toLocaleDateString();
-				const learned = lastIssues.slice(0, 3).map((issue) => `• ${issue} [learned ${date}]`).join('\n');
-				setWorkspaceStandards({ ...existing, customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n') });
+				const learned = lastIssues
+					.slice(0, 3)
+					.map((issue) => `• ${issue} [learned ${date}]`)
+					.join('\n');
+				setWorkspaceStandards({
+					...existing,
+					customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n')
+				});
 				scheduleSave();
 			}
 			break;
 		}
-		if (totalScore < 4) { appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Review: needs rework' }); break; }
+		if (totalScore < 4) {
+			appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Review: needs rework' });
+			break;
+		}
 
 		lastIssues = review.issues;
 		const feedback = formatReviewFeedback(review, reviewCycle);
-		appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Fixing review issues (cycle ${reviewCycle})...` });
+		appendActionEvent(aiMsgId, {
+			tool: 'record_decision',
+			label: `Fixing review issues (cycle ${reviewCycle})...`
+		});
 		await streamOneTurn(
-			buildSprintReq('sql-gen', userText, SPRINT_TASK_TOOLS['build'], { role: 'user', content: feedback }),
+			buildSprintReq('sql-gen', userText, SPRINT_TASK_TOOLS['build'], {
+				role: 'user',
+				content: feedback
+			}),
 			aiMsgId,
 			signal
 		);
@@ -2219,7 +2607,10 @@ async function runSubagentPipeline(
 		injection?: { role: 'user'; content: string }
 	): AIChatRequest {
 		const req = buildRequest(contextCellIds, workspaceMemory);
-		req.messages = [{ role: 'user', content: userContent }, { role: 'assistant', content: '' }];
+		req.messages = [
+			{ role: 'user', content: userContent },
+			{ role: 'assistant', content: '' }
+		];
 		if (injection) {
 			req.messages = [...req.messages, injection, { role: 'assistant', content: '' }];
 		}
@@ -2255,7 +2646,10 @@ async function runSubagentPipeline(
 		// If the user rejects (or the model didn't emit a plan_proposal), we still proceed —
 		// the gate is advisory so as not to block progress when the model omits the block.
 		if (planProposal) {
-			appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Waiting for plan approval...' });
+			appendActionEvent(aiMsgId, {
+				tool: 'record_decision',
+				label: 'Waiting for plan approval...'
+			});
 			const approved = await requestPlanApproval(planProposal);
 			if (!approved || signal.aborted) return;
 			updateLastActionEvent(aiMsgId, { label: 'Plan approved' });
@@ -2268,11 +2662,14 @@ async function runSubagentPipeline(
 
 	// Phase 3: SQL Generation — multi-turn mini-loop with error recovery
 	appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Writing SQL...' });
-	const assertionsBlock = planAssertions.length > 0
-		? '\n\n[Acceptance criteria — verify all pass via query_data before calling <done>]\n' +
-		  planAssertions.map((a, i) => `${i + 1}. ${a.model} — ${a.description}: ${a.sql}`).join('\n') +
-		  '\nAfter run_cells succeeds, run each assertion. If any returns FALSE or non-zero, fix the model.'
-		: '';
+	const assertionsBlock =
+		planAssertions.length > 0
+			? '\n\n[Acceptance criteria — verify all pass via query_data before calling <done>]\n' +
+				planAssertions
+					.map((a, i) => `${i + 1}. ${a.model} — ${a.description}: ${a.sql}`)
+					.join('\n') +
+				'\nAfter run_cells succeeds, run each assertion. If any returns FALSE or non-zero, fix the model.'
+			: '';
 	const sqlBaseContent = `${userText}\n\n${discSummary}${assertionsBlock}`;
 	let sqlInjection: { role: 'user'; content: string } | null = null;
 	let sqlDone = false;
@@ -2292,11 +2689,16 @@ async function runSubagentPipeline(
 		});
 	// Query cells built so far (non-markdown).
 	const builtQueryCellCount = (): number =>
-		[..._outputNameToId.values()].filter((id) => getCells().find((c) => c.id === id)?.cellType !== 'markdown').length;
+		[..._outputNameToId.values()].filter(
+			(id) => getCells().find((c) => c.id === id)?.cellType !== 'markdown'
+		).length;
 	// Query cells built this run that don't yet have a chart.
 	const unchartedNames = (): string[] =>
 		[..._outputNameToId.values()]
-			.filter((id) => !_chartedCellIds.has(id) && getCells().find((c) => c.id === id)?.cellType !== 'markdown')
+			.filter(
+				(id) =>
+					!_chartedCellIds.has(id) && getCells().find((c) => c.id === id)?.cellType !== 'markdown'
+			)
 			.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id);
 	// Query cells built this run that haven't been run yet (no results yet — still idle).
 	const unrunCellIds = (): string[] =>
@@ -2306,16 +2708,23 @@ async function runSubagentPipeline(
 		});
 	// True once any markdown cell (findings/summary) was created this generation.
 	const findingsCreated = (): boolean =>
-		[..._outputNameToId.values()].some((id) => getCells().find((x) => x.id === id)?.cellType === 'markdown');
+		[..._outputNameToId.values()].some(
+			(id) => getCells().find((x) => x.id === id)?.cellType === 'markdown'
+		);
 
 	while (!sqlDone && sqlDepth < MAX_SQL_DEPTH && !signal.aborted) {
 		const sqlReq = buildSubagentReq('sql-gen', sqlBaseContent, sqlInjection ?? undefined);
-		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } = await streamOneTurn(sqlReq, aiMsgId, signal);
+		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
+			await streamOneTurn(sqlReq, aiMsgId, signal);
 		if (aborted) return;
 
 		// Transient stream/connection error mid-response — retry this turn instead of bailing.
 		if (streamError) {
-			sqlInjection = { role: 'user', content: 'The previous response was interrupted by a connection error. Continue from where you left off.' };
+			sqlInjection = {
+				role: 'user',
+				content:
+					'The previous response was interrupted by a connection error. Continue from where you left off.'
+			};
 			sqlDepth++;
 			continue;
 		}
@@ -2325,8 +2734,11 @@ async function runSubagentPipeline(
 		// case where the model emits <done> before run_cells in the same output chunk
 		// (server flushes done-blocks before tool-calls, so signalledDone can be true
 		// even though run_cells just fired and the model hasn't seen the results).
-		const hadRunCellsSql = allToolResults.some(r => r.startsWith('run_cells result:'));
-		if (signalledDone && !anyBuiltCellFailing() && !hadRunCellsSql) { sqlDone = true; break; }
+		const hadRunCellsSql = allToolResults.some((r) => r.startsWith('run_cells result:'));
+		if (signalledDone && !anyBuiltCellFailing() && !hadRunCellsSql) {
+			sqlDone = true;
+			break;
+		}
 
 		if (wasTruncated) {
 			sqlInjection = { role: 'user', content: 'Continue from where you left off.' };
@@ -2344,31 +2756,44 @@ async function runSubagentPipeline(
 			// Exit even if it didn't emit <done> (llama-3.3-70b often omits it after pick_chart).
 			// Also exit for documentation-only tasks where builtQueryCellCount() stays 0.
 			const hasFindingsNow = findingsCreated();
-			if (errorLines.length === 0 && unrun.length === 0 && charts.length === 0 && (builtQueryCellCount() > 0 || hasFindingsNow)) {
-				sqlDone = true; break;
+			if (
+				errorLines.length === 0 &&
+				unrun.length === 0 &&
+				charts.length === 0 &&
+				(builtQueryCellCount() > 0 || hasFindingsNow)
+			) {
+				sqlDone = true;
+				break;
 			}
 
-			const directive = errorLines.length > 0
-				? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
-				: builtQueryCellCount() === 0 && !hasFindingsNow
-					? 'No SQL models created yet. Call create_cell with cellType:"query" and complete SQL, then call run_cells to execute it.'
-					: unrun.length > 0
-						? `Cells created but not yet executed. Call run_cells with cellIds: ${JSON.stringify(unrun)} to validate them, then continue.`
-						: charts.length > 0 && !hasFindingsNow
-							? `Cells run clean. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") — use \`{{outputName.field}}\` live refs for all key numbers (e.g. \`{{orders.count}} orders processed\`, \`{{top.revenue}}\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) output <done> with follow-up suggestions.`
-							: charts.length > 0
-								? `Cells run clean. Call pick_chart for: ${charts.join(', ')}, then output <done> with follow-up suggestions.`
-								: !hasFindingsNow
-									? 'Cells run clean. Write a findings markdown cell (cellType:"markdown", outputName:"findings") — use `{{outputName.field}}` live refs for all key numbers so the summary updates when data refreshes. Then output <done> with follow-up suggestions.'
-									: 'All done. Output <done> with follow-up suggestions.';
-			sqlInjection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}` };
+			const directive =
+				errorLines.length > 0
+					? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
+					: builtQueryCellCount() === 0 && !hasFindingsNow
+						? 'No SQL models created yet. Call create_cell with cellType:"query" and complete SQL, then call run_cells to execute it.'
+						: unrun.length > 0
+							? `Cells created but not yet executed. Call run_cells with cellIds: ${JSON.stringify(unrun)} to validate them, then continue.`
+							: charts.length > 0 && !hasFindingsNow
+								? `Cells run clean. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") — use \`{{outputName.field}}\` live refs for all key numbers (e.g. \`{{orders.count}} orders processed\`, \`{{top.revenue}}\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) output <done> with follow-up suggestions.`
+								: charts.length > 0
+									? `Cells run clean. Call pick_chart for: ${charts.join(', ')}, then output <done> with follow-up suggestions.`
+									: !hasFindingsNow
+										? 'Cells run clean. Write a findings markdown cell (cellType:"markdown", outputName:"findings") — use `{{outputName.field}}` live refs for all key numbers so the summary updates when data refreshes. Then output <done> with follow-up suggestions.'
+										: 'All done. Output <done> with follow-up suggestions.';
+			sqlInjection = {
+				role: 'user',
+				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
+			};
 			sqlDepth++;
 			continue;
 		}
 
 		// No tool calls this turn (prose-only stall). If we already have clean cells or a
 		// findings cell, treat the build as complete and fall through to review.
-		if ((builtQueryCellCount() > 0 || findingsCreated()) && !anyBuiltCellFailing()) { sqlDone = true; break; }
+		if ((builtQueryCellCount() > 0 || findingsCreated()) && !anyBuiltCellFailing()) {
+			sqlDone = true;
+			break;
+		}
 		if (sqlStallRetries < 2) {
 			sqlStallRetries++;
 			sqlInjection = {
@@ -2398,13 +2823,22 @@ async function runSubagentPipeline(
 	for (let reviewCycle = 1; reviewCycle <= MAX_REVIEW_CYCLES; reviewCycle++) {
 		if (signal.aborted) return;
 
-		appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Reviewing (${reviewCycle}/${MAX_REVIEW_CYCLES})...` });
-		const reviewAssertionsBlock = planAssertions.length > 0
-			? '\n\n[Pre-defined acceptance criteria from planning — run these first]\n' +
-			  planAssertions.map((a, i) => `${i + 1}. ${a.model} — ${a.description}: ${a.sql}`).join('\n')
-			: '';
+		appendActionEvent(aiMsgId, {
+			tool: 'record_decision',
+			label: `Reviewing (${reviewCycle}/${MAX_REVIEW_CYCLES})...`
+		});
+		const reviewAssertionsBlock =
+			planAssertions.length > 0
+				? '\n\n[Pre-defined acceptance criteria from planning — run these first]\n' +
+					planAssertions
+						.map((a, i) => `${i + 1}. ${a.model} — ${a.description}: ${a.sql}`)
+						.join('\n')
+				: '';
 		const { allToolResults: reviewResults } = await streamOneTurn(
-			buildSubagentReq('sql-review', `Review these newly created notebook cells: ${[..._outputNameToId.keys()].join(', ')}${reviewAssertionsBlock}`),
+			buildSubagentReq(
+				'sql-review',
+				`Review these newly created notebook cells: ${[..._outputNameToId.keys()].join(', ')}${reviewAssertionsBlock}`
+			),
 			aiMsgId,
 			signal
 		);
@@ -2442,27 +2876,53 @@ async function runSubagentPipeline(
 		// Fixable: inject specific scored feedback back to sql-gen
 		lastIssues = review.issues;
 		const feedback = formatReviewFeedback(review, reviewCycle);
-		appendActionEvent(aiMsgId, { tool: 'record_decision', label: `Fixing review issues (cycle ${reviewCycle})...` });
+		appendActionEvent(aiMsgId, {
+			tool: 'record_decision',
+			label: `Fixing review issues (cycle ${reviewCycle})...`
+		});
 
-		let fixInjection: { role: 'user'; content: string } | null = { role: 'user', content: feedback };
+		let fixInjection: { role: 'user'; content: string } | null = {
+			role: 'user',
+			content: feedback
+		};
 		let fixDepth = 0;
 		const MAX_FIX_DEPTH = 6;
 		while (fixDepth < MAX_FIX_DEPTH && !signal.aborted) {
-			const { allToolResults: fixResults, aborted: fixAborted, signalledDone: fixDone, streamError } = await streamOneTurn(
+			const {
+				allToolResults: fixResults,
+				aborted: fixAborted,
+				signalledDone: fixDone,
+				streamError
+			} = await streamOneTurn(
 				buildSubagentReq('sql-gen', sqlBaseContent, fixInjection ?? undefined),
 				aiMsgId,
 				signal
 			);
 			if (fixAborted) return;
-			if (streamError) { fixInjection = { role: 'user', content: 'Continue from where you left off.' }; fixDepth++; continue; }
+			if (streamError) {
+				fixInjection = { role: 'user', content: 'Continue from where you left off.' };
+				fixDepth++;
+				continue;
+			}
 			if (fixDone && !anyBuiltCellFailing()) break;
 			if (fixResults.length > 0) {
 				const errLines = fixResults.filter((r) => r.includes(': RUN FAILED —'));
-				fixInjection = errLines.length > 0
-					? { role: 'user', content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nFix SQL errors — call update_cell then run_cells:\n${errLines.join('\n')}` }
-					: { role: 'user', content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nAll fixed. Call <done>.` };
+				fixInjection =
+					errLines.length > 0
+						? {
+								role: 'user',
+								content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nFix SQL errors — call update_cell then run_cells:\n${errLines.join('\n')}`
+							}
+						: {
+								role: 'user',
+								content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nAll fixed. Call <done>.`
+							};
 			} else {
-				fixInjection = { role: 'user', content: 'Call update_cell with the fix and run_cells to verify. Do NOT respond with prose only.' };
+				fixInjection = {
+					role: 'user',
+					content:
+						'Call update_cell with the fix and run_cells to verify. Do NOT respond with prose only.'
+				};
 			}
 			fixDepth++;
 		}
@@ -2480,7 +2940,10 @@ function buildFocusedReq(
 	injection?: { role: 'user'; content: string }
 ): AIChatRequest {
 	const req = buildRequest(contextCellIds, workspaceMemory);
-	req.messages = [{ role: 'user', content: userContent }, { role: 'assistant', content: '' }];
+	req.messages = [
+		{ role: 'user', content: userContent },
+		{ role: 'assistant', content: '' }
+	];
 	if (injection) {
 		req.messages = [...req.messages, injection, { role: 'assistant', content: '' }];
 	}
@@ -2503,11 +2966,12 @@ async function runDebugLoop(
 	let streamErrorCount = 0;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
-		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } = await streamOneTurn(
-			buildFocusedReq('debug', userText, contextCellIds, workspaceMemory, injection ?? undefined),
-			aiMsgId,
-			signal
-		);
+		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
+			await streamOneTurn(
+				buildFocusedReq('debug', userText, contextCellIds, workspaceMemory, injection ?? undefined),
+				aiMsgId,
+				signal
+			);
 		if (aborted) return;
 
 		if (streamError || wasTruncated) {
@@ -2523,18 +2987,24 @@ async function runDebugLoop(
 			stallRetries = 0;
 			const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
 			const runFailedLines = allToolResults.filter((r) => r.includes(': RUN FAILED —'));
-			const getCellErrorLines = allToolResults.filter((r) => r.includes('— error:') && r.includes('Fix the SQL with update_cell'));
+			const getCellErrorLines = allToolResults.filter(
+				(r) => r.includes('— error:') && r.includes('Fix the SQL with update_cell')
+			);
 			// Exit immediately when run_cells succeeded (no failures) — avoids sending an extra
 			// turn just to emit <done>, which can be very slow with external LLM providers.
 			if (hadRunCells && runFailedLines.length === 0) break;
 			// Model emitted <done> but cells are still failing — override and continue.
 			if (signalledDone && runFailedLines.length === 0 && getCellErrorLines.length === 0) break;
-			const directive = runFailedLines.length > 0
-				? `Fix the SQL error — call update_cell with corrected SQL then run_cells:\n${runFailedLines.join('\n')}`
-				: getCellErrorLines.length > 0
-					? `The cell has an SQL error. Call update_cell with corrected SQL (use valid column names from the table), then run_cells to verify:\n${getCellErrorLines.join('\n')}`
-					: 'Continue debugging. Call run_cells to verify the fix, then call <done>.';
-			injection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}` };
+			const directive =
+				runFailedLines.length > 0
+					? `Fix the SQL error — call update_cell with corrected SQL then run_cells:\n${runFailedLines.join('\n')}`
+					: getCellErrorLines.length > 0
+						? `The cell has an SQL error. Call update_cell with corrected SQL (use valid column names from the table), then run_cells to verify:\n${getCellErrorLines.join('\n')}`
+						: 'Continue debugging. Call run_cells to verify the fix, then call <done>.';
+			injection = {
+				role: 'user',
+				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
+			};
 			depth++;
 			continue;
 		}
@@ -2543,7 +3013,11 @@ async function runDebugLoop(
 
 		if (stallRetries < 3) {
 			stallRetries++;
-			injection = { role: 'user', content: 'Call run_cells on the failing cell to reproduce the SQL error (the run result will contain the error message), then call update_cell with the corrected SQL and run_cells again to verify. Do NOT respond with prose only.' };
+			injection = {
+				role: 'user',
+				content:
+					'Call run_cells on the failing cell to reproduce the SQL error (the run result will contain the error message), then call update_cell with the corrected SQL and run_cells again to verify. Do NOT respond with prose only.'
+			};
 			depth++;
 			continue;
 		}
@@ -2569,11 +3043,18 @@ async function runDashboardLoop(
 	let knownCellName: string | null = null;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
-		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } = await streamOneTurn(
-			buildFocusedReq('dashboard', userText, contextCellIds, workspaceMemory, injection ?? undefined),
-			aiMsgId,
-			signal
-		);
+		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
+			await streamOneTurn(
+				buildFocusedReq(
+					'dashboard',
+					userText,
+					contextCellIds,
+					workspaceMemory,
+					injection ?? undefined
+				),
+				aiMsgId,
+				signal
+			);
 		if (aborted) return;
 
 		if (streamError || wasTruncated) {
@@ -2601,7 +3082,10 @@ async function runDashboardLoop(
 				? `The summary cell '${knownCellName}' already exists. Use update_cell to revise it rather than creating a new one. Then call <done>.`
 				: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags for the relevant cells, then call <done>.';
 
-			injection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive} Do NOT respond with prose only — call the tools now.` };
+			injection = {
+				role: 'user',
+				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive} Do NOT respond with prose only — call the tools now.`
+			};
 			depth++;
 			continue;
 		}
@@ -2632,11 +3116,18 @@ async function runInvestigationLoop(
 	let stallRetries = 0;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
-		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } = await streamOneTurn(
-			buildFocusedReq('investigation', userText, contextCellIds, workspaceMemory, injection ?? undefined),
-			aiMsgId,
-			signal
-		);
+		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
+			await streamOneTurn(
+				buildFocusedReq(
+					'investigation',
+					userText,
+					contextCellIds,
+					workspaceMemory,
+					injection ?? undefined
+				),
+				aiMsgId,
+				signal
+			);
 		if (aborted) return;
 
 		if (streamError || wasTruncated) {
@@ -2649,14 +3140,21 @@ async function runInvestigationLoop(
 
 		if (allToolResults.length > 0) {
 			stallRetries = 0;
-			injection = { role: 'user', content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\nSummarize your findings and call <done> with follow-up suggestions.` };
+			injection = {
+				role: 'user',
+				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\nSummarize your findings and call <done> with follow-up suggestions.`
+			};
 			depth++;
 			continue;
 		}
 
 		if (stallRetries < 2) {
 			stallRetries++;
-			injection = { role: 'user', content: 'You did not call any data tools and did not signal completion. If you already have enough information from context, summarize your findings and end with <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Otherwise call sample_data or query_data first.' };
+			injection = {
+				role: 'user',
+				content:
+					'You did not call any data tools and did not signal completion. If you already have enough information from context, summarize your findings and end with <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Otherwise call sample_data or query_data first.'
+			};
 			depth++;
 			continue;
 		}
@@ -2666,7 +3164,10 @@ async function runInvestigationLoop(
 
 // ── Main submit ───────────────────────────────────────────────────────────────
 
-export async function submitAIMessage(userText: string, forcedIntent?: 'build' | 'sprint' | 'fix' | 'dashboard' | 'explore'): Promise<void> {
+export async function submitAIMessage(
+	userText: string,
+	forcedIntent?: 'build' | 'sprint' | 'fix' | 'dashboard' | 'explore'
+): Promise<void> {
 	if (getIsGenerating()) return;
 
 	// Snapshot before any mutations
@@ -2721,334 +3222,447 @@ export async function submitAIMessage(userText: string, forcedIntent?: 'build' |
 					return d.patterns || undefined;
 				})
 				.catch(() => undefined as string | undefined),
-			_preflightDone ? Promise.resolve() : runPreflightProfiles().then(() => {
-				_preflightDone = true;
-				// #7 — Fire background expansion for remaining tables without awaiting
-				void runIdlePreflightExpansion();
-			})
+			_preflightDone
+				? Promise.resolve()
+				: runPreflightProfiles().then(() => {
+						_preflightDone = true;
+						// #7 — Fire background expansion for remaining tables without awaiting
+						void runIdlePreflightExpansion();
+					})
 		]);
 
 		// Route to the most appropriate loop based on intent.
-		const intentMap = { build: 'creation', sprint: 'creation', fix: 'debug', dashboard: 'dashboard', explore: 'investigation' } as const;
+		const intentMap = {
+			build: 'creation',
+			sprint: 'creation',
+			fix: 'debug',
+			dashboard: 'dashboard',
+			explore: 'investigation'
+		} as const;
 		const intent = forcedIntent ? intentMap[forcedIntent] : classifyIntent(userText);
 		// Simple creation tasks (add a column, rename, tweak a filter) don't need discovery/
 		// modeling/review overhead — route them directly to the standard agentic loop.
 		// 'sprint' forces complex (sprint planning + SQL eval); 'build' still auto-detects.
-		const complexity = forcedIntent === 'sprint'
-			? 'complex'
-			: intent === 'creation' ? classifyComplexity(userText) : 'medium';
+		const complexity =
+			forcedIntent === 'sprint'
+				? 'complex'
+				: intent === 'creation'
+					? classifyComplexity(userText)
+					: 'medium';
 		if (intent === 'creation') {
 			if (complexity === 'complex') {
 				// Complex tasks use the sprint loop: plan → discovery → per-task loops → review
-				await runSprintLoop(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal);
+				await runSprintLoop(
+					userText,
+					aiMsg.id,
+					contextCellIds,
+					workspaceMemory,
+					abortController.signal
+				);
 			} else {
-				await runSubagentPipeline(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal, complexity);
+				await runSubagentPipeline(
+					userText,
+					aiMsg.id,
+					contextCellIds,
+					workspaceMemory,
+					abortController.signal,
+					complexity
+				);
 			}
 			// If the request asked for a dashboard/chart/kpi, build it from the newly created cells.
-			if (/\b(dashboard|chart|kpi|graph|plot|visuali[sz]e)\b/i.test(userText) && !abortController.signal.aborted) {
-				await runDashboardLoop(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal);
+			if (
+				/\b(dashboard|chart|kpi|graph|plot|visuali[sz]e)\b/i.test(userText) &&
+				!abortController.signal.aborted
+			) {
+				await runDashboardLoop(
+					userText,
+					aiMsg.id,
+					contextCellIds,
+					workspaceMemory,
+					abortController.signal
+				);
 			}
 		} else if (intent === 'debug') {
-			await runDebugLoop(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal);
+			await runDebugLoop(
+				userText,
+				aiMsg.id,
+				contextCellIds,
+				workspaceMemory,
+				abortController.signal
+			);
 		} else if (intent === 'dashboard') {
-			await runDashboardLoop(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal);
+			await runDashboardLoop(
+				userText,
+				aiMsg.id,
+				contextCellIds,
+				workspaceMemory,
+				abortController.signal
+			);
 		} else if (intent === 'investigation') {
-			await runInvestigationLoop(userText, aiMsg.id, contextCellIds, workspaceMemory, abortController.signal);
+			await runInvestigationLoop(
+				userText,
+				aiMsg.id,
+				contextCellIds,
+				workspaceMemory,
+				abortController.signal
+			);
 		} else {
+			// ── Agentic loop ─────────────────────────────────────────────────────────
+			// Higher depth needed: each result-critical tool call (run_cells, sample_data, etc.)
+			// now occupies its own iteration so a 3-cell task uses ~8–12 turns instead of 2–3.
+			const MAX_DEPTH = 30;
+			let depth = 0;
+			// Single injection slot — replaced each iteration, never accumulated.
+			// Accumulating would bloat the prompt and squeeze out response tokens.
+			let agentInjection: { role: 'user'; content: string } | null = null;
+			// How many times we've nudged the model after it stalled with SQL errors still present.
+			// Checked against actual cell status (not just "did the last turn return errors") so
+			// multiple consecutive prose-only stalls during error correction all get recovery nudges.
+			let errorStallRetries = 0;
+			// Last known error lines from run_cells — persisted so stall recovery nudges can
+			// re-surface the specific error even when allToolResults is empty.
+			let lastErrorDetails: string[] = [];
+			// Same for data tool failures (sample_data/query_data/profile_column).
+			let prevHadDataErrors = false;
+			// Generic mid-task stall counter: model produced only prose with no tool calls and no <done>.
+			// Allows multiple recovery nudges and resets when the model makes productive progress,
+			// so a stall → recovery → work → stall sequence still gets a nudge on the second stall.
+			let midTaskStallRetries = 0;
+			const MAX_MID_TASK_STALL_RETRIES = 3;
+			// Whether the previous iteration executed data tool calls (sample_data / query_data /
+			// profile_column). Used to detect the investigation→stall gap: model called sample_data,
+			// got results, then produced prose only without proceeding to build cells.
+			let prevHadDataToolCalls = false;
+			// How many times we've resumed after a max_tokens truncation. Capped to prevent infinite loops
+			// if the model consistently hits the limit on the same subtask.
+			let truncationRetries = 0;
+			const MAX_TRUNCATION_RETRIES = 3;
+			// How many times we've retried after a mid-stream connection/parse error. Bounded so a
+			// persistently broken connection doesn't loop forever, but a transient blip no longer
+			// kills the whole generation.
+			let streamErrorRetries = 0;
+			const MAX_STREAM_ERROR_RETRIES = 2;
 
-		// ── Agentic loop ─────────────────────────────────────────────────────────
-		// Higher depth needed: each result-critical tool call (run_cells, sample_data, etc.)
-		// now occupies its own iteration so a 3-cell task uses ~8–12 turns instead of 2–3.
-		const MAX_DEPTH = 30;
-		let depth = 0;
-		// Single injection slot — replaced each iteration, never accumulated.
-		// Accumulating would bloat the prompt and squeeze out response tokens.
-		let agentInjection: { role: 'user'; content: string } | null = null;
-		// How many times we've nudged the model after it stalled with SQL errors still present.
-		// Checked against actual cell status (not just "did the last turn return errors") so
-		// multiple consecutive prose-only stalls during error correction all get recovery nudges.
-		let errorStallRetries = 0;
-		// Last known error lines from run_cells — persisted so stall recovery nudges can
-		// re-surface the specific error even when allToolResults is empty.
-		let lastErrorDetails: string[] = [];
-		// Same for data tool failures (sample_data/query_data/profile_column).
-		let prevHadDataErrors = false;
-		// Generic mid-task stall counter: model produced only prose with no tool calls and no <done>.
-		// Allows multiple recovery nudges and resets when the model makes productive progress,
-		// so a stall → recovery → work → stall sequence still gets a nudge on the second stall.
-		let midTaskStallRetries = 0;
-		const MAX_MID_TASK_STALL_RETRIES = 3;
-		// Whether the previous iteration executed data tool calls (sample_data / query_data /
-		// profile_column). Used to detect the investigation→stall gap: model called sample_data,
-		// got results, then produced prose only without proceeding to build cells.
-		let prevHadDataToolCalls = false;
-		// How many times we've resumed after a max_tokens truncation. Capped to prevent infinite loops
-		// if the model consistently hits the limit on the same subtask.
-		let truncationRetries = 0;
-		const MAX_TRUNCATION_RETRIES = 3;
-		// How many times we've retried after a mid-stream connection/parse error. Bounded so a
-		// persistently broken connection doesn't loop forever, but a transient blip no longer
-		// kills the whole generation.
-		let streamErrorRetries = 0;
-		const MAX_STREAM_ERROR_RETRIES = 2;
+			while (depth < MAX_DEPTH) {
+				// Save per-iteration checkpoint BEFORE any mutations in this iteration
+				pushCheckpoint(takeSnapshot());
 
-		while (depth < MAX_DEPTH) {
-			// Save per-iteration checkpoint BEFORE any mutations in this iteration
-			pushCheckpoint(takeSnapshot());
+				const reqBody = buildRequest(contextCellIds, workspaceMemory);
 
-			const reqBody = buildRequest(contextCellIds, workspaceMemory);
+				// Inject the latest tool result message from the previous iteration.
+				// Append after the current assistant message so the server's slice(-2) sees:
+				//   [history..., assistantMsg, agentInjection, emptyAssistantPlaceholder]
+				// → olderMessages = [...history, assistantMsg], lastUser = agentInjection.content
+				// This preserves the assistant's prior response in context across iterations.
+				if (agentInjection) {
+					reqBody.messages = [
+						...reqBody.messages,
+						agentInjection,
+						{ role: 'assistant' as const, content: '' }
+					];
+				}
 
-			// Inject the latest tool result message from the previous iteration.
-			// Append after the current assistant message so the server's slice(-2) sees:
-			//   [history..., assistantMsg, agentInjection, emptyAssistantPlaceholder]
-			// → olderMessages = [...history, assistantMsg], lastUser = agentInjection.content
-			// This preserves the assistant's prior response in context across iterations.
-			if (agentInjection) {
-				reqBody.messages = [...reqBody.messages, agentInjection, { role: 'assistant' as const, content: '' }];
-			}
+				const {
+					allToolResults,
+					aborted,
+					signalledDone,
+					hadDataToolCalls,
+					wasTruncated,
+					streamError
+				} = await streamOneTurn(reqBody, aiMsg.id, abortController.signal);
+				if (aborted) break;
 
-			const { allToolResults, aborted, signalledDone, hadDataToolCalls, wasTruncated, streamError } = await streamOneTurn(reqBody, aiMsg.id, abortController.signal);
-			if (aborted) break;
+				// Transient stream/connection error mid-response. The old code let this throw and
+				// silently end the run; instead retry the turn (bounded) so a network blip doesn't
+				// kill generation. The model re-receives context and continues; create_cell de-dupes.
+				if (streamError) {
+					if (streamErrorRetries < MAX_STREAM_ERROR_RETRIES) {
+						streamErrorRetries++;
+						agentInjection = {
+							role: 'user',
+							content:
+								'The previous response was interrupted by a connection error. Continue the task from where you left off — re-run any cells whose results you did not see.'
+						};
+						depth++;
+						continue;
+					}
+					appendErrorMessage(
+						'The connection was interrupted repeatedly. Some steps may be incomplete — ask me to continue.'
+					);
+					break;
+				}
 
-			// Transient stream/connection error mid-response. The old code let this throw and
-			// silently end the run; instead retry the turn (bounded) so a network blip doesn't
-			// kill generation. The model re-receives context and continues; create_cell de-dupes.
-			if (streamError) {
-				if (streamErrorRetries < MAX_STREAM_ERROR_RETRIES) {
-					streamErrorRetries++;
+				// Truncation recovery: server detected finish_reason="length" (LLM hit max_tokens).
+				// The model's output was cut off mid-stream — stall recovery nudges are wrong here.
+				// Inject a clean "continue where you left off" message instead.
+				if (wasTruncated && truncationRetries < MAX_TRUNCATION_RETRIES) {
 					agentInjection = {
 						role: 'user',
-						content: 'The previous response was interrupted by a connection error. Continue the task from where you left off — re-run any cells whose results you did not see.'
+						content:
+							'Your response was cut off because you hit the token limit. Continue exactly where you left off — complete any unfinished tool calls or steps and then finish the task.'
 					};
+					truncationRetries++;
 					depth++;
 					continue;
 				}
-				appendErrorMessage('The connection was interrupted repeatedly. Some steps may be incomplete — ask me to continue.');
-				break;
-			}
 
-			// Truncation recovery: server detected finish_reason="length" (LLM hit max_tokens).
-			// The model's output was cut off mid-stream — stall recovery nudges are wrong here.
-			// Inject a clean "continue where you left off" message instead.
-			if (wasTruncated && truncationRetries < MAX_TRUNCATION_RETRIES) {
-				agentInjection = {
-					role: 'user',
-					content: 'Your response was cut off because you hit the token limit. Continue exactly where you left off — complete any unfinished tool calls or steps and then finish the task.'
-				};
-				truncationRetries++;
-				depth++;
-				continue;
-			}
-
-			// Confirmation gate: if > 3 new cells created in first iteration and none run yet,
-			// pause and ask user to confirm before proceeding to run/chart steps.
-			if (depth === 0 && _outputNameToId.size > 3 && _alreadyRanIds.size === 0) {
-				const shouldProceed = await requestConfirmation(_outputNameToId.size);
-				if (!shouldProceed) {
-					undoAIChanges();
-					didCancel = true;
-					break;
+				// Confirmation gate: if > 3 new cells created in first iteration and none run yet,
+				// pause and ask user to confirm before proceeding to run/chart steps.
+				if (depth === 0 && _outputNameToId.size > 3 && _alreadyRanIds.size === 0) {
+					const shouldProceed = await requestConfirmation(_outputNameToId.size);
+					if (!shouldProceed) {
+						undoAIChanges();
+						didCancel = true;
+						break;
+					}
 				}
-			}
 
-			// Agent signalled completion via <done> block.
-			// Only stop if there are no run_cells errors AND all created/updated query cells
-			// have been explicitly run — prevents silent failures in the finally auto-run.
-			// Also don't stop if data tools (sample_data/query_data/profile_column) were just
-			// called: their results need to be fed back before the model can continue building.
-			const hasRunErrors = allToolResults.some((r) => r.includes(': RUN FAILED —'));
-			const createdButNotRun = [..._outputNameToId.values()].filter(
-				(id) => !_alreadyRanIds.has(id) && getCells().find((c) => c.id === id)?.cellType !== 'markdown'
-			);
-			const updatedButNotRun = [..._updatedCellIds].filter((id) => !_alreadyRanIds.has(id));
-			const hasUnrunCells = createdButNotRun.length > 0 || updatedButNotRun.length > 0;
-			// Check actual cell status — not just whether this turn's allToolResults had errors.
-			// Prevents honoring <done> when the model emits it after a failed fix attempt
-			// without re-running cells, so hasRunErrors would be false despite broken cells.
-			const anyCellStillFailed = [...new Set([..._outputNameToId.values(), ..._updatedCellIds])]
-				.some((id) => {
+				// Agent signalled completion via <done> block.
+				// Only stop if there are no run_cells errors AND all created/updated query cells
+				// have been explicitly run — prevents silent failures in the finally auto-run.
+				// Also don't stop if data tools (sample_data/query_data/profile_column) were just
+				// called: their results need to be fed back before the model can continue building.
+				const hasRunErrors = allToolResults.some((r) => r.includes(': RUN FAILED —'));
+				const createdButNotRun = [..._outputNameToId.values()].filter(
+					(id) =>
+						!_alreadyRanIds.has(id) && getCells().find((c) => c.id === id)?.cellType !== 'markdown'
+				);
+				const updatedButNotRun = [..._updatedCellIds].filter((id) => !_alreadyRanIds.has(id));
+				const hasUnrunCells = createdButNotRun.length > 0 || updatedButNotRun.length > 0;
+				// Check actual cell status — not just whether this turn's allToolResults had errors.
+				// Prevents honoring <done> when the model emits it after a failed fix attempt
+				// without re-running cells, so hasRunErrors would be false despite broken cells.
+				const anyCellStillFailed = [
+					...new Set([..._outputNameToId.values(), ..._updatedCellIds])
+				].some((id) => {
 					const c = getCells().find((x) => x.id === id);
 					return c && c.cellType !== 'markdown' && c.status === 'error';
 				});
-			// Detect turns where only inspection tools were called (list_cells, search_workspace, etc.)
-			// and no cells have been built yet — used by Fix A (stronger directive) and Fix B (don't
-			// honour <done> when the task clearly still requires building cells).
-			const INSPECTION_PREFIXES = ['**Cells:', '**Search:', '**Lineage:', '**Search unavailable'];
-			const allResultsAreInspection =
-				allToolResults.length > 0 &&
-				allToolResults.every((r) => INSPECTION_PREFIXES.some((p) => r.startsWith(p)));
-			const inspectionOnlyWithNoCells = allResultsAreInspection && _outputNameToId.size === 0;
-			// Don't honour <done> if run_cells or get_cell_result fired this turn — the model
-			// may have emitted <done> before the tool call in the same chunk (server flushes
-			// done-blocks before tool-calls), causing signalledDone=true even though the model
-			// hasn't seen the results yet. run_cells is not in DATA_TOOL_NAMES so hadDataToolCalls
-			// doesn't catch it.
-			const hadRunCells = allToolResults.some(r => r.startsWith('run_cells result:'));
-			const hadGetCellResult = allToolResults.some(r => r.startsWith('get_cell_result('));
-			if (signalledDone && !hasRunErrors && !hasUnrunCells && !hadDataToolCalls && !hadRunCells && !hadGetCellResult && !anyCellStillFailed && !inspectionOnlyWithNoCells) break;
+				// Detect turns where only inspection tools were called (list_cells, search_workspace, etc.)
+				// and no cells have been built yet — used by Fix A (stronger directive) and Fix B (don't
+				// honour <done> when the task clearly still requires building cells).
+				const INSPECTION_PREFIXES = ['**Cells:', '**Search:', '**Lineage:', '**Search unavailable'];
+				const allResultsAreInspection =
+					allToolResults.length > 0 &&
+					allToolResults.every((r) => INSPECTION_PREFIXES.some((p) => r.startsWith(p)));
+				const inspectionOnlyWithNoCells = allResultsAreInspection && _outputNameToId.size === 0;
+				// Don't honour <done> if run_cells or get_cell_result fired this turn — the model
+				// may have emitted <done> before the tool call in the same chunk (server flushes
+				// done-blocks before tool-calls), causing signalledDone=true even though the model
+				// hasn't seen the results yet. run_cells is not in DATA_TOOL_NAMES so hadDataToolCalls
+				// doesn't catch it.
+				const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
+				const hadGetCellResult = allToolResults.some((r) => r.startsWith('get_cell_result('));
+				if (
+					signalledDone &&
+					!hasRunErrors &&
+					!hasUnrunCells &&
+					!hadDataToolCalls &&
+					!hadRunCells &&
+					!hadGetCellResult &&
+					!anyCellStillFailed &&
+					!inspectionOnlyWithNoCells
+				)
+					break;
 
-			// No tool calls at all — agent is done or stalled
-			if (allToolResults.length === 0) {
-				if (!signalledDone && depth === 0) {
-					// First turn: model emitted only text/plan without calling any tools.
-					agentInjection = {
-						role: 'user',
-						content: 'You described a plan but did not call any tools. Execute it now: call sample_data to investigate the data, then create_cell, run_cells, and pick_chart to build the notebook.'
-					};
-					depth++;
-					continue;
-				}
-
-				// Check which created/updated cells currently have error status.
-				// Using actual cell state (not allToolResults) so this stays accurate across
-				// multiple consecutive prose-only stalls during error correction.
-				const failedCells = [...new Set([..._outputNameToId.values(), ..._updatedCellIds])]
-					.map((id) => getCells().find((c) => c.id === id))
-					.filter((c): c is NonNullable<typeof c> => !!c && c.cellType !== 'markdown' && c.status === 'error');
-
-				// Error stall recovery — up to 4 nudges, each re-includes the error details.
-				if (failedCells.length > 0 && errorStallRetries < 4) {
-					// Use current cell names from failedCells — lastErrorDetails may reference
-					// an old name if the model renamed the cell as part of its fix attempt.
-					const details = failedCells.map((c) => {
-						const match = lastErrorDetails.find((d) => d.startsWith(`${c.outputName}:`));
-						return match ?? `${c.outputName}: RUN FAILED — (call run_cells to see current error)`;
-					}).join('\n');
-					const errorHint = lastErrorDetails.slice(0, 2).map((d) => d.slice(0, 200)).join('\n');
-					agentInjection = {
-						role: 'user',
-						content: `These cells still have SQL errors — fix them by calling update_cell then run_cells:\n${details}\n\nLast errors:\n${errorHint}\n\nCall update_cell(cellId="<outputName>", code="<corrected SQL>") for each failing cell. Do NOT respond with prose only.`
-					};
-					errorStallRetries++;
-					depth++;
-					continue;
-				}
-
-				// Data tool failed (table not found) — nudge the model to use the correct table name.
-				if (prevHadDataErrors) {
-					agentInjection = {
-						role: 'user',
-						content: 'The data investigation failed because the requested table was not found. Check the Schema section for the exact available table names and call sample_data again with the correct name. Do not respond with prose only — call the tools now.'
-					};
-					prevHadDataErrors = false;
-					depth++;
-					continue;
-				}
-
-				// Mid-task stall: model produced prose only at depth > 0, no errors, no <done>.
-				// Three cases:
-				//   A) Cells exist → model described visualization but didn't call pick_chart/<done>
-				//   B) No cells yet but previous turn had data tool calls → model investigated
-				//      source data then stalled instead of proceeding to create cells (Step 0 gap)
-				//   C) No cells, no data tool calls → model produced prose/wrong-format tool call
-				//      (e.g. raw {"sql":...} instead of <tool_call>{"tool":"query_data",...}])
-				// Allow up to MAX_MID_TASK_STALL_RETRIES nudges; counter resets on productive turns
-				// so a stall → recovery → work → stall sequence still gets nudged the second time.
-				const hasCells = _outputNameToId.size > 0;
-				if (!signalledDone && midTaskStallRetries < MAX_MID_TASK_STALL_RETRIES && failedCells.length === 0) {
-					let nudgeContent: string;
-					if (hasCells) {
-						const unchartedNames = [..._outputNameToId.values()]
-							.filter((id) => !_chartedCellIds.has(id))
-							.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
-							.filter((name) => getCells().find((c) => c.outputName === name)?.cellType !== 'markdown');
-						nudgeContent = unchartedNames.length > 0
-							? `You stopped mid-task. Complete these steps in order: (1) call create_cell with cellType:"markdown", outputName:"findings" to write a findings summary, (2) call pick_chart for each query cell: ${unchartedNames.join(', ')}, (3) output <done> with follow-up suggestions. Do not respond with prose only — call the tools now.`
-							: 'You stopped mid-task without signalling completion. Write a findings markdown cell (create_cell cellType:"markdown", outputName:"findings") then output <done> with follow-up suggestions.';
-					} else if (prevHadDataToolCalls) {
-						nudgeContent = 'You investigated the source data but have not built any cells yet. Proceed now: call list_cells and search_workspace (Step 1 — Discover), then create_cell for each model (Step 2 — Build), run_cells (Step 4 — Validate), and pick_chart. Do not respond with prose only — call the tools.';
-					} else {
-						nudgeContent = 'You have not called any tools. Use the exact <tool_call> format from the instructions — do NOT output raw JSON or prose descriptions of tool calls. Required format:\n<tool_call>{"tool":"query_data","callId":"D1","args":{"sql":"SELECT ..."}}</tool_call>\nCall sample_data or query_data to investigate the data, then create_cell, run_cells, and pick_chart.';
+				// No tool calls at all — agent is done or stalled
+				if (allToolResults.length === 0) {
+					if (!signalledDone && depth === 0) {
+						// First turn: model emitted only text/plan without calling any tools.
+						agentInjection = {
+							role: 'user',
+							content:
+								'You described a plan but did not call any tools. Execute it now: call sample_data to investigate the data, then create_cell, run_cells, and pick_chart to build the notebook.'
+						};
+						depth++;
+						continue;
 					}
-					agentInjection = { role: 'user', content: nudgeContent };
-					midTaskStallRetries++;
-					depth++;
-					continue;
+
+					// Check which created/updated cells currently have error status.
+					// Using actual cell state (not allToolResults) so this stays accurate across
+					// multiple consecutive prose-only stalls during error correction.
+					const failedCells = [...new Set([..._outputNameToId.values(), ..._updatedCellIds])]
+						.map((id) => getCells().find((c) => c.id === id))
+						.filter(
+							(c): c is NonNullable<typeof c> =>
+								!!c && c.cellType !== 'markdown' && c.status === 'error'
+						);
+
+					// Error stall recovery — up to 4 nudges, each re-includes the error details.
+					if (failedCells.length > 0 && errorStallRetries < 4) {
+						// Use current cell names from failedCells — lastErrorDetails may reference
+						// an old name if the model renamed the cell as part of its fix attempt.
+						const details = failedCells
+							.map((c) => {
+								const match = lastErrorDetails.find((d) => d.startsWith(`${c.outputName}:`));
+								return (
+									match ?? `${c.outputName}: RUN FAILED — (call run_cells to see current error)`
+								);
+							})
+							.join('\n');
+						const errorHint = lastErrorDetails
+							.slice(0, 2)
+							.map((d) => d.slice(0, 200))
+							.join('\n');
+						agentInjection = {
+							role: 'user',
+							content: `These cells still have SQL errors — fix them by calling update_cell then run_cells:\n${details}\n\nLast errors:\n${errorHint}\n\nCall update_cell(cellId="<outputName>", code="<corrected SQL>") for each failing cell. Do NOT respond with prose only.`
+						};
+						errorStallRetries++;
+						depth++;
+						continue;
+					}
+
+					// Data tool failed (table not found) — nudge the model to use the correct table name.
+					if (prevHadDataErrors) {
+						agentInjection = {
+							role: 'user',
+							content:
+								'The data investigation failed because the requested table was not found. Check the Schema section for the exact available table names and call sample_data again with the correct name. Do not respond with prose only — call the tools now.'
+						};
+						prevHadDataErrors = false;
+						depth++;
+						continue;
+					}
+
+					// Mid-task stall: model produced prose only at depth > 0, no errors, no <done>.
+					// Three cases:
+					//   A) Cells exist → model described visualization but didn't call pick_chart/<done>
+					//   B) No cells yet but previous turn had data tool calls → model investigated
+					//      source data then stalled instead of proceeding to create cells (Step 0 gap)
+					//   C) No cells, no data tool calls → model produced prose/wrong-format tool call
+					//      (e.g. raw {"sql":...} instead of <tool_call>{"tool":"query_data",...}])
+					// Allow up to MAX_MID_TASK_STALL_RETRIES nudges; counter resets on productive turns
+					// so a stall → recovery → work → stall sequence still gets nudged the second time.
+					const hasCells = _outputNameToId.size > 0;
+					if (
+						!signalledDone &&
+						midTaskStallRetries < MAX_MID_TASK_STALL_RETRIES &&
+						failedCells.length === 0
+					) {
+						let nudgeContent: string;
+						if (hasCells) {
+							const unchartedNames = [..._outputNameToId.values()]
+								.filter((id) => !_chartedCellIds.has(id))
+								.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
+								.filter(
+									(name) => getCells().find((c) => c.outputName === name)?.cellType !== 'markdown'
+								);
+							nudgeContent =
+								unchartedNames.length > 0
+									? `You stopped mid-task. Complete these steps in order: (1) call create_cell with cellType:"markdown", outputName:"findings" to write a findings summary, (2) call pick_chart for each query cell: ${unchartedNames.join(', ')}, (3) output <done> with follow-up suggestions. Do not respond with prose only — call the tools now.`
+									: 'You stopped mid-task without signalling completion. Write a findings markdown cell (create_cell cellType:"markdown", outputName:"findings") then output <done> with follow-up suggestions.';
+						} else if (prevHadDataToolCalls) {
+							nudgeContent =
+								'You investigated the source data but have not built any cells yet. Proceed now: call list_cells and search_workspace (Step 1 — Discover), then create_cell for each model (Step 2 — Build), run_cells (Step 4 — Validate), and pick_chart. Do not respond with prose only — call the tools.';
+						} else {
+							nudgeContent =
+								'You have not called any tools. Use the exact <tool_call> format from the instructions — do NOT output raw JSON or prose descriptions of tool calls. Required format:\n<tool_call>{"tool":"query_data","callId":"D1","args":{"sql":"SELECT ..."}}</tool_call>\nCall sample_data or query_data to investigate the data, then create_cell, run_cells, and pick_chart.';
+						}
+						agentInjection = { role: 'user', content: nudgeContent };
+						midTaskStallRetries++;
+						depth++;
+						continue;
+					}
+					break;
 				}
-				break;
-			}
 
-			prevHadDataToolCalls = hadDataToolCalls;
-			// Model made productive tool calls — reset mid-task stall counter so future stalls
-			// after productive work still get recovery nudges (not just the very first one).
-			midTaskStallRetries = 0;
+				prevHadDataToolCalls = hadDataToolCalls;
+				// Model made productive tool calls — reset mid-task stall counter so future stalls
+				// after productive work still get recovery nudges (not just the very first one).
+				midTaskStallRetries = 0;
 
-			// Feed the latest tool results back to the LLM so it can verify and self-correct.
-			// We replace (not accumulate) to keep prompt size stable across iterations.
-			const errorLines = allToolResults.filter((r) => r.includes(': RUN FAILED —'));
-			const dataErrorLines = allToolResults.filter((r) => /^(?:sample_data|query_data|profile_column) failed:/.test(r));
-			// Persist the most recent error lines so stall recovery nudges can re-surface them
-			// even when the model stalls (allToolResults empty) in a subsequent iteration.
-			if (errorLines.length > 0) lastErrorDetails = errorLines;
-			prevHadDataErrors = dataErrorLines.length > 0;
+				// Feed the latest tool results back to the LLM so it can verify and self-correct.
+				// We replace (not accumulate) to keep prompt size stable across iterations.
+				const errorLines = allToolResults.filter((r) => r.includes(': RUN FAILED —'));
+				const dataErrorLines = allToolResults.filter((r) =>
+					/^(?:sample_data|query_data|profile_column) failed:/.test(r)
+				);
+				// Persist the most recent error lines so stall recovery nudges can re-surface them
+				// even when the model stalls (allToolResults empty) in a subsequent iteration.
+				if (errorLines.length > 0) lastErrorDetails = errorLines;
+				prevHadDataErrors = dataErrorLines.length > 0;
 
-			let directive: string;
-			if (allResultsAreInspection && _outputNameToId.size === 0) {
-				directive =
-					'Discovery complete. Now BUILD the analysis: call sample_data on the most relevant table ' +
-					'(or query_data for a quick overview), then create_cell for each model you need, run_cells ' +
-					'to validate, and pick_chart to visualise results. Do not respond with prose only — call the tools now.';
-			} else if (hadDataToolCalls && _outputNameToId.size === 0) {
-				// Data investigation complete but no cells built yet — strong "build now" directive prevents
-				// the model from stalling after sample_data/query_data/profile_column stops the stream.
-				directive =
-					'Data investigation complete. Now build the analysis: call create_cell for each model you need ' +
-					'(using the actual data structure shown above), then run_cells to validate, and pick_chart to visualise. ' +
-					'Do not respond with prose only — call the tools now.';
-			} else if ((hadRunCells && !hasRunErrors || hadGetCellResult) && _outputNameToId.size > 0) {
-				// run_cells succeeded or cell data retrieved — tell model to chart and finish.
-				const uncharted = [..._outputNameToId.values()]
-					.filter((id) => !_chartedCellIds.has(id))
-					.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
-					.filter((name) => getCells().find((c) => c.outputName === name)?.cellType !== 'markdown');
-				const prefix = hadRunCells ? 'Cells ran successfully' : 'Cell data retrieved';
-				directive = uncharted.length > 0
-					? `${prefix}. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, (2) call pick_chart for: ${uncharted.join(', ')}, (3) output <done> with 3 follow-up suggestions.`
-					: `${prefix}. Now write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, then output <done> with 3 follow-up suggestions.`;
-			} else {
-				directive = 'Continue based on these results.';
-			}
-			if (errorLines.length > 0) {
-				const failingNames = errorLines.map((l) => l.split(':')[0]).join(', ');
-				// Do not repeat errorLines here — they are already shown in Tool results above.
-				// Redundant SQL/schema blocks in the directive caused the model to interpret
-				// error results as "SQL snippet output" and miss the RUN FAILED signal.
-				directive = `The cells above show RUN FAILED. You MUST fix them:\n1. Call update_cell(cellId="<name>", code="<corrected SQL>") for each failing cell: ${failingNames}\n2. Then call run_cells([${failingNames}]) to verify the fix.\nDo NOT assume a cell works until run_cells reports success rows. Do NOT output <done> until all cells succeed.`;
-				// If the error text contains backticks, hint the model about DuckDB identifier syntax
-				if (errorLines.some((l) => l.includes('`'))) {
-					directive += '\n⚠ Hint: DuckDB does not support backtick identifiers. Replace every `name` with "name" (double-quotes).';
+				let directive: string;
+				if (allResultsAreInspection && _outputNameToId.size === 0) {
+					directive =
+						'Discovery complete. Now BUILD the analysis: call sample_data on the most relevant table ' +
+						'(or query_data for a quick overview), then create_cell for each model you need, run_cells ' +
+						'to validate, and pick_chart to visualise results. Do not respond with prose only — call the tools now.';
+				} else if (hadDataToolCalls && _outputNameToId.size === 0) {
+					// Data investigation complete but no cells built yet — strong "build now" directive prevents
+					// the model from stalling after sample_data/query_data/profile_column stops the stream.
+					directive =
+						'Data investigation complete. Now build the analysis: call create_cell for each model you need ' +
+						'(using the actual data structure shown above), then run_cells to validate, and pick_chart to visualise. ' +
+						'Do not respond with prose only — call the tools now.';
+				} else if (
+					((hadRunCells && !hasRunErrors) || hadGetCellResult) &&
+					_outputNameToId.size > 0
+				) {
+					// run_cells succeeded or cell data retrieved — tell model to chart and finish.
+					const uncharted = [..._outputNameToId.values()]
+						.filter((id) => !_chartedCellIds.has(id))
+						.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
+						.filter(
+							(name) => getCells().find((c) => c.outputName === name)?.cellType !== 'markdown'
+						);
+					const prefix = hadRunCells ? 'Cells ran successfully' : 'Cell data retrieved';
+					directive =
+						uncharted.length > 0
+							? `${prefix}. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, (2) call pick_chart for: ${uncharted.join(', ')}, (3) output <done> with 3 follow-up suggestions.`
+							: `${prefix}. Now write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, then output <done> with 3 follow-up suggestions.`;
+				} else {
+					directive = 'Continue based on these results.';
 				}
-			} else if (dataErrorLines.length > 0) {
-				directive = `Data investigation failed — the requested table(s) were not found. Check the Schema section above for exact table names and call sample_data again with the correct name.`;
-			} else if (hasUnrunCells) {
-				const names = [...new Set([...createdButNotRun, ...updatedButNotRun])]
-					.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
-					.join(', ');
-				directive = `Cells were created/updated but NOT run: ${names}. Calling update_cell does NOT verify correctness — you MUST call run_cells([${names}]) now to confirm they work.`;
+				if (errorLines.length > 0) {
+					const failingNames = errorLines.map((l) => l.split(':')[0]).join(', ');
+					// Do not repeat errorLines here — they are already shown in Tool results above.
+					// Redundant SQL/schema blocks in the directive caused the model to interpret
+					// error results as "SQL snippet output" and miss the RUN FAILED signal.
+					directive = `The cells above show RUN FAILED. You MUST fix them:\n1. Call update_cell(cellId="<name>", code="<corrected SQL>") for each failing cell: ${failingNames}\n2. Then call run_cells([${failingNames}]) to verify the fix.\nDo NOT assume a cell works until run_cells reports success rows. Do NOT output <done> until all cells succeed.`;
+					// If the error text contains backticks, hint the model about DuckDB identifier syntax
+					if (errorLines.some((l) => l.includes('`'))) {
+						directive +=
+							'\n⚠ Hint: DuckDB does not support backtick identifiers. Replace every `name` with "name" (double-quotes).';
+					}
+				} else if (dataErrorLines.length > 0) {
+					directive = `Data investigation failed — the requested table(s) were not found. Check the Schema section above for exact table names and call sample_data again with the correct name.`;
+				} else if (hasUnrunCells) {
+					const names = [...new Set([...createdButNotRun, ...updatedButNotRun])]
+						.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
+						.join(', ');
+					directive = `Cells were created/updated but NOT run: ${names}. Calling update_cell does NOT verify correctness — you MUST call run_cells([${names}]) now to confirm they work.`;
+				}
+				agentInjection = {
+					role: 'user',
+					content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
+				};
+
+				depth++;
 			}
-			agentInjection = {
-				role: 'user',
-				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
-			};
 
-			depth++;
-		}
-
-		// If loop ended with cells still in error state, emit a human-readable message
-		const stillFailed = [...new Set([..._outputNameToId.values(), ..._updatedCellIds])]
-			.map((id) => getCells().find((c) => c.id === id))
-			.filter((c): c is NonNullable<typeof c> => !!c && c.cellType !== 'markdown' && c.status === 'error');
-		if (stillFailed.length > 0) {
-			const details = stillFailed.map((c) => {
-				const errMsg = c.errors?.[0]?.display ?? c.errors?.[0]?.reason ?? 'unknown error';
-				return `- \`${c.outputName}\`: ${errMsg}`;
-			}).join('\n');
-			updateMessageText(aiMsg.id, `\n\n⚠ Couldn't fix all SQL errors after multiple attempts. These cells still have errors:\n${details}\n\nTry asking me to use a different approach, or fix them manually.`);
-			setMessageError(aiMsg.id);
-		}
-
+			// If loop ended with cells still in error state, emit a human-readable message
+			const stillFailed = [...new Set([..._outputNameToId.values(), ..._updatedCellIds])]
+				.map((id) => getCells().find((c) => c.id === id))
+				.filter(
+					(c): c is NonNullable<typeof c> =>
+						!!c && c.cellType !== 'markdown' && c.status === 'error'
+				);
+			if (stillFailed.length > 0) {
+				const details = stillFailed
+					.map((c) => {
+						const errMsg = c.errors?.[0]?.display ?? c.errors?.[0]?.reason ?? 'unknown error';
+						return `- \`${c.outputName}\`: ${errMsg}`;
+					})
+					.join('\n');
+				updateMessageText(
+					aiMsg.id,
+					`\n\n⚠ Couldn't fix all SQL errors after multiple attempts. These cells still have errors:\n${details}\n\nTry asking me to use a different approach, or fix them manually.`
+				);
+				setMessageError(aiMsg.id);
+			}
 		} // end else (standard loop)
-
 	} catch (err) {
 		if (!(err instanceof Error && err.name === 'AbortError')) {
 			appendErrorMessage(err instanceof Error ? err.message : 'Unknown error');
@@ -3065,7 +3679,9 @@ export async function submitAIMessage(userText: string, forcedIntent?: 'build' |
 					const cell = getCells().find((c) => c.id === cellId);
 					if (!cell || cell.cellType === 'markdown') return Promise.resolve();
 					_alreadyRanIds.add(cellId);
-					return runCell(cellId).catch(() => { /* error surfaced via cell.status */ });
+					return runCell(cellId).catch(() => {
+						/* error surfaced via cell.status */
+					});
 				})
 		);
 
@@ -3096,9 +3712,14 @@ export async function submitAIMessage(userText: string, forcedIntent?: 'build' |
 		const cellsToEmbed = [..._outputNameToId.entries()]
 			.map(([outputName, cellId]) => {
 				const cell = allCells.find((c) => c.id === cellId);
-				return cell && cell.cellType !== 'markdown' ? { notebookId, cellId, outputName, code: cell.code } : null;
+				return cell && cell.cellType !== 'markdown'
+					? { notebookId, cellId, outputName, code: cell.code }
+					: null;
 			})
-			.filter((x): x is { notebookId: string; cellId: string; outputName: string; code: string } => x !== null);
+			.filter(
+				(x): x is { notebookId: string; cellId: string; outputName: string; code: string } =>
+					x !== null
+			);
 		if (cellsToEmbed.length > 0) {
 			void fetch('/api/ai/embed', {
 				method: 'POST',

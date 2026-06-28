@@ -15,10 +15,19 @@ export type ColumnFormatKind =
 
 export interface ColumnFormat {
 	kind: ColumnFormatKind;
-	/** For 'category': stable palette index 0-4, derived from a hash of the column name. */
-	paletteSeed?: number;
 	/** For 'currency': detected symbol, default '$'. */
 	currencySymbol?: string;
+}
+
+/** Number of distinct chip colors in the --tag-* categorical palette (layout.css). */
+export const TAG_PALETTE_SIZE = 8;
+
+/** Stable palette index 0-7 for a category chip, derived from the cell's own value so
+ *  distinct values in the same column get visually distinct, consistent colors. */
+export function paletteSeedForValue(value: string): number {
+	let h = 0;
+	for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0;
+	return Math.abs(h) % TAG_PALETTE_SIZE;
 }
 
 const ID_NAME_RE = /(^|_)(id|uuid|guid)$/i;
@@ -37,12 +46,6 @@ const CURRENCY_VALUE_RE = /[$€£¥₦₵₹]/;
 
 function ratio(hits: number, total: number): number {
 	return total > 0 ? hits / total : 0;
-}
-
-function paletteSeedFor(col: string): number {
-	let h = 0;
-	for (let i = 0; i < col.length; i++) h = (h * 31 + col.charCodeAt(i)) | 0;
-	return Math.abs(h) % 5;
 }
 
 function detectCurrencySymbol(samples: unknown[]): string | undefined {
@@ -136,7 +139,7 @@ export function detectColumnFormat(rows: Record<string, unknown>[], col: string)
 	const nonNull = rows.map((r) => r[col]).filter((v) => v !== null && v !== undefined);
 	const distinct = new Set(nonNull.map(String)).size;
 	if (distinct <= 20 && ratio(distinct, nonNull.length) <= 0.5) {
-		return { kind: 'category', paletteSeed: paletteSeedFor(col) };
+		return { kind: 'category' };
 	}
 
 	// 10. text — fallback

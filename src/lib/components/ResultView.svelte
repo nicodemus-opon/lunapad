@@ -5,7 +5,11 @@
 	import StatsView from '$lib/components/StatsView.svelte';
 	import { Table2, TrendingUp, Sigma, Maximize2, X, Download, Settings2 } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
-	import { setTabViewMode, setTabChartConfig, setCellResultChartConfig } from '$lib/stores/notebook.svelte';
+	import {
+		setTabViewMode,
+		setTabChartConfig,
+		setCellResultChartConfig
+	} from '$lib/stores/notebook.svelte';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
 
 	interface Props {
@@ -24,15 +28,23 @@
 	}
 
 	let {
-		tabId, cellId = '', notebookId = '', rows, columns,
-		name = 'result', viewMode, chartConfig,
-		onAddSort, onAddFilter, truncated = false
+		tabId,
+		cellId = '',
+		notebookId = '',
+		rows,
+		columns,
+		name = 'result',
+		viewMode,
+		chartConfig,
+		onAddSort,
+		onAddFilter,
+		truncated = false
 	}: Props = $props();
 
 	let lastShapeSignature = $state('');
 	let expanded = $state(false);
 	let showConfigPanel = $state(false);
-	let chartContainerEl: HTMLElement | null = $state(null);
+	let chartViewRef: { exportPng: (filename: string) => Promise<void> } | undefined = $state();
 
 	// ── Chart height resize ───────────────────────────────────────────────────
 	const MIN_CHART_HEIGHT = 160;
@@ -52,7 +64,9 @@
 		if (!resizing) return;
 		chartHeight = Math.max(MIN_CHART_HEIGHT, resizeStartHeight + (e.clientY - resizeStartY));
 	}
-	function onResizeEnd() { resizing = false; }
+	function onResizeEnd() {
+		resizing = false;
+	}
 
 	const activeConfig = $derived.by((): ChartConfig | null => {
 		if (viewMode !== 'chart') return null;
@@ -67,7 +81,10 @@
 	$effect(() => {
 		const signature = computeShapeSignature(columns);
 		if (!signature) return;
-		if (!lastShapeSignature) { lastShapeSignature = signature; return; }
+		if (!lastShapeSignature) {
+			lastShapeSignature = signature;
+			return;
+		}
 		if (signature === lastShapeSignature) return;
 		lastShapeSignature = signature;
 		// Columns changed — re-infer chart only if no user config exists yet.
@@ -89,67 +106,16 @@
 	}
 
 	// ── PNG export ────────────────────────────────────────────────────────────
-	// Charts render as Plot/hand-built SVG; export by serializing the SVG with
-	// inlined computed styles (CSS vars don't resolve on a detached/serialized node).
-	function inlineComputedStyles(srcRoot: Element, dstRoot: Element) {
-		const srcEls = [srcRoot, ...srcRoot.querySelectorAll('*')];
-		const dstEls = [dstRoot, ...dstRoot.querySelectorAll('*')];
-		const PROPS = ['fill', 'stroke', 'color', 'font-family', 'font-size', 'opacity', 'stroke-width', 'stroke-dasharray'];
-		for (let i = 0; i < srcEls.length; i++) {
-			const computed = getComputedStyle(srcEls[i]);
-			const decls = PROPS.map((p) => `${p}:${computed.getPropertyValue(p)}`).join(';');
-			const existing = (dstEls[i] as HTMLElement).getAttribute('style') ?? '';
-			(dstEls[i] as HTMLElement).setAttribute('style', `${decls};${existing}`);
-		}
-	}
-
-	function downloadSvgPng(svg: SVGSVGElement) {
-		const clone = svg.cloneNode(true) as SVGSVGElement;
-		// Resolve var(--chart-1)-style colors to concrete values while still
-		// attached to the document, then inline them onto the (soon detached)
-		// clone — a serialized SVG can't resolve CSS vars on its own.
-		inlineComputedStyles(svg, clone);
-		const xml = new XMLSerializer().serializeToString(clone);
-		const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
-		const img = new Image();
-		img.onload = () => {
-			const rect = svg.getBoundingClientRect();
-			const scale = window.devicePixelRatio || 1;
-			const out = document.createElement('canvas');
-			out.width = rect.width * scale;
-			out.height = rect.height * scale;
-			const ctx = out.getContext('2d')!;
-			const bg = getComputedStyle(document.documentElement).getPropertyValue('--background').trim() || '#ffffff';
-			ctx.fillStyle = bg;
-			ctx.fillRect(0, 0, out.width, out.height);
-			ctx.drawImage(img, 0, 0, out.width, out.height);
-			const a = document.createElement('a');
-			a.download = `${name || 'chart'}.png`;
-			a.href = out.toDataURL('image/png');
-			a.click();
-			URL.revokeObjectURL(url);
-		};
-		img.src = url;
-	}
-
-	// PlotChart briefly keeps both the outgoing and incoming chart mounted while
-	// crossfading between them (see PlotChart.svelte's `data-mid-transition`
-	// marker), with the new one appended last. Capture the *last* matching <svg>
-	// (the settled/incoming chart, not a stale outgoing one mid-removal), and if
-	// a crossfade is still in flight, wait briefly for it to finish so the PNG
-	// isn't taken from a half-faded frame.
-	function downloadChartPng() {
-		const container = chartContainerEl;
-		if (!container) return;
-		const capture = () => {
-			const svgs = container.querySelectorAll('svg');
-			const svg = svgs[svgs.length - 1];
-			if (svg) downloadSvgPng(svg);
-		};
-		if (container.querySelector('[data-mid-transition]')) {
-			setTimeout(capture, 300);
-		} else {
-			capture();
+	// Delegates to ChartView's exported exportPng (which forwards to the
+	// mounted PlotlyMount) — Plotly.toImage() handles background fill (via the
+	// theme's paper_bgcolor) and DPI scaling internally, so there's no SVG
+	// cloning/style-inlining to do here.
+	async function downloadChartPng() {
+		try {
+			await chartViewRef?.exportPng(`${name || 'chart'}.png`);
+		} catch {
+			// table/big-value/value/delta have no chart to export — silently no-op,
+			// the Download button is only shown for chart view anyway.
 		}
 	}
 
@@ -160,82 +126,119 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="flex flex-col h-full">
+<div class="flex h-full flex-col">
 	<!-- Toolbar -->
-	<div class="flex items-center justify-between gap-2 pb-2 shrink-0">
-		<div class="flex items-center rounded-xl border border-border/80 bg-muted/25 overflow-hidden shadow-sm">
+	<div class="flex shrink-0 items-center justify-between gap-2 pb-2">
+		<div
+			class="flex items-center overflow-hidden rounded-xl border border-border/80 bg-muted/25 shadow-sm"
+		>
 			<button
-				class="flex items-center gap-1.5 px-3 h-7 text-xs transition-colors rounded-l-xl
-					{viewMode === 'table' ? 'bg-card text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
-				onclick={() => switchView('table')}
-			><Table2 class="w-3 h-3" />Table</button>
-			<div class="w-px h-7 bg-border/80"></div>
+				class="flex h-7 items-center gap-1.5 rounded-l-xl px-3 text-xs transition-colors
+					{viewMode === 'table'
+					? 'bg-card font-medium text-foreground'
+					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+				onclick={() => switchView('table')}><Table2 class="h-3 w-3" />Table</button
+			>
+			<div class="h-7 w-px bg-border/80"></div>
 			<button
-				class="flex items-center gap-1.5 px-3 h-7 text-xs transition-colors
-					{viewMode === 'chart' ? 'bg-card text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
-				onclick={() => switchView('chart')}
-			><TrendingUp class="w-3 h-3" />Chart</button>
-			<div class="w-px h-7 bg-border/80"></div>
+				class="flex h-7 items-center gap-1.5 px-3 text-xs transition-colors
+					{viewMode === 'chart'
+					? 'bg-card font-medium text-foreground'
+					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+				onclick={() => switchView('chart')}><TrendingUp class="h-3 w-3" />Chart</button
+			>
+			<div class="h-7 w-px bg-border/80"></div>
 			<button
-				class="flex items-center gap-1.5 px-3 h-7 text-xs transition-colors rounded-r-xl
-					{viewMode === 'stats' ? 'bg-card text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
-				onclick={() => switchView('stats')}
-			><Sigma class="w-3 h-3" />Statistics</button>
+				class="flex h-7 items-center gap-1.5 rounded-r-xl px-3 text-xs transition-colors
+					{viewMode === 'stats'
+					? 'bg-card font-medium text-foreground'
+					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+				onclick={() => switchView('stats')}><Sigma class="h-3 w-3" />Statistics</button
+			>
 		</div>
 
 		{#if viewMode === 'chart' && activeConfig}
 			<div class="flex items-center gap-0.5">
 				<!-- Settings panel toggle -->
 				<button
-					class="h-7 w-7 flex items-center justify-center rounded transition-colors
-						{showConfigPanel ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="flex h-7 w-7 items-center justify-center rounded transition-colors
+						{showConfigPanel
+						? 'bg-primary/15 text-primary'
+						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					title="Chart settings"
 					onclick={() => (showConfigPanel = !showConfigPanel)}
-				><Settings2 class="w-3.5 h-3.5" /></button>
+					><Settings2 class="h-3.5 w-3.5" /></button
+				>
 
 				<!-- PNG download -->
-				<button class="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-					title="Download as PNG" onclick={downloadChartPng}><Download class="w-3.5 h-3.5" /></button>
+				<button
+					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+					title="Download as PNG"
+					onclick={downloadChartPng}><Download class="h-3.5 w-3.5" /></button
+				>
 
 				<!-- Fullscreen -->
-				<button class="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-					title="Fullscreen" onclick={() => (expanded = true)}><Maximize2 class="w-3.5 h-3.5" /></button>
+				<button
+					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+					title="Fullscreen"
+					onclick={() => (expanded = true)}><Maximize2 class="h-3.5 w-3.5" /></button
+				>
 			</div>
 		{/if}
 	</div>
 
 	<!-- Content -->
 	{#if viewMode === 'table'}
-		<div class="flex-1 min-h-0">
-			<ResultTable {rows} {columns} {name} {truncated} pageSize={25} fillHeight {onAddSort} {onAddFilter} />
+		<div class="min-h-0 flex-1">
+			<ResultTable
+				{rows}
+				{columns}
+				{name}
+				{truncated}
+				pageSize={25}
+				fillHeight
+				{onAddSort}
+				{onAddFilter}
+			/>
 		</div>
 	{:else if viewMode === 'chart' && activeConfig}
 		<!-- Split layout: optional left config panel + chart -->
-		<div class="flex-1 min-h-0 flex gap-0 overflow-hidden">
+		<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
 			{#if showConfigPanel}
-				<div class="w-56 shrink-0 border-r border-border bg-muted/10 overflow-y-auto px-3 py-3">
+				<div class="w-56 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3">
 					<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 				</div>
 			{/if}
-			<div class="flex-1 min-w-0 flex flex-col">
-				<div class="flex-1 min-h-40" bind:this={chartContainerEl}>
-					<ChartView {rows} {columns} config={activeConfig} height={chartHeight} />
+			<div class="flex min-w-0 flex-1 flex-col">
+				<div class="min-h-40 flex-1">
+					<ChartView
+						bind:this={chartViewRef}
+						{rows}
+						{columns}
+						config={activeConfig}
+						height={chartHeight}
+					/>
 				</div>
 				<!-- Resize handle -->
 				<div
-					class="h-2 w-full cursor-ns-resize flex items-center justify-center group select-none touch-none shrink-0"
-					role="separator" aria-label="Resize chart"
+					class="group flex h-2 w-full shrink-0 cursor-ns-resize touch-none items-center justify-center select-none"
+					role="separator"
+					aria-label="Resize chart"
 					onpointerdown={onResizeStart}
 					onpointermove={onResizeMove}
 					onpointerup={onResizeEnd}
 					onpointercancel={onResizeEnd}
 				>
-					<div class="h-0.5 w-10 rounded-full bg-border/40 group-hover:bg-border transition-colors {resizing ? 'bg-primary/50' : ''}"></div>
+					<div
+						class="h-0.5 w-10 rounded-full bg-border/40 transition-colors group-hover:bg-border {resizing
+							? 'bg-primary/50'
+							: ''}"
+					></div>
 				</div>
 			</div>
 		</div>
 	{:else if viewMode === 'stats'}
-		<div class="flex-1 min-h-0">
+		<div class="min-h-0 flex-1">
 			<StatsView {rows} {columns} {name} />
 		</div>
 	{/if}
@@ -243,13 +246,20 @@
 
 <!-- Fullscreen overlay -->
 {#if expanded && activeConfig}
-	<div class="fixed inset-0 z-100 bg-background/95 backdrop-blur-sm flex flex-col" role="dialog" aria-modal="true">
-		<div class="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+	<div
+		class="fixed inset-0 z-100 flex flex-col bg-background/95 backdrop-blur-sm"
+		role="dialog"
+		aria-modal="true"
+	>
+		<div class="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
 			<span class="text-sm font-medium text-foreground">{activeConfig.title || name}</span>
-			<button class="h-8 w-8 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-				onclick={() => (expanded = false)} title="Close fullscreen"><X class="w-4 h-4" /></button>
+			<button
+				class="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+				onclick={() => (expanded = false)}
+				title="Close fullscreen"><X class="h-4 w-4" /></button
+			>
 		</div>
-		<div class="flex-1 min-h-0 p-6">
+		<div class="min-h-0 flex-1 p-6">
 			<ChartView {rows} {columns} config={activeConfig} />
 		</div>
 	</div>

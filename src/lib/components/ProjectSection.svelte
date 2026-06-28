@@ -91,7 +91,7 @@
 		</span>
 		{#if isDbtProject}
 			<span
-				class="shrink-0 rounded border border-success/20 bg-success/10 px-1 py-px text-[9px] font-semibold tracking-wide text-success"
+				class="shrink-0 rounded border bg-accent px-1 py-px text-[9px] font-semibold tracking-wide text-foreground"
 			>
 				dbt
 			</span>

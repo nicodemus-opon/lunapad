@@ -45,6 +45,8 @@ const UDF_OPEN_RE = /^\{%\s*udf\s*%\}\s*$/;
 const UDF_CLOSE_RE = /^\{%\s*\/udf\s*%\}\s*$/;
 const PLOT_OPEN_RE = /^\{%\s*plot\s+([^%]*?)\s*%\}\s*$/;
 const PLOT_CLOSE_RE = /^\{%\s*\/plot\s*%\}\s*$/;
+const PYTHON_OPEN_RE = /^\{%\s*python\s+([^%]*?)\s*%\}\s*$/;
+const PYTHON_CLOSE_RE = /^\{%\s*\/python\s*%\}\s*$/;
 // Forces a markdown-cell boundary that would otherwise be invisible: between two
 // adjacent markdown cells (which would silently merge into one prose blob), or
 // in place of a markdown cell whose content is empty (which would otherwise be
@@ -83,7 +85,8 @@ export type LunaEntry =
 	| LunaQueryEntry
 	| { kind: 'modelRef'; ref: string }
 	| { kind: 'udf'; udfBody: string }
-	| { kind: 'plot'; name: string; code: string };
+	| { kind: 'plot'; name: string; code: string }
+	| { kind: 'python'; name: string; code: string };
 
 export interface LunaDocument {
 	entries: LunaEntry[];
@@ -151,6 +154,7 @@ export function parseLunaFile(content: string): LunaDocument {
 		const modelMatch = line.match(MODEL_REF_RE);
 		const udfOpenMatch = line.match(UDF_OPEN_RE);
 		const plotOpenMatch = line.match(PLOT_OPEN_RE);
+		const pythonOpenMatch = line.match(PYTHON_OPEN_RE);
 
 		if (CELL_BREAK_RE.test(line)) {
 			// If there was no real prose to flush, this break marker stands for an
@@ -183,6 +187,20 @@ export function parseLunaFile(content: string): LunaDocument {
 				i++;
 			}
 			entries.push({ kind: 'plot', name: attrs.name ?? '', code: bodyLines.join('\n').trim() });
+			i++; // skip closing marker (no-op if body ran to EOF unterminated)
+			continue;
+		}
+
+		if (pythonOpenMatch) {
+			flushProse();
+			const attrs = parseAttrs(pythonOpenMatch[1]);
+			const bodyLines: string[] = [];
+			i++;
+			while (i < lines.length && !PYTHON_CLOSE_RE.test(lines[i])) {
+				bodyLines.push(lines[i]);
+				i++;
+			}
+			entries.push({ kind: 'python', name: attrs.name ?? '', code: bodyLines.join('\n').trim() });
 			i++; // skip closing marker (no-op if body ran to EOF unterminated)
 			continue;
 		}
@@ -238,7 +256,7 @@ export function parseLunaFile(content: string): LunaDocument {
 /** Minimal shape needed to serialize one cell — kept separate from the store's
  *  `Cell` type so this module has no runtime dependency on notebook.svelte.ts. */
 export interface SerializableCell {
-	cellType: 'query' | 'markdown' | 'udf' | 'plot';
+	cellType: 'query' | 'markdown' | 'udf' | 'plot' | 'python';
 	markdown: string;
 	udfBody: string;
 	outputName: string;
@@ -340,6 +358,8 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
 		} else if (cell.cellType === 'plot') {
 			blocks.push(`{% plot name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /plot %}`);
+		} else if (cell.cellType === 'python') {
+			blocks.push(`{% python name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /python %}`);
 		} else if (cell.promotedModelPath) {
 			blocks.push(`{% model ref="${cell.outputName}" /%}`);
 		} else {

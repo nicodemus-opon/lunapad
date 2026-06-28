@@ -7,8 +7,10 @@
 	import { getTheme, setTheme, getLLMConfig, setLLMConfig } from '$lib/stores/notebook.svelte';
 	import ConnectionsSettings from './ConnectionsSettings.svelte';
 	import ApiKeysSettings from './ApiKeysSettings.svelte';
+	import PythonPackagesPanel from './PythonPackagesPanel.svelte';
 	import TeamSettings from '$lib/components/TeamSettings.svelte';
 	import { toast } from 'svelte-sonner';
+	import { getProjectFolder } from '$lib/stores/notebook.svelte';
 	import {
 		Settings,
 		User,
@@ -19,10 +21,11 @@
 		Monitor,
 		Sun,
 		Moon,
-		LogOut
+		LogOut,
+		PackageSearch
 	} from '@lucide/svelte';
 
-	type SettingsTab = 'general' | 'account' | 'ai' | 'connections' | 'api-keys' | 'team';
+	type SettingsTab = 'general' | 'account' | 'ai' | 'connections' | 'api-keys' | 'python' | 'team';
 
 	interface Props {
 		open: boolean;
@@ -52,6 +55,8 @@
 	$effect(() => {
 		// Hide the admin-only tab if the dialog is opened on it without admin rights.
 		if (open && tab === 'team' && !isAdmin) tab = 'general';
+		// Python packages only make sense with a project folder open.
+		if (open && tab === 'python' && !getProjectFolder()) tab = 'general';
 	});
 
 	async function saveProfile(): Promise<void> {
@@ -101,6 +106,10 @@
 		{ id: 'ai' as const, label: 'AI', icon: Sparkles },
 		{ id: 'connections' as const, label: 'Connections', icon: Database },
 		{ id: 'api-keys' as const, label: 'API Keys', icon: KeyRound },
+		// Python cells (and their packages) only exist in filesystem/project mode.
+		...(getProjectFolder()
+			? [{ id: 'python' as const, label: 'Python', icon: PackageSearch }]
+			: []),
 		...(isAdmin ? [{ id: 'team' as const, label: 'Team', icon: ShieldUser }] : [])
 	]);
 </script>
@@ -310,6 +319,8 @@
 					<ConnectionsSettings />
 				{:else if tab === 'api-keys'}
 					<ApiKeysSettings />
+				{:else if tab === 'python'}
+					<PythonPackagesPanel />
 				{:else if tab === 'team' && isAdmin}
 					<TeamSettings />
 				{/if}

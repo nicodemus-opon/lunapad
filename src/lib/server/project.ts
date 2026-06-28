@@ -185,7 +185,11 @@ models: []
 	await Promise.all([
 		fs.writeFile(path.join(folder, 'dbt_project.yml'), dbtProjectYml, 'utf-8'),
 		fs.writeFile(path.join(folder, 'profiles.yml'), profilesYml, 'utf-8'),
-		fs.writeFile(path.join(folder, 'README.md'), `# ${name}\n\nA dbt project scaffolded by Lunapad.\n`, 'utf-8'),
+		fs.writeFile(
+			path.join(folder, 'README.md'),
+			`# ${name}\n\nA dbt project scaffolded by Lunapad.\n`,
+			'utf-8'
+		),
 		fs.writeFile(path.join(folder, 'models', 'staging', '_sources.yml'), sourcesYml, 'utf-8'),
 		fs.writeFile(path.join(folder, 'models', 'staging', '_models.yml'), stagingModelsYml, 'utf-8'),
 		fs.writeFile(path.join(folder, 'models', 'marts', '_models.yml'), martsModelsYml, 'utf-8')
@@ -236,7 +240,11 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	 * @param relDir   Relative path from project root (e.g. "models/staging").
 	 * @param parentFolderId  The folder ID of the parent, or null for top-level.
 	 */
-	async function walkDir(absDir: string, relDir: string, parentFolderId: string | null): Promise<void> {
+	async function walkDir(
+		absDir: string,
+		relDir: string,
+		parentFolderId: string | null
+	): Promise<void> {
 		let entries: import('node:fs').Dirent[];
 		try {
 			entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -255,7 +263,10 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 		// SQL files that don't have a same-named .prql file (i.e. not compiled dbt output)
 		const prqlBaseNames = new Set(prqlFiles.map((e) => e.name.replace(/\.prql$/, '')));
 		const sqlOnlyFiles = entries
-			.filter((e) => e.isFile() && e.name.endsWith('.sql') && !prqlBaseNames.has(e.name.replace(/\.sql$/, '')))
+			.filter(
+				(e) =>
+					e.isFile() && e.name.endsWith('.sql') && !prqlBaseNames.has(e.name.replace(/\.sql$/, ''))
+			)
 			.sort((a, b) => a.name.localeCompare(b.name));
 
 		// `.luna` multi-cell notebooks — the default authoring format, living
@@ -277,7 +288,13 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 			const notebookId = `${relDir}/${outputName}`;
 			const filePath = path.join(absDir, file.name);
 			try {
-				const { cell, notebookId: targetNbId } = await readCellFile(filePath, outputName, 0, folder, 'prql');
+				const { cell, notebookId: targetNbId } = await readCellFile(
+					filePath,
+					outputName,
+					0,
+					folder,
+					'prql'
+				);
 				if (targetNbId) {
 					// Secondary cell: belongs to another notebook via @notebook annotation
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
@@ -303,7 +320,13 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 			const notebookId = `${relDir}/${outputName}`;
 			const filePath = path.join(absDir, file.name);
 			try {
-				const { cell, notebookId: targetNbId } = await readCellFile(filePath, outputName, 0, folder, 'sql');
+				const { cell, notebookId: targetNbId } = await readCellFile(
+					filePath,
+					outputName,
+					0,
+					folder,
+					'sql'
+				);
 				if (targetNbId) {
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
 				} else {
@@ -328,7 +351,11 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 			const notebookId = `${relDir}/${name}`;
 			try {
 				const content = await fs.readFile(path.join(absDir, file.name), 'utf-8');
-				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder, usedOutputNames);
+				const cells = await hydrateLunaEntries(
+					parseLunaFile(content).entries,
+					folder,
+					usedOutputNames
+				);
 				notebooks.push({
 					id: notebookId,
 					name,
@@ -350,10 +377,13 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 		const ae = await fs.readdir(analysesDir, { withFileTypes: true });
 		hasAnalysesContent = ae.some(
 			(e) =>
-				(e.isFile() && (e.name.endsWith('.prql') || e.name.endsWith('.sql') || e.name.endsWith('.luna'))) ||
+				(e.isFile() &&
+					(e.name.endsWith('.prql') || e.name.endsWith('.sql') || e.name.endsWith('.luna'))) ||
 				(e.isDirectory() && !e.name.startsWith('.'))
 		);
-	} catch { /* no analyses dir */ }
+	} catch {
+		/* no analyses dir */
+	}
 
 	if (hasAnalysesContent) {
 		folders.push({ id: 'analyses', name: 'analyses', parentId: null });
@@ -439,7 +469,10 @@ async function loadMissingModelsFromManifest(
 
 		// Extract materialization from config block
 		const matMap: Record<string, 'table' | 'view' | 'incremental' | 'ephemeral'> = {
-			table: 'table', view: 'view', incremental: 'incremental', ephemeral: 'ephemeral'
+			table: 'table',
+			view: 'view',
+			incremental: 'incremental',
+			ephemeral: 'ephemeral'
 		};
 		const mat = matMap[node.config?.materialized ?? ''] ?? 'table';
 
@@ -457,7 +490,11 @@ async function loadMissingModelsFromManifest(
 			for (const seg of segments) {
 				const childId = `${currentId}/${seg}`;
 				if (!existingFolderIds.has(childId)) {
-					folders.push({ id: childId, name: seg, parentId: currentId === 'models' ? null : currentId });
+					folders.push({
+						id: childId,
+						name: seg,
+						parentId: currentId === 'models' ? null : currentId
+					});
 					existingFolderIds.add(childId);
 				}
 				currentId = childId;
@@ -476,6 +513,7 @@ async function loadMissingModelsFromManifest(
 			udfBody: '',
 			status: 'idle',
 			result: null,
+			pythonOutput: null,
 			errors: [],
 			compiledSQL: null,
 			executionMs: null,
@@ -494,6 +532,7 @@ async function loadMissingModelsFromManifest(
 			dbtSchema: node.config?.schema ?? null,
 			dbtTags: node.config?.tags ?? [],
 			promotedModelPath: null,
+			promotedSeedPath: null,
 			dbtTestStatus: 'idle',
 			dbtTestResults: [],
 			dbtTestLog: [],
@@ -544,7 +583,8 @@ async function walkNotebooksDirectory(
 	try {
 		const entries = await fs.readdir(notebooksDir, { withFileTypes: true });
 		hasContent = entries.some(
-			(e) => (e.isFile() && e.name.endsWith('.luna')) || (e.isDirectory() && !e.name.startsWith('.'))
+			(e) =>
+				(e.isFile() && e.name.endsWith('.luna')) || (e.isDirectory() && !e.name.startsWith('.'))
 		);
 	} catch {
 		return; // no notebooks dir yet
@@ -553,7 +593,11 @@ async function walkNotebooksDirectory(
 
 	folders.push({ id: 'notebooks', name: 'notebooks', parentId: null });
 
-	async function walk(absDir: string, relDir: string, parentFolderId: string | null): Promise<void> {
+	async function walk(
+		absDir: string,
+		relDir: string,
+		parentFolderId: string | null
+	): Promise<void> {
 		let entries: import('node:fs').Dirent[];
 		try {
 			entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -578,7 +622,11 @@ async function walkNotebooksDirectory(
 			const notebookId = `${relDir}/${name}`;
 			try {
 				const content = await fs.readFile(path.join(absDir, file.name), 'utf-8');
-				const cells = await hydrateLunaEntries(parseLunaFile(content).entries, folder, usedOutputNames);
+				const cells = await hydrateLunaEntries(
+					parseLunaFile(content).entries,
+					folder,
+					usedOutputNames
+				);
 				notebooks.push({
 					id: notebookId,
 					name,
@@ -660,6 +708,12 @@ async function hydrateLunaEntries(
 			cells.push(cell);
 			continue;
 		}
+		if (entry.kind === 'python') {
+			const cell = buildPythonCellFromLuna(entry.name, entry.code);
+			claimCellOutputName(usedOutputNames, cell);
+			cells.push(cell);
+			continue;
+		}
 		// modelRef: hydrate the real cell from its promoted model file. This
 		// intentionally mirrors the same outputName/id as the standalone model
 		// cell elsewhere in the project — it's the same logical model, not a
@@ -668,7 +722,13 @@ async function hydrateLunaEntries(
 		if (relPath) {
 			try {
 				const fileLanguage: CellLanguage = relPath.endsWith('.sql') ? 'sql' : 'prql';
-				const { cell } = await readCellFile(path.join(projectRoot, relPath), entry.ref, 0, projectRoot, fileLanguage);
+				const { cell } = await readCellFile(
+					path.join(projectRoot, relPath),
+					entry.ref,
+					0,
+					projectRoot,
+					fileLanguage
+				);
 				cells.push({ ...cell, promotedModelPath: relPath });
 				continue;
 			} catch {
@@ -708,6 +768,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		udfBody,
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -726,6 +787,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		dbtSchema: null,
 		dbtTags: [],
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -757,6 +819,7 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		udfBody: '',
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -775,6 +838,58 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		dbtSchema: null,
 		dbtTags: [],
 		promotedModelPath: null,
+		promotedSeedPath: null,
+		dbtTestStatus: 'idle',
+		dbtTestResults: [],
+		dbtTestLog: [],
+		scheduleEnabled: false,
+		scheduleIntervalMinutes: 60,
+		scheduleScope: 'cell',
+		scheduleStatus: 'idle',
+		scheduleLastRunAt: null,
+		scheduleNextRunAt: null,
+		scheduleLastError: null,
+		intelligence: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null
+	};
+}
+
+function buildPythonCellFromLuna(name: string, code: string): Cell {
+	return {
+		id: name || crypto.randomUUID(),
+		cellType: 'python',
+		language: 'prql',
+		connectionId: null,
+		outputName: name,
+		code,
+		markdown: '',
+		markdownPreview: false,
+		udfBody: '',
+		status: 'idle',
+		result: null,
+		pythonOutput: null,
+		errors: [],
+		compiledSQL: null,
+		executionMs: null,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		resultViewMode: 'table',
+		resultChartConfig: null,
+		display: 'full',
+		stageResultsCollapsed: [],
+		materializeMode: 'table',
+		materializeTarget: '',
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		description: null,
+		dbtSchema: null,
+		dbtTags: [],
+		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -806,6 +921,7 @@ function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 		udfBody: '',
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -824,6 +940,7 @@ function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 		dbtSchema: null,
 		dbtTags: [],
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -855,6 +972,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		udfBody: '',
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -873,6 +991,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		dbtSchema: entry.schema,
 		dbtTags: entry.tags,
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -939,6 +1058,7 @@ async function readCellFile(
 		udfBody: '',
 		status: 'idle',
 		result: null,
+		pythonOutput: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -957,6 +1077,7 @@ async function readCellFile(
 		dbtSchema: ymlSchema,
 		dbtTags: ymlTags,
 		promotedModelPath: null,
+		promotedSeedPath: null,
 		dbtTestStatus: 'idle',
 		dbtTestResults: [],
 		dbtTestLog: [],
@@ -1016,11 +1137,7 @@ export async function writeCellFile(
  */
 export async function writeNotebookMeta(dirPath: string, meta: NotebookMeta): Promise<void> {
 	await fs.mkdir(dirPath, { recursive: true });
-	await fs.writeFile(
-		path.join(dirPath, '.lunapad.json'),
-		JSON.stringify(meta, null, 2),
-		'utf-8'
-	);
+	await fs.writeFile(path.join(dirPath, '.lunapad.json'), JSON.stringify(meta, null, 2), 'utf-8');
 }
 
 /**
@@ -1031,7 +1148,11 @@ export async function deleteCellFile(filePath: string): Promise<void> {
 	await fs.unlink(filePath);
 	// Remove companion compiled .sql so dbt doesn't see a ghost model
 	if (filePath.endsWith('.prql')) {
-		try { await fs.unlink(filePath.replace(/\.prql$/, '.sql')); } catch { /* no companion */ }
+		try {
+			await fs.unlink(filePath.replace(/\.prql$/, '.sql'));
+		} catch {
+			/* no companion */
+		}
 	}
 	// Remove parent dir if now empty (ignoring .lunapad.json)
 	const dir = path.dirname(filePath);
@@ -1062,7 +1183,11 @@ export async function renameCellFile(oldPath: string, newPath: string): Promise<
 	if (oldPath.endsWith('.prql') && newPath.endsWith('.prql')) {
 		const oldSql = oldPath.replace(/\.prql$/, '.sql');
 		const newSql = newPath.replace(/\.prql$/, '.sql');
-		try { await fs.rename(oldSql, newSql); } catch { /* no companion */ }
+		try {
+			await fs.rename(oldSql, newSql);
+		} catch {
+			/* no companion */
+		}
 	}
 }
 

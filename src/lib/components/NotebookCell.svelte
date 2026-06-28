@@ -13,6 +13,7 @@
 	import InlineResultView from './InlineResultView.svelte';
 	import MaterializeDialog from './MaterializeDialog.svelte';
 	import PromoteDialog from './PromoteDialog.svelte';
+	import PromoteSeedDialog from './PromoteSeedDialog.svelte';
 	import {
 		prqlToGuiStages,
 		extractLetBindings,
@@ -50,6 +51,8 @@
 		updateCellUdfBody,
 		updatePlotCellCode,
 		runPlotCell,
+		updatePythonCellCode,
+		runPythonCell,
 		setCellMarkdownPreview,
 		duplicateCell,
 		copyCellToClipboard,
@@ -76,6 +79,7 @@
 	import { buildSandboxGlobalsDts } from '$lib/services/plot-cell';
 	import { PLOT_TEMPLATES } from '$lib/services/plot-templates';
 	import PlotCellOutput from './PlotCellOutput.svelte';
+	import PythonCellOutput from './PythonCellOutput.svelte';
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
@@ -150,6 +154,7 @@
 	let menuOpen = $state(false);
 	let materializeDialogOpen = $state(false);
 	let promoteDialogOpen = $state(false);
+	let promoteSeedDialogOpen = $state(false);
 	// Portaled popovers (status chips, refs, errors) take focus outside the cell
 	// element; keep the cell chrome revealed while any of them is open.
 	let overlayCount = $state(0);
@@ -174,6 +179,7 @@
 	const isUdfCell = $derived(cell.cellType === 'udf');
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	const isPlotCell = $derived(cell.cellType === 'plot');
+	const isPythonCell = $derived(cell.cellType === 'python');
 	const plotDeps = $derived(
 		isPlotCell
 			? resolvePlotDataRefs(
@@ -849,7 +855,7 @@
 	);
 
 	const hasStatusLine = $derived(
-		isQueryCell &&
+		(isQueryCell || isPythonCell) &&
 			!collapsed &&
 			!reportView &&
 			(showResult ||
@@ -891,13 +897,13 @@
 			<div></div>
 		{:else}
 			<CellGutter
-				{isQueryCell}
+				isQueryCell={isQueryCell || isPythonCell}
 				{revealed}
 				status={cell.status}
 				needsRun={cell.needsRun}
 				{running}
 				runTooltip={runTooltipText}
-				onRun={() => runCell(cell.id)}
+				onRun={() => (isPythonCell ? runPythonCell(cell.id) : runCell(cell.id))}
 				onCancel={() => cancelCell(cell.id)}
 			>
 				{#snippet menu()}
@@ -905,6 +911,7 @@
 						{cell}
 						{notebookId}
 						{isQueryCell}
+						{isPythonCell}
 						{isFirst}
 						{isLast}
 						{isDbtProject}
@@ -914,6 +921,7 @@
 						bind:open={menuOpen}
 						onOpenMaterialize={() => (materializeDialogOpen = true)}
 						onOpenPromote={() => (promoteDialogOpen = true)}
+						onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
 						onRunTests={() => void testCell(cell.id)}
 					/>
 				{/snippet}
@@ -984,7 +992,21 @@
 								/>
 								<p class="mt-1 text-2xs text-muted-foreground">
 									Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
-									<code>return Plot.plot(...)</code>.
+									<code>return {'{ data: [...], layout: {...} }'}</code>.
+								</p>
+							{:else if isPythonCell}
+								<Editor
+									bind:this={editorRef}
+									code={cell.code}
+									errors={cell.errors}
+									language="python"
+									{dark}
+									onchange={(c) => updatePythonCellCode(cell.id, c)}
+								/>
+								<p class="mt-1 text-2xs text-muted-foreground">
+									Reference upstream cells by name — they're already DataFrames. End the cell
+									with a bare expression (like Jupyter), or assign to <code>result</code> or
+									<code>fig</code>, to surface a table or Plotly chart.
 								</p>
 							{:else if !isQueryCell}
 								<div class="group/markdown relative">
@@ -1114,6 +1136,15 @@
 						</div>
 					{/if}
 
+					<!-- Python cell output: stdout + captured Plotly figures + traceback.
+					     The resulting DataFrame (if any) renders below via the shared
+					     Results block, same InlineResultView every other cell type uses. -->
+					{#if isPythonCell && cell.pythonOutput}
+						<div in:fade={{ duration: 220 }}>
+							<PythonCellOutput output={cell.pythonOutput} />
+						</div>
+					{/if}
+
 					<!-- Results -->
 					{#if cell.result && (cell.status === 'success' || cell.status === 'running')}
 						<div
@@ -1215,6 +1246,7 @@
 	{#if isQueryCell}
 		<MaterializeDialog bind:open={materializeDialogOpen} {cell} {isDbtProject} />
 		<PromoteDialog bind:open={promoteDialogOpen} {cell} />
+		<PromoteSeedDialog bind:open={promoteSeedDialogOpen} {cell} />
 	{/if}
 	<CellModeSwitchDialogs
 		bind:confirmSwitchToGui
@@ -1303,19 +1335,23 @@
 		max-width: 100%;
 		border-radius: 0.25rem;
 	}
-	.markdown-body :global(table) {
+	/* :not([data-slot]) excludes tables rendered by the shared ui/table components
+	   (used for Markdoc-parsed pipe tables), which bring their own Tailwind styling
+	   and shouldn't be double-styled by these rules — only the legacy `marked`-rendered
+	   raw HTML table path (non-Markdoc prose cells) needs them. */
+	.markdown-body :global(table:not([data-slot])) {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 0.85em;
 		margin: 0 0 0.5rem;
 	}
-	.markdown-body :global(th),
-	.markdown-body :global(td) {
+	.markdown-body :global(th:not([data-slot])),
+	.markdown-body :global(td:not([data-slot])) {
 		padding: 0.3rem 0.6rem;
 		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 		text-align: left;
 	}
-	.markdown-body :global(th) {
+	.markdown-body :global(th:not([data-slot])) {
 		font-weight: 600;
 		background: color-mix(in oklch, currentColor 4%, transparent);
 	}
