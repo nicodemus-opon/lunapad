@@ -10,6 +10,8 @@ import type {
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
+import { selectSchemaForPrompt, resolveExternalSchema } from '$lib/server/ai-schema-context.js';
+import { DEFAULT_SCHEMA_TOKEN_BUDGET, SMALL_MODEL_SCHEMA_TOKEN_BUDGET } from '$lib/services/token-budget.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -61,28 +63,12 @@ function extractTableRefs(code: string): Set<string> {
 	return refs;
 }
 
-function prioritizeSchema(
-	schema: AIChatSchemaTable[],
-	cells: AIChatCell[],
-	maxTables: number,
-	maxCols: number
-): AIChatSchemaTable[] {
+function activeTableNamesFromCells(cells: AIChatCell[]): Set<string> {
 	const activeTables = new Set<string>();
 	for (const c of cells) {
 		for (const ref of extractTableRefs(c.code)) activeTables.add(ref);
 	}
-	return [...schema]
-		.sort((a, b) => {
-			const aHit = activeTables.has(a.name.toLowerCase()) ? 1 : 0;
-			const bHit = activeTables.has(b.name.toLowerCase()) ? 1 : 0;
-			return bHit - aHit;
-		})
-		.slice(0, maxTables)
-		.map((t) => ({
-			...t,
-			columns: t.columns.slice(0, maxCols),
-			columnTypes: t.columnTypes?.slice(0, maxCols)
-		}));
+	return activeTables;
 }
 
 function buildDialectSection(dialect: string): string {
@@ -124,8 +110,10 @@ function buildSystemPromptOllama(
 ): string {
 	const cellList = cells.length > 0 ? cells.map(formatCellGraph).join(', ') : 'none';
 
-	// Prioritize schema tables referenced by active cells; truncate more aggressively for small models
-	const prioritizedSchema = prioritizeSchema(schema, cells, isSmall ? 10 : 20, isSmall ? 8 : 15);
+	// `schema` arrives already selected/token-budgeted by `selectSchemaForPrompt` (called once,
+	// in POST, before branching into whichever prompt builder is needed) — no further
+	// truncation here.
+	const prioritizedSchema = schema;
 	const schemaList =
 		prioritizedSchema.length > 0
 			? prioritizedSchema
@@ -249,7 +237,7 @@ RULES:
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
 16. DOCUMENT YOUR WORK: after cells run clean, always write a markdown findings cell (cellType:"markdown", outputName:"findings") summarising what was built, data quality notes, and key decisions.
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
-17. RECORD DECISIONS: after confirming a primary key, join key, grain, or business rule, call record_decision. Re-injected in all future turns — you will never need to re-investigate it.
+17. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
 
 You MAY write 1–2 sentences of explanation before tool calls.
 
@@ -328,13 +316,13 @@ function buildSystemPromptXML(
 					.join('\n')
 			: '  (none)';
 
+	// `schema` arrives already selected/token-budgeted by `selectSchemaForPrompt` — no further
+	// positional truncation here.
 	const schemaList =
 		schema.length > 0
 			? schema
-					.slice(0, 30)
 					.map((t) => {
 						const colList = t.columns
-							.slice(0, 15)
 							.map((col) => (col.includes(' ') ? `"${col}"` : col))
 							.join(', ');
 						const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
@@ -357,10 +345,11 @@ function buildSystemPromptXML(
 					.map(([k, v]) => `- ${k}: ${v}`)
 					.join('\n')
 			: '';
-	// #3 — Modeling decisions recorded via record_decision this session
+	// #3 — Decisions/discoveries recorded via record_decision (this session, plus the most
+	// recent ones persisted to disk from prior sessions when a project folder is open)
 	const planSection =
 		sessionPlanContext && sessionPlanContext.length > 0
-			? '\n\n## Established modeling decisions (do not re-investigate)\n' +
+			? '\n\n## Established decisions & discoveries (do not re-investigate)\n' +
 				sessionPlanContext.map((d, i) => `${i + 1}. ${d}`).join('\n')
 			: '';
 	// #9 — Schema-change warning
@@ -467,9 +456,9 @@ ${buildMarkdocSyntaxBlock()}
 ## Tools (lookup — use before building or modifying cells)
 - get_lineage: {outputName:string} — upstream/downstream deps
 - list_cells: {} — full inventory of existing models (use in Step 1)
-- search_workspace: {query:string} — semantic search; returns full SQL code for matched cells (use in Step 1 to find reusable models)
+- search_workspace: {query:string} — semantic search; returns full SQL code for matched cells, plus relevant past decisions/discoveries recorded via record_decision (use in Step 1 to find reusable models AND check what's already been decided)
 - get_cell_result: {cellId:string, limit?:number} — read an already-run cell's result data without re-querying. Use when explaining results or charting existing data.
-- **record_decision: {decision:string}** — record a modeling decision that persists across turns. Call after confirming a primary key, join key, grain, business rule, or data quality fix. Prevents re-investigating already-resolved questions in later turns.
+- **record_decision: {decision:string, type?:"decision"|"discovery"}** — record a modeling decision or notable data discovery that persists across turns AND across future sessions (written to disk). Call after confirming a primary key, join key, grain, business rule, or data quality fix (type: "decision"); call for a surprising data fact too (type: "discovery"). Prevents re-investigating already-resolved questions in later turns or later sessions.
 
 ## Graph notation
 depends_on=[x] = reads FROM x. feeds_into=[x] = x reads FROM this. [HIGH IMPACT] = cell has 3+ dependents — be conservative when modifying.
@@ -515,12 +504,12 @@ function buildSubagentSystemPrompt(
 					.join('\n')
 			: '  (none)';
 
+	// `schema` arrives already selected/token-budgeted by `selectSchemaForPrompt` — no further
+	// positional truncation here.
 	const schemaList =
 		schema
-			.slice(0, 20)
 			.map((t) => {
 				const cols = t.columns
-					.slice(0, 15)
 					.map((col) => (col.includes(' ') ? `"${col}"` : col))
 					.join(', ');
 				const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
@@ -1143,14 +1132,19 @@ const NATIVE_TOOLS = [
 		function: {
 			name: 'record_decision',
 			description:
-				'Record a modeling decision that should persist across turns. Call when you resolve something non-obvious: confirmed primary key, join key, grain choice, data quality issue fixed, business rule applied. These are re-injected in every subsequent turn so you never re-investigate a resolved question.',
+				'Record a modeling decision OR a notable data discovery that should persist across turns and across future sessions (written to disk, not just this conversation). Call when you resolve something non-obvious: confirmed primary key, join key, grain choice, data quality issue fixed, business rule applied (type: "decision") — or when you notice an unexpected fact about the data: a surprising null rate, an unusual cardinality, a gotcha future queries should account for (type: "discovery"). Persisted entries are also retrievable later via search_workspace, so this is worth calling even for things that won\'t matter again this turn.',
 			parameters: {
 				type: 'object',
 				properties: {
 					decision: {
 						type: 'string',
 						description:
-							'Concise statement of what was decided and why (e.g. "treating email as FK to customers — id not present in source").'
+							'Concise statement of what was decided/discovered and why (e.g. "treating email as FK to customers — id not present in source").'
+					},
+					type: {
+						type: 'string',
+						enum: ['decision', 'discovery'],
+						description: 'Defaults to "decision" when omitted.'
 					}
 				},
 				required: ['decision']
@@ -1713,11 +1707,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	const {
 		cells,
 		connectionSchema,
+		externalConnectionIds = [],
+		externalSchemaFallback = [],
 		connectionDialect = 'duckdb',
 		pythonAvailable = false
 	} = req.notebookContext ?? {
 		cells: [],
 		connectionSchema: [],
+		externalConnectionIds: [],
+		externalSchemaFallback: [],
 		connectionDialect: 'duckdb' as const,
 		pythonAvailable: false
 	};
@@ -1739,11 +1737,31 @@ export const POST: RequestHandler = async ({ request }) => {
 	const sessionPlanContext = req.sessionPlanContext;
 	const workspaceContract = req.workspaceContract;
 	const schemaChangeNote = req.schemaChangeNote;
+
+	// Two-stage retrieval over the external warehouse catalog (resolveExternalSchema), then one
+	// unified, token-budgeted selection pass over local + external tables together
+	// (selectSchemaForPrompt) — replaces what used to be four independent, inconsistent
+	// truncation implementations scattered across this file and prompt-stage-plan/+server.ts.
+	const latestUserMessage = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+	const resolvedExternalSchema = await resolveExternalSchema({
+		connectionIds: externalConnectionIds,
+		userQuery: latestUserMessage,
+		fallback: externalSchemaFallback
+	});
+	const schema = selectSchemaForPrompt({
+		query: latestUserMessage,
+		tables: [...connectionSchema, ...resolvedExternalSchema],
+		tokenBudget: isSmall ? SMALL_MODEL_SCHEMA_TOKEN_BUDGET : DEFAULT_SCHEMA_TOKEN_BUDGET,
+		maxTables: isSmall ? 10 : 40,
+		maxColumnsPerTable: isSmall ? 8 : 15,
+		activeTableNames: activeTableNamesFromCells(cells)
+	});
+
 	const systemPrompt = req.subagentType
 		? buildSubagentSystemPrompt(
 				req.subagentType,
 				cells,
-				connectionSchema,
+				schema,
 				sessionDataContext,
 				workspaceContract,
 				sessionPlanContext,
@@ -1754,7 +1772,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		: isOllama
 			? buildSystemPromptOllama(
 					cells,
-					connectionSchema,
+					schema,
 					workspaceMemory,
 					sessionDataContext,
 					useNativeTools,
@@ -1767,7 +1785,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				)
 			: buildSystemPromptXML(
 					cells,
-					connectionSchema,
+					schema,
 					workspaceMemory,
 					sessionDataContext,
 					workspaceContract,

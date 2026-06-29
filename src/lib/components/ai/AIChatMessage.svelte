@@ -4,6 +4,7 @@
 	import { getCells } from '$lib/stores/notebook.svelte.js';
 	import { renderMarkdocCell } from '$lib/services/markdoc-interp.js';
 	import MarkdocRenderer from '$lib/components/markdown/MarkdocRenderer.svelte';
+	import DiffView from '$lib/components/ai/DiffView.svelte';
 
 	interface Props {
 		message: ChatMessage;
@@ -61,25 +62,6 @@
 		if (dashboards) parts.push(`${dashboards} dashboard block${dashboards === 1 ? '' : 's'}`);
 		if (runs) parts.push(`${runs} run${runs === 1 ? '' : 's'}`);
 		return parts.join(' · ') || 'Actions taken';
-	}
-
-	/** Compute a simple line-level diff between old and new code for display. */
-	function buildDiff(oldCode: string, newCode: string): Array<{ kind: 'same' | 'removed' | 'added'; line: string }> {
-		const oldLines = oldCode.split('\n');
-		const newLines = newCode.split('\n');
-		const result: Array<{ kind: 'same' | 'removed' | 'added'; line: string }> = [];
-		const maxLen = Math.max(oldLines.length, newLines.length);
-		for (let i = 0; i < maxLen; i++) {
-			const o = oldLines[i];
-			const n = newLines[i];
-			if (o === n) {
-				result.push({ kind: 'same', line: o ?? '' });
-			} else {
-				if (o !== undefined) result.push({ kind: 'removed', line: o });
-				if (n !== undefined) result.push({ kind: 'added', line: n });
-			}
-		}
-		return result;
 	}
 
 	// Auto-expand activity during streaming so user can see live progress
@@ -215,17 +197,7 @@
 									</button>
 									{#if isExpanded}
 										{#if hasDiff}
-											<div class="border-t border-border/20 font-mono text-2xs overflow-x-auto">
-												{#each buildDiff(ev.oldCode!, ev.newCode!) as line}
-													{#if line.kind === 'same'}
-														<div class="px-2.5 py-px text-foreground/40 whitespace-pre">{line.line}</div>
-													{:else if line.kind === 'removed'}
-														<div class="bg-destructive/8 px-2.5 py-px text-destructive/70 whitespace-pre">- {line.line}</div>
-													{:else}
-														<div class="bg-success/8 px-2.5 py-px text-success/80 whitespace-pre">+ {line.line}</div>
-													{/if}
-												{/each}
-											</div>
+											<DiffView class="border-t border-border/20" oldCode={ev.oldCode!} newCode={ev.newCode!} />
 										{:else}
 											<div class="border-t border-border/20 px-2.5 py-1.5 font-mono text-2xs overflow-x-auto whitespace-pre text-foreground/60">
 												{ev.preview}

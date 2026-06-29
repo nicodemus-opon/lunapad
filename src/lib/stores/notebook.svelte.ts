@@ -227,6 +227,10 @@ export interface ExternalSchemaTable {
 	schema?: string;
 	columns: string[];
 	columnTypes: string[];
+	/** Table-level comment, when the underlying catalog/dbt project exposes one. */
+	description?: string;
+	/** Parallel to `columns` — column-level comments, when available. */
+	columnDescriptions?: string[];
 }
 
 export interface Notebook {
@@ -5045,7 +5049,14 @@ export async function setConnectionSecret(
 export function setExternalConnectionSchema(
 	connectionId: string,
 	connectionName: string,
-	tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }>
+	tables: Array<{
+		name: string;
+		schema?: string;
+		columns: string[];
+		columnTypes: string[];
+		description?: string;
+		columnDescriptions?: string[];
+	}>
 ): void {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
 	const normalizedTables: ExternalSchemaTable[] = tables.map((table) => ({
@@ -5054,13 +5065,31 @@ export function setExternalConnectionSchema(
 		name: table.name,
 		schema: table.schema,
 		columns: table.columns,
-		columnTypes: table.columnTypes
+		columnTypes: table.columnTypes,
+		description: table.description,
+		columnDescriptions: table.columnDescriptions
 	}));
 	state.externalSchemaTables = [
 		...state.externalSchemaTables.filter((table) => table.connectionId !== connectionId),
 		...normalizedTables
 	];
 	scheduleSave();
+	// Best-effort background backfill of the schema-embedding index used for catalog-scale
+	// retrieval (Postgres+Ollama-backed, full-mode only — no-op/silent if unavailable).
+	void fetch('/api/ai/embed-schema', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			connectionId,
+			projectFolder: state.projectFolder,
+			tables: normalizedTables.map((t) => ({
+				tableName: t.schema ? `${t.schema}.${t.name}` : t.name,
+				columnNames: t.columns.join(', '),
+				columnTypes: t.columnTypes.join(', '),
+				description: t.description
+			}))
+		})
+	}).catch(() => {});
 	if (state.autoRun) {
 		markCellsForConnectionStale(connectionId);
 		void runAllStale();

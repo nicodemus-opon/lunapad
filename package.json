@@ -71,6 +71,7 @@
 		"better-auth": "^1.6.20",
 		"croner": "^10.0.1",
 		"dompurify": "^3.4.10",
+		"gpt-tokenizer": "^3.4.0",
 		"inngest": "^4.5.0",
 		"marked": "^18.0.4",
 		"monaco-editor": "^0.55.1",

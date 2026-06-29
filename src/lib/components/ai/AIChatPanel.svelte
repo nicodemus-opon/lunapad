@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { X, Sparkles, RotateCcw, SlidersHorizontal } from '@lucide/svelte';
+	import { X, Sparkles, RotateCcw, SlidersHorizontal, Loader } from '@lucide/svelte';
 	import AIChatThread from './AIChatThread.svelte';
 	import AIChatInput from './AIChatInput.svelte';
 	import WorkspaceStandards from './WorkspaceStandards.svelte';
 	import SprintBoard from './SprintBoard.svelte';
+	import PipelinePhaseStepper from './PipelinePhaseStepper.svelte';
 	import { SPRINT_TASK_STYLE } from './sprint-task-style.js';
-	import { setAIChatOpen, getUndoAvailable, clearMessages, getMessages, getCheckpointCount, getConfirmationRequest, resolveConfirmation, getPendingPlanProposal, resolvePlanApproval, setUndoAvailable, setPendingSnapshot, getSprintTasks, setSprintTasks, isSprintPlanPendingApproval, resolveSprintPlanApproval } from '$lib/stores/ai-chat.svelte.js';
+	import { setAIChatOpen, getUndoAvailable, clearMessages, getMessages, getCheckpointCount, getConfirmationRequest, resolveConfirmation, getPendingPlanProposal, resolvePlanApproval, setUndoAvailable, setPendingSnapshot, getSprintTasks, setSprintTasks, isSprintPlanPendingApproval, resolveSprintPlanApproval, getPipelinePhases, getIsGenerating, getCurrentActivityLabel } from '$lib/stores/ai-chat.svelte.js';
 	import { undoAIChanges, undoLastAIStep, resetAISession } from '$lib/services/ai-chat-client.js';
 
 	interface Props {
@@ -22,6 +23,9 @@
 	let messageCount = $derived(getMessages().length);
 	let sprintTasks = $derived(getSprintTasks());
 	let sprintPlanPending = $derived(isSprintPlanPendingApproval());
+	let pipelinePhases = $derived(getPipelinePhases());
+	let isGenerating = $derived(getIsGenerating());
+	let activityLabel = $derived(getCurrentActivityLabel());
 	let sprintFeedback = $state('');
 	let standardsOpen = $state(false);
 </script>
@@ -110,6 +114,17 @@
 					Looks good — build it
 				</button>
 			</div>
+		</div>
+	{/if}
+
+	<!-- Pipeline phase stepper — visible while the creation-intent subagent pipeline runs -->
+	{#if pipelinePhases.length > 0}
+		<PipelinePhaseStepper phases={pipelinePhases} />
+	{:else if isGenerating && sprintTasks.length === 0 && activityLabel}
+		<!-- Generic activity fallback — debug/dashboard/investigation loops have no phase
+		     list of their own, so without this the panel can look frozen mid-turn. -->
+		<div class="border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[11px] text-muted-foreground" data-testid="ai-activity-bar">
+			<Loader size={11} class="mr-1.5 inline animate-spin text-primary" />{activityLabel}
 		</div>
 	{/if}
 

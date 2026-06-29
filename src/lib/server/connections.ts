@@ -46,6 +46,10 @@ interface SchemaTable {
 	schema?: string;
 	columns: string[];
 	columnTypes: string[];
+	/** Table-level comment, when the underlying catalog exposes one (currently Postgres/ClickHouse only). */
+	description?: string;
+	/** Parallel to `columns` — column-level comments, when available. */
+	columnDescriptions?: string[];
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -659,6 +663,72 @@ export async function queryExternalConnection(
 	}
 }
 
+// ── Best-effort table/column comment enrichment ───────────────────────────────
+// Every external connection routes through Trino — there is no native per-connector driver
+// code path in this file, only `trinoRequest`. Comment/description support is not part of the
+// standard `information_schema` columns Trino implements, so for the two connector types where
+// it matters most we issue a second, best-effort query via the JDBC passthrough table function
+// (`<catalog>.system.query(query => '...')`, supported by Trino's postgresql/clickhouse
+// connectors) against the underlying catalog's own comment-bearing system tables. A failure
+// here (unsupported Trino version, connector without passthrough, permissions) must never
+// break schema fetch itself — callers depend on this for live "refresh schema" UX.
+//
+// TODO(RAG-followup): the other 12 ConnectionType variants (mysql/mariadb/sqlserver/oracle/
+// redshift/snowflake/singlestore have their own comment-catalog dialect and are reasonable,
+// symmetric follow-up work; cassandra/gsheets/mongodb/elasticsearch likely have no meaningful
+// "column comment" concept at all) are intentionally not covered here.
+
+interface CatalogComment {
+	schema: string;
+	table: string;
+	/** Null for a table-level comment, set for a column-level comment. */
+	column: string | null;
+	comment: string;
+}
+
+function buildCommentPassthroughQuery(connectionType: 'postgres' | 'clickhouse'): string {
+	if (connectionType === 'postgres') {
+		return `SELECT n.nspname AS table_schem, c.relname AS table_name, a.attname AS column_name, d.description AS comment
+			FROM pg_description d
+			JOIN pg_class c ON d.objoid = c.oid
+			JOIN pg_namespace n ON c.relnamespace = n.oid
+			LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.objsubid AND d.objsubid > 0
+			WHERE d.description IS NOT NULL AND d.description != ''`;
+	}
+	return `SELECT database AS table_schem, table AS table_name, name AS column_name, comment
+		FROM system.columns
+		WHERE comment != ''
+		UNION ALL
+		SELECT database AS table_schem, table AS table_name, NULL AS column_name, comment
+		FROM system.tables
+		WHERE comment != ''`;
+}
+
+async function fetchCatalogComments(
+	connection: Exclude<Connection, DuckDBWASMConnection>,
+	catalogName: string,
+	connSchema: string
+): Promise<CatalogComment[]> {
+	if (connection.type !== 'postgres' && connection.type !== 'clickhouse') return [];
+	try {
+		const passthroughSql = buildCommentPassthroughQuery(connection.type);
+		const wrapped = `SELECT * FROM TABLE(${quoteTrinoIdent(catalogName)}.system.query(query => ${quoteLiteral(passthroughSql)}))`;
+		const result = await trinoRequest(wrapped, catalogName, connSchema);
+		return result.rows
+			.map((row) => ({
+				schema: String(row.table_schem ?? ''),
+				table: String(row.table_name ?? ''),
+				column: row.column_name == null ? null : String(row.column_name),
+				comment: String(row.comment ?? '')
+			}))
+			.filter((c) => c.table && c.comment);
+	} catch {
+		// Best-effort only — missing passthrough support, an older Trino version, or
+		// insufficient permissions must not break schema fetch.
+		return [];
+	}
+}
+
 export async function fetchExternalConnectionSchema(
 	connection: Connection,
 	secret?: ConnectionSecret
@@ -714,6 +784,25 @@ export async function fetchExternalConnectionSchema(
 			columns: [column],
 			columnTypes: [type]
 		});
+	}
+
+	const comments = await fetchCatalogComments(
+		connection as Exclude<Connection, DuckDBWASMConnection>,
+		catalogName,
+		connSchema
+	);
+	for (const c of comments) {
+		const key = `${c.schema}.${c.table}`;
+		const t = tables.get(key);
+		if (!t) continue;
+		if (c.column === null) {
+			t.description = c.comment;
+		} else {
+			const colIdx = t.columns.indexOf(c.column);
+			if (colIdx === -1) continue;
+			if (!t.columnDescriptions) t.columnDescriptions = new Array(t.columns.length).fill(undefined);
+			t.columnDescriptions[colIdx] = c.comment;
+		}
 	}
 
 	return { tables: [...tables.values()] };

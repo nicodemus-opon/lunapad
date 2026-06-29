@@ -1,5 +1,5 @@
 import type { CellSnapshot } from './notebook.svelte.js';
-import type { WorkspaceNamingRule, SprintTask } from '$lib/types/ai-chat.js';
+import type { WorkspaceNamingRule, SprintTask, PipelinePhase } from '$lib/types/ai-chat.js';
 import type { PlanAssertion } from '$lib/types/ai-subagents.js';
 
 export interface WorkspaceStandards {
@@ -95,6 +95,16 @@ let _confirmationRequest = $state<{ cellCount: number; resolve: (proceed: boolea
 let _pendingPlanProposal = $state<{ models: Array<{ name: string; grain: string; source?: string; depends_on?: string[]; type?: string }>; note?: string; assertions?: PlanAssertion[] } | null>(null);
 let _planProposalResolve = $state<((proceed: boolean) => void) | null>(null);
 
+// Rolling history-summary cache (Improvement: token-budgeted history) — `atMessageCount` is the
+// total message count (`allMsgs.length` in ai-chat-client.ts buildRequest) at the time the
+// summary was generated; buildRequest treats the cache as stale once the conversation has grown
+// past that point and kicks off a background refresh, but still uses the (slightly stale) cached
+// text for the current turn rather than going without — better than nothing.
+let _historySummaryCache = $state<{ atMessageCount: number; summary: string } | null>(null);
+
+// Pipeline phases — populated by runSubagentPipeline (creation intent), shown as a stepper
+let _pipelinePhases = $state<PipelinePhase[]>([]);
+
 // Sprint tasks — populated by sprint_planning subagent, updated as tasks execute
 let _sprintTasks = $state<SprintTask[]>([]);
 // Sprint plan approval gate — resolves null (start building) or string (refinement feedback)
@@ -121,6 +131,13 @@ export function setAIChatPanelWidth(w: number): void {
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 export function getMessages(): ChatMessage[] { return _messages; }
+
+export function getHistorySummaryCache(): { atMessageCount: number; summary: string } | null {
+	return _historySummaryCache;
+}
+export function setHistorySummaryCache(cache: { atMessageCount: number; summary: string } | null): void {
+	_historySummaryCache = cache;
+}
 
 export function appendMessage(msg: Omit<ChatMessage, 'id' | 'createdAt'> & { id?: string }): ChatMessage {
 	const full: ChatMessage = { id: makeId(), createdAt: Date.now(), ...msg };
@@ -165,7 +182,13 @@ export function setMessageError(id: string): void {
 	_messages = _messages.map((m) => m.id === id ? { ...m, hasError: true } : m);
 }
 
-export function clearMessages(): void { _messages = []; _sprintTasks = []; _currentActivityLabel = null; }
+export function clearMessages(): void {
+	_messages = [];
+	_sprintTasks = [];
+	_pipelinePhases = [];
+	_currentActivityLabel = null;
+	_historySummaryCache = null;
+}
 
 // ── Generation state ──────────────────────────────────────────────────────────
 
@@ -185,6 +208,7 @@ export function abortGeneration(): void {
 	_currentActivityLabel = null;
 	// Clear all ghost markers on abort
 	_ghostCellIds = new Set();
+	_pipelinePhases = [];
 	// Mark any streaming message as stopped so a halted partial answer is clearly
 	// distinguishable from a completed one.
 	_messages = _messages.map((m) => m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m);
@@ -330,6 +354,18 @@ export function setWorkspaceStandards(s: WorkspaceStandards): void {
 		localStorage.setItem(WORKSPACE_STANDARDS_KEY, JSON.stringify(s));
 	}
 }
+
+// ── Pipeline phases ───────────────────────────────────────────────────────────
+
+export function getPipelinePhases(): PipelinePhase[] { return _pipelinePhases; }
+
+export function setPipelinePhases(phases: PipelinePhase[]): void { _pipelinePhases = phases; }
+
+export function updatePipelinePhase(id: PipelinePhase['id'], patch: Partial<PipelinePhase>): void {
+	_pipelinePhases = _pipelinePhases.map((p) => p.id === id ? { ...p, ...patch } : p);
+}
+
+export function clearPipelinePhases(): void { _pipelinePhases = []; }
 
 // ── Sprint tasks ──────────────────────────────────────────────────────────────
 

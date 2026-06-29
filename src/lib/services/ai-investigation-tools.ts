@@ -240,12 +240,13 @@ export async function executeInvestigationTool(
 					const res = await fetch('/api/ai/search', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ query })
+						body: JSON.stringify({ query, folder: getProjectFolder() ?? undefined })
 					});
 					if (!res.ok) throw new Error(`search failed: ${res.status}`);
 					const data = (await res.json()) as {
 						cells: Array<{ output_name: string; code_snippet: string; similarity: number }>;
 						tables: Array<{ table_name: string; column_names: string; similarity: number }>;
+						memories?: Array<{ slug: string; description: string; type: string; similarity: number }>;
 					};
 					const cellLines = data.cells.map((c) =>
 						c.code_snippet?.trim()
@@ -253,11 +254,15 @@ export async function executeInvestigationTool(
 							: `\`${c.output_name}\` (${(c.similarity * 100).toFixed(0)}% match)`
 					);
 					const tableLines = data.tables.map((t) => `- \`${t.table_name}\`: ${t.column_names}`);
+					const memoryLines = (data.memories ?? []).map(
+						(m) => `- (${m.type}) ${m.description}`
+					);
 					const text =
 						`Search "${query}":\n` +
 						(cellLines.length ? `Relevant cells:\n${cellLines.join('\n\n')}\n` : '') +
 						(tableLines.length ? `Relevant tables:\n${tableLines.join('\n')}\n` : '') +
-						(!cellLines.length && !tableLines.length ? 'No matches found.\n' : '');
+						(memoryLines.length ? `Relevant past decisions/discoveries:\n${memoryLines.join('\n')}\n` : '') +
+						(!cellLines.length && !tableLines.length && !memoryLines.length ? 'No matches found.\n' : '');
 					return { text, label: `Searched "${query}"` };
 				} catch {
 					return {

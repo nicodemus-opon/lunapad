@@ -4,7 +4,7 @@ import { query } from './db.js';
 const EMBED_MODEL = 'nomic-embed-text';
 const EMBED_DIM = 768;
 
-function getOllamaBaseUrl(): string {
+export function getOllamaBaseUrl(): string {
 	return (process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434').replace(/\/$/, '');
 }
 
@@ -54,9 +54,29 @@ export async function ensureEmbeddingTables(): Promise<void> {
 				UNIQUE(connection_id, table_name)
 			)
 		`);
+		// Migration for tables created in the dead-code era (before content_hash/column_types
+		// existed) — IF NOT EXISTS makes this a no-op on fresh installs.
+		await query(`ALTER TABLE schema_embeddings ADD COLUMN IF NOT EXISTS content_hash TEXT`);
+		await query(`ALTER TABLE schema_embeddings ADD COLUMN IF NOT EXISTS column_types TEXT`);
 		await query(`
 			CREATE INDEX IF NOT EXISTS schema_embeddings_hnsw_idx
 			ON schema_embeddings USING hnsw (embedding vector_cosine_ops)
+		`);
+		await query(`
+			CREATE TABLE IF NOT EXISTS memory_embeddings (
+				id           SERIAL PRIMARY KEY,
+				folder       TEXT NOT NULL,
+				slug         TEXT NOT NULL,
+				type         TEXT NOT NULL,
+				embedding    vector(${EMBED_DIM}),
+				description  TEXT,
+				updated_at   TIMESTAMPTZ DEFAULT NOW(),
+				UNIQUE(folder, slug)
+			)
+		`);
+		await query(`
+			CREATE INDEX IF NOT EXISTS memory_embeddings_hnsw_idx
+			ON memory_embeddings USING hnsw (embedding vector_cosine_ops)
 		`);
 		await query(`
 			CREATE TABLE IF NOT EXISTS workspace_patterns (
@@ -111,19 +131,52 @@ export async function upsertSchemaEmbedding(input: {
 	connectionId: string;
 	tableName: string;
 	columnNames: string;
+	columnTypes: string;
+	description?: string;
 }): Promise<void> {
-	const text = `${input.tableName} columns: ${input.columnNames}`;
+	const hash = crypto
+		.createHash('sha256')
+		.update(`${input.tableName}|${input.columnNames}|${input.columnTypes}|${input.description ?? ''}`)
+		.digest('hex');
+
+	const existing = await query<{ content_hash: string }>(
+		`SELECT content_hash FROM schema_embeddings WHERE connection_id = $1 AND table_name = $2`,
+		[input.connectionId, input.tableName]
+	).catch(() => []);
+
+	if (existing[0]?.content_hash === hash) return;
+
+	const text = `${input.tableName}${input.description ? ' — ' + input.description : ''} columns: ${input.columnNames}`;
 	const embedding = await generateEmbedding(text);
 	if (!embedding) return;
 
 	await query(
-		`INSERT INTO schema_embeddings (connection_id, table_name, column_names, embedding, updated_at)
-		 VALUES ($1, $2, $3, $4::vector, NOW())
+		`INSERT INTO schema_embeddings (connection_id, table_name, column_names, column_types, content_hash, embedding, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::vector, NOW())
 		 ON CONFLICT (connection_id, table_name) DO UPDATE SET
 		   column_names = EXCLUDED.column_names,
+		   column_types = EXCLUDED.column_types,
+		   content_hash = EXCLUDED.content_hash,
 		   embedding    = EXCLUDED.embedding,
 		   updated_at   = NOW()`,
-		[input.connectionId, input.tableName, input.columnNames, JSON.stringify(embedding)]
+		[input.connectionId, input.tableName, input.columnNames, input.columnTypes, hash, JSON.stringify(embedding)]
+	).catch(() => {});
+}
+
+/** Deletes embedded rows for tables no longer present in the connection's current schema —
+ *  mirrors the full-replace semantics `setExternalConnectionSchema` already uses client-side.
+ *  Without this, tables dropped from the warehouse leave phantom rows that pollute retrieval. */
+export async function deleteStaleSchemaEmbeddings(
+	connectionId: string,
+	keepTableNames: string[]
+): Promise<void> {
+	if (keepTableNames.length === 0) {
+		await query(`DELETE FROM schema_embeddings WHERE connection_id = $1`, [connectionId]).catch(() => {});
+		return;
+	}
+	await query(
+		`DELETE FROM schema_embeddings WHERE connection_id = $1 AND table_name <> ALL($2::text[])`,
+		[connectionId, keepTableNames]
 	).catch(() => {});
 }
 
@@ -144,19 +197,105 @@ export async function searchCellEmbeddings(
 	).catch(() => []);
 }
 
+export interface SchemaEmbeddingMatch {
+	table_name: string;
+	column_names: string;
+	column_types: string | null;
+	similarity: number;
+}
+
 export async function searchSchemaEmbeddings(
 	queryText: string,
-	limit = 5
-): Promise<Array<{ table_name: string; column_names: string; similarity: number }>> {
+	limit = 5,
+	connectionIds?: string[]
+): Promise<SchemaEmbeddingMatch[]> {
 	const embedding = await generateEmbedding(queryText);
 	if (!embedding) return [];
 
-	return query<{ table_name: string; column_names: string; similarity: number }>(
-		`SELECT table_name, column_names,
+	if (connectionIds && connectionIds.length > 0) {
+		return query<SchemaEmbeddingMatch>(
+			`SELECT table_name, column_names, column_types,
+			        1 - (embedding <=> $1::vector) AS similarity
+			 FROM schema_embeddings
+			 WHERE connection_id = ANY($2::text[])
+			 ORDER BY embedding <=> $1::vector
+			 LIMIT $3`,
+			[JSON.stringify(embedding), connectionIds, limit]
+		).catch(() => []);
+	}
+
+	return query<SchemaEmbeddingMatch>(
+		`SELECT table_name, column_names, column_types,
 		        1 - (embedding <=> $1::vector) AS similarity
 		 FROM schema_embeddings
 		 ORDER BY embedding <=> $1::vector
 		 LIMIT $2`,
 		[JSON.stringify(embedding), limit]
+	).catch(() => []);
+}
+
+export async function upsertMemoryEmbedding(input: {
+	folder: string;
+	slug: string;
+	type: string;
+	description: string;
+}): Promise<void> {
+	const embedding = await generateEmbedding(`${input.type}: ${input.description}`);
+	if (!embedding) return;
+
+	await query(
+		`INSERT INTO memory_embeddings (folder, slug, type, embedding, description, updated_at)
+		 VALUES ($1, $2, $3, $4::vector, $5, NOW())
+		 ON CONFLICT (folder, slug) DO UPDATE SET
+		   type        = EXCLUDED.type,
+		   embedding   = EXCLUDED.embedding,
+		   description = EXCLUDED.description,
+		   updated_at  = NOW()`,
+		[input.folder, input.slug, input.type, JSON.stringify(embedding), input.description]
+	).catch(() => {});
+}
+
+export interface MemoryEmbeddingMatch {
+	slug: string;
+	description: string;
+	type: string;
+	similarity: number;
+}
+
+export async function searchMemoryEmbeddings(
+	queryText: string,
+	folder: string,
+	limit = 5
+): Promise<MemoryEmbeddingMatch[]> {
+	const embedding = await generateEmbedding(queryText);
+	if (!embedding) return [];
+
+	return query<MemoryEmbeddingMatch>(
+		`SELECT slug, description, type,
+		        1 - (embedding <=> $1::vector) AS similarity
+		 FROM memory_embeddings
+		 WHERE folder = $2
+		 ORDER BY embedding <=> $1::vector
+		 LIMIT $3`,
+		[JSON.stringify(embedding), folder, limit]
+	).catch(() => []);
+}
+
+export async function countSchemaEmbeddings(connectionIds: string[]): Promise<number> {
+	if (connectionIds.length === 0) return 0;
+	const rows = await query<{ count: string }>(
+		`SELECT COUNT(*) AS count FROM schema_embeddings WHERE connection_id = ANY($1::text[])`,
+		[connectionIds]
+	).catch(() => []);
+	return Number(rows[0]?.count ?? 0);
+}
+
+export async function listSchemaEmbeddings(connectionIds: string[]): Promise<
+	Array<{ table_name: string; column_names: string; column_types: string | null }>
+> {
+	if (connectionIds.length === 0) return [];
+	return query<{ table_name: string; column_names: string; column_types: string | null }>(
+		`SELECT table_name, column_names, column_types FROM schema_embeddings WHERE connection_id = ANY($1::text[])`,
+		[connectionIds]
 	).catch(() => []);
 }

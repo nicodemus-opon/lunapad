@@ -75,12 +75,18 @@ type SSEEvent =
 	| { type: 'error'; error: string };
 
 // Bounds for the agent loop — enough to genuinely investigate without it wandering.
-// "Real loop, ~10-25s, visible progress" per product decision; tool turns and repair
-// attempts are capped separately since they serve different purposes (the model choosing
-// to look at data, vs. us forcing a fix after a real execution error).
+// Tool turns and repair attempts are capped separately since they serve different purposes
+// (the model choosing to look at data, vs. us forcing a fix after a real execution error).
 const MAX_TOOL_TURNS = 6;
 const MAX_REPAIR_ATTEMPTS = 2;
-const OVERALL_BUDGET_MS = 30_000;
+// Per-turn deadline is reset before every LLM round trip rather than applied once to the whole
+// loop — a fixed total budget shorter than the server's own per-call timeout (60s default, see
+// ai-schema-context.ts) meant any single slow call (routine with local/Ollama models) got killed
+// mid-stream-read, surfacing as a raw "BodyStreamBuffer was aborted" browser error. The buffer
+// covers network + tool-execution overhead on top of the LLM call itself.
+const PER_TURN_BUDGET_BUFFER_MS = 20_000;
+// Absolute ceiling across all turns, just to bound a pathological tool-call ping-pong loop.
+const OVERALL_SAFETY_CAP_MS = 10 * 60_000;
 
 // ── Simple LRU cache, same shape as prompt-llm.ts's PRQL cache ──
 
@@ -106,6 +112,15 @@ function cacheSet(key: string, value: InlineCellEditResult): void {
 		if (oldest !== undefined) _cache.delete(oldest);
 	}
 	_cache.set(key, value);
+}
+
+// Thrown when a request is aborted by our own code (superseded by a newer edit, or explicitly
+// cancelled) rather than by a real failure — callers should ignore it silently.
+export class CellEditCancelledError extends Error {
+	constructor() {
+		super('AI cell edit cancelled');
+		this.name = 'CellEditCancelledError';
+	}
 }
 
 let _activeController: AbortController | null = null;
@@ -168,14 +183,22 @@ export async function editCellWithAI(
 	const cached = cacheGet(cacheKey);
 	if (cached) return cached;
 
-	_activeController?.abort();
+	_activeController?.abort('superseded');
 	_activeController = new AbortController();
 	const controller = _activeController;
 	const signal = controller.signal;
-	const budgetTimer = setTimeout(() => controller.abort(), OVERALL_BUDGET_MS);
+
+	const perTurnTimeoutMs = (input.timeoutMs ?? 60_000) + PER_TURN_BUDGET_BUFFER_MS;
+	let turnTimer: ReturnType<typeof setTimeout> | undefined;
+	const armTurnTimer = () => {
+		clearTimeout(turnTimer);
+		turnTimer = setTimeout(() => controller.abort('timeout'), perTurnTimeoutMs);
+	};
+	const safetyTimer = setTimeout(() => controller.abort('timeout'), OVERALL_SAFETY_CAP_MS);
 
 	try {
 		onProgress?.('Generating…');
+		armTurnTimer();
 		let events = await postEditCellTurn(input, signal);
 		let toolTurns = 0;
 		let repairAttempts = 0;
@@ -202,6 +225,7 @@ export async function editCellWithAI(
 				}
 				const forceFinal = toolTurns >= MAX_TOOL_TURNS;
 				onProgress?.(forceFinal ? 'Wrapping up…' : 'Investigating…');
+				armTurnTimer();
 				events = await postEditCellTurn(
 					input,
 					signal,
@@ -234,6 +258,7 @@ export async function editCellWithAI(
 
 			repairAttempts++;
 			onProgress?.('Found an error, fixing…');
+			armTurnTimer();
 			events = await postEditCellTurn(input, signal, {
 				messages: [
 					...resultEvent.messages,
@@ -244,8 +269,21 @@ export async function editCellWithAI(
 				]
 			});
 		}
+	} catch (err) {
+		if (signal.aborted) {
+			// Aborts we triggered ourselves are not failures: a newer edit superseded this one,
+			// or the user explicitly cancelled. Surface as a distinguishable error so callers can
+			// ignore it silently instead of showing the raw fetch/stream error (e.g. Chrome's
+			// "BodyStreamBuffer was aborted") or a misleading "AI did not return a result".
+			if (signal.reason === 'superseded' || signal.reason === 'cancelled') {
+				throw new CellEditCancelledError();
+			}
+			throw new Error('AI request timed out — the model took too long to respond.');
+		}
+		throw err;
 	} finally {
-		clearTimeout(budgetTimer);
+		clearTimeout(turnTimer);
+		clearTimeout(safetyTimer);
 		if (_activeController === controller) {
 			_activeController = null;
 		}
@@ -253,6 +291,6 @@ export async function editCellWithAI(
 }
 
 export function cancelActiveCellEdit(): void {
-	_activeController?.abort();
+	_activeController?.abort('cancelled');
 	_activeController = null;
 }

@@ -3,7 +3,7 @@ import type { DiscoveryResult, ReviewResult } from '$lib/types/ai-subagents.js';
 
 export const DISCOVERY_TOOLS: AIChatToolName[] = ['search_workspace', 'list_cells', 'get_lineage', 'sample_data', 'profile_column', 'query_data'];
 
-export const MODELING_TOOLS: AIChatToolName[] = ['record_decision'];
+export const MODELING_TOOLS: AIChatToolName[] = ['record_decision', 'search_workspace'];
 
 export const SQL_GEN_TOOLS: AIChatToolName[] = [
 	'create_cell',

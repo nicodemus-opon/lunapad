@@ -47,6 +47,62 @@ export async function writeProjectFile(
 	}
 }
 
+// ── AI memory ────────────────────────────────────────────────────────────────
+
+export interface AIMemoryEntry {
+	slug: string;
+	description: string;
+	type: 'decision' | 'discovery';
+	date: string;
+}
+
+export async function readAIMemory(
+	folder: string
+): Promise<{ conventions: string; entries: AIMemoryEntry[] }> {
+	const res = await fetch(`/api/ai/memory?folder=${encodeURIComponent(folder)}`);
+	const body = (await res.json()) as { error?: string; conventions?: string; entries?: AIMemoryEntry[] };
+	if (!res.ok) throw new Error(body.error ?? 'Failed to read AI memory');
+	return { conventions: body.conventions ?? '', entries: body.entries ?? [] };
+}
+
+export async function recordAIMemoryEntry(
+	folder: string,
+	type: 'decision' | 'discovery',
+	text: string
+): Promise<{ slug: string; entries: AIMemoryEntry[] }> {
+	const res = await fetch('/api/ai/memory', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, type, text })
+	});
+	const body = (await res.json()) as { error?: string; slug?: string; entries?: AIMemoryEntry[] };
+	if (!res.ok) throw new Error(body.error ?? 'Failed to record AI memory entry');
+	return { slug: body.slug!, entries: body.entries ?? [] };
+}
+
+export async function removeAIMemoryEntry(folder: string, slug: string): Promise<AIMemoryEntry[]> {
+	const res = await fetch('/api/ai/memory', {
+		method: 'DELETE',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, slug })
+	});
+	const body = (await res.json()) as { error?: string; entries?: AIMemoryEntry[] };
+	if (!res.ok) throw new Error(body.error ?? 'Failed to remove AI memory entry');
+	return body.entries ?? [];
+}
+
+export async function writeAIConventions(folder: string, conventions: string): Promise<void> {
+	const res = await fetch('/api/ai/memory', {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, conventions })
+	});
+	if (!res.ok) {
+		const body = (await res.json()) as { error?: string };
+		throw new Error(body.error ?? 'Failed to write AI conventions');
+	}
+}
+
 export async function deleteProjectFile(folder: string, file: string): Promise<void> {
 	const res = await fetch('/api/project/delete', {
 		method: 'POST',

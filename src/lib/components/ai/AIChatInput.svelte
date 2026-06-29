@@ -4,8 +4,30 @@
 	import { getCells } from '$lib/stores/notebook.svelte.js';
 	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
 
+	type ChatMode = 'auto' | 'build' | 'sprint' | 'fix' | 'dashboard' | 'explore';
+
+	/** Slash-command aliases for the existing mode dropdown — a lightweight shortcut,
+	 *  not a new intent system. Must appear at the very start of the message. */
+	const SLASH_COMMANDS: Record<string, Exclude<ChatMode, 'auto'>> = {
+		fix: 'fix',
+		optimize: 'build',
+		explain: 'explore',
+		build: 'build',
+		sprint: 'sprint',
+		dashboard: 'dashboard'
+	};
+
+	/** Strip a leading `/command` token and resolve it to a mode, if recognized. */
+	function parseSlashCommand(value: string): { mode: Exclude<ChatMode, 'auto'> | null; rest: string } {
+		const match = value.match(/^\/(\w+)\s*/);
+		if (!match) return { mode: null, rest: value };
+		const mode = SLASH_COMMANDS[match[1].toLowerCase()];
+		if (!mode) return { mode: null, rest: value };
+		return { mode, rest: value.slice(match[0].length) };
+	}
+
 	let text = $state('');
-	let selectedMode = $state<'auto' | 'build' | 'sprint' | 'fix' | 'dashboard' | 'explore'>('auto');
+	let selectedMode = $state<ChatMode>('auto');
 	let isGenerating = $derived(getIsGenerating());
 	let contextCellIds = $derived(getContextCellIds());
 	let cells = $derived(getCells());
@@ -23,7 +45,10 @@
 		if (!value || isGenerating) return;
 		text = '';
 		adjustHeight();
-		await submitAIMessage(value, selectedMode === 'auto' ? undefined : selectedMode);
+		const { mode: slashMode, rest } = parseSlashCommand(value);
+		const effectiveMode = slashMode ?? (selectedMode === 'auto' ? undefined : selectedMode);
+		const effectiveText = slashMode ? rest.trim() : value;
+		await submitAIMessage(effectiveText || value, effectiveMode);
 	}
 
 	function onKeydown(e: KeyboardEvent) {

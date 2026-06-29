@@ -555,6 +555,72 @@ describe('fetchExternalConnectionSchema', () => {
 		expect(body).toContain('"primary_postgres".information_schema.columns');
 	});
 
+	it('merges table and column comments fetched via the system.query passthrough (Postgres)', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				trinoPage(
+					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[['public', 'jobs', 'id', 'integer'], ['public', 'jobs', 'title', 'varchar']]
+				)
+			)
+			.mockResolvedValueOnce(
+				trinoPage(
+					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'comment' }],
+					[
+						['public', 'jobs', null, 'Job postings'],
+						['public', 'jobs', 'title', 'The job title']
+					]
+				)
+			);
+
+		const result = await fetchExternalConnectionSchema(postgresConnection);
+		expect(result.tables).toHaveLength(1);
+		expect(result.tables[0].description).toBe('Job postings');
+		expect(result.tables[0].columnDescriptions).toEqual([undefined, 'The job title']);
+
+		const commentQueryBody = fetchMock.mock.calls[1]?.[1]?.body as string;
+		expect(commentQueryBody).toContain('system.query');
+	});
+
+	it('merges table and column comments fetched via the system.query passthrough (ClickHouse)', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				trinoPage(
+					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[['analytics', 'events', 'id', 'UInt64']]
+				)
+			)
+			.mockResolvedValueOnce(
+				trinoPage(
+					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'comment' }],
+					[['analytics', 'events', 'id', 'Primary key']]
+				)
+			);
+
+		const result = await fetchExternalConnectionSchema(clickHouseConnection);
+		expect(result.tables[0].columnDescriptions).toEqual(['Primary key']);
+	});
+
+	it('returns plain schema (no descriptions) when the comment passthrough query fails', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				trinoPage(
+					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[['public', 'jobs', 'id', 'integer']]
+				)
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({ id: 'q2', error: { message: 'system.query not supported' }, stats: { state: 'FAILED' } }),
+					{ status: 200 }
+				)
+			);
+
+		const result = await fetchExternalConnectionSchema(postgresConnection);
+		expect(result.tables).toHaveLength(1);
+		expect(result.tables[0]).toEqual({ name: 'jobs', schema: 'public', columns: ['id'], columnTypes: ['integer'] });
+	});
+
 	it('auto-registers on catalog-not-found then retries', async () => {
 		fetchMock
 			// First schema query fails: catalog not found

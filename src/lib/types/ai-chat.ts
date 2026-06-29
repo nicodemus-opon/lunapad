@@ -4,6 +4,16 @@ import type { ChartConfig } from './gui-pipeline.js';
 export type SprintTaskType = 'investigate' | 'build' | 'visualize' | 'document' | 'dashboard';
 export type SprintTaskStatus = 'pending' | 'active' | 'done' | 'failed' | 'skipped';
 
+/** Fixed stages of the 'creation' intent's subagent pipeline (runSubagentPipeline). */
+export type PipelinePhaseId = 'discovery' | 'modeling' | 'sql-gen' | 'sql-review';
+export type PipelinePhaseStatus = 'pending' | 'active' | 'done';
+
+export interface PipelinePhase {
+	id: PipelinePhaseId;
+	label: string;
+	status: PipelinePhaseStatus;
+}
+
 export interface SprintTask {
 	id: string;
 	type: SprintTaskType;
@@ -57,13 +67,22 @@ export interface AIChatSchemaTable {
 	columnTypes?: string[];
 	rowCount?: number;
 	columnProfiles?: Record<string, string>;
+	/** Table-level description/comment, when the connector or dbt project exposes one. */
+	description?: string;
 }
 
 export interface AIChatRequest {
 	messages: Array<{ role: 'user' | 'assistant'; content: string }>;
 	notebookContext: {
 		cells: AIChatCell[];
+		/** Local (DuckDB) tables only — unchanged truncation, small and dynamic, no retrieval needed. */
 		connectionSchema: AIChatSchemaTable[];
+		/** Distinct external connectionIds referenced by the notebook's cells — used by the server to
+		 *  run retrieval against `schema_embeddings`, scoped to these connections. */
+		externalConnectionIds: string[];
+		/** Today's client-truncated external table list — used only as a fallback when server-side
+		 *  retrieval is unavailable (no Postgres/Ollama, or no embeddings yet for these connections). */
+		externalSchemaFallback: AIChatSchemaTable[];
 		activeConnectionId: string | null;
 		connectionDialect: 'duckdb' | 'trino';
 		/** Whether the server-side Python worker is ready — gates Python tool guidance/use. */
@@ -165,6 +184,8 @@ export interface ProfileColumnArgs {
 
 export interface RecordDecisionArgs {
 	decision: string;
+	/** Defaults to 'decision' when omitted. */
+	type?: 'decision' | 'discovery';
 }
 
 export interface PickChartArgs {

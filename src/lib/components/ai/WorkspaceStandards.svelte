@@ -1,12 +1,37 @@
 <script lang="ts">
 	import { Plus, Trash2 } from '@lucide/svelte';
 	import { getWorkspaceStandards, setWorkspaceStandards } from '$lib/stores/ai-chat.svelte.js';
-	import { scheduleSave } from '$lib/stores/notebook.svelte.js';
+	import { scheduleSave, getProjectFolder, getIsDbtProject } from '$lib/stores/notebook.svelte.js';
+	import { readAIMemory, removeAIMemoryEntry, writeAIConventions, type AIMemoryEntry } from '$lib/services/project-client.js';
 	import type { WorkspaceNamingRule } from '$lib/types/ai-chat.js';
 
 	const MATERIALIZE_OPTIONS = ['ephemeral', 'view', 'table', 'incremental'] as const;
 
 	let standards = $derived(getWorkspaceStandards());
+	let memoryEntries = $state<AIMemoryEntry[]>([]);
+	let lastLoadedFolder: string | null = null;
+	let conventionsSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// Reload the persisted memory list whenever the open project folder changes (including to/from
+	// no project). loadProjectMemoryIfNeeded() in ai-chat-client.ts already seeds customInstructions
+	// into the store on a folder switch — this just keeps the entries list in this panel in sync.
+	$effect(() => {
+		const folder = getProjectFolder();
+		const isDbt = getIsDbtProject();
+		if (folder === lastLoadedFolder) return;
+		lastLoadedFolder = folder;
+		if (!folder || !isDbt) {
+			memoryEntries = [];
+			return;
+		}
+		readAIMemory(folder)
+			.then((res) => {
+				memoryEntries = res.entries;
+			})
+			.catch(() => {
+				memoryEntries = [];
+			});
+	});
 
 	function addRule() {
 		setWorkspaceStandards({
@@ -31,6 +56,27 @@
 	function updateInstructions(value: string) {
 		setWorkspaceStandards({ ...standards, customInstructions: value });
 		scheduleSave();
+
+		// Disk write is debounced separately from the instant localStorage write above — this
+		// fires on every keystroke and a network round-trip per keystroke would be wasteful.
+		const folder = getProjectFolder();
+		if (!folder || !getIsDbtProject()) return;
+		clearTimeout(conventionsSaveTimer);
+		conventionsSaveTimer = setTimeout(() => {
+			writeAIConventions(folder, value).catch((err) =>
+				console.error('[ai-memory] failed to persist conventions:', err)
+			);
+		}, 500);
+	}
+
+	async function deleteMemoryEntry(slug: string) {
+		const folder = getProjectFolder();
+		if (!folder) return;
+		try {
+			memoryEntries = await removeAIMemoryEntry(folder, slug);
+		} catch (err) {
+			console.error('[ai-memory] failed to remove entry:', err);
+		}
 	}
 </script>
 
@@ -92,4 +138,31 @@
 		oninput={(e) => updateInstructions((e.target as HTMLTextAreaElement).value)}
 		rows={2}
 	></textarea>
+
+	{#if memoryEntries.length > 0}
+		<div class="flex flex-col gap-1">
+			<span class="text-2xs font-medium text-muted-foreground/70">
+				Memory — decisions &amp; discoveries recorded by the AI, persisted to this project
+			</span>
+			{#each memoryEntries as entry (entry.slug)}
+				<div class="flex items-start gap-1.5">
+					<span
+						class="mt-0.5 shrink-0 rounded px-1 py-0.5 text-2xs font-medium {entry.type === 'discovery'
+							? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+							: 'bg-primary/15 text-primary'}"
+					>
+						{entry.type}
+					</span>
+					<span class="min-w-0 flex-1 text-2xs text-foreground/80">{entry.description}</span>
+					<button
+						class="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-destructive"
+						onclick={() => deleteMemoryEntry(entry.slug)}
+						aria-label="Delete memory entry"
+					>
+						<Trash2 size={11} />
+					</button>
+				</div>
+			{/each}
+		</div>
+	{/if}
 </div>

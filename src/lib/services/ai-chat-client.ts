@@ -27,9 +27,16 @@ import {
 	getConnections,
 	getAllCellsAcrossNotebooks,
 	scheduleSave,
+	getProjectFolder,
+	getIsDbtProject,
 	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
+import {
+	readAIMemory,
+	recordAIMemoryEntry,
+	writeAIConventions
+} from '$lib/services/project-client.js';
 import {
 	getMessages,
 	appendMessage,
@@ -66,6 +73,11 @@ import {
 	clearSprintTasks,
 	requestSprintPlanApproval,
 	setCurrentActivityLabel,
+	getHistorySummaryCache,
+	setHistorySummaryCache,
+	setPipelinePhases,
+	updatePipelinePhase,
+	clearPipelinePhases,
 	type NotebookSnapshot
 } from '$lib/stores/ai-chat.svelte.js';
 import type {
@@ -89,7 +101,8 @@ import type {
 	WorkspaceContract,
 	WorkspaceNamingRule,
 	SprintTask,
-	SprintTaskType
+	SprintTaskType,
+	PipelinePhase
 } from '$lib/types/ai-chat.js';
 import {
 	classifyIntent,
@@ -107,6 +120,8 @@ import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { rowsToCsv } from '$lib/utils.js';
+import { estimateTokens, fitToTokenBudget, DEFAULT_HISTORY_TOKEN_BUDGET } from '$lib/services/token-budget.js';
+import { summarizeOlderTurns } from '$lib/services/history-summarizer.js';
 import { type Connection, isBuiltinDuckDBConnection } from '$lib/types/connection.js';
 import {
 	quoteIdent,
@@ -330,6 +345,72 @@ export function resetAISession(): void {
 	_idlePreflightDone = false;
 	_lastSchemaHash = null;
 	clearCheckpoints();
+}
+
+// Tracks which project folder's memory is currently loaded into session state, so a folder
+// switch (including to/from no-project demo mode) is detected once per change rather than
+// re-fetched on every turn. `null` also covers "no project open yet".
+let _lastLoadedMemoryFolder: string | null | undefined = undefined;
+
+/** Seeds session memory from `.lunapad/memory/` when a project folder is open, or falls back
+ *  to the existing localStorage path in demo mode. Call once per turn, before `buildRequest()` —
+ *  it's a no-op unless the open project folder changed since the last call.
+ *
+ *  Folder changes (including closing a project) also reset the rest of session state — today
+ *  `resetAISession()` is only wired to a manual "reset" button, so without this, tool-output
+ *  cache and decisions from a previously-open project would otherwise silently leak into a
+ *  different project's chat session. */
+export async function loadProjectMemoryIfNeeded(): Promise<void> {
+	const folder = getProjectFolder();
+	if (folder === _lastLoadedMemoryFolder) return;
+	_lastLoadedMemoryFolder = folder;
+
+	_sessionDataContext = new Map();
+	_preflightCache = new Map();
+	_preflightDone = false;
+	_idlePreflightDone = false;
+	_lastSchemaHash = null;
+
+	if (!folder || !getIsDbtProject()) {
+		_sessionPlanContext = [];
+		loadAIMemory();
+		return;
+	}
+
+	try {
+		const { conventions, entries } = await readAIMemory(folder);
+		// Ambient seed stays small and recency-based (the index is already sorted newest-first) —
+		// anything beyond this is retrieved on demand via search_workspace, not dumped here.
+		_sessionPlanContext = entries.slice(0, 5).map((e) => `(${e.type}) ${e.description}`);
+		const existing = getWorkspaceStandards();
+		setWorkspaceStandards({ ...existing, customInstructions: conventions });
+	} catch (err) {
+		console.error('[ai-memory] failed to load project memory:', err);
+		_sessionPlanContext = [];
+	}
+}
+
+/** Appends up to 3 "learned" bullets to customInstructions after a review cycle resolves
+ *  issues a previous fix pass introduced. Shared by both the subagent pipeline and sprint
+ *  loop's review steps (previously duplicated verbatim in each). Mirrors the update to disk
+ *  when a project is open, so self-learned conventions survive across sessions too. */
+function persistLearnedPatterns(lastIssues: string[]): void {
+	const existing = getWorkspaceStandards();
+	const date = new Date().toLocaleDateString();
+	const learned = lastIssues
+		.slice(0, 3)
+		.map((issue) => `• ${issue} [learned ${date}]`)
+		.join('\n');
+	const customInstructions = [existing.customInstructions, learned].filter(Boolean).join('\n');
+	setWorkspaceStandards({ ...existing, customInstructions });
+	scheduleSave();
+
+	const folder = getProjectFolder();
+	if (folder && getIsDbtProject()) {
+		writeAIConventions(folder, customInstructions).catch((err) =>
+			console.error('[ai-memory] failed to persist learned conventions:', err)
+		);
+	}
 }
 
 const DATA_TOOL_NAMES = new Set(['query_data', 'sample_data', 'profile_column']);
@@ -800,47 +881,112 @@ function compressOldMessage(content: string): string {
 	return filtered.join('\n\n');
 }
 
+type ChatTurn = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * Relevance-weighted, token-budgeted history selection — kept first (task framing) + any older
+ * messages that mention active cell outputNames (preserves per-cell context, token-budgeted
+ * since this is the one part that can grow unboundedly with conversation length) + last 6 always.
+ * Also retains the most recent assistant message containing a <plan> block so the model never
+ * loses an agreed plan mid-task, even as the window slides.
+ *
+ * Pure (no store/network access) so it's independently testable — `buildRequest` below handles
+ * the side-effecting parts (reading/writing the history-summary cache, kicking off the
+ * background summarization call) using `dropped` from this function's result.
+ */
+export function selectConversationHistory(
+	allMsgs: ChatTurn[],
+	activeOutputNames: Set<string>
+): { conversationMessages: ChatTurn[]; dropped: ChatTurn[] } {
+	if (allMsgs.length <= 7) {
+		return { conversationMessages: allMsgs, dropped: [] };
+	}
+
+	const first = allMsgs[0];
+	const last6 = allMsgs.slice(-6);
+	const older = allMsgs.slice(1, -6);
+	const relevant = older.filter((m) => [...activeOutputNames].some((name) => m.content.includes(name)));
+	// Intent-anchor: most recent plan-containing message not already in relevant or last6
+	const relevantSet = new Set(relevant);
+	const planMsg = [...older]
+		.reverse()
+		.find((m) => m.role === 'assistant' && m.content.includes('<plan>') && !relevantSet.has(m));
+	// Strip verbose read-tool blocks from stale messages; keep the 2 most recent intact
+	// so the current turn's tool results (list_cells, search, etc.) remain fully visible.
+	const compress = (m: ChatTurn) => (m.role === 'assistant' ? { ...m, content: compressOldMessage(m.content) } : m);
+
+	const compressedFirst = compress(first);
+	const compressedPlanMsg = planMsg ? compress(planMsg) : undefined;
+	const compressedLast6 = [...last6.slice(0, -2).map(compress), ...last6.slice(-2)];
+	// `relevant` is the one part of this list that can grow unboundedly with conversation
+	// length (every distinct active outputName mentioned anywhere in history adds a
+	// candidate) — first/planMsg/last6 are all small, fixed-size, and always kept in full.
+	// Token-budget only the unbounded part, prioritizing the most recently mentioned
+	// messages over older ones when the budget doesn't stretch to all of them.
+	const reserved =
+		estimateTokens(compressedFirst.content) +
+		(compressedPlanMsg ? estimateTokens(compressedPlanMsg.content) : 0) +
+		compressedLast6.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+	const remainingBudget = Math.max(0, DEFAULT_HISTORY_TOKEN_BUDGET - reserved);
+	const compressedRelevant = relevant.map(compress);
+	const relevantByRecencyDesc = [...compressedRelevant].reverse();
+	const { kept, dropped } = fitToTokenBudget(relevantByRecencyDesc, remainingBudget, (m) =>
+		estimateTokens(m.content)
+	);
+	const keptRelevantChronological = [...kept].reverse();
+	const droppedChronological = [...dropped].reverse();
+
+	return {
+		conversationMessages: [
+			compressedFirst,
+			...keptRelevantChronological,
+			...(compressedPlanMsg ? [compressedPlanMsg] : []),
+			...compressedLast6
+		],
+		dropped: droppedChronological
+	};
+}
+
+// Only worth the rolling-summarization LLM round trip once the dropped mass is more than a
+// couple of stray messages — otherwise we'd re-summarize away one borderline message every turn
+// for no real benefit.
+const MIN_SUMMARIZE_TOKENS = 300;
+
 function buildRequest(contextCellIds: string[], workspaceMemory?: string): AIChatRequest {
 	const cells = getCells();
 	const schema = getExternalSchemaTables();
 	const llmConfig = getLLMConfig();
 	const defaultConn = getDefaultConnection();
 
-	// Relevance-weighted history: keep first (task framing) + any older messages that mention
-	// active cell outputNames (preserves per-cell context) + last 6 always.
-	// #5 — Also retain the most recent assistant message containing a <plan> block so the
-	// model never loses an agreed plan mid-task, even as the window slides.
-	const allMsgs = getMessages()
+	const allMsgs: ChatTurn[] = getMessages()
 		.filter((m) => m.role === 'user' || m.role === 'assistant')
 		.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }));
-	let conversationMessages: typeof allMsgs;
-	if (allMsgs.length <= 7) {
-		conversationMessages = allMsgs;
-	} else {
-		const activeOutputNames = new Set(cells.map((c) => c.outputName).filter(Boolean));
-		const first = allMsgs[0];
-		const last6 = allMsgs.slice(-6);
-		const older = allMsgs.slice(1, -6);
-		const relevant = older.filter((m) =>
-			[...activeOutputNames].some((name) => m.content.includes(name))
-		);
-		// Intent-anchor: most recent plan-containing message not already in relevant or last6
-		const relevantSet = new Set(relevant);
-		const planMsg = [...older]
-			.reverse()
-			.find((m) => m.role === 'assistant' && m.content.includes('<plan>') && !relevantSet.has(m));
-		// Strip verbose read-tool blocks from stale messages; keep the 2 most recent intact
-		// so the current turn's tool results (list_cells, search, etc.) remain fully visible.
-		const compress = (m: (typeof allMsgs)[number]) =>
-			m.role === 'assistant' ? { ...m, content: compressOldMessage(m.content) } : m;
-		conversationMessages = [
-			first,
-			...relevant.map(compress),
-			...(planMsg ? [compress(planMsg)] : []),
-			...last6.slice(0, -2).map(compress),
-			...last6.slice(-2)
-		];
+	const activeOutputNames = new Set(cells.map((c) => c.outputName).filter(Boolean));
+	const { conversationMessages: selectedHistory, dropped } = selectConversationHistory(
+		allMsgs,
+		activeOutputNames
+	);
+
+	const droppedTokens = dropped.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+	let summaryMessage: ChatTurn | undefined;
+	if (dropped.length > 0 && droppedTokens > MIN_SUMMARIZE_TOKENS) {
+		const cache = getHistorySummaryCache();
+		if (cache) {
+			summaryMessage = { role: 'assistant', content: `Session summary so far: ${cache.summary}` };
+		}
+		if (!cache || cache.atMessageCount < allMsgs.length) {
+			// Stale or missing — refresh in the background for the *next* turn to pick up. This
+			// turn proceeds with whatever cached summary it had (possibly none) rather than
+			// blocking on an extra LLM round trip.
+			void summarizeOlderTurns(dropped, llmConfig)
+				.then((summary) => setHistorySummaryCache({ atMessageCount: allMsgs.length, summary }))
+				.catch(() => {});
+		}
 	}
+
+	const conversationMessages: ChatTurn[] = summaryMessage
+		? [selectedHistory[0], summaryMessage, ...selectedHistory.slice(1)]
+		: selectedHistory;
 
 	// Merge DuckDB local tables + external schema tables into unified schema list
 	// Enrich with preflight profiles if available
@@ -857,13 +1003,18 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				})
 		};
 	});
-	const externalTables = schema.slice(0, 40).map((t) => {
+	// Today's client-side truncation — kept as a cheap fallback for when server-side retrieval
+	// (against schema_embeddings, scoped by externalConnectionIds below) is unavailable. No
+	// longer the primary path: at warehouse scale a flat slice(0, 40) made any table outside
+	// the window structurally invisible to the AI, regardless of relevance.
+	const externalSchemaFallback = schema.slice(0, 40).map((t) => {
 		const cacheKey = t.schema ? `${t.schema}.${t.name}` : t.name;
 		const profile = _preflightCache.get(cacheKey);
 		return {
 			name: cacheKey,
 			columns: t.columns.slice(0, 30),
 			columnTypes: t.columnTypes?.slice(0, 30) ?? [],
+			...(t.description && { description: t.description }),
 			...(profile?.rowCount != null && { rowCount: profile.rowCount }),
 			...(profile?.columnProfiles &&
 				Object.keys(profile.columnProfiles).length > 0 && {
@@ -871,7 +1022,8 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				})
 		};
 	});
-	const allSchemaTables = [...duckdbTables, ...externalTables].slice(0, 50);
+	const externalConnectionIds = [...new Set(schema.map((t) => t.connectionId))];
+	const allSchemaTables = [...duckdbTables, ...externalSchemaFallback].slice(0, 50);
 
 	// #9 — Schema-diff awareness: detect table additions/removals across turns
 	const currentSchemaHash = allSchemaTables
@@ -1013,7 +1165,9 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					...(pythonStdout && { pythonStdout })
 				};
 			}),
-			connectionSchema: allSchemaTables,
+			connectionSchema: duckdbTables,
+			externalConnectionIds,
+			externalSchemaFallback,
 			activeConnectionId: defaultConn.isBuiltin ? null : (defaultConn.connection.id ?? null),
 			connectionDialect: defaultConn.isBuiltin ? 'duckdb' : 'trino',
 			pythonAvailable: getPythonAvailable()
@@ -1517,14 +1671,24 @@ async function executeToolCallWithResult(
 
 		case 'record_decision': {
 			// #3 — Planning memory: store a modeling decision so it persists across turns
-			const { decision } = call.args as RecordDecisionArgs;
+			const { decision, type } = call.args as RecordDecisionArgs;
 			if (decision?.trim()) {
-				_sessionPlanContext.push(decision.trim());
+				const text = decision.trim();
+				_sessionPlanContext.push(text);
 				appendActionEvent(aiMsgId, {
 					tool: 'record_decision',
-					label: `Noted: ${decision.trim().slice(0, 80)}`
+					label: `Noted: ${text.slice(0, 80)}`
 				});
-				return `Decision recorded: "${decision.trim()}"`;
+				// Mirror to disk when a project is open — survives across sessions/machines
+				// instead of only the 24h-TTL localStorage cap. Best-effort: never blocks the
+				// turn or rolls back the in-memory state above on a disk failure.
+				const folder = getProjectFolder();
+				if (folder && getIsDbtProject()) {
+					recordAIMemoryEntry(folder, type === 'discovery' ? 'discovery' : 'decision', text).catch(
+						(err) => console.error('[ai-memory] failed to persist decision:', err)
+					);
+				}
+				return `Decision recorded: "${text}"`;
 			}
 			return 'record_decision: decision text is required';
 		}
@@ -2540,19 +2704,7 @@ async function runSprintLoop(
 		const review = parseReviewResult(reviewText);
 		const totalScore = review?.total ?? 10;
 		if (!review || review.approved || review.issues.length === 0 || totalScore >= 7) {
-			if (reviewCycle > 1 && lastIssues.length > 0) {
-				const existing = getWorkspaceStandards();
-				const date = new Date().toLocaleDateString();
-				const learned = lastIssues
-					.slice(0, 3)
-					.map((issue) => `• ${issue} [learned ${date}]`)
-					.join('\n');
-				setWorkspaceStandards({
-					...existing,
-					customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n')
-				});
-				scheduleSave();
-			}
+			if (reviewCycle > 1 && lastIssues.length > 0) persistLearnedPatterns(lastIssues);
 			break;
 		}
 		if (totalScore < 4) {
@@ -2605,6 +2757,20 @@ async function runSubagentPipeline(
 		return req;
 	}
 
+	const PHASE_LABELS: Record<PipelinePhase['id'], string> = {
+		discovery: 'Discovery',
+		modeling: 'Modeling',
+		'sql-gen': 'SQL generation',
+		'sql-review': 'Review'
+	};
+	const phaseIds: PipelinePhase['id'][] =
+		complexity === 'complex'
+			? ['discovery', 'modeling', 'sql-gen', 'sql-review']
+			: ['discovery', 'modeling', 'sql-gen'];
+	setPipelinePhases(
+		phaseIds.map((id) => ({ id, label: PHASE_LABELS[id], status: id === 'discovery' ? 'active' : 'pending' }))
+	);
+
 	// Phase 1: Discovery — always run (even medium tasks benefit from reuse detection)
 	appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Searching workspace...' });
 	const { allToolResults: discResults, aborted: discAborted } = await streamOneTurn(
@@ -2616,6 +2782,8 @@ async function runSubagentPipeline(
 
 	const discSummary = buildDiscoverySummary(discResults);
 	updateLastActionEvent(aiMsgId, { label: 'Workspace searched' });
+	updatePipelinePhase('discovery', { status: 'done' });
+	updatePipelinePhase('modeling', { status: 'active' });
 
 	// Phase 2: Modeling — always run so the user sees a plan before SQL is written
 	let planAssertions: PlanAssertion[] = [];
@@ -2645,6 +2813,9 @@ async function runSubagentPipeline(
 			}
 		}
 	}
+
+	updatePipelinePhase('modeling', { status: 'done' });
+	updatePipelinePhase('sql-gen', { status: 'active' });
 
 	// Phase 3: SQL Generation — multi-turn mini-loop with error recovery
 	appendActionEvent(aiMsgId, { tool: 'record_decision', label: 'Writing SQL...' });
@@ -2795,14 +2966,19 @@ async function runSubagentPipeline(
 	}
 
 	if (signal.aborted) return;
+	updatePipelinePhase('sql-gen', { status: 'done' });
 
 	// Phase 4: SQL Review — GAN-inspired generator-evaluator loop.
 	// Only for complex tasks (medium tasks skip review to reduce latency).
 	// Runs up to 3 review cycles: each failed review feeds specific, scored feedback
 	// back to sql-gen for a targeted fix pass, then the evaluator re-checks.
 	const createdNames = [..._outputNameToId.keys()];
-	if (complexity !== 'complex' || createdNames.length === 0 || anyBuiltCellFailing()) return;
+	if (complexity !== 'complex' || createdNames.length === 0 || anyBuiltCellFailing()) {
+		updatePipelinePhase('sql-review', { status: 'done' });
+		return;
+	}
 
+	updatePipelinePhase('sql-review', { status: 'active' });
 	const MAX_REVIEW_CYCLES = 3;
 	let lastIssues: string[] = [];
 
@@ -2837,19 +3013,7 @@ async function runSubagentPipeline(
 		const totalScore = review?.total ?? (review ? 10 : 10);
 		if (!review || review.approved || review.issues.length === 0 || totalScore >= 7) {
 			// Persist learned patterns if a previous fix cycle resolved issues (Improvement 4)
-			if (reviewCycle > 1 && lastIssues.length > 0) {
-				const existing = getWorkspaceStandards();
-				const date = new Date().toLocaleDateString();
-				const learned = lastIssues
-					.slice(0, 3)
-					.map((issue) => `• ${issue} [learned ${date}]`)
-					.join('\n');
-				setWorkspaceStandards({
-					...existing,
-					customInstructions: [existing.customInstructions, learned].filter(Boolean).join('\n')
-				});
-				scheduleSave();
-			}
+			if (reviewCycle > 1 && lastIssues.length > 0) persistLearnedPatterns(lastIssues);
 			break;
 		}
 
@@ -2913,6 +3077,7 @@ async function runSubagentPipeline(
 			fixDepth++;
 		}
 	}
+	updatePipelinePhase('sql-review', { status: 'done' });
 }
 
 // ── Focused subagent loops ────────────────────────────────────────────────────
@@ -3169,6 +3334,7 @@ export async function submitAIMessage(
 	_updatedCellIds = new Set();
 	_madeNotebookChanges = false;
 	clearSprintTasks();
+	clearPipelinePhases();
 
 	// Append user message to thread
 	appendMessage({
@@ -3198,6 +3364,10 @@ export async function submitAIMessage(
 	let didCancel = false;
 
 	try {
+		// Detect a project-folder switch (including to/from demo mode) and reseed session
+		// memory accordingly before anything else this turn touches it.
+		await loadProjectMemoryIfNeeded();
+
 		// Run preflight + fetch workspace patterns in parallel — both are best-effort.
 		// _preflightDone skips the profiling queries on subsequent turns (cache already warm).
 		const [workspaceMemory] = await Promise.all([

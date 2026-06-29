@@ -6,6 +6,7 @@ import {
 } from '$lib/services/stage-catalog';
 import type { LLMPlanningContext } from '$lib/services/intelligence-db';
 import type { PromptLLMConfig } from '$lib/services/prompt-llm';
+import { rankColumnsByRelevance } from '$lib/server/ai-schema-context.js';
 
 interface PromptStagePlanRequest {
 	query: string;
@@ -97,31 +98,6 @@ function sanitizeSuggestion(
 	};
 }
 
-/** Score a column's relevance to the query: word overlap + semantic type + grouping cardinality + null penalty. */
-function columnRelevanceScore(
-	query: string,
-	columnName: string,
-	semanticType: string | undefined,
-	nullRatio: number,
-	distinctCount: number
-): number {
-	const queryTokens = new Set(
-		query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1)
-	);
-	const colTokens = columnName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/);
-	const nameOverlap = colTokens.filter((t) => queryTokens.has(t)).length;
-	const semanticBoost = semanticType && queryTokens.has(semanticType.toLowerCase()) ? 1 : 0;
-
-	// Boost categorical columns (suitable for grouping) when the query implies grouping/segmentation
-	const isGroupingQuery = /(group|by|per|each|breakdown|segment|categor|type|top\s*\d|rank)/i.test(query);
-	const distinctBoost = isGroupingQuery && distinctCount > 3 && distinctCount < 500 ? 0.5 : 0;
-
-	// Penalise columns that are mostly empty — less analytically useful
-	const nullPenalty = nullRatio > 0.5 ? -0.5 : nullRatio > 0.3 ? -0.25 : 0;
-
-	return nameOverlap + semanticBoost + distinctBoost + nullPenalty;
-}
-
 function buildContextBlock(
 	query: string,
 	llmContext: LLMPlanningContext | undefined
@@ -130,23 +106,11 @@ function buildContextBlock(
 		return 'schemaContext: none';
 	}
 
-	// Rank columns by relevance to query, then fall back to original order for ties
-	const ranked = llmContext.columns
-		.map((column, idx) => ({
-			column,
-			idx,
-			score: columnRelevanceScore(
-				query,
-				column.name,
-				column.semanticType ?? undefined,
-				Number(column.nullRatio ?? 0),
-				Number(column.distinctCount ?? 0)
-			)
-		}))
-		.sort((a, b) => b.score - a.score || a.idx - b.idx)
-		.slice(0, MAX_CONTEXT_COLUMNS);
+	// Shared with the agentic chat path and the single-table generate-prql/edit-cell endpoints —
+	// previously a near-duplicate reimplementation lived in this file.
+	const ranked = rankColumnsByRelevance(query, llmContext.columns, MAX_CONTEXT_COLUMNS);
 
-	const compactColumns = ranked.map(({ column }) => {
+	const compactColumns = ranked.map((column) => {
 		// Prefer frequency-ranked top values; fall back to random samples
 		const samples = (column.topValues?.slice(0, 4).map((t) => t.v))
 			?? (column.sampleValues ?? []).slice(0, 4);

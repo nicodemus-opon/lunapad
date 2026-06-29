@@ -3,10 +3,12 @@
 	import {
 		editCellWithAI,
 		cancelActiveCellEdit,
+		CellEditCancelledError,
 		type InlineCellEditResult,
 		type InlineCellEditColumn
 	} from '$lib/services/inline-cell-ai';
 	import { getLLMConfig } from '$lib/stores/notebook.svelte';
+	import DiffView from '$lib/components/ai/DiffView.svelte';
 
 	interface Props {
 		open?: boolean;
@@ -107,6 +109,7 @@
 			result = res;
 			if (!res) errorMessage = 'AI did not return a result.';
 		} catch (err) {
+			if (err instanceof CellEditCancelledError) return;
 			errorMessage = err instanceof Error ? err.message : 'AI cell edit failed.';
 		} finally {
 			generating = false;
@@ -184,8 +187,9 @@
 
 		{#if result}
 			<div class="mt-2 rounded-md border border-primary/20 bg-background/60 p-2">
-				<pre
-					class="max-h-48 overflow-auto font-mono text-2xs leading-relaxed whitespace-pre text-foreground">{result.code}</pre>
+				<div class="max-h-48 overflow-auto leading-relaxed">
+					<DiffView oldCode={code} newCode={result.code} />
+				</div>
 				{#if result.reasoning}
 					<p class="mt-1.5 text-2xs text-muted-foreground">{result.reasoning}</p>
 				{/if}
