@@ -295,6 +295,8 @@ try:
     go.Figure.show = lambda self, *a, **kw: None
 except Exception:
     go = None
+if go is not None:
+    pd.options.plotting.backend = 'plotly'
 try:
     import jedi
 except Exception:

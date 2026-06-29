@@ -9,6 +9,7 @@ import type {
 } from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
+import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -1088,21 +1089,7 @@ const NATIVE_TOOLS = [
 			}
 		}
 	},
-	{
-		type: 'function',
-		function: {
-			name: 'get_lineage',
-			description:
-				'Returns upstream (depends_on) and downstream (feeds_into) cells for a given outputName, plus dashboard usage. Call before modifying a cell to understand impact.',
-			parameters: {
-				type: 'object',
-				properties: {
-					outputName: { type: 'string', description: 'The cell outputName to inspect' }
-				},
-				required: ['outputName']
-			}
-		}
-	},
+	...READONLY_INVESTIGATION_TOOLS,
 	{
 		type: 'function',
 		function: {
@@ -1110,19 +1097,6 @@ const NATIVE_TOOLS = [
 			description:
 				'Lists all query cells with status and row counts. Use when you need a full inventory of existing cells.',
 			parameters: { type: 'object', properties: {} }
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'search_workspace',
-			description:
-				'Semantic search over existing cells and schema tables. Use before generating SQL to find relevant existing models.',
-			parameters: {
-				type: 'object',
-				properties: { query: { type: 'string', description: 'Natural language search query' } },
-				required: ['query']
-			}
 		}
 	},
 	{
@@ -1141,54 +1115,6 @@ const NATIVE_TOOLS = [
 					limit: { type: 'number', description: 'Max rows to return (default 20, max 50).' }
 				},
 				required: ['sql']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'sample_data',
-			description:
-				'Fetch a random sample of rows from a named table. Use to understand data shape before writing queries.',
-			parameters: {
-				type: 'object',
-				properties: {
-					table: { type: 'string', description: 'Table name as it appears in the schema.' },
-					n: { type: 'number', description: 'Number of sample rows (default 10, max 50).' }
-				},
-				required: ['table']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'profile_column',
-			description:
-				'Get null rate, distinct count, min/max, and top 5 values for a column. Use before GROUP BY or JOIN to understand cardinality.',
-			parameters: {
-				type: 'object',
-				properties: {
-					table: { type: 'string', description: 'Table name.' },
-					column: { type: 'string', description: 'Column name to profile.' }
-				},
-				required: ['table', 'column']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'get_cell_result',
-			description:
-				"Read an already-run cell's result data without re-executing the query. Use when explaining existing results or building a chart from data already in memory.",
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: { type: 'string', description: 'Cell id or outputName to read result from.' },
-					limit: { type: 'number', description: 'Max rows to return (default 50, max 100).' }
-				},
-				required: ['cellId']
 			}
 		}
 	},

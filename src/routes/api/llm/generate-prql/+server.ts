@@ -371,7 +371,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					model: req.llmConfig.model,
 					systemPrompt,
 					userPrompt,
-					signal: controller.signal
+					signal: controller.signal,
+					apiKey: req.llmConfig.apiKey
 				});
 
 				const firstExtracted = extractPRQLFromResponse(firstContent);
@@ -404,7 +405,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						model: req.llmConfig.model,
 						systemPrompt,
 						userPrompt: repairUserPrompt,
-						signal: controller.signal
+						signal: controller.signal,
+						apiKey: req.llmConfig.apiKey
 					});
 
 					const repairExtracted = extractPRQLFromResponse(repairContent);

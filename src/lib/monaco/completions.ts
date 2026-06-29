@@ -5,6 +5,7 @@ import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
 import { getSqlFunctionDocs } from './sql-dialects';
 import type { ConnectionType } from '$lib/types/connection';
 import { completePython } from '$lib/services/python-client';
+import { formatDocstring } from '$lib/services/docstring-format';
 
 // Both UDF cells and Python data cells use Monaco language id 'python', but
 // want very different completions (UDF: fixed type-hint skeleton; data cell:
@@ -331,7 +332,15 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 			) => {
 				if (seen.has(label)) return;
 				seen.add(label);
-				suggestions.push({ label, kind, insertText: label, detail, documentation, range, sortText: sortPrefix + label });
+				suggestions.push({
+					label,
+					kind,
+					insertText: label,
+					detail,
+					documentation: documentation ? { value: formatDocstring(documentation) } : undefined,
+					range,
+					sortText: sortPrefix + label
+				});
 			};
 			for (const name of PY_DATA_CELL_BARE) push(name, kinds.Variable, '0');
 			for (const kw of PY_KEYWORDS) push(kw, kinds.Keyword, '3');

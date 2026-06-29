@@ -176,13 +176,17 @@ export async function callLLMJson(input: {
 	systemPrompt: string;
 	userPrompt: string;
 	signal: AbortSignal;
+	apiKey?: string;
 }): Promise<string> {
 	const isQwen3 = /qwen3/i.test(input.model ?? '');
 	const systemContent = isQwen3 ? input.systemPrompt + '\n/no_think' : input.systemPrompt;
 
 	const response = await fetch(input.completionUrl, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
+		},
 		body: JSON.stringify({
 			model: input.model,
 			temperature: 0.2,

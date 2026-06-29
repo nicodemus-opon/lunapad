@@ -107,12 +107,16 @@ import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { rowsToCsv } from '$lib/utils.js';
+import { type Connection, isBuiltinDuckDBConnection } from '$lib/types/connection.js';
 import {
-	type Connection,
-	BUILTIN_DUCKDB_CONNECTION,
-	BUILTIN_DUCKDB_CONNECTION_ID,
-	isBuiltinDuckDBConnection
-} from '$lib/types/connection.js';
+	quoteIdent,
+	toMarkdownTable,
+	getDefaultConnection,
+	getConnectionForTable,
+	runRawQuery,
+	knownTableNames,
+	assertKnownTable
+} from '$lib/services/ai-investigation-tools.js';
 
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -191,16 +195,6 @@ function fixUnquotedSpacedColumns(sql: string): string {
 
 function sanitizeSQL(sql: string): string {
 	return fixUnquotedSpacedColumns(fixBacktickIdents(fixBracketSubscripts(sql)));
-}
-
-function quoteIdent(name: string): string {
-	if (name.includes('.')) {
-		return name
-			.split('.')
-			.map((p) => `"${p.replace(/"/g, '""')}"`)
-			.join('.');
-	}
-	return `"${name.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -340,85 +334,12 @@ export function resetAISession(): void {
 
 const DATA_TOOL_NAMES = new Set(['query_data', 'sample_data', 'profile_column']);
 
-function getDefaultConnection(): { isBuiltin: boolean; connection: Connection } {
-	const cells = getCells();
-	const connections = getConnections();
-	const externalId = cells.find(
-		(c) => c.connectionId && c.connectionId !== BUILTIN_DUCKDB_CONNECTION_ID
-	)?.connectionId;
-	if (externalId) {
-		const conn = connections.find((c) => c.id === externalId);
-		if (conn && !isBuiltinDuckDBConnection(conn)) {
-			return { isBuiltin: false, connection: conn };
-		}
-	}
-	return { isBuiltin: true, connection: BUILTIN_DUCKDB_CONNECTION };
-}
-
-// Resolves the connection a specific table actually lives on, rather than guessing
-// from notebook cells. Without this, profile_column/sample_data on an external table
-// would silently run against DuckDB whenever the notebook's cells happened not to
-// reveal an external connection (e.g. a fresh notebook, or all cells anchored after
-// a markdown cell — see insertCellAfter).
-function getConnectionForTable(
-	table: string
-): { isBuiltin: boolean; connection: Connection } | null {
-	const norm = (s: string) => s.toLowerCase().replace(/^"(.+)"$/, '$1');
-	const target = norm(table);
-	const match = getExternalSchemaTables().find((t) => {
-		const qualified = t.schema ? `${t.schema}.${t.name}` : t.name;
-		return norm(qualified) === target || norm(t.name) === target;
-	});
-	if (!match) return null;
-	const conn = getConnections().find((c) => c.id === match.connectionId);
-	if (!conn) return null;
-	return { isBuiltin: false, connection: conn };
-}
-
-async function runRawQuery(
-	sql: string,
-	table?: string
-): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
-	const { isBuiltin, connection } =
-		(table && getConnectionForTable(table)) || getDefaultConnection();
-	if (isBuiltin) {
-		return executeSQL(sql);
-	}
-	return queryConnectionSQL(connection, sql);
-}
-
-function toMarkdownTable(columns: string[], rows: Record<string, unknown>[]): string {
-	if (rows.length === 0) return '(no rows)';
-	const header = `| ${columns.join(' | ')} |`;
-	const sep = `| ${columns.map(() => '---').join(' | ')} |`;
-	const data = rows
-		.slice(0, 15)
-		.map((r) => `| ${columns.map((c) => String(r[c] ?? '')).join(' | ')} |`);
-	return [header, sep, ...data].join('\n');
-}
-
 interface DataToolResult {
 	llmText: string;
 	previewText: string;
 	label: string;
 	contextKey: string;
 	contextSummary: string;
-}
-
-function knownTableNames(): string[] {
-	const local = getTables().map((t) => t.name);
-	const external = getExternalSchemaTables().map((t) =>
-		t.schema ? `${t.schema}.${t.name}` : t.name
-	);
-	return [...local, ...external];
-}
-
-function assertKnownTable(table: string): string | null {
-	const known = knownTableNames();
-	if (known.length === 0) return 'No tables are loaded — upload data first.';
-	const norm = (s: string) => s.toLowerCase().replace(/^"(.+)"$/, '$1');
-	if (known.some((n) => norm(n) === norm(table))) return null;
-	return `Table "${table}" not found. Available tables: ${known.slice(0, 10).join(', ')}`;
 }
 
 async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | null> {

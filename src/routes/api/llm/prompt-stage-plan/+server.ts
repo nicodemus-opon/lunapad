@@ -281,7 +281,10 @@ async function requestSuggestionFromLLM(input: {
 }): Promise<ExternalPromptStageSuggestionInput> {
 	const response = await fetch(input.completionUrl, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			...(input.llmConfig.apiKey ? { Authorization: `Bearer ${input.llmConfig.apiKey}` } : {})
+		},
 		body: JSON.stringify({
 			model: input.llmConfig.model,
 			temperature: 0.2,

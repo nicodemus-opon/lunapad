@@ -83,9 +83,13 @@ function emitSection(lines: string[], start: number, name: string, out: string[]
 	const flush = () => {
 		if (!current) return;
 		const head = formatInline(current.head);
-		const desc = current.body.map((l) => formatInline(l)).join(' ').trim();
+		const desc = current.body
+			.map((l) => formatInline(l))
+			.join(' ')
+			.trim();
 		const sep = head.indexOf(' : ');
-		const headMd = sep === -1 ? `**${head}**` : `**${head.slice(0, sep)}** *${head.slice(sep + 3)}*`;
+		const headMd =
+			sep === -1 ? `**${head}**` : `**${head.slice(0, sep)}** *${head.slice(sep + 3)}*`;
 		out.push(`- ${headMd}${desc ? ` — ${desc}` : ''}`);
 		current = null;
 	};
@@ -113,7 +117,7 @@ function emitSection(lines: string[], start: number, name: string, out: string[]
 
 function formatInline(text: string): string {
 	return text
-		.replace(/:ref:`([^`<]+)<[^`>]*>`/g, '$1')
+		.replace(/:ref:`([^`<]+?)\s*<[^`>]*>`/g, '$1')
 		.replace(
 			/:(?:py:)?(?:func|meth|class|attr|obj|mod|data|exc|term):`~?([^`]+)`/g,
 			(_m, name: string) => `\`${name.split('.').pop()}\``

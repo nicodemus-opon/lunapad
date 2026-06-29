@@ -169,7 +169,14 @@
 	// supports it; otherwise fall back to whatever the parent wired up (sidebar chat).
 	function handleFixWithAI(errorMsg: string) {
 		if (canInlinePrompt) {
-			inlinePromptPreset = `Fix this error: ${errorMsg}`;
+			// Prefer the structured error (display/hint) over the flattened string the
+			// popover passes — gives the agent more to work with than a bare message.
+			const err = cell.errors[0];
+			inlinePromptPreset = err
+				? [`Fix this error: ${err.display ?? err.reason ?? errorMsg}`, err.hint ? `Hint: ${err.hint}` : null]
+						.filter(Boolean)
+						.join('\n')
+				: `Fix this error: ${errorMsg}`;
 			inlinePromptOpen = true;
 			return;
 		}
@@ -306,6 +313,42 @@
 			.slice(0, 8)
 			.map((t) => ({ name: t.name, columns: t.columns, columnTypes: t.columnTypes }))
 	);
+
+	function sqlTypeToDataKind(sqlType: string): 'numeric' | 'date' | 'boolean' | 'text' {
+		const t = sqlType.toUpperCase();
+		if (/INT|DECIMAL|NUMERIC|DOUBLE|FLOAT|REAL/.test(t)) return 'numeric';
+		if (/DATE|TIME/.test(t)) return 'date';
+		if (/BOOL/.test(t)) return 'boolean';
+		return 'text';
+	}
+
+	// Best-effort "main table" for this cell's inline AI prompt, parsed from its own FROM
+	// clause — raw text cells have no GUI "from" stage to read this from directly. Lets
+	// rankColumnsByRelevance/buildSchemaBlock (ai-schema-context.ts) actually engage instead
+	// of always falling back to the bare "available tables" list.
+	const inlinePromptSourceTable = $derived.by(() => {
+		if (!isQueryCell) return undefined;
+		const fromRe = cell.language === 'sql' ? /\bFROM\s+([a-zA-Z_][\w."]*)/i : /^\s*from\s+([a-zA-Z_][\w.]*)/im;
+		const match = cell.code.match(fromRe);
+		if (!match) return undefined;
+		const candidate = match[1].replace(/"/g, '');
+		const found = [...tables, ...externalSchemaTables].find(
+			(t) => t.name.toLowerCase() === candidate.toLowerCase()
+		);
+		return found?.name;
+	});
+
+	const inlinePromptColumns = $derived.by(() => {
+		const name = inlinePromptSourceTable;
+		if (!name) return [];
+		const found = [...tables, ...externalSchemaTables].find((t) => t.name === name);
+		if (!found) return [];
+		return found.columns.map((col, i) => ({
+			name: col,
+			dataKind: sqlTypeToDataKind(found.columnTypes[i] ?? ''),
+			sqlType: found.columnTypes[i]
+		}));
+	});
 
 	const connectionType = $derived.by(() => {
 		const connection = connections.find((entry) => entry.id === connectionValue);
@@ -1010,6 +1053,8 @@
 									code={cell.code}
 									outputName={cell.outputName}
 									pythonAvailable={getPythonAvailable()}
+									sourceTable={inlinePromptSourceTable}
+									columns={inlinePromptColumns}
 									otherTables={inlinePromptTables}
 									autoSubmitInstruction={inlinePromptPreset}
 									onAutoSubmitConsumed={() => (inlinePromptPreset = null)}

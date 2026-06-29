@@ -4,6 +4,7 @@ import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
 import { getSqlFunctionDoc } from './sql-dialects';
 import { getModelDialect, getModelPythonContext } from './completions';
 import { hoverPython } from '$lib/services/python-client';
+import { formatDocstring } from '$lib/services/docstring-format';
 
 export function registerHoverProviders(monaco: typeof Monaco): void {
 	monaco.languages.registerHoverProvider('prql', {
@@ -55,6 +56,7 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 					controller.signal
 				);
 				if (!hover) return null;
+				const doc = hover.doc ? formatDocstring(hover.doc) : '';
 				return {
 					range: new monaco.Range(
 						position.lineNumber,
@@ -62,7 +64,7 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 						position.lineNumber,
 						word.endColumn
 					),
-					contents: [{ value: `**${hover.signature}**${hover.doc ? `\n\n${hover.doc}` : ''}` }]
+					contents: [{ value: `**${hover.signature}**${doc ? `\n\n${doc}` : ''}` }]
 				};
 			} catch {
 				return null;

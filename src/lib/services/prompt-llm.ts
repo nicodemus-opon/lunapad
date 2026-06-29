@@ -6,6 +6,7 @@ export interface PromptLLMConfig {
 	provider: 'openapi-compatible' | 'ollama';
 	baseUrl: string;
 	model: string;
+	apiKey?: string;
 }
 
 interface PromptLLMInferenceRequest {

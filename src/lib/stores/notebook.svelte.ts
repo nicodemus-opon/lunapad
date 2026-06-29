@@ -3273,26 +3273,62 @@ export function deleteNotebook(id: string): void {
 export function duplicateNotebook(id: string): void {
 	const original = state.notebooks.find((n) => n.id === id);
 	if (!original) return;
-	const copy: Notebook = {
-		id: makeId(),
-		name: `${original.name} Copy`,
-		folderId: original.folderId,
-		defaultCellLanguage: original.defaultCellLanguage ?? 'prql',
-		cells: original.cells.map((cell, i) => ({
-			...makeCell(cell.code, cell.outputName || `result${i + 1}`, cell.language ?? 'prql'),
-			cellType: cell.cellType,
-			outputName: cell.outputName || `result${i + 1}`,
-			markdown: cell.markdown,
-			markdownPreview: cell.markdownPreview,
-			udfBody: cell.udfBody,
-			language: cell.language ?? 'prql',
+
+	// Mirror duplicateCell's clone semantics (full spread + targeted resets) so a
+	// duplicated notebook's cells behave like any other duplicated cell — fresh
+	// outputNames, not "already promoted/scheduled", deep-cloned mutable fields.
+	const cells: Cell[] = original.cells.map((cell) => {
+		const outputName = cell.outputName ? deconflictOutputName(cell.outputName) : cell.outputName;
+		return {
+			...cell,
+			id: makeId(),
+			outputName,
+			materializeTarget: outputName || cell.materializeTarget,
+			promotedModelPath: null,
+			promotedSeedPath: null,
+			scheduleEnabled: false,
+			scheduleNextRunAt: null,
 			guiStages: JSON.parse(JSON.stringify(cell.guiStages)) as GUIPipelineStage[],
-			editMode: cell.editMode,
-			resultViewMode: cell.resultViewMode,
 			resultChartConfig: cell.resultChartConfig
 				? (JSON.parse(JSON.stringify(cell.resultChartConfig)) as ChartConfig)
 				: null
-		}))
+		};
+	});
+
+	// In filesystem mode, notebook IDs are relative paths, not opaque UUIDs —
+	// reusing makeId() here would write the duplicate outside the models/
+	// directory structure entirely. Flat-format notebooks derive their path from
+	// their single cell's (already-deconflicted) outputName; luna-format
+	// notebooks pick their own deconflicted name within the same directory.
+	const inFsMode = state.storageMode === 'filesystem' && original.id.includes('/');
+	let copyId: string;
+	let copyName: string;
+	if (inFsMode) {
+		const dir = original.id.substring(0, original.id.lastIndexOf('/'));
+		if (original.format === 'luna') {
+			let name = `${original.name}_copy`;
+			let n = 2;
+			while (state.notebooks.some((nb) => nb.id === `${dir}/${name}`)) {
+				name = `${original.name}_copy${n++}`;
+			}
+			copyId = `${dir}/${name}`;
+			copyName = name;
+		} else {
+			copyName = cells[0]?.outputName || original.name;
+			copyId = `${dir}/${copyName}`;
+		}
+	} else {
+		copyId = makeId();
+		copyName = `${original.name} Copy`;
+	}
+
+	const copy: Notebook = {
+		id: copyId,
+		name: copyName,
+		folderId: original.folderId,
+		format: original.format,
+		defaultCellLanguage: original.defaultCellLanguage ?? 'prql',
+		cells
 	};
 	state.notebooks = [...state.notebooks, copy];
 	if (!state.openNotebookTabIds.includes(copy.id)) {
@@ -3300,6 +3336,10 @@ export function duplicateNotebook(id: string): void {
 	}
 	state.activeTabId = copy.id;
 	scheduleSave();
+	if (inFsMode) {
+		if (copy.format === 'luna') scheduleLunaNotebookSave(copy.id);
+		else for (const cell of copy.cells) scheduleFileSave(copy.id, cell.id);
+	}
 }
 
 export function createFolder(name: string, parentId: string | null = null): string {
@@ -3384,14 +3424,17 @@ export function deleteFolderIfEmpty(id: string): boolean {
 }
 
 export function ensureDefaultFolder(): string {
-	// In filesystem mode, folder IDs are relative paths (e.g. models/notebooks).
-	// Ignore UUID-based folders that may still be in state from local mode.
-	const existing = state.folders.find(
-		(f) =>
-			f.parentId === null &&
-			f.name === 'Notebooks' &&
-			(state.storageMode !== 'filesystem' || f.id.startsWith('models/'))
-	);
+	if (state.storageMode === 'filesystem') {
+		// Folder IDs are relative paths derived from the on-disk directory name
+		// (see createFolder's sanitization). Disk-scanned folders keep their
+		// literal directory name (e.g. "notebooks") rather than the title-cased
+		// "Notebooks" default, so match on the stable id, not the display name —
+		// otherwise this creates a second "models/notebooks_1" folder every time.
+		const existing = state.folders.find((f) => f.parentId === null && f.id === 'models/notebooks');
+		if (existing) return existing.id;
+		return createFolder('Notebooks', null);
+	}
+	const existing = state.folders.find((f) => f.parentId === null && f.name === 'Notebooks');
 	if (existing) return existing.id;
 	return createFolder('Notebooks', null);
 }
@@ -3405,21 +3448,36 @@ export function moveNotebookToFolder(notebookId: string, folderId: string | null
 		const targetDir = folderId ?? 'models';
 		const modelName = notebook.id.split('/').pop() ?? notebook.name;
 		const newId = `${targetDir}/${modelName}`;
-		for (const cell of notebook.cells) {
-			const oldRel = getRelativeCellPath(notebook, cell);
-			if (oldRel) {
-				const ext = cell.language === 'sql' ? '.sql' : '.prql';
-				const newRel = `${targetDir}/${cell.outputName}${ext}`;
-				renameProjectFile(state.projectFolder, oldRel, newRel).catch(() => {});
-				if (cell.language !== 'sql') {
-					renameProjectFile(
-						state.projectFolder,
-						oldRel.replace(/\.prql$/, '.sql'),
-						newRel.replace(/\.prql$/, '.sql')
-					).catch(() => {});
+
+		if (notebook.format === 'luna') {
+			// One file holds the whole notebook — move it directly rather than
+			// treating each cell as its own .prql/.sql file on disk.
+			const existingTimer = lunaSaveTimers.get(notebook.id);
+			if (existingTimer) {
+				clearTimeout(existingTimer);
+				lunaSaveTimers.delete(notebook.id);
+			}
+			renameProjectFile(state.projectFolder, `${notebookId}.luna`, `${newId}.luna`)
+				.catch(() => {})
+				.finally(() => scheduleLunaNotebookSave(newId));
+		} else {
+			for (const cell of notebook.cells) {
+				const oldRel = getRelativeCellPath(notebook, cell);
+				if (oldRel) {
+					const ext = cell.language === 'sql' ? '.sql' : '.prql';
+					const newRel = `${targetDir}/${cell.outputName}${ext}`;
+					renameProjectFile(state.projectFolder, oldRel, newRel).catch(() => {});
+					if (cell.language !== 'sql') {
+						renameProjectFile(
+							state.projectFolder,
+							oldRel.replace(/\.prql$/, '.sql'),
+							newRel.replace(/\.prql$/, '.sql')
+						).catch(() => {});
+					}
 				}
 			}
 		}
+
 		state.openNotebookTabIds = state.openNotebookTabIds.map((t) => (t === notebookId ? newId : t));
 		if (state.activeTabId === notebookId) state.activeTabId = newId;
 		notebook.id = newId;
@@ -3434,35 +3492,60 @@ export function renameNotebook(id: string, name: string): void {
 	if (!nb) return;
 
 	if (state.storageMode === 'filesystem' && state.projectFolder && nb.id.includes('/')) {
-		// Rename the cell file on disk by moving it
 		const dir = nb.id.substring(0, nb.id.lastIndexOf('/'));
 		const newId = `${dir}/${name}`;
-		const firstCell = nb.cells[0];
-		const ext = firstCell?.language === 'sql' ? '.sql' : '.prql';
-		const oldRel = `${nb.id}${ext}`;
-		const newRel = `${newId}${ext}`;
 
-		const oldCellId = firstCell?.id;
-		nb.name = name;
-		nb.id = newId;
-		if (firstCell) {
-			firstCell.outputName = name;
-			firstCell.materializeTarget = name;
-			firstCell.id = name;
-		}
+		if (nb.format === 'luna') {
+			// One file holds the whole notebook — cell identity (outputName) is
+			// independent of the notebook's display name, so only the file itself
+			// moves. Cancel any pending debounced save under the old id first so it
+			// can't resurrect the old file after the rename.
+			const existingTimer = lunaSaveTimers.get(nb.id);
+			if (existingTimer) {
+				clearTimeout(existingTimer);
+				lunaSaveTimers.delete(nb.id);
+			}
+			nb.name = name;
+			nb.id = newId;
 
-		// Update open tab references
-		state.openNotebookTabIds = state.openNotebookTabIds.map((t) => (t === id ? newId : t));
-		if (state.activeTabId === id) state.activeTabId = newId;
+			state.openNotebookTabIds = state.openNotebookTabIds.map((t) => (t === id ? newId : t));
+			if (state.activeTabId === id) state.activeTabId = newId;
 
-		renameProjectFile(state.projectFolder, oldRel, newRel).catch(() => {});
-		if (firstCell?.language !== 'sql') {
-			// Also rename the companion dbt-compiled .sql file for PRQL cells
-			renameProjectFile(
-				state.projectFolder,
-				oldRel.replace(/\.prql$/, '.sql'),
-				newRel.replace(/\.prql$/, '.sql')
-			).catch(() => {});
+			// Move the file, then re-save under the new path regardless of whether the
+			// move succeeded — covers the case where the file hadn't hit disk yet
+			// (e.g. renamed right after creation, before the initial save fired).
+			renameProjectFile(state.projectFolder, `${id}.luna`, `${newId}.luna`)
+				.catch(() => {})
+				.finally(() => scheduleLunaNotebookSave(newId));
+		} else {
+			// Flat format: the notebook is exactly one cell's file on disk, and the
+			// model name (outputName) is the file's basename — renaming the
+			// notebook renames the underlying model.
+			const firstCell = nb.cells[0];
+			const ext = firstCell?.language === 'sql' ? '.sql' : '.prql';
+			const oldRel = `${nb.id}${ext}`;
+			const newRel = `${newId}${ext}`;
+
+			nb.name = name;
+			nb.id = newId;
+			if (firstCell) {
+				firstCell.outputName = name;
+				firstCell.materializeTarget = name;
+				firstCell.id = name;
+			}
+
+			state.openNotebookTabIds = state.openNotebookTabIds.map((t) => (t === id ? newId : t));
+			if (state.activeTabId === id) state.activeTabId = newId;
+
+			renameProjectFile(state.projectFolder, oldRel, newRel).catch(() => {});
+			if (firstCell?.language !== 'sql') {
+				// Also rename the companion dbt-compiled .sql file for PRQL cells
+				renameProjectFile(
+					state.projectFolder,
+					oldRel.replace(/\.prql$/, '.sql'),
+					newRel.replace(/\.prql$/, '.sql')
+				).catch(() => {});
+			}
 		}
 	} else {
 		nb.name = name;
@@ -4647,8 +4730,15 @@ export function updateCellName(
 		return { ok: false, error: `"${name}" is already used by another model in this project` };
 	}
 	const oldName = cell.outputName;
-	// In filesystem mode, rename the .prql file and keep notebook/tab IDs in sync.
-	if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName) {
+	if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName && nb.format === 'luna') {
+		// One file holds the whole notebook — a cell's outputName is independent of
+		// the notebook's own id/file path, so only the cell changes; the .luna file
+		// gets re-saved with the new name embedded, no per-cell file rename.
+		cell.outputName = name;
+		cell.materializeTarget = name;
+		scheduleLunaNotebookSave(nb.id);
+	} else if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName) {
+		// Flat format: rename the .prql file and keep notebook/tab IDs in sync.
 		const oldPath = getRelativeCellPath(nb, cell);
 		cell.outputName = name;
 		cell.materializeTarget = name;

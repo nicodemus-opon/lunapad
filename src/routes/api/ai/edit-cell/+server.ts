@@ -1,24 +1,31 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
-	compile as compileNodePrql,
-	CompileOptions as NodeCompileOptions
-} from 'prqlc/dist/node/prqlc_js';
-import {
 	normalizeTimeoutMs,
 	normalizeBaseUrl,
 	quoteIdent,
 	buildSchemaBlock,
 	rankColumnsByRelevance,
-	callLLMJson,
 	type SchemaColumn,
 	type OtherTable
 } from '$lib/server/ai-schema-context';
+import {
+	READONLY_INVESTIGATION_TOOLS,
+	callLLMWithTools,
+	type ChatMessage
+} from '$lib/server/ai-tools';
 
-// Fast, scoped single-turn cell edit — the inline "Tell AI what to do" prompt. Deliberately
-// a sibling to /api/llm/generate-prql rather than a generalization of it: that endpoint's
-// compile-validate-repair loop and PRQL-idiom postprocessing are too PRQL-specific to branch
-// three ways (PRQL/SQL/Python) cleanly. Only the schema-context building is shared.
+// Inline "Tell AI what to do" cell edit — a bounded multi-turn agent loop, sibling to
+// /api/llm/generate-prql rather than a generalization of it (that endpoint's PRQL-idiom
+// postprocessing is too PRQL-specific to branch three ways cleanly; only schema-context
+// building is shared). Unlike a single-shot completion, this loop can call the 5 read-only
+// investigation tools (sample_data, profile_column, get_cell_result, get_lineage,
+// search_workspace) before answering — execution of those tools is entirely client-side
+// (notebook/connection state lives in the browser), so this endpoint is stateless: each
+// request is one LLM turn, and the client drives the loop by re-posting with `messages` +
+// `toolResults`. Trial-execution self-correction (the "fix its bugs" step) also happens
+// client-side, for the same reason — see `trialRunCandidateCode` in
+// `$lib/services/ai-investigation-tools.ts`.
 
 export interface EditCellRequest {
 	instruction: string;
@@ -31,6 +38,18 @@ export interface EditCellRequest {
 	otherTables?: OtherTable[];
 	llmConfig: { provider: string; baseUrl: string; model: string; apiKey?: string };
 	timeoutMs?: number;
+	/** Present on continuation turns (after a tool call or a trial-execution repair). */
+	messages?: ChatMessage[];
+	/** Results for the tool_calls sent in the previous turn's `tool_call` event. */
+	toolResults?: Array<{ id: string; content: string }>;
+	/** Set once the client has hit its tool-call turn cap — forces a final answer. */
+	forceFinal?: boolean;
+}
+
+export interface EditCellToolCall {
+	id: string;
+	tool: string;
+	args: Record<string, unknown>;
 }
 
 export interface EditCellSuggestedAlternative {
@@ -93,12 +112,16 @@ function buildSystemPrompt(req: EditCellRequest): string {
 			? `If this task would actually be better as a SQL cell (a straightforward relational transform), set "suggestedAlternative": {"cellType":"query","language":"sql","reason":"..."}.`
 			: `If this task would actually be better as a Python cell (statistics, ML, text/regex processing, or custom visualization beyond simple charts), set "suggestedAlternative": {"cellType":"python","reason":"..."}. Only suggest this when it is clearly a better fit — most relational requests should stay in ${langLabel}.`;
 
-	return `You are editing a single ${langLabel} notebook cell in place, based on a short instruction. Output ONLY valid JSON: {"code": "...", "reasoning": "...", "suggestedAlternative"?: {...}}
+	return `You are editing a single ${langLabel} notebook cell in place, based on a short instruction.
 
 The cell currently contains:
 \`\`\`
 ${req.existingCode || '(empty)'}
 \`\`\`
+
+You may call read-only tools (sample_data, profile_column, get_cell_result, get_lineage, search_workspace) to investigate real data or notebook state BEFORE answering — e.g. to check actual values/date formats, see an upstream cell's error or shape, or find a reusable model elsewhere. Only call a tool when it would genuinely change your answer; skip tools for trivial edits.
+
+When you are done investigating, respond with ONLY valid JSON and no tool call: {"code": "...", "reasoning": "...", "suggestedAlternative"?: {...}}
 
 Apply the user's instruction to produce the FULL new cell code (not a diff) in the "code" field, written in ${langLabel}. Keep changes minimal and scoped to the instruction — don't rewrite unrelated parts of the cell.
 ${altGuidance}
@@ -126,27 +149,6 @@ function buildUserPrompt(req: EditCellRequest): string {
 	}
 	parts.push('', 'Return JSON with "code" and "reasoning" fields.');
 	return parts.join('\n');
-}
-
-function tryCompilePRQL(sourceTable: string, prql: string): string | null {
-	try {
-		const fullQuery = `from ${sourceTable}\n${prql}`;
-		const opts = new NodeCompileOptions();
-		opts.target = 'sql.duckdb';
-		opts.signature_comment = false;
-		opts.format = true;
-		compileNodePrql(fullQuery, opts);
-		return null;
-	} catch (err: unknown) {
-		try {
-			type ErrEntry = { reason?: string; display?: string };
-			const parsed = JSON.parse((err as Error).message) as ErrEntry & { inner?: ErrEntry[] };
-			const inner: ErrEntry[] = parsed.inner ?? [parsed];
-			return inner.map((e) => e.reason ?? e.display ?? String(e)).join('; ');
-		} catch {
-			return String(err);
-		}
-	}
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -189,19 +191,51 @@ export const POST: RequestHandler = async ({ request }) => {
 
 			try {
 				const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
-				const systemPrompt = buildSystemPrompt(req);
-				const userPrompt = buildUserPrompt(req);
 
-				send({ type: 'status', message: 'Generating…' });
-				const content = await callLLMJson({
+				let messages: ChatMessage[];
+				if (req.messages && req.messages.length > 0) {
+					messages = req.messages.slice();
+					for (const tr of req.toolResults ?? []) {
+						messages.push({ role: 'tool', tool_call_id: tr.id, content: tr.content });
+					}
+					send({ type: 'status', message: 'Continuing…' });
+				} else {
+					messages = [
+						{ role: 'system', content: buildSystemPrompt(req) },
+						{ role: 'user', content: buildUserPrompt(req) }
+					];
+					send({ type: 'status', message: 'Generating…' });
+				}
+
+				const response = await callLLMWithTools({
 					completionUrl,
 					model: req.llmConfig.model,
-					systemPrompt,
-					userPrompt,
-					signal: controller.signal
+					messages,
+					tools: req.forceFinal ? undefined : READONLY_INVESTIGATION_TOOLS,
+					signal: controller.signal,
+					apiKey: req.llmConfig.apiKey
 				});
 
-				const extracted = extractEditResponse(content);
+				if (response.toolCalls.length > 0) {
+					const assistantMessage: ChatMessage = {
+						role: 'assistant',
+						content: response.content,
+						tool_calls: response.toolCalls.map((tc) => ({
+							id: tc.id,
+							type: 'function',
+							function: { name: tc.name, arguments: JSON.stringify(tc.args) }
+						}))
+					};
+					const calls: EditCellToolCall[] = response.toolCalls.map((tc) => ({
+						id: tc.id,
+						tool: tc.name,
+						args: tc.args
+					}));
+					send({ type: 'tool_call', calls, messages: [...messages, assistantMessage] });
+					return;
+				}
+
+				const extracted = extractEditResponse(response.content ?? '');
 				if (!extracted || !extracted.code?.trim()) {
 					send({ type: 'error', error: 'LLM did not produce valid code output' });
 					return;
@@ -212,47 +246,14 @@ export const POST: RequestHandler = async ({ request }) => {
 					req.cellType
 				);
 
-				// Only PRQL has a server-side compiler available — validate/repair once.
-				if (req.cellType === 'query' && req.language === 'prql' && req.sourceTable) {
-					const compileError = tryCompilePRQL(req.sourceTable, extracted.code);
-					if (compileError) {
-						send({ type: 'status', message: 'Fixing issues, retrying…' });
-						const repairPrompt = [
-							userPrompt,
-							'',
-							`Previous attempt failed PRQL compilation with: ${compileError}`,
-							`Previous code was:\n${extracted.code}`,
-							'Fix the error and return corrected JSON only.'
-						].join('\n');
-						const repairContent = await callLLMJson({
-							completionUrl,
-							model: req.llmConfig.model,
-							systemPrompt,
-							userPrompt: repairPrompt,
-							signal: controller.signal
-						});
-						const repaired = extractEditResponse(repairContent);
-						if (repaired?.code?.trim()) {
-							send({
-								type: 'result',
-								code: repaired.code.trim(),
-								cellType: req.cellType,
-								language: req.language,
-								reasoning: repaired.reasoning,
-								...(suggestedAlternative && { suggestedAlternative })
-							});
-							return;
-						}
-					}
-				}
-
 				send({
 					type: 'result',
 					code: extracted.code.trim(),
 					cellType: req.cellType,
 					language: req.language,
 					reasoning: extracted.reasoning,
-					...(suggestedAlternative && { suggestedAlternative })
+					...(suggestedAlternative && { suggestedAlternative }),
+					messages: [...messages, { role: 'assistant', content: response.content }]
 				});
 			} catch (err) {
 				if (!(err instanceof Error && err.name === 'AbortError')) {

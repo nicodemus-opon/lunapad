@@ -3,7 +3,8 @@
 	import {
 		editCellWithAI,
 		cancelActiveCellEdit,
-		type InlineCellEditResult
+		type InlineCellEditResult,
+		type InlineCellEditColumn
 	} from '$lib/services/inline-cell-ai';
 	import { getLLMConfig } from '$lib/stores/notebook.svelte';
 
@@ -15,6 +16,8 @@
 		code: string;
 		outputName?: string;
 		pythonAvailable: boolean;
+		sourceTable?: string;
+		columns?: InlineCellEditColumn[];
 		otherTables?: Array<{ name: string; columns: string[]; columnTypes: string[] }>;
 		onApply: (code: string) => void;
 		onCreateAlternative?: (alt: {
@@ -39,6 +42,8 @@
 		code,
 		outputName,
 		pythonAvailable,
+		sourceTable,
+		columns = [],
 		otherTables = [],
 		onApply,
 		onCreateAlternative,
@@ -89,6 +94,9 @@
 					cellType,
 					language,
 					existingCode: code,
+					cellId,
+					sourceTable,
+					columns: columns.length > 0 ? columns : undefined,
 					otherTables: otherTables.length > 0 ? otherTables : undefined,
 					llmConfig: getLLMConfig()
 				},
@@ -180,6 +188,11 @@
 					class="max-h-48 overflow-auto font-mono text-2xs leading-relaxed whitespace-pre text-foreground">{result.code}</pre>
 				{#if result.reasoning}
 					<p class="mt-1.5 text-2xs text-muted-foreground">{result.reasoning}</p>
+				{/if}
+				{#if result.trialError}
+					<p class="mt-1.5 text-2xs text-destructive">
+						⚠ Still failed when tested: {result.trialError}
+					</p>
 				{/if}
 				<div class="mt-2 flex items-center gap-2">
 					<button
