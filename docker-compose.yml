@@ -2,9 +2,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: lunapad
-      POSTGRES_PASSWORD: lunapad
-      POSTGRES_DB: lunapad
+      POSTGRES_USER: ${POSTGRES_USER:-lunapad}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lunapad}
+      POSTGRES_DB: ${POSTGRES_DB:-lunapad}
     ports:
       - "5432:5432"
     volumes:
@@ -57,33 +57,36 @@ services:
       # Set ORIGIN to the URL your users reach the app at (e.g. https://yourdomain.com).
       # better-auth uses it for trustedOrigins — login won't work if this doesn't match
       # what the browser sends in the Origin header. Override in your deployment panel.
-      ORIGIN: http://localhost:3967
+      # Set ORIGIN to the URL your users reach the app at (e.g. https://yourdomain.com).
+      # better-auth uses it for trustedOrigins — login won't work if this doesn't match
+      # what the browser sends in the Origin header. Override in your deployment panel.
+      ORIGIN: ${ORIGIN:-http://localhost:3967}
       # INNGEST_SERVE_HOST tells the Inngest SDK what URL to register functions under.
       # Must be the Docker-internal URL so the Inngest container can reach the app
       # without going through the external reverse proxy.
-      INNGEST_SERVE_HOST: http://app:3000
-      TRINO_URL: http://trino:8080
-      TRINO_CATALOG_DIR: /trino-catalog
+      INNGEST_SERVE_HOST: ${INNGEST_SERVE_HOST:-http://app:3000}
+      TRINO_URL: ${TRINO_URL:-http://trino:8080}
+      TRINO_CATALOG_DIR: ${TRINO_CATALOG_DIR:-/trino-catalog}
       # Postgres (pgvector) — use service name, not localhost, inside Docker network.
-      DATABASE_URL: postgresql://lunapad:lunapad@db:5432/lunapad
+      DATABASE_URL: ${DATABASE_URL:-postgresql://lunapad:lunapad@db:5432/lunapad}
       # Auth (better-auth) — set real random values before deploying for real.
       # BETTER_AUTH_SECRET signs session tokens; SECRETS_ENCRYPTION_KEY (32 random
       # bytes, base64) encrypts stored connection passwords. Never reuse one for the other.
-      BETTER_AUTH_SECRET: change-me-to-a-random-32-byte-secret
-      SECRETS_ENCRYPTION_KEY: change-me-to-a-random-32-byte-base64-key
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-change-me-to-a-random-32-byte-secret}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-change-me-to-a-random-32-byte-base64-key}
       # Ollama runs on the host machine. host.docker.internal resolves to the host
       # on Docker Desktop (Mac/Windows). On Linux, extra_hosts adds the route.
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # Inngest: point to the inngest service inside the Docker network.
       # INNGEST_DEV=1 tells the SDK it's in dev mode (skips signature verification).
-      INNGEST_DEV: "1"
-      INNGEST_BASE_URL: http://inngest:8288
-      INNGEST_EVENT_KEY: local
-      INNGEST_SIGNING_KEY: local
+      INNGEST_DEV: ${INNGEST_DEV:-1}
+      INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest:8288}
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-local}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-local}
       # Default dbt project folder — auto-opened (and scaffolded into a dbt-best-practices
       # project if empty) on first load, and used by the Inngest scheduler. Bind-mounted
       # below so it persists on the host and survives `down`/`up`.
-      PROJECT_FOLDER: /app/project
+      PROJECT_FOLDER: ${PROJECT_FOLDER:-/app/project}
     extra_hosts:
       # On Linux, Docker does not resolve host.docker.internal by default.
       # This maps it to the host gateway so Ollama is reachable from the container.
