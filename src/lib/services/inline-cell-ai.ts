@@ -62,6 +62,7 @@ interface EditCellToolCall {
 
 type SSEEvent =
 	| { type: 'status'; message: string }
+	| { type: 'delta'; content: string }
 	| { type: 'tool_call'; calls: EditCellToolCall[]; messages: ChatMessage[] }
 	| ({
 			type: 'result';
@@ -84,7 +85,7 @@ const MAX_REPAIR_ATTEMPTS = 2;
 // ai-schema-context.ts) meant any single slow call (routine with local/Ollama models) got killed
 // mid-stream-read, surfacing as a raw "BodyStreamBuffer was aborted" browser error. The buffer
 // covers network + tool-execution overhead on top of the LLM call itself.
-const PER_TURN_BUDGET_BUFFER_MS = 20_000;
+const PER_TURN_BUDGET_BUFFER_MS = 30_000;
 // Absolute ceiling across all turns, just to bound a pathological tool-call ping-pong loop.
 const OVERALL_SAFETY_CAP_MS = 10 * 60_000;
 
@@ -129,7 +130,8 @@ async function postEditCellTurn(
 	input: InlineCellEditInput,
 	signal: AbortSignal,
 	continuation?: { messages: ChatMessage[]; toolResults?: Array<{ id: string; content: string }> },
-	forceFinal?: boolean
+	forceFinal?: boolean,
+	onDelta?: (chunk: string) => void
 ): Promise<SSEEvent[]> {
 	const response = await fetch('/api/ai/edit-cell', {
 		method: 'POST',
@@ -161,23 +163,43 @@ async function postEditCellTurn(
 	let buffer = '';
 	const events: SSEEvent[] = [];
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		buffer += decoder.decode(value, { stream: true });
+	function processBuffer() {
 		const parts = buffer.split('\n\n');
 		buffer = parts.pop() ?? '';
 		for (const part of parts) {
 			if (!part.startsWith('data: ')) continue;
-			events.push(JSON.parse(part.slice(6)) as SSEEvent);
+			try {
+				const event = JSON.parse(part.slice(6)) as SSEEvent;
+				if (event.type === 'delta') {
+					onDelta?.(event.content);
+				} else {
+					events.push(event);
+				}
+			} catch {
+				// skip malformed chunk
+			}
 		}
+	}
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		processBuffer();
+	}
+	// Flush UTF-8 decoder and any remaining buffer content.
+	buffer += decoder.decode();
+	if (buffer.trim()) {
+		buffer += '\n\n';
+		processBuffer();
 	}
 	return events;
 }
 
 export async function editCellWithAI(
 	input: InlineCellEditInput,
-	onProgress?: (message: string) => void
+	onProgress?: (message: string) => void,
+	onDelta?: (chunk: string) => void
 ): Promise<InlineCellEditResult | null> {
 	const cacheKey = makeCacheKey(input);
 	const cached = cacheGet(cacheKey);
@@ -188,7 +210,10 @@ export async function editCellWithAI(
 	const controller = _activeController;
 	const signal = controller.signal;
 
-	const perTurnTimeoutMs = (input.timeoutMs ?? 60_000) + PER_TURN_BUDGET_BUFFER_MS;
+	// Default matches the server-side DEFAULT_TIMEOUT_MS (180 s). The buffer on top ensures
+	// the server-side timer fires and sends a proper error event before the client aborts.
+	const serverTimeoutMs = input.timeoutMs ?? 180_000;
+	const perTurnTimeoutMs = serverTimeoutMs + PER_TURN_BUDGET_BUFFER_MS;
 	let turnTimer: ReturnType<typeof setTimeout> | undefined;
 	const armTurnTimer = () => {
 		clearTimeout(turnTimer);
@@ -199,7 +224,7 @@ export async function editCellWithAI(
 	try {
 		onProgress?.('Generating…');
 		armTurnTimer();
-		let events = await postEditCellTurn(input, signal);
+		let events = await postEditCellTurn(input, signal, undefined, undefined, onDelta);
 		let toolTurns = 0;
 		let repairAttempts = 0;
 
@@ -230,7 +255,8 @@ export async function editCellWithAI(
 					input,
 					signal,
 					{ messages: toolCallEvent.messages, toolResults },
-					forceFinal
+					forceFinal,
+					onDelta
 				);
 				continue;
 			}
@@ -256,6 +282,15 @@ export async function editCellWithAI(
 				return result;
 			}
 
+			// SQL cells: don't enter the repair loop — external connections can be slow and
+			// the repair LLM call rarely fixes a failed SQL trial without more context.
+			// Return the result immediately with the trial error surfaced in the UI.
+			if (input.language === 'sql') {
+				result.trialError = trial.error;
+				cacheSet(cacheKey, result);
+				return result;
+			}
+
 			repairAttempts++;
 			onProgress?.('Found an error, fixing…');
 			armTurnTimer();
@@ -267,7 +302,7 @@ export async function editCellWithAI(
 						content: `Your code failed when actually run:\n${trial.error}\n\nFix it and return corrected JSON (no tool call needed unless you need to investigate further).`
 					}
 				]
-			});
+			}, undefined, onDelta);
 		}
 	} catch (err) {
 		if (signal.aborted) {

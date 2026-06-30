@@ -2,7 +2,7 @@ import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { language as sqlMonarch } from 'monaco-editor/esm/vs/basic-languages/sql/sql.js';
 import { PRQL_KEYWORDS, PRQL_BUILTINS, PRQL_DOCS } from './prql';
 import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
-import { getSqlFunctionDocs } from './sql-dialects';
+import { getSqlFunctionDocs, getSqlFunctionDoc } from './sql-dialects';
 import type { ConnectionType } from '$lib/types/connection';
 import { completePython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
@@ -26,6 +26,30 @@ export function getModelPythonContext(model: Monaco.editor.ITextModel): PythonCe
 	return pythonContextByModel.get(model.uri.toString());
 }
 
+// Upstream cell DataFrame schemas for Python data cells — { name, columns[] } per
+// upstream cell that has a result. Lets ghost completions show structured schema
+// ("orders: id, status, amount") instead of guessing from jedi names alone.
+export interface PythonUpstreamSchema {
+	name: string;
+	columns: string[];
+}
+const pythonSchemaByModel = new Map<string, PythonUpstreamSchema[]>();
+
+export function setModelPythonSchema(
+	model: Monaco.editor.ITextModel,
+	schemas: PythonUpstreamSchema[]
+): void {
+	pythonSchemaByModel.set(model.uri.toString(), schemas);
+}
+
+export function clearModelPythonSchema(model: Monaco.editor.ITextModel): void {
+	pythonSchemaByModel.delete(model.uri.toString());
+}
+
+export function getModelPythonSchema(model: Monaco.editor.ITextModel): PythonUpstreamSchema[] {
+	return pythonSchemaByModel.get(model.uri.toString()) ?? [];
+}
+
 // A completion candidate from the per-cell registry: "table.column" pairs or
 // bare table/cell names, optionally carrying a type to show as completion detail.
 export interface CompletionEntry {
@@ -43,6 +67,10 @@ export function setModelCompletions(model: Monaco.editor.ITextModel, items: Comp
 
 export function clearModelCompletions(model: Monaco.editor.ITextModel): void {
 	completionsByModel.delete(model.uri.toString());
+}
+
+export function getModelCompletions(model: Monaco.editor.ITextModel): CompletionEntry[] {
+	return completionsByModel.get(model.uri.toString()) ?? [];
 }
 
 // Per-cell connection type — drives which dialect-specific SQL functions
@@ -68,7 +96,7 @@ interface ColumnEntry {
 	detail?: string;
 }
 
-function parseRegistry(
+export function parseRegistry(
 	items: CompletionEntry[]
 ): { tables: Map<string, ColumnEntry[]>; bare: CompletionEntry[] } {
 	const tables = new Map<string, ColumnEntry[]>();
@@ -93,9 +121,12 @@ function parseRegistry(
 }
 
 export function registerCompletions(monaco: typeof Monaco): void {
-	for (const languageId of ['prql', 'sql'] as const) {
+	for (const languageId of ['prql', 'sql', 'trinosql', 'genericsql'] as const) {
+		const isSql = languageId === 'sql' || languageId === 'trinosql' || languageId === 'genericsql';
 		monaco.languages.registerCompletionItemProvider(languageId, {
-			triggerCharacters: ['.'],
+			// SQL: also trigger on ( and , so completions stay open inside function calls.
+			// PRQL keeps dot-only to avoid noise inside transform expressions.
+			triggerCharacters: isSql ? ['.', '(', ','] : ['.'],
 			provideCompletionItems(model, position) {
 				const items = completionsByModel.get(model.uri.toString()) ?? [];
 				const { tables, bare } = parseRegistry(items);
@@ -109,7 +140,7 @@ export function registerCompletions(monaco: typeof Monaco): void {
 				};
 				const kinds = monaco.languages.CompletionItemKind;
 
-				// Dot context: `table.|` → only that table's columns
+				// Dot context: `table.|` → only that table's columns with type docs
 				const lineBefore = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
 				const dotMatch = lineBefore.match(/([A-Za-z_][\w]*|`[^`]+`)\.$/);
 				if (dotMatch) {
@@ -121,6 +152,7 @@ export function registerCompletions(monaco: typeof Monaco): void {
 								kind: kinds.Field,
 								insertText: c.name,
 								detail: c.detail,
+								documentation: c.detail ? { value: `\`${c.detail}\`` } : undefined,
 								range,
 								sortText: '0' + c.name
 							}))
@@ -166,7 +198,8 @@ export function registerCompletions(monaco: typeof Monaco): void {
 					label: string,
 					kind: Monaco.languages.CompletionItemKind,
 					sortPrefix: string,
-					detail?: string
+					detail?: string,
+					documentation?: string
 				) => {
 					if (seen.has(label)) return;
 					seen.add(label);
@@ -175,24 +208,50 @@ export function registerCompletions(monaco: typeof Monaco): void {
 						kind,
 						insertText: label,
 						detail,
+						documentation: documentation ? { value: documentation } : undefined,
 						range,
 						sortText: sortPrefix + label
 					});
 				};
 
-				for (const [table, cols] of tables) {
-					push(table, kinds.Struct, '1');
-					for (const c of cols) push(`${table}.${c.name}`, kinds.Field, '3', c.detail);
-				}
-				for (const b of bare) push(b.text, kinds.Variable, '2', b.detail);
-
-				if (languageId === 'sql') {
+				if (isSql) {
 					const dialect = getModelDialect(model);
-					for (const fn of getSqlFunctionDocs(dialect)) {
-						push(fn.name, kinds.Function, '4', fn.signature);
+
+					// SQL clause context: rank schema vs functions/keywords based on position.
+					// FROM/JOIN → tables only. SELECT/WHERE/etc → schema first, functions after.
+					const fromOrJoin = /\b(FROM|JOIN)\s+[\w`"]*$/i.test(lineBefore);
+					const columnCtx = /\b(SELECT|WHERE|HAVING|ON|GROUP\s+BY|ORDER\s+BY|AND|OR|NOT|SET)\s+[\w`".,\s*]*$/i.test(lineBefore);
+
+					if (fromOrJoin) {
+						for (const [table, cols] of tables) {
+							const colList = cols.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : '')).join('\n');
+							push(table, kinds.Struct, '0', undefined, colList || undefined);
+						}
+						for (const b of bare) push(b.text, kinds.Variable, '1', b.detail);
+						return { suggestions };
 					}
-					for (const kw of SQL_KEYWORDS) push(kw, kinds.Keyword, '5');
+
+					// Sort prefix: schema items first when in a column-expression context
+					const schemaSort = columnCtx ? '1' : '1';
+					const fnSort    = columnCtx ? '4' : '4';
+					const kwSort    = columnCtx ? '5' : '5';
+
+					for (const [table, cols] of tables) {
+						const colList = cols.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : '')).join('\n');
+						push(table, kinds.Struct, schemaSort, undefined, colList || undefined);
+						for (const c of cols) push(`${table}.${c.name}`, kinds.Field, schemaSort + '5', c.detail, c.detail ? `\`${c.detail}\`` : undefined);
+					}
+					for (const b of bare) push(b.text, kinds.Variable, schemaSort + '9', b.detail);
+					for (const fn of getSqlFunctionDocs(dialect)) {
+						push(fn.name, kinds.Function, fnSort, fn.signature, fn.doc);
+					}
+					for (const kw of SQL_KEYWORDS) push(kw, kinds.Keyword, kwSort);
 				} else {
+					for (const [table, cols] of tables) {
+						push(table, kinds.Struct, '1');
+						for (const c of cols) push(`${table}.${c.name}`, kinds.Field, '3', c.detail);
+					}
+					for (const b of bare) push(b.text, kinds.Variable, '2', b.detail);
 					for (const kw of PRQL_KEYWORDS) push(kw, kinds.Keyword, '4', PRQL_DOCS[kw]);
 					for (const fn of PRQL_BUILTINS) push(fn, kinds.Function, '5', PRQL_DOCS[fn]);
 					for (const snippet of PRQL_SNIPPETS) {
@@ -365,4 +424,61 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 			return { suggestions };
 		}
 	});
+}
+
+export function registerSqlSignatureHelp(monaco: typeof Monaco): void {
+	for (const langId of ['sql', 'trinosql', 'genericsql'] as const) {
+		monaco.languages.registerSignatureHelpProvider(langId, {
+			signatureHelpTriggerCharacters: ['('],
+			signatureHelpRetriggerCharacters: [','],
+			provideSignatureHelp(model, position) {
+				const textBefore = model.getValueInRange({
+					startLineNumber: 1,
+					startColumn: 1,
+					endLineNumber: position.lineNumber,
+					endColumn: position.column
+				});
+
+				// Walk backwards to find the matching open paren and count commas at depth 0.
+				let depth = 0;
+				let commas = 0;
+				for (let i = textBefore.length - 1; i >= 0; i--) {
+					const ch = textBefore[i];
+					if (ch === ')') {
+						depth++;
+					} else if (ch === '(') {
+						if (depth > 0) {
+							depth--;
+						} else {
+							// Found the open paren for the current call — look left for the function name.
+							const fnMatch = textBefore.slice(0, i).match(/([A-Za-z_][\w]*)$/);
+							if (!fnMatch) return null;
+							const dialect = getModelDialect(model);
+							const fn = getSqlFunctionDoc(fnMatch[1].toLowerCase(), dialect);
+							if (!fn) return null;
+							const paramStr = fn.signature.match(/\(([^)]*)\)/)?.[1] ?? '';
+							const params = paramStr ? paramStr.split(',').map((p) => p.trim()) : [];
+							return {
+								dispose: () => {},
+								value: {
+									signatures: [
+										{
+											label: fn.signature,
+											documentation: { value: fn.doc },
+											parameters: params.map((p) => ({ label: p }))
+										}
+									],
+									activeSignature: 0,
+									activeParameter: Math.min(commas, Math.max(0, params.length - 1))
+								}
+							};
+						}
+					} else if (ch === ',' && depth === 0) {
+						commas++;
+					}
+				}
+				return null;
+			}
+		});
+	}
 }

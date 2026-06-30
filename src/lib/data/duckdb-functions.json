@@ -1,0 +1,1612 @@
+[
+  {
+    "name": "abs",
+    "signature": "abs(x)",
+    "doc": "Absolute value."
+  },
+  {
+    "name": "acos",
+    "signature": "acos(x)",
+    "doc": "Computes the inverse cosine of x."
+  },
+  {
+    "name": "acosh",
+    "signature": "acosh(x)",
+    "doc": "Computes the inverse hyperbolic cosine of x."
+  },
+  {
+    "name": "add",
+    "signature": "add(x, y)",
+    "doc": "Alias for x + y."
+  },
+  {
+    "name": "age",
+    "signature": "age(timestamp, timestamp)",
+    "doc": "Subtract arguments, resulting in the time difference between the two timestamps."
+  },
+  {
+    "name": "ago",
+    "signature": "ago(interval)",
+    "doc": "Subtracts an interval from the current timestamp, returning a timestamp in the past. Equivalent to current_timestamp - interval."
+  },
+  {
+    "name": "alias",
+    "signature": "alias(column)",
+    "doc": "Return the name of the column."
+  },
+  {
+    "name": "any_value",
+    "signature": "any_value(arg)",
+    "doc": "Returns the first non-NULL value from arg. This function is affected by ordering."
+  },
+  {
+    "name": "arg_max",
+    "signature": "arg_max(arg, val)",
+    "doc": "Finds the row with the maximum val and calculates the arg expression at that row. Rows where the value of the arg or val expression is NULL are ignored. This function is affected by ordering."
+  },
+  {
+    "name": "arg_max_null",
+    "signature": "arg_max_null(arg, val)",
+    "doc": "Finds the row with the maximum val and calculates the arg expression at that row. Rows where the val expression evaluates to NULL are ignored. This function is affected by ordering."
+  },
+  {
+    "name": "arg_min",
+    "signature": "arg_min(arg, val)",
+    "doc": "Finds the row with the minimum val and calculates the arg expression at that row. Rows where the value of the arg or val expression is NULL are ignored. This function is affected by ordering."
+  },
+  {
+    "name": "arg_min_null",
+    "signature": "arg_min_null(arg, val)",
+    "doc": "Finds the row with the minimum val and calculates the arg expression at that row. Rows where the val expression evaluates to NULL are ignored. This function is affected by ordering."
+  },
+  {
+    "name": "array_cosine_distance",
+    "signature": "array_cosine_distance(array1, array2)",
+    "doc": "Computes the cosine distance between two arrays of the same size. The array elements cannot be NULL. The arrays can have any size as long as the size is the same for both arguments."
+  },
+  {
+    "name": "array_cosine_similarity",
+    "signature": "array_cosine_similarity(array1, array2)",
+    "doc": "Computes the cosine similarity between two arrays of the same size. The array elements cannot be NULL. The arrays can have any size as long as the size is the same for both arguments."
+  },
+  {
+    "name": "array_cross_product",
+    "signature": "array_cross_product(array, array)",
+    "doc": "Computes the cross product of two arrays of size 3. The array elements cannot be NULL."
+  },
+  {
+    "name": "array_distance",
+    "signature": "array_distance(array1, array2)",
+    "doc": "Computes the distance between two arrays of the same size. The array elements cannot be NULL. The arrays can have any size as long as the size is the same for both arguments."
+  },
+  {
+    "name": "array_extract",
+    "signature": "array_extract(list, index)",
+    "doc": "Extracts the indexth (1-based) value from the list."
+  },
+  {
+    "name": "array_inner_product",
+    "signature": "array_inner_product(array1, array2)",
+    "doc": "Computes the inner product between two arrays of the same size. The array elements cannot be NULL. The arrays can have any size as long as the size is the same for both arguments."
+  },
+  {
+    "name": "array_negative_inner_product",
+    "signature": "array_negative_inner_product(array1, array2)",
+    "doc": "Computes the negative inner product between two arrays of the same size. The array elements cannot be NULL. The arrays can have any size as long as the size is the same for both arguments."
+  },
+  {
+    "name": "array_pop_back",
+    "signature": "array_pop_back(list)",
+    "doc": "Returns the list without the last element."
+  },
+  {
+    "name": "array_pop_front",
+    "signature": "array_pop_front(list)",
+    "doc": "Returns the list without the first element."
+  },
+  {
+    "name": "array_push_front",
+    "signature": "array_push_front(list, element)",
+    "doc": "Prepends element to list."
+  },
+  {
+    "name": "array_to_string",
+    "signature": "array_to_string(list, delimiter)",
+    "doc": "Concatenates list/array elements using an optional delimiter."
+  },
+  {
+    "name": "array_to_string_comma_default",
+    "signature": "array_to_string_comma_default(array)",
+    "doc": "Concatenates list/array elements with a comma delimiter."
+  },
+  {
+    "name": "array_value",
+    "signature": "array_value(arg, ...)",
+    "doc": "Creates an ARRAY containing the argument values."
+  },
+  {
+    "name": "asin",
+    "signature": "asin(x)",
+    "doc": "Computes the inverse sine of x."
+  },
+  {
+    "name": "asinh",
+    "signature": "asinh(x)",
+    "doc": "Computes the inverse hyperbolic sine of x."
+  },
+  {
+    "name": "atan",
+    "signature": "atan(x)",
+    "doc": "Computes the inverse tangent of x."
+  },
+  {
+    "name": "atan2",
+    "signature": "atan2(y, x)",
+    "doc": "Computes the inverse tangent (y, x)."
+  },
+  {
+    "name": "atanh",
+    "signature": "atanh(x)",
+    "doc": "Computes the inverse hyperbolic tangent of x."
+  },
+  {
+    "name": "avg",
+    "signature": "avg(arg)",
+    "doc": "Calculates the average of all non-null values in arg. This function is affected by ordering."
+  },
+  {
+    "name": "bit_and",
+    "signature": "bit_and(arg)",
+    "doc": "Returns the bitwise AND of all bits in a given expression."
+  },
+  {
+    "name": "bit_count",
+    "signature": "bit_count(x)",
+    "doc": "Returns the number of bits that are set."
+  },
+  {
+    "name": "bit_or",
+    "signature": "bit_or(arg)",
+    "doc": "Returns the bitwise OR of all bits in a given expression."
+  },
+  {
+    "name": "bit_xor",
+    "signature": "bit_xor(arg)",
+    "doc": "Returns the bitwise XOR of all bits in a given expression."
+  },
+  {
+    "name": "bitstring_agg",
+    "signature": "bitstring_agg(arg)",
+    "doc": "Returns a bitstring whose length corresponds to the range of the non-null (integer) values, with bits set at the location of each (distinct) value."
+  },
+  {
+    "name": "bool_and",
+    "signature": "bool_and(arg)",
+    "doc": "Returns true if every input value is true, otherwise false."
+  },
+  {
+    "name": "bool_or",
+    "signature": "bool_or(arg)",
+    "doc": "Returns true if any input value is true, otherwise false."
+  },
+  {
+    "name": "can_cast_implicitly",
+    "signature": "can_cast_implicitly(source_value, target_value)",
+    "doc": "Whether or not we can implicitly cast from the types of the source value to the target value."
+  },
+  {
+    "name": "cardinality",
+    "signature": "cardinality(map)",
+    "doc": "Return the size of the map (or the number of entries in the map)."
+  },
+  {
+    "name": "cbrt",
+    "signature": "cbrt(x)",
+    "doc": "Returns the cube root of the number."
+  },
+  {
+    "name": "ceil",
+    "signature": "ceil(x)",
+    "doc": "Rounds the number up."
+  },
+  {
+    "name": "ceiling",
+    "signature": "ceiling(x)",
+    "doc": "Rounds the number up. Alias of ceil."
+  },
+  {
+    "name": "century",
+    "signature": "century(timestamp)",
+    "doc": "Extracts the century of a timestamp."
+  },
+  {
+    "name": "checkpoint",
+    "signature": "checkpoint(database)",
+    "doc": "Synchronize WAL with file for (optional) database without interrupting transactions."
+  },
+  {
+    "name": "coalesce",
+    "signature": "coalesce(expr, ...)",
+    "doc": "Return the first expression that evaluates to a non-NULL value. Accepts 1 or more parameters. Each expression can be a column, literal value, function result, or many others."
+  },
+  {
+    "name": "concat",
+    "signature": "concat(value, ...)",
+    "doc": "Concatenates multiple strings or lists. NULL inputs are skipped. See also operator ||."
+  },
+  {
+    "name": "constant_or_null",
+    "signature": "constant_or_null(arg1, arg2)",
+    "doc": "If arg2 is NULL, return NULL. Otherwise, return arg1."
+  },
+  {
+    "name": "contains",
+    "signature": "contains(list, element)",
+    "doc": "Returns true if the list contains the element."
+  },
+  {
+    "name": "corr",
+    "signature": "corr(y, x)",
+    "doc": "The correlation coefficient."
+  },
+  {
+    "name": "cos",
+    "signature": "cos(x)",
+    "doc": "Computes the cosine of x."
+  },
+  {
+    "name": "cot",
+    "signature": "cot(x)",
+    "doc": "Computes the cotangent of x."
+  },
+  {
+    "name": "count",
+    "signature": "count()",
+    "doc": "Returns the number of rows."
+  },
+  {
+    "name": "count_if",
+    "signature": "count_if(x)",
+    "doc": "Aggregate function; rows contribute 1 if x is true or a non-zero number, else 0."
+  },
+  {
+    "name": "countif",
+    "signature": "countif(arg)",
+    "doc": "Returns the number of rows where arg is true."
+  },
+  {
+    "name": "covar_pop",
+    "signature": "covar_pop(y, x)",
+    "doc": "The population covariance, which does not include bias correction."
+  },
+  {
+    "name": "covar_samp",
+    "signature": "covar_samp(y, x)",
+    "doc": "The sample covariance, which includes Bessel's bias correction."
+  },
+  {
+    "name": "create_sort_key",
+    "signature": "create_sort_key(parameters...)",
+    "doc": "Constructs a binary-comparable sort key based on a set of input parameters and sort qualifiers."
+  },
+  {
+    "name": "current_catalog",
+    "signature": "current_catalog()",
+    "doc": "Return the name of the currently active catalog. Default is memory."
+  },
+  {
+    "name": "current_database",
+    "signature": "current_database()",
+    "doc": "Return the name of the currently active database."
+  },
+  {
+    "name": "current_localtimestamp",
+    "signature": "current_localtimestamp()",
+    "doc": "Returns the current timestamp with time zone (at the start of the transaction)."
+  },
+  {
+    "name": "current_query",
+    "signature": "current_query()",
+    "doc": "Return the current query as a string."
+  },
+  {
+    "name": "current_schema",
+    "signature": "current_schema()",
+    "doc": "Return the name of the currently active schema. Default is main."
+  },
+  {
+    "name": "current_schemas",
+    "signature": "current_schemas(boolean)",
+    "doc": "Return list of schemas. Pass a parameter of true to include implicit schemas."
+  },
+  {
+    "name": "current_setting",
+    "signature": "current_setting('setting_name')",
+    "doc": "Return the current value of the configuration setting."
+  },
+  {
+    "name": "currval",
+    "signature": "currval('sequence_name')",
+    "doc": "Return the current value of the sequence. Note that nextval must be called at least once prior to calling currval."
+  },
+  {
+    "name": "date_add",
+    "signature": "date_add(date, interval)",
+    "doc": "Add the interval to the date and return a DATETIME value."
+  },
+  {
+    "name": "date_diff",
+    "signature": "date_diff(part, startdate, enddate)",
+    "doc": "The number of part boundaries between startdate and enddate, inclusive of the larger date and exclusive of the smaller date."
+  },
+  {
+    "name": "date_part",
+    "signature": "date_part(part, date)",
+    "doc": "Get the subfield (equivalent to extract)."
+  },
+  {
+    "name": "date_sub",
+    "signature": "date_sub(part, startdate, enddate)",
+    "doc": "The signed length of the interval between startdate and enddate, truncated to whole multiples of part."
+  },
+  {
+    "name": "date_trunc",
+    "signature": "date_trunc(part, date)",
+    "doc": "Truncate to specified precision. Always returns a TIMESTAMP, even when the input is a DATE."
+  },
+  {
+    "name": "datepart",
+    "signature": "datepart(part, interval)",
+    "doc": "Alias of date_part."
+  },
+  {
+    "name": "dayname",
+    "signature": "dayname(date)",
+    "doc": "The (English) name of the weekday."
+  },
+  {
+    "name": "days_in_month",
+    "signature": "days_in_month(date)",
+    "doc": "The number of days in the month of the given date."
+  },
+  {
+    "name": "decode",
+    "signature": "decode(blob[, on_error])",
+    "doc": "Converts blob to VARCHAR. The optional on_error parameter controls handling of invalid UTF-8: 'strict' (default, throws error), 'replace' (replaces invalid characters with ?), or 'ignore' (removes invalid characters)."
+  },
+  {
+    "name": "degrees",
+    "signature": "degrees(x)",
+    "doc": "Converts radians to degrees."
+  },
+  {
+    "name": "divide",
+    "signature": "divide(x, y)",
+    "doc": "Alias for x // y."
+  },
+  {
+    "name": "element_at",
+    "signature": "element_at(map, key)",
+    "doc": "Return the value for a given key as a list, or an empty list if the key is not contained in the map. The type of the key provided in the second parameter must match the type of the map's keys; else, an error is thrown."
+  },
+  {
+    "name": "encode",
+    "signature": "encode(string)",
+    "doc": "Converts the string to BLOB. Converts UTF-8 characters into literal encoding."
+  },
+  {
+    "name": "entropy",
+    "signature": "entropy(x)",
+    "doc": "The log-2 entropy of count input-values."
+  },
+  {
+    "name": "epoch",
+    "signature": "epoch(timestamp)",
+    "doc": "Returns the total number of seconds since the epoch."
+  },
+  {
+    "name": "epoch_ms",
+    "signature": "epoch_ms(timestamp)",
+    "doc": "Returns the total number of milliseconds since the epoch."
+  },
+  {
+    "name": "epoch_ns",
+    "signature": "epoch_ns(timestamp)",
+    "doc": "Returns the total number of nanoseconds since the epoch."
+  },
+  {
+    "name": "epoch_us",
+    "signature": "epoch_us(timestamp)",
+    "doc": "Returns the total number of microseconds since the epoch."
+  },
+  {
+    "name": "equi_width_bins",
+    "signature": "equi_width_bins(min, max, bincount, nice := false)",
+    "doc": "Returns the upper boundaries of a partition of the interval [min, max] into bin_count equal-sized subintervals (for use with, e.g., histogram). If nice = true, then min, max and bincount may be adjusted to produce more aesthetically pleasing results."
+  },
+  {
+    "name": "error",
+    "signature": "error(message)",
+    "doc": "Throws the given error message."
+  },
+  {
+    "name": "even",
+    "signature": "even(x)",
+    "doc": "Round to next even number by rounding away from zero."
+  },
+  {
+    "name": "exp",
+    "signature": "exp(x)",
+    "doc": "Computes e ** x."
+  },
+  {
+    "name": "extract",
+    "signature": "extract(part from date)",
+    "doc": "Get subfield from a date."
+  },
+  {
+    "name": "factorial",
+    "signature": "factorial(x)",
+    "doc": "See the ! operator. Computes the product of the current integer and all integers below it."
+  },
+  {
+    "name": "favg",
+    "signature": "favg(arg)",
+    "doc": "Calculates the average using a more accurate floating point summation (Kahan Sum). This function is affected by ordering."
+  },
+  {
+    "name": "fdiv",
+    "signature": "fdiv(x, y)",
+    "doc": "Performs integer division (x // y) but returns a DOUBLE value."
+  },
+  {
+    "name": "first",
+    "signature": "first(arg)",
+    "doc": "Returns the first value (null or non-null) from arg. This function is affected by ordering."
+  },
+  {
+    "name": "flatten",
+    "signature": "flatten(nested_list)",
+    "doc": "Flattens a nested list by one level."
+  },
+  {
+    "name": "floor",
+    "signature": "floor(x)",
+    "doc": "Rounds the number down."
+  },
+  {
+    "name": "fmod",
+    "signature": "fmod(x, y)",
+    "doc": "Calculates the modulo value. Always returns a DOUBLE value."
+  },
+  {
+    "name": "force_checkpoint",
+    "signature": "force_checkpoint(database)",
+    "doc": "Synchronize WAL with file for (optional) database interrupting transactions."
+  },
+  {
+    "name": "from_base64",
+    "signature": "from_base64(string)",
+    "doc": "Converts a base64 encoded string to a character string (BLOB)."
+  },
+  {
+    "name": "fsum",
+    "signature": "fsum(arg)",
+    "doc": "Calculates the sum using a more accurate floating point summation (Kahan Sum). This function is affected by ordering."
+  },
+  {
+    "name": "gamma",
+    "signature": "gamma(x)",
+    "doc": "Interpolation of the factorial of x - 1. Fractional inputs are allowed."
+  },
+  {
+    "name": "gcd",
+    "signature": "gcd(x, y)",
+    "doc": "Computes the greatest common divisor of x and y."
+  },
+  {
+    "name": "gen_random_uuid",
+    "signature": "gen_random_uuid()",
+    "doc": "Return a random UUID (UUIDv4) similar to this: eeccb8c5-9943-b2bb-bb5e-222f4e14b687."
+  },
+  {
+    "name": "generate_series",
+    "signature": "generate_series(timestamp, timestamp, interval)",
+    "doc": "Generate a table of timestamps in the closed range, stepping by the interval."
+  },
+  {
+    "name": "geometric_mean",
+    "signature": "geometric_mean(arg)",
+    "doc": "Calculates the geometric mean of all non-null values in arg. This function is affected by ordering."
+  },
+  {
+    "name": "get_current_time",
+    "signature": "get_current_time()",
+    "doc": "Current time (start of current transaction) in the local time zone as TIMETZ."
+  },
+  {
+    "name": "getenv",
+    "signature": "getenv(var)",
+    "doc": "Returns the value of the environment variable var. Only available in the command line client."
+  },
+  {
+    "name": "glob",
+    "signature": "glob(search_path)",
+    "doc": "Return filenames found at the location indicated by the search_path in a single column named file. The search_path may contain glob pattern matching syntax."
+  },
+  {
+    "name": "greatest",
+    "signature": "greatest(x1, x2, ...)",
+    "doc": "Selects the largest value."
+  },
+  {
+    "name": "greatest_common_divisor",
+    "signature": "greatest_common_divisor(x, y)",
+    "doc": "Computes the greatest common divisor of x and y."
+  },
+  {
+    "name": "hash",
+    "signature": "hash(value)",
+    "doc": "Returns a UBIGINT with the hash of the value. The used hash function may change across DuckDB versions."
+  },
+  {
+    "name": "hex",
+    "signature": "hex(blob)",
+    "doc": "Converts blob to VARCHAR using hexadecimal encoding."
+  },
+  {
+    "name": "histogram",
+    "signature": "histogram(arg)",
+    "doc": "Returns a MAP of key-value pairs representing buckets and counts."
+  },
+  {
+    "name": "histogram_exact",
+    "signature": "histogram_exact(arg, elements)",
+    "doc": "Returns a MAP of key-value pairs representing the requested elements and their counts. A catch-all element specific to the data-type is automatically added to count other elements when they appear, see is_histogram_other_bin."
+  },
+  {
+    "name": "histogram_values",
+    "signature": "histogram_values(source, col_name, technique, bin_count)",
+    "doc": "Returns the upper boundaries of the bins and their counts."
+  },
+  {
+    "name": "icu_sort_key",
+    "signature": "icu_sort_key(string, collator)",
+    "doc": "Surrogate sort key used to sort special characters according to the specific locale. Collator parameter is optional. Only available when the ICU extension is installed."
+  },
+  {
+    "name": "if",
+    "signature": "if(a, b, c)",
+    "doc": "Ternary conditional operator; returns b if a, else returns c. Equivalent to CASE WHEN a THEN b ELSE c END."
+  },
+  {
+    "name": "ifnull",
+    "signature": "ifnull(expr, other)",
+    "doc": "A two-argument version of coalesce."
+  },
+  {
+    "name": "is_histogram_other_bin",
+    "signature": "is_histogram_other_bin(arg)",
+    "doc": "Returns true when arg is the \"catch-all element\" of its datatype for the purpose of the histogram_exact function, which is equal to the \"right-most boundary\" of its datatype for the purpose of the histogram function."
+  },
+  {
+    "name": "isfinite",
+    "signature": "isfinite(x)",
+    "doc": "Returns true if the floating point value is finite, false otherwise."
+  },
+  {
+    "name": "isinf",
+    "signature": "isinf(x)",
+    "doc": "Returns true if the floating point value is infinite, false otherwise."
+  },
+  {
+    "name": "isnan",
+    "signature": "isnan(x)",
+    "doc": "Returns true if the floating point value is not a number, false otherwise."
+  },
+  {
+    "name": "julian",
+    "signature": "julian(date)",
+    "doc": "Extract the Julian Day number from a date."
+  },
+  {
+    "name": "kurtosis",
+    "signature": "kurtosis(x)",
+    "doc": "The excess kurtosis (Fisher's definition) with bias correction according to the sample size."
+  },
+  {
+    "name": "kurtosis_pop",
+    "signature": "kurtosis_pop(x)",
+    "doc": "The excess kurtosis (Fisher’s definition) without bias correction."
+  },
+  {
+    "name": "last",
+    "signature": "last(arg)",
+    "doc": "Returns the last value of a column. This function is affected by ordering."
+  },
+  {
+    "name": "last_day",
+    "signature": "last_day(date)",
+    "doc": "The last day of the corresponding month in the date."
+  },
+  {
+    "name": "lcm",
+    "signature": "lcm(x, y)",
+    "doc": "Computes the least common multiple of x and y."
+  },
+  {
+    "name": "least",
+    "signature": "least(x1, x2, ...)",
+    "doc": "Selects the smallest value."
+  },
+  {
+    "name": "least_common_multiple",
+    "signature": "least_common_multiple(x, y)",
+    "doc": "Computes the least common multiple of x and y."
+  },
+  {
+    "name": "length",
+    "signature": "length(list)",
+    "doc": "Returns the length of the list."
+  },
+  {
+    "name": "lgamma",
+    "signature": "lgamma(x)",
+    "doc": "Computes the log of the gamma function."
+  },
+  {
+    "name": "list",
+    "signature": "list(arg)",
+    "doc": "Returns a LIST containing all the values of a column. This function is affected by ordering."
+  },
+  {
+    "name": "list_aggregate",
+    "signature": "list_aggregate(list, function_name, ...)",
+    "doc": "Executes the aggregate function function_name on the elements of list. See the List Aggregates section for more details."
+  },
+  {
+    "name": "list_any_value",
+    "signature": "list_any_value(list)",
+    "doc": "Applies aggregate function any_value to the list."
+  },
+  {
+    "name": "list_append",
+    "signature": "list_append(list, element)",
+    "doc": "Appends element to list."
+  },
+  {
+    "name": "list_approx_count_distinct",
+    "signature": "list_approx_count_distinct(list)",
+    "doc": "Applies aggregate function approx_count_distinct to the list."
+  },
+  {
+    "name": "list_avg",
+    "signature": "list_avg(list)",
+    "doc": "Applies aggregate function avg to the list."
+  },
+  {
+    "name": "list_bit_and",
+    "signature": "list_bit_and(list)",
+    "doc": "Applies aggregate function bit_and to the list."
+  },
+  {
+    "name": "list_bit_or",
+    "signature": "list_bit_or(list)",
+    "doc": "Applies aggregate function bit_or to the list."
+  },
+  {
+    "name": "list_bit_xor",
+    "signature": "list_bit_xor(list)",
+    "doc": "Applies aggregate function bit_xor to the list."
+  },
+  {
+    "name": "list_bool_and",
+    "signature": "list_bool_and(list)",
+    "doc": "Applies aggregate function bool_and to the list."
+  },
+  {
+    "name": "list_bool_or",
+    "signature": "list_bool_or(list)",
+    "doc": "Applies aggregate function bool_or to the list."
+  },
+  {
+    "name": "list_concat",
+    "signature": "list_concat(list_1, ..., list_n)",
+    "doc": "Concatenates lists. NULL inputs are skipped. See also operator ||."
+  },
+  {
+    "name": "list_contains",
+    "signature": "list_contains(list, element)",
+    "doc": "Returns true if the list contains the element."
+  },
+  {
+    "name": "list_cosine_distance",
+    "signature": "list_cosine_distance(list1, list2)",
+    "doc": "Computes the cosine distance between two same-sized lists."
+  },
+  {
+    "name": "list_cosine_similarity",
+    "signature": "list_cosine_similarity(list1, list2)",
+    "doc": "Computes the cosine similarity between two same-sized lists."
+  },
+  {
+    "name": "list_count",
+    "signature": "list_count(list)",
+    "doc": "Applies aggregate function count to the list."
+  },
+  {
+    "name": "list_distance",
+    "signature": "list_distance(list1, list2)",
+    "doc": "Calculates the Euclidean distance between two points with coordinates given in two inputs lists of equal length."
+  },
+  {
+    "name": "list_distinct",
+    "signature": "list_distinct(list)",
+    "doc": "Removes all duplicates and NULL values from a list. Does not preserve the original order."
+  },
+  {
+    "name": "list_entropy",
+    "signature": "list_entropy(list)",
+    "doc": "Applies aggregate function entropy to the list."
+  },
+  {
+    "name": "list_extract",
+    "signature": "list_extract(list, index)",
+    "doc": "Extract the indexth (1-based) value from the list."
+  },
+  {
+    "name": "list_filter",
+    "signature": "list_filter(list, lambda(x))",
+    "doc": "Constructs a list from those elements of the input list for which the lambda function returns true. DuckDB must be able to cast the lambda function's return type to BOOL. The return type of list_filter is the same as the input list's. See list_filter examples."
+  },
+  {
+    "name": "list_first",
+    "signature": "list_first(list)",
+    "doc": "Applies aggregate function first to the list."
+  },
+  {
+    "name": "list_grade_up",
+    "signature": "list_grade_up(list[, col1][, col2])",
+    "doc": "Works like list_sort, but the results are the indexes that correspond to the position in the original list instead of the actual values."
+  },
+  {
+    "name": "list_has_all",
+    "signature": "list_has_all(list1, list2)",
+    "doc": "Returns true if all elements of list2 are in list1. NULLs are ignored."
+  },
+  {
+    "name": "list_has_any",
+    "signature": "list_has_any(list1, list2)",
+    "doc": "Returns true if the lists have any element in common. NULLs are ignored."
+  },
+  {
+    "name": "list_histogram",
+    "signature": "list_histogram(list)",
+    "doc": "Applies aggregate function histogram to the list."
+  },
+  {
+    "name": "list_inner_product",
+    "signature": "list_inner_product(list1, list2)",
+    "doc": "Computes the inner product between two same-sized lists."
+  },
+  {
+    "name": "list_intersect",
+    "signature": "list_intersect(list1, list2)",
+    "doc": "Returns a list of all the elements that exist in both list1 and list2, without duplicates."
+  },
+  {
+    "name": "list_kurtosis",
+    "signature": "list_kurtosis(list)",
+    "doc": "Applies aggregate function kurtosis to the list."
+  },
+  {
+    "name": "list_kurtosis_pop",
+    "signature": "list_kurtosis_pop(list)",
+    "doc": "Applies aggregate function kurtosis_pop to the list."
+  },
+  {
+    "name": "list_last",
+    "signature": "list_last(list)",
+    "doc": "Applies aggregate function last to the list."
+  },
+  {
+    "name": "list_mad",
+    "signature": "list_mad(list)",
+    "doc": "Applies aggregate function mad to the list."
+  },
+  {
+    "name": "list_max",
+    "signature": "list_max(list)",
+    "doc": "Applies aggregate function max to the list."
+  },
+  {
+    "name": "list_median",
+    "signature": "list_median(list)",
+    "doc": "Applies aggregate function median to the list."
+  },
+  {
+    "name": "list_min",
+    "signature": "list_min(list)",
+    "doc": "Applies aggregate function min to the list."
+  },
+  {
+    "name": "list_mode",
+    "signature": "list_mode(list)",
+    "doc": "Applies aggregate function mode to the list."
+  },
+  {
+    "name": "list_negative_inner_product",
+    "signature": "list_negative_inner_product(list1, list2)",
+    "doc": "Computes the negative inner product between two same-sized lists."
+  },
+  {
+    "name": "list_position",
+    "signature": "list_position(list, element)",
+    "doc": "Returns the index of the element if the list contains the element. If the element is not found, it returns NULL."
+  },
+  {
+    "name": "list_prepend",
+    "signature": "list_prepend(element, list)",
+    "doc": "Prepends element to list."
+  },
+  {
+    "name": "list_product",
+    "signature": "list_product(list)",
+    "doc": "Applies aggregate function product to the list."
+  },
+  {
+    "name": "list_reduce",
+    "signature": "list_reduce(list, lambda(x,y)[, initial_value])",
+    "doc": "Reduces all elements of the input list into a single scalar value by executing the lambda function on a running result and the next list element. The lambda function has an optional initial_value argument. See list_reduce examples."
+  },
+  {
+    "name": "list_resize",
+    "signature": "list_resize(list, size[[, value]])",
+    "doc": "Resizes the list to contain size elements. Initializes new elements with value or NULL if value is not set."
+  },
+  {
+    "name": "list_reverse",
+    "signature": "list_reverse(list)",
+    "doc": "Reverses the list."
+  },
+  {
+    "name": "list_reverse_sort",
+    "signature": "list_reverse_sort(list[, col1])",
+    "doc": "Sorts the elements of the list in reverse order. See the Sorting Lists section for more details about sorting order and NULL values."
+  },
+  {
+    "name": "list_select",
+    "signature": "list_select(value_list, index_list)",
+    "doc": "Returns a list based on the elements selected by the index_list."
+  },
+  {
+    "name": "list_sem",
+    "signature": "list_sem(list)",
+    "doc": "Applies aggregate function sem to the list."
+  },
+  {
+    "name": "list_skewness",
+    "signature": "list_skewness(list)",
+    "doc": "Applies aggregate function skewness to the list."
+  },
+  {
+    "name": "list_slice",
+    "signature": "list_slice(list, begin, end)",
+    "doc": "Extracts a sublist or substring using slice conventions. Negative values are accepted."
+  },
+  {
+    "name": "list_sort",
+    "signature": "list_sort(list[, col1][, col2])",
+    "doc": "Sorts the elements of the list. See the Sorting Lists section for more details about sorting order and NULL values."
+  },
+  {
+    "name": "list_stddev_pop",
+    "signature": "list_stddev_pop(list)",
+    "doc": "Applies aggregate function stddev_pop to the list."
+  },
+  {
+    "name": "list_stddev_samp",
+    "signature": "list_stddev_samp(list)",
+    "doc": "Applies aggregate function stddev_samp to the list."
+  },
+  {
+    "name": "list_string_agg",
+    "signature": "list_string_agg(list)",
+    "doc": "Applies aggregate function string_agg to the list."
+  },
+  {
+    "name": "list_sum",
+    "signature": "list_sum(list)",
+    "doc": "Applies aggregate function sum to the list."
+  },
+  {
+    "name": "list_transform",
+    "signature": "list_transform(list, lambda(x))",
+    "doc": "Returns a list that is the result of applying the lambda function to each element of the input list. The return type is defined by the return type of the lambda function. See list_transform examples."
+  },
+  {
+    "name": "list_unique",
+    "signature": "list_unique(list)",
+    "doc": "Counts the unique elements of a list."
+  },
+  {
+    "name": "list_value",
+    "signature": "list_value(arg, ...)",
+    "doc": "Creates a LIST containing the argument values."
+  },
+  {
+    "name": "list_var_pop",
+    "signature": "list_var_pop(list)",
+    "doc": "Applies aggregate function var_pop to the list."
+  },
+  {
+    "name": "list_var_samp",
+    "signature": "list_var_samp(list)",
+    "doc": "Applies aggregate function var_samp to the list."
+  },
+  {
+    "name": "list_where",
+    "signature": "list_where(value_list, mask_list)",
+    "doc": "Returns a list with the BOOLEANs in mask_list applied as a mask to the value_list."
+  },
+  {
+    "name": "list_zip",
+    "signature": "list_zip(list_1, ..., list_n[, truncate])",
+    "doc": "Zips n LISTs to a new LIST whose length will be that of the longest list. Its elements are structs of n elements from each list list_1, …, list_n, missing elements are replaced with NULL. If truncate is set, all lists are truncated to the smallest list length."
+  },
+  {
+    "name": "ln",
+    "signature": "ln(x)",
+    "doc": "Computes the natural logarithm of x."
+  },
+  {
+    "name": "log",
+    "signature": "log(x)",
+    "doc": "Computes the base-10 log of x."
+  },
+  {
+    "name": "log10",
+    "signature": "log10(x)",
+    "doc": "Alias of log. Computes the base-10 log of x."
+  },
+  {
+    "name": "log2",
+    "signature": "log2(x)",
+    "doc": "Computes the base-2 log of x."
+  },
+  {
+    "name": "mad",
+    "signature": "mad(x)",
+    "doc": "The median absolute deviation. Temporal types return a positive INTERVAL."
+  },
+  {
+    "name": "make_date",
+    "signature": "make_date(year, month, day)",
+    "doc": "The date for the given parts."
+  },
+  {
+    "name": "make_time",
+    "signature": "make_time(bigint, bigint, double)",
+    "doc": "The time for the given parts."
+  },
+  {
+    "name": "make_timestamp",
+    "signature": "make_timestamp(bigint, bigint, bigint, bigint, bigint, double)",
+    "doc": "The timestamp for the given parts."
+  },
+  {
+    "name": "make_timestamp_ms",
+    "signature": "make_timestamp_ms(milliseconds)",
+    "doc": "Converts milliseconds since the epoch to a timestamp."
+  },
+  {
+    "name": "make_timestamp_ns",
+    "signature": "make_timestamp_ns(nanoseconds)",
+    "doc": "Converts nanoseconds since the epoch to a timestamp."
+  },
+  {
+    "name": "map",
+    "signature": "map()",
+    "doc": "Returns an empty map."
+  },
+  {
+    "name": "map_concat",
+    "signature": "map_concat(maps...)",
+    "doc": "Returns a map created from merging the input maps. On key collision the value is taken from the last map with that key."
+  },
+  {
+    "name": "map_contains",
+    "signature": "map_contains(map, key)",
+    "doc": "Checks if a map contains a given key."
+  },
+  {
+    "name": "map_contains_entry",
+    "signature": "map_contains_entry(map, key, value)",
+    "doc": "Check if a map contains a given key-value pair."
+  },
+  {
+    "name": "map_contains_value",
+    "signature": "map_contains_value(map, value)",
+    "doc": "Checks if a map contains a given value."
+  },
+  {
+    "name": "map_entries",
+    "signature": "map_entries(map)",
+    "doc": "Return a list of struct(k, v) for each key-value pair in the map."
+  },
+  {
+    "name": "map_extract",
+    "signature": "map_extract(map, key)",
+    "doc": "Return the value for a given key as a list, or NULL if the key is not contained in the map. The type of the key provided in the second parameter must match the type of the map's keys else an error is returned."
+  },
+  {
+    "name": "map_extract_value",
+    "signature": "map_extract_value(map, key)",
+    "doc": "Returns the value for a given key or NULL if the key is not contained in the map. The type of the key provided in the second parameter must match the type of the map's keys; else, an error is thrown."
+  },
+  {
+    "name": "map_from_entries",
+    "signature": "map_from_entries(STRUCT(k, v)[])",
+    "doc": "Returns a map created from the entries of the array."
+  },
+  {
+    "name": "map_keys",
+    "signature": "map_keys(map)",
+    "doc": "Return a list of all keys in the map."
+  },
+  {
+    "name": "map_values",
+    "signature": "map_values(map)",
+    "doc": "Return a list of all values in the map."
+  },
+  {
+    "name": "max",
+    "signature": "max(arg)",
+    "doc": "Returns the maximum value present in arg. This function is unaffected by distinctness."
+  },
+  {
+    "name": "md5",
+    "signature": "md5(blob)",
+    "doc": "Returns the MD5 hash of the blob as a VARCHAR."
+  },
+  {
+    "name": "md5_number",
+    "signature": "md5_number(blob)",
+    "doc": "Returns the MD5 hash of the blob as a HUGEINT."
+  },
+  {
+    "name": "md5_number_lower",
+    "signature": "md5_number_lower(string)",
+    "doc": "Returns the lower 8 bytes of the MD5 hash of string as a UBIGINT."
+  },
+  {
+    "name": "md5_number_upper",
+    "signature": "md5_number_upper(string)",
+    "doc": "Returns the upper 8 bytes of the MD5 hash of string as a UBIGINT."
+  },
+  {
+    "name": "median",
+    "signature": "median(x)",
+    "doc": "The middle value of the set. For even value counts, quantitative values are averaged and ordinal values return the lower value."
+  },
+  {
+    "name": "min",
+    "signature": "min(arg)",
+    "doc": "Returns the minimum value present in arg. This function is unaffected by distinctness."
+  },
+  {
+    "name": "mode",
+    "signature": "mode(x)",
+    "doc": "The most frequent value. This function is affected by ordering."
+  },
+  {
+    "name": "monthname",
+    "signature": "monthname(date)",
+    "doc": "The (English) name of the month."
+  },
+  {
+    "name": "multiply",
+    "signature": "multiply(x, y)",
+    "doc": "Alias for x * y."
+  },
+  {
+    "name": "nextafter",
+    "signature": "nextafter(x, y)",
+    "doc": "Return the next floating point value after x in the direction of y."
+  },
+  {
+    "name": "nextval",
+    "signature": "nextval('sequence_name')",
+    "doc": "Return the following value of the sequence."
+  },
+  {
+    "name": "nullif",
+    "signature": "nullif(a, b)",
+    "doc": "Return NULL if a = b, else return a. Equivalent to CASE WHEN a = b THEN NULL ELSE a END."
+  },
+  {
+    "name": "octet_length",
+    "signature": "octet_length(blob)",
+    "doc": "Number of bytes in blob."
+  },
+  {
+    "name": "parse_formatted_bytes",
+    "signature": "parse_formatted_bytes(string)",
+    "doc": "Parse a human-readable byte size string (e.g., '16 KiB') into a UBIGINT number of bytes. Throws an error on invalid input."
+  },
+  {
+    "name": "pg_typeof",
+    "signature": "pg_typeof(expression)",
+    "doc": "Returns the lower case name of the data type of the result of the expression. For PostgreSQL compatibility."
+  },
+  {
+    "name": "pi",
+    "signature": "pi()",
+    "doc": "Returns the value of pi."
+  },
+  {
+    "name": "pow",
+    "signature": "pow(x, y)",
+    "doc": "Computes x to the power of y."
+  },
+  {
+    "name": "power",
+    "signature": "power(x, y)",
+    "doc": "Alias of pow. Computes x to the power of y."
+  },
+  {
+    "name": "product",
+    "signature": "product(arg)",
+    "doc": "Calculates the product of all non-null values in arg. This function is affected by ordering."
+  },
+  {
+    "name": "quantile_cont",
+    "signature": "quantile_cont(x, pos)",
+    "doc": "The interpolated pos-quantile of x for 0 <= pos <= 1. Returns the pos * (n_nonnull_values - 1)th (zero-indexed, in the specified order) value of x or an interpolation between the adjacent values if the index is not an integer. Intuitively, arranges the values of x as equispaced points on a line, sta"
+  },
+  {
+    "name": "quantile_disc",
+    "signature": "quantile_disc(x, pos)",
+    "doc": "The discrete pos-quantile of x for 0 <= pos <= 1. Returns the greatest(ceil(pos * n_nonnull_values) - 1, 0)th (zero-indexed, in the specified order) value of x. Intuitively, assigns to each value of x an equisized sub-interval (left-open and right-closed except for the initial interval) of the inter"
+  },
+  {
+    "name": "query",
+    "signature": "query(query_string)",
+    "doc": "Table function that parses and executes the query defined in query_string. Only constant strings are allowed. Warning: this function allows invoking arbitrary queries, potentially altering the database state."
+  },
+  {
+    "name": "query_table",
+    "signature": "query_table(tbl_name)",
+    "doc": "Table function that returns the table given in tbl_name."
+  },
+  {
+    "name": "radians",
+    "signature": "radians(x)",
+    "doc": "Converts degrees to radians."
+  },
+  {
+    "name": "random",
+    "signature": "random()",
+    "doc": "Returns a random number x in the range 0.0 <= x < 1.0."
+  },
+  {
+    "name": "range",
+    "signature": "range(timestamp, timestamp, interval)",
+    "doc": "Generate a table of timestamps in the half open range, stepping by the interval."
+  },
+  {
+    "name": "read_blob",
+    "signature": "read_blob(source)",
+    "doc": "Returns the content from source (a filename, a list of filenames, or a glob pattern) as a BLOB. See the read_blob guide for more details."
+  },
+  {
+    "name": "read_text",
+    "signature": "read_text(source)",
+    "doc": "Returns the content from source (a filename, a list of filenames, or a glob pattern) as a VARCHAR. The file content is first validated to be valid UTF-8. If read_text attempts to read a file with invalid UTF-8 an error is thrown suggesting to use read_blob instead. See the read_text guide for more d"
+  },
+  {
+    "name": "regr_avgx",
+    "signature": "regr_avgx(y, x)",
+    "doc": "The average of the independent variable for non-NULL pairs, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_avgy",
+    "signature": "regr_avgy(y, x)",
+    "doc": "The average of the dependent variable for non-NULL pairs, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_count",
+    "signature": "regr_count(y, x)",
+    "doc": "The number of non-NULL pairs."
+  },
+  {
+    "name": "regr_intercept",
+    "signature": "regr_intercept(y, x)",
+    "doc": "The intercept of the univariate linear regression line, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_r2",
+    "signature": "regr_r2(y, x)",
+    "doc": "The squared Pearson correlation coefficient between y and x. Also: The coefficient of determination in a linear regression, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_slope",
+    "signature": "regr_slope(y, x)",
+    "doc": "Returns the slope of the linear regression line, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_sxx",
+    "signature": "regr_sxx(y, x)",
+    "doc": "The sample variance, which includes Bessel's bias correction, of the independent variable for non-NULL pairs, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "regr_sxy",
+    "signature": "regr_sxy(y, x)",
+    "doc": "The sample covariance, which includes Bessel's bias correction."
+  },
+  {
+    "name": "regr_syy",
+    "signature": "regr_syy(y, x)",
+    "doc": "The sample variance, which includes Bessel's bias correction, of the dependent variable for non-NULL pairs, where x is the independent variable and y is the dependent variable."
+  },
+  {
+    "name": "repeat",
+    "signature": "repeat(blob, count)",
+    "doc": "Repeats the blob count number of times."
+  },
+  {
+    "name": "repeat_row",
+    "signature": "repeat_row(varargs, num_rows)",
+    "doc": "Returns a table with num_rows rows, each containing the fields defined in varargs."
+  },
+  {
+    "name": "replace_type",
+    "signature": "replace_type(value, source_type, target_type)",
+    "doc": "Recursively casts every field of value that has type source_type to target_type. The source and target types are supplied as NULL-typed values, e.g., NULL::VARCHAR. Useful for converting the field types of a deeply nested value (e.g., a STRUCT or LIST) in one call."
+  },
+  {
+    "name": "round",
+    "signature": "round(v NUMERIC, s INTEGER)",
+    "doc": "Round to s decimal places. Values s < 0 are allowed."
+  },
+  {
+    "name": "round_even",
+    "signature": "round_even(v NUMERIC, s INTEGER)",
+    "doc": "Alias of roundbankers(v, s). Round to s decimal places using the rounding half to even rule. Values s < 0 are allowed."
+  },
+  {
+    "name": "roundbankers",
+    "signature": "roundbankers(v NUMERIC, s INTEGER)",
+    "doc": "Alias of round_even(v, s). Round to s decimal places using the rounding half to even rule. Values s < 0 are allowed."
+  },
+  {
+    "name": "row",
+    "signature": "row(any, ...)",
+    "doc": "Create an unnamed STRUCT (tuple) containing the argument values."
+  },
+  {
+    "name": "sem",
+    "signature": "sem(x)",
+    "doc": "The standard error of the mean."
+  },
+  {
+    "name": "setseed",
+    "signature": "setseed(x)",
+    "doc": "Sets the seed to be used for the random function."
+  },
+  {
+    "name": "sha1",
+    "signature": "sha1(blob)",
+    "doc": "Returns a VARCHAR with the SHA-1 hash of the blob."
+  },
+  {
+    "name": "sha256",
+    "signature": "sha256(blob)",
+    "doc": "Returns a VARCHAR with the SHA-256 hash of the blob."
+  },
+  {
+    "name": "sign",
+    "signature": "sign(x)",
+    "doc": "Returns the sign of x as -1, 0 or 1."
+  },
+  {
+    "name": "signbit",
+    "signature": "signbit(x)",
+    "doc": "Returns whether the signbit is set or not."
+  },
+  {
+    "name": "sin",
+    "signature": "sin(x)",
+    "doc": "Computes the sin of x."
+  },
+  {
+    "name": "skewness",
+    "signature": "skewness(x)",
+    "doc": "The skewness."
+  },
+  {
+    "name": "sleep_ms",
+    "signature": "sleep_ms(milliseconds)",
+    "doc": "Pause execution for the specified number of milliseconds. Returns NULL."
+  },
+  {
+    "name": "sqrt",
+    "signature": "sqrt(x)",
+    "doc": "Returns the square root of the number."
+  },
+  {
+    "name": "stats",
+    "signature": "stats(expression)",
+    "doc": "Returns a string with statistics about the expression. Expression can be a column, constant, or SQL expression."
+  },
+  {
+    "name": "stddev_pop",
+    "signature": "stddev_pop(x)",
+    "doc": "The population standard deviation."
+  },
+  {
+    "name": "stddev_samp",
+    "signature": "stddev_samp(x)",
+    "doc": "The sample standard deviation."
+  },
+  {
+    "name": "strftime",
+    "signature": "strftime(date, format)",
+    "doc": "Converts a date to a string according to the format string."
+  },
+  {
+    "name": "string_agg",
+    "signature": "string_agg(arg)",
+    "doc": "Concatenates the column string values with a comma separator (,). This function is affected by ordering."
+  },
+  {
+    "name": "strptime",
+    "signature": "strptime(text, format-list)",
+    "doc": "Converts the string text to timestamp applying the format strings in the list until one succeeds. Throws an error on failure. To return NULL on failure, use try_strptime."
+  },
+  {
+    "name": "struct_concat",
+    "signature": "struct_concat(structs...)",
+    "doc": "Merge the multiple structs into a single STRUCT."
+  },
+  {
+    "name": "struct_contains",
+    "signature": "struct_contains(struct, entry)",
+    "doc": "Check if the STRUCT contains the specified entry."
+  },
+  {
+    "name": "struct_extract",
+    "signature": "struct_extract(struct, 'entry')",
+    "doc": "Extract the named entry from the STRUCT."
+  },
+  {
+    "name": "struct_extract_at",
+    "signature": "struct_extract_at(struct, idx)",
+    "doc": "Extract the entry from a STRUCT (tuple) using an index (1-based)."
+  },
+  {
+    "name": "struct_insert",
+    "signature": "struct_insert(struct, name := any, ...)",
+    "doc": "Add field(s) to an existing STRUCT."
+  },
+  {
+    "name": "struct_pack",
+    "signature": "struct_pack(name := any, ...)",
+    "doc": "Create a STRUCT containing the argument values. The entry name will be the bound variable name."
+  },
+  {
+    "name": "struct_position",
+    "signature": "struct_position(struct, entry)",
+    "doc": "Return the index of the entry within the STRUCT (1-based), or NULL if not found."
+  },
+  {
+    "name": "struct_update",
+    "signature": "struct_update(struct, name := any, ...)",
+    "doc": "Add or update field(s) of an existing STRUCT."
+  },
+  {
+    "name": "struct_values",
+    "signature": "struct_values(struct)",
+    "doc": "Return the values of a STRUCT as an unnamed STRUCT (tuple)."
+  },
+  {
+    "name": "subtract",
+    "signature": "subtract(x, y)",
+    "doc": "Alias for x - y."
+  },
+  {
+    "name": "sum",
+    "signature": "sum(arg)",
+    "doc": "Calculates the sum of all non-null values in arg / counts true values when arg is boolean. The floating-point versions of this function are affected by ordering."
+  },
+  {
+    "name": "tan",
+    "signature": "tan(x)",
+    "doc": "Computes the tangent of x."
+  },
+  {
+    "name": "time_bucket",
+    "signature": "time_bucket(bucket_width, date[, offset])",
+    "doc": "Truncate date to a grid of width bucket_width. The grid is anchored at 2000-01-01[ + offset] when bucket_width is a number of months or coarser units, else 2000-01-03[ + offset]. Note that 2000-01-03 is a Monday."
+  },
+  {
+    "name": "to_base64",
+    "signature": "to_base64(blob)",
+    "doc": "Converts a blob to a base64 encoded string."
+  },
+  {
+    "name": "to_centuries",
+    "signature": "to_centuries(integer)",
+    "doc": "Construct a century interval."
+  },
+  {
+    "name": "to_days",
+    "signature": "to_days(integer)",
+    "doc": "Construct a day interval."
+  },
+  {
+    "name": "to_decades",
+    "signature": "to_decades(integer)",
+    "doc": "Construct a decade interval."
+  },
+  {
+    "name": "to_hours",
+    "signature": "to_hours(integer)",
+    "doc": "Construct an hour interval."
+  },
+  {
+    "name": "to_microseconds",
+    "signature": "to_microseconds(integer)",
+    "doc": "Construct a microsecond interval."
+  },
+  {
+    "name": "to_millennia",
+    "signature": "to_millennia(integer)",
+    "doc": "Construct a millennium interval."
+  },
+  {
+    "name": "to_milliseconds",
+    "signature": "to_milliseconds(integer)",
+    "doc": "Construct a millisecond interval."
+  },
+  {
+    "name": "to_minutes",
+    "signature": "to_minutes(integer)",
+    "doc": "Construct a minute interval."
+  },
+  {
+    "name": "to_months",
+    "signature": "to_months(integer)",
+    "doc": "Construct a month interval."
+  },
+  {
+    "name": "to_quarters",
+    "signature": "to_quarters(integer)",
+    "doc": "Construct an interval of integer quarters."
+  },
+  {
+    "name": "to_seconds",
+    "signature": "to_seconds(integer)",
+    "doc": "Construct a second interval."
+  },
+  {
+    "name": "to_weeks",
+    "signature": "to_weeks(integer)",
+    "doc": "Construct a week interval."
+  },
+  {
+    "name": "to_years",
+    "signature": "to_years(integer)",
+    "doc": "Construct a year interval."
+  },
+  {
+    "name": "today",
+    "signature": "today()",
+    "doc": "Current date (start of current transaction) in the local time zone."
+  },
+  {
+    "name": "trunc",
+    "signature": "trunc(x)",
+    "doc": "Truncates the number."
+  },
+  {
+    "name": "try_strptime",
+    "signature": "try_strptime(text, format-list)",
+    "doc": "Converts the string text to timestamp applying the format strings in the list until one succeeds. Returns NULL on failure."
+  },
+  {
+    "name": "txid_current",
+    "signature": "txid_current()",
+    "doc": "Returns the current transaction's identifier, a BIGINT value. It will assign a new one if the current transaction does not have one already."
+  },
+  {
+    "name": "typeof",
+    "signature": "typeof(expression)",
+    "doc": "Returns the name of the data type of the result of the expression."
+  },
+  {
+    "name": "unbin",
+    "signature": "unbin(value)",
+    "doc": "Converts a value from binary representation to a blob."
+  },
+  {
+    "name": "unhex",
+    "signature": "unhex(value)",
+    "doc": "Converts a value from hexadecimal representation to a blob."
+  },
+  {
+    "name": "union_extract",
+    "signature": "union_extract(union, 'tag')",
+    "doc": "Extract the value with the named tags from the union. NULL if the tag is not currently selected."
+  },
+  {
+    "name": "union_tag",
+    "signature": "union_tag(union)",
+    "doc": "Retrieve the currently selected tag of the union as an Enum."
+  },
+  {
+    "name": "union_value",
+    "signature": "union_value(tag := any)",
+    "doc": "Create a single member UNION containing the argument value. The tag of the value will be the bound variable name."
+  },
+  {
+    "name": "unnest",
+    "signature": "unnest(list)",
+    "doc": "Unnests a list by one level. Note that this is a special function that alters the cardinality of the result. See the unnest page for more details."
+  },
+  {
+    "name": "unpivot_list",
+    "signature": "unpivot_list(arg, ...)",
+    "doc": "Identical to list_value, but generated as part of unpivot for better error messages."
+  },
+  {
+    "name": "uuid",
+    "signature": "uuid()",
+    "doc": "Return a random UUID (UUIDv4) similar to this: eeccb8c5-9943-b2bb-bb5e-222f4e14b687."
+  },
+  {
+    "name": "uuid_extract_timestamp",
+    "signature": "uuid_extract_timestamp(uuidv7)",
+    "doc": "Extracts TIMESTAMP WITH TIME ZONE from a UUIDv7 value."
+  },
+  {
+    "name": "uuid_extract_version",
+    "signature": "uuid_extract_version(uuid)",
+    "doc": "Extracts UUID version (4 or 7)."
+  },
+  {
+    "name": "uuidv4",
+    "signature": "uuidv4()",
+    "doc": "Return a random UUID (UUIDv4) similar to this: eeccb8c5-9943-b2bb-bb5e-222f4e14b687."
+  },
+  {
+    "name": "uuidv7",
+    "signature": "uuidv7()",
+    "doc": "Return a random UUIDv7 similar to this: 81964ebe-00b1-7e1d-b0f9-43c29b6fb8f5."
+  },
+  {
+    "name": "var_pop",
+    "signature": "var_pop(x)",
+    "doc": "The population variance, which does not include bias correction."
+  },
+  {
+    "name": "var_samp",
+    "signature": "var_samp(x)",
+    "doc": "The sample variance, which includes Bessel's bias correction."
+  },
+  {
+    "name": "version",
+    "signature": "version()",
+    "doc": "Return the currently active version of DuckDB in this format."
+  },
+  {
+    "name": "weighted_avg",
+    "signature": "weighted_avg(arg, weight)",
+    "doc": "Calculates the weighted average of all non-null values in arg, where each value is scaled by its corresponding weight. If weight is NULL, the value will be skipped. This function is affected by ordering."
+  },
+  {
+    "name": "xor",
+    "signature": "xor(x, y)",
+    "doc": "Bitwise XOR."
+  }
+]

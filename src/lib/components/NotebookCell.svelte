@@ -6,8 +6,6 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
-	import RefPickerMenu from './markdown/RefPickerMenu.svelte';
-	import FilterPickerMenu from './markdown/FilterPickerMenu.svelte';
 	import GUIEditor from './gui/GUIEditor.svelte';
 	import InlineResultView from './InlineResultView.svelte';
 	import MaterializeDialog from './MaterializeDialog.svelte';
@@ -99,6 +97,19 @@
 		resolveConnection
 	} from '$lib/types/connection';
 	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
+	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
+	import SlashCommandPalette from './markdown/SlashCommandPalette.svelte';
+	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
+	import type { SlashCommand } from '$lib/services/markdown-format';
+	import {
+		wrapSelection,
+		toggleLinePrefix,
+		insertAtCursor,
+		getListContinuation,
+		indentListLine,
+		getSlashToken,
+		applySlashCommand
+	} from '$lib/services/markdown-format';
 
 	interface Props {
 		cell: Cell;
@@ -259,6 +270,8 @@
 	let compiledSqlForSwitch = $state('');
 	let confirmSwitchToPrql = $state(false);
 	let markdownTextareaEl: HTMLTextAreaElement | null = $state(null);
+	let markdownEditContainerEl: HTMLDivElement | null = $state(null);
+	let slashToken: string | null = $state(null);
 	const revealed = $derived(
 		!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0)
 	);
@@ -649,6 +662,143 @@
 		if (!isMarkdownPreviewMode && markdownTextareaEl) adjustMarkdownHeight();
 	});
 
+	// Click-outside-to-preview: fires when user clicks outside the edit container.
+	$effect(() => {
+		if (isMarkdownPreviewMode || !markdownEditContainerEl) return;
+		function handleMousedown(e: MouseEvent) {
+			if (markdownEditContainerEl?.contains(e.target as Node)) return;
+			if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true);
+		}
+		document.addEventListener('mousedown', handleMousedown);
+		return () => document.removeEventListener('mousedown', handleMousedown);
+	});
+
+	function applyFormatResult(result: { value: string; selectionStart: number; selectionEnd: number }) {
+		updateCellMarkdown(cell.id, result.value);
+		tick().then(() => {
+			markdownTextareaEl?.focus();
+			markdownTextareaEl?.setSelectionRange(result.selectionStart, result.selectionEnd);
+			adjustMarkdownHeight();
+		});
+	}
+
+	function getTextAreaState() {
+		const el = markdownTextareaEl;
+		return {
+			value: cell.markdown ?? '',
+			selectionStart: el?.selectionStart ?? (cell.markdown?.length ?? 0),
+			selectionEnd: el?.selectionEnd ?? (cell.markdown?.length ?? 0)
+		};
+	}
+
+	function handleToolbarFormat(action: FormatAction) {
+		const state = getTextAreaState();
+		if (action.type === 'wrap') {
+			applyFormatResult(wrapSelection(state, action.prefix, action.suffix, action.placeholder));
+		} else if (action.type === 'line-prefix') {
+			applyFormatResult(toggleLinePrefix(state, action.prefix));
+		} else {
+			applyFormatResult(insertAtCursor(state, action.text));
+		}
+	}
+
+	function handleSlashSelect(command: SlashCommand) {
+		if (!markdownTextareaEl) return;
+		const state = {
+			value: markdownTextareaEl.value,
+			selectionStart: markdownTextareaEl.selectionStart,
+			selectionEnd: markdownTextareaEl.selectionEnd
+		};
+		applyFormatResult(applySlashCommand(state, command.snippet));
+		slashToken = null;
+	}
+
+	function handleMarkdownKeydown(e: KeyboardEvent) {
+		const el = e.currentTarget as HTMLTextAreaElement;
+		const state = { value: el.value, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd };
+		const mod = e.metaKey || e.ctrlKey;
+
+		// Slash palette keyboard navigation — delegate to the palette via a custom event
+		if (slashToken !== null) {
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || (e.key === 'Enter' && !mod)) {
+				// Forward to palette by dispatching on the palette element
+				const palette = markdownEditContainerEl?.querySelector<HTMLElement>('.md-slash-palette');
+				if (palette) {
+					e.preventDefault();
+					palette.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, bubbles: false }));
+					return;
+				}
+			}
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				slashToken = null;
+				return;
+			}
+		}
+
+		// Formatting shortcuts
+		if (mod && !e.shiftKey && e.key === 'b') {
+			e.preventDefault();
+			applyFormatResult(wrapSelection(state, '**', '**', 'bold'));
+			return;
+		}
+		if (mod && !e.shiftKey && e.key === 'i') {
+			e.preventDefault();
+			applyFormatResult(wrapSelection(state, '*', '*', 'italic'));
+			return;
+		}
+		if (mod && !e.shiftKey && e.key === '`') {
+			e.preventDefault();
+			applyFormatResult(wrapSelection(state, '`', '`', 'code'));
+			return;
+		}
+		if (mod && !e.shiftKey && e.key === 'k') {
+			e.preventDefault();
+			applyFormatResult(wrapSelection(state, '[', '](url)', 'link text'));
+			return;
+		}
+		if (mod && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+			e.preventDefault();
+			setCellMarkdownPreview(cell.id, true);
+			return;
+		}
+
+		// Tab: indent/unindent list line (no-op on non-list lines, falls through to browser default)
+		if (e.key === 'Tab') {
+			const result = indentListLine(state, e.shiftKey ? 'out' : 'in');
+			if (result) {
+				e.preventDefault();
+				applyFormatResult(result);
+				return;
+			}
+		}
+
+		// Enter: smart list continuation
+		if (e.key === 'Enter' && !mod) {
+			const cont = getListContinuation(state);
+			if (cont !== null) {
+				e.preventDefault();
+				if (cont.removeCurrentPrefix) {
+					applyFormatResult(toggleLinePrefix(state, cont.prefix));
+				} else {
+					applyFormatResult(insertAtCursor(state, '\n' + cont.prefix));
+				}
+				return;
+			}
+		}
+
+		// Slash detection — check on next tick after character is inserted
+		tick().then(() => {
+			if (!markdownTextareaEl) return;
+			const newState = {
+				value: markdownTextareaEl.value,
+				selectionStart: markdownTextareaEl.selectionStart,
+				selectionEnd: markdownTextareaEl.selectionEnd
+			};
+			slashToken = getSlashToken(newState);
+		});
+	}
+
 	function isNativeInputTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
 		const tag = target.tagName.toLowerCase();
@@ -958,7 +1108,7 @@
 	bind:this={cellContainerEl}
 	class="notebook-cell group relative border-l-4 p-4 text-foreground outline-none {entering
 		? 'is-entering'
-		: ''} {cellFocused ? 'border-secondary' : 'border-transparent'} {reportView
+		: ''} {cellFocused ? 'border-primary/20' : 'border-transparent'} {reportView
 		? ''
 		: running
 			? 'bg-muted/30'
@@ -1112,6 +1262,7 @@
 									errors={cell.errors}
 									language="python"
 									pythonContext={{ kind: 'data', notebookId }}
+									pythonSchemas={prevCellSources}
 									{dark}
 									onchange={(c) => updatePythonCellCode(cell.id, c)}
 								/>
@@ -1121,13 +1272,13 @@
 									<code>fig</code>, to surface a table or Plotly chart.
 								</p>
 							{:else if !isQueryCell}
-								<div class="group/markdown relative">
+								<div class="group/markdown relative" bind:this={markdownEditContainerEl}>
 									{#if isMarkdownPreviewMode}
-										<!-- Preview mode: seamless {#html}, double-click to edit -->
+										<!-- Preview mode: click to edit -->
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<div
-											class="markdown-body cursor-text"
-											ondblclick={() => setCellMarkdownPreview(cell.id, false)}
+											class="markdown-body prose cursor-text"
+											onclick={() => setCellMarkdownPreview(cell.id, false)}
 										>
 											{#if markdocResult}
 												<MarkdocRenderer
@@ -1138,36 +1289,46 @@
 											{/if}
 										</div>
 										<button
-											class="absolute top-0 right-0 hidden rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors group-hover/markdown:block hover:text-foreground"
+											class="absolute top-0 right-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
 											onclick={() => setCellMarkdownPreview(cell.id, false)}
 										>
 											Edit
 										</button>
 									{:else}
-										<!-- Edit mode: minimal textarea, blur → preview -->
-										<div class="mb-1 flex justify-end gap-1.5">
-											<FilterPickerMenu
-												entries={refPickerEntries}
-												onInsert={insertMarkdownSnippet}
-											/>
-											<RefPickerMenu entries={refPickerEntries} onSelect={insertMarkdownRef} />
-										</div>
-										<Textarea
-											bind:ref={markdownTextareaEl}
-											value={cell.markdown}
-											placeholder="Write markdown here..."
-											class="min-h-24! resize-none! overflow-hidden! rounded-none! border-0! bg-transparent! px-0! py-0.5! text-sm! leading-6! shadow-none! ring-0! focus-visible:border-transparent! focus-visible:ring-0! focus-visible:outline-none!"
-											oninput={(e: Event) => {
-												updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value);
-												adjustMarkdownHeight();
-											}}
-											onblur={(e: FocusEvent) => {
-												const related = e.relatedTarget as HTMLElement | null;
-												if (related?.closest('.md-refpicker-trigger, .md-refpicker-content'))
-													return;
-												if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true);
-											}}
+										<!-- Edit mode: toolbar + textarea + slash palette -->
+										<MarkdownToolbar
+											{refPickerEntries}
+											onFormat={handleToolbarFormat}
+											onInsertSnippet={insertMarkdownSnippet}
+											onInsertRef={insertMarkdownRef}
+											onTogglePreview={() => setCellMarkdownPreview(cell.id, true)}
 										/>
+										<div class="relative">
+											<Textarea
+												bind:ref={markdownTextareaEl}
+												value={cell.markdown}
+												placeholder="Write markdown here..."
+												class="min-h-32! resize-none! overflow-hidden! rounded-none! border-0! bg-transparent! px-0! py-0.5! text-sm! leading-6! shadow-none! ring-0! focus-visible:border-transparent! focus-visible:ring-0! focus-visible:outline-none!"
+												oninput={(e: Event) => {
+													updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value);
+													adjustMarkdownHeight();
+												}}
+												onkeydown={handleMarkdownKeydown}
+												onblur={(e: FocusEvent) => {
+													const related = e.relatedTarget as HTMLElement | null;
+													if (related?.closest('.md-refpicker-trigger, .md-refpicker-content, .md-toolbar, .md-slash-palette'))
+														return;
+													// blur handled by click-outside effect; only guard keyboard Tab away
+												}}
+											/>
+											{#if slashToken !== null}
+												<SlashCommandPalette
+													token={slashToken}
+													onSelect={handleSlashSelect}
+													onDismiss={() => (slashToken = null)}
+												/>
+											{/if}
+										</div>
 										{#if hasLiveRefs}
 											<p class="mt-0.5 text-2xs text-muted-foreground select-none">
 												⚡ Live refs active — run upstream cells to update values
@@ -1412,23 +1573,26 @@
 		margin: 0 0 0.5rem;
 		white-space: pre-wrap;
 		word-break: break-word;
+		font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
 	}
 	.markdown-body :global(code) {
-		font-family: ui-monospace, SFMono-Regular, monospace;
+		font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
 		font-size: 0.85em;
-		background: color-mix(in oklch, currentColor 8%, transparent);
-		border-radius: 0.2rem;
-		padding: 0.1em 0.3em;
+		background: color-mix(in oklch, var(--primary) 10%, transparent);
+		border: 1px solid color-mix(in oklch, var(--primary) 15%, transparent);
+		border-radius: 0.25rem;
+		padding: 0.1em 0.35em;
+		color: var(--primary);
 	}
 	.markdown-body :global(pre code) {
 		background: none;
 		padding: 0;
 	}
 	.markdown-body :global(blockquote) {
-		border-left: 2px solid color-mix(in oklch, currentColor 30%, transparent);
+		border-left: 3px solid var(--primary);
 		margin: 0 0 0.5rem;
-		padding-left: 0.75rem;
-		opacity: 0.8;
+		padding-left: 0.85rem;
+		color: var(--muted-foreground);
 	}
 	.markdown-body :global(hr) {
 		border: none;
@@ -1436,8 +1600,20 @@
 		margin: 0.75rem 0;
 	}
 	.markdown-body :global(a) {
+		color: var(--primary);
 		text-decoration: underline;
-		text-underline-offset: 2px;
+		text-underline-offset: 3px;
+	}
+	.markdown-body :global(a:hover) {
+		opacity: 0.75;
+	}
+	.markdown-body :global(del) {
+		opacity: 0.6;
+	}
+	.markdown-body :global(h1) {
+		border-bottom: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		padding-bottom: 0.3rem;
+		margin-bottom: 0.75rem;
 	}
 	.markdown-body :global(img) {
 		max-width: 100%;

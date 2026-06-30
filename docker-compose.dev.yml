@@ -16,11 +16,10 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # Dev server runs on 5173, not the production container's 3000 — keep ORIGIN
-      # in sync or better-auth's cookie/origin checks will reject every request.
       ORIGIN: http://localhost:5173
-      # Tells vite.config.ts to poll for file changes (see comment there) — Docker
-      # Desktop's bind mounts don't reliably forward inotify events into the container.
+      # Dev server is on 5173 — override the prod INNGEST_SERVE_HOST so the Inngest SDK
+      # registers functions at the correct port inside the Docker network.
+      INNGEST_SERVE_HOST: http://app:5173
       VITE_DOCKER_DEV: "1"
     volumes:
       - .:/app
@@ -29,7 +28,7 @@ services:
       - /app/node_modules
       - /app/.svelte-kit
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5173/api/setup > /dev/null"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5173/api/health > /dev/null"]
       interval: 5s
       timeout: 5s
       retries: 20

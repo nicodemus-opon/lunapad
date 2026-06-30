@@ -292,9 +292,11 @@ import ast, sys, json, traceback
 import pandas as pd
 try:
     import plotly.graph_objects as go
+    import plotly.express as px
     go.Figure.show = lambda self, *a, **kw: None
 except Exception:
     go = None
+    px = None
 if go is not None:
     pd.options.plotting.backend = 'plotly'
 try:
@@ -302,7 +304,7 @@ try:
 except Exception:
     jedi = None
 
-ns: dict = {'pd': pd, 'go': go}
+ns: dict = {'pd': pd, 'go': go, 'px': px}
 
 def _compile_cell(code):
     # IPython-style: if the cell ends in a bare expression (e.g. just
@@ -698,6 +700,13 @@ export function spawnPythonCell(
 
 export function getPythonJob(id: string): PythonJob | undefined {
 	return jobs.get(id);
+}
+
+/** True if a warm worker process is already running for this notebook.
+ *  Does NOT spawn — callers use this to skip trial execution when the
+ *  worker is cold (avoiding a 20 s timeout that would always fail). */
+export function isWorkerWarm(notebookId: string): boolean {
+	return workers.has(notebookId);
 }
 
 /** Runs jedi-backed completion/hover against a notebook's already-warm worker

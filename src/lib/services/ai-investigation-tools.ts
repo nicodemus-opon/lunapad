@@ -19,7 +19,7 @@ import {
 	type Cell
 } from '$lib/stores/notebook.svelte.js';
 import { buildExecutionCode, buildSQLExecutionCode, resolvePythonDataRefs } from '$lib/services/cell-deps.js';
-import { runPython, watchPythonLogs, cancelPython, type PythonTablePayload } from '$lib/services/python-client.js';
+import { runPython, watchPythonLogs, cancelPython, isPythonWorkerWarm, type PythonTablePayload } from '$lib/services/python-client.js';
 import { rowsToCsv } from '$lib/utils.js';
 import {
 	type Connection,
@@ -331,7 +331,12 @@ async function trialRunQuery(
 
 	try {
 		const limited = wrapForTrial(sql);
-		const result = isBuiltin ? await executeSQL(limited) : await queryConnectionSQL(connection, limited);
+		const TRIAL_TIMEOUT_MS = isBuiltin ? 10_000 : 12_000;
+		const timeoutPromise = new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error('Trial run timed out')), TRIAL_TIMEOUT_MS)
+		);
+		const queryPromise = isBuiltin ? executeSQL(limited) : queryConnectionSQL(connection, limited);
+		const result = await Promise.race([queryPromise, timeoutPromise]);
 		return { ok: true, rows: result.rows, columns: result.columns };
 	} catch (err) {
 		return { ok: false, error: err instanceof Error ? err.message : 'Query failed' };
@@ -342,6 +347,10 @@ async function trialRunPython(cellId: string, candidateCode: string): Promise<Tr
 	const cells = getCells();
 	const idx = cells.findIndex((c) => c.id === cellId);
 	if (idx === -1) return { ok: false, error: 'Cell not found' };
+
+	const notebookId = getActiveTabId();
+	const warm = await isPythonWorkerWarm(notebookId);
+	if (!warm) return { ok: true };
 
 	const trialCells: Cell[] = cells.slice();
 	trialCells[idx] = { ...cells[idx], code: candidateCode };
@@ -356,7 +365,6 @@ async function trialRunPython(cellId: string, candidateCode: string): Promise<Tr
 		};
 	}
 
-	const notebookId = getActiveTabId();
 	try {
 		const jobId = await runPython(notebookId, candidateCode, tables, getProjectFolder());
 		return await new Promise<TrialRunResult>((resolve) => {

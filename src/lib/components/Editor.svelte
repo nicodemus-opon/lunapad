@@ -10,7 +10,7 @@
 	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
-	import type { CompletionEntry, PythonCellContext } from '$lib/monaco/completions';
+	import type { CompletionEntry, PythonCellContext, PythonUpstreamSchema } from '$lib/monaco/completions';
 	import type { ConnectionType } from '$lib/types/connection';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
@@ -41,6 +41,11 @@
 		 * their call parens (it otherwise treats unrecognized identifiers as
 		 * plain tokens, not function calls). */
 		udfFunctionNames?: string[];
+		/** Upstream cell schemas for Python data cells — each entry is a cell that
+		 * has a result, with its outputName and column list. Fed into the ghost-text
+		 * registry so completions can show "orders: id, status, amount" rather than
+		 * guessing from jedi names. */
+		pythonSchemas?: PythonUpstreamSchema[];
 	}
 
 	let {
@@ -55,7 +60,8 @@
 		connectionType = 'duckdb-wasm',
 		udfFunctionNames = [],
 		plotGlobalsDts,
-		pythonContext
+		pythonContext,
+		pythonSchemas = []
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -78,6 +84,10 @@
 		| ((m: Monaco.editor.ITextModel, dts: string) => void)
 		| null = null;
 	let clearModelPlotGlobals: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let setModelPythonSchema:
+		| ((m: Monaco.editor.ITextModel, schemas: PythonUpstreamSchema[]) => void)
+		| null = null;
+	let clearModelPythonSchema: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let activatePlotGlobals: ((modelUri: string) => void) | null = null;
 	let suppressUpdate = false;
 	let destroyed = false;
@@ -191,6 +201,8 @@
 		clearModelPythonContext = mod.clearModelPythonContext;
 		setModelPlotGlobals = mod.setModelPlotGlobals;
 		clearModelPlotGlobals = mod.clearModelPlotGlobals;
+		setModelPythonSchema = mod.setModelPythonSchema;
+		clearModelPythonSchema = mod.clearModelPythonSchema;
 		activatePlotGlobals = mod.activatePlotGlobals;
 
 		model = m.editor.createModel(
@@ -201,6 +213,7 @@
 		setModelCompletions(model, completions);
 		setModelDialect(model, connectionType);
 		if (pythonContext) setModelPythonContext(model, pythonContext);
+		if (pythonSchemas.length > 0) setModelPythonSchema(model, pythonSchemas);
 		if (plotGlobalsDts != null) {
 			setModelPlotGlobals(model, plotGlobalsDts);
 			// Make this editor's globals live immediately on mount rather than
@@ -239,6 +252,7 @@
 			fixedOverflowWidgets: true,
 			quickSuggestions: true,
 			suggestOnTriggerCharacters: true,
+			inlineSuggest: { enabled: true },
 			tabSize: 2,
 			padding: { top: 6, bottom: 6 }
 		});
@@ -343,6 +357,12 @@
 	$effect(() => {
 		if (!model || !setModelPythonContext || !pythonContext) return;
 		setModelPythonContext(model, pythonContext);
+	});
+
+	// Sync upstream DataFrame schemas → per-model registry (ghost completions)
+	$effect(() => {
+		if (!model || !setModelPythonSchema) return;
+		setModelPythonSchema(model, pythonSchemas);
 	});
 
 	// Sync sandbox-globals dts → per-model registry (and the live extraLib, if

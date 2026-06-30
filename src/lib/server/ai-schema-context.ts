@@ -31,7 +31,7 @@ export interface OtherTable {
 	columnTypes: string[];
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const MIN_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 180_000;
 

@@ -112,13 +112,24 @@ function buildSystemPrompt(req: EditCellRequest): string {
 			? `If this task would actually be better as a SQL cell (a straightforward relational transform), set "suggestedAlternative": {"cellType":"query","language":"sql","reason":"..."}.`
 			: `If this task would actually be better as a Python cell (statistics, ML, text/regex processing, or custom visualization beyond simple charts), set "suggestedAlternative": {"cellType":"python","reason":"..."}. Only suggest this when it is clearly a better fit — most relational requests should stay in ${langLabel}.`;
 
+	const pythonEnvNote =
+		req.cellType === 'python'
+			? `
+Python execution environment:
+- pandas (as pd), numpy (as np), plotly.graph_objects (as go) are pre-imported.
+- Upstream query cells are injected as pandas DataFrames — the variable name is the cell's outputName (e.g. if an upstream cell is named "sales", use \`sales\` directly).
+- The notebook namespace is shared: imports and variables from earlier cells are already available.
+- To return tabular data, assign a DataFrame to \`result\` or make it the last expression.
+- To return a chart, assign a Plotly Figure to any variable (or make it the last expression).`
+			: '';
+
 	return `You are editing a single ${langLabel} notebook cell in place, based on a short instruction.
 
 The cell currently contains:
 \`\`\`
 ${req.existingCode || '(empty)'}
 \`\`\`
-
+${pythonEnvNote}
 You may call read-only tools (sample_data, profile_column, get_cell_result, get_lineage, search_workspace) to investigate real data or notebook state BEFORE answering — e.g. to check actual values/date formats, see an upstream cell's error or shape, or find a reusable model elsewhere. Only call a tool when it would genuinely change your answer; skip tools for trivial edits.
 
 When you are done investigating, respond with ONLY valid JSON and no tool call: {"code": "...", "reasoning": "...", "suggestedAlternative"?: {...}}
@@ -213,7 +224,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					messages,
 					tools: req.forceFinal ? undefined : READONLY_INVESTIGATION_TOOLS,
 					signal: controller.signal,
-					apiKey: req.llmConfig.apiKey
+					apiKey: req.llmConfig.apiKey,
+					onDelta: (chunk) => send({ type: 'delta', content: chunk })
 				});
 
 				if (response.toolCalls.length > 0) {
@@ -256,9 +268,13 @@ export const POST: RequestHandler = async ({ request }) => {
 					messages: [...messages, { role: 'assistant', content: response.content }]
 				});
 			} catch (err) {
-				if (!(err instanceof Error && err.name === 'AbortError')) {
-					send({ type: 'error', error: err instanceof Error ? err.message : 'Internal error' });
-				}
+				const errMsg =
+					err instanceof Error && err.name === 'AbortError'
+						? 'AI request timed out — the model took too long to respond'
+						: err instanceof Error
+							? err.message
+							: 'Internal error';
+				send({ type: 'error', error: errMsg });
 			} finally {
 				clearTimeout(timeout);
 				try {

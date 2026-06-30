@@ -4,7 +4,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { authClient } from '$lib/auth-client';
-	import { getTheme, setTheme, getLLMConfig, setLLMConfig } from '$lib/stores/notebook.svelte';
+	import {
+		getTheme,
+		setTheme,
+		getLLMConfig,
+		setLLMConfig,
+		getGhostTextEnabled,
+		setGhostTextEnabled
+	} from '$lib/stores/notebook.svelte';
 	import ConnectionsSettings from './ConnectionsSettings.svelte';
 	import ApiKeysSettings from './ApiKeysSettings.svelte';
 	import PythonPackagesPanel from './PythonPackagesPanel.svelte';
@@ -40,6 +47,7 @@
 
 	const theme = $derived(getTheme());
 	const llmConfig = $derived(getLLMConfig());
+	const ghostTextEnabled = $derived(getGhostTextEnabled());
 
 	let accountName = $state('');
 	let savingProfile = $state(false);
@@ -313,6 +321,37 @@
 								Used by the AI chat panel. For Ollama: <span class="font-mono">qwen3:1.7b</span>
 								(fast) or <span class="font-mono">qwen3:4b</span> (better quality).
 							</p>
+							<div class="space-y-1 border-t border-border/40 pt-3">
+								<label class="flex items-center gap-2 text-xs text-muted-foreground">
+									<input
+										type="checkbox"
+										class="accent-primary"
+										checked={ghostTextEnabled}
+										onchange={(e: Event) =>
+											setGhostTextEnabled((e.target as HTMLInputElement).checked)}
+									/>
+									Ghost-text completions in PRQL/SQL/Python cells
+								</label>
+								<label for="llm-completion-model" class="text-xs text-muted-foreground"
+									>Completion model <span class="opacity-50">(optional override)</span></label
+								>
+								<Input
+									id="llm-completion-model"
+									class="h-8 font-mono text-xs"
+									placeholder={llmConfig.model}
+									value={llmConfig.completionModel ?? ''}
+									oninput={(e: Event) =>
+										setLLMConfig({
+											completionModel: (e.target as HTMLInputElement).value || undefined
+										})}
+								/>
+								<p class="text-xs text-muted-foreground">
+									Reasoning/chat models often burn their token budget "thinking" and return
+									empty ghost-text suggestions. A small dedicated code-completion model works
+									much better here — e.g. <span class="font-mono">qwen2.5-coder:1.5b</span>. Leave
+									blank to reuse the model above.
+								</p>
+							</div>
 						</div>
 					</div>
 				{:else if tab === 'connections'}

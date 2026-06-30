@@ -1,0 +1,2042 @@
+[
+  {
+    "name": "abs",
+    "signature": "abs(x) → [same as input]",
+    "doc": "Returns the absolute value of x."
+  },
+  {
+    "name": "acos",
+    "signature": "acos(x) → double",
+    "doc": "Returns the arc cosine of x."
+  },
+  {
+    "name": "all_match",
+    "signature": "all_match(array(T), function(T, boolean)) → boolean",
+    "doc": "Returns whether all elements of an array match the given predicate. Returns true if all the elements match the predicate (a special case is when the array is empty); false if one or more elements don’t match; NULL if the predicate function returns NULL for one or more elements and true for all other"
+  },
+  {
+    "name": "any_match",
+    "signature": "any_match(array(T), function(T, boolean)) → boolean",
+    "doc": "Returns whether any elements of an array match the given predicate. Returns true if one or more elements match the predicate; false if none of the elements matches (a special case is when the array is empty); NULL if the predicate function returns NULL for one or more elements and false for all othe"
+  },
+  {
+    "name": "any_value",
+    "signature": "any_value(x) → [same as input]",
+    "doc": "Returns an arbitrary non-null value x, if one exists. x can be any valid expression. This allows you to return values from columns that are not directly part of the aggregation, including expressions using these columns, in a query."
+  },
+  {
+    "name": "approx_distinct",
+    "signature": "approx_distinct(x) → bigint",
+    "doc": "Returns the approximate number of distinct input values. This function provides an approximation of count(DISTINCT x). Zero is returned if all input values are null."
+  },
+  {
+    "name": "approx_most_frequent",
+    "signature": "approx_most_frequent(buckets, value, capacity) → map<[same as value], bigint>",
+    "doc": "Computes the top frequent values up to buckets elements approximately. Approximate estimation of the function enables us to pick up the frequent values with less memory. Larger capacity improves the accuracy of underlying algorithm with sacrificing the memory capacity. The returned value is a map co"
+  },
+  {
+    "name": "approx_percentile",
+    "signature": "approx_percentile(x, percentage) → [same as x]",
+    "doc": "Returns the approximate percentile for all input values of x at the given percentage. The value of percentage must be between zero and one and must be constant for all input rows."
+  },
+  {
+    "name": "approx_set",
+    "signature": "approx_set(x) → HyperLogLog",
+    "doc": "Returns the HyperLogLog sketch of the input data set of x. This data sketch underlies approx_distinct() and can be stored and used later by calling cardinality()."
+  },
+  {
+    "name": "arbitrary",
+    "signature": "arbitrary(x) → [same as input]",
+    "doc": "Returns an arbitrary non-null value of x, if one exists. Identical to any_value()."
+  },
+  {
+    "name": "array_agg",
+    "signature": "array_agg(x) → array<[same as input]>",
+    "doc": "Returns an array created from the input x elements."
+  },
+  {
+    "name": "array_distinct",
+    "signature": "array_distinct(x) → array",
+    "doc": "Remove duplicate values from the array x."
+  },
+  {
+    "name": "array_except",
+    "signature": "array_except(x, y) → array",
+    "doc": "Returns an array of elements in x but not in y, without duplicates."
+  },
+  {
+    "name": "array_first",
+    "signature": "array_first(array(E)) → E",
+    "doc": "Returns the first element of an array. If the array is empty, the function returns NULL, whereas the subscript operator would fail in such a case."
+  },
+  {
+    "name": "array_histogram",
+    "signature": "array_histogram(x) → map<K, bigint>",
+    "doc": "Returns a map where the keys are the unique elements in the input array x and the values are the number of times that each element appears in x. Null values are ignored."
+  },
+  {
+    "name": "array_intersect",
+    "signature": "array_intersect(x, y) → array",
+    "doc": "Returns an array of the elements in the intersection of x and y, without duplicates."
+  },
+  {
+    "name": "array_join",
+    "signature": "array_join(x, delimiter) → varchar",
+    "doc": "Concatenates the elements of the given array using the delimiter. Null elements are omitted in the result."
+  },
+  {
+    "name": "array_last",
+    "signature": "array_last(array(E)) → E",
+    "doc": "Returns the last element of an array. If the array is empty, the function returns NULL, whereas the subscript operator would fail in such a case."
+  },
+  {
+    "name": "array_max",
+    "signature": "array_max(x) → x",
+    "doc": "Returns the maximum value of input array."
+  },
+  {
+    "name": "array_min",
+    "signature": "array_min(x) → x",
+    "doc": "Returns the minimum value of input array."
+  },
+  {
+    "name": "array_position",
+    "signature": "array_position(x, element) → bigint",
+    "doc": "Returns the position of the first occurrence of the element in array x (or 0 if not found)."
+  },
+  {
+    "name": "array_remove",
+    "signature": "array_remove(x, element) → array",
+    "doc": "Remove all elements that equal element from array x."
+  },
+  {
+    "name": "array_sort",
+    "signature": "array_sort(x) → array",
+    "doc": "Sorts and returns the array x. The elements of x must be orderable. Null elements will be placed at the end of the returned array."
+  },
+  {
+    "name": "array_union",
+    "signature": "array_union(x, y) → array",
+    "doc": "Returns an array of the elements in the union of x and y, without duplicates."
+  },
+  {
+    "name": "arrays_overlap",
+    "signature": "arrays_overlap(x, y) → boolean",
+    "doc": "Tests if arrays x and y have any non-null elements in common. Returns null if there are no non-null elements in common but either array contains null."
+  },
+  {
+    "name": "asin",
+    "signature": "asin(x) → double",
+    "doc": "Returns the arc sine of x."
+  },
+  {
+    "name": "at_timezone",
+    "signature": "at_timezone(x, zone) → timestamp(p) with time zone",
+    "doc": "Converts x to a time zone specified in zone."
+  },
+  {
+    "name": "atan",
+    "signature": "atan(x) → double",
+    "doc": "Returns the arc tangent of x."
+  },
+  {
+    "name": "atan2",
+    "signature": "atan2(y, x) → double",
+    "doc": "Returns the arc tangent of y / x."
+  },
+  {
+    "name": "avg",
+    "signature": "avg(x) → double",
+    "doc": "Returns the average (arithmetic mean) of all input values."
+  },
+  {
+    "name": "bar",
+    "signature": "bar(x, width) → varchar",
+    "doc": "Renders a single bar in an ANSI bar chart using a default low_color of red and a high_color of green. For example, if x of 25% and width of 40 are passed to this function. A 10-character red bar will be drawn followed by 30 spaces to create a bar of 40 characters."
+  },
+  {
+    "name": "beta_cdf",
+    "signature": "beta_cdf(a, b, v) → double",
+    "doc": "Compute the Beta cdf with given a, b parameters: P(N < v; a, b). The a, b parameters must be positive real numbers and value v must be a real value. The value v must lie on the interval [0, 1]."
+  },
+  {
+    "name": "bing_tile",
+    "signature": "bing_tile(x, y, zoom_level) → BingTile",
+    "doc": "Creates a Bing tile object from XY coordinates and a zoom level. Zoom levels from 1 to 23 are supported."
+  },
+  {
+    "name": "bing_tile_at",
+    "signature": "bing_tile_at(latitude, longitude, zoom_level) → BingTile",
+    "doc": "Returns a Bing tile at a given zoom level containing a point at a given latitude and longitude. Latitude must be within [-85.05112878, 85.05112878] range. Longitude must be within [-180, 180] range. Zoom levels from 1 to 23 are supported."
+  },
+  {
+    "name": "bing_tile_coordinates",
+    "signature": "bing_tile_coordinates(tile) → row<x, y>",
+    "doc": "Returns the XY coordinates of a given Bing tile."
+  },
+  {
+    "name": "bing_tile_polygon",
+    "signature": "bing_tile_polygon(tile) → Geometry",
+    "doc": "Returns the polygon representation of a given Bing tile."
+  },
+  {
+    "name": "bing_tile_quadkey",
+    "signature": "bing_tile_quadkey(tile) → varchar",
+    "doc": "Returns the quadkey of a given Bing tile."
+  },
+  {
+    "name": "bing_tile_zoom_level",
+    "signature": "bing_tile_zoom_level(tile) → tinyint",
+    "doc": "Returns the zoom level of a given Bing tile."
+  },
+  {
+    "name": "bing_tiles_around",
+    "signature": "bing_tiles_around(latitude, longitude, zoom_level)",
+    "doc": "Returns a collection of Bing tiles that surround the point specified by the latitude and longitude arguments at a given zoom level."
+  },
+  {
+    "name": "bit_count",
+    "signature": "bit_count(x, bits) → bigint",
+    "doc": "Count the number of bits set in x (treated as bits-bit signed integer) in 2’s complement representation:"
+  },
+  {
+    "name": "bitwise_and",
+    "signature": "bitwise_and(x, y) → bigint",
+    "doc": "Returns the bitwise AND of x and y in 2’s complement representation."
+  },
+  {
+    "name": "bitwise_and_agg",
+    "signature": "bitwise_and_agg(x) → bigint",
+    "doc": "Returns the bitwise AND of all input non-NULL values in 2’s complement representation. If all records inside the group are NULL, or if the group is empty, the function returns NULL."
+  },
+  {
+    "name": "bitwise_left_shift",
+    "signature": "bitwise_left_shift(value, shift) → [same as value]",
+    "doc": "Returns the left shifted value of value."
+  },
+  {
+    "name": "bitwise_not",
+    "signature": "bitwise_not(x) → bigint",
+    "doc": "Returns the bitwise NOT of x in 2’s complement representation (NOT x = -x - 1):"
+  },
+  {
+    "name": "bitwise_or",
+    "signature": "bitwise_or(x, y) → bigint",
+    "doc": "Returns the bitwise OR of x and y in 2’s complement representation."
+  },
+  {
+    "name": "bitwise_or_agg",
+    "signature": "bitwise_or_agg(x) → bigint",
+    "doc": "Returns the bitwise OR of all input non-NULL values in 2’s complement representation. If all records inside the group are NULL, or if the group is empty, the function returns NULL."
+  },
+  {
+    "name": "bitwise_right_shift",
+    "signature": "bitwise_right_shift(value, shift) → [same as value]",
+    "doc": "Returns the logical right shifted value of value."
+  },
+  {
+    "name": "bitwise_right_shift_arithmetic",
+    "signature": "bitwise_right_shift_arithmetic(value, shift) → [same as value]",
+    "doc": "Returns the arithmetic right shifted value of value."
+  },
+  {
+    "name": "bitwise_xor",
+    "signature": "bitwise_xor(x, y) → bigint",
+    "doc": "Returns the bitwise XOR of x and y in 2’s complement representation."
+  },
+  {
+    "name": "bitwise_xor_agg",
+    "signature": "bitwise_xor_agg(x) → bigint",
+    "doc": "Returns the bitwise XOR of all input non-NULL values in 2’s complement representation. If all records inside the group are NULL, or if the group is empty, the function returns NULL."
+  },
+  {
+    "name": "bool_and",
+    "signature": "bool_and(boolean) → boolean",
+    "doc": "Returns TRUE if every input value is TRUE, otherwise FALSE."
+  },
+  {
+    "name": "bool_or",
+    "signature": "bool_or(boolean) → boolean",
+    "doc": "Returns TRUE if any input value is TRUE, otherwise FALSE."
+  },
+  {
+    "name": "cardinality",
+    "signature": "cardinality(x) → bigint",
+    "doc": "Returns the cardinality (size) of the array x."
+  },
+  {
+    "name": "cast",
+    "signature": "cast(value AS type) → type",
+    "doc": "Explicitly cast a value as a type. This can be used to cast a varchar to a numeric value type and vice versa."
+  },
+  {
+    "name": "cbrt",
+    "signature": "cbrt(x) → double",
+    "doc": "Returns the cube root of x."
+  },
+  {
+    "name": "ceil",
+    "signature": "ceil(x) → [same as input]",
+    "doc": "This is an alias for ceiling()."
+  },
+  {
+    "name": "ceiling",
+    "signature": "ceiling(x) → [same as input]",
+    "doc": "Returns x rounded up to the nearest integer."
+  },
+  {
+    "name": "char2hexint",
+    "signature": "char2hexint(string) → varchar",
+    "doc": "Returns the hexadecimal representation of the UTF-16BE encoding of the string."
+  },
+  {
+    "name": "checksum",
+    "signature": "checksum(x) → varbinary",
+    "doc": "Returns an order-insensitive checksum of the given values."
+  },
+  {
+    "name": "chr",
+    "signature": "chr(n) → varchar",
+    "doc": "Returns the Unicode code point n as a single character string."
+  },
+  {
+    "name": "codepoint",
+    "signature": "codepoint(string) → integer",
+    "doc": "Returns the Unicode code point of the only character of string."
+  },
+  {
+    "name": "color",
+    "signature": "color(string) → color",
+    "doc": "Returns a color capturing a decoded RGB value from a 4-character string of the format “#000”. The input string should be varchar containing a CSS-style short rgb string or one of black, red, green, yellow, blue, magenta, cyan, white."
+  },
+  {
+    "name": "combinations",
+    "signature": "combinations(array(T), n) → array(array(T))",
+    "doc": "Returns n-element sub-groups of input array. If the input array has no duplicates, combinations returns n-element subsets."
+  },
+  {
+    "name": "concat",
+    "signature": "concat(string1, ..., stringN) → varchar",
+    "doc": "Returns the concatenation of string1, string2, ..., stringN. This function provides the same functionality as the SQL-standard concatenation operator (||)."
+  },
+  {
+    "name": "concat_ws",
+    "signature": "concat_ws(separator, string1, ..., stringN) → varchar",
+    "doc": "Returns the concatenation of string1, string2, ..., stringN using separator to join the values. If separator is null, then the return value is null. Any null values provided in the arguments after the separator are skipped."
+  },
+  {
+    "name": "contains",
+    "signature": "contains(x, element) → boolean",
+    "doc": "Returns true if the array x contains the element."
+  },
+  {
+    "name": "contains_sequence",
+    "signature": "contains_sequence(x, seq) → boolean",
+    "doc": "Return true if array x contains all of array seq as a subsequence (all values in the same consecutive order)."
+  },
+  {
+    "name": "convex_hull_agg",
+    "signature": "convex_hull_agg(Geometry) → Geometry",
+    "doc": "Returns the minimum convex geometry that encloses all input geometries."
+  },
+  {
+    "name": "corr",
+    "signature": "corr(y, x) → double",
+    "doc": "Returns correlation coefficient of input values."
+  },
+  {
+    "name": "cos",
+    "signature": "cos(x) → double",
+    "doc": "Returns the cosine of x."
+  },
+  {
+    "name": "cosh",
+    "signature": "cosh(x) → double",
+    "doc": "Returns the hyperbolic cosine of x."
+  },
+  {
+    "name": "cosine_distance",
+    "signature": "cosine_distance(array(double), array(double)) → double",
+    "doc": "Calculates the cosine distance between two dense vectors:"
+  },
+  {
+    "name": "cosine_similarity",
+    "signature": "cosine_similarity(array(double), array(double)) → double",
+    "doc": "Calculates the cosine similarity of two dense vectors:"
+  },
+  {
+    "name": "count",
+    "signature": "count(*) → bigint",
+    "doc": "Returns the number of input rows."
+  },
+  {
+    "name": "count_if",
+    "signature": "count_if(x) → bigint",
+    "doc": "Returns the number of TRUE input values. This function is equivalent to count(CASE WHEN x THEN 1 END)."
+  },
+  {
+    "name": "covar_pop",
+    "signature": "covar_pop(y, x) → double",
+    "doc": "Returns the population covariance of input values."
+  },
+  {
+    "name": "covar_samp",
+    "signature": "covar_samp(y, x) → double",
+    "doc": "Returns the sample covariance of input values."
+  },
+  {
+    "name": "crc32",
+    "signature": "crc32(binary) → bigint",
+    "doc": "Computes the CRC-32 of binary. For general purpose hashing, use xxhash64(), as it is much faster and produces a better quality hash."
+  },
+  {
+    "name": "cume_dist",
+    "signature": "cume_dist() → bigint",
+    "doc": "Returns the cumulative distribution of a value in a group of values. The result is the number of rows preceding or peer with the row in the window ordering of the window partition divided by the total number of rows in the window partition. Thus, any tie values in the ordering will evaluate to the s"
+  },
+  {
+    "name": "current_groups",
+    "signature": "current_groups()",
+    "doc": "Returns the list of groups for the current user running the query."
+  },
+  {
+    "name": "current_timezone",
+    "signature": "current_timezone() → varchar",
+    "doc": "Returns the current time zone in the format defined by IANA (e.g., America/Los_Angeles) or as fixed offset from UTC (e.g., +08:35)"
+  },
+  {
+    "name": "date",
+    "signature": "date(x) → date",
+    "doc": "This is an alias for CAST(x AS date)."
+  },
+  {
+    "name": "date_add",
+    "signature": "date_add(unit, value, timestamp) → [same as input]",
+    "doc": "Adds an interval value of type unit to timestamp. Subtraction can be performed by using a negative value:"
+  },
+  {
+    "name": "date_diff",
+    "signature": "date_diff(unit, timestamp1, timestamp2) → bigint",
+    "doc": "Returns timestamp2 - timestamp1 expressed in terms of unit:"
+  },
+  {
+    "name": "date_format",
+    "signature": "date_format(timestamp, format) → varchar",
+    "doc": "Formats timestamp as a string using format:"
+  },
+  {
+    "name": "date_trunc",
+    "signature": "date_trunc(unit, x) → [same as input]",
+    "doc": "Returns x truncated to unit:"
+  },
+  {
+    "name": "day",
+    "signature": "day(x) → bigint",
+    "doc": "Returns the day of the month from x."
+  },
+  {
+    "name": "day_of_month",
+    "signature": "day_of_month(x) → bigint",
+    "doc": "This is an alias for day()."
+  },
+  {
+    "name": "day_of_week",
+    "signature": "day_of_week(x) → bigint",
+    "doc": "Returns the ISO day of the week from x. The value ranges from 1 (Monday) to 7 (Sunday)."
+  },
+  {
+    "name": "day_of_year",
+    "signature": "day_of_year(x) → bigint",
+    "doc": "Returns the day of the year from x. The value ranges from 1 to 366."
+  },
+  {
+    "name": "degrees",
+    "signature": "degrees(x) → double",
+    "doc": "Converts angle x in radians to degrees."
+  },
+  {
+    "name": "dense_rank",
+    "signature": "dense_rank() → bigint",
+    "doc": "Returns the rank of a value in a group of values. This is similar to rank(), except that tie values do not produce gaps in the sequence. The window frame must not be specified."
+  },
+  {
+    "name": "dot_product",
+    "signature": "dot_product(array(double), array(double)) → double",
+    "doc": "Calculates the dot product:"
+  },
+  {
+    "name": "dow",
+    "signature": "dow(x) → bigint",
+    "doc": "This is an alias for day_of_week()."
+  },
+  {
+    "name": "doy",
+    "signature": "doy(x) → bigint",
+    "doc": "This is an alias for day_of_year()."
+  },
+  {
+    "name": "e",
+    "signature": "e() → double",
+    "doc": "Returns the constant Euler’s number."
+  },
+  {
+    "name": "element_at",
+    "signature": "element_at(array(E), index) → E",
+    "doc": "Returns element of array at given index. If index > 0, this function provides the same functionality as the SQL-standard subscript operator ([]), except that the function returns NULL when accessing an index larger than array length, whereas the subscript operator would fail in such a case. If index"
+  },
+  {
+    "name": "empty_approx_set",
+    "signature": "empty_approx_set() → HyperLogLog",
+    "doc": "Returns an empty HyperLogLog."
+  },
+  {
+    "name": "ends_with",
+    "signature": "ends_with(string, substring) → boolean",
+    "doc": "Tests whether substring is a suffix of string."
+  },
+  {
+    "name": "euclidean_distance",
+    "signature": "euclidean_distance(array(double), array(double)) → double",
+    "doc": "Calculates the euclidean distance:"
+  },
+  {
+    "name": "every",
+    "signature": "every(boolean) → boolean",
+    "doc": "This is an alias for bool_and()."
+  },
+  {
+    "name": "exp",
+    "signature": "exp(x) → double",
+    "doc": "Returns Euler’s number raised to the power of x."
+  },
+  {
+    "name": "extract",
+    "signature": "extract(field FROM x) → bigint",
+    "doc": "Returns field from x:"
+  },
+  {
+    "name": "filter",
+    "signature": "filter(array(T), function(T, boolean)) → array(T)",
+    "doc": "Constructs an array from those elements of array for which function returns true:"
+  },
+  {
+    "name": "first_value",
+    "signature": "first_value(x) → [same as input]",
+    "doc": "Returns the first value of the window."
+  },
+  {
+    "name": "flatten",
+    "signature": "flatten(x) → array",
+    "doc": "Flattens an array(array(T)) to an array(T) by concatenating the contained arrays."
+  },
+  {
+    "name": "floor",
+    "signature": "floor(x) → [same as input]",
+    "doc": "Returns x rounded down to the nearest integer."
+  },
+  {
+    "name": "format",
+    "signature": "format(format, args...) → varchar",
+    "doc": "Returns a formatted string using the specified format string and arguments:"
+  },
+  {
+    "name": "format_datetime",
+    "signature": "format_datetime(timestamp, format) → varchar",
+    "doc": "Formats timestamp as a string using format."
+  },
+  {
+    "name": "format_number",
+    "signature": "format_number(number) → varchar",
+    "doc": "Returns a formatted string using a unit symbol:"
+  },
+  {
+    "name": "from_base",
+    "signature": "from_base(string, radix) → bigint",
+    "doc": "Returns the value of string interpreted as a base-radix number."
+  },
+  {
+    "name": "from_base32",
+    "signature": "from_base32(string) → varbinary",
+    "doc": "Decodes binary data from the base32 encoded string."
+  },
+  {
+    "name": "from_base64",
+    "signature": "from_base64(string) → varbinary",
+    "doc": "Decodes binary data from the base64 encoded string."
+  },
+  {
+    "name": "from_base64url",
+    "signature": "from_base64url(string) → varbinary",
+    "doc": "Decodes binary data from the base64 encoded string using the URL safe alphabet."
+  },
+  {
+    "name": "from_big_endian_32",
+    "signature": "from_big_endian_32(binary) → integer",
+    "doc": "Decodes the 32-bit two’s complement big-endian binary. The input must be exactly 4 bytes."
+  },
+  {
+    "name": "from_big_endian_64",
+    "signature": "from_big_endian_64(binary) → bigint",
+    "doc": "Decodes the 64-bit two’s complement big-endian binary. The input must be exactly 8 bytes."
+  },
+  {
+    "name": "from_encoded_polyline",
+    "signature": "from_encoded_polyline(varchar) → Geometry",
+    "doc": "Decodes a polyline to a linestring."
+  },
+  {
+    "name": "from_geojson_geometry",
+    "signature": "from_geojson_geometry(varchar) → SphericalGeography",
+    "doc": "Returns the spherical geography type object from the GeoJSON representation stripping non geometry key/values. Feature and FeatureCollection are not supported."
+  },
+  {
+    "name": "from_hex",
+    "signature": "from_hex(string) → varbinary",
+    "doc": "Decodes binary data from the hex encoded string."
+  },
+  {
+    "name": "from_ieee754_32",
+    "signature": "from_ieee754_32(binary) → real",
+    "doc": "Decodes the 32-bit big-endian binary in IEEE 754 single-precision floating-point format. The input must be exactly 4 bytes."
+  },
+  {
+    "name": "from_ieee754_64",
+    "signature": "from_ieee754_64(binary) → double",
+    "doc": "Decodes the 64-bit big-endian binary in IEEE 754 double-precision floating-point format. The input must be exactly 8 bytes."
+  },
+  {
+    "name": "from_iso8601_date",
+    "signature": "from_iso8601_date(string) → date",
+    "doc": "Parses the ISO 8601 formatted date string into a date. The date can be a calendar date, a week date using ISO week numbering, or year and day of year combined:"
+  },
+  {
+    "name": "from_iso8601_timestamp",
+    "signature": "from_iso8601_timestamp(string) → timestamp(3) with time zone",
+    "doc": "Parses the ISO 8601 formatted date string, optionally with time and time zone, into a timestamp(3) with time zone. The time defaults to 00:00:00.000, and the time zone defaults to the session time zone:"
+  },
+  {
+    "name": "from_iso8601_timestamp_nanos",
+    "signature": "from_iso8601_timestamp_nanos(string) → timestamp(9) with time zone",
+    "doc": "Parses the ISO 8601 formatted date and time string. The time zone defaults to the session time zone:"
+  },
+  {
+    "name": "from_unixtime",
+    "signature": "from_unixtime(unixtime) → timestamp(3) with time zone",
+    "doc": "Returns the UNIX timestamp unixtime as a timestamp with time zone. unixtime is the number of seconds since 1970-01-01 00:00:00 UTC."
+  },
+  {
+    "name": "from_unixtime_nanos",
+    "signature": "from_unixtime_nanos(unixtime) → timestamp(9) with time zone",
+    "doc": "Returns the UNIX timestamp unixtime as a timestamp with time zone. unixtime is the number of nanoseconds since 1970-01-01 00:00:00.000000000 UTC:"
+  },
+  {
+    "name": "from_utf8",
+    "signature": "from_utf8(binary) → varchar",
+    "doc": "Decodes a UTF-8 encoded string from binary. Invalid UTF-8 sequences are replaced with the Unicode replacement character U+FFFD."
+  },
+  {
+    "name": "geometric_mean",
+    "signature": "geometric_mean(x) → double",
+    "doc": "Returns the geometric mean of all input values."
+  },
+  {
+    "name": "geometry_from_hadoop_shape",
+    "signature": "geometry_from_hadoop_shape(varbinary) → Geometry",
+    "doc": "Returns a geometry type object from Spatial Framework for Hadoop representation."
+  },
+  {
+    "name": "geometry_invalid_reason",
+    "signature": "geometry_invalid_reason(Geometry) → varchar",
+    "doc": "Returns the reason for why the input geometry is not valid. Returns NULL if the input is valid."
+  },
+  {
+    "name": "geometry_nearest_points",
+    "signature": "geometry_nearest_points(first: Geometry, second: Geometry)",
+    "doc": "Returns the points on each geometry nearest the other. If either geometry is empty, return NULL. Otherwise, return a row of two Points that have the minimum distance of any two points on the geometries. The first Point will be from the first Geometry argument, the second from the second Geometry arg"
+  },
+  {
+    "name": "geometry_to_bing_tiles",
+    "signature": "geometry_to_bing_tiles(geometry, zoom_level)",
+    "doc": "Returns the minimum set of Bing tiles that fully covers a given geometry at a given zoom level. Zoom levels from 1 to 23 are supported."
+  },
+  {
+    "name": "geometry_union",
+    "signature": "geometry_union(array(Geometry)) → Geometry",
+    "doc": "Returns a geometry that represents the point set union of the input geometries. Performance of this function, in conjunction with array_agg() to first aggregate the input geometries, may be better than geometry_union_agg(), at the expense of higher memory utilization."
+  },
+  {
+    "name": "geometry_union_agg",
+    "signature": "geometry_union_agg(Geometry) → Geometry",
+    "doc": "Returns a geometry that represents the point set union of all input geometries."
+  },
+  {
+    "name": "great_circle_distance",
+    "signature": "great_circle_distance(latitude1, longitude1, latitude2, longitude2) → double",
+    "doc": "Returns the great-circle distance between two points on Earth’s surface in kilometers."
+  },
+  {
+    "name": "greatest",
+    "signature": "greatest(value1, value2, ..., valueN) → [same as input]",
+    "doc": "Returns the largest of the provided values."
+  },
+  {
+    "name": "hamming_distance",
+    "signature": "hamming_distance(string1, string2) → bigint",
+    "doc": "Returns the Hamming distance of string1 and string2, i.e. the number of positions at which the corresponding characters are different. Note that the two strings must have the same length."
+  },
+  {
+    "name": "hash_counts",
+    "signature": "hash_counts(x)",
+    "doc": "Returns a map containing the Murmur3Hash128 hashed values and the count of their occurences within the internal MinHash structure belonging to x."
+  },
+  {
+    "name": "histogram",
+    "signature": "histogram(x) → map<K,bigint>",
+    "doc": "Returns a map containing the count of the number of times each input value occurs."
+  },
+  {
+    "name": "hmac_md5",
+    "signature": "hmac_md5(binary, key) → varbinary",
+    "doc": "Computes HMAC with MD5 of binary with the given key."
+  },
+  {
+    "name": "hmac_sha1",
+    "signature": "hmac_sha1(binary, key) → varbinary",
+    "doc": "Computes HMAC with SHA1 of binary with the given key."
+  },
+  {
+    "name": "hmac_sha256",
+    "signature": "hmac_sha256(binary, key) → varbinary",
+    "doc": "Computes HMAC with SHA256 of binary with the given key."
+  },
+  {
+    "name": "hmac_sha512",
+    "signature": "hmac_sha512(binary, key) → varbinary",
+    "doc": "Computes HMAC with SHA512 of binary with the given key."
+  },
+  {
+    "name": "hour",
+    "signature": "hour(x) → bigint",
+    "doc": "Returns the hour of the day from x. The value ranges from 0 to 23."
+  },
+  {
+    "name": "human_readable_seconds",
+    "signature": "human_readable_seconds(double) → varchar",
+    "doc": "Formats the double value of seconds into a human-readable string containing weeks, days, hours, minutes, and seconds:"
+  },
+  {
+    "name": "id0",
+    "signature": "if(condition, true_value)",
+    "doc": "Evaluates and returns true_value if condition is true, otherwise null is returned and true_value is not evaluated."
+  },
+  {
+    "name": "id1",
+    "signature": "coalesce(value1, value2[, ...])",
+    "doc": "Returns the first non-null value in the argument list. Like a CASE expression, arguments are only evaluated if necessary."
+  },
+  {
+    "name": "id2",
+    "signature": "nullif(value1, value2)",
+    "doc": "Returns null if value1 equals value2, otherwise returns value1."
+  },
+  {
+    "name": "id3",
+    "signature": "try(expression)",
+    "doc": "Evaluate an expression and handle certain types of errors by returning NULL."
+  },
+  {
+    "name": "index",
+    "signature": "index(string, substring) → bigint",
+    "doc": "Alias for strpos() function."
+  },
+  {
+    "name": "infinity",
+    "signature": "infinity() → double",
+    "doc": "Returns the constant representing positive infinity."
+  },
+  {
+    "name": "intersection_cardinality",
+    "signature": "intersection_cardinality(x, y) → long",
+    "doc": "Returns the estimation for the cardinality of the intersection of the two set digests."
+  },
+  {
+    "name": "inverse_beta_cdf",
+    "signature": "inverse_beta_cdf(a, b, p) → double",
+    "doc": "Compute the inverse of the Beta cdf with given a, b parameters for the cumulative probability (p): P(N < n). The a, b parameters must be positive real values. The probability p must lie on the interval [0, 1]."
+  },
+  {
+    "name": "inverse_normal_cdf",
+    "signature": "inverse_normal_cdf(mean, sd, p) → double",
+    "doc": "Compute the inverse of the Normal cdf with given mean and standard deviation (sd) for the cumulative probability (p): P(N < n). The mean must be a real value and the standard deviation must be a real and positive value. The probability p must lie on the interval (0, 1)."
+  },
+  {
+    "name": "is_finite",
+    "signature": "is_finite(x) → boolean",
+    "doc": "Determine if x is finite."
+  },
+  {
+    "name": "is_infinite",
+    "signature": "is_infinite(x) → boolean",
+    "doc": "Determine if x is infinite."
+  },
+  {
+    "name": "is_json_scalar",
+    "signature": "is_json_scalar(json) → boolean",
+    "doc": "Determine if json is a scalar (i.e. a JSON number, a JSON string, true, false or null):"
+  },
+  {
+    "name": "is_nan",
+    "signature": "is_nan(x) → boolean",
+    "doc": "Determine if x is not-a-number."
+  },
+  {
+    "name": "jaccard_index",
+    "signature": "jaccard_index(x, y) → double",
+    "doc": "Returns the estimation of Jaccard index for the two set digests."
+  },
+  {
+    "name": "json_array_contains",
+    "signature": "json_array_contains(json, value) → boolean",
+    "doc": "Determine if value exists in json (a string containing a JSON array):"
+  },
+  {
+    "name": "json_array_get",
+    "signature": "json_array_get(json_array, index) → json",
+    "doc": "Warning"
+  },
+  {
+    "name": "json_array_length",
+    "signature": "json_array_length(json) → bigint",
+    "doc": "Returns the array length of json (a string containing a JSON array):"
+  },
+  {
+    "name": "json_extract",
+    "signature": "json_extract(json, json_path) → json",
+    "doc": "Evaluates the JSONPath-like expression json_path on json (a string containing JSON) and returns the result as a JSON string:"
+  },
+  {
+    "name": "json_extract_scalar",
+    "signature": "json_extract_scalar(json, json_path) → varchar",
+    "doc": "Like json_extract(), but returns the result value as a string (as opposed to being encoded as JSON). The value referenced by json_path must be a scalar (boolean, number or string)."
+  },
+  {
+    "name": "json_format",
+    "signature": "json_format(json) → varchar",
+    "doc": "Returns the JSON text serialized from the input JSON value. This is inverse function to json_parse()."
+  },
+  {
+    "name": "json_parse",
+    "signature": "json_parse(string) → json",
+    "doc": "Returns the JSON value deserialized from the input JSON text. This is inverse function to json_format():"
+  },
+  {
+    "name": "json_size",
+    "signature": "json_size(json, json_path) → bigint",
+    "doc": "Like json_extract(), but returns the size of the value. For objects or arrays, the size is the number of members, and the size of a scalar value is zero."
+  },
+  {
+    "name": "kurtosis",
+    "signature": "kurtosis(x) → double",
+    "doc": "Returns the excess kurtosis of all input values. Unbiased estimate using the following expression:"
+  },
+  {
+    "name": "lag",
+    "signature": "lag(x[, offset[, default_value]]) → [same as input]",
+    "doc": "Returns the value at offset rows before the current row in the window partition. Offsets start at 0, which is the current row. The offset can be any scalar expression. The default offset is 1. If the offset is null, an error is raised. If the offset refers to a row that is not within the partition, "
+  },
+  {
+    "name": "last_day_of_month",
+    "signature": "last_day_of_month(x) → date",
+    "doc": "Returns the last day of the month."
+  },
+  {
+    "name": "last_value",
+    "signature": "last_value(x) → [same as input]",
+    "doc": "Returns the last value of the window."
+  },
+  {
+    "name": "lead",
+    "signature": "lead(x[, offset[, default_value]]) → [same as input]",
+    "doc": "Returns the value at offset rows after the current row in the window partition. Offsets start at 0, which is the current row. The offset can be any scalar expression. The default offset is 1. If the offset is null, an error is raised. If the offset refers to a row that is not within the partition, t"
+  },
+  {
+    "name": "least",
+    "signature": "least(value1, value2, ..., valueN) → [same as input]",
+    "doc": "Returns the smallest of the provided values."
+  },
+  {
+    "name": "length",
+    "signature": "length(string) → bigint",
+    "doc": "Returns the length of string in characters."
+  },
+  {
+    "name": "levenshtein_distance",
+    "signature": "levenshtein_distance(string1, string2) → bigint",
+    "doc": "Returns the Levenshtein edit distance of string1 and string2, i.e. the minimum number of single-character edits (insertions, deletions or substitutions) needed to change string1 into string2."
+  },
+  {
+    "name": "line_interpolate_point",
+    "signature": "line_interpolate_point(LineString, double) → Geometry",
+    "doc": "Returns a Point interpolated along a LineString at the fraction given. The fraction must be between 0 and 1, inclusive."
+  },
+  {
+    "name": "line_interpolate_points",
+    "signature": "line_interpolate_points(LineString, double, repeated)",
+    "doc": "Returns an array of Points interpolated along a LineString. The fraction must be between 0 and 1, inclusive."
+  },
+  {
+    "name": "line_locate_point",
+    "signature": "line_locate_point(LineString, Point) → double",
+    "doc": "Returns a float between 0 and 1 representing the location of the closest point on the LineString to the given Point, as a fraction of total 2d line length."
+  },
+  {
+    "name": "listagg",
+    "signature": "listagg(x, separator) → varchar",
+    "doc": "Returns the concatenated input values, separated by the separator string."
+  },
+  {
+    "name": "ln",
+    "signature": "ln(x) → double",
+    "doc": "Returns the natural logarithm of x."
+  },
+  {
+    "name": "log",
+    "signature": "log(b, x) → double",
+    "doc": "Returns the base b logarithm of x."
+  },
+  {
+    "name": "log10",
+    "signature": "log10(x) → double",
+    "doc": "Returns the base 10 logarithm of x."
+  },
+  {
+    "name": "log2",
+    "signature": "log2(x) → double",
+    "doc": "Returns the base 2 logarithm of x."
+  },
+  {
+    "name": "lower",
+    "signature": "lower(string) → varchar",
+    "doc": "Converts string to lowercase."
+  },
+  {
+    "name": "lpad",
+    "signature": "lpad(string, size, padstring) → varchar",
+    "doc": "Left pads string to size characters with padstring. If size is less than the length of string, the result is truncated to size characters. size must not be negative and padstring must be non-empty."
+  },
+  {
+    "name": "ltrim",
+    "signature": "ltrim(string) → varchar",
+    "doc": "Removes leading whitespace from string."
+  },
+  {
+    "name": "luhn_check",
+    "signature": "luhn_check(string) → boolean",
+    "doc": "Tests whether a string of digits is valid according to the Luhn algorithm."
+  },
+  {
+    "name": "make_set_digest",
+    "signature": "make_set_digest(x) → setdigest",
+    "doc": "Composes all input values of x into a setdigest."
+  },
+  {
+    "name": "map",
+    "signature": "map() → map<unknown, unknown>",
+    "doc": "Returns an empty map."
+  },
+  {
+    "name": "map_agg",
+    "signature": "map_agg(key, value) → map<K,V>",
+    "doc": "Returns a map created from the input key / value pairs."
+  },
+  {
+    "name": "map_concat",
+    "signature": "map_concat(map1(K, V), map2(K, V), ..., mapN(K, V)) → map(K, V)",
+    "doc": "Returns the union of all the given maps. If a key is found in multiple given maps, that key’s value in the resulting map comes from the last one of those maps."
+  },
+  {
+    "name": "map_entries",
+    "signature": "map_entries(map(K, V)) → array(row(K, V))",
+    "doc": "Returns an array of all entries in the given map."
+  },
+  {
+    "name": "map_filter",
+    "signature": "map_filter(map(K, V), function(K, V, boolean)) → map(K, V)",
+    "doc": "Constructs a map from those entries of map for which function returns true:"
+  },
+  {
+    "name": "map_from_entries",
+    "signature": "map_from_entries(array(row(K, V))) → map(K, V)",
+    "doc": "Returns a map created from the given array of entries."
+  },
+  {
+    "name": "map_keys",
+    "signature": "map_keys(x(K, V)) → array(K)",
+    "doc": "Returns all the keys in the map x."
+  },
+  {
+    "name": "map_union",
+    "signature": "map_union(x(K, V)) → map<K,V>",
+    "doc": "Returns the union of all the input maps. If a key is found in multiple input maps, that key’s value in the resulting map comes from an arbitrary input map."
+  },
+  {
+    "name": "map_values",
+    "signature": "map_values(x(K, V)) → array(V)",
+    "doc": "Returns all the values in the map x."
+  },
+  {
+    "name": "map_zip_with",
+    "signature": "map_zip_with(map(K, V1), map(K, V2), function(K, V1, V2, V3)) → map(K, V3)",
+    "doc": "Merges the two given maps into a single map by applying function to the pair of values with the same key. For keys only presented in one map, NULL will be passed as the value for the missing key."
+  },
+  {
+    "name": "max",
+    "signature": "max(x) → [same as input]",
+    "doc": "Returns the maximum value of all input values."
+  },
+  {
+    "name": "max_by",
+    "signature": "max_by(x, y) → [same as x]",
+    "doc": "Returns the value of x associated with the maximum value of y over all input values."
+  },
+  {
+    "name": "md5",
+    "signature": "md5(binary) → varbinary",
+    "doc": "Computes the MD5 hash of binary."
+  },
+  {
+    "name": "merge",
+    "signature": "merge(HyperLogLog) → HyperLogLog",
+    "doc": "Returns the HyperLogLog of the aggregate union of the individual hll HyperLogLog structures."
+  },
+  {
+    "name": "merge_set_digest",
+    "signature": "merge_set_digest(setdigest) → setdigest",
+    "doc": "Returns the setdigest of the aggregate union of the individual setdigest Set Digest structures."
+  },
+  {
+    "name": "millisecond",
+    "signature": "millisecond(x) → bigint",
+    "doc": "Returns the millisecond of the second from x."
+  },
+  {
+    "name": "min",
+    "signature": "min(x) → [same as input]",
+    "doc": "Returns the minimum value of all input values."
+  },
+  {
+    "name": "min_by",
+    "signature": "min_by(x, y) → [same as x]",
+    "doc": "Returns the value of x associated with the minimum value of y over all input values."
+  },
+  {
+    "name": "minute",
+    "signature": "minute(x) → bigint",
+    "doc": "Returns the minute of the hour from x."
+  },
+  {
+    "name": "mod",
+    "signature": "mod(n, m) → [same as input]",
+    "doc": "Returns the modulo (remainder) of n divided by m."
+  },
+  {
+    "name": "month",
+    "signature": "month(x) → bigint",
+    "doc": "Returns the month of the year from x."
+  },
+  {
+    "name": "multimap_agg",
+    "signature": "multimap_agg(key, value) → map<K,array(V)>",
+    "doc": "Returns a multimap created from the input key / value pairs. Each key can be associated with multiple values."
+  },
+  {
+    "name": "multimap_from_entries",
+    "signature": "multimap_from_entries(array(row(K, V))) → map(K, array(V))",
+    "doc": "Returns a multimap created from the given array of entries. Each key can be associated with multiple values."
+  },
+  {
+    "name": "murmur3",
+    "signature": "murmur3(binary) → varbinary",
+    "doc": "Computes the 128-bit MurmurHash3 hash of binary."
+  },
+  {
+    "name": "nan",
+    "signature": "nan() → double",
+    "doc": "Returns the constant representing not-a-number."
+  },
+  {
+    "name": "ngrams",
+    "signature": "ngrams(array(T), n) → array(array(T))",
+    "doc": "Returns n-grams (sub-sequences of adjacent n elements) for the array. The order of the n-grams in the result is unspecified."
+  },
+  {
+    "name": "none_match",
+    "signature": "none_match(array(T), function(T, boolean)) → boolean",
+    "doc": "Returns whether no elements of an array match the given predicate. Returns true if none of the elements matches the predicate (a special case is when the array is empty); false if one or more elements match; NULL if the predicate function returns NULL for one or more elements and false for all other"
+  },
+  {
+    "name": "normal_cdf",
+    "signature": "normal_cdf(mean, sd, v) → double",
+    "doc": "Compute the Normal cdf with given mean and standard deviation (sd): P(N < v; mean, sd). The mean and value v must be real values and the standard deviation must be a real and positive value."
+  },
+  {
+    "name": "normalize",
+    "signature": "normalize(string) → varchar",
+    "doc": "Transforms string with NFC normalization form."
+  },
+  {
+    "name": "now",
+    "signature": "now() → timestamp(3) with time zone",
+    "doc": "This is an alias for current_timestamp."
+  },
+  {
+    "name": "nth_value",
+    "signature": "nth_value(x, offset) → [same as input]",
+    "doc": "Returns the value at the specified offset from the beginning of the window. Offsets start at 1. The offset can be any scalar expression. If the offset is null or greater than the number of values in the window, null is returned. It is an error for the offset to be zero or negative."
+  },
+  {
+    "name": "ntile",
+    "signature": "ntile(n) → bigint",
+    "doc": "Divides the rows for each window partition into n buckets ranging from 1 to at most n. Bucket values will differ by at most 1. If the number of rows in the partition does not divide evenly into the number of buckets, then the remainder values are distributed one per bucket, starting with the first b"
+  },
+  {
+    "name": "numeric_histogram",
+    "signature": "numeric_histogram(buckets, value, weight) → map<double, double>",
+    "doc": "Computes an approximate histogram with up to buckets number of buckets for all values with a per-item weight of weight. The algorithm is based loosely on:"
+  },
+  {
+    "name": "overlay",
+    "signature": "overlay(string PLACING replacement FROM start) → varchar",
+    "doc": "Returns string with the substring beginning at position start (1-based, must be greater than 0) replaced by replacement. The number of characters removed defaults to the length of replacement. The result keeps the same length as string only when the replaced range lies entirely within string; when t"
+  },
+  {
+    "name": "parse_data_size",
+    "signature": "parse_data_size(string)",
+    "doc": "Parses string of format value unit into a number, where value is the fractional number of unit values:"
+  },
+  {
+    "name": "parse_datetime",
+    "signature": "parse_datetime(string, format) → timestamp with time zone",
+    "doc": "Parses string into a timestamp with time zone using format."
+  },
+  {
+    "name": "parse_duration",
+    "signature": "parse_duration(string) → interval",
+    "doc": "Parses string of format value unit into an interval, where value is fractional number of unit values:"
+  },
+  {
+    "name": "percent_rank",
+    "signature": "percent_rank() → double",
+    "doc": "Returns the percentage ranking of a value in group of values. The result is (r - 1) / (n - 1) where r is the rank() of the row and n is the total number of rows in the window partition. The window frame must not be specified."
+  },
+  {
+    "name": "pi",
+    "signature": "pi() → double",
+    "doc": "Returns the constant Pi."
+  },
+  {
+    "name": "position",
+    "signature": "position(substring IN string) → bigint",
+    "doc": "Returns the starting position of the first instance of substring in string. Positions start with 1. If not found, 0 is returned."
+  },
+  {
+    "name": "pow",
+    "signature": "pow(x, p) → double",
+    "doc": "This is an alias for power()."
+  },
+  {
+    "name": "power",
+    "signature": "power(x, p) → double",
+    "doc": "Returns x raised to the power of p."
+  },
+  {
+    "name": "quarter",
+    "signature": "quarter(x) → bigint",
+    "doc": "Returns the quarter of the year from x. The value ranges from 1 to 4."
+  },
+  {
+    "name": "radians",
+    "signature": "radians(x) → double",
+    "doc": "Converts angle x in degrees to radians."
+  },
+  {
+    "name": "rand",
+    "signature": "rand() → double",
+    "doc": "This is an alias for random()."
+  },
+  {
+    "name": "random",
+    "signature": "random() → double",
+    "doc": "Returns a pseudo-random value in the range 0.0 <= x < 1.0."
+  },
+  {
+    "name": "rank",
+    "signature": "rank() → bigint",
+    "doc": "Returns the rank of a value in a group of values. The rank is one plus the number of rows preceding the row that are not peer with the row. Thus, tie values in the ordering will produce gaps in the sequence. The ranking is performed for each window partition. The window frame must not be specified."
+  },
+  {
+    "name": "reduce",
+    "signature": "reduce(array(T), initialState S, inputFunction(S, T, S), outputFunction(S, R)) → R",
+    "doc": "Returns a single value reduced from array. inputFunction will be invoked for each element in array in order. In addition to taking the element, inputFunction takes the current state, initially initialState, and returns the new state. outputFunction will be invoked to turn the final state into the re"
+  },
+  {
+    "name": "reduce_agg",
+    "signature": "reduce_agg(inputValue T, initialState S, inputFunction(S, T, S), combineFunction(S, S, S)) → S",
+    "doc": "Reduces all input values into a single value. inputFunction will be invoked for each non-null input value. In addition to taking the input value, inputFunction takes the current state, initially initialState, and returns the new state. combineFunction will be invoked to combine two states into a new"
+  },
+  {
+    "name": "regexp_count",
+    "signature": "regexp_count(string, pattern) → bigint",
+    "doc": "Returns the number of occurrence of pattern in string:"
+  },
+  {
+    "name": "regexp_extract",
+    "signature": "regexp_extract(string, pattern) → varchar",
+    "doc": "Returns the first substring matched by the regular expression pattern in string:"
+  },
+  {
+    "name": "regexp_extract_all",
+    "signature": "regexp_extract_all(string, pattern)",
+    "doc": "Returns the substring(s) matched by the regular expression pattern in string:"
+  },
+  {
+    "name": "regexp_like",
+    "signature": "regexp_like(string, pattern) → boolean",
+    "doc": "Evaluates the regular expression pattern and determines if it is contained within string."
+  },
+  {
+    "name": "regexp_position",
+    "signature": "regexp_position(string, pattern) → integer",
+    "doc": "Returns the index of the first occurrence (counting from 1) of pattern in string. Returns -1 if not found:"
+  },
+  {
+    "name": "regexp_replace",
+    "signature": "regexp_replace(string, pattern) → varchar",
+    "doc": "Removes every instance of the substring matched by the regular expression pattern from string:"
+  },
+  {
+    "name": "regexp_split",
+    "signature": "regexp_split(string, pattern)",
+    "doc": "Splits string using the regular expression pattern and returns an array. Trailing empty strings are preserved:"
+  },
+  {
+    "name": "regr_intercept",
+    "signature": "regr_intercept(y, x) → double",
+    "doc": "Returns linear regression intercept of input values. y is the dependent value. x is the independent value."
+  },
+  {
+    "name": "regr_slope",
+    "signature": "regr_slope(y, x) → double",
+    "doc": "Returns linear regression slope of input values. y is the dependent value. x is the independent value."
+  },
+  {
+    "name": "render",
+    "signature": "render(x, color) → varchar",
+    "doc": "Renders value x using the specific color using ANSI color codes. x can be either a double, bigint, or varchar."
+  },
+  {
+    "name": "repeat",
+    "signature": "repeat(element, count) → array",
+    "doc": "Repeat element for count times."
+  },
+  {
+    "name": "replace",
+    "signature": "replace(string, search) → varchar",
+    "doc": "Removes all instances of search from string."
+  },
+  {
+    "name": "reverse",
+    "signature": "reverse(string) → varchar",
+    "doc": "Returns string with the characters in reverse order."
+  },
+  {
+    "name": "rgb",
+    "signature": "rgb(red, green, blue) → color",
+    "doc": "Returns a color value capturing the RGB value of three component color values supplied as int parameters ranging from 0 to 255: red, green, blue."
+  },
+  {
+    "name": "round",
+    "signature": "round(x) → [same as input]",
+    "doc": "Returns x rounded to the nearest integer."
+  },
+  {
+    "name": "row_number",
+    "signature": "row_number() → bigint",
+    "doc": "Returns a unique, sequential number for each row, starting with one, according to the ordering of rows within the window partition. The window frame must not be specified."
+  },
+  {
+    "name": "rpad",
+    "signature": "rpad(string, size, padstring) → varchar",
+    "doc": "Right pads string to size characters with padstring. If size is less than the length of string, the result is truncated to size characters. size must not be negative and padstring must be non-empty."
+  },
+  {
+    "name": "rtrim",
+    "signature": "rtrim(string) → varchar",
+    "doc": "Removes trailing whitespace from string."
+  },
+  {
+    "name": "second",
+    "signature": "second(x) → bigint",
+    "doc": "Returns the second of the minute from x."
+  },
+  {
+    "name": "sequence",
+    "signature": "sequence(start, stop)",
+    "doc": "Generate a sequence of integers from start to stop, incrementing by 1 if start is less than or equal to stop, otherwise -1."
+  },
+  {
+    "name": "sha1",
+    "signature": "sha1(binary) → varbinary",
+    "doc": "Computes the SHA1 hash of binary."
+  },
+  {
+    "name": "sha256",
+    "signature": "sha256(binary) → varbinary",
+    "doc": "Computes the SHA256 hash of binary."
+  },
+  {
+    "name": "sha512",
+    "signature": "sha512(binary) → varbinary",
+    "doc": "Computes the SHA512 hash of binary."
+  },
+  {
+    "name": "shuffle",
+    "signature": "shuffle(x) → array",
+    "doc": "Generate a random permutation of the given array x."
+  },
+  {
+    "name": "sign",
+    "signature": "sign(x) → [same as input]",
+    "doc": "Returns the signum function of x, that is:"
+  },
+  {
+    "name": "simplify_geometry",
+    "signature": "simplify_geometry(Geometry, double) → Geometry",
+    "doc": "Returns a “simplified” version of the input geometry using the Douglas-Peucker algorithm. Will avoid creating derived geometries (polygons in particular) that are invalid."
+  },
+  {
+    "name": "sin",
+    "signature": "sin(x) → double",
+    "doc": "Returns the sine of x."
+  },
+  {
+    "name": "sinh",
+    "signature": "sinh(x) → double",
+    "doc": "Returns the hyperbolic sine of x."
+  },
+  {
+    "name": "skewness",
+    "signature": "skewness(x) → double",
+    "doc": "Returns the Fisher’s moment coefficient of skewness of all input values."
+  },
+  {
+    "name": "slice",
+    "signature": "slice(x, start, length) → array",
+    "doc": "Subsets array x starting from index start (or starting from the end if start is negative) with a length of length."
+  },
+  {
+    "name": "soundex",
+    "signature": "soundex(char) → string",
+    "doc": "It is typically used to evaluate the similarity of two expressions phonetically, that is how the string sounds when spoken:"
+  },
+  {
+    "name": "split",
+    "signature": "split(string, delimiter)",
+    "doc": "Splits string on delimiter and returns an array."
+  },
+  {
+    "name": "split_part",
+    "signature": "split_part(string, delimiter, index) → varchar",
+    "doc": "Splits string on delimiter and returns the field index. Field indexes start with 1. If the index is larger than the number of fields, then null is returned."
+  },
+  {
+    "name": "split_to_map",
+    "signature": "split_to_map(string, entryDelimiter, keyValueDelimiter) → map<varchar, varchar>",
+    "doc": "Splits string by entryDelimiter and keyValueDelimiter and returns a map. entryDelimiter splits string into key-value pairs. keyValueDelimiter splits each pair into key and value."
+  },
+  {
+    "name": "split_to_multimap",
+    "signature": "split_to_multimap(string, entryDelimiter, keyValueDelimiter)",
+    "doc": "Splits string by entryDelimiter and keyValueDelimiter and returns a map containing an array of values for each unique key. entryDelimiter splits string into key-value pairs. keyValueDelimiter splits each pair into key and value. The values for each key will be in the same order as they appeared in s"
+  },
+  {
+    "name": "spooky_hash_v2_32",
+    "signature": "spooky_hash_v2_32(binary) → varbinary",
+    "doc": "Computes the 32-bit SpookyHashV2 hash of binary."
+  },
+  {
+    "name": "spooky_hash_v2_64",
+    "signature": "spooky_hash_v2_64(binary) → varbinary",
+    "doc": "Computes the 64-bit SpookyHashV2 hash of binary."
+  },
+  {
+    "name": "sqrt",
+    "signature": "sqrt(x) → double",
+    "doc": "Returns the square root of x."
+  },
+  {
+    "name": "st_area",
+    "signature": "ST_Area(Geometry) → double",
+    "doc": "Returns the 2D Euclidean area of a geometry."
+  },
+  {
+    "name": "st_asbinary",
+    "signature": "ST_AsBinary(Geometry) → varbinary",
+    "doc": "Returns the WKB representation of the geometry."
+  },
+  {
+    "name": "st_astext",
+    "signature": "ST_AsText(Geometry) → varchar",
+    "doc": "Returns the WKT representation of the geometry. For empty geometries, ST_AsText(ST_LineFromText('LINESTRING EMPTY')) will produce 'MULTILINESTRING EMPTY' and ST_AsText(ST_Polygon('POLYGON EMPTY')) will produce 'MULTIPOLYGON EMPTY'."
+  },
+  {
+    "name": "st_boundary",
+    "signature": "ST_Boundary(Geometry) → Geometry",
+    "doc": "Returns the closure of the combinatorial boundary of this geometry."
+  },
+  {
+    "name": "st_buffer",
+    "signature": "ST_Buffer(Geometry, distance) → Geometry",
+    "doc": "Returns the geometry that represents all points whose distance from the specified geometry is less than or equal to the specified distance. If the points of the geometry are extremely close together (delta < 1e-8), this might return an empty geometry."
+  },
+  {
+    "name": "st_centroid",
+    "signature": "ST_Centroid(Geometry) → Geometry",
+    "doc": "Returns the point value that is the mathematical centroid of a geometry."
+  },
+  {
+    "name": "st_contains",
+    "signature": "ST_Contains(geometryA: Geometry, geometryB: Geometry) → boolean",
+    "doc": "Returns true if and only if no points of the second geometry lie in the exterior of the first geometry, and at least one point of the interior of the first geometry lies in the interior of the second geometry."
+  },
+  {
+    "name": "st_convexhull",
+    "signature": "ST_ConvexHull(Geometry) → Geometry",
+    "doc": "Returns the minimum convex geometry that encloses all input geometries."
+  },
+  {
+    "name": "st_coorddim",
+    "signature": "ST_CoordDim(Geometry) → bigint",
+    "doc": "Returns the coordinate dimension of the geometry."
+  },
+  {
+    "name": "st_crosses",
+    "signature": "ST_Crosses(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the supplied geometries have some, but not all, interior points in common."
+  },
+  {
+    "name": "st_difference",
+    "signature": "ST_Difference(first: Geometry, second: Geometry) → Geometry",
+    "doc": "Returns the geometry value that represents the point set difference of the given geometries."
+  },
+  {
+    "name": "st_dimension",
+    "signature": "ST_Dimension(Geometry) → bigint",
+    "doc": "Returns the inherent dimension of this geometry object, which must be less than or equal to the coordinate dimension."
+  },
+  {
+    "name": "st_disjoint",
+    "signature": "ST_Disjoint(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the give geometries do not spatially intersect – if they do not share any space together."
+  },
+  {
+    "name": "st_distance",
+    "signature": "ST_Distance(first: SphericalGeography, second: SphericalGeography) → double",
+    "doc": "Returns the great-circle distance in meters between two SphericalGeography points."
+  },
+  {
+    "name": "st_endpoint",
+    "signature": "ST_EndPoint(Geometry) → point",
+    "doc": "Returns the last point of a LineString geometry as a Point. This is a shortcut for ST_PointN(geometry, ST_NumPoints(geometry))."
+  },
+  {
+    "name": "st_envelope",
+    "signature": "ST_Envelope(Geometry) → Geometry",
+    "doc": "Returns the bounding rectangular polygon of a geometry."
+  },
+  {
+    "name": "st_envelopeaspts",
+    "signature": "ST_EnvelopeAsPts(Geometry)",
+    "doc": "Returns an array of two points: the lower left and upper right corners of the bounding rectangular polygon of a geometry. Returns NULL if input geometry is empty."
+  },
+  {
+    "name": "st_equals",
+    "signature": "ST_Equals(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the given geometries represent the same geometry."
+  },
+  {
+    "name": "st_exteriorring",
+    "signature": "ST_ExteriorRing(Geometry) → Geometry",
+    "doc": "Returns a line string representing the exterior ring of the input polygon."
+  },
+  {
+    "name": "st_geometries",
+    "signature": "ST_Geometries(Geometry)",
+    "doc": "Returns an array of geometries in the specified collection. Returns a one-element array if the input geometry is not a multi-geometry. Returns NULL if input geometry is empty."
+  },
+  {
+    "name": "st_geometryfromtext",
+    "signature": "ST_GeometryFromText(varchar) → Geometry",
+    "doc": "Returns a geometry type object from WKT representation."
+  },
+  {
+    "name": "st_geometryn",
+    "signature": "ST_GeometryN(Geometry, index) → Geometry",
+    "doc": "Returns the geometry element at a given index (indices start at 1). If the geometry is a collection of geometries (e.g., GEOMETRYCOLLECTION or MULTI*), returns the geometry at a given index. If the given index is less than 1 or greater than the total number of elements in the collection, returns NUL"
+  },
+  {
+    "name": "st_geometrytype",
+    "signature": "ST_GeometryType(Geometry) → varchar",
+    "doc": "Returns the type of the geometry."
+  },
+  {
+    "name": "st_geomfrombinary",
+    "signature": "ST_GeomFromBinary(varbinary) → Geometry",
+    "doc": "Returns a geometry type object from WKB or EWKB representation."
+  },
+  {
+    "name": "st_geomfromkml",
+    "signature": "ST_GeomFromKML(varchar) → Geometry",
+    "doc": "Returns a geometry type object from KML representation."
+  },
+  {
+    "name": "st_interiorringn",
+    "signature": "ST_InteriorRingN(Geometry, index) → Geometry",
+    "doc": "Returns the interior ring element at the specified index (indices start at 1). If the given index is less than 1 or greater than the total number of interior rings in the input geometry, returns NULL. The input geometry must be a polygon. Use ST_NumInteriorRing() to find out the total number of elem"
+  },
+  {
+    "name": "st_interiorrings",
+    "signature": "ST_InteriorRings(Geometry)",
+    "doc": "Returns an array of all interior rings found in the input geometry, or an empty array if the polygon has no interior rings. Returns NULL if the input geometry is empty. The input geometry must be a polygon."
+  },
+  {
+    "name": "st_intersection",
+    "signature": "ST_Intersection(first: Geometry, second: Geometry) → Geometry",
+    "doc": "Returns the geometry value that represents the point set intersection of two geometries."
+  },
+  {
+    "name": "st_intersects",
+    "signature": "ST_Intersects(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the given geometries spatially intersect in two dimensions (share any portion of space) and false if they do not (they are disjoint)."
+  },
+  {
+    "name": "st_isclosed",
+    "signature": "ST_IsClosed(Geometry) → boolean",
+    "doc": "Returns true if the linestring’s start and end points are coincident."
+  },
+  {
+    "name": "st_isempty",
+    "signature": "ST_IsEmpty(Geometry) → boolean",
+    "doc": "Returns true if this Geometry is an empty geometrycollection, polygon, point etc."
+  },
+  {
+    "name": "st_isring",
+    "signature": "ST_IsRing(Geometry) → boolean",
+    "doc": "Returns true if and only if the line is closed and simple."
+  },
+  {
+    "name": "st_issimple",
+    "signature": "ST_IsSimple(Geometry) → boolean",
+    "doc": "Returns true if this Geometry has no anomalous geometric points, such as self intersection or self tangency."
+  },
+  {
+    "name": "st_isvalid",
+    "signature": "ST_IsValid(Geometry) → boolean",
+    "doc": "Returns true if and only if the input geometry is well-formed. Use geometry_invalid_reason() to determine why the geometry is not well-formed."
+  },
+  {
+    "name": "st_length",
+    "signature": "ST_Length(Geometry) → double",
+    "doc": "Returns the length of a linestring or multi-linestring using Euclidean measurement on a two-dimensional plane (based on spatial ref) in projected units."
+  },
+  {
+    "name": "st_linefromtext",
+    "signature": "ST_LineFromText(varchar) → LineString",
+    "doc": "Returns a geometry type linestring object from WKT representation."
+  },
+  {
+    "name": "st_linestring",
+    "signature": "ST_LineString(array(Point)) → LineString",
+    "doc": "Returns a LineString formed from an array of points. If there are fewer than two non-empty points in the input array, an empty LineString will be returned. Array elements must not be NULL or the same as the previous element. The returned geometry may not be simple, e.g. may self-intersect or may con"
+  },
+  {
+    "name": "st_multipoint",
+    "signature": "ST_MultiPoint(array(Point)) → MultiPoint",
+    "doc": "Returns a MultiPoint geometry object formed from the specified points. Returns NULL if input array is empty. Array elements must not be NULL or empty. The returned geometry may not be simple and may contain duplicate points if input array has duplicates."
+  },
+  {
+    "name": "st_numgeometries",
+    "signature": "ST_NumGeometries(Geometry) → bigint",
+    "doc": "Returns the number of geometries in the collection. If the geometry is a collection of geometries (e.g., GEOMETRYCOLLECTION or MULTI*), returns the number of geometries, for single geometries returns 1, for empty geometries returns 0."
+  },
+  {
+    "name": "st_numinteriorring",
+    "signature": "ST_NumInteriorRing(Geometry) → bigint",
+    "doc": "Returns the cardinality of the collection of interior rings of a polygon."
+  },
+  {
+    "name": "st_numpoints",
+    "signature": "ST_NumPoints(Geometry) → bigint",
+    "doc": "Returns the number of points in a geometry. This is an extension to the SQL/MM ST_NumPoints function which only applies to point and linestring."
+  },
+  {
+    "name": "st_overlaps",
+    "signature": "ST_Overlaps(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the given geometries share space, are of the same dimension, but are not completely contained by each other."
+  },
+  {
+    "name": "st_point",
+    "signature": "ST_Point(lon: double, lat: double) → Point",
+    "doc": "Returns a geometry type point object with the given coordinate values."
+  },
+  {
+    "name": "st_pointn",
+    "signature": "ST_PointN(LineString, index) → Point",
+    "doc": "Returns the vertex of a linestring at a given index (indices start at 1). If the given index is less than 1 or greater than the total number of elements in the collection, returns NULL. Use ST_NumPoints() to find out the total number of elements."
+  },
+  {
+    "name": "st_points",
+    "signature": "ST_Points(Geometry)",
+    "doc": "Returns an array of points in a linestring."
+  },
+  {
+    "name": "st_polygon",
+    "signature": "ST_Polygon(varchar) → Polygon",
+    "doc": "Returns a geometry type polygon object from WKT representation."
+  },
+  {
+    "name": "st_relate",
+    "signature": "ST_Relate(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if first geometry is spatially related to second geometry."
+  },
+  {
+    "name": "st_startpoint",
+    "signature": "ST_StartPoint(Geometry) → point",
+    "doc": "Returns the first point of a LineString geometry as a Point. This is a shortcut for ST_PointN(geometry, 1)."
+  },
+  {
+    "name": "st_symdifference",
+    "signature": "ST_SymDifference(first: Geometry, second: Geometry) → Geometry",
+    "doc": "Returns the geometry value that represents the point set symmetric difference of two geometries."
+  },
+  {
+    "name": "st_touches",
+    "signature": "ST_Touches(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if the given geometries have at least one point in common, but their interiors do not intersect."
+  },
+  {
+    "name": "st_union",
+    "signature": "ST_Union(first: Geometry, second: Geometry) → Geometry",
+    "doc": "Returns a geometry that represents the point set union of the input geometries."
+  },
+  {
+    "name": "st_within",
+    "signature": "ST_Within(first: Geometry, second: Geometry) → boolean",
+    "doc": "Returns true if first geometry is completely inside second geometry."
+  },
+  {
+    "name": "st_x",
+    "signature": "ST_X(Point) → double",
+    "doc": "Returns the X coordinate of the point."
+  },
+  {
+    "name": "st_xmax",
+    "signature": "ST_XMax(Geometry) → double",
+    "doc": "Returns X maxima of a bounding box of a geometry."
+  },
+  {
+    "name": "st_xmin",
+    "signature": "ST_XMin(Geometry) → double",
+    "doc": "Returns X minima of a bounding box of a geometry."
+  },
+  {
+    "name": "st_y",
+    "signature": "ST_Y(Point) → double",
+    "doc": "Returns the Y coordinate of the point."
+  },
+  {
+    "name": "st_ymax",
+    "signature": "ST_YMax(Geometry) → double",
+    "doc": "Returns Y maxima of a bounding box of a geometry."
+  },
+  {
+    "name": "st_ymin",
+    "signature": "ST_YMin(Geometry) → double",
+    "doc": "Returns Y minima of a bounding box of a geometry."
+  },
+  {
+    "name": "starts_with",
+    "signature": "starts_with(string, substring) → boolean",
+    "doc": "Tests whether substring is a prefix of string."
+  },
+  {
+    "name": "stddev",
+    "signature": "stddev(x) → double",
+    "doc": "This is an alias for stddev_samp()."
+  },
+  {
+    "name": "stddev_pop",
+    "signature": "stddev_pop(x) → double",
+    "doc": "Returns the population standard deviation of all input values."
+  },
+  {
+    "name": "stddev_samp",
+    "signature": "stddev_samp(x) → double",
+    "doc": "Returns the sample standard deviation of all input values."
+  },
+  {
+    "name": "strpos",
+    "signature": "strpos(string, substring) → bigint",
+    "doc": "Returns the starting position of the first instance of substring in string. Positions start with 1. If not found, 0 is returned."
+  },
+  {
+    "name": "substr",
+    "signature": "substr(string, start) → varchar",
+    "doc": "This is an alias for substring()."
+  },
+  {
+    "name": "substring",
+    "signature": "substring(string, start) → varchar",
+    "doc": "Returns the rest of string from the starting position start. Positions start with 1. A negative starting position is interpreted as being relative to the end of the string."
+  },
+  {
+    "name": "sum",
+    "signature": "sum(x) → [same as input]",
+    "doc": "Returns the sum of all input values."
+  },
+  {
+    "name": "t_cdf",
+    "signature": "t_cdf(x, df) → double",
+    "doc": "Compute the Student’s t-distribution cumulative density function for given x and degrees of freedom (df). The x must be a real value and degrees of freedom must be an integer and positive value."
+  },
+  {
+    "name": "t_pdf",
+    "signature": "t_pdf(x, df) → double",
+    "doc": "Computes the Student’s t-distribution probability density function for given x and degrees of freedom (df). The x must be a real value and degrees of freedom must be an integer and positive value."
+  },
+  {
+    "name": "tan",
+    "signature": "tan(x) → double",
+    "doc": "Returns the tangent of x."
+  },
+  {
+    "name": "tanh",
+    "signature": "tanh(x) → double",
+    "doc": "Returns the hyperbolic tangent of x."
+  },
+  {
+    "name": "tdigest_agg",
+    "signature": "tdigest_agg(x) → tdigest",
+    "doc": "Composes all input values of x into a tdigest. x can be of any numeric type."
+  },
+  {
+    "name": "theta_sketch_cardinality",
+    "signature": "theta_sketch_cardinality(sketch) → double",
+    "doc": "Returns the estimated value of the sketch."
+  },
+  {
+    "name": "theta_sketch_union",
+    "signature": "theta_sketch_union(sketch[, nominal_entries, seed]) → varbinary",
+    "doc": "Returns a serialized sketch as varbinary, which is a merged collection of sketches. The optional nominal_entries and seed parameters let you specify non-default sketch size and seed when merging sketches created with custom settings."
+  },
+  {
+    "name": "timezone",
+    "signature": "timezone(timestamp(p) with time zone) → varchar",
+    "doc": "Returns the timezone identifier from timestamp(p) with time zone. The format of the returned identifier is identical to the format used in the input timestamp:"
+  },
+  {
+    "name": "timezone_hour",
+    "signature": "timezone_hour(timestamp) → bigint",
+    "doc": "Returns the hour of the time zone offset from timestamp."
+  },
+  {
+    "name": "timezone_minute",
+    "signature": "timezone_minute(timestamp) → bigint",
+    "doc": "Returns the minute of the time zone offset from timestamp."
+  },
+  {
+    "name": "to_base",
+    "signature": "to_base(x, radix) → varchar",
+    "doc": "Returns the base-radix representation of x."
+  },
+  {
+    "name": "to_base32",
+    "signature": "to_base32(binary) → varchar",
+    "doc": "Encodes binary into a base32 string representation."
+  },
+  {
+    "name": "to_base64",
+    "signature": "to_base64(binary) → varchar",
+    "doc": "Encodes binary into a base64 string representation."
+  },
+  {
+    "name": "to_base64url",
+    "signature": "to_base64url(binary) → varchar",
+    "doc": "Encodes binary into a base64 string representation using the URL safe alphabet."
+  },
+  {
+    "name": "to_big_endian_32",
+    "signature": "to_big_endian_32(integer) → varbinary",
+    "doc": "Encodes integer into a 32-bit two’s complement big-endian format."
+  },
+  {
+    "name": "to_big_endian_64",
+    "signature": "to_big_endian_64(bigint) → varbinary",
+    "doc": "Encodes bigint into a 64-bit two’s complement big-endian format."
+  },
+  {
+    "name": "to_char",
+    "signature": "to_char(timestamp, format) → varchar",
+    "doc": "Formats timestamp as a string using format."
+  },
+  {
+    "name": "to_date",
+    "signature": "to_date(string, format) → date",
+    "doc": "Parses string into a DATE using format."
+  },
+  {
+    "name": "to_encoded_polyline",
+    "signature": "to_encoded_polyline(Geometry) → varchar",
+    "doc": "Encodes a linestring or multipoint to a polyline."
+  },
+  {
+    "name": "to_geojson_geometry",
+    "signature": "to_geojson_geometry(SphericalGeography) → varchar",
+    "doc": "Returns the GeoJSON encoded defined by the input spherical geography."
+  },
+  {
+    "name": "to_geometry",
+    "signature": "to_geometry(SphericalGeography) → Geometry",
+    "doc": "Converts a SphericalGeography object to a Geometry object."
+  },
+  {
+    "name": "to_hex",
+    "signature": "to_hex(binary) → varchar",
+    "doc": "Encodes binary into a hex string representation."
+  },
+  {
+    "name": "to_ieee754_32",
+    "signature": "to_ieee754_32(real) → varbinary",
+    "doc": "Encodes real into a 32-bit big-endian binary according to IEEE 754 single-precision floating-point format."
+  },
+  {
+    "name": "to_ieee754_64",
+    "signature": "to_ieee754_64(double) → varbinary",
+    "doc": "Encodes double into a 64-bit big-endian binary according to IEEE 754 double-precision floating-point format."
+  },
+  {
+    "name": "to_iso8601",
+    "signature": "to_iso8601(x) → varchar",
+    "doc": "Formats x as an ISO 8601 string."
+  },
+  {
+    "name": "to_milliseconds",
+    "signature": "to_milliseconds(interval) → bigint",
+    "doc": "Returns the day-to-second interval as milliseconds."
+  },
+  {
+    "name": "to_spherical_geography",
+    "signature": "to_spherical_geography(Geometry) → SphericalGeography",
+    "doc": "Converts a Geometry object to a SphericalGeography object on the sphere of the Earth’s radius. This function is only applicable to POINT, MULTIPOINT, LINESTRING, MULTILINESTRING, POLYGON, MULTIPOLYGON geometries defined in 2D space, or GEOMETRYCOLLECTION of such geometries. For each point of the inp"
+  },
+  {
+    "name": "to_timestamp",
+    "signature": "to_timestamp(string, format) → timestamp",
+    "doc": "Parses string into a TIMESTAMP using format."
+  },
+  {
+    "name": "to_unixtime",
+    "signature": "to_unixtime(timestamp) → double",
+    "doc": "Returns timestamp as a UNIX timestamp."
+  },
+  {
+    "name": "to_utf8",
+    "signature": "to_utf8(string) → varbinary",
+    "doc": "Encodes string into a UTF-8 varbinary representation."
+  },
+  {
+    "name": "transform",
+    "signature": "transform(array(T), function(T, U)) → array(U)",
+    "doc": "Returns an array that is the result of applying function to each element of array:"
+  },
+  {
+    "name": "transform_keys",
+    "signature": "transform_keys(map(K1, V), function(K1, V, K2)) → map(K2, V)",
+    "doc": "Returns a map that applies function to each entry of map and transforms the keys:"
+  },
+  {
+    "name": "transform_values",
+    "signature": "transform_values(map(K, V1), function(K, V1, V2)) → map(K, V2)",
+    "doc": "Returns a map that applies function to each entry of map and transforms the values:"
+  },
+  {
+    "name": "translate",
+    "signature": "translate(source, from, to) → varchar",
+    "doc": "Returns the source string translated by replacing characters found in the from string with the corresponding characters in the to string. If the from string contains duplicates, only the first is used. If the source character does not exist in the from string, the source character will be copied wit"
+  },
+  {
+    "name": "trim",
+    "signature": "trim([ [ specification ] [ string ] FROM ] source ) → varchar",
+    "doc": "Removes any leading and/or trailing characters as specified up to and including string from source:"
+  },
+  {
+    "name": "trim_array",
+    "signature": "trim_array(x, n) → array",
+    "doc": "Remove n elements from the end of array:"
+  },
+  {
+    "name": "truncate",
+    "signature": "truncate(x) → [same as input]",
+    "doc": "Returns x rounded to integer by dropping digits after decimal point."
+  },
+  {
+    "name": "try_cast",
+    "signature": "try_cast(value AS type) → type",
+    "doc": "Like cast(), but returns null if the cast fails."
+  },
+  {
+    "name": "typeof",
+    "signature": "typeof(expr) → varchar",
+    "doc": "Returns the name of the type of the provided expression:"
+  },
+  {
+    "name": "upper",
+    "signature": "upper(string) → varchar",
+    "doc": "Converts string to uppercase."
+  },
+  {
+    "name": "url_decode",
+    "signature": "url_decode(value) → varchar",
+    "doc": "Unescapes the URL encoded value. This function is the inverse of url_encode()."
+  },
+  {
+    "name": "url_encode",
+    "signature": "url_encode(value) → varchar",
+    "doc": "Escapes value by encoding it so that it can be safely included in URL query parameter names and values:"
+  },
+  {
+    "name": "url_extract_fragment",
+    "signature": "url_extract_fragment(url) → varchar",
+    "doc": "Returns the fragment identifier from url."
+  },
+  {
+    "name": "url_extract_host",
+    "signature": "url_extract_host(url) → varchar",
+    "doc": "Returns the host from url."
+  },
+  {
+    "name": "url_extract_parameter",
+    "signature": "url_extract_parameter(url, name) → varchar",
+    "doc": "Returns the value of the first query string parameter named name from url. Parameter extraction is handled in the typical manner as specified by RFC 1866#section-8.2.1."
+  },
+  {
+    "name": "url_extract_path",
+    "signature": "url_extract_path(url) → varchar",
+    "doc": "Returns the path from url."
+  },
+  {
+    "name": "url_extract_port",
+    "signature": "url_extract_port(url) → bigint",
+    "doc": "Returns the port number from url."
+  },
+  {
+    "name": "url_extract_protocol",
+    "signature": "url_extract_protocol(url) → varchar",
+    "doc": "Returns the protocol from url:"
+  },
+  {
+    "name": "url_extract_query",
+    "signature": "url_extract_query(url) → varchar",
+    "doc": "Returns the query string from url."
+  },
+  {
+    "name": "uuid",
+    "signature": "uuid() → uuid",
+    "doc": "Returns a pseudo randomly generated UUID (type 4)."
+  },
+  {
+    "name": "var_pop",
+    "signature": "var_pop(x) → double",
+    "doc": "Returns the population variance of all input values."
+  },
+  {
+    "name": "var_samp",
+    "signature": "var_samp(x) → double",
+    "doc": "Returns the sample variance of all input values."
+  },
+  {
+    "name": "variance",
+    "signature": "variance(x) → double",
+    "doc": "This is an alias for var_samp()."
+  },
+  {
+    "name": "version",
+    "signature": "version() → varchar",
+    "doc": "Returns the Trino version used on the cluster. Equivalent to the value of the node_version column in the system.runtime.nodes table."
+  },
+  {
+    "name": "week",
+    "signature": "week(x) → bigint",
+    "doc": "Returns the ISO week of the year from x. The value ranges from 1 to 53."
+  },
+  {
+    "name": "week_of_year",
+    "signature": "week_of_year(x) → bigint",
+    "doc": "This is an alias for week()."
+  },
+  {
+    "name": "width_bucket",
+    "signature": "width_bucket(x, bound1, bound2, n) → bigint",
+    "doc": "Returns the bin number of x in an equi-width histogram with the specified bound1 and bound2 bounds and n number of buckets."
+  },
+  {
+    "name": "wilson_interval_lower",
+    "signature": "wilson_interval_lower(successes, trials, z) → double",
+    "doc": "Returns the lower bound of the Wilson score interval of a Bernoulli trial process at a confidence specified by the z-score z."
+  },
+  {
+    "name": "wilson_interval_upper",
+    "signature": "wilson_interval_upper(successes, trials, z) → double",
+    "doc": "Returns the upper bound of the Wilson score interval of a Bernoulli trial process at a confidence specified by the z-score z."
+  },
+  {
+    "name": "with_timezone",
+    "signature": "with_timezone(timestamp(p), zone) → timestamp(p) with time zone",
+    "doc": "Returns the timestamp specified in timestamp with the time zone specified in zone with precision p:"
+  },
+  {
+    "name": "word_stem",
+    "signature": "word_stem(word) → varchar",
+    "doc": "Returns the stem of word in the English language."
+  },
+  {
+    "name": "xxhash64",
+    "signature": "xxhash64(binary) → varbinary",
+    "doc": "Computes the xxHash64 hash of binary."
+  },
+  {
+    "name": "year",
+    "signature": "year(x) → bigint",
+    "doc": "Returns the year from x."
+  },
+  {
+    "name": "year_of_week",
+    "signature": "year_of_week(x) → bigint",
+    "doc": "Returns the year of the ISO week from x."
+  },
+  {
+    "name": "yow",
+    "signature": "yow(x) → bigint",
+    "doc": "This is an alias for year_of_week()."
+  },
+  {
+    "name": "zip",
+    "signature": "zip(array1, array2[, ...]) → array(row)",
+    "doc": "Merges the given arrays, element-wise, into a single array of rows. The M-th element of the N-th argument will be the N-th field of the M-th output element. If the arguments have an uneven length, missing values are filled with NULL."
+  },
+  {
+    "name": "zip_with",
+    "signature": "zip_with(array(T), array(U), function(T, U, R)) → array(R)",
+    "doc": "Merges the two given arrays, element-wise, into a single array using function. If one array is shorter, nulls are appended at the end to match the length of the longer array, before applying function."
+  }
+]

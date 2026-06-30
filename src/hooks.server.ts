@@ -43,7 +43,7 @@ const authDisabled = testAuthDisabled || DEMO_MODE;
 // people without a Lunapad account can open it. Per-report/per-site `requireAuth` is
 // enforced inside each route's own load function instead, not here, since /r and /s must
 // be reachable before we know which specific report someone's asking for.
-const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/login', '/setup', '/r', '/s'];
+const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/api/health', '/login', '/setup', '/r', '/s'];
 // The live-cell run endpoint a published report's page calls client-side — same
 // public-by-default, per-report-gated reasoning as /r and /s above.
 const PUBLIC_PATH_PATTERNS = [/^\/api\/shares\/[^/]+\/run$/];

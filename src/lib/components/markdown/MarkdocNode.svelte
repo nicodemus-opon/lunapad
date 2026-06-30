@@ -14,6 +14,7 @@
 	import ProgressWidget from './ProgressWidget.svelte';
 	import DetailsWidget from './DetailsWidget.svelte';
 	import TabsWidget from './TabsWidget.svelte';
+	import CodeBlock from './CodeBlock.svelte';
 	import * as Table from '$lib/components/ui/table';
 
 	interface Props {
@@ -69,7 +70,7 @@
 {:else if tag?.name === 'tabs'}
 	<TabsWidget tabs={tag.children as Tag[]} {notebookId} />
 {:else if tag?.name === 'pre'}
-	<pre {...tag.attributes}><code>{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}</code></pre>
+	<CodeBlock lang={tag.attributes?.['data-language'] ?? ''} children={tag.children} />
 {:else if tag?.name === 'table'}
 	<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}

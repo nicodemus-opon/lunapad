@@ -5,10 +5,11 @@ WORKDIR /app
 RUN apk upgrade --no-cache && corepack enable && corepack prepare pnpm@11 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-# Remove host-local store-dir so pnpm uses its default inside the container
+# Remove host-local store-dir so pnpm uses the BuildKit cache mount path below
 RUN sed -i '/^store-dir/d' .npmrc
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
@@ -35,7 +36,8 @@ RUN corepack enable && corepack prepare pnpm@11 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN sed -i '/^store-dir/d' .npmrc
 
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prod --ignore-scripts
 
 COPY --from=builder /app/build ./build
 
@@ -66,7 +68,9 @@ RUN corepack enable && corepack prepare pnpm@11 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN sed -i '/^store-dir/d' .npmrc
-RUN pnpm install --frozen-lockfile
+
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 EXPOSE 5173
 

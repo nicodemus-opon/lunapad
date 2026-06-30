@@ -8,7 +8,6 @@
 		type InlineCellEditColumn
 	} from '$lib/services/inline-cell-ai';
 	import { getLLMConfig } from '$lib/stores/notebook.svelte';
-	import DiffView from '$lib/components/ai/DiffView.svelte';
 
 	interface Props {
 		open?: boolean;
@@ -60,6 +59,18 @@
 	let statusMessage = $state<string | null>(null);
 	let result = $state<InlineCellEditResult | null>(null);
 	let errorMessage = $state<string | null>(null);
+	let originalCode = $state<string | null>(null);
+
+	function extractPartialCode(raw: string): string | null {
+		const match = /"code"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw);
+		if (!match) return null;
+		return match[1]
+			.replace(/\\n/g, '\n')
+			.replace(/\\t/g, '\t')
+			.replace(/\\r/g, '\r')
+			.replace(/\\\\/g, '\\')
+			.replace(/\\"/g, '"');
+	}
 
 	$effect(() => {
 		if (!open) return;
@@ -80,6 +91,12 @@
 		statusMessage = null;
 		result = null;
 		errorMessage = null;
+		originalCode = null;
+	}
+
+	function discard() {
+		if (originalCode !== null) onApply(originalCode);
+		close();
 	}
 
 	async function submit() {
@@ -89,6 +106,8 @@
 		statusMessage = null;
 		result = null;
 		errorMessage = null;
+		originalCode = code;
+		let accumulated = '';
 		try {
 			const res = await editCellWithAI(
 				{
@@ -104,11 +123,21 @@
 				},
 				(msg) => {
 					statusMessage = msg;
+				},
+				(chunk) => {
+					accumulated += chunk;
+					const partial = extractPartialCode(accumulated);
+					if (partial !== null) onApply(partial);
 				}
 			);
-			result = res;
-			if (!res) errorMessage = 'AI did not return a result.';
+			if (res) {
+				onApply(res.code);
+				result = res;
+			} else {
+				errorMessage = 'AI did not return a result.';
+			}
 		} catch (err) {
+			if (originalCode !== null) onApply(originalCode);
 			if (err instanceof CellEditCancelledError) return;
 			errorMessage = err instanceof Error ? err.message : 'AI cell edit failed.';
 		} finally {
@@ -118,8 +147,6 @@
 	}
 
 	function apply() {
-		if (!result) return;
-		onApply(result.code);
 		close();
 	}
 
@@ -163,6 +190,7 @@
 				disabled={generating}
 				onkeydown={onKeydown}
 				placeholder="Tell AI what to do with this cell…"
+				data-testid="inline-prompt-input"
 				class="h-7 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-60"
 			/>
 			{#if generating}
@@ -170,7 +198,7 @@
 			{/if}
 			<button
 				class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-				onclick={close}
+				onclick={originalCode !== null ? discard : close}
 				aria-label="Dismiss"
 			>
 				<X class="h-3.5 w-3.5" />
@@ -182,32 +210,31 @@
 		{/if}
 
 		{#if errorMessage}
-			<p class="mt-1.5 px-0.5 text-2xs text-destructive">{errorMessage}</p>
+			<p data-testid="inline-prompt-error" class="mt-1.5 px-0.5 text-2xs text-destructive">{errorMessage}</p>
 		{/if}
 
 		{#if result}
 			<div class="mt-2 rounded-md border border-primary/20 bg-background/60 p-2">
-				<div class="max-h-48 overflow-auto leading-relaxed">
-					<DiffView oldCode={code} newCode={result.code} />
-				</div>
 				{#if result.reasoning}
-					<p class="mt-1.5 text-2xs text-muted-foreground">{result.reasoning}</p>
+					<p class="text-2xs text-muted-foreground">{result.reasoning}</p>
 				{/if}
 				{#if result.trialError}
-					<p class="mt-1.5 text-2xs text-destructive">
+					<p class="mt-1 text-2xs text-destructive">
 						⚠ Still failed when tested: {result.trialError}
 					</p>
 				{/if}
 				<div class="mt-2 flex items-center gap-2">
 					<button
+						data-testid="inline-prompt-accept"
 						class="h-6 rounded border border-primary/30 px-2 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
 						onclick={apply}
 					>
-						Apply
+						Accept
 					</button>
 					<button
+						data-testid="inline-prompt-discard"
 						class="h-6 rounded px-2 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-						onclick={close}
+						onclick={discard}
 					>
 						Discard
 					</button>

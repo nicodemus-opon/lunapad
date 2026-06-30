@@ -5,13 +5,23 @@
 		getTables,
 		getExternalSchemaTables,
 		getConnections,
-		setExternalConnectionSchema
+		setExternalConnectionSchema,
+		insertIntoActiveCell
 	} from '$lib/stores/notebook.svelte';
 	import { fetchConnectionSchema } from '$lib/services/connections';
-	import { Columns3, Database, LayoutGrid, RefreshCw, Table2 } from '@lucide/svelte';
+	import {
+		Columns3,
+		Copy,
+		CornerDownLeft,
+		Database,
+		LayoutGrid,
+		RefreshCw,
+		Table2
+	} from '@lucide/svelte';
 	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as ContextMenu from '$lib/components/ui/context-menu';
 
 	const tables = $derived(getTables());
 	const externalSchemaTables = $derived(getExternalSchemaTables());
@@ -118,6 +128,10 @@
 		return String(n);
 	}
 
+	function copyToClipboard(text: string) {
+		navigator.clipboard.writeText(text).catch(() => {});
+	}
+
 	// Refresh all external schemas — debounced to at most once per 30s
 	let lastFocusRefresh = 0;
 	async function refreshAllExternalSchemas(): Promise<void> {
@@ -155,71 +169,169 @@
 	meta: string | undefined,
 	expanded: boolean,
 	onToggle: () => void,
-	refreshing: boolean = false
+	refreshing: boolean = false,
+	onRefresh: (() => void) | undefined = undefined
 )}
-	<TreeRow depth={0} expandable {expanded} onActivate={onToggle}>
-		{#snippet icon()}
-			<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-		{/snippet}
-		{#snippet label()}
-			<span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">{name}</span>
-		{/snippet}
-		{#snippet trailing()}
-			{#if refreshing}
-				<RefreshCw class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-			{:else if meta}
-				<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
-			{/if}
-		{/snippet}
-	</TreeRow>
+	<ContextMenu.Root>
+		<ContextMenu.Trigger>
+			<TreeRow depth={0} expandable {expanded} onActivate={onToggle}>
+				{#snippet icon()}
+					<Database class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				{/snippet}
+				{#snippet label()}
+					<span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">{name}</span>
+				{/snippet}
+				{#snippet trailing()}
+					{#if refreshing}
+						<RefreshCw class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+					{:else if meta}
+						<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
+					{/if}
+				{/snippet}
+			</TreeRow>
+		</ContextMenu.Trigger>
+		<ContextMenu.Content class="w-44">
+			<ContextMenu.Item onclick={() => (onRefresh ?? loadCatalog)()} disabled={refreshing}>
+				<RefreshCw class="h-3.5 w-3.5" />
+				Refresh
+			</ContextMenu.Item>
+			<ContextMenu.Separator />
+			<ContextMenu.Item onclick={() => copyToClipboard(name)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy name
+			</ContextMenu.Item>
+		</ContextMenu.Content>
+	</ContextMenu.Root>
 {/snippet}
 
-{#snippet schemaRow(name: string, count: number, expanded: boolean, onToggle: () => void)}
-	<TreeRow depth={1} expandable {expanded} onActivate={onToggle}>
-		{#snippet icon()}
-			<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground" />
-		{/snippet}
-		{#snippet label()}
-			<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
-		{/snippet}
-		{#snippet trailing()}
-			{#if count > 0}
-				<span class="shrink-0 text-2xs text-muted-foreground">{count}</span>
-			{/if}
-		{/snippet}
-	</TreeRow>
+{#snippet schemaRow(
+	name: string,
+	count: number,
+	expanded: boolean,
+	onToggle: () => void,
+	dbName: string
+)}
+	<ContextMenu.Root>
+		<ContextMenu.Trigger>
+			<TreeRow depth={1} expandable {expanded} onActivate={onToggle}>
+				{#snippet icon()}
+					<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground" />
+				{/snippet}
+				{#snippet label()}
+					<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
+				{/snippet}
+				{#snippet trailing()}
+					{#if count > 0}
+						<span class="shrink-0 text-2xs text-muted-foreground">{count}</span>
+					{/if}
+				{/snippet}
+			</TreeRow>
+		</ContextMenu.Trigger>
+		<ContextMenu.Content class="w-48">
+			<ContextMenu.Item onclick={() => copyToClipboard(name)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy schema name
+			</ContextMenu.Item>
+			<ContextMenu.Item onclick={() => copyToClipboard(`${dbName}.${name}`)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy qualified name
+			</ContextMenu.Item>
+		</ContextMenu.Content>
+	</ContextMenu.Root>
 {/snippet}
 
-{#snippet tableRow(name: string, meta: string | undefined, expanded: boolean, onToggle: () => void)}
-	<TreeRow depth={2} expandable {expanded} onActivate={onToggle}>
-		{#snippet icon()}
-			<Table2 class="h-3 w-3 shrink-0 text-muted-foreground" />
-		{/snippet}
-		{#snippet label()}
-			<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
-		{/snippet}
-		{#snippet trailing()}
-			{#if meta}
-				<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
-			{/if}
-		{/snippet}
-	</TreeRow>
+{#snippet tableRow(
+	name: string,
+	meta: string | undefined,
+	expanded: boolean,
+	onToggle: () => void,
+	qualifiedName: string
+)}
+	<ContextMenu.Root>
+		<ContextMenu.Trigger>
+			<TreeRow depth={2} expandable {expanded} onActivate={onToggle}>
+				{#snippet icon()}
+					<Table2 class="h-3 w-3 shrink-0 text-muted-foreground" />
+				{/snippet}
+				{#snippet label()}
+					<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
+				{/snippet}
+				{#snippet trailing()}
+					{#if meta}
+						<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
+					{/if}
+				{/snippet}
+			</TreeRow>
+		</ContextMenu.Trigger>
+		<ContextMenu.Content class="w-56">
+			<ContextMenu.Label class="text-2xs text-muted-foreground/70 pb-0.5">{qualifiedName}</ContextMenu.Label>
+			<ContextMenu.Separator />
+			<ContextMenu.Item onclick={() => insertIntoActiveCell(qualifiedName)}>
+				<CornerDownLeft class="h-3.5 w-3.5" />
+				Insert reference
+			</ContextMenu.Item>
+			<ContextMenu.Item onclick={() => insertIntoActiveCell(`SELECT *\nFROM ${qualifiedName}\nLIMIT 100`)}>
+				<CornerDownLeft class="h-3.5 w-3.5" />
+				Insert SELECT *
+			</ContextMenu.Item>
+			<ContextMenu.Item onclick={() => insertIntoActiveCell(`from ${qualifiedName}\ntake 100`)}>
+				<CornerDownLeft class="h-3.5 w-3.5" />
+				Insert PRQL from
+			</ContextMenu.Item>
+			<ContextMenu.Separator />
+			<ContextMenu.Item onclick={() => copyToClipboard(name)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy table name
+			</ContextMenu.Item>
+			<ContextMenu.Item onclick={() => copyToClipboard(qualifiedName)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy qualified name
+			</ContextMenu.Item>
+		</ContextMenu.Content>
+	</ContextMenu.Root>
 {/snippet}
 
-{#snippet columnRow(name: string, type?: string)}
-	<TreeRow depth={3} class="cursor-default hover:bg-transparent" tabindex={-1}>
-		{#snippet icon()}
-			<Columns3 class="h-3 w-3 shrink-0 text-muted-foreground/70" />
-		{/snippet}
-		{#snippet label()}
-			<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{name}</span>
-		{/snippet}
-		{#snippet trailing()}
+{#snippet columnRow(name: string, type?: string, qualifiedCol?: string)}
+	<ContextMenu.Root>
+		<ContextMenu.Trigger>
+			<TreeRow depth={3} class="cursor-default hover:bg-transparent" tabindex={-1}>
+				{#snippet icon()}
+					<Columns3 class="h-3 w-3 shrink-0 text-muted-foreground/70" />
+				{/snippet}
+				{#snippet label()}
+					<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{name}</span>
+				{/snippet}
+				{#snippet trailing()}
+					{#if type}
+						<span class="shrink-0 font-mono text-2xs text-muted-foreground/70">{type}</span>
+					{/if}
+				{/snippet}
+			</TreeRow>
+		</ContextMenu.Trigger>
+		<ContextMenu.Content class="w-48">
+			<ContextMenu.Item onclick={() => insertIntoActiveCell(name)}>
+				<CornerDownLeft class="h-3.5 w-3.5" />
+				Insert column name
+			</ContextMenu.Item>
+			{#if qualifiedCol}
+				<ContextMenu.Item onclick={() => insertIntoActiveCell(qualifiedCol)}>
+					<CornerDownLeft class="h-3.5 w-3.5" />
+					Insert qualified
+				</ContextMenu.Item>
+			{/if}
+			<ContextMenu.Separator />
+			<ContextMenu.Item onclick={() => copyToClipboard(name)}>
+				<Copy class="h-3.5 w-3.5" />
+				Copy column name
+			</ContextMenu.Item>
 			{#if type}
-				<span class="shrink-0 font-mono text-2xs text-muted-foreground/70">{type}</span>
+				<ContextMenu.Item onclick={() => copyToClipboard(type)}>
+					<Copy class="h-3.5 w-3.5" />
+					Copy type
+				</ContextMenu.Item>
 			{/if}
-		{/snippet}
-	</TreeRow>
+		</ContextMenu.Content>
+	</ContextMenu.Root>
 {/snippet}
 
 <div class="flex h-full flex-col overflow-hidden">
@@ -245,7 +357,9 @@
 					db.name,
 					`${tableCount} ${tableCount === 1 ? 'table' : 'tables'}`,
 					dbExpanded,
-					() => toggleDatabase(dbKey)
+					() => toggleDatabase(dbKey),
+					false,
+					loadCatalog
 				)}
 
 				{#if dbExpanded}
@@ -253,7 +367,7 @@
 						{@const schemaKey = `${dbKey}.${schema.name}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
 						{@render schemaRow(schema.name, schema.tables.length, schemaExpanded, () =>
-							toggleSchema(dbKey, schema.name)
+							toggleSchema(dbKey, schema.name), db.name
 						)}
 
 						{#if schemaExpanded}
@@ -268,12 +382,13 @@
 									table.name,
 									rowCount !== undefined ? fmtRows(rowCount) : undefined,
 									tableExpanded,
-									() => toggleTable(tableKey)
+									() => toggleTable(tableKey),
+									`${schema.name}.${table.name}`
 								)}
 
 								{#if tableExpanded}
 									{#each table.columns as col (col.name)}
-										{@render columnRow(col.name, col.type)}
+										{@render columnRow(col.name, col.type, `${table.name}.${col.name}`)}
 									{/each}
 								{/if}
 							{/each}
@@ -292,7 +407,8 @@
 					undefined,
 					dbExpanded,
 					() => toggleDatabase(dbKey),
-					isRefreshing
+					isRefreshing,
+					() => refreshExternalSchema(entry.id)
 				)}
 
 				{#if dbExpanded}
@@ -300,7 +416,7 @@
 						{@const schemaKey = `${dbKey}.${schema}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
 						{@render schemaRow(schema, schemaTables.length, schemaExpanded, () =>
-							toggleSchema(dbKey, schema)
+							toggleSchema(dbKey, schema), entry.name
 						)}
 
 						{#if schemaExpanded}
@@ -312,12 +428,12 @@
 								{@const tableNodeKey = `${entry.id}:${schema}:${table.name}`}
 								{@const tableExpanded = expandedTable[tableNodeKey] ?? false}
 								{@render tableRow(rawName, undefined, tableExpanded, () =>
-									toggleTable(tableNodeKey)
+									toggleTable(tableNodeKey), `${schema}.${rawName}`
 								)}
 
 								{#if tableExpanded}
 									{#each table.columns as column, colIdx (column)}
-										{@render columnRow(column, table.columnTypes[colIdx])}
+										{@render columnRow(column, table.columnTypes[colIdx], `${rawName}.${column}`)}
 									{/each}
 								{/if}
 							{/each}

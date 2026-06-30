@@ -297,6 +297,10 @@ export interface LLMConfig {
 	baseUrl: string;
 	model: string;
 	apiKey?: string;
+	/** Optional override used only for ghost-text completions — reasoning/chat models tend
+	 *  to burn their token budget "thinking" before emitting an answer, which is fatal for a
+	 *  fast keystroke-level completion. Falls back to `model` when unset. */
+	completionModel?: string;
 }
 
 interface NotebookState {
@@ -315,6 +319,8 @@ interface NotebookState {
 	tables: UploadedTable[];
 	theme: 'light' | 'dark' | 'system';
 	autoRun: boolean;
+	/** Ghost-text inline completion (Monaco inline-completions provider) — default on. */
+	ghostTextEnabled: boolean;
 	llmConfig: LLMConfig;
 	notebookEvents: NotebookEvent[];
 	// 'idle' until initWorkspaceMode() runs; otherwise reflects the last /api/workspace/*
@@ -570,18 +576,13 @@ function makePlotCell(code = DEFAULT_PLOT_CODE): Cell {
 	};
 }
 
-const DEFAULT_PYTHON_CODE = `# Reference an upstream cell by its output name — it's already a DataFrame.
-# e.g. if an earlier cell's output name is "orders":
-# result = orders.groupby("status").size().reset_index(name="count")
-
-import plotly.express as px
-# fig = px.bar(result, x="status", y="count")
-`;
+const DEFAULT_PYTHON_CODE = '';
 
 // Python cells reuse the generic \`code\` field, same as query/plot cells. The
 // last DataFrame-typed value (or a variable named \`result\`) becomes the cell's
 // \`.result\`; a variable named \`fig\` (or any \`fig.show()\` call) becomes a
 // rendered Plotly figure — see python-runner.ts's wrapper script.
+// \`pd\`, \`go\`, and \`px\` are pre-imported in the warm worker namespace (python-runner.ts) — no boilerplate imports needed.
 function makePythonCell(code = DEFAULT_PYTHON_CODE): Cell {
 	return {
 		...makeCell(code, 'py_result'),
@@ -876,6 +877,7 @@ let state = $state<NotebookState>({
 	tables: [],
 	theme: 'system',
 	autoRun: false,
+	ghostTextEnabled: true,
 	llmConfig: {
 		provider: 'ollama',
 		baseUrl: 'http://127.0.0.1:11434',
@@ -967,6 +969,7 @@ function serialize(persistResults = true): string {
 		tables: state.tables,
 		theme: state.theme,
 		autoRun: state.autoRun,
+		ghostTextEnabled: state.ghostTextEnabled,
 		llmConfig: state.llmConfig,
 		notebookEvents: state.notebookEvents,
 		workspaceStandards: getWorkspaceStandards()
@@ -1867,6 +1870,7 @@ function deserialize(raw: string): void {
 
 		if (data.theme) state.theme = data.theme as NotebookState['theme'];
 		if (typeof data.autoRun === 'boolean') state.autoRun = data.autoRun;
+		if (typeof data.ghostTextEnabled === 'boolean') state.ghostTextEnabled = data.ghostTextEnabled;
 		if (data.llmConfig && typeof data.llmConfig === 'object') {
 			const llmConfig = data.llmConfig as Partial<LLMConfig>;
 			state.llmConfig = {
@@ -3009,6 +3013,15 @@ export function getLLMConfig(): LLMConfig {
 
 export function setAutoRun(value: boolean): void {
 	state.autoRun = value;
+	scheduleSave();
+}
+
+export function getGhostTextEnabled(): boolean {
+	return state.ghostTextEnabled;
+}
+
+export function setGhostTextEnabled(value: boolean): void {
+	state.ghostTextEnabled = value;
 	scheduleSave();
 }
 
@@ -6243,6 +6256,7 @@ export function __resetStateForTests(): void {
 		tables: [],
 		theme: 'system',
 		autoRun: false,
+		ghostTextEnabled: true,
 		llmConfig: {
 			provider: 'ollama',
 			baseUrl: 'http://127.0.0.1:11434',

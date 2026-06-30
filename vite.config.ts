@@ -5,6 +5,11 @@ import { readFileSync, mkdirSync, copyFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createLogger, type Plugin } from 'vite';
+import { WebSocketServer } from 'ws';
+import type { WebSocket } from 'ws';
+import { createWebSocketConnection } from 'vscode-ws-jsonrpc/server';
+import type { IWebSocket } from 'vscode-ws-jsonrpc';
+import { startLspForConnection } from './src/lib/server/sql-lsp-handler';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -79,11 +84,36 @@ const duckdbStaticServe: Plugin = {
 	},
 };
 
+function toRpcSocket(ws: WebSocket): IWebSocket {
+	return {
+		send: (content) => ws.send(content),
+		onMessage: (cb) => { ws.on('message', (data) => cb(data.toString())); },
+		onError: (cb) => { ws.on('error', cb); },
+		onClose: (cb) => { ws.on('close', (code, reason) => cb(code, reason.toString())); },
+		dispose: () => ws.close(),
+	};
+}
+
+const sqlLspPlugin: Plugin = {
+	name: 'sql-lsp',
+	configureServer(server) {
+		const wss = new WebSocketServer({ noServer: true });
+		server.httpServer?.on('upgrade', (request, socket, head) => {
+			if (request.url !== '/api/lsp') return;
+			wss.handleUpgrade(request, socket as import('net').Socket, head, (ws) => {
+				const rpcSocket = toRpcSocket(ws);
+				const conn = createWebSocketConnection(rpcSocket);
+				startLspForConnection(conn.reader, conn.writer);
+			});
+		});
+	},
+};
+
 const viteLogger = createLogger();
 
 export default defineConfig({
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- vite@8/vitest vite@7 Plugin type mismatch
-	plugins: [duckdbStaticServe, svelteNodeModulesStyleFix, tailwindcss(), sveltekit()] as any,
+	plugins: [sqlLspPlugin, duckdbStaticServe, svelteNodeModulesStyleFix, tailwindcss(), sveltekit()] as any,
 	customLogger: {
 		...viteLogger,
 		warn(msg, options) {

@@ -132,6 +132,9 @@ export async function callLLMWithTools(input: {
 	tools?: typeof READONLY_INVESTIGATION_TOOLS;
 	signal: AbortSignal;
 	apiKey?: string;
+	/** Called with each content chunk when the model is producing a text answer.
+	 *  Presence enables streaming mode (stream:true). Not called for tool-call turns. */
+	onDelta?: (chunk: string) => void;
 }): Promise<LLMToolCallResponse> {
 	const isQwen3 = /qwen3/i.test(input.model ?? '');
 	const messages =
@@ -141,6 +144,8 @@ export async function callLLMWithTools(input: {
 					...input.messages.slice(1)
 				]
 			: input.messages;
+
+	const useStream = !!input.onDelta;
 
 	const response = await fetch(input.completionUrl, {
 		method: 'POST',
@@ -152,7 +157,7 @@ export async function callLLMWithTools(input: {
 			model: input.model,
 			temperature: 0.2,
 			top_p: 0.9,
-			stream: false,
+			stream: useStream,
 			...(isQwen3 ? { options: { think: false } } : {}),
 			...(input.tools ? { tools: input.tools, tool_choice: 'auto' } : {}),
 			messages
@@ -165,16 +170,180 @@ export async function callLLMWithTools(input: {
 		throw new Error(`LLM request failed (${response.status}): ${text.slice(0, 400)}`);
 	}
 
-	const payload = (await response.json()) as OpenAIToolCallsResponse;
-	const message = payload.choices?.[0]?.message;
-	const toolCalls: LLMToolCall[] = (message?.tool_calls ?? []).map((tc) => {
-		let args: Record<string, unknown> = {};
-		try {
-			args = JSON.parse(tc.function.arguments || '{}');
-		} catch {
-			// leave args empty — caller's tool executor will report missing required fields
+	if (!useStream) {
+		const payload = (await response.json()) as OpenAIToolCallsResponse;
+		const message = payload.choices?.[0]?.message;
+		const toolCalls: LLMToolCall[] = (message?.tool_calls ?? []).map((tc) => {
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(tc.function.arguments || '{}');
+			} catch {
+				// leave args empty
+			}
+			return { id: tc.id, name: tc.function.name, args };
+		});
+		return { content: message?.content ?? null, toolCalls };
+	}
+
+	// ── Streaming path ──────────────────────────────────────────────────────────
+	// Some providers return application/json even when asked for streaming — fall back.
+	const ct = response.headers.get('content-type') ?? '';
+	if (!ct.includes('text/event-stream') && !ct.includes('application/x-ndjson')) {
+		const payload = (await response.json()) as OpenAIToolCallsResponse;
+		const message = payload.choices?.[0]?.message;
+		const toolCalls: LLMToolCall[] = (message?.tool_calls ?? []).map((tc) => {
+			let args: Record<string, unknown> = {};
+			try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+			return { id: tc.id, name: tc.function.name, args };
+		});
+		return { content: message?.content ?? null, toolCalls };
+	}
+
+	// Raw accumulated text — may include <think>…</think> blocks from reasoning models.
+	// These appear in delta.content during streaming but are stripped from message.content
+	// in non-streaming responses, so we strip them before returning.
+	let rawContent = '';
+	const tcMap = new Map<number, { id: string; name: string; args: string }>();
+	// Track whether we're inside a think block so onDelta skips those tokens.
+	let insideThink = false;
+
+	const reader = response.body!.getReader();
+	const decoder = new TextDecoder();
+	let buf = '';
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buf += decoder.decode(value, { stream: true });
+		const lines = buf.split('\n');
+		buf = lines.pop() ?? '';
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const raw = line.slice(6).trim();
+			if (raw === '[DONE]') continue;
+			let chunk: { choices?: Array<{ delta?: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> } }> };
+			try {
+				chunk = JSON.parse(raw);
+			} catch {
+				continue;
+			}
+			const delta = chunk.choices?.[0]?.delta;
+			if (!delta) continue;
+			if (delta.content) {
+				rawContent += delta.content;
+				// Route chunk to onDelta, stripping think-block content.
+				// A single chunk may open *and* close a think block, so we
+				// process iteratively rather than with a simple flag flip.
+				let remaining = delta.content;
+				while (remaining) {
+					if (insideThink) {
+						const end = remaining.indexOf('</think>');
+						if (end === -1) { remaining = ''; break; }
+						insideThink = false;
+						remaining = remaining.slice(end + '</think>'.length);
+					} else {
+						const start = remaining.indexOf('<think>');
+						if (start === -1) { input.onDelta!(remaining); remaining = ''; break; }
+						if (start > 0) input.onDelta!(remaining.slice(0, start));
+						insideThink = true;
+						remaining = remaining.slice(start + '<think>'.length);
+					}
+				}
+			}
+			if (delta.tool_calls) {
+				for (const tc of delta.tool_calls) {
+					if (!tcMap.has(tc.index)) tcMap.set(tc.index, { id: '', name: '', args: '' });
+					const entry = tcMap.get(tc.index)!;
+					if (tc.id) entry.id = tc.id;
+					if (tc.function?.name) entry.name += tc.function.name;
+					if (tc.function?.arguments) entry.args += tc.function.arguments;
+				}
+			}
 		}
-		return { id: tc.id, name: tc.function.name, args };
+	}
+
+	// Strip reasoning blocks — present in streaming but absent in non-streaming message.content.
+	const content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+	const toolCalls: LLMToolCall[] = [...tcMap.entries()]
+		.sort(([a], [b]) => a - b)
+		.map(([, tc]) => {
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(tc.args || '{}');
+			} catch {
+				// leave args empty
+			}
+			return { id: tc.id, name: tc.name, args };
+		});
+	return { content: content || null, toolCalls };
+}
+
+// ── Plain-text completion helper ────────────────────────────────────────────────
+// Used by /api/ai/complete (ghost-text inline completion). Unlike callLLMWithTools and
+// callLLMJson, this never sends `tools` or `response_format` — a JSON wrapper would have
+// the model pad a raw code completion with `{"code": ...}` boilerplate that eats into the
+// already-tiny max_tokens budget for no benefit. Single-shot, no streaming: the caller
+// (the /complete route) applies its own short, fixed timeout via its AbortSignal.
+
+const COMPLETION_MIN_TIMEOUT_MS = 500;
+const COMPLETION_MAX_TIMEOUT_MS = 4_000;
+const COMPLETION_DEFAULT_TIMEOUT_MS = 1_800;
+
+export function normalizeCompletionTimeoutMs(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return COMPLETION_DEFAULT_TIMEOUT_MS;
+	return Math.max(COMPLETION_MIN_TIMEOUT_MS, Math.min(COMPLETION_MAX_TIMEOUT_MS, Math.round(value)));
+}
+
+interface OpenAITextResponse {
+	choices?: Array<{ message?: { content?: string | null } }>;
+}
+
+export async function callLLMText(input: {
+	completionUrl: string;
+	model: string;
+	systemPrompt: string;
+	userPrompt: string;
+	maxTokens?: number;
+	signal: AbortSignal;
+	apiKey?: string;
+	/** Gates the Ollama-specific think-disabling flags below — sending them to a real
+	 *  OpenAI-compatible cloud endpoint risks an "unrecognized field" rejection. */
+	provider?: string;
+}): Promise<string> {
+	const isQwen3 = /qwen3/i.test(input.model ?? '');
+	const isOllama = input.provider === 'ollama';
+	const systemContent = isQwen3 ? `${input.systemPrompt}\n/no_think` : input.systemPrompt;
+
+	const response = await fetch(input.completionUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
+		},
+		body: JSON.stringify({
+			model: input.model,
+			temperature: 0.2,
+			top_p: 0.9,
+			stream: false,
+			max_tokens: input.maxTokens ?? 160,
+			// Best-effort — not every reasoning-capable Ollama model honors this, but it's
+			// free to send and helps the ones that do (sanitizeCompletion also strips any
+			// literal <think> tags that slip through as defense-in-depth).
+			...(isOllama ? { think: false, options: { think: false } } : {}),
+			messages: [
+				{ role: 'system', content: systemContent },
+				{ role: 'user', content: input.userPrompt }
+			]
+		}),
+		signal: input.signal
 	});
-	return { content: message?.content ?? null, toolCalls };
+
+	if (!response.ok) {
+		const text = await response.text();
+		throw new Error(`LLM request failed (${response.status}): ${text.slice(0, 400)}`);
+	}
+
+	const payload = (await response.json()) as OpenAITextResponse;
+	return payload.choices?.[0]?.message?.content ?? '';
 }

@@ -43,7 +43,9 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     ports:
       - "3967:3000"
     depends_on:
@@ -52,10 +54,14 @@ services:
       trino:
         condition: service_healthy
     environment:
-      # Set canonical origin so adapter-node builds URLs as http (not https).
-      # Without this, SvelteKit defaults to https in production, causing Inngest
-      # to register function URLs as https:// and then fail to reach the HTTP app.
-      ORIGIN: http://app:3000
+      # Set ORIGIN to the URL your users reach the app at (e.g. https://yourdomain.com).
+      # better-auth uses it for trustedOrigins — login won't work if this doesn't match
+      # what the browser sends in the Origin header. Override in your deployment panel.
+      ORIGIN: http://localhost:3967
+      # INNGEST_SERVE_HOST tells the Inngest SDK what URL to register functions under.
+      # Must be the Docker-internal URL so the Inngest container can reach the app
+      # without going through the external reverse proxy.
+      INNGEST_SERVE_HOST: http://app:3000
       TRINO_URL: http://trino:8080
       TRINO_CATALOG_DIR: /trino-catalog
       # Postgres (pgvector) — use service name, not localhost, inside Docker network.
@@ -86,7 +92,7 @@ services:
       - ./trino/catalog:/trino-catalog
       - ./project:/app/project
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ > /dev/null"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null"]
       interval: 5s
       timeout: 5s
       retries: 10

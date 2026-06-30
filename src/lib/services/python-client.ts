@@ -138,6 +138,16 @@ export async function isPythonEnvReady(): Promise<boolean> {
 	}
 }
 
+export async function isPythonWorkerWarm(notebookId: string): Promise<boolean> {
+	try {
+		const res = await fetch(`/api/python/warm?notebookId=${encodeURIComponent(notebookId)}`);
+		const body = (await res.json()) as { warm?: boolean };
+		return body.warm ?? false;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Subscribe to live stdout for a Python cell job, same SSE-over-fetch pattern
  * as project-client.ts's watchDbtLogs. Returns an unsubscribe function.
