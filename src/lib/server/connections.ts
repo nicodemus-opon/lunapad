@@ -1,6 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
+import {
+	catalogTypeMappingProperties,
+	catalogTypeMappingSession
+} from '$lib/server/trino-type-mapping';
 import type {
 	ClickHouseConnection,
 	Connection,
@@ -83,13 +87,30 @@ interface TrinoResponse {
 	error?: { message: string; errorCode?: number };
 }
 
-function buildTrinoHeaders(catalogName?: string, schema?: string): Record<string, string> {
+interface TrinoRequestOptions {
+	signal?: AbortSignal;
+	session?: string;
+}
+
+function trinoOptsForConnection(
+	connection: Exclude<Connection, DuckDBWASMConnection>
+): TrinoRequestOptions {
+	const session = catalogTypeMappingSession(connection.catalogName, connection.type);
+	return session ? { session } : {};
+}
+
+function buildTrinoHeaders(
+	catalogName?: string,
+	schema?: string,
+	opts?: Pick<TrinoRequestOptions, 'session'>
+): Record<string, string> {
 	const headers: Record<string, string> = {
 		'X-Trino-User': 'lunapad',
 		'Content-Type': 'text/plain; charset=utf-8'
 	};
 	if (catalogName) headers['X-Trino-Catalog'] = catalogName;
 	if (schema) headers['X-Trino-Schema'] = schema;
+	if (opts?.session) headers['X-Trino-Session'] = opts.session;
 	return headers;
 }
 
@@ -97,13 +118,14 @@ async function trinoRequest(
 	sql: string,
 	catalogName?: string,
 	schema?: string,
-	signal?: AbortSignal
+	opts?: TrinoRequestOptions
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
+	const signal = opts?.signal;
 	let response: Response;
 	try {
 		response = await fetch(`${TRINO_URL}/v1/statement`, {
 			method: 'POST',
-			headers: buildTrinoHeaders(catalogName, schema),
+			headers: buildTrinoHeaders(catalogName, schema, opts),
 			body: sql,
 			signal
 		});
@@ -195,8 +217,13 @@ async function trinoRequest(
 	}
 }
 
-async function trinoExec(sql: string, catalogName: string, schema = 'public'): Promise<void> {
-	await trinoRequest(sql, catalogName, schema);
+async function trinoExec(
+	sql: string,
+	catalogName: string,
+	schema = 'public',
+	opts?: TrinoRequestOptions
+): Promise<void> {
+	await trinoRequest(sql, catalogName, schema, opts);
 }
 
 // ── Catalog registration via Trino's dynamic catalog SQL ──────────────────────
@@ -424,11 +451,15 @@ export async function registerCatalog(
 	}
 
 	const spec = await buildCatalogSpec(connection, secret, catalogDir);
+	const fullSpec: CatalogSpec = {
+		...spec,
+		properties: { ...spec.properties, ...catalogTypeMappingProperties(connection.type) }
+	};
 
 	// DROP + CREATE so edits to an already-registered catalog (host, port, database,
 	// credentials, ...) actually take effect — see comment above.
 	await trinoRequest(buildDropCatalogSQL(connection.catalogName));
-	await trinoRequest(buildCreateCatalogSQL(connection.catalogName, spec));
+	await trinoRequest(buildCreateCatalogSQL(connection.catalogName, fullSpec));
 }
 
 export async function unregisterCatalog(catalogName: string): Promise<void> {
@@ -545,10 +576,11 @@ function defaultSchema(connection: Exclude<Connection, DuckDBWASMConnection>): s
 // ── Materialization via Trino ─────────────────────────────────────────────────
 
 async function getTrinoRelationType(
-	catalogName: string,
+	connection: Exclude<Connection, DuckDBWASMConnection>,
 	targetSchema: string,
 	targetName: string
 ): Promise<ExternalRelationType | null> {
+	const catalogName = connection.catalogName;
 	const sql = `
 		SELECT table_type
 		FROM ${quoteTrinoIdent(catalogName)}.information_schema.tables
@@ -557,7 +589,12 @@ async function getTrinoRelationType(
 		LIMIT 1
 	`;
 	try {
-		const result = await trinoRequest(sql, catalogName, targetSchema);
+		const result = await trinoRequest(
+			sql,
+			catalogName,
+			targetSchema,
+			trinoOptsForConnection(connection)
+		);
 		const tableType = String(result.rows[0]?.table_type ?? '').toUpperCase();
 		if (tableType === 'VIEW') return 'view';
 		if (tableType === 'BASE TABLE') return 'table';
@@ -578,37 +615,38 @@ async function materializeTrinoConnection(
 	const ident = quoteTrinoPath(catalogName, targetSchema, targetName);
 	const sourceSQL = normalizeMaterializeSQL(sql);
 	const schema = defaultSchema(connection);
+	const trinoOpts = trinoOptsForConnection(connection);
 
 	if (mode === 'view') {
-		const existingType = await getTrinoRelationType(catalogName, targetSchema, targetName);
+		const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
 		if (existingType === 'table') {
-			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema);
+			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		}
-		await trinoExec(`CREATE OR REPLACE VIEW ${ident} AS ${sourceSQL}`, catalogName, schema);
+		await trinoExec(`CREATE OR REPLACE VIEW ${ident} AS ${sourceSQL}`, catalogName, schema, trinoOpts);
 		return { name: targetName, type: 'view' };
 	}
 
 	if (mode === 'table') {
-		const existingType = await getTrinoRelationType(catalogName, targetSchema, targetName);
+		const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
 		if (existingType === 'view') {
-			await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema);
+			await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		} else if (existingType === 'table') {
-			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema);
+			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		}
-		await trinoExec(`CREATE TABLE ${ident} AS ${sourceSQL}`, catalogName, schema);
+		await trinoExec(`CREATE TABLE ${ident} AS ${sourceSQL}`, catalogName, schema, trinoOpts);
 		return { name: targetName, type: 'table' };
 	}
 
 	// incremental
-	const existingType = await getTrinoRelationType(catalogName, targetSchema, targetName);
+	const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
 	if (existingType === 'view') {
-		await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema);
+		await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 	}
 	if (existingType !== 'table') {
-		await trinoExec(`CREATE TABLE ${ident} AS ${sourceSQL}`, catalogName, schema);
+		await trinoExec(`CREATE TABLE ${ident} AS ${sourceSQL}`, catalogName, schema, trinoOpts);
 		return { name: targetName, type: 'table' };
 	}
-	await trinoExec(`INSERT INTO ${ident} SELECT * FROM (${sourceSQL})`, catalogName, schema);
+	await trinoExec(`INSERT INTO ${ident} SELECT * FROM (${sourceSQL})`, catalogName, schema, trinoOpts);
 	return { name: targetName, type: 'table' };
 }
 
@@ -641,7 +679,8 @@ export async function testExternalConnection(
 	const probe = await trinoRequest(
 		`SELECT 1 FROM ${quoteTrinoIdent(connection.catalogName)}.information_schema.schemata LIMIT 1`,
 		connection.catalogName,
-		defaultSchema(connection)
+		defaultSchema(connection),
+		trinoOptsForConnection(connection)
 	);
 	if (probe.rows.length === 0) {
 		throw new Error(
@@ -662,12 +701,16 @@ export async function queryExternalConnection(
 		throw new Error(`Connection type '${connection.type}' is not supported.`);
 	}
 	assertReadableSQL(sql);
+	const trinoOpts = {
+		...trinoOptsForConnection(connection),
+		signal
+	};
 	try {
-		return await trinoRequest(sql, connection.catalogName, defaultSchema(connection), signal);
+		return await trinoRequest(sql, connection.catalogName, defaultSchema(connection), trinoOpts);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
 			await registerCatalog(connection, secret);
-			return trinoRequest(sql, connection.catalogName, defaultSchema(connection), signal);
+			return trinoRequest(sql, connection.catalogName, defaultSchema(connection), trinoOpts);
 		}
 		throw err;
 	}
@@ -723,7 +766,12 @@ async function fetchCatalogComments(
 	try {
 		const passthroughSql = buildCommentPassthroughQuery(connection.type);
 		const wrapped = `SELECT * FROM TABLE(${quoteTrinoIdent(catalogName)}.system.query(query => ${quoteLiteral(passthroughSql)}))`;
-		const result = await trinoRequest(wrapped, catalogName, connSchema);
+		const result = await trinoRequest(
+			wrapped,
+			catalogName,
+			connSchema,
+			trinoOptsForConnection(connection)
+		);
 		return result.rows
 			.map((row) => ({
 				schema: String(row.table_schem ?? ''),
@@ -760,13 +808,14 @@ export async function fetchExternalConnectionSchema(
 		 ORDER BY table_schema, table_name, ordinal_position`;
 
 	const connSchema = defaultSchema(connection as Exclude<Connection, DuckDBWASMConnection>);
+	const trinoOpts = trinoOptsForConnection(connection as Exclude<Connection, DuckDBWASMConnection>);
 	let result: Awaited<ReturnType<typeof trinoRequest>>;
 	try {
-		result = await trinoRequest(schemaQuery, catalogName, connSchema);
+		result = await trinoRequest(schemaQuery, catalogName, connSchema, trinoOpts);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
 			await registerCatalog(connection, secret);
-			result = await trinoRequest(schemaQuery, catalogName, connSchema);
+			result = await trinoRequest(schemaQuery, catalogName, connSchema, trinoOpts);
 		} else {
 			throw err;
 		}
@@ -870,10 +919,11 @@ async function uploadTrinoTable(
 		.map((c) => `${quoteTrinoIdent(c.name)} ${duckdbTypeToTrino(c.type)}`)
 		.join(', ');
 	const colNames = columns.map((c) => quoteTrinoIdent(c.name)).join(', ');
+	const trinoOpts = trinoOptsForConnection(connection);
 
 	if (mode === 'replace') {
-		await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, targetSchema);
-		await trinoExec(`CREATE TABLE ${ident} (${colDefs})`, catalogName, targetSchema);
+		await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, targetSchema, trinoOpts);
+		await trinoExec(`CREATE TABLE ${ident} (${colDefs})`, catalogName, targetSchema, trinoOpts);
 	}
 
 	const BATCH = 500;
@@ -885,7 +935,8 @@ async function uploadTrinoTable(
 		await trinoExec(
 			`INSERT INTO ${ident} (${colNames}) VALUES\n${valueRows}`,
 			catalogName,
-			targetSchema
+			targetSchema,
+			trinoOpts
 		);
 	}
 

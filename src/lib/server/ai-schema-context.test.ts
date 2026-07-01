@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	rankColumnsByRelevance,
 	selectSchemaForPrompt,
+	sqlTypeMismatchCast,
 	type SchemaColumn
 } from './ai-schema-context';
 import type { AIChatSchemaTable } from '$lib/types/ai-chat.js';
@@ -21,6 +22,14 @@ describe('rankColumnsByRelevance', () => {
 	it('ranks query-matching columns first when over the max', () => {
 		const ranked = rankColumnsByRelevance('revenue by region', columns, 2);
 		expect(ranked.map((c) => c.name)).toEqual(['revenue', 'region']);
+	});
+});
+
+describe('sqlTypeMismatchCast', () => {
+	it('flags varbinary and json types', () => {
+		expect(sqlTypeMismatchCast('text', 'varbinary')).toMatch(/from_utf8/);
+		expect(sqlTypeMismatchCast('text', 'json')).toMatch(/json_parse/);
+		expect(sqlTypeMismatchCast('date', 'varchar')).toMatch(/TIMESTAMP|date_parse/);
 	});
 });
 

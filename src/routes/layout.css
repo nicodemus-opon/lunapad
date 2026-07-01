@@ -254,6 +254,11 @@
 		@apply bg-background text-foreground;
 	}
 
+	/* Sidebar rail icons use currentColor strokes — keep them visible on themed buttons */
+	#layout-root [data-slot='tooltip-trigger'] .lucide {
+		stroke: currentColor;
+	}
+
 	.lc-axis-label,
 	.lc-axis-tick-label {
 		stroke: none !important;

@@ -65,20 +65,29 @@ export function quoteIdent(name: string): string {
 export function sqlTypeMismatchCast(dataKind: string, sqlType: string | undefined): string | null {
 	if (!sqlType) return null;
 	const sql = sqlType.toUpperCase();
+	if (sql.includes('VARBINARY')) {
+		return 'varbinary — use from_utf8(col) for text comparisons; re-save source if column should be varchar';
+	}
+	if (sql.includes('JSON')) {
+		return 'json — use json_parse(col) and json_extract_scalar(col, \'$.key\')';
+	}
+	if (sql.includes('IPADDRESS') || sql === 'INET') {
+		return 'ip address — CAST(col AS VARCHAR) for string comparison';
+	}
 	if (
 		dataKind === 'date' &&
 		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
 	) {
-		return 'stored as text — needs an explicit date cast';
+		return 'stored as text — needs CAST(col AS TIMESTAMP) or date_parse(col, format)';
 	}
 	if (dataKind === 'date' && sql.includes('TIMESTAMP')) {
-		return 'timestamp — cast to date for date-only comparison';
+		return 'timestamp — CAST(col AS DATE) for date-only comparison';
 	}
 	if (
 		dataKind === 'numeric' &&
 		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
 	) {
-		return 'stored as text — needs an explicit numeric cast';
+		return 'stored as text — needs CAST(col AS DOUBLE) or try_cast';
 	}
 	return null;
 }

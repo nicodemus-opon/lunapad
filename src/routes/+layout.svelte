@@ -27,12 +27,11 @@
 	}
 
 	const theme = $derived(getTheme());
+	let systemPrefersDark = $state(
+		browser && window.matchMedia('(prefers-color-scheme: dark)').matches
+	);
 	const resolvedTheme = $derived(
-		theme === 'system'
-			? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-				? 'dark'
-				: 'light'
-			: theme
+		theme === 'system' ? (systemPrefersDark ? 'dark' : 'light') : theme
 	);
 
 	$effect(() => {
@@ -47,12 +46,18 @@
 		document.documentElement.dataset.os = platformOS.value;
 	});
 
-	onMount(async () => {
-		try {
-			await initPlatform();
-		} catch {
+	onMount(() => {
+		const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+		const onColorSchemeChange = (event: MediaQueryListEvent) => {
+			systemPrefersDark = event.matches;
+		};
+		colorScheme.addEventListener('change', onColorSchemeChange);
+
+		void initPlatform().catch(() => {
 			// Tauri OS plugin unavailable; navigator-based detection stays in effect
-		}
+		});
+
+		return () => colorScheme.removeEventListener('change', onColorSchemeChange);
 	});
 </script>
 

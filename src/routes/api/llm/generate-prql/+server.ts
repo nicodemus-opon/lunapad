@@ -131,20 +131,26 @@ function stripLeadingFromClause(prql: string, sourceTable: string): string {
 function prqlCastNote(dataKind: string, sqlType: string | undefined): string | null {
 	if (!sqlType) return null;
 	const sql = sqlType.toUpperCase();
+	if (sql.includes('VARBINARY')) {
+		return 'varbinary — use s"from_utf8({col})" for text comparisons';
+	}
+	if (sql.includes('JSON')) {
+		return 'json — use s"json_extract_scalar(json_parse({col}), \'$.key\')"';
+	}
 	if (
 		dataKind === 'date' &&
 		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
 	) {
-		return 'stored as text — cast with ::date or CAST({col} AS DATE) inside s"..."';
+		return 'stored as text — cast with s"CAST({col} AS TIMESTAMP)" or date_parse';
 	}
 	if (dataKind === 'date' && sql.includes('TIMESTAMP')) {
-		return 'timestamp — use ::date inside s"..." for date-only comparison';
+		return 'timestamp — use s"CAST({col} AS DATE)" for date-only comparison';
 	}
 	if (
 		dataKind === 'numeric' &&
 		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
 	) {
-		return 'stored as text — cast with CAST({col} AS DOUBLE) inside s"..."';
+		return 'stored as text — cast with s"CAST({col} AS DOUBLE)"';
 	}
 	return null;
 }

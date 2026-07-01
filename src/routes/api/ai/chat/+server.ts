@@ -39,6 +39,7 @@ import {
 	blockedToolFallbackText,
 	type ChatToolPolicyContext
 } from '$lib/agent/server/chat-tool-policy.js';
+import { buildUserContent } from '$lib/server/ai-user-content.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -54,7 +55,8 @@ function sendTextDelta(ctrl: SSEController, delta: string, onMeaningful?: () => 
 
 function formatCellGraph(c: AIChatCell): string {
 	const lang = c.cellType === 'python' ? 'python' : c.language;
-	const parts: string[] = [`${c.outputName}(${lang},${c.status})`];
+	const attached = c.isContextCell ? '[ATTACHED] ' : '';
+	const parts: string[] = [`${attached}${c.outputName}(${lang},${c.status})`];
 	if (c.upstream?.length) parts.push(`←[${c.upstream.join(',')}]`);
 	if (c.downstream?.length) parts.push(`→[${c.downstream.join(',')}]`);
 	if (c.criticalityScore && c.criticalityScore >= 3) {
@@ -116,6 +118,10 @@ function buildDialectSection(dialect: string): string {
 - Approx: approx_distinct(col), approx_percentile(col, 0.95)
 - Arrays: CROSS JOIN UNNEST(arr) AS t(val), array_agg(), array_join(arr, ',')
 - Strings: split(col, ','), regexp_extract(col, pattern, group)
+- Text stored as VARCHAR: CAST(col AS TIMESTAMP/DATE/DOUBLE) or date_parse(col, format) before comparing to dates/numbers.
+- JSON/VARIANT columns (often VARCHAR): json_parse(col) then json_extract_scalar(col, '$.key') — not native -> operators.
+- VARBINARY: from_utf8(col) for text — never CAST(col AS VARCHAR). Lunapad maps binary types at catalog level; re-save source if still VARBINARY.
+- MySQL TIMESTAMP is TIMESTAMP WITH TIME ZONE in Trino — watch timezone when comparing to current_date.
 - No DuckDB syntax: no LIST_AGG, no STRUCT, no generate_series, no EXCLUDE/REPLACE
 - Table references use the full name shown in the Schema section (catalog.schema.table)
 - Identifiers: use double-quotes for reserved words or names with spaces: "my column". NEVER use backticks — they are MySQL syntax and are a syntax error in Trino.
@@ -338,6 +344,7 @@ function buildSystemPromptXML(
 							? ` chart=${c.resultChartConfig.chartType}(x=${c.resultChartConfig.xColumn},y=[${c.resultChartConfig.yColumns?.join(',')}])`
 							: '';
 						const active = c.isActiveNotebook ? ' [active]' : '';
+						const attached = c.isContextCell ? ' [ATTACHED]' : '';
 						const impact =
 							(c.criticalityScore ?? 0) >= 3
 								? ` [HIGH IMPACT — ${c.criticalityScore} dependents]`
@@ -348,7 +355,7 @@ function buildSystemPromptXML(
 							: c.pythonError
 								? ` [ERROR: ${c.pythonError}]`
 								: '';
-						return `  id=${c.id} name="${c.outputName}" status=${c.status}${lang}${active}${impact}${up}${down}${chart}${err}`;
+						return `  id=${c.id} name="${c.outputName}" status=${c.status}${lang}${active}${attached}${impact}${up}${down}${chart}${err}`;
 					})
 					.join('\n')
 			: '  (none)';
@@ -965,31 +972,6 @@ ${cellList}
 Schema:
 ${schemaList}`;
 	}
-}
-
-function buildUserContent(
-	cells: AIChatCell[],
-	messages: Array<{ role: string; content: string }>
-): string {
-	// Attach full code for cells referenced in recent user messages
-	const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-	const referencedOutputNames = new Set(
-		cells.filter((c) => lastUserMsg.includes(c.outputName)).map((c) => c.outputName)
-	);
-	// Also always include full code for error cells — LLM needs it to write a fix
-	// even when the user says "fix it" without naming the specific cell
-	const errorCells = cells.filter((c) => c.status === 'error' && c.code.trim());
-	for (const c of errorCells) referencedOutputNames.add(c.outputName);
-
-	const codeBlocks = cells
-		.filter((c) => referencedOutputNames.has(c.outputName) && c.code.trim())
-		.map((c) => {
-			const errNote = c.status === 'error' && c.errorMessage ? `\n-- Error: ${c.errorMessage}` : '';
-			return `### Cell: ${c.outputName} (${c.language})${errNote ? '\n' + errNote : ''}\n\`\`\`sql\n${c.code}\n\`\`\``;
-		})
-		.join('\n\n');
-
-	return codeBlocks ? `${lastUserMsg}\n\n${codeBlocks}` : lastUserMsg;
 }
 
 export const POST: RequestHandler = async ({ request }) => {

@@ -51,6 +51,8 @@ export interface AIChatCell {
 	resultChartConfig?: ChartConfig | null;
 	/** True when this cell belongs to the notebook currently open/active in the editor */
 	isActiveNotebook?: boolean;
+	/** True when the user attached this cell via "Share with AI" for the current message */
+	isContextCell?: boolean;
 	/** downstream cell count — signals high-impact cells */
 	criticalityScore?: number;
 	/** First error message when status === 'error' — lets the LLM know what to fix */

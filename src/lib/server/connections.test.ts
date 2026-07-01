@@ -99,6 +99,8 @@ describe('registerCatalog', () => {
 		expect(content).toContain(`"connection-url" = 'jdbc:postgresql://localhost:5432/jobs'`);
 		expect(content).toContain(`"connection-user" = 'postgres'`);
 		expect(content).toContain(`"connection-password" = 'pw'`);
+		expect(content).toContain(`"jdbc-types-mapped-to-varchar" = 'bytea'`);
+		expect(content).toContain(`"unsupported-type-handling" = 'CONVERT_TO_VARCHAR'`);
 	});
 
 	it('rejects invalid catalogName before issuing any SQL', async () => {
@@ -119,6 +121,31 @@ describe('registerCatalog', () => {
 		const secureConn = { ...clickHouseConnection, secure: true };
 		const content = await registerAndCapture(secureConn, { password: 'secret' });
 		expect(content).toContain('jdbc:clickhouse://127.0.0.1:8123/analytics?ssl=true&sslmode=none');
+	});
+
+	it('maps ClickHouse String columns to VARCHAR in Trino', async () => {
+		const content = await registerAndCapture(clickHouseConnection, { password: 'secret' });
+		expect(content).toContain('"clickhouse.map-string-as-varchar" = \'true\'');
+	});
+
+	it('maps MySQL binary columns to VARCHAR in Trino', async () => {
+		const conn: Connection = {
+			id: 'mysql-1',
+			name: 'MySQL',
+			type: 'mysql',
+			catalogName: 'mysql_main',
+			host: 'localhost',
+			port: 3306,
+			database: 'app',
+			username: 'root',
+			ssl: false
+		};
+		const content = await registerAndCapture(conn, { password: 'pw' });
+		expect(content).toContain(
+			'"jdbc-types-mapped-to-varchar" = \'binary,varbinary,tinyblob,blob,mediumblob,longblob\''
+		);
+		expect(content).toContain('"decimal-mapping" = \'allow_overflow\'');
+		expect(content).toContain('"unsupported-type-handling" = \'CONVERT_TO_VARCHAR\'');
 	});
 
 	it('uses sslMode=verify-full for Postgres when set', async () => {
@@ -595,6 +622,26 @@ describe('queryExternalConnection', () => {
 		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
 		expect(headers?.['X-Trino-Catalog']).toBe('primary_postgres');
 		expect(headers?.['X-Trino-Schema']).toBe('public');
+	});
+
+	it('sets map_string_as_varchar session for ClickHouse queries', async () => {
+		fetchMock.mockResolvedValueOnce(trinoPage([{ name: 'role_category' }], [['Legal']]));
+
+		await queryExternalConnection(clickHouseConnection, undefined, 'SELECT role_category FROM jobs');
+
+		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+		expect(headers?.['X-Trino-Session']).toBe('primary_clickhouse.map_string_as_varchar=true');
+	});
+
+	it('sets unsupported_type_handling session for Postgres queries', async () => {
+		fetchMock.mockResolvedValueOnce(trinoPage([{ name: 'id' }], [[1]]));
+
+		await queryExternalConnection(postgresConnection, undefined, 'SELECT id FROM jobs');
+
+		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+		expect(headers?.['X-Trino-Session']).toBe(
+			'primary_postgres.unsupported_type_handling=CONVERT_TO_VARCHAR'
+		);
 	});
 
 	it('auto-registers on catalog-not-found then retries', async () => {

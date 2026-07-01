@@ -6,6 +6,24 @@
 		<meta name="text-scale" content="scale" />
 		%sveltekit.head%
 		<script>
+			// Runs synchronously before first paint — applies saved theme before CSS paints
+			(function () {
+				try {
+					var raw = localStorage.getItem('lunapad_notebook');
+					if (!raw) return;
+					var data = JSON.parse(raw);
+					var theme = data.theme || 'system';
+					var dark =
+						theme === 'dark' ||
+						(theme === 'system' &&
+							window.matchMedia('(prefers-color-scheme: dark)').matches);
+					document.documentElement.classList.toggle('dark', dark);
+					document.documentElement.classList.toggle('light', !dark);
+				} catch (_) {
+					/* ignore corrupt storage */
+				}
+			})();
+
 			// Runs synchronously before first paint — prevents traffic-light overlap flash
 			if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
 				var p = navigator.platform.toLowerCase();

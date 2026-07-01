@@ -1876,6 +1876,20 @@ export function scheduleSave(): void {
 
 let workspaceSaveRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let workspacePollTimer: ReturnType<typeof setInterval> | null = null;
+let workspaceSaveChain: Promise<void> = Promise.resolve();
+let workspaceSaveInFlight = false;
+
+/** Compare workspace versions the same way the server does (ms precision). */
+function workspaceTimestampsEqual(
+	a: string | null | undefined,
+	b: string | null | undefined
+): boolean {
+	if (a == null || b == null) return a === b;
+	const ta = new Date(a).getTime();
+	const tb = new Date(b).getTime();
+	if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
+	return ta === tb;
+}
 
 async function loadUserLlmSettings(): Promise<void> {
 	try {
@@ -1903,38 +1917,46 @@ export async function saveUserLlmSettings(): Promise<void> {
 	}
 }
 
-async function saveToServer(serializedJson: string, force = false): Promise<void> {
-	try {
-		const res = await fetch('/api/workspace/save', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				data: JSON.parse(serializedJson),
-				expectedUpdatedAt: state.workspaceServerUpdatedAt,
-				force
-			})
-		});
-		if (res.status === 409) {
+function saveToServer(serializedJson: string, force = false): Promise<void> {
+	const op = async () => {
+		workspaceSaveInFlight = true;
+		try {
+			const res = await fetch('/api/workspace/save', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					data: JSON.parse(serializedJson),
+					expectedUpdatedAt: state.workspaceServerUpdatedAt,
+					force
+				})
+			});
+			if (res.status === 409) {
+				const body = await res.json();
+				state.workspaceSyncStatus = 'conflict';
+				state.workspaceServerUpdatedAt = body.updatedAt ?? state.workspaceServerUpdatedAt;
+				state.workspaceUpdatedBy = body.updatedBy ?? state.workspaceUpdatedBy;
+				return;
+			}
+			if (!res.ok) throw new Error(`Workspace save failed: ${res.status}`);
 			const body = await res.json();
-			state.workspaceSyncStatus = 'conflict';
 			state.workspaceServerUpdatedAt = body.updatedAt ?? state.workspaceServerUpdatedAt;
-			state.workspaceUpdatedBy = body.updatedBy ?? state.workspaceUpdatedBy;
-			return;
+			state.workspaceUpdatedBy = body.updatedBy ?? null;
+			state.workspaceSyncStatus = 'synced';
+			if (workspaceSaveRetryTimer) {
+				clearTimeout(workspaceSaveRetryTimer);
+				workspaceSaveRetryTimer = null;
+			}
+		} catch {
+			state.workspaceSyncStatus = 'error';
+			if (workspaceSaveRetryTimer) clearTimeout(workspaceSaveRetryTimer);
+			workspaceSaveRetryTimer = setTimeout(() => scheduleSave(), 5000);
+		} finally {
+			workspaceSaveInFlight = false;
 		}
-		if (!res.ok) throw new Error(`Workspace save failed: ${res.status}`);
-		const body = await res.json();
-		state.workspaceServerUpdatedAt = body.updatedAt ?? state.workspaceServerUpdatedAt;
-		state.workspaceUpdatedBy = body.updatedBy ?? null;
-		state.workspaceSyncStatus = 'synced';
-		if (workspaceSaveRetryTimer) {
-			clearTimeout(workspaceSaveRetryTimer);
-			workspaceSaveRetryTimer = null;
-		}
-	} catch {
-		state.workspaceSyncStatus = 'error';
-		if (workspaceSaveRetryTimer) clearTimeout(workspaceSaveRetryTimer);
-		workspaceSaveRetryTimer = setTimeout(() => scheduleSave(), 5000);
-	}
+	};
+	const result = workspaceSaveChain.then(op, op);
+	workspaceSaveChain = result.catch(() => undefined);
+	return result;
 }
 
 export async function reloadWorkspaceFromServer(): Promise<void> {
@@ -1969,6 +1991,8 @@ export function stopWorkspacePolling(): void {
 
 async function pollWorkspaceVersion(): Promise<void> {
 	if (!useServerWorkspace || state.workspaceSyncStatus === 'conflict') return;
+	// A save still in flight can make the server look "newer" before we record its timestamp.
+	if (workspaceSaveInFlight) return;
 	try {
 		const res = await fetch('/api/workspace/load');
 		if (!res.ok) return;
@@ -1976,7 +2000,7 @@ async function pollWorkspaceVersion(): Promise<void> {
 		if (
 			body.updatedAt &&
 			state.workspaceServerUpdatedAt &&
-			body.updatedAt !== state.workspaceServerUpdatedAt
+			!workspaceTimestampsEqual(body.updatedAt, state.workspaceServerUpdatedAt)
 		) {
 			state.workspaceUpdatedBy = body.updatedBy ?? null;
 			// Don't auto-overwrite — surface conflict state for user choice

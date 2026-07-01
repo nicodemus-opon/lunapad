@@ -1168,6 +1168,7 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					resultColumns: isContext ? (c.result?.columns ?? []) : [],
 					status: c.status,
 					isActiveNotebook: true,
+					...(isContext && { isContextCell: true }),
 					...(upstream.length > 0 && { upstream }),
 					...(downstream.length > 0 && { downstream }),
 					// Include existing chart config for context cells so AI can modify rather than replace

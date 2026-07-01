@@ -698,7 +698,7 @@
 		} else if (status === 'conflict') {
 			const info = getWorkspaceConflictInfo();
 			workspaceSyncToastId = toast.warning(
-				`Workspace updated by a teammate${info.updatedBy ? ` (${info.updatedBy})` : ''}.`,
+				`Workspace was updated elsewhere${info.updatedBy ? ` (${info.updatedBy})` : ''}.`,
 				{
 					id: workspaceSyncToastId,
 					duration: Infinity,
@@ -1305,15 +1305,15 @@
 		{#snippet railButton(panel: SidebarPanel, Icon: typeof BookOpen, tooltipLabel: string)}
 			<Tooltip.Root>
 				<Tooltip.Trigger
-					class="flex  h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
+					class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
 					panel
-						? 'border border-border/50 bg-accent text-foreground'
-						: 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'}"
+						? 'border border-sidebar-border/50 bg-sidebar-accent text-sidebar-accent-foreground'
+						: 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'}"
 					onclick={() => selectSidebarPanel(panel)}
 					aria-label={tooltipLabel}
 					aria-pressed={activeSidebarPanel === panel}
 				>
-					<Icon class="h-4 w-4" />
+					<Icon class="h-4 w-4 shrink-0 stroke-current" />
 				</Tooltip.Trigger>
 				<Tooltip.Content side="right">{tooltipLabel}</Tooltip.Content>
 			</Tooltip.Root>
@@ -1333,7 +1333,7 @@
 					{onclick}
 					aria-label={label}
 				>
-					<Icon class="h-3.5 w-3.5" />
+					<Icon class="h-3.5 w-3.5 shrink-0 stroke-current" />
 				</Tooltip.Trigger>
 				<Tooltip.Content side="bottom">{label}</Tooltip.Content>
 			</Tooltip.Root>
@@ -1346,9 +1346,10 @@
 					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
 				style={`width: ${sidebarCollapsed ? RAIL_WIDTH : sidebarWidth}px`}
 			>
-				<!-- Icon rail -->
+				<!-- Icon rail (width matches RAIL_WIDTH — w-9 disagrees with --spacing scale) -->
 				<div
-					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background px-1 pt-1 pb-1.5"
+					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-sidebar px-1 pt-1 pb-1.5"
+					style={`width: ${RAIL_WIDTH}px`}
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
 					{#if isNotebookTab}
@@ -1364,14 +1365,14 @@
 					<div class="mt-auto">
 						<Tooltip.Root>
 							<Tooltip.Trigger
-								class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 								onclick={toggleSidebarCollapsed}
 								aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 							>
 								{#if sidebarCollapsed}
-									<PanelLeftOpen class="h-4 w-4" />
+									<PanelLeftOpen class="h-4 w-4 shrink-0 stroke-current" />
 								{:else}
-									<PanelLeftClose class="h-4 w-4" />
+									<PanelLeftClose class="h-4 w-4 shrink-0 stroke-current" />
 								{/if}
 							</Tooltip.Trigger>
 							<Tooltip.Content side="right">
@@ -1381,13 +1382,14 @@
 					</div>
 				</div>
 
-				<!-- Panel content (fixed width so collapse slides instead of reflowing) -->
+				<!-- Panel content (width collapses to 0 — avoid opacity transitions that can stick) -->
 				<div
-					class="flex shrink-0 flex-col overflow-hidden transition-opacity duration-(--motion-fast) {sidebarCollapsed
-						? 'opacity-0'
-						: 'opacity-100'}"
-					style={`width: ${sidebarWidth - RAIL_WIDTH}px`}
+					class="flex shrink-0 flex-col overflow-hidden {isDraggingSidebar
+						? 'transition-none'
+						: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
+					style={`width: ${sidebarCollapsed ? 0 : sidebarWidth - RAIL_WIDTH}px`}
 					inert={sidebarCollapsed}
+					aria-hidden={sidebarCollapsed}
 				>
 					<ProjectSection />
 
@@ -1960,9 +1962,10 @@
 																	{autoRun}
 																	reportView={true}
 																	isGhost={ghostCellIds.has(cell.id)}
-																	onShareWithAI={aiChatOpen
-																		? () => addContextCell(cell.id)
-																		: undefined}
+																	onShareWithAI={() => {
+																		setAIChatOpen(true);
+																		addContextCell(cell.id);
+																	}}
 																	onFixWithAI={aiChatOpen
 																		? (errorMsg) => {
 																				addContextCell(cell.id);
@@ -2010,7 +2013,10 @@
 															{autoRun}
 															{reportView}
 															isGhost={ghostCellIds.has(cell.id)}
-															onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
+															onShareWithAI={() => {
+																setAIChatOpen(true);
+																addContextCell(cell.id);
+															}}
 															onFixWithAI={aiChatOpen
 																? (errorMsg) => {
 																		addContextCell(cell.id);
