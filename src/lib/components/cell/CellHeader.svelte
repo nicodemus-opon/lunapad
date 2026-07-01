@@ -302,7 +302,7 @@
 						<Sparkles class="h-3.5 w-3.5" />
 					</button>
 				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Tell AI what to do (⌘K)</p></Tooltip.Content>
+				<Tooltip.Content><p class="text-xs">Tell AI what to do (⌘⇧K)</p></Tooltip.Content>
 			</Tooltip.Root>
 		{/if}
 

@@ -310,7 +310,12 @@ export const PRQL_FUNCTION_REGISTRY: PrqlFunctionOption[] = [
 		category: 'date',
 		detail: 'Format a date or timestamp with an explicit pattern.',
 		args: [
-			{ label: 'Format', placeholder: '%Y-%m-%d', defaultKind: 'literal', defaultValue: '%Y-%m-%d' },
+			{
+				label: 'Format',
+				placeholder: '%Y-%m-%d',
+				defaultKind: 'literal',
+				defaultValue: '%Y-%m-%d'
+			},
 			{ label: 'Date value', placeholder: 'column...', defaultKind: 'column' }
 		],
 		keywords: ['date', 'format', 'string']

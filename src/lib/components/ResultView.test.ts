@@ -13,7 +13,7 @@ describe('ResultView adaptive chart config', () => {
 
 		expect(source).toContain('inferSmartChartConfig');
 		expect(source).toContain('return chartConfig ?? inferSmartChartConfig(columns, rows);');
-		expect(source).toContain("setTabChartConfig(tabId, inferSmartChartConfig(columns, rows));");
+		expect(source).toContain('setTabChartConfig(tabId, inferSmartChartConfig(columns, rows));');
 	});
 
 	it('updates chart config when result shape signature changes', () => {

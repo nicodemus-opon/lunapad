@@ -22,9 +22,16 @@ interface PromptLLMInferenceResponse {
 	error?: string;
 }
 
-function isPipelineStageArray(value: unknown): value is Exclude<GUIPipelineStage, { type: 'raw' }>[] {
+function isPipelineStageArray(
+	value: unknown
+): value is Exclude<GUIPipelineStage, { type: 'raw' }>[] {
 	if (!Array.isArray(value)) return false;
-	return value.every((stage) => typeof stage === 'object' && stage !== null && typeof (stage as { type?: unknown }).type === 'string');
+	return value.every(
+		(stage) =>
+			typeof stage === 'object' &&
+			stage !== null &&
+			typeof (stage as { type?: unknown }).type === 'string'
+	);
 }
 
 export async function inferPromptStageSuggestionWithLLM(
@@ -47,8 +54,17 @@ export async function inferPromptStageSuggestionWithLLM(
 
 	return {
 		label: suggestion.label,
-		prompt: typeof suggestion.prompt === 'string' ? suggestion.prompt : `${suggestion.label}: generated from prompt inference`,
-		reasons: Array.isArray(suggestion.reasons) ? suggestion.reasons.filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0).slice(0, 5) : ['LLM-inferred stage chain'],
+		prompt:
+			typeof suggestion.prompt === 'string'
+				? suggestion.prompt
+				: `${suggestion.label}: generated from prompt inference`,
+		reasons: Array.isArray(suggestion.reasons)
+			? suggestion.reasons
+					.filter(
+						(reason): reason is string => typeof reason === 'string' && reason.trim().length > 0
+					)
+					.slice(0, 5)
+			: ['LLM-inferred stage chain'],
 		stages: suggestion.stages,
 		score: typeof suggestion.score === 'number' ? suggestion.score : 130,
 		confidence: typeof suggestion.confidence === 'number' ? suggestion.confidence : 0.74

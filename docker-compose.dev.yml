@@ -14,13 +14,15 @@ services:
     build:
       target: dev
     ports:
-      - "5173:5173"
+      - '5173:5173'
     environment:
       ORIGIN: http://localhost:5173
       # Dev server is on 5173 — override the prod INNGEST_SERVE_HOST so the Inngest SDK
       # registers functions at the correct port inside the Docker network.
       INNGEST_SERVE_HOST: http://app:5173
-      VITE_DOCKER_DEV: "1"
+      VITE_DOCKER_DEV: '1'
+      # Tells pnpm to proceed without TTY prompts (e.g. confirmModulesPurge).
+      CI: 'true'
     volumes:
       - .:/app
       # Anonymous volumes shadow the bind mount for these paths so the container's
@@ -28,7 +30,7 @@ services:
       - /app/node_modules
       - /app/.svelte-kit
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5173/api/health > /dev/null"]
+      test: ['CMD-SHELL', 'curl -sf http://localhost:5173/api/health > /dev/null']
       interval: 5s
       timeout: 5s
       retries: 20

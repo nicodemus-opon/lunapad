@@ -9,6 +9,7 @@ declare global {
 			user: typeof auth.$Infer.Session.user | null;
 			session: typeof auth.$Infer.Session.session | null;
 			apiKeyId: string | null;
+			apiKeyScopes: string[] | null;
 		}
 		// interface PageData {}
 		// interface PageState {}

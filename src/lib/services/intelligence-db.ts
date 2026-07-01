@@ -32,7 +32,8 @@ function nowMs(): number {
 
 function normalizeKind(typeName: string): 'numeric' | 'date' | 'boolean' | 'text' {
 	const lower = typeName.toLowerCase();
-	if (/(tinyint|smallint|int|bigint|hugeint|decimal|numeric|double|float|real)/.test(lower)) return 'numeric';
+	if (/(tinyint|smallint|int|bigint|hugeint|decimal|numeric|double|float|real)/.test(lower))
+		return 'numeric';
 	if (/(date|time|timestamp)/.test(lower)) return 'date';
 	if (/(bool)/.test(lower)) return 'boolean';
 	return 'text';
@@ -128,7 +129,12 @@ export interface IntelligentChartRecommendation {
 	seriesMode?: 'auto' | 'grouped' | 'stacked';
 }
 
-const DEFAULT_SEMANTIC_SYNONYMS: Array<{ token: string; canonical: string; semanticHint: ColumnSemanticType; weight: number }> = [
+const DEFAULT_SEMANTIC_SYNONYMS: Array<{
+	token: string;
+	canonical: string;
+	semanticHint: ColumnSemanticType;
+	weight: number;
+}> = [
 	{ token: 'gmv', canonical: 'revenue', semanticHint: 'amount', weight: 0.95 },
 	{ token: 'arr', canonical: 'revenue', semanticHint: 'amount', weight: 0.92 },
 	{ token: 'mrr', canonical: 'revenue', semanticHint: 'amount', weight: 0.92 },
@@ -158,7 +164,21 @@ const DEFAULT_SEMANTIC_SYNONYMS: Array<{ token: string; canonical: string; seman
 	{ token: 'urn', canonical: 'status', semanticHint: 'status', weight: 0.73 }
 ];
 
-const IDENTIFIER_TOKENS = new Set(['id', 'uuid', 'guid', 'identifier', 'key', 'pk', 'fk', 'no', 'nr', 'ref', 'code', 'sku', 'serial']);
+const IDENTIFIER_TOKENS = new Set([
+	'id',
+	'uuid',
+	'guid',
+	'identifier',
+	'key',
+	'pk',
+	'fk',
+	'no',
+	'nr',
+	'ref',
+	'code',
+	'sku',
+	'serial'
+]);
 
 const COLUMN_SEMANTIC_CATALOG: Array<{
 	type: ColumnSemanticType;
@@ -167,53 +187,308 @@ const COLUMN_SEMANTIC_CATALOG: Array<{
 	samplePatterns?: RegExp[];
 	priority: number;
 }> = [
-	{ type: 'id', kinds: ['numeric', 'text'], namePatterns: [/^id$/i, /(^|_)(id|uuid|guid|identifier)$/i], priority: 120 },
-	{ type: 'session_id', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(session|sess|visit)_id$/i], priority: 119 },
-	{ type: 'source_id', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(source|src|from)_id$/i], priority: 118 },
-	{ type: 'target_id', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(target|dst|to)_id$/i], priority: 118 },
-	{ type: 'parent_id', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(parent|ancestor|root)_id$/i], priority: 118 },
-	{ type: 'foreign_key', kinds: ['numeric', 'text'], namePatterns: [/_id$/i, /(^|_)(fk|foreign|key|ref|reference)$/i, /(customer|account|company|collection|user|owner|parent)_id$/i], priority: 116 },
-	{ type: 'created_at', kinds: ['date', 'text', 'numeric'], namePatterns: [/created(_at|at)?$/i, /ingested(_at|at)?$/i, /(inserted|loaded)(_at|at)?$/i, /created/i], priority: 115 },
-	{ type: 'updated_at', kinds: ['date', 'text', 'numeric'], namePatterns: [/updated(_at|at)?$/i, /modified(_at|at)?$/i, /(changed|edited)(_at|at)?$/i], priority: 114 },
-	{ type: 'event_time', kinds: ['date', 'text', 'numeric'], namePatterns: [/event(_at|at|_time|time)?$/i, /occurred(_at|at)?$/i, /happened(_at|at)?$/i, /completion.?time/i, /timestamp/i], samplePatterns: [/^\d{4}-\d{2}-\d{2}/, /^1\d{12}$/, /^1\d{9}$/], priority: 113 },
-	{ type: 'event_type', kinds: ['text'], namePatterns: [/event(_type|type)?$/i, /action(_type)?$/i, /verb$/i, /activity(_type)?$/i], priority: 96 },
-	{ type: 'date', kinds: ['date', 'text', 'numeric'], namePatterns: [/date|time|timestamp|day|week|month|year/i], samplePatterns: [/^\d{4}-\d{2}-\d{2}/, /^1\d{12}$/, /^1\d{9}$/], priority: 110 },
-	{ type: 'email', kinds: ['text'], namePatterns: [/email/i], samplePatterns: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/i], priority: 109 },
-	{ type: 'phone', kinds: ['text'], namePatterns: [/phone|mobile|tel/i], samplePatterns: [/^\+?[0-9().\-\s]{7,}$/], priority: 108 },
-	{ type: 'postal_code', kinds: ['text', 'numeric'], namePatterns: [/zip|postal|postcode/i], samplePatterns: [/^[A-Z0-9\-\s]{3,12}$/i], priority: 107 },
-	{ type: 'latitude', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(lat|latitude)$/i], samplePatterns: [/^-?(?:[0-8]?\d(?:\.\d+)?|90(?:\.0+)?)$/], priority: 104 },
-	{ type: 'longitude', kinds: ['numeric', 'text'], namePatterns: [/(^|_)(lon|lng|longitude|long)$/i], samplePatterns: [/^-?(?:1[0-7]\d(?:\.\d+)?|[0-9]?\d(?:\.\d+)?|180(?:\.0+)?)$/], priority: 104 },
-	{ type: 'geo_point', kinds: ['text', 'numeric'], namePatterns: [/lat|lng|lon|long|latitude|longitude|geopoint|geo_point/i], priority: 106 },
-	{ type: 'media_url', kinds: ['text'], namePatterns: [/image(_url)?|thumbnail(_url)?|avatar(_url)?|media(_url)?|video(_url)?|audio(_url)?|cdn(_url)?/i], samplePatterns: [/^https?:\/\//i, /^s3:\/\//i, /^gs:\/\//i], priority: 112 },
-	{ type: 'media_path', kinds: ['text'], namePatterns: [/file(_path)?|asset(_path)?|object_key|blob_key|media_path|image_path|video_path|audio_path/i], samplePatterns: [/\.(png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|pdf|docx?)$/i, /\//], priority: 94 },
-	{ type: 'media_extension', kinds: ['text'], namePatterns: [/ext|extension|file_type|mime|mime_type/i], samplePatterns: [/^(png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|pdf|docx?)$/i], priority: 92 },
-	{ type: 'url', kinds: ['text'], namePatterns: [/url|link|website|uri|slug/i], samplePatterns: [/^https?:\/\//i, /^www\./i], priority: 97 },
+	{
+		type: 'id',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/^id$/i, /(^|_)(id|uuid|guid|identifier)$/i],
+		priority: 120
+	},
+	{
+		type: 'session_id',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(session|sess|visit)_id$/i],
+		priority: 119
+	},
+	{
+		type: 'source_id',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(source|src|from)_id$/i],
+		priority: 118
+	},
+	{
+		type: 'target_id',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(target|dst|to)_id$/i],
+		priority: 118
+	},
+	{
+		type: 'parent_id',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(parent|ancestor|root)_id$/i],
+		priority: 118
+	},
+	{
+		type: 'foreign_key',
+		kinds: ['numeric', 'text'],
+		namePatterns: [
+			/_id$/i,
+			/(^|_)(fk|foreign|key|ref|reference)$/i,
+			/(customer|account|company|collection|user|owner|parent)_id$/i
+		],
+		priority: 116
+	},
+	{
+		type: 'created_at',
+		kinds: ['date', 'text', 'numeric'],
+		namePatterns: [
+			/created(_at|at)?$/i,
+			/ingested(_at|at)?$/i,
+			/(inserted|loaded)(_at|at)?$/i,
+			/created/i
+		],
+		priority: 115
+	},
+	{
+		type: 'updated_at',
+		kinds: ['date', 'text', 'numeric'],
+		namePatterns: [/updated(_at|at)?$/i, /modified(_at|at)?$/i, /(changed|edited)(_at|at)?$/i],
+		priority: 114
+	},
+	{
+		type: 'event_time',
+		kinds: ['date', 'text', 'numeric'],
+		namePatterns: [
+			/event(_at|at|_time|time)?$/i,
+			/occurred(_at|at)?$/i,
+			/happened(_at|at)?$/i,
+			/completion.?time/i,
+			/timestamp/i
+		],
+		samplePatterns: [/^\d{4}-\d{2}-\d{2}/, /^1\d{12}$/, /^1\d{9}$/],
+		priority: 113
+	},
+	{
+		type: 'event_type',
+		kinds: ['text'],
+		namePatterns: [/event(_type|type)?$/i, /action(_type)?$/i, /verb$/i, /activity(_type)?$/i],
+		priority: 96
+	},
+	{
+		type: 'date',
+		kinds: ['date', 'text', 'numeric'],
+		namePatterns: [/date|time|timestamp|day|week|month|year/i],
+		samplePatterns: [/^\d{4}-\d{2}-\d{2}/, /^1\d{12}$/, /^1\d{9}$/],
+		priority: 110
+	},
+	{
+		type: 'email',
+		kinds: ['text'],
+		namePatterns: [/email/i],
+		samplePatterns: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/i],
+		priority: 109
+	},
+	{
+		type: 'phone',
+		kinds: ['text'],
+		namePatterns: [/phone|mobile|tel/i],
+		samplePatterns: [/^\+?[0-9().\-\s]{7,}$/],
+		priority: 108
+	},
+	{
+		type: 'postal_code',
+		kinds: ['text', 'numeric'],
+		namePatterns: [/zip|postal|postcode/i],
+		samplePatterns: [/^[A-Z0-9\-\s]{3,12}$/i],
+		priority: 107
+	},
+	{
+		type: 'latitude',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(lat|latitude)$/i],
+		samplePatterns: [/^-?(?:[0-8]?\d(?:\.\d+)?|90(?:\.0+)?)$/],
+		priority: 104
+	},
+	{
+		type: 'longitude',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/(^|_)(lon|lng|longitude|long)$/i],
+		samplePatterns: [/^-?(?:1[0-7]\d(?:\.\d+)?|[0-9]?\d(?:\.\d+)?|180(?:\.0+)?)$/],
+		priority: 104
+	},
+	{
+		type: 'geo_point',
+		kinds: ['text', 'numeric'],
+		namePatterns: [/lat|lng|lon|long|latitude|longitude|geopoint|geo_point/i],
+		priority: 106
+	},
+	{
+		type: 'media_url',
+		kinds: ['text'],
+		namePatterns: [
+			/image(_url)?|thumbnail(_url)?|avatar(_url)?|media(_url)?|video(_url)?|audio(_url)?|cdn(_url)?/i
+		],
+		samplePatterns: [/^https?:\/\//i, /^s3:\/\//i, /^gs:\/\//i],
+		priority: 112
+	},
+	{
+		type: 'media_path',
+		kinds: ['text'],
+		namePatterns: [
+			/file(_path)?|asset(_path)?|object_key|blob_key|media_path|image_path|video_path|audio_path/i
+		],
+		samplePatterns: [/\.(png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|pdf|docx?)$/i, /\//],
+		priority: 94
+	},
+	{
+		type: 'media_extension',
+		kinds: ['text'],
+		namePatterns: [/ext|extension|file_type|mime|mime_type/i],
+		samplePatterns: [/^(png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|pdf|docx?)$/i],
+		priority: 92
+	},
+	{
+		type: 'url',
+		kinds: ['text'],
+		namePatterns: [/url|link|website|uri|slug/i],
+		samplePatterns: [/^https?:\/\//i, /^www\./i],
+		priority: 97
+	},
 	{ type: 'country', kinds: ['text'], namePatterns: [/country|nation/i], priority: 106 },
-	{ type: 'region', kinds: ['text'], namePatterns: [/region|state|province|territory|district/i], priority: 105 },
+	{
+		type: 'region',
+		kinds: ['text'],
+		namePatterns: [/region|state|province|territory|district/i],
+		priority: 105
+	},
 	{ type: 'city', kinds: ['text'], namePatterns: [/city|town|municipality/i], priority: 104 },
-	{ type: 'currency_code', kinds: ['text'], namePatterns: [/currency|ccy|iso_currency/i], samplePatterns: [/^[A-Z]{3}$/], priority: 103 },
-	{ type: 'inflow', kinds: ['numeric', 'text'], namePatterns: [/inflow|paid\s*in|deposit|credited|credit(_amount)?|received/i], priority: 103 },
-	{ type: 'outflow', kinds: ['numeric', 'text'], namePatterns: [/outflow|withdrawn|debit(ed)?|spent|payment|charge(d)?|fee(_amount)?/i], priority: 103 },
-	{ type: 'unit_price', kinds: ['numeric', 'text'], namePatterns: [/unit.?price|price_per|per_unit|cost_per|rate_per/i], priority: 103 },
-	{ type: 'currency_amount', kinds: ['numeric', 'text'], namePatterns: [/amount|revenue|sales|income|gmv|arr|mrr|acv|balance/i], priority: 102 },
-	{ type: 'amount', kinds: ['numeric', 'text'], namePatterns: [/amount|price|cost|revenue|sales|income|fee|balance|paid|withdrawn|withdrawal|deposit|credited|debited|disbursed|remitted|gmv|arr|mrr|acv/i], priority: 102 },
+	{
+		type: 'currency_code',
+		kinds: ['text'],
+		namePatterns: [/currency|ccy|iso_currency/i],
+		samplePatterns: [/^[A-Z]{3}$/],
+		priority: 103
+	},
+	{
+		type: 'inflow',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/inflow|paid\s*in|deposit|credited|credit(_amount)?|received/i],
+		priority: 103
+	},
+	{
+		type: 'outflow',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/outflow|withdrawn|debit(ed)?|spent|payment|charge(d)?|fee(_amount)?/i],
+		priority: 103
+	},
+	{
+		type: 'unit_price',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/unit.?price|price_per|per_unit|cost_per|rate_per/i],
+		priority: 103
+	},
+	{
+		type: 'currency_amount',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/amount|revenue|sales|income|gmv|arr|mrr|acv|balance/i],
+		priority: 102
+	},
+	{
+		type: 'amount',
+		kinds: ['numeric', 'text'],
+		namePatterns: [
+			/amount|price|cost|revenue|sales|income|fee|balance|paid|withdrawn|withdrawal|deposit|credited|debited|disbursed|remitted|gmv|arr|mrr|acv/i
+		],
+		priority: 102
+	},
 	{ type: 'percentage', kinds: ['numeric', 'text'], namePatterns: [/percent|pct/i], priority: 101 },
-	{ type: 'numerator', kinds: ['numeric', 'text'], namePatterns: [/numerator|num(erator)?_value|success|wins?|converted|completed/i], priority: 101 },
-	{ type: 'denominator', kinds: ['numeric', 'text'], namePatterns: [/denominator|denom|total|base|attempts?|eligible|population/i], priority: 100 },
+	{
+		type: 'numerator',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/numerator|num(erator)?_value|success|wins?|converted|completed/i],
+		priority: 101
+	},
+	{
+		type: 'denominator',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/denominator|denom|total|base|attempts?|eligible|population/i],
+		priority: 100
+	},
 	{ type: 'ratio', kinds: ['numeric', 'text'], namePatterns: [/ratio|rate|per_/i], priority: 100 },
-	{ type: 'count', kinds: ['numeric', 'text'], namePatterns: [/count|num|total|records|rows|visits|sessions|hits/i], priority: 98 },
-	{ type: 'quantity', kinds: ['numeric', 'text'], namePatterns: [/qty|quantity|units|volume|stock/i], priority: 97 },
-	{ type: 'volume_measure', kinds: ['numeric', 'text'], namePatterns: [/volume|liters?|gallons?|kg|grams?|tons?|units?_volume/i], priority: 97 },
-	{ type: 'duration', kinds: ['numeric', 'text'], namePatterns: [/duration|latency|seconds|minutes|hours|ms|millis|elapsed/i], priority: 96 },
-	{ type: 'status', kinds: ['text'], namePatterns: [/status|state|lifecycle|phase|stage|transaction.?status/i], priority: 95 },
-	{ type: 'binary_outcome', kinds: ['boolean', 'text', 'numeric'], namePatterns: [/is_(converted|churned|fraud|active|success|recovered)|converted|churned|recovered|approved|rejected|won|lost/i], priority: 92 },
-	{ type: 'flag', kinds: ['boolean', 'text'], namePatterns: [/is_|has_|flag|enabled|active/i], priority: 94 },
-	{ type: 'ordinal_rank', kinds: ['numeric', 'text'], namePatterns: [/rank|rating|grade|tier|severity|priority|satisfaction|nps|score_band/i], priority: 91 },
-	{ type: 'category', kinds: ['text'], namePatterns: [/category|segment|type|group|channel|source|bucket|genre|sub_?genre|mood|style|tag|tags/i], priority: 93 },
-	{ type: 'entity_name', kinds: ['text'], namePatterns: [/name|title|label|customer|account|company|vendor|product|merchant|payee|recipient/i], priority: 92 },
-	{ type: 'description', kinds: ['text'], namePatterns: [/description|summary|notes|comment|detail(s)?|memo|narrative/i], priority: 91 },
-	{ type: 'json_blob', kinds: ['text'], namePatterns: [/json|payload|metadata/i], samplePatterns: [/^\s*\{/, /^\s*\[/], priority: 90 },
-	{ type: 'code', kinds: ['text'], namePatterns: [/code|sku|ref|reference|token|identifier|receipt|receipt.?no/i], priority: 89 },
+	{
+		type: 'count',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/count|num|total|records|rows|visits|sessions|hits/i],
+		priority: 98
+	},
+	{
+		type: 'quantity',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/qty|quantity|units|volume|stock/i],
+		priority: 97
+	},
+	{
+		type: 'volume_measure',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/volume|liters?|gallons?|kg|grams?|tons?|units?_volume/i],
+		priority: 97
+	},
+	{
+		type: 'duration',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/duration|latency|seconds|minutes|hours|ms|millis|elapsed/i],
+		priority: 96
+	},
+	{
+		type: 'status',
+		kinds: ['text'],
+		namePatterns: [/status|state|lifecycle|phase|stage|transaction.?status/i],
+		priority: 95
+	},
+	{
+		type: 'binary_outcome',
+		kinds: ['boolean', 'text', 'numeric'],
+		namePatterns: [
+			/is_(converted|churned|fraud|active|success|recovered)|converted|churned|recovered|approved|rejected|won|lost/i
+		],
+		priority: 92
+	},
+	{
+		type: 'flag',
+		kinds: ['boolean', 'text'],
+		namePatterns: [/is_|has_|flag|enabled|active/i],
+		priority: 94
+	},
+	{
+		type: 'ordinal_rank',
+		kinds: ['numeric', 'text'],
+		namePatterns: [/rank|rating|grade|tier|severity|priority|satisfaction|nps|score_band/i],
+		priority: 91
+	},
+	{
+		type: 'category',
+		kinds: ['text'],
+		namePatterns: [
+			/category|segment|type|group|channel|source|bucket|genre|sub_?genre|mood|style|tag|tags/i
+		],
+		priority: 93
+	},
+	{
+		type: 'entity_name',
+		kinds: ['text'],
+		namePatterns: [
+			/name|title|label|customer|account|company|vendor|product|merchant|payee|recipient/i
+		],
+		priority: 92
+	},
+	{
+		type: 'description',
+		kinds: ['text'],
+		namePatterns: [/description|summary|notes|comment|detail(s)?|memo|narrative/i],
+		priority: 91
+	},
+	{
+		type: 'json_blob',
+		kinds: ['text'],
+		namePatterns: [/json|payload|metadata/i],
+		samplePatterns: [/^\s*\{/, /^\s*\[/],
+		priority: 90
+	},
+	{
+		type: 'code',
+		kinds: ['text'],
+		namePatterns: [/code|sku|ref|reference|token|identifier|receipt|receipt.?no/i],
+		priority: 89
+	},
 	{ type: 'metric', kinds: ['numeric'], namePatterns: [/metric|score|index|kpi/i], priority: 88 }
 ];
 
@@ -265,7 +540,10 @@ function isIdentifierLikeName(name: string): boolean {
 	return tokens.some((token) => token === 'uuid' || token === 'guid' || token === 'identifier');
 }
 
-function normalizedColumnName(name: string, synonyms: Map<string, { canonical: string; semanticHint: ColumnSemanticType; weight: number }>): string {
+function normalizedColumnName(
+	name: string,
+	synonyms: Map<string, { canonical: string; semanticHint: ColumnSemanticType; weight: number }>
+): string {
 	const tokens = tokenizeColumnName(name);
 	if (tokens.length === 0) return name.toLowerCase();
 	return tokens.map((token) => synonyms.get(token)?.canonical ?? token).join('_');
@@ -292,17 +570,18 @@ function inferColumnSemantics(input: {
 	if (isIdentifierLikeName(input.columnName)) {
 		const tokens = tokenizeColumnName(input.columnName);
 		const previousToken = tokens[tokens.length - 2] ?? '';
-		const semanticType: ColumnSemanticType = previousToken === 'session' || previousToken === 'sess' || previousToken === 'visit'
-			? 'session_id'
-			: previousToken === 'source' || previousToken === 'src' || previousToken === 'from'
-				? 'source_id'
-				: previousToken === 'target' || previousToken === 'dst' || previousToken === 'to'
-					? 'target_id'
-					: previousToken === 'parent' || previousToken === 'ancestor' || previousToken === 'root'
-						? 'parent_id'
-						: tokens.length > 1
-							? 'foreign_key'
-							: 'id';
+		const semanticType: ColumnSemanticType =
+			previousToken === 'session' || previousToken === 'sess' || previousToken === 'visit'
+				? 'session_id'
+				: previousToken === 'source' || previousToken === 'src' || previousToken === 'from'
+					? 'source_id'
+					: previousToken === 'target' || previousToken === 'dst' || previousToken === 'to'
+						? 'target_id'
+						: previousToken === 'parent' || previousToken === 'ancestor' || previousToken === 'root'
+							? 'parent_id'
+							: tokens.length > 1
+								? 'foreign_key'
+								: 'id';
 		const signature = `kind=${input.dataKind}|semantic=${semanticType}|shape=${samples.length === 0 ? 'none' : 'mixed'}|confidence=very-high`;
 		return {
 			semanticType,
@@ -313,7 +592,10 @@ function inferColumnSemantics(input: {
 
 	for (const candidate of COLUMN_SEMANTIC_CATALOG) {
 		if (!candidate.kinds.includes(input.dataKind)) continue;
-		if (candidate.type === 'url' && /(image|thumbnail|avatar|media|video|audio|file|asset|object_key|blob_key)/i.test(name)) {
+		if (
+			candidate.type === 'url' &&
+			/(image|thumbnail|avatar|media|video|audio|file|asset|object_key|blob_key)/i.test(name)
+		) {
 			continue;
 		}
 
@@ -329,14 +611,20 @@ function inferColumnSemantics(input: {
 		let score = candidate.priority;
 		let confidence = 0.45;
 		if (tokenMatch || rawTokenMatch) confidence += 0.14;
-		const matchedSynonyms = tokenizeColumnName(input.columnName).map((token) => synonyms.get(token)).filter(Boolean);
+		const matchedSynonyms = tokenizeColumnName(input.columnName)
+			.map((token) => synonyms.get(token))
+			.filter(Boolean);
 		if (matchedSynonyms.length > 0) {
-			const synonymBoost = matchedSynonyms.reduce((acc, entry) => acc + (entry?.weight ?? 0), 0) / matchedSynonyms.length;
+			const synonymBoost =
+				matchedSynonyms.reduce((acc, entry) => acc + (entry?.weight ?? 0), 0) /
+				matchedSynonyms.length;
 			confidence += synonymBoost * 0.2;
 		}
 
 		if (candidate.samplePatterns && candidate.samplePatterns.length > 0 && samples.length > 0) {
-			const matches = samples.filter((sample) => candidate.samplePatterns?.some((pattern) => pattern.test(sample))).length;
+			const matches = samples.filter((sample) =>
+				candidate.samplePatterns?.some((pattern) => pattern.test(sample))
+			).length;
 			score += matches * 2;
 			confidence += (matches / samples.length) * 0.35;
 		}
@@ -345,13 +633,58 @@ function inferColumnSemantics(input: {
 		if (candidate.type === 'binary_outcome' && input.dataKind === 'boolean') confidence += 0.15;
 		if (candidate.type === 'ordinal_rank' && input.dataKind === 'numeric') confidence += 0.08;
 		if (candidate.type === 'event_type' && input.dataKind === 'text') confidence += 0.05;
-		if ((candidate.type === 'media_url' || candidate.type === 'media_path' || candidate.type === 'media_extension') && input.dataKind === 'text') confidence += 0.05;
-		if ((candidate.type === 'created_at' || candidate.type === 'updated_at' || candidate.type === 'event_time' || candidate.type === 'date') && input.dataKind === 'date') confidence += 0.15;
-		if ((candidate.type === 'created_at' || candidate.type === 'updated_at' || candidate.type === 'event_time' || candidate.type === 'date') && input.dataKind === 'numeric') confidence += 0.1;
-		if ((candidate.type === 'amount' || candidate.type === 'currency_amount' || candidate.type === 'unit_price' || candidate.type === 'count' || candidate.type === 'quantity' || candidate.type === 'volume_measure' || candidate.type === 'metric' || candidate.type === 'inflow' || candidate.type === 'outflow' || candidate.type === 'numerator' || candidate.type === 'denominator') && input.dataKind === 'numeric') confidence += 0.12;
-		if (input.nullRatio !== undefined && input.nullRatio > 0.85 && candidate.type !== 'description') confidence -= 0.1;
-		if (input.distinctCount !== undefined && input.distinctCount <= 1 && candidate.type === 'entity_name') confidence -= 0.2;
-		if (input.distinctCount !== undefined && input.distinctCount <= 5 && candidate.type === 'category') confidence += 0.08;
+		if (
+			(candidate.type === 'media_url' ||
+				candidate.type === 'media_path' ||
+				candidate.type === 'media_extension') &&
+			input.dataKind === 'text'
+		)
+			confidence += 0.05;
+		if (
+			(candidate.type === 'created_at' ||
+				candidate.type === 'updated_at' ||
+				candidate.type === 'event_time' ||
+				candidate.type === 'date') &&
+			input.dataKind === 'date'
+		)
+			confidence += 0.15;
+		if (
+			(candidate.type === 'created_at' ||
+				candidate.type === 'updated_at' ||
+				candidate.type === 'event_time' ||
+				candidate.type === 'date') &&
+			input.dataKind === 'numeric'
+		)
+			confidence += 0.1;
+		if (
+			(candidate.type === 'amount' ||
+				candidate.type === 'currency_amount' ||
+				candidate.type === 'unit_price' ||
+				candidate.type === 'count' ||
+				candidate.type === 'quantity' ||
+				candidate.type === 'volume_measure' ||
+				candidate.type === 'metric' ||
+				candidate.type === 'inflow' ||
+				candidate.type === 'outflow' ||
+				candidate.type === 'numerator' ||
+				candidate.type === 'denominator') &&
+			input.dataKind === 'numeric'
+		)
+			confidence += 0.12;
+		if (input.nullRatio !== undefined && input.nullRatio > 0.85 && candidate.type !== 'description')
+			confidence -= 0.1;
+		if (
+			input.distinctCount !== undefined &&
+			input.distinctCount <= 1 &&
+			candidate.type === 'entity_name'
+		)
+			confidence -= 0.2;
+		if (
+			input.distinctCount !== undefined &&
+			input.distinctCount <= 5 &&
+			candidate.type === 'category'
+		)
+			confidence += 0.08;
 		if (input.distinctCount !== undefined && candidate.type === 'ordinal_rank') {
 			if (input.distinctCount >= 2 && input.distinctCount <= 12) confidence += 0.1;
 			if (input.distinctCount > 150) confidence -= 0.25;
@@ -368,7 +701,10 @@ function inferColumnSemantics(input: {
 
 	const semanticType = bestType ?? (input.dataKind === 'text' ? 'text' : 'metric');
 	if (
-		(bestType === 'metric' || bestType === 'amount' || bestType === 'count' || bestType === 'quantity') &&
+		(bestType === 'metric' ||
+			bestType === 'amount' ||
+			bestType === 'count' ||
+			bestType === 'quantity') &&
 		/(date|time|timestamp|completion\s*time|created|updated|occurred|event)/i.test(input.columnName)
 	) {
 		bestType = 'event_time';
@@ -378,15 +714,16 @@ function inferColumnSemantics(input: {
 	if (!bestType) {
 		bestConfidence = normalizeConfidence(input.dataKind === 'text' ? 0.4 : 0.55);
 	}
-	const sampleShape = samples.length === 0
-		? 'none'
-		: samples.every((sample) => /^\d+$/.test(sample))
-			? 'int'
-			: samples.every((sample) => /^\d+(\.\d+)?$/.test(sample))
-				? 'float'
-				: samples.every((sample) => /^\d{4}-\d{2}-\d{2}/.test(sample))
-					? 'iso-date'
-					: 'mixed';
+	const sampleShape =
+		samples.length === 0
+			? 'none'
+			: samples.every((sample) => /^\d+$/.test(sample))
+				? 'int'
+				: samples.every((sample) => /^\d+(\.\d+)?$/.test(sample))
+					? 'float'
+					: samples.every((sample) => /^\d{4}-\d{2}-\d{2}/.test(sample))
+						? 'iso-date'
+						: 'mixed';
 
 	return {
 		semanticType: resolvedSemanticType,
@@ -411,7 +748,10 @@ function combinations<T>(items: T[], size: number): T[][] {
 	return out;
 }
 
-function addDeriveSignatures(columns: ColumnSemanticSnapshot[], pushSignature: (entry: SignatureEntry) => void): void {
+function addDeriveSignatures(
+	columns: ColumnSemanticSnapshot[],
+	pushSignature: (entry: SignatureEntry) => void
+): void {
 	if (columns.length === 0) return;
 	const deriveColumns: SemanticDeriveColumn[] = columns.map((column) => ({
 		name: column.columnName,
@@ -461,15 +801,16 @@ function buildExhaustiveSignatures(columns: ColumnSemanticSnapshot[]): Signature
 	};
 
 	for (const column of sorted) {
-		const sampleShape = column.sampleValues.length === 0
-			? 'none'
-			: column.sampleValues.every((value) => /^\d+$/.test(value))
-				? 'int'
-				: column.sampleValues.every((value) => /^\d+(\.\d+)?$/.test(value))
-					? 'float'
-					: column.sampleValues.every((value) => /^\d{4}-\d{2}-\d{2}/.test(value))
-						? 'iso-date'
-						: 'mixed';
+		const sampleShape =
+			column.sampleValues.length === 0
+				? 'none'
+				: column.sampleValues.every((value) => /^\d+$/.test(value))
+					? 'int'
+					: column.sampleValues.every((value) => /^\d+(\.\d+)?$/.test(value))
+						? 'float'
+						: column.sampleValues.every((value) => /^\d{4}-\d{2}-\d{2}/.test(value))
+							? 'iso-date'
+							: 'mixed';
 		pushSignature({
 			type: 'column',
 			key: [
@@ -522,8 +863,14 @@ function buildExhaustiveSignatures(columns: ColumnSemanticSnapshot[]): Signature
 			type: 'semantic',
 			key: [
 				'semantic-pair',
-				`semantics=${pair.map((entry) => entry.semanticType).sort().join('+')}`,
-				`kinds=${pair.map((entry) => entry.dataKind).sort().join('+')}`,
+				`semantics=${pair
+					.map((entry) => entry.semanticType)
+					.sort()
+					.join('+')}`,
+				`kinds=${pair
+					.map((entry) => entry.dataKind)
+					.sort()
+					.join('+')}`,
 				`confidence=${confidenceBucket((pair[0].confidence + pair[1].confidence) / 2)}`
 			].join('|')
 		});
@@ -552,8 +899,14 @@ function buildExhaustiveSignatures(columns: ColumnSemanticSnapshot[]): Signature
 			type: 'semantic',
 			key: [
 				'semantic-triplet',
-				`semantics=${triplet.map((entry) => entry.semanticType).sort().join('+')}`,
-				`kinds=${triplet.map((entry) => entry.dataKind).sort().join('+')}`,
+				`semantics=${triplet
+					.map((entry) => entry.semanticType)
+					.sort()
+					.join('+')}`,
+				`kinds=${triplet
+					.map((entry) => entry.dataKind)
+					.sort()
+					.join('+')}`,
 				`confidence=${confidenceBucket(triplet.reduce((acc, entry) => acc + entry.confidence, 0) / triplet.length)}`
 			].join('|')
 		});
@@ -598,15 +951,25 @@ function buildExhaustiveSignatures(columns: ColumnSemanticSnapshot[]): Signature
 	return signatures;
 }
 
-async function getSemanticSynonyms(connectionId: string): Promise<Map<string, { canonical: string; semanticHint: ColumnSemanticType; weight: number }>> {
+async function getSemanticSynonyms(
+	connectionId: string
+): Promise<Map<string, { canonical: string; semanticHint: ColumnSemanticType; weight: number }>> {
 	const result = await executeSQL(`
 		SELECT token, canonical, semantic_hint, weight
 		FROM ${META_SCHEMA}.semantic_synonyms
 		WHERE connection_id = ${quoteLiteral(connectionId)}
 		ORDER BY weight DESC
 	`);
-	const map = new Map<string, { canonical: string; semanticHint: ColumnSemanticType; weight: number }>();
-	for (const row of result.rows as Array<{ token?: string; canonical?: string; semantic_hint?: ColumnSemanticType; weight?: number }>) {
+	const map = new Map<
+		string,
+		{ canonical: string; semanticHint: ColumnSemanticType; weight: number }
+	>();
+	for (const row of result.rows as Array<{
+		token?: string;
+		canonical?: string;
+		semantic_hint?: ColumnSemanticType;
+		weight?: number;
+	}>) {
 		const token = (row.token ?? '').trim().toLowerCase();
 		if (!token) continue;
 		map.set(token, {
@@ -669,7 +1032,12 @@ async function upsertSignatureUsage(input: {
 
 export async function registerSemanticSynonyms(input: {
 	connectionId: string;
-	entries: Array<{ token: string; canonical: string; semanticHint: ColumnSemanticType; weight?: number }>;
+	entries: Array<{
+		token: string;
+		canonical: string;
+		semanticHint: ColumnSemanticType;
+		weight?: number;
+	}>;
 }): Promise<void> {
 	await ensureIntelligenceMetaTables();
 	for (const entry of input.entries) {
@@ -787,8 +1155,11 @@ function extractPrimaryColumn(stage: GUIPipelineStage): string {
 			return stage.by[0] ?? stage.aggregations[0]?.column ?? '';
 		case 'derive':
 			return stage.columns[0]?.expr.mode === 'binary'
-				? (stage.columns[0].expr.left?.kind === 'column' ? stage.columns[0].expr.left.value : '')
-				: stage.columns[0]?.expr.mode === 'func' && stage.columns[0].expr.args?.[0]?.kind === 'column'
+				? stage.columns[0].expr.left?.kind === 'column'
+					? stage.columns[0].expr.left.value
+					: ''
+				: stage.columns[0]?.expr.mode === 'func' &&
+					  stage.columns[0].expr.args?.[0]?.kind === 'column'
 					? stage.columns[0].expr.args[0].value
 					: '';
 		case 'select':
@@ -840,18 +1211,32 @@ export async function ensureIntelligenceMetaTables(): Promise<void> {
 			PRIMARY KEY (connection_id, relation_name, column_name)
 		)
 	`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_type VARCHAR`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_signature VARCHAR`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_confidence DOUBLE`);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_type VARCHAR`
+	);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_signature VARCHAR`
+	);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS semantic_confidence DOUBLE`
+	);
 	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS min_val VARCHAR`);
 	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS max_val VARCHAR`);
 	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS mean_val DOUBLE`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS stddev_val DOUBLE`);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS stddev_val DOUBLE`
+	);
 	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS p50_val VARCHAR`);
 	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS p75_val VARCHAR`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS top_values_json VARCHAR`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS date_granularity VARCHAR`);
-	await run(`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS profile_source VARCHAR`);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS top_values_json VARCHAR`
+	);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS date_granularity VARCHAR`
+	);
+	await run(
+		`ALTER TABLE ${META_SCHEMA}.column_profiles ADD COLUMN IF NOT EXISTS profile_source VARCHAR`
+	);
 	await run(`
 		CREATE TABLE IF NOT EXISTS ${META_SCHEMA}.cell_runs (
 			run_id VARCHAR PRIMARY KEY,
@@ -964,7 +1349,10 @@ export async function getNotebookActionFeedback(input: {
 	connectionId: string;
 	notebookId: string;
 	cellId: string;
-}): Promise<{ acceptedByActionId: Record<string, number>; dismissedByActionId: Record<string, number> }> {
+}): Promise<{
+	acceptedByActionId: Record<string, number>;
+	dismissedByActionId: Record<string, number>;
+}> {
 	await ensureIntelligenceMetaTables();
 	if (!input.connectionId || !input.notebookId || !input.cellId) {
 		return { acceptedByActionId: {}, dismissedByActionId: {} };
@@ -981,7 +1369,11 @@ export async function getNotebookActionFeedback(input: {
 
 	const acceptedByActionId: Record<string, number> = {};
 	const dismissedByActionId: Record<string, number> = {};
-	for (const row of result.rows as Array<{ action_id?: string; feedback?: string; total_count?: number }>) {
+	for (const row of result.rows as Array<{
+		action_id?: string;
+		feedback?: string;
+		total_count?: number;
+	}>) {
 		const actionId = `${row.action_id ?? ''}`.trim();
 		if (!actionId) continue;
 		const count = Number(row.total_count ?? 0);
@@ -1130,9 +1522,16 @@ interface RichColumnStats {
 	dateGranularity?: 'day' | 'month' | 'year';
 }
 
-function inferDateGranularity(minStr: string, maxStr: string, approxUnique: number): 'day' | 'month' | 'year' {
+function inferDateGranularity(
+	minStr: string,
+	maxStr: string,
+	approxUnique: number
+): 'day' | 'month' | 'year' {
 	try {
-		const spanDays = Math.max(1, (new Date(maxStr).getTime() - new Date(minStr).getTime()) / 86400000);
+		const spanDays = Math.max(
+			1,
+			(new Date(maxStr).getTime() - new Date(minStr).getTime()) / 86400000
+		);
 		const density = approxUnique / spanDays;
 		if (density > 0.5) return 'day';
 		if (density > 0.01) return 'month';
@@ -1146,7 +1545,9 @@ function inferDateGranularity(minStr: string, maxStr: string, approxUnique: numb
  * Run DuckDB SUMMARIZE + frequency queries against a table already in DuckDB.
  * @param tableIdent  SQL-quoted table identifier, e.g. `"_p_abc"` or `"employees"`
  */
-async function computeRichStatsFromDuckDB(tableIdent: string): Promise<Map<string, RichColumnStats>> {
+async function computeRichStatsFromDuckDB(
+	tableIdent: string
+): Promise<Map<string, RichColumnStats>> {
 	const stats = new Map<string, RichColumnStats>();
 	let summaryRows: Record<string, unknown>[] = [];
 
@@ -1196,7 +1597,8 @@ async function computeRichStatsFromDuckDB(tableIdent: string): Promise<Map<strin
 		const colName = String(row.column_name ?? '');
 		const colType = String(row.column_type ?? '');
 		const approxUnique = Number(row.approx_unique ?? 0);
-		if (!colName || NUMERIC_TYPES.test(colType) || approxUnique === 0 || approxUnique > 100) continue;
+		if (!colName || NUMERIC_TYPES.test(colType) || approxUnique === 0 || approxUnique > 100)
+			continue;
 
 		try {
 			const qCol = `"${colName.replace(/"/g, '""')}"`;
@@ -1223,7 +1625,10 @@ async function computeRichStatsFromDuckDB(tableIdent: string): Promise<Map<strin
 	return stats;
 }
 
-function computeColumnStats(rows: Record<string, unknown>[], column: string): {
+function computeColumnStats(
+	rows: Record<string, unknown>[],
+	column: string
+): {
 	nullRatio: number;
 	distinctCount: number;
 	samples: string[];
@@ -1407,8 +1812,9 @@ export async function recordCellExecutionMetadata(input: {
 		`);
 	}
 
-	const schemaSummary = buildExhaustiveSignatures(snapshots)
-		.find((entry) => entry.type === 'schema')?.key ?? 'schema:none';
+	const schemaSummary =
+		buildExhaustiveSignatures(snapshots).find((entry) => entry.type === 'schema')?.key ??
+		'schema:none';
 
 	await upsertSignatureUsage({
 		connectionId: input.connectionId,
@@ -1477,7 +1883,9 @@ interface ProfileRow {
 	sample_values_json: string;
 }
 
-function buildPresetColumnProfiles(rows: ProfileRow[]): Partial<Record<string, PresetColumnProfile>> {
+function buildPresetColumnProfiles(
+	rows: ProfileRow[]
+): Partial<Record<string, PresetColumnProfile>> {
 	const profiles: Partial<Record<string, PresetColumnProfile>> = {};
 	for (const row of rows) {
 		if (!row.column_name) continue;
@@ -1554,7 +1962,10 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
-function humanizeColumnName(name: string, options: { stripAggregationPrefix?: boolean } = {}): string {
+function humanizeColumnName(
+	name: string,
+	options: { stripAggregationPrefix?: boolean } = {}
+): string {
 	const cleaned = name.trim().replace(/["`]/g, '');
 	const spaced = cleaned
 		.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -1563,7 +1974,10 @@ function humanizeColumnName(name: string, options: { stripAggregationPrefix?: bo
 		.trim();
 	const words = spaced.split(' ').filter(Boolean);
 	if (options.stripAggregationPrefix) {
-		while (words.length > 1 && ['total', 'sum', 'avg', 'average', 'count', 'num', 'number'].includes(words[0].toLowerCase())) {
+		while (
+			words.length > 1 &&
+			['total', 'sum', 'avg', 'average', 'count', 'num', 'number'].includes(words[0].toLowerCase())
+		) {
 			words.shift();
 		}
 	}
@@ -1610,11 +2024,17 @@ function humanizeColumnList(
 		.map((column) => humanizeColumnLabel(column, { stripAggregationPrefix: true, maxLength: 18 }))
 		.join(' + ');
 	const extraCount = filtered.length - visible.length;
-	return compactLabel(extraCount > 0 ? `${joined} + ${extraCount} more` : joined, options.maxLength ?? 30);
+	return compactLabel(
+		extraCount > 0 ? `${joined} + ${extraCount} more` : joined,
+		options.maxLength ?? 30
+	);
 }
 
 function countRowsLabel(column: string): string {
-	return compactLabel(`Count rows by ${humanizeColumnLabel(column, { stripAggregationPrefix: true, maxLength: 18 })}`, 38);
+	return compactLabel(
+		`Count rows by ${humanizeColumnLabel(column, { stripAggregationPrefix: true, maxLength: 18 })}`,
+		38
+	);
 }
 
 function stableHash(input: string): number {
@@ -1767,7 +2187,11 @@ function diversifySuggestions<T>(input: {
 					: Math.max(0, 1 - (recent.length - recencyIdx) / Math.max(1, recent.length));
 
 			const typeCoverageBonus =
-				typeSeenCount === 0 && selectedTypes < minDistinctTypes ? 0.22 : typeSeenCount === 0 ? 0.08 : 0;
+				typeSeenCount === 0 && selectedTypes < minDistinctTypes
+					? 0.22
+					: typeSeenCount === 0
+						? 0.08
+						: 0;
 			const intentCoverageBonus =
 				intentSeenCount === 0 && selectedIntents < minDistinctIntents
 					? 0.2
@@ -1820,11 +2244,13 @@ function stageShapeSignature(stage: GUIPipelineStage): string {
 			return `filter:${stage.logic}:${stage.conditions.length}:${ops}`;
 		}
 		case 'select': {
-			const bucket = stage.columns.length >= 10 ? 'wide' : stage.columns.length >= 4 ? 'mid' : 'narrow';
+			const bucket =
+				stage.columns.length >= 10 ? 'wide' : stage.columns.length >= 4 ? 'mid' : 'narrow';
 			return `select:${bucket}:${stage.columns.length}`;
 		}
 		case 'derive': {
-			const modes = [...new Set(stage.columns.map((column) => column.expr.mode))].sort().join(',') || 'none';
+			const modes =
+				[...new Set(stage.columns.map((column) => column.expr.mode))].sort().join(',') || 'none';
 			return `derive:${stage.columns.length}:${modes}`;
 		}
 		case 'group': {
@@ -1833,7 +2259,8 @@ function stageShapeSignature(stage: GUIPipelineStage): string {
 		}
 		case 'window': {
 			const dirs = stage.sortKeys.map((key) => key.dir).join(',') || 'none';
-			const deriveModes = [...new Set(stage.derives.map((derive) => derive.expr.mode))].join(',') || 'none';
+			const deriveModes =
+				[...new Set(stage.derives.map((derive) => derive.expr.mode))].join(',') || 'none';
 			return `window:${stage.frame}:${stage.sortKeys.length}:${dirs}:${stage.derives.length}:${deriveModes}`;
 		}
 		case 'loop':
@@ -1987,7 +2414,9 @@ function buildTypeAwareFilter(profile: ProfileRow | undefined): FilterChipSugges
 	if (profile.data_kind === 'date') {
 		const sample = pickLatestDate(values);
 		return {
-			label: sample ? compactLabel(`Recent ${humanColumn} from ${sample}`, 42) : `Filter ${humanColumn}`,
+			label: sample
+				? compactLabel(`Recent ${humanColumn} from ${sample}`, 42)
+				: `Filter ${humanColumn}`,
 			stage: {
 				type: 'filter',
 				conditions: [{ column, op: '>=', value: sample }],
@@ -2011,7 +2440,9 @@ function buildTypeAwareFilter(profile: ProfileRow | undefined): FilterChipSugges
 	if (profile.data_kind === 'numeric') {
 		const sample = pickNumericCutoff(values);
 		return {
-			label: sample ? compactLabel(`${humanColumn} >= ${sample}`, 42) : compactLabel(`High ${humanColumn}`, 42),
+			label: sample
+				? compactLabel(`${humanColumn} >= ${sample}`, 42)
+				: compactLabel(`High ${humanColumn}`, 42),
 			stage: {
 				type: 'filter',
 				conditions: [{ column, op: '>=', value: sample }],
@@ -2037,7 +2468,8 @@ function buildSmarterDerive(profileRows: ProfileRow[]): DeriveChipSuggestion | n
 		const semantic = row.semantic_type ?? 'text';
 		if (semantic === 'url' || semantic === 'email' || semantic === 'phone') return false;
 		const samples = parseSampleValues(row.sample_values_json);
-		if (samples.length === 0) return /(text|description|content|summary|notes|body)/i.test(row.column_name);
+		if (samples.length === 0)
+			return /(text|description|content|summary|notes|body)/i.test(row.column_name);
 		const avgLen = samples.reduce((acc, sample) => acc + sample.length, 0) / samples.length;
 		return avgLen >= 50;
 	});
@@ -2086,7 +2518,10 @@ function buildSmarterDerive(profileRows: ProfileRow[]): DeriveChipSuggestion | n
 	}
 
 	const amount = profileRows.find(
-		(row) => row.semantic_type === 'amount' && row.null_ratio <= 0.7 && (row.semantic_confidence ?? 0) >= 0.45
+		(row) =>
+			row.semantic_type === 'amount' &&
+			row.null_ratio <= 0.7 &&
+			(row.semantic_confidence ?? 0) >= 0.45
 	);
 	if (amount?.column_name) {
 		const column = amount.column_name;
@@ -2127,10 +2562,13 @@ function buildSmarterDerive(profileRows: ProfileRow[]): DeriveChipSuggestion | n
 			const n = parseNumericLike(value);
 			return n !== null && Math.floor(n) !== n;
 		});
-		const isCountLike = /(count|total|num|number|qty|quantity|jobs|visits|users|orders|records|rows)/i.test(column);
+		const isCountLike =
+			/(count|total|num|number|qty|quantity|jobs|visits|users|orders|records|rows)/i.test(column);
 		const roundWorthy =
 			hasFractional ||
-			/(amount|price|cost|revenue|sales|avg|mean|ratio|rate|percent|pct|score|value|metric)/i.test(column);
+			/(amount|price|cost|revenue|sales|avg|mean|ratio|rate|percent|pct|score|value|metric)/i.test(
+				column
+			);
 
 		if (!roundWorthy && isCountLike) {
 			return null;
@@ -2186,7 +2624,9 @@ function buildSmarterDerive(profileRows: ProfileRow[]): DeriveChipSuggestion | n
 function isPlaceholderValue(value: string): boolean {
 	const normalized = value.trim().toLowerCase();
 	if (!normalized) return false;
-	return /^(unavailable|unknown|n\/a|na|none|null|nil|undefined|missing|not available)$/.test(normalized);
+	return /^(unavailable|unknown|n\/a|na|none|null|nil|undefined|missing|not available)$/.test(
+		normalized
+	);
 }
 
 function buildPlaceholderFilterSuggestions(profileRows: ProfileRow[]): FilterChipSuggestion[] {
@@ -2222,11 +2662,18 @@ function buildDeriveCandidates(profileRows: ProfileRow[]): DeriveChipSuggestion[
 
 	const semanticDerived = findSemanticDeriveCandidates(toSemanticDeriveColumns(profileRows));
 	for (const candidate of semanticDerived) {
-		if (candidate.expressionClass === 'bucket_aggregate' || candidate.expressionClass === 'group_aggregate') continue;
+		if (
+			candidate.expressionClass === 'bucket_aggregate' ||
+			candidate.expressionClass === 'group_aggregate'
+		)
+			continue;
 		const safeName = candidate.outputName.replace(/\W+/g, '_');
 		if (candidate.expressionClass === 'multiply') {
 			add({
-				label: compactLabel(`Derive ${humanizeColumnLabel(candidate.outputName)} from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`, 42),
+				label: compactLabel(
+					`Derive ${humanizeColumnLabel(candidate.outputName)} from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`,
+					42
+				),
 				quality: candidate.quality,
 				stage: {
 					type: 'derive',
@@ -2246,7 +2693,10 @@ function buildDeriveCandidates(profileRows: ProfileRow[]): DeriveChipSuggestion[
 		}
 		if (candidate.expressionClass === 'subtract') {
 			add({
-				label: compactLabel(`Derive net flow from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`, 42),
+				label: compactLabel(
+					`Derive net flow from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`,
+					42
+				),
 				quality: candidate.quality,
 				stage: {
 					type: 'derive',
@@ -2266,7 +2716,10 @@ function buildDeriveCandidates(profileRows: ProfileRow[]): DeriveChipSuggestion[
 		}
 		if (candidate.expressionClass === 'divide') {
 			add({
-				label: compactLabel(`Derive efficiency ratio from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`, 42),
+				label: compactLabel(
+					`Derive efficiency ratio from ${humanizeColumnList([candidate.leftColumn, candidate.rightColumn], { maxLength: 26 })}`,
+					42
+				),
 				quality: candidate.quality,
 				stage: {
 					type: 'derive',
@@ -2313,29 +2766,82 @@ function buildDeriveCandidates(profileRows: ProfileRow[]): DeriveChipSuggestion[
 
 function pickCountDimension(profileRows: ProfileRow[], fallback: string | null): string | null {
 	const preferred =
-		profileRows.find((row) => /(genre|sub_?genre|mood|style|tag)/i.test(row.column_name) && row.distinct_count >= 2 && row.distinct_count <= 120 && row.null_ratio <= 0.8)?.column_name ??
-		profileRows.find((row) => row.semantic_type === 'category' && row.distinct_count >= 2 && row.distinct_count <= 200)?.column_name ??
-		profileRows.find((row) => row.semantic_type === 'status' && row.distinct_count >= 2 && row.distinct_count <= 200)?.column_name ??
-		profileRows.find((row) => row.data_kind === 'text' && row.distinct_count >= 2 && row.distinct_count <= 250 && row.null_ratio <= 0.8)?.column_name ??
-		profileRows.find((row) => /(type|category|segment|group)/i.test(row.column_name) && row.distinct_count >= 2 && row.distinct_count <= 500)?.column_name ??
+		profileRows.find(
+			(row) =>
+				/(genre|sub_?genre|mood|style|tag)/i.test(row.column_name) &&
+				row.distinct_count >= 2 &&
+				row.distinct_count <= 120 &&
+				row.null_ratio <= 0.8
+		)?.column_name ??
+		profileRows.find(
+			(row) =>
+				row.semantic_type === 'category' && row.distinct_count >= 2 && row.distinct_count <= 200
+		)?.column_name ??
+		profileRows.find(
+			(row) =>
+				row.semantic_type === 'status' && row.distinct_count >= 2 && row.distinct_count <= 200
+		)?.column_name ??
+		profileRows.find(
+			(row) =>
+				row.data_kind === 'text' &&
+				row.distinct_count >= 2 &&
+				row.distinct_count <= 250 &&
+				row.null_ratio <= 0.8
+		)?.column_name ??
+		profileRows.find(
+			(row) =>
+				/(type|category|segment|group)/i.test(row.column_name) &&
+				row.distinct_count >= 2 &&
+				row.distinct_count <= 500
+		)?.column_name ??
 		fallback;
 
 	if (preferred) return preferred;
 
 	return (
-		profileRows.find((row) => row.data_kind === 'numeric' && /(collection|group|segment|bucket|partition)/i.test(row.column_name) && row.distinct_count >= 2 && row.distinct_count <= 200)?.column_name ??
-		null
+		profileRows.find(
+			(row) =>
+				row.data_kind === 'numeric' &&
+				/(collection|group|segment|bucket|partition)/i.test(row.column_name) &&
+				row.distinct_count >= 2 &&
+				row.distinct_count <= 200
+		)?.column_name ?? null
 	);
 }
 
 const NON_METRIC_TYPES = new Set<ColumnSemanticType>([
-	'id', 'foreign_key', 'created_at', 'updated_at', 'date',
-	'event_time', 'event_type',
-	'session_id', 'source_id', 'target_id', 'parent_id',
-	'code', 'entity_name', 'status', 'flag', 'category',
-	'description', 'json_blob', 'email', 'phone', 'url',
-	'country', 'region', 'city', 'currency_code', 'postal_code', 'geo_point',
-	'media_url', 'media_path', 'media_extension', 'latitude', 'longitude'
+	'id',
+	'foreign_key',
+	'created_at',
+	'updated_at',
+	'date',
+	'event_time',
+	'event_type',
+	'session_id',
+	'source_id',
+	'target_id',
+	'parent_id',
+	'code',
+	'entity_name',
+	'status',
+	'flag',
+	'category',
+	'description',
+	'json_blob',
+	'email',
+	'phone',
+	'url',
+	'country',
+	'region',
+	'city',
+	'currency_code',
+	'postal_code',
+	'geo_point',
+	'media_url',
+	'media_path',
+	'media_extension',
+	'latitude',
+	'longitude'
 ]);
 
 function normalizedUsageScore(usage: number): number {
@@ -2357,7 +2863,13 @@ function metricSemanticFit(row: ProfileRow): number {
 	if (semantic === 'ratio' || semantic === 'percentage') return 0.82;
 	if (semantic === 'count') return 0.76;
 	if (semantic === 'duration') return 0.72;
-	if (semantic === 'session_id' || semantic === 'source_id' || semantic === 'target_id' || semantic === 'parent_id') return 0.04;
+	if (
+		semantic === 'session_id' ||
+		semantic === 'source_id' ||
+		semantic === 'target_id' ||
+		semantic === 'parent_id'
+	)
+		return 0.04;
 	if (semantic === 'ordinal_rank') return 0.38;
 	if (semantic === 'binary_outcome') return 0.42;
 	if (semantic === 'id' || semantic === 'foreign_key') return 0.04;
@@ -2432,14 +2944,17 @@ function usageFitByRole(
 	usageByTypeAndColumn: Map<string, number>,
 	usageByType: Map<StageType, number>
 ): number {
-	const stageTypes: StageType[] = role === 'metric'
-		? ['group', 'sort', 'derive']
-		: role === 'dimension'
-			? ['group', 'filter']
-			: ['filter', 'sort'];
+	const stageTypes: StageType[] =
+		role === 'metric'
+			? ['group', 'sort', 'derive']
+			: role === 'dimension'
+				? ['group', 'filter']
+				: ['filter', 'sort'];
 
 	const strongColumnSignal = stageTypes
-		.map((stageType) => normalizedUsageScore(usageByTypeAndColumn.get(`${stageType}::${column}`) ?? 0))
+		.map((stageType) =>
+			normalizedUsageScore(usageByTypeAndColumn.get(`${stageType}::${column}`) ?? 0)
+		)
 		.reduce((acc, score) => Math.max(acc, score), 0);
 	const stageAffinity = stageTypes
 		.map((stageType) => normalizedUsageScore(usageByType.get(stageType) ?? 0))
@@ -2458,38 +2973,78 @@ function scoreColumnImportance(input: {
 	const usageByType = input.usageByType ?? new Map<StageType, number>();
 	const confidence = normalizeConfidence(Number(input.row.semantic_confidence ?? 0.45));
 	const semantic = semanticFitByRole(input.row, input.role);
-	const quality = clamp((1 - clamp(input.row.null_ratio ?? 0, 0, 1)) * 0.62 + confidence * 0.38, 0, 1);
+	const quality = clamp(
+		(1 - clamp(input.row.null_ratio ?? 0, 0, 1)) * 0.62 + confidence * 0.38,
+		0,
+		1
+	);
 	const cardinality = cardinalityFit(input.row, input.role);
-	const usage = usageFitByRole(input.row.column_name, input.role, usageByTypeAndColumn, usageByType);
+	const usage = usageFitByRole(
+		input.row.column_name,
+		input.role,
+		usageByTypeAndColumn,
+		usageByType
+	);
 	const distinct = Math.max(0, Number(input.row.distinct_count ?? 0));
 
 	let score = semantic * 0.48 + quality * 0.27 + cardinality * 0.17 + usage * 0.08;
 
-	if (input.role === 'metric' && (isIdentifierLikeName(input.row.column_name) || isTemporalLikeColumnName(input.row.column_name))) {
+	if (
+		input.role === 'metric' &&
+		(isIdentifierLikeName(input.row.column_name) || isTemporalLikeColumnName(input.row.column_name))
+	) {
 		score *= 0.08;
 	}
-	if (input.role === 'metric' && (input.row.semantic_type === 'session_id' || input.row.semantic_type === 'source_id' || input.row.semantic_type === 'target_id' || input.row.semantic_type === 'parent_id')) {
+	if (
+		input.role === 'metric' &&
+		(input.row.semantic_type === 'session_id' ||
+			input.row.semantic_type === 'source_id' ||
+			input.row.semantic_type === 'target_id' ||
+			input.row.semantic_type === 'parent_id')
+	) {
 		score *= 0.08;
 	}
-	if (input.role !== 'metric' && input.row.data_kind === 'numeric' && /(amount|revenue|cost|price|balance|ratio|percent|pct|value|score|qty|quantity|count)/i.test(input.row.column_name)) {
+	if (
+		input.role !== 'metric' &&
+		input.row.data_kind === 'numeric' &&
+		/(amount|revenue|cost|price|balance|ratio|percent|pct|value|score|qty|quantity|count)/i.test(
+			input.row.column_name
+		)
+	) {
 		score *= 0.72;
 	}
-	if (input.role === 'dimension' && (input.row.semantic_type === 'status' || input.row.semantic_type === 'category') && distinct <= 2) {
+	if (
+		input.role === 'dimension' &&
+		(input.row.semantic_type === 'status' || input.row.semantic_type === 'category') &&
+		distinct <= 2
+	) {
 		score *= 0.25;
 	}
-	if (input.role === 'dimension' && (input.row.semantic_type === 'entity_name') && Number(input.row.distinct_count ?? 0) > 450) {
+	if (
+		input.role === 'dimension' &&
+		input.row.semantic_type === 'entity_name' &&
+		Number(input.row.distinct_count ?? 0) > 450
+	) {
 		score *= 0.72;
 	}
 	if (input.role === 'dimension' && input.row.data_kind === 'numeric') {
 		score *= 0.2;
 	}
-	if ((input.role === 'dimension' || input.role === 'filter') && /(name|title|label)/i.test(input.row.column_name) && Number(input.row.distinct_count ?? 0) > 180) {
+	if (
+		(input.role === 'dimension' || input.role === 'filter') &&
+		/(name|title|label)/i.test(input.row.column_name) &&
+		Number(input.row.distinct_count ?? 0) > 180
+	) {
 		score *= 0.45;
 	}
 	if ((input.role === 'dimension' || input.role === 'filter') && distinct <= 1) {
 		score *= 0.18;
 	}
-	if (input.role === 'filter' && (input.row.semantic_type === 'status' || input.row.semantic_type === 'category') && distinct < 2) {
+	if (
+		input.role === 'filter' &&
+		(input.row.semantic_type === 'status' || input.row.semantic_type === 'category') &&
+		distinct < 2
+	) {
 		score *= 0.12;
 	}
 	if (input.role === 'filter' && Number(input.row.distinct_count ?? 0) > 600) {
@@ -2509,7 +3064,10 @@ function rankColumnsByImportance(input: {
 	const usageByTypeAndColumn = input.usageByTypeAndColumn ?? new Map<string, number>();
 	const usageByType = input.usageByType ?? new Map<StageType, number>();
 	const uniqueRows = input.profileRows.filter(
-		(row, idx, rows) => rows.findIndex((entry) => entry.column_name.trim().toLowerCase() === row.column_name.trim().toLowerCase()) === idx
+		(row, idx, rows) =>
+			rows.findIndex(
+				(entry) => entry.column_name.trim().toLowerCase() === row.column_name.trim().toLowerCase()
+			) === idx
 	);
 	const ranked = uniqueRows
 		.map((row) => ({
@@ -2549,13 +3107,15 @@ function pickGroupDimension(
 	usageByTypeAndColumn: Map<string, number> = new Map(),
 	usageByType: Map<StageType, number> = new Map()
 ): string | null {
-	return rankColumnsByImportance({
-		profileRows,
-		role: 'dimension',
-		usageByTypeAndColumn,
-		usageByType,
-		minScore: 0.44
-	})[0]?.column ?? null;
+	return (
+		rankColumnsByImportance({
+			profileRows,
+			role: 'dimension',
+			usageByTypeAndColumn,
+			usageByType,
+			minScore: 0.44
+		})[0]?.column ?? null
+	);
 }
 
 function isTemporalLikeColumnName(name: string): boolean {
@@ -2580,12 +3140,18 @@ function pickMetricColumn(
 	});
 	if (ranked.length > 0) return ranked[0]?.column ?? null;
 
-	const metricNamePattern = /(amount|balance|total|sum|revenue|cost|price|value|score|count|qty|quantity|paid\s*in|withdrawn|debit|credit|inflow|outflow)/i;
+	const metricNamePattern =
+		/(amount|balance|total|sum|revenue|cost|price|value|score|count|qty|quantity|paid\s*in|withdrawn|debit|credit|inflow|outflow)/i;
 	const weakMetricNamePattern = /(value\s*guess|estimated\s*value|guess)/i;
 	if (ranked[0] && weakMetricNamePattern.test(ranked[0].column)) {
 		return null;
 	}
-	const fallbackNameMatch = fallbackColumns.find((column) => metricNamePattern.test(column) && !isIdentifierLikeName(column) && !isTemporalLikeColumnName(column));
+	const fallbackNameMatch = fallbackColumns.find(
+		(column) =>
+			metricNamePattern.test(column) &&
+			!isIdentifierLikeName(column) &&
+			!isTemporalLikeColumnName(column)
+	);
 	if (fallbackNameMatch) return fallbackNameMatch;
 
 	return null;
@@ -2630,14 +3196,19 @@ function findCompositeMetricPlan(
 	};
 }
 
-function metricAggregationFunc(profileRows: ProfileRow[], metricColumn: string): 'sum' | 'avg' | 'count' {
+function metricAggregationFunc(
+	profileRows: ProfileRow[],
+	metricColumn: string
+): 'sum' | 'avg' | 'count' {
 	const metric = profileRows.find((row) => row.column_name === metricColumn);
 	if (!metric) return 'sum';
 	if (metric.semantic_type === 'percentage' || metric.semantic_type === 'ratio') return 'avg';
 	if (metric.semantic_type === 'count') return 'count';
 	if (
 		metric.semantic_type === 'metric' &&
-		/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|score|index)/i.test(metricColumn)
+		/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|score|index)/i.test(
+			metricColumn
+		)
 	) {
 		return 'avg';
 	}
@@ -2653,7 +3224,11 @@ function normalizeCoercionDialect(dialect?: CoercionDialect): CoercionDialect {
 	return 'duckdb';
 }
 
-function metricSqlExpr(column: string, row: ProfileRow | undefined, dialect: CoercionDialect): string {
+function metricSqlExpr(
+	column: string,
+	row: ProfileRow | undefined,
+	dialect: CoercionDialect
+): string {
 	const id = quotedSqlIdentifier(column);
 	if (row?.data_kind === 'numeric') {
 		if (dialect === 'clickhouse') return `toFloat64OrNull(${id})`;
@@ -2670,9 +3245,16 @@ function metricSqlExpr(column: string, row: ProfileRow | undefined, dialect: Coe
 	return `cast(nullif(regexp_replace(cast(${id} as varchar), '[^0-9.+\\-]', '', 'g'), '') as double)`;
 }
 
-function temporalSqlExpr(column: string, row: ProfileRow | undefined, dialect: CoercionDialect): string {
+function temporalSqlExpr(
+	column: string,
+	row: ProfileRow | undefined,
+	dialect: CoercionDialect
+): string {
 	const id = quotedSqlIdentifier(column);
-	if (row?.data_kind === 'date' || /(event_time|created_at|updated_at|date|timestamp)/i.test(row?.semantic_type ?? '')) {
+	if (
+		row?.data_kind === 'date' ||
+		/(event_time|created_at|updated_at|date|timestamp)/i.test(row?.semantic_type ?? '')
+	) {
 		if (dialect === 'clickhouse') return `parseDateTime64BestEffortOrNull(toString(${id}))`;
 		return `cast(${id} as timestamp)`;
 	}
@@ -2691,7 +3273,9 @@ function temporalSqlExpr(column: string, row: ProfileRow | undefined, dialect: C
 }
 
 function firstFromTable(stages: GUIPipelineStage[]): string | null {
-	const source = stages.find((stage): stage is Extract<GUIPipelineStage, { type: 'from' }> => stage.type === 'from');
+	const source = stages.find(
+		(stage): stage is Extract<GUIPipelineStage, { type: 'from' }> => stage.type === 'from'
+	);
 	return source?.table?.trim() ? source.table.trim() : null;
 }
 
@@ -2732,7 +3316,8 @@ function chipSemanticKey(chip: QuickChip): string {
 			const derived = stage.columns[0];
 			if (!derived) return 'derive:none';
 			if (derived.expr.mode === 'func') {
-				const arg = derived.expr.args?.[0]?.kind === 'column' ? derived.expr.args[0].value : 'literal';
+				const arg =
+					derived.expr.args?.[0]?.kind === 'column' ? derived.expr.args[0].value : 'literal';
 				return `derive:${derived.name}:func:${derived.expr.func}:${arg}`;
 			}
 			if (derived.expr.mode === 'binary') {
@@ -2869,16 +3454,25 @@ function isMeaningfulStage(stage: Exclude<GUIPipelineStage, { type: 'raw' }>): b
 		case 'append':
 			return stage.sources.length > 0 && stage.sources.every((source) => source.trim().length > 0);
 		case 'filter':
-			return stage.conditions.length > 0 && stage.conditions.every((condition) => condition.column.trim().length > 0);
+			return (
+				stage.conditions.length > 0 &&
+				stage.conditions.every((condition) => condition.column.trim().length > 0)
+			);
 		case 'select':
 			return stage.columns.length > 0;
 		case 'derive':
-			return stage.columns.length > 0 && stage.columns.every((column) => column.name.trim().length > 0);
+			return (
+				stage.columns.length > 0 && stage.columns.every((column) => column.name.trim().length > 0)
+			);
 		case 'group':
-			return stage.by.length > 0 && stage.aggregations.length > 0 && stage.aggregations.every((aggregation) => {
-				if (aggregation.func === 'count' || aggregation.func === 'raw') return true;
-				return aggregation.column.trim().length > 0;
-			});
+			return (
+				stage.by.length > 0 &&
+				stage.aggregations.length > 0 &&
+				stage.aggregations.every((aggregation) => {
+					if (aggregation.func === 'count' || aggregation.func === 'raw') return true;
+					return aggregation.column.trim().length > 0;
+				})
+			);
 		case 'window':
 			return stage.frame.trim().length > 0 && stage.derives.length > 0;
 		case 'loop':
@@ -2892,7 +3486,9 @@ function isMeaningfulStage(stage: Exclude<GUIPipelineStage, { type: 'raw' }>): b
 	}
 }
 
-function compactPresetStageChain(stages: Exclude<GUIPipelineStage, { type: 'raw' }>[]): Exclude<GUIPipelineStage, { type: 'raw' }>[] {
+function compactPresetStageChain(
+	stages: Exclude<GUIPipelineStage, { type: 'raw' }>[]
+): Exclude<GUIPipelineStage, { type: 'raw' }>[] {
 	return stages.filter((stage) => {
 		if (stage.type === 'derive' && stage.columns.length === 0) return false;
 		if (stage.type === 'sort' && stage.keys.length === 0) return false;
@@ -2927,10 +3523,13 @@ function decayByRecency(lastUsedMs: number | undefined, now: number): number {
 
 function schemaContextSignature(profileRows: ProfileRow[]): string {
 	if (profileRows.length === 0) return 'schema:none';
-	const semantics = [...new Set(profileRows.map((row) => row.semantic_type ?? 'text'))].sort().join('+');
+	const semantics = [...new Set(profileRows.map((row) => row.semantic_type ?? 'text'))]
+		.sort()
+		.join('+');
 	const kinds = [...new Set(profileRows.map((row) => row.data_kind))].sort().join('+');
 	const avgConfidence =
-		profileRows.reduce((acc, row) => acc + Number(row.semantic_confidence ?? 0.45), 0) / profileRows.length;
+		profileRows.reduce((acc, row) => acc + Number(row.semantic_confidence ?? 0.45), 0) /
+		profileRows.length;
 	return `schema|semantics=${semantics || 'none'}|kinds=${kinds || 'none'}|confidence=${confidenceBucket(avgConfidence)}`;
 }
 
@@ -2941,7 +3540,9 @@ function parseDerivePattern(signatureKey: string): string | null {
 	return pattern || null;
 }
 
-function loadDerivePatternStrength(rows: Array<{ signature_key?: string; usage_count?: number }>): Map<string, number> {
+function loadDerivePatternStrength(
+	rows: Array<{ signature_key?: string; usage_count?: number }>
+): Map<string, number> {
 	const out = new Map<string, number>();
 	for (const row of rows) {
 		const pattern = parseDerivePattern(row.signature_key ?? '');
@@ -2957,7 +3558,11 @@ function guessKindFromColumnName(columnName: string): 'numeric' | 'date' | 'bool
 	const name = columnName.toLowerCase();
 	if (/(^is_|^has_|flag|enabled|active|disabled|valid)/.test(name)) return 'boolean';
 	if (isTemporalLikeColumnName(columnName)) return 'date';
-	if (/(amount|price|cost|revenue|sales|income|fee|balance|paid|withdrawn|withdrawal|deposit|credited|debited|disbursed|percent|pct|ratio|rate|count|num|total|qty|quantity|value|score|id|_id$)/.test(name)) {
+	if (
+		/(amount|price|cost|revenue|sales|income|fee|balance|paid|withdrawn|withdrawal|deposit|credited|debited|disbursed|percent|pct|ratio|rate|count|num|total|qty|quantity|value|score|id|_id$)/.test(
+			name
+		)
+	) {
 		return 'numeric';
 	}
 	return 'text';
@@ -2987,7 +3592,9 @@ function bootstrapProfilesFromColumns(columns: string[]): ProfileRow[] {
 }
 
 function isMeasurementFeatureName(name: string): boolean {
-	return /(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|feature|score|index)/i.test(name);
+	return /(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|feature|score|index)/i.test(
+		name
+	);
 }
 
 function isClassLikeColumnName(name: string): boolean {
@@ -3001,8 +3608,14 @@ function detectFeatureMatrixSignal(profileRows: ProfileRow[]): {
 } {
 	const classCandidates = profileRows
 		.filter((row) => {
-			if (isIdentifierLikeName(row.column_name) || isTemporalLikeColumnName(row.column_name)) return false;
-			if (row.data_kind !== 'text' && row.semantic_type !== 'category' && row.semantic_type !== 'status') return false;
+			if (isIdentifierLikeName(row.column_name) || isTemporalLikeColumnName(row.column_name))
+				return false;
+			if (
+				row.data_kind !== 'text' &&
+				row.semantic_type !== 'category' &&
+				row.semantic_type !== 'status'
+			)
+				return false;
 			if (!isClassLikeColumnName(row.column_name)) return false;
 			const distinct = Number(row.distinct_count ?? 0);
 			if (distinct < 2 || distinct > 40) return false;
@@ -3023,13 +3636,16 @@ function detectFeatureMatrixSignal(profileRows: ProfileRow[]): {
 	const featureColumns = profileRows
 		.filter((row) => {
 			if (row.data_kind !== 'numeric') return false;
-			if (isIdentifierLikeName(row.column_name) || isTemporalLikeColumnName(row.column_name)) return false;
+			if (isIdentifierLikeName(row.column_name) || isTemporalLikeColumnName(row.column_name))
+				return false;
 			if (row.semantic_type === 'id' || row.semantic_type === 'foreign_key') return false;
 			return isMeasurementFeatureName(row.column_name);
 		})
 		.map((row) => row.column_name);
 
-	const hasTemporalAxis = profileRows.some((row) => row.data_kind === 'date' || isTemporalLikeColumnName(row.column_name));
+	const hasTemporalAxis = profileRows.some(
+		(row) => row.data_kind === 'date' || isTemporalLikeColumnName(row.column_name)
+	);
 	const classColumn = classCandidates[0]?.column_name ?? null;
 	const isFeatureMatrix = featureColumns.length >= 3 && classColumn !== null && !hasTemporalAxis;
 
@@ -3059,7 +3675,10 @@ function shouldDropGroupChip(chip: QuickChip, profileRows: ProfileRow[]): boolea
 function shouldDropDeriveChip(chip: QuickChip, profileRows: ProfileRow[]): boolean {
 	if (chip.stage.type !== 'derive') return false;
 	const deriveExpr = chip.stage.columns[0]?.expr;
-	const column = deriveExpr?.mode === 'func' && deriveExpr.args?.[0]?.kind === 'column' ? deriveExpr.args[0].value : '';
+	const column =
+		deriveExpr?.mode === 'func' && deriveExpr.args?.[0]?.kind === 'column'
+			? deriveExpr.args[0].value
+			: '';
 	if (!column) return false;
 	const profile = profileRows.find((row) => row.column_name === column);
 	if (!profile) return false;
@@ -3078,7 +3697,10 @@ function shouldDropLowSignalFilterChip(chip: QuickChip, profileRows: ProfileRow[
 	if (!condition?.column) return false;
 	const profile = profileRows.find((row) => row.column_name === condition.column);
 	if (!profile) return false;
-	if ((profile.semantic_type === 'status' || profile.semantic_type === 'category') && profile.distinct_count < 2) {
+	if (
+		(profile.semantic_type === 'status' || profile.semantic_type === 'category') &&
+		profile.distinct_count < 2
+	) {
 		return true;
 	}
 	return false;
@@ -3104,9 +3726,7 @@ function scopeProfileRowsToAvailableColumns(
 ): ProfileRow[] {
 	if (availableColumns.length === 0) return profileRows;
 	const availableSet = new Set(
-		availableColumns
-			.map((column) => column.trim().toLowerCase())
-			.filter(Boolean)
+		availableColumns.map((column) => column.trim().toLowerCase()).filter(Boolean)
 	);
 	if (availableSet.size === 0) return profileRows;
 	return profileRows.filter((row) => availableSet.has(row.column_name.trim().toLowerCase()));
@@ -3119,7 +3739,13 @@ function stageSignalScore(input: {
 	weightedUsageByTypeAndColumn: Map<string, number>;
 	weightedUsageByType: Map<StageType, number>;
 }): number {
-	const { chip, profileRows, importanceByColumn, weightedUsageByTypeAndColumn, weightedUsageByType } = input;
+	const {
+		chip,
+		profileRows,
+		importanceByColumn,
+		weightedUsageByTypeAndColumn,
+		weightedUsageByType
+	} = input;
 	const usageTypeScore = normalizedUsageScore(weightedUsageByType.get(chip.stage.type) ?? 0);
 
 	if (chip.stage.type === 'take') {
@@ -3140,9 +3766,21 @@ function stageSignalScore(input: {
 		if (!key?.column) return 0.12;
 		const profile = profileForColumn(profileRows, key.column);
 		const importance = importanceByColumn.get(key.column) ?? 0;
-		const columnUsage = normalizedUsageScore(weightedUsageByTypeAndColumn.get(`sort::${key.column}`) ?? 0);
-		const temporalBonus = profile && (profile.semantic_type === 'updated_at' || profile.semantic_type === 'created_at' || profile.semantic_type === 'date') ? 0.2 : 0;
-		return clamp(importance * 0.62 + columnUsage * 0.2 + usageTypeScore * 0.1 + temporalBonus, 0, 1);
+		const columnUsage = normalizedUsageScore(
+			weightedUsageByTypeAndColumn.get(`sort::${key.column}`) ?? 0
+		);
+		const temporalBonus =
+			profile &&
+			(profile.semantic_type === 'updated_at' ||
+				profile.semantic_type === 'created_at' ||
+				profile.semantic_type === 'date')
+				? 0.2
+				: 0;
+		return clamp(
+			importance * 0.62 + columnUsage * 0.2 + usageTypeScore * 0.1 + temporalBonus,
+			0,
+			1
+		);
 	}
 
 	if (chip.stage.type === 'filter') {
@@ -3150,13 +3788,30 @@ function stageSignalScore(input: {
 		if (!condition?.column) return 0.12;
 		const profile = profileForColumn(profileRows, condition.column);
 		const importance = importanceByColumn.get(condition.column) ?? 0;
-		const columnUsage = normalizedUsageScore(weightedUsageByTypeAndColumn.get(`filter::${condition.column}`) ?? 0);
-		const genericEqualityPenalty = condition.op === '==' && `${condition.value ?? ''}`.trim() === '' ? 0.16 : 0;
+		const columnUsage = normalizedUsageScore(
+			weightedUsageByTypeAndColumn.get(`filter::${condition.column}`) ?? 0
+		);
+		const genericEqualityPenalty =
+			condition.op === '==' && `${condition.value ?? ''}`.trim() === '' ? 0.16 : 0;
 		const placeholderPenalty =
 			condition.op === '!=' && isPlaceholderValue(`${condition.value ?? ''}`)
-				? (profile && (profile.semantic_type === 'status' || profile.semantic_type === 'category' || profile.semantic_type === 'region' || profile.semantic_type === 'country') ? 0.24 : 0.08)
+				? profile &&
+					(profile.semantic_type === 'status' ||
+						profile.semantic_type === 'category' ||
+						profile.semantic_type === 'region' ||
+						profile.semantic_type === 'country')
+					? 0.24
+					: 0.08
 				: 0;
-		return clamp(importance * 0.68 + columnUsage * 0.2 + usageTypeScore * 0.12 - genericEqualityPenalty - placeholderPenalty, 0, 1);
+		return clamp(
+			importance * 0.68 +
+				columnUsage * 0.2 +
+				usageTypeScore * 0.12 -
+				genericEqualityPenalty -
+				placeholderPenalty,
+			0,
+			1
+		);
 	}
 
 	if (chip.stage.type === 'derive') {
@@ -3169,7 +3824,9 @@ function stageSignalScore(input: {
 					? first.expr.left.value
 					: '';
 		const importance = sourceColumn ? (importanceByColumn.get(sourceColumn) ?? 0) : 0.3;
-		const columnUsage = sourceColumn ? normalizedUsageScore(weightedUsageByTypeAndColumn.get(`derive::${sourceColumn}`) ?? 0) : 0;
+		const columnUsage = sourceColumn
+			? normalizedUsageScore(weightedUsageByTypeAndColumn.get(`derive::${sourceColumn}`) ?? 0)
+			: 0;
 		return clamp(importance * 0.68 + columnUsage * 0.2 + usageTypeScore * 0.12, 0, 1);
 	}
 
@@ -3178,8 +3835,14 @@ function stageSignalScore(input: {
 		const agg = chip.stage.aggregations[0];
 		const byImportance = by ? (importanceByColumn.get(by) ?? 0) : 0;
 		const metricImportance = agg?.column ? (importanceByColumn.get(agg.column) ?? 0) : 0.5;
-		const columnUsage = by ? normalizedUsageScore(weightedUsageByTypeAndColumn.get(`group::${by}`) ?? 0) : 0;
-		return clamp(byImportance * 0.45 + metricImportance * 0.3 + columnUsage * 0.15 + usageTypeScore * 0.1, 0, 1);
+		const columnUsage = by
+			? normalizedUsageScore(weightedUsageByTypeAndColumn.get(`group::${by}`) ?? 0)
+			: 0;
+		return clamp(
+			byImportance * 0.45 + metricImportance * 0.3 + columnUsage * 0.15 + usageTypeScore * 0.1,
+			0,
+			1
+		);
 	}
 
 	return 0.4;
@@ -3200,7 +3863,11 @@ function shouldDropLowSignalStageChip(input: {
 			const condition = input.chip.stage.conditions[0];
 			if (!condition?.column) return 0.25;
 			const profile = profileForColumn(input.profileRows, condition.column);
-			if (profile && (profile.semantic_type === 'status' || profile.semantic_type === 'category') && Number(profile.distinct_count ?? 0) >= 2) {
+			if (
+				profile &&
+				(profile.semantic_type === 'status' || profile.semantic_type === 'category') &&
+				Number(profile.distinct_count ?? 0) >= 2
+			) {
 				return 0.19;
 			}
 			const hasConcreteValue = `${condition.value ?? ''}`.trim() !== '';
@@ -3255,7 +3922,9 @@ export async function getIntelligentQuickChips(input: {
 
 		let suffixUsageRows: UsageRow[] = [];
 		if (contextSuffixes.length > 0) {
-			const suffixPredicates = contextSuffixes.map((suffix) => `pipeline_signature LIKE ${quoteLiteral(`%${suffix}`)}`);
+			const suffixPredicates = contextSuffixes.map(
+				(suffix) => `pipeline_signature LIKE ${quoteLiteral(`%${suffix}`)}`
+			);
 			const suffixResult = await executeSQL(`
 				SELECT pipeline_signature, stage_type, column_name, usage_count, last_used_ms
 				FROM ${META_SCHEMA}.stage_usage
@@ -3300,12 +3969,18 @@ export async function getIntelligentQuickChips(input: {
 				if (weightedUsage <= 0) continue;
 
 				const stageType = row.stage_type;
-				weightedUsageByType.set(stageType, (weightedUsageByType.get(stageType) ?? 0) + weightedUsage);
+				weightedUsageByType.set(
+					stageType,
+					(weightedUsageByType.get(stageType) ?? 0) + weightedUsage
+				);
 
 				const column = (row.column_name ?? '').trim();
 				if (!column) continue;
 				const key = `${stageType}::${column}`;
-				weightedUsageByTypeAndColumn.set(key, (weightedUsageByTypeAndColumn.get(key) ?? 0) + weightedUsage);
+				weightedUsageByTypeAndColumn.set(
+					key,
+					(weightedUsageByTypeAndColumn.get(key) ?? 0) + weightedUsage
+				);
 			}
 		}
 
@@ -3348,7 +4023,9 @@ export async function getIntelligentQuickChips(input: {
 			rowsByRelation.set(relation, bucket);
 		}
 
-		const availableSet = new Set(input.availableColumns.map((column) => column.trim()).filter(Boolean));
+		const availableSet = new Set(
+			input.availableColumns.map((column) => column.trim()).filter(Boolean)
+		);
 		const hasKnownAvailableColumns = availableSet.size > 0;
 		let bestResultProfiles: ProfileRow[] = [];
 		let bestScore = -1;
@@ -3377,9 +4054,13 @@ export async function getIntelligentQuickChips(input: {
 			}
 		}
 
-		let profileRows: ProfileRow[] = sourceProfileRows.length > 0 ? sourceProfileRows : bestResultProfiles;
+		let profileRows: ProfileRow[] =
+			sourceProfileRows.length > 0 ? sourceProfileRows : bestResultProfiles;
 		let bootstrappedFromColumns = false;
-		const scopedProfileRows = scopeProfileRowsToAvailableColumns(profileRows, input.availableColumns);
+		const scopedProfileRows = scopeProfileRowsToAvailableColumns(
+			profileRows,
+			input.availableColumns
+		);
 		if (scopedProfileRows.length > 0) {
 			profileRows = scopedProfileRows;
 		}
@@ -3391,12 +4072,15 @@ export async function getIntelligentQuickChips(input: {
 
 		const metadataColumns = profileRows.map((row) => row.column_name).filter(Boolean);
 		const candidateColumns =
-			input.availableColumns.length > 0
-				? input.availableColumns
-				: metadataColumns;
+			input.availableColumns.length > 0 ? input.availableColumns : metadataColumns;
 
-		const metadataBase = getQuickChips({ stages: input.stages, availableColumns: candidateColumns });
-		const scored: Array<QuickChip & { score: number }> = (metadataBase.length > 0 ? metadataBase : base)
+		const metadataBase = getQuickChips({
+			stages: input.stages,
+			availableColumns: candidateColumns
+		});
+		const scored: Array<QuickChip & { score: number }> = (
+			metadataBase.length > 0 ? metadataBase : base
+		)
 			.filter((chip) => !shouldDropGroupChip(chip, profileRows))
 			.filter((chip) => !shouldDropDeriveChip(chip, profileRows))
 			.filter((chip) => !shouldDropLowSignalFilterChip(chip, profileRows))
@@ -3408,7 +4092,9 @@ export async function getIntelligentQuickChips(input: {
 
 		const schemaContext = schemaContextSignature(profileRows);
 		const contextSignatures = stageContextSignatures(input.stages, schemaContext);
-		const contextPredicates = contextSignatures.map((signature) => `context_signature = ${quoteLiteral(signature)}`);
+		const contextPredicates = contextSignatures.map(
+			(signature) => `context_signature = ${quoteLiteral(signature)}`
+		);
 		const sequenceRows: Array<{
 			context_signature?: string;
 			next_stage: StageType;
@@ -3424,12 +4110,14 @@ export async function getIntelligentQuickChips(input: {
 				ORDER BY usage_count DESC, last_used_ms DESC
 				LIMIT 40
 			`);
-			sequenceRows.push(...(sequenceUsageResult.rows as Array<{
-				context_signature?: string;
-				next_stage: StageType;
-				usage_count: number;
-				last_used_ms?: number;
-			}>));
+			sequenceRows.push(
+				...(sequenceUsageResult.rows as Array<{
+					context_signature?: string;
+					next_stage: StageType;
+					usage_count: number;
+					last_used_ms?: number;
+				}>)
+			);
 		}
 		const sequenceBoostByType = new Map<StageType, number>();
 		for (const row of sequenceRows) {
@@ -3445,7 +4133,10 @@ export async function getIntelligentQuickChips(input: {
 						? 0.74
 						: 0.66;
 			const strength = usage * recency * contextWeight;
-			sequenceBoostByType.set(row.next_stage, (sequenceBoostByType.get(row.next_stage) ?? 0) + strength);
+			sequenceBoostByType.set(
+				row.next_stage,
+				(sequenceBoostByType.get(row.next_stage) ?? 0) + strength
+			);
 		}
 
 		let schemaFamiliarityBoost = 0;
@@ -3465,7 +4156,9 @@ export async function getIntelligentQuickChips(input: {
 				ORDER BY usage_count DESC
 				LIMIT 1
 			`);
-			const usage = Number((schemaUsageResult.rows as Array<{ usage_count?: number }>)[0]?.usage_count ?? 0);
+			const usage = Number(
+				(schemaUsageResult.rows as Array<{ usage_count?: number }>)[0]?.usage_count ?? 0
+			);
 			if (Number.isFinite(usage) && usage > 0) {
 				schemaFamiliarityBoost = Math.min(3, Math.log2(1 + usage));
 			}
@@ -3539,7 +4232,7 @@ export async function getIntelligentQuickChips(input: {
 			(topMetric?.score ?? 0) >= 0.56 &&
 			normalizeConfidence(Number(topMetric?.row.semantic_confidence ?? 0)) >= 0.35 &&
 			Number(topMetric?.row.null_ratio ?? 1) <= 0.6;
-		const numeric = hasStrongMetric ? topMetric?.column ?? null : null;
+		const numeric = hasStrongMetric ? (topMetric?.column ?? null) : null;
 		const date =
 			profileRows.find((row) => row.semantic_type === 'event_time')?.column_name ??
 			profileRows.find((row) => row.semantic_type === 'updated_at')?.column_name ??
@@ -3548,10 +4241,21 @@ export async function getIntelligentQuickChips(input: {
 		const dimension =
 			rankedDimensions[0]?.column ??
 			pickGroupDimension(profileRows, weightedUsageByTypeAndColumn, weightedUsageByType) ??
-			profileRows.find((row) => (row.semantic_type === 'event_time' || row.semantic_type === 'updated_at' || row.semantic_type === 'created_at' || row.semantic_type === 'date') && row.null_ratio <= 0.85)?.column_name ??
-			profileRows.find((row) => row.data_kind === 'text' && row.distinct_count >= 2 && row.distinct_count <= 250)?.column_name ??
+			profileRows.find(
+				(row) =>
+					(row.semantic_type === 'event_time' ||
+						row.semantic_type === 'updated_at' ||
+						row.semantic_type === 'created_at' ||
+						row.semantic_type === 'date') &&
+					row.null_ratio <= 0.85
+			)?.column_name ??
+			profileRows.find(
+				(row) => row.data_kind === 'text' && row.distinct_count >= 2 && row.distinct_count <= 250
+			)?.column_name ??
 			null;
-		const filterProfile = pickFilterProfile(profileRows, weightedUsageByTypeAndColumn, weightedUsageByType) ?? rankedFilters[0]?.row;
+		const filterProfile =
+			pickFilterProfile(profileRows, weightedUsageByTypeAndColumn, weightedUsageByType) ??
+			rankedFilters[0]?.row;
 		const filterColumn = filterProfile?.column_name;
 		const filterSuggestion = buildTypeAwareFilter(filterProfile);
 		const deriveSuggestions = buildDeriveCandidates(profileRows);
@@ -3580,56 +4284,93 @@ export async function getIntelligentQuickChips(input: {
 			const primaryFeature = featureMatrixSignal.featureColumns[0] ?? numeric ?? null;
 			if (primaryFeature) {
 				const featureAlias = primaryFeature.replace(/\W+/g, '_');
-				upsertQuickChip(scored, {
-					id: `group-${featureMatrixSignal.classColumn}-${primaryFeature}-avg`,
-					label: compactLabel(`Average ${humanizeColumnLabel(primaryFeature, { stripAggregationPrefix: true, maxLength: 18 })} by ${humanizeColumnLabel(featureMatrixSignal.classColumn, { stripAggregationPrefix: true, maxLength: 18 })}`, 42),
+				upsertQuickChip(
+					scored,
+					{
+						id: `group-${featureMatrixSignal.classColumn}-${primaryFeature}-avg`,
+						label: compactLabel(
+							`Average ${humanizeColumnLabel(primaryFeature, { stripAggregationPrefix: true, maxLength: 18 })} by ${humanizeColumnLabel(featureMatrixSignal.classColumn, { stripAggregationPrefix: true, maxLength: 18 })}`,
+							42
+						),
+						icon: 'group',
+						stage: {
+							type: 'group',
+							by: [featureMatrixSignal.classColumn],
+							aggregations: [
+								{ name: `avg_${featureAlias}`, func: 'average', column: primaryFeature }
+							]
+						},
+						tone: 'primary'
+					},
+					39
+				);
+			}
+
+			const classProfile = profileForColumn(profileRows, featureMatrixSignal.classColumn);
+			const classSample = pickFilterSampleValue(
+				parseSampleValues(classProfile?.sample_values_json)
+			);
+			upsertQuickChip(
+				scored,
+				{
+					id: `group-count-${featureMatrixSignal.classColumn}`,
+					label: compactLabel(
+						`Count rows by ${humanizeColumnLabel(featureMatrixSignal.classColumn, { stripAggregationPrefix: true, maxLength: 18 })}`,
+						38
+					),
 					icon: 'group',
 					stage: {
 						type: 'group',
 						by: [featureMatrixSignal.classColumn],
-						aggregations: [{ name: `avg_${featureAlias}`, func: 'average', column: primaryFeature }]
+						aggregations: [
+							{
+								name: `count_${featureMatrixSignal.classColumn.replace(/\W+/g, '_')}`,
+								func: 'count',
+								column: ''
+							}
+						]
 					},
 					tone: 'primary'
-				}, 39);
-			}
-
-			const classProfile = profileForColumn(profileRows, featureMatrixSignal.classColumn);
-			const classSample = pickFilterSampleValue(parseSampleValues(classProfile?.sample_values_json));
-			upsertQuickChip(scored, {
-				id: `group-count-${featureMatrixSignal.classColumn}`,
-				label: compactLabel(`Count rows by ${humanizeColumnLabel(featureMatrixSignal.classColumn, { stripAggregationPrefix: true, maxLength: 18 })}`, 38),
-				icon: 'group',
-				stage: {
-					type: 'group',
-					by: [featureMatrixSignal.classColumn],
-					aggregations: [{ name: `count_${featureMatrixSignal.classColumn.replace(/\W+/g, '_')}`, func: 'count', column: '' }]
 				},
-				tone: 'primary'
-			}, 34);
+				34
+			);
 
-			upsertQuickChip(scored, {
-				id: `filter-${featureMatrixSignal.classColumn}-class`,
-				label: classSample
-					? compactLabel(`Filter ${humanizeColumnLabel(featureMatrixSignal.classColumn)} = ${classSample}`, 42)
-					: `Filter ${humanizeColumnLabel(featureMatrixSignal.classColumn)}`,
-				icon: 'filter',
-				stage: {
-					type: 'filter',
-					conditions: [{ column: featureMatrixSignal.classColumn, op: '==', value: classSample ?? '' }],
-					logic: 'and'
+			upsertQuickChip(
+				scored,
+				{
+					id: `filter-${featureMatrixSignal.classColumn}-class`,
+					label: classSample
+						? compactLabel(
+								`Filter ${humanizeColumnLabel(featureMatrixSignal.classColumn)} = ${classSample}`,
+								42
+							)
+						: `Filter ${humanizeColumnLabel(featureMatrixSignal.classColumn)}`,
+					icon: 'filter',
+					stage: {
+						type: 'filter',
+						conditions: [
+							{ column: featureMatrixSignal.classColumn, op: '==', value: classSample ?? '' }
+						],
+						logic: 'and'
+					},
+					tone: 'primary'
 				},
-				tone: 'primary'
-			}, 32);
+				32
+			);
 		}
 
 		if (date) {
-			upsertQuickChip(scored, {
-				id: `sort-${date}`,
-				label: compactLabel(`Newest by ${humanizeColumnLabel(date)}`, 42),
-				icon: 'sort',
-				stage: { type: 'sort', keys: [{ column: date, dir: 'desc' }] },
-				tone: 'primary'
-			}, 36);
+			upsertQuickChip(
+				scored,
+				{
+					id: `sort-${date}`,
+					label: compactLabel(`Newest by ${humanizeColumnLabel(date)}`, 42),
+					icon: 'sort',
+					stage: { type: 'sort', keys: [{ column: date, dir: 'desc' }] },
+					tone: 'primary'
+				},
+				36
+			);
 		}
 
 		if (filterColumn) {
@@ -3645,93 +4386,127 @@ export async function getIntelligentQuickChips(input: {
 			if (filterSuggestion) {
 				dropGenericFilterForColumn(scored, filterColumn);
 			}
-			upsertQuickChip(scored, {
-				id: `filter-${filterColumn}`,
-				label: resolvedFilter.label,
-				icon: 'filter',
-				stage: resolvedFilter.stage,
-				tone: 'primary'
-			}, 30);
+			upsertQuickChip(
+				scored,
+				{
+					id: `filter-${filterColumn}`,
+					label: resolvedFilter.label,
+					icon: 'filter',
+					stage: resolvedFilter.stage,
+					tone: 'primary'
+				},
+				30
+			);
 		}
 
 		for (const placeholderFilter of placeholderFilters) {
 			const placeholderColumn = placeholderFilter.stage.conditions[0]?.column ?? '';
-			const placeholderProfile = placeholderColumn ? profileForColumn(profileRows, placeholderColumn) : undefined;
+			const placeholderProfile = placeholderColumn
+				? profileForColumn(profileRows, placeholderColumn)
+				: undefined;
 			const placeholderScore =
-				placeholderProfile && (placeholderProfile.semantic_type === 'url' || placeholderProfile.semantic_type === 'email' || placeholderProfile.semantic_type === 'phone')
+				placeholderProfile &&
+				(placeholderProfile.semantic_type === 'url' ||
+					placeholderProfile.semantic_type === 'email' ||
+					placeholderProfile.semantic_type === 'phone')
 					? 26
 					: 14;
-			upsertQuickChip(scored, {
-				id: `filter-quality-${placeholderFilter.stage.conditions[0]?.column ?? 'quality'}`,
-				label: placeholderFilter.label,
-				icon: 'filter',
-				stage: placeholderFilter.stage,
-				tone: 'primary'
-			}, placeholderScore);
+			upsertQuickChip(
+				scored,
+				{
+					id: `filter-quality-${placeholderFilter.stage.conditions[0]?.column ?? 'quality'}`,
+					label: placeholderFilter.label,
+					icon: 'filter',
+					stage: placeholderFilter.stage,
+					tone: 'primary'
+				},
+				placeholderScore
+			);
 		}
 
 		if (dimension && numeric && dimension !== numeric && hasStrongMetric) {
 			const aggFunc = metricAggregationFunc(profileRows, numeric);
 			const metricAlias = numeric.replace(/\W+/g, '_');
-			const verb = aggFunc === 'avg' ? 'Average' : aggFunc.charAt(0).toUpperCase() + aggFunc.slice(1);
-			upsertQuickChip(scored, {
-				id: `group-${dimension}-${numeric}`,
-				label: compactLabel(`${verb} ${humanizeColumnLabel(numeric, { stripAggregationPrefix: true, maxLength: 18 })} by ${humanizeColumnLabel(dimension, { stripAggregationPrefix: true, maxLength: 18 })}`, 42),
-				icon: 'group',
-				stage: {
-					type: 'group',
-					by: [dimension],
-					aggregations: [{ name: `${aggFunc}_${metricAlias}`, func: aggFunc, column: numeric }]
+			const verb =
+				aggFunc === 'avg' ? 'Average' : aggFunc.charAt(0).toUpperCase() + aggFunc.slice(1);
+			upsertQuickChip(
+				scored,
+				{
+					id: `group-${dimension}-${numeric}`,
+					label: compactLabel(
+						`${verb} ${humanizeColumnLabel(numeric, { stripAggregationPrefix: true, maxLength: 18 })} by ${humanizeColumnLabel(dimension, { stripAggregationPrefix: true, maxLength: 18 })}`,
+						42
+					),
+					icon: 'group',
+					stage: {
+						type: 'group',
+						by: [dimension],
+						aggregations: [{ name: `${aggFunc}_${metricAlias}`, func: aggFunc, column: numeric }]
+					},
+					tone: 'primary'
 				},
-				tone: 'primary'
-			}, 29);
+				29
+			);
 		} else if (dimension && !numeric) {
 			const dimAlias = dimension.replace(/\W+/g, '_');
-			upsertQuickChip(scored, {
-				id: `group-${dimension}-count`,
-				label: countRowsLabel(dimension),
-				icon: 'group',
-				stage: {
-					type: 'group',
-					by: [dimension],
-					aggregations: [{ name: `count_${dimAlias}`, func: 'count', column: '' }]
+			upsertQuickChip(
+				scored,
+				{
+					id: `group-${dimension}-count`,
+					label: countRowsLabel(dimension),
+					icon: 'group',
+					stage: {
+						type: 'group',
+						by: [dimension],
+						aggregations: [{ name: `count_${dimAlias}`, func: 'count', column: '' }]
+					},
+					tone: 'primary'
 				},
-				tone: 'primary'
-			}, 26);
+				26
+			);
 		}
 
 		if (countDimension) {
 			const dimAlias = countDimension.replace(/\W+/g, '_');
-			upsertQuickChip(scored, {
-				id: `group-count-${countDimension}`,
-				label: countRowsLabel(countDimension),
-				icon: 'group',
-				stage: {
-					type: 'group',
-					by: [countDimension],
-					aggregations: [{ name: `count_${dimAlias}`, func: 'count', column: '' }]
+			upsertQuickChip(
+				scored,
+				{
+					id: `group-count-${countDimension}`,
+					label: countRowsLabel(countDimension),
+					icon: 'group',
+					stage: {
+						type: 'group',
+						by: [countDimension],
+						aggregations: [{ name: `count_${dimAlias}`, func: 'count', column: '' }]
+					},
+					tone: 'primary'
 				},
-				tone: 'primary'
-			}, 27);
+				27
+			);
 		}
 
 		for (const deriveSuggestion of deriveSuggestions) {
-			const deriveColumn = deriveSuggestion.stage.columns[0]?.name ?? (numeric ?? 'derived');
+			const deriveColumn = deriveSuggestion.stage.columns[0]?.name ?? numeric ?? 'derived';
 			const qualityBoost = Math.round((deriveSuggestion.quality ?? 0.4) * 10);
-			upsertQuickChip(scored, {
-				id: `derive-${deriveColumn}`,
-				label: deriveSuggestion.label,
-				icon: 'derive',
-				stage: deriveSuggestion.stage,
-				tone: 'accent'
-			}, (deriveSuggestion.label.toLowerCase().includes('length') ? 27 : 22) + qualityBoost);
+			upsertQuickChip(
+				scored,
+				{
+					id: `derive-${deriveColumn}`,
+					label: deriveSuggestion.label,
+					icon: 'derive',
+					stage: deriveSuggestion.stage,
+					tone: 'accent'
+				},
+				(deriveSuggestion.label.toLowerCase().includes('length') ? 27 : 22) + qualityBoost
+			);
 		}
 
 		const boosted = scored.map((chip) => {
 			const typeStrength = weightedUsageByType.get(chip.stage.type) ?? 0;
 			const typeBoost = typeStrength > 0 ? Math.min(12, Math.log2(1 + typeStrength) * 4) : 0;
 			const sequenceStrength = sequenceBoostByType.get(chip.stage.type) ?? 0;
-			const sequenceBoost = sequenceStrength > 0 ? Math.min(10, Math.log2(1 + sequenceStrength) * 5) : 0;
+			const sequenceBoost =
+				sequenceStrength > 0 ? Math.min(10, Math.log2(1 + sequenceStrength) * 5) : 0;
 
 			const primaryColumn = extractPrimaryColumn(chip.stage).trim();
 			const columnKey = primaryColumn ? `${chip.stage.type}::${primaryColumn}` : '';
@@ -3739,23 +4514,25 @@ export async function getIntelligentQuickChips(input: {
 			const columnBoost = columnStrength > 0 ? Math.min(10, Math.log2(1 + columnStrength) * 5) : 0;
 			const semanticConfidenceBoost = primaryColumn
 				? Math.min(
-					6,
-					(profileRows.find((row) => row.column_name === primaryColumn)?.semantic_confidence ?? 0.35) * 6
-				)
+						6,
+						(profileRows.find((row) => row.column_name === primaryColumn)?.semantic_confidence ??
+							0.35) * 6
+					)
 				: 0;
 			const importanceBoost = Math.min(7, (importanceByColumn.get(primaryColumn) ?? 0) * 7);
-			const pairBoost = chip.stage.type === 'group'
-				? (() => {
-					const by = chip.stage.by[0] ?? '';
-					const metric = chip.stage.aggregations[0]?.column ?? '';
-					const byImportance = importanceByColumn.get(by) ?? 0;
-					const metricImportance = importanceByColumn.get(metric) ?? 0;
-					if (!metric || chip.stage.aggregations[0]?.func === 'count') {
-						return Math.min(2.4, byImportance * 2.4);
-					}
-					return Math.min(4.2, (byImportance * 0.45 + metricImportance * 0.55) * 4.2);
-				})()
-				: 0;
+			const pairBoost =
+				chip.stage.type === 'group'
+					? (() => {
+							const by = chip.stage.by[0] ?? '';
+							const metric = chip.stage.aggregations[0]?.column ?? '';
+							const byImportance = importanceByColumn.get(by) ?? 0;
+							const metricImportance = importanceByColumn.get(metric) ?? 0;
+							if (!metric || chip.stage.aggregations[0]?.func === 'count') {
+								return Math.min(2.4, byImportance * 2.4);
+							}
+							return Math.min(4.2, (byImportance * 0.45 + metricImportance * 0.55) * 4.2);
+						})()
+					: 0;
 			const stageQuality = stageSignalScore({
 				chip,
 				profileRows,
@@ -3764,18 +4541,32 @@ export async function getIntelligentQuickChips(input: {
 				weightedUsageByType
 			});
 			const stageQualityBoost = Math.min(6.5, stageQuality * 6.5);
-			const derivePatternBoost = chip.stage.type === 'derive'
-				? (() => {
-					const composed = derivePatternStrength.get('composed_metric') ?? 0;
-					const ratio = derivePatternStrength.get('efficiency_ratio') ?? 0;
-					const flow = derivePatternStrength.get('flow_delta') ?? 0;
-					const prior = Math.max(composed, ratio, flow);
-					if (prior <= 0) return 0;
-					return Math.min(5.5, Math.log2(1 + prior) * 2.1);
-				})()
-				: 0;
+			const derivePatternBoost =
+				chip.stage.type === 'derive'
+					? (() => {
+							const composed = derivePatternStrength.get('composed_metric') ?? 0;
+							const ratio = derivePatternStrength.get('efficiency_ratio') ?? 0;
+							const flow = derivePatternStrength.get('flow_delta') ?? 0;
+							const prior = Math.max(composed, ratio, flow);
+							if (prior <= 0) return 0;
+							return Math.min(5.5, Math.log2(1 + prior) * 2.1);
+						})()
+					: 0;
 
-			return { ...chip, score: chip.score + typeBoost + columnBoost + sequenceBoost + semanticConfidenceBoost + importanceBoost + pairBoost + stageQualityBoost + derivePatternBoost + schemaFamiliarityBoost };
+			return {
+				...chip,
+				score:
+					chip.score +
+					typeBoost +
+					columnBoost +
+					sequenceBoost +
+					semanticConfidenceBoost +
+					importanceBoost +
+					pairBoost +
+					stageQualityBoost +
+					derivePatternBoost +
+					schemaFamiliarityBoost
+			};
 		});
 
 		const existingStageTypes = new Set(input.stages.map((stage) => stage.type));
@@ -3803,7 +4594,9 @@ export async function getIntelligentQuickChips(input: {
 		const seenKeys = new Set(diversified.map((chip) => stageSemanticKey(chip.stage)));
 		const sortedCandidates = [...chipCandidates].sort((a, b) => b.score - a.score);
 		const filled = [...diversified];
-		const sortedFilterCandidates = sortedCandidates.filter((candidate) => candidate.item.stage.type === 'filter');
+		const sortedFilterCandidates = sortedCandidates.filter(
+			(candidate) => candidate.item.stage.type === 'filter'
+		);
 		let filterCount = filled.filter((chip) => chip.stage.type === 'filter').length;
 		for (const candidate of sortedFilterCandidates) {
 			if (filterCount >= 2) break;
@@ -3815,7 +4608,9 @@ export async function getIntelligentQuickChips(input: {
 			}
 		}
 		if (!filled.some((chip) => chip.stage.type === 'group')) {
-			const bestGroup = sortedCandidates.find((candidate) => candidate.item.stage.type === 'group' && !seenKeys.has(candidate.semanticKey));
+			const bestGroup = sortedCandidates.find(
+				(candidate) => candidate.item.stage.type === 'group' && !seenKeys.has(candidate.semanticKey)
+			);
 			if (bestGroup && filled.length < 6) {
 				filled.push(bestGroup.item);
 				seenKeys.add(bestGroup.semanticKey);
@@ -3833,7 +4628,10 @@ export async function getIntelligentQuickChips(input: {
 	}
 }
 
-function detectProfileRowsFromResult(columns: string[], rows: Record<string, unknown>[]): ProfileRow[] {
+function detectProfileRowsFromResult(
+	columns: string[],
+	rows: Record<string, unknown>[]
+): ProfileRow[] {
 	return columns.map((column) => {
 		const stats = computeColumnStats(rows, column);
 		const inferred = inferColumnSemantics({
@@ -3858,8 +4656,20 @@ function detectProfileRowsFromResult(columns: string[], rows: Record<string, unk
 
 type ChartRole = 'temporal' | 'dimension' | 'metric' | 'identifier' | 'other';
 
-const TEMPORAL_SEMANTICS = new Set<ColumnSemanticType>(['event_time', 'created_at', 'updated_at', 'date']);
-const IDENTIFIER_SEMANTICS = new Set<ColumnSemanticType>(['id', 'foreign_key', 'session_id', 'source_id', 'target_id', 'parent_id']);
+const TEMPORAL_SEMANTICS = new Set<ColumnSemanticType>([
+	'event_time',
+	'created_at',
+	'updated_at',
+	'date'
+]);
+const IDENTIFIER_SEMANTICS = new Set<ColumnSemanticType>([
+	'id',
+	'foreign_key',
+	'session_id',
+	'source_id',
+	'target_id',
+	'parent_id'
+]);
 const METRIC_SEMANTICS = new Set<ColumnSemanticType>([
 	'amount',
 	'currency_amount',
@@ -3889,7 +4699,8 @@ function toChartRole(row: ProfileRow): ChartRole {
 	if (row.data_kind === 'date') return 'temporal';
 	if (semantic && TEMPORAL_SEMANTICS.has(semantic)) return 'temporal';
 	if (semantic && IDENTIFIER_SEMANTICS.has(semantic)) return 'identifier';
-	if (row.data_kind === 'numeric' && (!semantic || !IDENTIFIER_SEMANTICS.has(semantic))) return 'metric';
+	if (row.data_kind === 'numeric' && (!semantic || !IDENTIFIER_SEMANTICS.has(semantic)))
+		return 'metric';
 	if (semantic === 'description' || semantic === 'json_blob') return 'other';
 	if (row.data_kind === 'text' || row.data_kind === 'boolean') return 'dimension';
 	return 'other';
@@ -3962,9 +4773,9 @@ function pickDimensionBindings(dimensionRows: ProfileRow[]): {
 	const secondaryDimensionRow = axisPriority.find(
 		(row) => row.column_name !== primaryDimensionRow?.column_name
 	);
-	const lowCardDimension = dimensionRows.find(
-		(row) => toCardinalityClass(row) === 'low'
-	)?.column_name ?? primaryDimensionRow?.column_name;
+	const lowCardDimension =
+		dimensionRows.find((row) => toCardinalityClass(row) === 'low')?.column_name ??
+		primaryDimensionRow?.column_name;
 
 	return {
 		primaryDimension: primaryDimensionRow?.column_name,
@@ -3994,12 +4805,8 @@ export function recommendIntelligentChartTypes(input: {
 		.sort((a, b) => chartRoleScore(b, 'dimension') - chartRoleScore(a, 'dimension'));
 
 	const primaryTemporal = temporalRows[0]?.column_name;
-	const {
-		primaryDimension,
-		secondaryDimension,
-		lowCardDimension,
-		primaryDimensionRow
-	} = pickDimensionBindings(dimensionRows);
+	const { primaryDimension, secondaryDimension, lowCardDimension, primaryDimensionRow } =
+		pickDimensionBindings(dimensionRows);
 	const primaryMetric = metricRows[0]?.column_name;
 	const secondaryMetrics = metricRows.slice(1, 4).map((row) => row.column_name);
 	const topMetrics = metricRows.slice(0, 4).map((row) => row.column_name);
@@ -4035,89 +4842,148 @@ export function recommendIntelligentChartTypes(input: {
 	};
 
 	if (primaryTemporal && primaryMetric) {
-		const temporalConfidence = (chartRoleScore(temporalRows[0], 'temporal') + chartRoleScore(metricRows[0], 'metric')) / 2;
+		const temporalConfidence =
+			(chartRoleScore(temporalRows[0], 'temporal') + chartRoleScore(metricRows[0], 'metric')) / 2;
 		const yColumns = topMetrics.length > 0 ? topMetrics : [primaryMetric];
 		const temporalColor = secondaryDimension ?? lowCardDimension ?? null;
-		add('line', 'Temporal + metric signature suggests trend analysis', 0.93 + temporalConfidence * 0.08, {
-			xColumn: primaryTemporal,
-			yColumns,
-			colorColumn: temporalColor,
-			seriesMode: yColumns.length >= 2 ? 'grouped' : 'auto'
-		});
-		add('area', yColumns.length >= 2
-			? 'Multiple metrics over time fit stacked cumulative trend view'
-			: 'Single metric over time supports an area trend view', 0.86 + temporalConfidence * 0.08, {
-			xColumn: primaryTemporal,
-			yColumns,
-			colorColumn: null,
-			seriesMode: yColumns.length >= 2 ? 'stacked' : 'auto'
-		});
+		add(
+			'line',
+			'Temporal + metric signature suggests trend analysis',
+			0.93 + temporalConfidence * 0.08,
+			{
+				xColumn: primaryTemporal,
+				yColumns,
+				colorColumn: temporalColor,
+				seriesMode: yColumns.length >= 2 ? 'grouped' : 'auto'
+			}
+		);
+		add(
+			'area',
+			yColumns.length >= 2
+				? 'Multiple metrics over time fit stacked cumulative trend view'
+				: 'Single metric over time supports an area trend view',
+			0.86 + temporalConfidence * 0.08,
+			{
+				xColumn: primaryTemporal,
+				yColumns,
+				colorColumn: null,
+				seriesMode: yColumns.length >= 2 ? 'stacked' : 'auto'
+			}
+		);
 	}
 
 	if (primaryDimension && primaryMetric) {
-		const primaryDimScore = primaryDimensionRow ? chartRoleScore(primaryDimensionRow, 'dimension') : chartRoleScore(dimensionRows[0], 'dimension');
+		const primaryDimScore = primaryDimensionRow
+			? chartRoleScore(primaryDimensionRow, 'dimension')
+			: chartRoleScore(dimensionRows[0], 'dimension');
 		const metricScore = chartRoleScore(metricRows[0], 'metric');
-		const axisPenalty = primaryDimensionRow && toCardinalityClass(primaryDimensionRow) === 'high' && lowCardDimension && lowCardDimension !== primaryDimension
-			? 0.08
-			: 0;
+		const axisPenalty =
+			primaryDimensionRow &&
+			toCardinalityClass(primaryDimensionRow) === 'high' &&
+			lowCardDimension &&
+			lowCardDimension !== primaryDimension
+				? 0.08
+				: 0;
 		const dimensionConfidence = Math.max(0, (primaryDimScore + metricScore) / 2 - axisPenalty);
 		const yColumns = topMetrics.length > 0 ? topMetrics : [primaryMetric];
-		const barColor = secondaryDimension ?? (yColumns.length === 1 ? lowCardDimension ?? null : null);
-		const barSeriesMode: 'auto' | 'grouped' = dimensionRows.length >= 2 || yColumns.length >= 2 ? 'grouped' : 'auto';
-		add('bar', 'Dimension + metric signature suggests grouped category comparison', 0.72 + dimensionConfidence * 0.12, {
-			xColumn: primaryDimension,
-			yColumns,
-			seriesMode: barSeriesMode,
-			colorColumn: barColor
-		});
-		if (dimensionRows.length >= 2 && yColumns.length >= 2) {
-			add('bar', 'Two dimensions and multiple metrics support stacked category comparisons', 0.76 + dimensionConfidence * 0.12, {
+		const barColor =
+			secondaryDimension ?? (yColumns.length === 1 ? (lowCardDimension ?? null) : null);
+		const barSeriesMode: 'auto' | 'grouped' =
+			dimensionRows.length >= 2 || yColumns.length >= 2 ? 'grouped' : 'auto';
+		add(
+			'bar',
+			'Dimension + metric signature suggests grouped category comparison',
+			0.72 + dimensionConfidence * 0.12,
+			{
 				xColumn: primaryDimension,
 				yColumns,
-				seriesMode: 'stacked',
-				colorColumn: secondaryDimension
-			});
+				seriesMode: barSeriesMode,
+				colorColumn: barColor
+			}
+		);
+		if (dimensionRows.length >= 2 && yColumns.length >= 2) {
+			add(
+				'bar',
+				'Two dimensions and multiple metrics support stacked category comparisons',
+				0.76 + dimensionConfidence * 0.12,
+				{
+					xColumn: primaryDimension,
+					yColumns,
+					seriesMode: 'stacked',
+					colorColumn: secondaryDimension
+				}
+			);
 		}
-		add('bar-horizontal', 'Text-heavy category labels improve readability in horizontal bars', 0.68 + dimensionConfidence * 0.16, {
-			xColumn: primaryDimension,
-			yColumns: [primaryMetric],
-			colorColumn: secondaryDimension ?? lowCardDimension ?? null,
-			seriesMode: 'auto'
-		});
+		add(
+			'bar-horizontal',
+			'Text-heavy category labels improve readability in horizontal bars',
+			0.68 + dimensionConfidence * 0.16,
+			{
+				xColumn: primaryDimension,
+				yColumns: [primaryMetric],
+				colorColumn: secondaryDimension ?? lowCardDimension ?? null,
+				seriesMode: 'auto'
+			}
+		);
 		const lowCardinality = dimensionRows.find((row) => row.column_name === lowCardDimension);
 		if (lowCardinality && toCardinalityClass(lowCardinality) === 'low') {
-			add('pie', 'Low-cardinality dimension supports part-to-whole comparison', 0.66 + dimensionConfidence * 0.12, {
-				xColumn: lowCardDimension,
-				yColumns: [primaryMetric]
-			});
+			add(
+				'pie',
+				'Low-cardinality dimension supports part-to-whole comparison',
+				0.66 + dimensionConfidence * 0.12,
+				{
+					xColumn: lowCardDimension,
+					yColumns: [primaryMetric]
+				}
+			);
 		}
 	}
 
 	if (metricRows.length >= 3) {
-		const metricConfidence = (chartRoleScore(metricRows[0], 'metric') + chartRoleScore(metricRows[1], 'metric') + chartRoleScore(metricRows[2], 'metric')) / 3;
-		add('bubble', 'Three metrics detected, bubble chart can encode x/y/size together', 0.74 + metricConfidence * 0.18, {
-			xColumn: metricRows[0].column_name,
-			yColumns: [metricRows[1].column_name],
-			sizeColumn: metricRows[2].column_name,
-			colorColumn: lowCardDimension ?? null
-		});
+		const metricConfidence =
+			(chartRoleScore(metricRows[0], 'metric') +
+				chartRoleScore(metricRows[1], 'metric') +
+				chartRoleScore(metricRows[2], 'metric')) /
+			3;
+		add(
+			'bubble',
+			'Three metrics detected, bubble chart can encode x/y/size together',
+			0.74 + metricConfidence * 0.18,
+			{
+				xColumn: metricRows[0].column_name,
+				yColumns: [metricRows[1].column_name],
+				sizeColumn: metricRows[2].column_name,
+				colorColumn: lowCardDimension ?? null
+			}
+		);
 	}
 
 	if (metricRows.length >= 2) {
-		const metricConfidence = (chartRoleScore(metricRows[0], 'metric') + chartRoleScore(metricRows[1], 'metric')) / 2;
-		add('scatter', 'Multiple metrics detected for relationship analysis', 0.73 + metricConfidence * 0.2, {
-			xColumn: metricRows[0].column_name,
-			yColumns: [metricRows[1].column_name],
-			sizeColumn: metricRows[2]?.column_name ?? null,
-			colorColumn: lowCardDimension ?? null
-		});
+		const metricConfidence =
+			(chartRoleScore(metricRows[0], 'metric') + chartRoleScore(metricRows[1], 'metric')) / 2;
+		add(
+			'scatter',
+			'Multiple metrics detected for relationship analysis',
+			0.73 + metricConfidence * 0.2,
+			{
+				xColumn: metricRows[0].column_name,
+				yColumns: [metricRows[1].column_name],
+				sizeColumn: metricRows[2]?.column_name ?? null,
+				colorColumn: lowCardDimension ?? null
+			}
+		);
 	}
 
 	if (metricRows.length === 1 && temporalRows.length === 0 && dimensionRows.length === 0) {
-		add('histogram', 'Single metric signature, distribution shape is likely informative', 0.71 + chartRoleScore(metricRows[0], 'metric') * 0.16, {
-			xColumn: metricRows[0].column_name,
-			yColumns: [metricRows[0].column_name]
-		});
+		add(
+			'histogram',
+			'Single metric signature, distribution shape is likely informative',
+			0.71 + chartRoleScore(metricRows[0], 'metric') * 0.16,
+			{
+				xColumn: metricRows[0].column_name,
+				yColumns: [metricRows[0].column_name]
+			}
+		);
 	}
 
 	if (recommendations.length === 0) {
@@ -4169,22 +5035,27 @@ export async function getIntelligentPresetSuggestions(input: {
 			FROM ${META_SCHEMA}.column_profiles
 			WHERE connection_id = ${quoteLiteral(input.connectionId)}
 			  AND ${(() => {
-				const relationCandidates = relationNameCandidates(sourceTable);
-				return relationCandidates.length > 0
-					? `relation_name IN (${relationCandidates.map((name) => quoteLiteral(name)).join(', ')})`
-					: `relation_name = ${quoteLiteral(sourceTable)}`;
-			})()}
+					const relationCandidates = relationNameCandidates(sourceTable);
+					return relationCandidates.length > 0
+						? `relation_name IN (${relationCandidates.map((name) => quoteLiteral(name)).join(', ')})`
+						: `relation_name = ${quoteLiteral(sourceTable)}`;
+				})()}
 			ORDER BY seen_count DESC, last_seen_ms DESC
 		`);
 		let profileRows = profileResult.rows as unknown as ProfileRow[];
-		const scopedProfileRows = scopeProfileRowsToAvailableColumns(profileRows, input.availableColumns);
+		const scopedProfileRows = scopeProfileRowsToAvailableColumns(
+			profileRows,
+			input.availableColumns
+		);
 		if (scopedProfileRows.length > 0) {
 			profileRows = scopedProfileRows;
 		} else if (input.availableColumns.length > 0) {
 			profileRows = bootstrapProfilesFromColumns(input.availableColumns);
 		}
 		const deriveCandidates = findSemanticDeriveCandidates(toSemanticDeriveColumns(profileRows));
-		const deriveQualityByPattern = new Map(deriveCandidates.map((candidate) => [candidate.pattern, candidate.quality]));
+		const deriveQualityByPattern = new Map(
+			deriveCandidates.map((candidate) => [candidate.pattern, candidate.quality])
+		);
 		const availableColumnProfiles = buildPresetColumnProfiles(profileRows);
 		const base = recommendPresets({
 			stages: input.stages,
@@ -4206,7 +5077,9 @@ export async function getIntelligentPresetSuggestions(input: {
 
 		const schemaKey = schemaContextSignature(profileRows);
 		const contextSignatures = stageContextSignatures(input.stages, schemaKey);
-		const contextPredicates = contextSignatures.map((signature) => `context_signature = ${quoteLiteral(signature)}`);
+		const contextPredicates = contextSignatures.map(
+			(signature) => `context_signature = ${quoteLiteral(signature)}`
+		);
 		const sequenceRows: Array<{
 			context_signature?: string;
 			next_stage?: StageType;
@@ -4219,11 +5092,13 @@ export async function getIntelligentPresetSuggestions(input: {
 				WHERE connection_id = ${quoteLiteral(input.connectionId)}
 				  AND (${contextPredicates.join(' OR ')})
 			`);
-			sequenceRows.push(...(sequenceResult.rows as Array<{
-				context_signature?: string;
-				next_stage?: StageType;
-				usage_count?: number;
-			}>));
+			sequenceRows.push(
+				...(sequenceResult.rows as Array<{
+					context_signature?: string;
+					next_stage?: StageType;
+					usage_count?: number;
+				}>)
+			);
 		}
 		const sequenceScore = new Map<StageType, number>();
 		for (const row of sequenceRows) {
@@ -4237,7 +5112,10 @@ export async function getIntelligentPresetSuggestions(input: {
 					: signature.includes('variant=intent')
 						? 0.74
 						: 0.66;
-			sequenceScore.set(type, (sequenceScore.get(type) ?? 0) + Number(row.usage_count ?? 0) * contextWeight);
+			sequenceScore.set(
+				type,
+				(sequenceScore.get(type) ?? 0) + Number(row.usage_count ?? 0) * contextWeight
+			);
 		}
 
 		const relationCandidates = relationNameCandidates(sourceTable);
@@ -4263,27 +5141,42 @@ export async function getIntelligentPresetSuggestions(input: {
 			const reasons = [...preset.reasons];
 			const inflowCandidate =
 				profileRows.find((row) => row.semantic_type === 'inflow')?.column_name ??
-				profileRows.find((row) => /paid\s*in|inflow|deposit|credited|received/i.test(row.column_name))?.column_name ??
+				profileRows.find((row) =>
+					/paid\s*in|inflow|deposit|credited|received/i.test(row.column_name)
+				)?.column_name ??
 				null;
 			const outflowCandidate =
 				profileRows.find((row) => row.semantic_type === 'outflow')?.column_name ??
-				profileRows.find((row) => /withdrawn|outflow|debited|spent|payment|charge/i.test(row.column_name))?.column_name ??
+				profileRows.find((row) =>
+					/withdrawn|outflow|debited|spent|payment|charge/i.test(row.column_name)
+				)?.column_name ??
 				null;
-			const hasPairedFlowColumns = Boolean(inflowCandidate && outflowCandidate && inflowCandidate !== outflowCandidate);
+			const hasPairedFlowColumns = Boolean(
+				inflowCandidate && outflowCandidate && inflowCandidate !== outflowCandidate
+			);
 
 			if (preset.preset.id === 'dedup-latest') {
 				if (semanticSet.has('id') || semanticSet.has('foreign_key')) {
 					score += 8;
 					reasons.push('identifier semantics detected');
 				}
-				if (semanticSet.has('event_time') || semanticSet.has('created_at') || semanticSet.has('updated_at') || semanticSet.has('date')) {
+				if (
+					semanticSet.has('event_time') ||
+					semanticSet.has('created_at') ||
+					semanticSet.has('updated_at') ||
+					semanticSet.has('date')
+				) {
 					score += 10;
 					reasons.push('temporal semantics detected');
 				}
 			}
 
 			if (preset.preset.id === 'group-top') {
-				if (semanticSet.has('category') || semanticSet.has('region') || semanticSet.has('country')) {
+				if (
+					semanticSet.has('category') ||
+					semanticSet.has('region') ||
+					semanticSet.has('country')
+				) {
 					score += 8;
 					reasons.push('strong dimension semantics');
 				}
@@ -4293,13 +5186,21 @@ export async function getIntelligentPresetSuggestions(input: {
 				}
 			}
 
-			if (preset.preset.id === 'top-metric' && (semanticSet.has('amount') || semanticSet.has('metric'))) {
+			if (
+				preset.preset.id === 'top-metric' &&
+				(semanticSet.has('amount') || semanticSet.has('metric'))
+			) {
 				score += 9;
 				reasons.push('metric semantics detected');
 			}
 
 			if (preset.preset.id === 'temporal-trend') {
-				if (semanticSet.has('event_time') || semanticSet.has('created_at') || semanticSet.has('updated_at') || semanticSet.has('date')) {
+				if (
+					semanticSet.has('event_time') ||
+					semanticSet.has('created_at') ||
+					semanticSet.has('updated_at') ||
+					semanticSet.has('date')
+				) {
 					score += 12;
 					reasons.push('temporal semantics detected');
 				}
@@ -4310,7 +5211,12 @@ export async function getIntelligentPresetSuggestions(input: {
 			}
 
 			if (preset.preset.id === 'text-categorize') {
-				if (semanticSet.has('description') || semanticSet.has('text') || semanticSet.has('status') || semanticSet.has('category')) {
+				if (
+					semanticSet.has('description') ||
+					semanticSet.has('text') ||
+					semanticSet.has('status') ||
+					semanticSet.has('category')
+				) {
 					score += 10;
 					reasons.push('categorization semantics detected');
 				}
@@ -4328,18 +5234,32 @@ export async function getIntelligentPresetSuggestions(input: {
 			}
 
 			if (preset.preset.id === 'frequency-ranking') {
-				if (semanticSet.has('entity_name') || semanticSet.has('category') || semanticSet.has('status') || semanticSet.has('region')) {
+				if (
+					semanticSet.has('entity_name') ||
+					semanticSet.has('category') ||
+					semanticSet.has('status') ||
+					semanticSet.has('region')
+				) {
 					score += 8;
 					reasons.push('dimension semantics detected');
 				}
 			}
 
 			if (preset.preset.id === 'cashflow-rollup') {
-				if (hasPairedFlowColumns && (semanticSet.has('amount') || semanticSet.has('metric') || semanticSet.has('quantity'))) {
+				if (
+					hasPairedFlowColumns &&
+					(semanticSet.has('amount') || semanticSet.has('metric') || semanticSet.has('quantity'))
+				) {
 					score += 11;
 					reasons.push('flow-like metric semantics detected');
 				}
-				if (hasPairedFlowColumns && (semanticSet.has('event_time') || semanticSet.has('created_at') || semanticSet.has('updated_at') || semanticSet.has('date'))) {
+				if (
+					hasPairedFlowColumns &&
+					(semanticSet.has('event_time') ||
+						semanticSet.has('created_at') ||
+						semanticSet.has('updated_at') ||
+						semanticSet.has('date'))
+				) {
 					score += 8;
 					reasons.push('temporal rollup semantics detected');
 				}
@@ -4358,11 +5278,18 @@ export async function getIntelligentPresetSuggestions(input: {
 			if (preset.preset.id === 'cashflow-rollup') {
 				score += (deriveQualityByPattern.get('flow_delta') ?? 0) * 5;
 			}
-			if (preset.preset.id === 'temporal-trend' || preset.preset.id === 'seasonal-pattern' || preset.preset.id === 'drift-monitor') {
+			if (
+				preset.preset.id === 'temporal-trend' ||
+				preset.preset.id === 'seasonal-pattern' ||
+				preset.preset.id === 'drift-monitor'
+			) {
 				score += (deriveQualityByPattern.get('temporal_metric') ?? 0) * 4;
 			}
 
-			const sequenceBoost = preset.stages.reduce((acc, stage) => acc + (sequenceScore.get(stage.type) ?? 0), 0);
+			const sequenceBoost = preset.stages.reduce(
+				(acc, stage) => acc + (sequenceScore.get(stage.type) ?? 0),
+				0
+			);
 			if (sequenceBoost > 0) {
 				score += Math.min(14, Math.log2(1 + sequenceBoost) * 4.5);
 				reasons.push('historically effective stage sequence');
@@ -4376,7 +5303,11 @@ export async function getIntelligentPresetSuggestions(input: {
 					);
 					return strength > 0 ? Math.min(8, Math.log2(1 + strength) * 2.8) : 0;
 				}
-				if (preset.preset.id === 'temporal-trend' || preset.preset.id === 'seasonal-pattern' || preset.preset.id === 'drift-monitor') {
+				if (
+					preset.preset.id === 'temporal-trend' ||
+					preset.preset.id === 'seasonal-pattern' ||
+					preset.preset.id === 'drift-monitor'
+				) {
 					const strength = derivePatternStrength.get('temporal_metric') ?? 0;
 					return strength > 0 ? Math.min(9, Math.log2(1 + strength) * 3.2) : 0;
 				}
@@ -4419,16 +5350,23 @@ export async function getIntelligentPresetSuggestions(input: {
 		const presetImportanceByColumn = new Map<string, number>();
 		for (const ranked of [rankedPresetMetrics, rankedPresetDimensions]) {
 			for (const entry of ranked) {
-				presetImportanceByColumn.set(entry.column, Math.max(presetImportanceByColumn.get(entry.column) ?? 0, entry.score));
+				presetImportanceByColumn.set(
+					entry.column,
+					Math.max(presetImportanceByColumn.get(entry.column) ?? 0, entry.score)
+				);
 			}
 		}
 		const resolveColumn = (candidate: string | null): string | null => {
 			if (!candidate) return null;
 			if (profileByColumn.has(candidate)) return candidate;
 			const normalized = candidate.trim().toLowerCase();
-			const byNormalized = profileRows.find((row) => row.column_name.trim().toLowerCase() === normalized)?.column_name;
+			const byNormalized = profileRows.find(
+				(row) => row.column_name.trim().toLowerCase() === normalized
+			)?.column_name;
 			if (byNormalized) return byNormalized;
-			return input.availableColumns.find((column) => column.trim().toLowerCase() === normalized) ?? null;
+			return (
+				input.availableColumns.find((column) => column.trim().toLowerCase() === normalized) ?? null
+			);
 		};
 
 		const columnBySemantic = (...semanticTypes: ColumnSemanticType[]): string | null => {
@@ -4448,18 +5386,34 @@ export async function getIntelligentPresetSuggestions(input: {
 			resolveColumn(columnBySemantic('event_time', 'updated_at', 'created_at', 'date')) ??
 			resolveColumn(
 				profileRows.find((row) => isTemporalLikeColumnName(row.column_name))?.column_name ??
-				input.availableColumns.find((column) => isTemporalLikeColumnName(column)) ??
-				null
+					input.availableColumns.find((column) => isTemporalLikeColumnName(column)) ??
+					null
 			);
-		const compositeMetricPlan = findCompositeMetricPlan(profileRows, input.availableColumns, dialect);
-		const metricColumn = compositeMetricPlan?.name ?? resolveColumn(rankedPresetMetrics[0]?.column ?? pickMetricColumn(profileRows, input.availableColumns));
+		const compositeMetricPlan = findCompositeMetricPlan(
+			profileRows,
+			input.availableColumns,
+			dialect
+		);
+		const metricColumn =
+			compositeMetricPlan?.name ??
+			resolveColumn(
+				rankedPresetMetrics[0]?.column ?? pickMetricColumn(profileRows, input.availableColumns)
+			);
 		const detailColumn =
 			resolveColumn(columnBySemantic('description')) ??
 			resolveColumn(columnByNamePattern(/details?|description|memo|notes?|comment|message/i));
 		const entityColumn =
-			resolveColumn(rankedPresetDimensions.find((entry) => (entry.row.semantic_type ?? 'text') === 'entity_name')?.column ?? null) ??
-			resolveColumn(columnBySemantic('entity_name', 'category', 'status', 'region', 'country', 'city')) ??
-			resolveColumn(columnByNamePattern(/payee|merchant|vendor|customer|name|entity|category|status/i));
+			resolveColumn(
+				rankedPresetDimensions.find(
+					(entry) => (entry.row.semantic_type ?? 'text') === 'entity_name'
+				)?.column ?? null
+			) ??
+			resolveColumn(
+				columnBySemantic('entity_name', 'category', 'status', 'region', 'country', 'city')
+			) ??
+			resolveColumn(
+				columnByNamePattern(/payee|merchant|vendor|customer|name|entity|category|status/i)
+			);
 		const inflowColumnCandidate =
 			resolveColumn(columnBySemantic('inflow')) ??
 			resolveColumn(columnByNamePattern(/paid\s*in|inflow|deposit|credited|received/i));
@@ -4474,9 +5428,7 @@ export async function getIntelligentPresetSuggestions(input: {
 		const inflowColumn = hasDistinctFlowPair ? inflowColumnCandidate : null;
 		const outflowColumn = hasDistinctFlowPair ? outflowColumnCandidate : null;
 
-		const prioritizedColumns = (
-			...columns: Array<string | null>
-		): string[] => {
+		const prioritizedColumns = (...columns: Array<string | null>): string[] => {
 			const dedup: string[] = [];
 			for (const column of columns) {
 				if (!column) continue;
@@ -4499,7 +5451,12 @@ export async function getIntelligentPresetSuggestions(input: {
 			if (isIdentifierLikeName(column)) return false;
 			if (isTemporalLikeColumnName(column)) return false;
 			if (featureMatrixSignal.isFeatureMatrix && isMeasurementFeatureName(column)) return false;
-			if (/(amount|revenue|cost|price|balance|paid|withdrawn|metric|value|score|qty|quantity|count)/i.test(column)) return false;
+			if (
+				/(amount|revenue|cost|price|balance|paid|withdrawn|metric|value|score|qty|quantity|count)/i.test(
+					column
+				)
+			)
+				return false;
 			if (/(slug|description|note|notes|comment|memo)/i.test(column)) return false;
 			return true;
 		};
@@ -4507,23 +5464,25 @@ export async function getIntelligentPresetSuggestions(input: {
 			const profile = profileFor(column);
 			const semanticScore = profile
 				? scoreColumnImportance({
-					row: profile,
-					role: 'dimension',
-					usageByType: presetUsageByType
-				})
+						row: profile,
+						role: 'dimension',
+						usageByType: presetUsageByType
+					})
 				: 0.44;
 			const semanticBoost = profile
 				? /(region|country|city)/i.test(profile.semantic_type ?? '')
 					? 0.24
 					: /(category|status)/i.test(profile.semantic_type ?? '')
 						? 0.18
-					: /(entity_name)/i.test(profile.semantic_type ?? '')
-						? -0.18
-						: 0
+						: /(entity_name)/i.test(profile.semantic_type ?? '')
+							? -0.18
+							: 0
 				: 0;
 			const nameBoost = /(species|class|target|label)/i.test(column)
 				? 0.3
-				: /(genre|sub_?genre|mood|style|region|country|city|product|category|segment|channel|status|stage|type|customer\s*type|merchant|vendor|customer|payee)/i.test(column)
+				: /(genre|sub_?genre|mood|style|region|country|city|product|category|segment|channel|status|stage|type|customer\s*type|merchant|vendor|customer|payee)/i.test(
+							column
+					  )
 					? 0.14
 					: featureMatrixSignal.isFeatureMatrix && isMeasurementFeatureName(column)
 						? -0.2
@@ -4540,13 +5499,23 @@ export async function getIntelligentPresetSuggestions(input: {
 			return clamp(semanticScore + semanticBoost + nameBoost + cardinalityPenalty, 0, 1);
 		};
 		const dimensionCandidates = input.availableColumns
-			.filter((column, index, arr) => arr.findIndex((entry) => entry.trim().toLowerCase() === column.trim().toLowerCase()) === index)
+			.filter(
+				(column, index, arr) =>
+					arr.findIndex((entry) => entry.trim().toLowerCase() === column.trim().toLowerCase()) ===
+					index
+			)
 			.filter((column) => column !== metricColumn && isDimensionCandidate(column))
 			.map((column) => ({ column, relevance: dimensionRelevance(column) }))
 			.sort((a, b) => b.relevance - a.relevance);
-		const relevanceValues = dimensionCandidates.map((candidate) => candidate.relevance).sort((a, b) => b - a);
-		const percentileIndex = Math.min(relevanceValues.length - 1, Math.max(0, Math.floor(relevanceValues.length * 0.5)));
-		const adaptiveRelevanceCutoff = relevanceValues.length > 0 ? Math.max(0.42, relevanceValues[percentileIndex] ?? 0.42) : 0.42;
+		const relevanceValues = dimensionCandidates
+			.map((candidate) => candidate.relevance)
+			.sort((a, b) => b - a);
+		const percentileIndex = Math.min(
+			relevanceValues.length - 1,
+			Math.max(0, Math.floor(relevanceValues.length * 0.5))
+		);
+		const adaptiveRelevanceCutoff =
+			relevanceValues.length > 0 ? Math.max(0.42, relevanceValues[percentileIndex] ?? 0.42) : 0.42;
 		const selectedDimensions = dimensionCandidates
 			.filter((candidate) => candidate.relevance >= adaptiveRelevanceCutoff)
 			.slice(0, 2)
@@ -4556,16 +5525,25 @@ export async function getIntelligentPresetSuggestions(input: {
 		const resolvedPrimaryDimension = featureMatrixSignal.isFeatureMatrix
 			? (featureMatrixSignal.classColumn ?? primaryDimension)
 			: primaryDimension;
-		const resolvedSecondaryDimension = featureMatrixSignal.isFeatureMatrix ? null : secondaryDimension;
-		const dimensionPhrase = humanizeColumnList([resolvedPrimaryDimension, resolvedSecondaryDimension], { maxLength: 24 });
+		const resolvedSecondaryDimension = featureMatrixSignal.isFeatureMatrix
+			? null
+			: secondaryDimension;
+		const dimensionPhrase = humanizeColumnList(
+			[resolvedPrimaryDimension, resolvedSecondaryDimension],
+			{ maxLength: 24 }
+		);
 		const humanMetricColumn = compositeMetricPlan
 			? 'Revenue'
 			: metricColumn
 				? humanizeColumnLabel(metricColumn, { stripAggregationPrefix: true, maxLength: 18 })
 				: null;
 		const humanTimeColumn = timeColumn ? humanizeColumnName(timeColumn) : null;
-		const humanDetailColumn = detailColumn ? humanizeColumnLabel(detailColumn, { maxLength: 18 }) : null;
-		const humanEntityColumn = entityColumn ? humanizeColumnLabel(entityColumn, { maxLength: 18 }) : null;
+		const humanDetailColumn = detailColumn
+			? humanizeColumnLabel(detailColumn, { maxLength: 18 })
+			: null;
+		const humanEntityColumn = entityColumn
+			? humanizeColumnLabel(entityColumn, { maxLength: 18 })
+			: null;
 		const hasTimeSignal = Boolean(timeColumn);
 		const hasMetricSignal = Boolean(metricColumn);
 		const hasDimensionSignal = Boolean(resolvedPrimaryDimension);
@@ -4579,17 +5557,32 @@ export async function getIntelligentPresetSuggestions(input: {
 			if (!metricColumn || !timeColumn) return null;
 			const metricProfileRow = profileRows.find((row) => row.column_name === metricColumn);
 			const timeProfileRow = profileRows.find((row) => row.column_name === timeColumn);
-			const metricAggFunc = compositeMetricPlan ? 'sum' : metricAggregationFunc(profileRows, metricColumn);
+			const metricAggFunc = compositeMetricPlan
+				? 'sum'
+				: metricAggregationFunc(profileRows, metricColumn);
 			const metricValueColumn = compositeMetricPlan
 				? compositeMetricPlan.name
 				: metricAggFunc === 'count'
 					? metricColumn
 					: 'metric_value';
 			const metricValueDerive = compositeMetricPlan
-				? [{ name: compositeMetricPlan.name, expr: { mode: 'sstring' as const, template: compositeMetricPlan.expressionSql } }]
+				? [
+						{
+							name: compositeMetricPlan.name,
+							expr: { mode: 'sstring' as const, template: compositeMetricPlan.expressionSql }
+						}
+					]
 				: metricAggFunc === 'count'
 					? []
-					: [{ name: 'metric_value', expr: { mode: 'sstring' as const, template: metricSqlExpr(metricColumn, metricProfileRow, dialect) } }];
+					: [
+							{
+								name: 'metric_value',
+								expr: {
+									mode: 'sstring' as const,
+									template: metricSqlExpr(metricColumn, metricProfileRow, dialect)
+								}
+							}
+						];
 			const timeValueExpr = temporalSqlExpr(timeColumn, timeProfileRow, dialect);
 			if (!timeValueExpr) return null;
 			const partitionColumns = [resolvedPrimaryDimension, resolvedSecondaryDimension]
@@ -4597,7 +5590,8 @@ export async function getIntelligentPresetSuggestions(input: {
 				.map((column) => quotedSqlIdentifier(column));
 
 			if (presetId === 'temporal-trend') {
-				const partitionExpr = partitionColumns.length > 0 ? `partition by ${partitionColumns.join(', ')} ` : '';
+				const partitionExpr =
+					partitionColumns.length > 0 ? `partition by ${partitionColumns.join(', ')} ` : '';
 				return [
 					{
 						type: 'derive',
@@ -4675,7 +5669,12 @@ export async function getIntelligentPresetSuggestions(input: {
 					},
 					{
 						type: 'group',
-						by: ['period_month', 'season_month', 'season_weekday', ...(resolvedPrimaryDimension ? [resolvedPrimaryDimension] : [])],
+						by: [
+							'period_month',
+							'season_month',
+							'season_weekday',
+							...(resolvedPrimaryDimension ? [resolvedPrimaryDimension] : [])
+						],
 						aggregations: [
 							{ name: 'metric_total', func: metricAggFunc, column: metricValueColumn },
 							{ name: 'row_count', func: 'count', column: '' }
@@ -4688,18 +5687,28 @@ export async function getIntelligentPresetSuggestions(input: {
 								name: 'seasonality_index',
 								expr: {
 									mode: 'sstring',
-									template: 'metric_total / nullif(avg(metric_total) over (partition by season_weekday), 0)'
+									template:
+										'metric_total / nullif(avg(metric_total) over (partition by season_weekday), 0)'
 								}
 							}
 						]
 					},
-					{ type: 'sort', keys: [{ column: 'period_month', dir: 'asc' }, { column: 'seasonality_index', dir: 'desc' }] },
+					{
+						type: 'sort',
+						keys: [
+							{ column: 'period_month', dir: 'asc' },
+							{ column: 'seasonality_index', dir: 'desc' }
+						]
+					},
 					{ type: 'take', n: 160 }
 				];
 			}
 
 			if (presetId === 'drift-monitor' && resolvedPrimaryDimension) {
-				const partitionExpr = partitionColumns.length > 0 ? partitionColumns.join(', ') : quotedSqlIdentifier(resolvedPrimaryDimension);
+				const partitionExpr =
+					partitionColumns.length > 0
+						? partitionColumns.join(', ')
+						: quotedSqlIdentifier(resolvedPrimaryDimension);
 				return [
 					{
 						type: 'derive',
@@ -4728,7 +5737,11 @@ export async function getIntelligentPresetSuggestions(input: {
 					},
 					{
 						type: 'group',
-						by: [resolvedPrimaryDimension, 'drift_window', ...(resolvedSecondaryDimension ? [resolvedSecondaryDimension] : [])],
+						by: [
+							resolvedPrimaryDimension,
+							'drift_window',
+							...(resolvedSecondaryDimension ? [resolvedSecondaryDimension] : [])
+						],
 						aggregations: [
 							{ name: 'metric_total', func: metricAggFunc, column: metricValueColumn },
 							{ name: 'row_count', func: 'count', column: '' }
@@ -4780,12 +5793,14 @@ export async function getIntelligentPresetSuggestions(input: {
 		const hydrated = enriched.map((preset) => {
 			const baseReason = preset.reasons[0] ?? preset.preset.description;
 			if (preset.preset.id === 'temporal-trend') {
-				const label = timeColumn && metricColumn
-					? `Monthly ${humanMetricColumn} trend from ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = timeColumn && metricColumn
-					? `Decompose monthly ${humanMetricColumn} into level, delta, and growth to surface trend inflections`
-					: baseReason;
+				const label =
+					timeColumn && metricColumn
+						? `Monthly ${humanMetricColumn} trend from ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					timeColumn && metricColumn
+						? `Decompose monthly ${humanMetricColumn} into level, delta, and growth to surface trend inflections`
+						: baseReason;
 				const analystStages = buildAnalystPresetStages('temporal-trend');
 				return {
 					...preset,
@@ -4795,17 +5810,24 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: analystStages ?? buildPresetStages('temporal-trend', prioritizedColumns(timeColumn, metricColumn, entityColumn))
+					stages:
+						analystStages ??
+						buildPresetStages(
+							'temporal-trend',
+							prioritizedColumns(timeColumn, metricColumn, entityColumn)
+						)
 				};
 			}
 
 			if (preset.preset.id === 'cashflow-rollup') {
-				const label = inflowColumn && outflowColumn && timeColumn
-					? `Inflow vs outflow (${humanizeColumnName(inflowColumn, { stripAggregationPrefix: true })}/${humanizeColumnName(outflowColumn, { stripAggregationPrefix: true })}) by ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = inflowColumn && outflowColumn
-					? `Derive inflow/outflow from ${humanizeColumnName(inflowColumn, { stripAggregationPrefix: true })} and ${humanizeColumnName(outflowColumn, { stripAggregationPrefix: true })}`
-					: baseReason;
+				const label =
+					inflowColumn && outflowColumn && timeColumn
+						? `Inflow vs outflow (${humanizeColumnName(inflowColumn, { stripAggregationPrefix: true })}/${humanizeColumnName(outflowColumn, { stripAggregationPrefix: true })}) by ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					inflowColumn && outflowColumn
+						? `Derive inflow/outflow from ${humanizeColumnName(inflowColumn, { stripAggregationPrefix: true })} and ${humanizeColumnName(outflowColumn, { stripAggregationPrefix: true })}`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4814,14 +5836,18 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('cashflow-rollup', prioritizedColumns(timeColumn, inflowColumn, outflowColumn, detailColumn, entityColumn))
+					stages: buildPresetStages(
+						'cashflow-rollup',
+						prioritizedColumns(timeColumn, inflowColumn, outflowColumn, detailColumn, entityColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'text-categorize') {
-				const label = detailColumn && metricColumn
-					? `Categorize ${humanDetailColumn} and summarize ${humanMetricColumn}`
-					: preset.preset.label;
+				const label =
+					detailColumn && metricColumn
+						? `Categorize ${humanDetailColumn} and summarize ${humanMetricColumn}`
+						: preset.preset.label;
 				const reason = detailColumn
 					? `Build case buckets from ${humanDetailColumn} patterns`
 					: baseReason;
@@ -4833,7 +5859,10 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('text-categorize', prioritizedColumns(detailColumn, metricColumn, timeColumn, entityColumn))
+					stages: buildPresetStages(
+						'text-categorize',
+						prioritizedColumns(detailColumn, metricColumn, timeColumn, entityColumn)
+					)
 				};
 			}
 
@@ -4852,14 +5881,20 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('frequency-ranking', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn, timeColumn))
+					stages: buildPresetStages(
+						'frequency-ranking',
+						prioritizedColumns(
+							resolvedPrimaryDimension,
+							resolvedSecondaryDimension,
+							metricColumn,
+							timeColumn
+						)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'anomaly-scan') {
-				const label = metricColumn
-					? `Largest ${humanMetricColumn} outliers`
-					: preset.preset.label;
+				const label = metricColumn ? `Largest ${humanMetricColumn} outliers` : preset.preset.label;
 				const reason = metricColumn
 					? `Derive absolute ${humanMetricColumn} and rank descending`
 					: baseReason;
@@ -4871,17 +5906,22 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('anomaly-scan', prioritizedColumns(metricColumn, entityColumn, detailColumn, timeColumn))
+					stages: buildPresetStages(
+						'anomaly-scan',
+						prioritizedColumns(metricColumn, entityColumn, detailColumn, timeColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'group-top') {
-				const label = dimensionPhrase && metricColumn
-					? compactLabel(`${humanMetricColumn} by ${dimensionPhrase}`, 34)
-					: preset.preset.label;
-				const reason = dimensionPhrase && metricColumn
-					? `Aggregate ${humanMetricColumn} across ${dimensionPhrase}`
-					: baseReason;
+				const label =
+					dimensionPhrase && metricColumn
+						? compactLabel(`${humanMetricColumn} by ${dimensionPhrase}`, 34)
+						: preset.preset.label;
+				const reason =
+					dimensionPhrase && metricColumn
+						? `Aggregate ${humanMetricColumn} across ${dimensionPhrase}`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4890,17 +5930,27 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('group-top', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn, timeColumn))
+					stages: buildPresetStages(
+						'group-top',
+						prioritizedColumns(
+							resolvedPrimaryDimension,
+							resolvedSecondaryDimension,
+							metricColumn,
+							timeColumn
+						)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'hierarchical-rollup') {
-				const label = metricColumn && dimensionPhrase
-					? compactLabel(`${humanMetricColumn} rollup by ${dimensionPhrase}`, 34)
-					: preset.preset.label;
-				const reason = metricColumn && dimensionPhrase
-					? `Multi-column rollup selected with relevance cutoff ${adaptiveRelevanceCutoff.toFixed(2)}`
-					: baseReason;
+				const label =
+					metricColumn && dimensionPhrase
+						? compactLabel(`${humanMetricColumn} rollup by ${dimensionPhrase}`, 34)
+						: preset.preset.label;
+				const reason =
+					metricColumn && dimensionPhrase
+						? `Multi-column rollup selected with relevance cutoff ${adaptiveRelevanceCutoff.toFixed(2)}`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4909,17 +5959,27 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('hierarchical-rollup', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn, timeColumn))
+					stages: buildPresetStages(
+						'hierarchical-rollup',
+						prioritizedColumns(
+							resolvedPrimaryDimension,
+							resolvedSecondaryDimension,
+							metricColumn,
+							timeColumn
+						)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'contribution-total') {
-				const label = metricColumn && dimensionPhrase
-					? compactLabel(`${humanMetricColumn} share by ${dimensionPhrase}`, 34)
-					: preset.preset.label;
-				const reason = metricColumn && dimensionPhrase
-					? `Estimate segment contribution share across ${dimensionPhrase}`
-					: baseReason;
+				const label =
+					metricColumn && dimensionPhrase
+						? compactLabel(`${humanMetricColumn} share by ${dimensionPhrase}`, 34)
+						: preset.preset.label;
+				const reason =
+					metricColumn && dimensionPhrase
+						? `Estimate segment contribution share across ${dimensionPhrase}`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4928,17 +5988,27 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('contribution-total', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn, timeColumn))
+					stages: buildPresetStages(
+						'contribution-total',
+						prioritizedColumns(
+							resolvedPrimaryDimension,
+							resolvedSecondaryDimension,
+							metricColumn,
+							timeColumn
+						)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'period-variance') {
-				const label = metricColumn && timeColumn
-					? `Period variance of ${humanMetricColumn} over ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = metricColumn && timeColumn
-					? `Derive period buckets and compute period-over-period deltas`
-					: baseReason;
+				const label =
+					metricColumn && timeColumn
+						? `Period variance of ${humanMetricColumn} over ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					metricColumn && timeColumn
+						? `Derive period buckets and compute period-over-period deltas`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4947,17 +6017,22 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('period-variance', prioritizedColumns(timeColumn, resolvedPrimaryDimension, metricColumn))
+					stages: buildPresetStages(
+						'period-variance',
+						prioritizedColumns(timeColumn, resolvedPrimaryDimension, metricColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'segment-anomaly') {
-				const label = metricColumn && dimensionPhrase
-					? `Segment anomalies for ${humanMetricColumn} by ${dimensionPhrase}`
-					: preset.preset.label;
-				const reason = metricColumn && dimensionPhrase
-					? `Rank deviation-heavy segment slices with paired dimensions`
-					: baseReason;
+				const label =
+					metricColumn && dimensionPhrase
+						? `Segment anomalies for ${humanMetricColumn} by ${dimensionPhrase}`
+						: preset.preset.label;
+				const reason =
+					metricColumn && dimensionPhrase
+						? `Rank deviation-heavy segment slices with paired dimensions`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -4966,7 +6041,10 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('segment-anomaly', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn))
+					stages: buildPresetStages(
+						'segment-anomaly',
+						prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn)
+					)
 				};
 			}
 
@@ -4985,14 +6063,18 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('null-hotspots', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn))
+					stages: buildPresetStages(
+						'null-hotspots',
+						prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'duplicate-fingerprint') {
-				const label = entityColumn && resolvedPrimaryDimension
-					? `Duplicate fingerprints for ${humanEntityColumn} within ${humanizeColumnName(resolvedPrimaryDimension)}`
-					: preset.preset.label;
+				const label =
+					entityColumn && resolvedPrimaryDimension
+						? `Duplicate fingerprints for ${humanEntityColumn} within ${humanizeColumnName(resolvedPrimaryDimension)}`
+						: preset.preset.label;
 				const reason = entityColumn
 					? `Group by key-like entities and rank duplicate concentration`
 					: baseReason;
@@ -5004,17 +6086,22 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('duplicate-fingerprint', prioritizedColumns(entityColumn, resolvedPrimaryDimension, metricColumn))
+					stages: buildPresetStages(
+						'duplicate-fingerprint',
+						prioritizedColumns(entityColumn, resolvedPrimaryDimension, metricColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'cohort-retention') {
-				const label = entityColumn && timeColumn
-					? `Cohort retention for ${humanEntityColumn} over ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = entityColumn && timeColumn
-					? `Derive first-seen periods and summarize active entities`
-					: baseReason;
+				const label =
+					entityColumn && timeColumn
+						? `Cohort retention for ${humanEntityColumn} over ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					entityColumn && timeColumn
+						? `Derive first-seen periods and summarize active entities`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -5023,7 +6110,10 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('cohort-retention', prioritizedColumns(timeColumn, entityColumn, resolvedPrimaryDimension))
+					stages: buildPresetStages(
+						'cohort-retention',
+						prioritizedColumns(timeColumn, entityColumn, resolvedPrimaryDimension)
+					)
 				};
 			}
 
@@ -5042,17 +6132,22 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('funnel-dropoff', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn))
+					stages: buildPresetStages(
+						'funnel-dropoff',
+						prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'outlier-explain') {
-				const label = metricColumn && dimensionPhrase
-					? `Outlier explanation for ${humanMetricColumn} by ${dimensionPhrase}`
-					: preset.preset.label;
-				const reason = metricColumn && dimensionPhrase
-					? `Pair outlier ranking with grouped contextual explanation`
-					: baseReason;
+				const label =
+					metricColumn && dimensionPhrase
+						? `Outlier explanation for ${humanMetricColumn} by ${dimensionPhrase}`
+						: preset.preset.label;
+				const reason =
+					metricColumn && dimensionPhrase
+						? `Pair outlier ranking with grouped contextual explanation`
+						: baseReason;
 				return {
 					...preset,
 					preset: {
@@ -5061,17 +6156,22 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('outlier-explain', prioritizedColumns(metricColumn, resolvedPrimaryDimension, resolvedSecondaryDimension))
+					stages: buildPresetStages(
+						'outlier-explain',
+						prioritizedColumns(metricColumn, resolvedPrimaryDimension, resolvedSecondaryDimension)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'seasonal-pattern') {
-				const label = metricColumn && timeColumn
-					? `Seasonality decomposition for ${humanMetricColumn} using ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = metricColumn && timeColumn
-					? `Model weekday and month effects, then compute relative seasonal index against weekday baselines`
-					: baseReason;
+				const label =
+					metricColumn && timeColumn
+						? `Seasonality decomposition for ${humanMetricColumn} using ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					metricColumn && timeColumn
+						? `Model weekday and month effects, then compute relative seasonal index against weekday baselines`
+						: baseReason;
 				const analystStages = buildAnalystPresetStages('seasonal-pattern');
 				return {
 					...preset,
@@ -5081,7 +6181,9 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: analystStages ?? buildPresetStages('seasonal-pattern', prioritizedColumns(timeColumn, metricColumn))
+					stages:
+						analystStages ??
+						buildPresetStages('seasonal-pattern', prioritizedColumns(timeColumn, metricColumn))
 				};
 			}
 
@@ -5100,17 +6202,28 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('efficiency-lens', prioritizedColumns(resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn, inflowColumn, outflowColumn))
+					stages: buildPresetStages(
+						'efficiency-lens',
+						prioritizedColumns(
+							resolvedPrimaryDimension,
+							resolvedSecondaryDimension,
+							metricColumn,
+							inflowColumn,
+							outflowColumn
+						)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'drift-monitor') {
-				const label = dimensionPhrase && timeColumn
-					? `Distribution drift monitor for ${dimensionPhrase} using ${humanTimeColumn}`
-					: preset.preset.label;
-				const reason = dimensionPhrase && timeColumn
-					? `Score recent vs baseline windows by segment and rank drift deltas to isolate unstable cohorts`
-					: baseReason;
+				const label =
+					dimensionPhrase && timeColumn
+						? `Distribution drift monitor for ${dimensionPhrase} using ${humanTimeColumn}`
+						: preset.preset.label;
+				const reason =
+					dimensionPhrase && timeColumn
+						? `Score recent vs baseline windows by segment and rank drift deltas to isolate unstable cohorts`
+						: baseReason;
 				const analystStages = buildAnalystPresetStages('drift-monitor');
 				return {
 					...preset,
@@ -5120,17 +6233,23 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: analystStages ?? buildPresetStages('drift-monitor', prioritizedColumns(timeColumn, resolvedPrimaryDimension, resolvedSecondaryDimension, metricColumn))
+					stages:
+						analystStages ??
+						buildPresetStages(
+							'drift-monitor',
+							prioritizedColumns(
+								timeColumn,
+								resolvedPrimaryDimension,
+								resolvedSecondaryDimension,
+								metricColumn
+							)
+						)
 				};
 			}
 
 			if (preset.preset.id === 'top-metric') {
-				const label = metricColumn
-					? `Top rows by ${metricColumn}`
-					: preset.preset.label;
-				const reason = metricColumn
-					? `sort by ${metricColumn} and keep top rows`
-					: baseReason;
+				const label = metricColumn ? `Top rows by ${metricColumn}` : preset.preset.label;
+				const reason = metricColumn ? `sort by ${metricColumn} and keep top rows` : baseReason;
 				return {
 					...preset,
 					preset: {
@@ -5139,14 +6258,18 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('top-metric', prioritizedColumns(metricColumn, timeColumn, entityColumn))
+					stages: buildPresetStages(
+						'top-metric',
+						prioritizedColumns(metricColumn, timeColumn, entityColumn)
+					)
 				};
 			}
 
 			if (preset.preset.id === 'dedup-latest') {
-				const label = timeColumn && entityColumn
-					? `Latest row per ${entityColumn} by ${timeColumn}`
-					: preset.preset.label;
+				const label =
+					timeColumn && entityColumn
+						? `Latest row per ${entityColumn} by ${timeColumn}`
+						: preset.preset.label;
 				const reason = timeColumn
 					? `sort by ${timeColumn} and keep first record per key`
 					: baseReason;
@@ -5158,7 +6281,10 @@ export async function getIntelligentPresetSuggestions(input: {
 						description: reason
 					},
 					reasons: [reason, ...preset.reasons],
-					stages: buildPresetStages('dedup-latest', prioritizedColumns(timeColumn, entityColumn, metricColumn))
+					stages: buildPresetStages(
+						'dedup-latest',
+						prioritizedColumns(timeColumn, entityColumn, metricColumn)
+					)
 				};
 			}
 
@@ -5170,7 +6296,10 @@ export async function getIntelligentPresetSuggestions(input: {
 				...preset,
 				stages: compactPresetStageChain(preset.stages)
 			}))
-			.filter((preset) => preset.stages.length > 0 && preset.stages.every((stage) => isMeaningfulStage(stage)));
+			.filter(
+				(preset) =>
+					preset.stages.length > 0 && preset.stages.every((stage) => isMeaningfulStage(stage))
+			);
 
 		if (normalizedHydrated.length === 0) {
 			return fallbackBase;
@@ -5181,24 +6310,27 @@ export async function getIntelligentPresetSuggestions(input: {
 				preset.stages.length === 0
 					? 0.3
 					: preset.stages.reduce((acc, stage) => {
-						if (stage.type === 'from') {
-							return acc + 0.5;
-						}
-						return acc + stageSignalScore({
-							chip: {
-								id: `preset-${preset.preset.id}`,
-								label: preset.preset.label,
-								icon: 'filter',
-								stage,
-								tone: 'primary',
-								hydration: fallbackQuickChipHydration({ stage, label: preset.preset.label })
-							},
-							profileRows,
-							importanceByColumn: presetImportanceByColumn,
-							weightedUsageByTypeAndColumn: new Map<string, number>(),
-							weightedUsageByType: presetUsageByType
-						});
-					}, 0) / Math.max(1, preset.stages.length);
+							if (stage.type === 'from') {
+								return acc + 0.5;
+							}
+							return (
+								acc +
+								stageSignalScore({
+									chip: {
+										id: `preset-${preset.preset.id}`,
+										label: preset.preset.label,
+										icon: 'filter',
+										stage,
+										tone: 'primary',
+										hydration: fallbackQuickChipHydration({ stage, label: preset.preset.label })
+									},
+									profileRows,
+									importanceByColumn: presetImportanceByColumn,
+									weightedUsageByTypeAndColumn: new Map<string, number>(),
+									weightedUsageByType: presetUsageByType
+								})
+							);
+						}, 0) / Math.max(1, preset.stages.length);
 			const stageQualityBoost = Math.min(10, stageQualityAvg * 10);
 			return {
 				...preset,
@@ -5213,7 +6345,9 @@ export async function getIntelligentPresetSuggestions(input: {
 			maxResults: 24
 		});
 
-		const basePresetForCategory = (category: HydratedSuggestionMetadata['semanticCategory']): string => {
+		const basePresetForCategory = (
+			category: HydratedSuggestionMetadata['semanticCategory']
+		): string => {
 			switch (category) {
 				case 'temporal':
 					return 'temporal-trend';
@@ -5283,13 +6417,18 @@ export async function getIntelligentPresetSuggestions(input: {
 
 		const enrichedWithTemplates = [...stageQualityAdjusted, ...semanticTemplateSuggestions];
 
-		const strictlyHydrated = enrichedWithTemplates.filter((preset) => isFullyHydratedPreset(preset));
+		const strictlyHydrated = enrichedWithTemplates.filter((preset) =>
+			isFullyHydratedPreset(preset)
+		);
 		const hydratedPool = strictlyHydrated.length > 0 ? strictlyHydrated : enrichedWithTemplates;
 
 		const scores = hydratedPool.map((preset) => preset.score).sort((a, b) => b - a);
-		const percentileScore = scores.length > 0
-			? (scores[Math.min(scores.length - 1, Math.max(0, Math.floor(scores.length * 0.55)))] ?? scores[0] ?? 0)
-			: 0;
+		const percentileScore =
+			scores.length > 0
+				? (scores[Math.min(scores.length - 1, Math.max(0, Math.floor(scores.length * 0.55)))] ??
+					scores[0] ??
+					0)
+				: 0;
 		const minScore = scores.length > 0 ? (scores[scores.length - 1] ?? 0) : 0;
 		const maxScore = scores.length > 0 ? (scores[0] ?? 0) : 0;
 		const adaptiveScoreFloor = Math.max(percentileScore, minScore + (maxScore - minScore) * 0.35);
@@ -5353,7 +6492,10 @@ export async function getLLMPlanningContext(input: {
 			profileRows = profileResult.rows as unknown as ProfileRow[];
 		}
 
-		const scopedProfileRows = scopeProfileRowsToAvailableColumns(profileRows, input.availableColumns);
+		const scopedProfileRows = scopeProfileRowsToAvailableColumns(
+			profileRows,
+			input.availableColumns
+		);
 		if (scopedProfileRows.length > 0) {
 			profileRows = scopedProfileRows;
 		} else if (profileRows.length === 0 && input.availableColumns.length > 0) {
@@ -5384,17 +6526,23 @@ export async function getLLMPlanningContext(input: {
 			if (columns.length >= maxColumns) break;
 			const key = columnName.trim().toLowerCase();
 			if (!key) continue;
-			const row = (byName.get(key) as RichProfileRow) ?? bootstrapProfilesFromColumns([columnName])[0];
+			const row =
+				(byName.get(key) as RichProfileRow) ?? bootstrapProfilesFromColumns([columnName])[0];
 			if (!row) continue;
 
 			let topValues: Array<{ v: string; pct: number }> | undefined;
 			if (row.top_values_json) {
-				try { topValues = JSON.parse(row.top_values_json) as Array<{ v: string; pct: number }>; } catch { /* ignore */ }
+				try {
+					topValues = JSON.parse(row.top_values_json) as Array<{ v: string; pct: number }>;
+				} catch {
+					/* ignore */
+				}
 			}
 
 			// Prefer frequency-ranked top values over random samples
-			const sampleValues = topValues?.slice(0, maxSamplesPerColumn).map((t) => t.v)
-				?? parseSampleValues(row.sample_values_json).slice(0, maxSamplesPerColumn);
+			const sampleValues =
+				topValues?.slice(0, maxSamplesPerColumn).map((t) => t.v) ??
+				parseSampleValues(row.sample_values_json).slice(0, maxSamplesPerColumn);
 
 			columns.push({
 				name: columnName,
@@ -5416,7 +6564,11 @@ export async function getLLMPlanningContext(input: {
 
 		return {
 			sourceTable,
-			pipelineStageTypes: input.stages.filter((stage): stage is Exclude<GUIPipelineStage, { type: 'raw' }> => stage.type !== 'raw').map((stage) => stage.type),
+			pipelineStageTypes: input.stages
+				.filter(
+					(stage): stage is Exclude<GUIPipelineStage, { type: 'raw' }> => stage.type !== 'raw'
+				)
+				.map((stage) => stage.type),
 			columns
 		};
 	} catch {
@@ -5435,7 +6587,11 @@ export async function getLLMPlanningContext(input: {
 
 		return {
 			sourceTable,
-			pipelineStageTypes: input.stages.filter((stage): stage is Exclude<GUIPipelineStage, { type: 'raw' }> => stage.type !== 'raw').map((stage) => stage.type),
+			pipelineStageTypes: input.stages
+				.filter(
+					(stage): stage is Exclude<GUIPipelineStage, { type: 'raw' }> => stage.type !== 'raw'
+				)
+				.map((stage) => stage.type),
 			columns: fallbackColumns
 		};
 	}

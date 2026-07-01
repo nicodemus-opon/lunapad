@@ -86,9 +86,7 @@ export async function testConnection(
 	});
 }
 
-export async function fetchConnectionSchema(
-	connection: Connection
-): Promise<{
+export async function fetchConnectionSchema(connection: Connection): Promise<{
 	tables: Array<{ name: string; schema?: string; columns: string[]; columnTypes: string[] }>;
 }> {
 	return postJSON<{

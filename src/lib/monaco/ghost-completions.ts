@@ -143,7 +143,15 @@ async function fetchCompletion(
 		const res = await fetch('/api/ai/complete', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ language, prefix, suffix, schema, dialect, pythonKind, llmConfig: effectiveConfig }),
+			body: JSON.stringify({
+				language,
+				prefix,
+				suffix,
+				schema,
+				dialect,
+				pythonKind,
+				llmConfig: effectiveConfig
+			}),
 			signal
 		});
 		if (!res.ok) return '';
@@ -183,7 +191,15 @@ export function registerGhostCompletions(monaco: typeof Monaco): void {
 					debounceTimer = setTimeout(() => {
 						buildContextHints(languageId, model, position, controller.signal)
 							.then(({ schema, dialect, pythonKind }) =>
-								fetchCompletion(languageId, prefix, suffix, schema, dialect, pythonKind, controller.signal)
+								fetchCompletion(
+									languageId,
+									prefix,
+									suffix,
+									schema,
+									dialect,
+									pythonKind,
+									controller.signal
+								)
 							)
 							.then(resolve, () => resolve(''));
 					}, DEBOUNCE_MS);

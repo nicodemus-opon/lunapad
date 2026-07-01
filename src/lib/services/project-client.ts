@@ -16,7 +16,7 @@ export async function openProject(folder: string): Promise<ProjectInfo> {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ folder })
 	});
-	const body = await res.json() as { error?: string } & ProjectInfo;
+	const body = (await res.json()) as { error?: string } & ProjectInfo;
 	if (!res.ok) throw new Error(body.error ?? 'Failed to open project');
 	return body;
 }
@@ -25,7 +25,11 @@ export async function listProjectNotebooks(
 	folder: string
 ): Promise<{ notebooks: Notebook[]; folders: NotebookFolder[] }> {
 	const res = await fetch(`/api/project/list?folder=${encodeURIComponent(folder)}`);
-	const body = await res.json() as { error?: string; notebooks?: Notebook[]; folders?: NotebookFolder[] };
+	const body = (await res.json()) as {
+		error?: string;
+		notebooks?: Notebook[];
+		folders?: NotebookFolder[];
+	};
 	if (!res.ok) throw new Error(body.error ?? 'Failed to list notebooks');
 	return { notebooks: body.notebooks ?? [], folders: body.folders ?? [] };
 }
@@ -42,7 +46,7 @@ export async function writeProjectFile(
 		body: JSON.stringify({ folder, file, content, isDbtProject })
 	});
 	if (!res.ok) {
-		const body = await res.json() as { error?: string };
+		const body = (await res.json()) as { error?: string };
 		throw new Error(body.error ?? 'Failed to write file');
 	}
 }
@@ -60,7 +64,11 @@ export async function readAIMemory(
 	folder: string
 ): Promise<{ conventions: string; entries: AIMemoryEntry[] }> {
 	const res = await fetch(`/api/ai/memory?folder=${encodeURIComponent(folder)}`);
-	const body = (await res.json()) as { error?: string; conventions?: string; entries?: AIMemoryEntry[] };
+	const body = (await res.json()) as {
+		error?: string;
+		conventions?: string;
+		entries?: AIMemoryEntry[];
+	};
 	if (!res.ok) throw new Error(body.error ?? 'Failed to read AI memory');
 	return { conventions: body.conventions ?? '', entries: body.entries ?? [] };
 }
@@ -110,7 +118,7 @@ export async function deleteProjectFile(folder: string, file: string): Promise<v
 		body: JSON.stringify({ folder, file })
 	});
 	if (!res.ok) {
-		const body = await res.json() as { error?: string };
+		const body = (await res.json()) as { error?: string };
 		throw new Error(body.error ?? 'Failed to delete file');
 	}
 }
@@ -126,7 +134,7 @@ export async function renameProjectFile(
 		body: JSON.stringify({ folder, oldFile, newFile })
 	});
 	if (!res.ok) {
-		const body = await res.json() as { error?: string };
+		const body = (await res.json()) as { error?: string };
 		throw new Error(body.error ?? 'Failed to rename file');
 	}
 }
@@ -138,7 +146,7 @@ export async function scaffoldProject(folder: string, name: string): Promise<voi
 		body: JSON.stringify({ folder, name })
 	});
 	if (!res.ok) {
-		const body = await res.json() as { error?: string };
+		const body = (await res.json()) as { error?: string };
 		throw new Error(body.error ?? 'Failed to scaffold project');
 	}
 }
@@ -207,15 +215,13 @@ export function watchProjectFolder(
 	return () => ctrl.abort();
 }
 
-export async function auditProject(
-	folder: string
-): Promise<{ stubsAdded: string[] }> {
+export async function auditProject(folder: string): Promise<{ stubsAdded: string[] }> {
 	const res = await fetch('/api/project/audit', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ folder })
 	});
-	const body = await res.json() as { error?: string; stubsAdded?: string[] };
+	const body = (await res.json()) as { error?: string; stubsAdded?: string[] };
 	if (!res.ok) throw new Error(body.error ?? 'Audit failed');
 	return { stubsAdded: body.stubsAdded ?? [] };
 }
@@ -243,7 +249,7 @@ export async function updateProjectSchema(
 		body: JSON.stringify({ folder, modelPath, updates })
 	});
 	if (!res.ok) {
-		const body = await res.json() as { error?: string };
+		const body = (await res.json()) as { error?: string };
 		throw new Error(body.error ?? 'Failed to update schema');
 	}
 }
@@ -285,7 +291,7 @@ export async function promoteCells(
 
 export async function fetchDbtManifest(folder: string): Promise<DbtModel[]> {
 	const res = await fetch(`/api/dbt/manifest?folder=${encodeURIComponent(folder)}`);
-	const body = await res.json() as { error?: string; models?: DbtModel[] };
+	const body = (await res.json()) as { error?: string; models?: DbtModel[] };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to load dbt manifest');
 	return body.models ?? [];
 }
@@ -296,7 +302,7 @@ export async function dbtRun(folder: string, select?: string): Promise<string> {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ folder, select })
 	});
-	const body = await res.json() as { error?: string; jobId?: string };
+	const body = (await res.json()) as { error?: string; jobId?: string };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to run dbt');
 	return body.jobId!;
 }
@@ -307,7 +313,7 @@ export async function dbtCompile(folder: string): Promise<string> {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ folder })
 	});
-	const body = await res.json() as { error?: string; jobId?: string };
+	const body = (await res.json()) as { error?: string; jobId?: string };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to compile dbt');
 	return body.jobId!;
 }
@@ -318,7 +324,7 @@ export async function dbtTest(folder: string, select?: string): Promise<string> 
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ folder, select })
 	});
-	const body = await res.json() as { error?: string; jobId?: string };
+	const body = (await res.json()) as { error?: string; jobId?: string };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to test dbt');
 	return body.jobId!;
 }

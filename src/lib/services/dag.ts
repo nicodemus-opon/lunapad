@@ -56,7 +56,10 @@ export function extractDependenciesFromPRQL(prql: string): string[] {
 		const fromMatch = /^from\s+(?:[A-Za-z_][A-Za-z0-9_]*=)?([^\s]+)$/i.exec(line);
 		if (fromMatch) deps.add(normalizeName(fromMatch[1]));
 
-		const joinMatch = /^join\s+(?:side:(?:inner|left|right|full)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=)?([^\s(]+)/i.exec(line);
+		const joinMatch =
+			/^join\s+(?:side:(?:inner|left|right|full)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=)?([^\s(]+)/i.exec(
+				line
+			);
 		if (joinMatch) deps.add(normalizeName(joinMatch[1]));
 	}
 
@@ -97,10 +100,7 @@ export function buildInferredDag(nodes: ModelNode[]): InferredDag {
 	return { nodes: [...nodes], edges };
 }
 
-function traverse(
-	seedIds: string[],
-	adj: Map<string, string[]>
-): Set<string> {
+function traverse(seedIds: string[], adj: Map<string, string[]>): Set<string> {
 	const visited = new Set<string>(seedIds);
 	const queue = [...seedIds];
 	while (queue.length > 0) {
@@ -115,7 +115,10 @@ function traverse(
 	return visited;
 }
 
-function topologicalOrder(nodeIds: Set<string>, edges: ModelEdge[]): { ordered: string[]; hasCycle: boolean } {
+function topologicalOrder(
+	nodeIds: Set<string>,
+	edges: ModelEdge[]
+): { ordered: string[]; hasCycle: boolean } {
 	const indegree = new Map<string, number>();
 	const nextMap = new Map<string, string[]>();
 	for (const id of nodeIds) {

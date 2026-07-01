@@ -16,8 +16,16 @@ interface UploadConnectionRequest {
 export const POST: RequestHandler = async ({ request }) => {
 	const body = (await request.json()) as Partial<UploadConnectionRequest>;
 
-	if (!body?.connection || !body.tableName || !Array.isArray(body.columns) || !Array.isArray(body.rows)) {
-		return json({ error: 'connection, tableName, columns, and rows are required.' }, { status: 400 });
+	if (
+		!body?.connection ||
+		!body.tableName ||
+		!Array.isArray(body.columns) ||
+		!Array.isArray(body.rows)
+	) {
+		return json(
+			{ error: 'connection, tableName, columns, and rows are required.' },
+			{ status: 400 }
+		);
 	}
 
 	const mode = body.mode === 'append' ? 'append' : 'replace';

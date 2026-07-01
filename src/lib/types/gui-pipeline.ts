@@ -111,7 +111,21 @@ export interface DeriveColumn {
 }
 
 // ── Group / Aggregate ────────────────────────────────────────────────────────
-export type AggFunc = 'sum' | 'avg' | 'average' | 'count' | 'count_distinct' | 'min' | 'max' | 'first' | 'last' | 'stddev' | 'all' | 'any' | 'concat_array' | 'raw';
+export type AggFunc =
+	| 'sum'
+	| 'avg'
+	| 'average'
+	| 'count'
+	| 'count_distinct'
+	| 'min'
+	| 'max'
+	| 'first'
+	| 'last'
+	| 'stddev'
+	| 'all'
+	| 'any'
+	| 'concat_array'
+	| 'raw';
 
 export interface AggregationRow {
 	name: string; // empty string = no alias in output
@@ -311,4 +325,3 @@ export interface ChartConfig {
 }
 
 export type ResultViewMode = 'table' | 'chart' | 'stats';
-

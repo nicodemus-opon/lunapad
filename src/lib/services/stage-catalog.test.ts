@@ -16,15 +16,28 @@ import {
 	searchStages
 } from '$lib/services/stage-catalog';
 import { guiToPreql } from '$lib/services/gui-prql';
-import { compile as compileNodePrql, CompileOptions as NodeCompileOptions } from 'prqlc/dist/node/prqlc_js';
+import {
+	compile as compileNodePrql,
+	CompileOptions as NodeCompileOptions
+} from 'prqlc/dist/node/prqlc_js';
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 
 describe('stage-catalog', () => {
 	it('creates typed default stages', () => {
 		expect(makeDefaultStage('take')).toEqual({ type: 'take', n: 100 });
-		expect(makeDefaultStage('join')).toEqual({ type: 'join', joinType: 'inner', table: '', conditions: [] });
+		expect(makeDefaultStage('join')).toEqual({
+			type: 'join',
+			joinType: 'inner',
+			table: '',
+			conditions: []
+		});
 		expect(makeDefaultStage('append')).toEqual({ type: 'append', sources: [] });
-		expect(makeDefaultStage('window')).toEqual({ type: 'window', frame: 'rows:-2..0', sortKeys: [], derives: [] });
+		expect(makeDefaultStage('window')).toEqual({
+			type: 'window',
+			frame: 'rows:-2..0',
+			sortKeys: [],
+			derives: []
+		});
 		expect(makeDefaultStage('loop')).toEqual({ type: 'loop', body: 'filter true' });
 	});
 
@@ -87,7 +100,11 @@ describe('stage-catalog', () => {
 
 		expect(groupSuggestions.length).toBeGreaterThan(0);
 		expect(groupSuggestions.some((entry) => entry.stageType === 'group')).toBe(true);
-		expect(groupSuggestions.some((entry) => entry.stage.type === 'group' && entry.stage.by.includes('region'))).toBe(true);
+		expect(
+			groupSuggestions.some(
+				(entry) => entry.stage.type === 'group' && entry.stage.by.includes('region')
+			)
+		).toBe(true);
 
 		const deriveSuggestions = searchSemanticStageCombinations({
 			query: 'derive',
@@ -117,7 +134,11 @@ describe('stage-catalog', () => {
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
-		expect(prompts.some((prompt) => /Units Sold/i.test(prompt.label) || /Units Sold/i.test(prompt.prompt))).toBe(true);
+		expect(
+			prompts.some(
+				(prompt) => /Units Sold/i.test(prompt.label) || /Units Sold/i.test(prompt.prompt)
+			)
+		).toBe(true);
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('units sold');
 	});
 
@@ -132,10 +153,16 @@ describe('stage-catalog', () => {
 		expect(prompts.some((prompt) => /group by tenant name/i.test(prompt.prompt))).toBe(true);
 		expect(
 			prompts.some(
-				(prompt) => /tenant name/i.test(prompt.prompt) && prompt.stages.some((stage) => stage.type === 'group')
+				(prompt) =>
+					/tenant name/i.test(prompt.prompt) &&
+					prompt.stages.some((stage) => stage.type === 'group')
 			)
 		).toBe(true);
-		expect(prompts.some((prompt) => prompt.stages.some((stage) => stage.type === 'take' || stage.type === 'sort'))).toBe(true);
+		expect(
+			prompts.some((prompt) =>
+				prompt.stages.some((stage) => stage.type === 'take' || stage.type === 'sort')
+			)
+		).toBe(true);
 	});
 
 	it('builds a valid prompt generation plan with strict schema grounding', () => {
@@ -161,7 +188,11 @@ describe('stage-catalog', () => {
 				prompt: 'Least rent by city: group by city, min rent, sort asc, take 1',
 				reasons: ['LLM inferred least-intent ranking'],
 				stages: [
-					{ type: 'group', by: ['city'], aggregations: [{ name: 'min_rent_usd', func: 'min', column: 'rent_usd' }] },
+					{
+						type: 'group',
+						by: ['city'],
+						aggregations: [{ name: 'min_rent_usd', func: 'min', column: 'rent_usd' }]
+					},
 					{ type: 'sort', keys: [{ column: 'min_rent_usd', dir: 'asc' }] },
 					{ type: 'take', n: 1 }
 				],
@@ -178,14 +209,23 @@ describe('stage-catalog', () => {
 	it('normalizes prompt suggestions so group stages never have empty aggregations', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'group customer_id and show top total',
-			availableColumns: ['order_id', 'customer_id', 'region', 'product_category', 'unit_price', 'units', 'total']
+			availableColumns: [
+				'order_id',
+				'customer_id',
+				'region',
+				'product_category',
+				'unit_price',
+				'units',
+				'total'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
 		for (const prompt of prompts) {
 			for (const stage of prompt.stages) {
 				if (stage.type !== 'group') continue;
-				const hasWindowBody = !!stage.window && (stage.window.sortKeys.length > 0 || stage.window.derives.length > 0);
+				const hasWindowBody =
+					!!stage.window && (stage.window.sortKeys.length > 0 || stage.window.derives.length > 0);
 				expect(stage.aggregations.length > 0 || hasWindowBody).toBe(true);
 			}
 		}
@@ -194,7 +234,15 @@ describe('stage-catalog', () => {
 	it('prioritizes explicit group+top prompts using requested dimension and metric', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'group customer_id and show top total',
-			availableColumns: ['order_id', 'customer_id', 'region', 'product_category', 'unit_price', 'units', 'total']
+			availableColumns: [
+				'order_id',
+				'customer_id',
+				'region',
+				'product_category',
+				'unit_price',
+				'units',
+				'total'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
@@ -248,7 +296,9 @@ describe('stage-catalog', () => {
 		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).not.toContain('order_id');
 		expect(
 			prompts.some((prompt) =>
-				/derive unit_price \* units|sum_revenue|by revenue/i.test(`${prompt.label} ${prompt.prompt}`)
+				/derive unit_price \* units|sum_revenue|by revenue/i.test(
+					`${prompt.label} ${prompt.prompt}`
+				)
 			)
 		).toBe(true);
 		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('revenue');
@@ -257,7 +307,18 @@ describe('stage-catalog', () => {
 	it('maps fraud-rate queries to fraud outcome columns instead of unrelated numeric fields', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'fraud rate by payment method',
-			availableColumns: ['txn_id', 'txn_time', 'account_type', 'country', 'payment_method', 'merchant_category', 'amount_usd', 'fx_rate', 'is_fraud', 'settlement_status']
+			availableColumns: [
+				'txn_id',
+				'txn_time',
+				'account_type',
+				'country',
+				'payment_method',
+				'merchant_category',
+				'amount_usd',
+				'fx_rate',
+				'is_fraud',
+				'settlement_status'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
@@ -269,7 +330,18 @@ describe('stage-catalog', () => {
 	it('prioritizes filtered metric summaries for return-rate prompts with dimensions and time grain', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'monthly return rate by channel where region is west',
-			availableColumns: ['order_id', 'order_date', 'channel', 'region', 'customer_name', 'product_category', 'units', 'discount_pct', 'shipping_days', 'returned']
+			availableColumns: [
+				'order_id',
+				'order_date',
+				'channel',
+				'region',
+				'customer_name',
+				'product_category',
+				'units',
+				'discount_pct',
+				'shipping_days',
+				'returned'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
@@ -283,7 +355,19 @@ describe('stage-catalog', () => {
 	it('prioritizes filtered top-N metric prompts over raw take-stage fallbacks', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'top 5 customer_name by units where returned == true',
-			availableColumns: ['order_id', 'order_date', 'customer_name', 'region', 'channel', 'product_category', 'units', 'unit_price', 'discount_pct', 'returned', 'shipping_days']
+			availableColumns: [
+				'order_id',
+				'order_date',
+				'customer_name',
+				'region',
+				'channel',
+				'product_category',
+				'units',
+				'unit_price',
+				'discount_pct',
+				'returned',
+				'shipping_days'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
@@ -297,7 +381,15 @@ describe('stage-catalog', () => {
 	it('prompt generation plan does not emit aggregate {} placeholders', () => {
 		const plan = generatePromptStagePlan({
 			query: 'group customer_id and show top total',
-			availableColumns: ['order_id', 'customer_id', 'region', 'product_category', 'unit_price', 'units', 'total'],
+			availableColumns: [
+				'order_id',
+				'customer_id',
+				'region',
+				'product_category',
+				'unit_price',
+				'units',
+				'total'
+			],
 			validateCompile: true
 		});
 
@@ -367,9 +459,13 @@ describe('stage-catalog', () => {
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
-		expect(prompts.some((prompt) => /mrr|mrr usd/i.test(prompt.label) && /industry/i.test(prompt.prompt))).toBe(true);
+		expect(
+			prompts.some((prompt) => /mrr|mrr usd/i.test(prompt.label) && /industry/i.test(prompt.prompt))
+		).toBe(true);
 		expect(prompts.some((prompt) => /account id by industry/i.test(prompt.label))).toBe(false);
-		expect(prompts.some((prompt) => /aggregate account_id by industry/i.test(prompt.prompt))).toBe(false);
+		expect(prompts.some((prompt) => /aggregate account_id by industry/i.test(prompt.prompt))).toBe(
+			false
+		);
 	});
 
 	it('prioritizes mrr-by-industry prompts for industry mrr natural-language input', () => {
@@ -439,8 +535,8 @@ describe('stage-catalog', () => {
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
-		const twoDimensional = prompts.find((p) =>
-			/by plan/i.test(p.prompt) && /monthly|month/i.test(p.prompt)
+		const twoDimensional = prompts.find(
+			(p) => /by plan/i.test(p.prompt) && /monthly|month/i.test(p.prompt)
 		);
 		expect(twoDimensional).toBeDefined();
 	});
@@ -448,7 +544,15 @@ describe('stage-catalog', () => {
 	it('prioritizes dual-dimension count analysis for categorical queries like priority issue type', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'priority issue type',
-			availableColumns: ['ticket_id', 'created_at', 'priority', 'issue_type', 'customer_segment', 'csat_score', 'first_response_minutes']
+			availableColumns: [
+				'ticket_id',
+				'created_at',
+				'priority',
+				'issue_type',
+				'customer_segment',
+				'csat_score',
+				'first_response_minutes'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
@@ -461,14 +565,22 @@ describe('stage-catalog', () => {
 	it('treats measure-like columns as metrics in mixed queries like temperature region', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'temperature region',
-			availableColumns: ['recorded_at', 'region', 'temperature_c', 'humidity_pct', 'air_quality_index']
+			availableColumns: [
+				'recorded_at',
+				'region',
+				'temperature_c',
+				'humidity_pct',
+				'air_quality_index'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('temperature_c');
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('region');
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('avg temperature_c by region');
-		expect(prompts[0]?.prompt.toLowerCase()).not.toContain('count rows by region and temperature_c');
+		expect(prompts[0]?.prompt.toLowerCase()).not.toContain(
+			'count rows by region and temperature_c'
+		);
 	});
 
 	it('uses average aggregation for continuous measure-like columns', () => {
@@ -483,13 +595,21 @@ describe('stage-catalog', () => {
 	it('keeps correlation checks numeric-only even when query includes categorical columns', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'temperature region compare',
-			availableColumns: ['recorded_at', 'region', 'temperature_c', 'humidity_pct', 'air_quality_index']
+			availableColumns: [
+				'recorded_at',
+				'region',
+				'temperature_c',
+				'humidity_pct',
+				'air_quality_index'
+			]
 		});
 
 		const correlation = prompts.find((prompt) => /Correlation check/i.test(prompt.label));
 		expect(correlation).toBeDefined();
 		expect(correlation?.prompt.toLowerCase()).not.toContain('region');
-		expect(correlation?.prompt.toLowerCase()).toMatch(/temperature_c|humidity_pct|air_quality_index/);
+		expect(correlation?.prompt.toLowerCase()).toMatch(
+			/temperature_c|humidity_pct|air_quality_index/
+		);
 	});
 
 	it('handles temporal-pair queries generically without overfitting to specific names', () => {
@@ -551,7 +671,9 @@ describe('stage-catalog', () => {
 		expect(prompts.length).toBeGreaterThan(0);
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('humidity_pct');
 		expect(prompts[0]?.prompt.toLowerCase()).toContain('region');
-		expect(prompts[0]?.prompt.toLowerCase()).toMatch(/avg humidity_pct by region|sum humidity_pct by region/);
+		expect(prompts[0]?.prompt.toLowerCase()).toMatch(
+			/avg humidity_pct by region|sum humidity_pct by region/
+		);
 	});
 
 	it('supports more-than-two matched columns by surfacing pair analyses that include the third column', () => {
@@ -563,7 +685,9 @@ describe('stage-catalog', () => {
 		expect(prompts.length).toBeGreaterThan(0);
 		expect(prompts.some((prompt) => /temporal relation|compare/i.test(prompt.prompt))).toBe(true);
 		expect(prompts.some((prompt) => prompt.prompt.toLowerCase().includes('posted_at'))).toBe(true);
-		expect(prompts.some((prompt) => prompt.prompt.toLowerCase().includes('application_deadline'))).toBe(true);
+		expect(
+			prompts.some((prompt) => prompt.prompt.toLowerCase().includes('application_deadline'))
+		).toBe(true);
 	});
 
 	it('locks mixed four-column behavior across metric and dimension semantics', () => {
@@ -574,16 +698,29 @@ describe('stage-catalog', () => {
 
 		expect(prompts.length).toBeGreaterThan(0);
 		expect(
-			prompts.some((prompt) => /avg revenue_usd by region|sum revenue_usd by region|avg cost_usd by region|sum cost_usd by region/i.test(prompt.prompt))
+			prompts.some((prompt) =>
+				/avg revenue_usd by region|sum revenue_usd by region|avg cost_usd by region|sum cost_usd by region/i.test(
+					prompt.prompt
+				)
+			)
 		).toBe(true);
 		expect(
-			prompts.some((prompt) => /avg revenue_usd by segment|sum revenue_usd by segment|avg cost_usd by segment|sum cost_usd by segment/i.test(prompt.prompt))
+			prompts.some((prompt) =>
+				/avg revenue_usd by segment|sum revenue_usd by segment|avg cost_usd by segment|sum cost_usd by segment/i.test(
+					prompt.prompt
+				)
+			)
 		).toBe(true);
 		expect(
-			prompts.some((prompt) => /correlation check: compare revenue_usd and cost_usd/i.test(prompt.prompt))
+			prompts.some((prompt) =>
+				/correlation check: compare revenue_usd and cost_usd/i.test(prompt.prompt)
+			)
 		).toBe(true);
 		expect(
-			prompts.some((prompt) => /revenue_usd|cost_usd/i.test(prompt.prompt) && /region|segment/i.test(prompt.prompt))
+			prompts.some(
+				(prompt) =>
+					/revenue_usd|cost_usd/i.test(prompt.prompt) && /region|segment/i.test(prompt.prompt)
+			)
 		).toBe(true);
 	});
 
@@ -619,7 +756,9 @@ describe('stage-catalog', () => {
 		expect(prompts.length).toBeGreaterThan(0);
 		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('trend');
 		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('monthly');
-		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('delivered_on_time');
+		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain(
+			'delivered_on_time'
+		);
 	});
 
 	it('maps attendance intent to present-like outcome columns for monthly queries', () => {
@@ -636,11 +775,19 @@ describe('stage-catalog', () => {
 	it('maps resolution intent to resolution metrics for monthly queries', () => {
 		const prompts = searchAnalysisPrompts({
 			query: 'resolution hours by month',
-			availableColumns: ['ticket_id', 'created_at', 'priority', 'resolution_hours', 'first_response_minutes']
+			availableColumns: [
+				'ticket_id',
+				'created_at',
+				'priority',
+				'resolution_hours',
+				'first_response_minutes'
+			]
 		});
 
 		expect(prompts.length).toBeGreaterThan(0);
-		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('resolution_hours');
+		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain(
+			'resolution_hours'
+		);
 		expect(`${prompts[0]?.label} ${prompts[0]?.prompt}`.toLowerCase()).toContain('monthly');
 	});
 
@@ -753,7 +900,10 @@ describe('stage-catalog', () => {
 				availableColumns: scenario.columns
 			});
 			const topPrompt = prompts[0]?.prompt.toLowerCase() ?? '';
-			const top3Text = prompts.slice(0, 3).map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase()).join(' | ');
+			const top3Text = prompts
+				.slice(0, 3)
+				.map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase())
+				.join(' | ');
 			expect(topPrompt.length).toBeGreaterThan(0);
 			for (const token of scenario.expectTopContains) {
 				expect(top3Text).toContain(token.toLowerCase());
@@ -768,14 +918,54 @@ describe('stage-catalog', () => {
 			top1MustContain: string[];
 			top3MustContain: string[];
 		}> = [
-			{ query: 'industry mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['industry'], top3MustContain: ['mrr_usd'] },
-			{ query: 'priority issue type', columns: ['priority', 'issue_type', 'csat_score', 'created_at'], top1MustContain: ['priority'], top3MustContain: ['issue_type'] },
-			{ query: 'trend by signup date', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['signup_date'], top3MustContain: ['signup_date'] },
-			{ query: 'outliers in mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['mrr_usd'], top3MustContain: ['mrr_usd'] },
-			{ query: 'compare mrr and churn risk score', columns: ['industry', 'mrr_usd', 'churn_risk_score', 'signup_date'], top1MustContain: ['mrr_usd'], top3MustContain: ['churn_risk_score'] },
-			{ query: 'top tenant by spend', columns: ['tenant_name', 'monthly_spend', 'created_at'], top1MustContain: ['tenant_name'], top3MustContain: ['monthly_spend'] },
-			{ query: 'group region and product', columns: ['region', 'product', 'revenue', 'created_at'], top1MustContain: ['region'], top3MustContain: ['product'] },
-			{ query: 'revenue by category trend', columns: ['category', 'price', 'units_sold', 'sold_date'], top1MustContain: ['category'], top3MustContain: ['revenue'] }
+			{
+				query: 'industry mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['industry'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				query: 'priority issue type',
+				columns: ['priority', 'issue_type', 'csat_score', 'created_at'],
+				top1MustContain: ['priority'],
+				top3MustContain: ['issue_type']
+			},
+			{
+				query: 'trend by signup date',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['signup_date'],
+				top3MustContain: ['signup_date']
+			},
+			{
+				query: 'outliers in mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['mrr_usd'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				query: 'compare mrr and churn risk score',
+				columns: ['industry', 'mrr_usd', 'churn_risk_score', 'signup_date'],
+				top1MustContain: ['mrr_usd'],
+				top3MustContain: ['churn_risk_score']
+			},
+			{
+				query: 'top tenant by spend',
+				columns: ['tenant_name', 'monthly_spend', 'created_at'],
+				top1MustContain: ['tenant_name'],
+				top3MustContain: ['monthly_spend']
+			},
+			{
+				query: 'group region and product',
+				columns: ['region', 'product', 'revenue', 'created_at'],
+				top1MustContain: ['region'],
+				top3MustContain: ['product']
+			},
+			{
+				query: 'revenue by category trend',
+				columns: ['category', 'price', 'units_sold', 'sold_date'],
+				top1MustContain: ['category'],
+				top3MustContain: ['revenue']
+			}
 		];
 
 		let top1Hits = 0;
@@ -785,19 +975,33 @@ describe('stage-catalog', () => {
 		let metricIntentTopFive = 0;
 
 		for (const scenario of scenarios) {
-			const prompts = searchAnalysisPrompts({ query: scenario.query, availableColumns: scenario.columns, limit: 8 });
+			const prompts = searchAnalysisPrompts({
+				query: scenario.query,
+				availableColumns: scenario.columns,
+				limit: 8
+			});
 			const top1 = prompts[0]?.prompt.toLowerCase() ?? '';
-			const top3 = prompts.slice(0, 3).map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase());
+			const top3 = prompts
+				.slice(0, 3)
+				.map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase());
 			const top5 = prompts.slice(0, 5);
 
-			if (scenario.top1MustContain.every((token) => top1.includes(token.toLowerCase()))) top1Hits += 1;
-			if (scenario.top3MustContain.every((token) => top3.some((entry) => entry.includes(token.toLowerCase())))) top3Hits += 1;
+			if (scenario.top1MustContain.every((token) => top1.includes(token.toLowerCase())))
+				top1Hits += 1;
+			if (
+				scenario.top3MustContain.every((token) =>
+					top3.some((entry) => entry.includes(token.toLowerCase()))
+				)
+			)
+				top3Hits += 1;
 
 			const ids = new Set<string>();
 			for (const prompt of top5) {
 				if (ids.has(prompt.id)) duplicateCount += 1;
 				ids.add(prompt.id);
-				const isMetricPrompt = /aggregate .* by|sum_|mrr|revenue|score|amount|price|spend/i.test(`${prompt.label} ${prompt.prompt}`);
+				const isMetricPrompt = /aggregate .* by|sum_|mrr|revenue|score|amount|price|spend/i.test(
+					`${prompt.label} ${prompt.prompt}`
+				);
 				if (isMetricPrompt) metricIntentTopFive += 1;
 			}
 			totalTopFive += top5.length;
@@ -809,7 +1013,9 @@ describe('stage-catalog', () => {
 		const duplicateRate = totalTopFive === 0 ? 0 : duplicateCount / totalTopFive;
 		const metricShare = totalTopFive === 0 ? 0 : metricIntentTopFive / totalTopFive;
 
-		console.info(`[analysis-benchmark] scenarios=${scenarioCount} top1=${top1Rate.toFixed(2)} top3=${top3Rate.toFixed(2)} duplicate=${duplicateRate.toFixed(2)} metricShare=${metricShare.toFixed(2)}`);
+		console.info(
+			`[analysis-benchmark] scenarios=${scenarioCount} top1=${top1Rate.toFixed(2)} top3=${top3Rate.toFixed(2)} duplicate=${duplicateRate.toFixed(2)} metricShare=${metricShare.toFixed(2)}`
+		);
 
 		expect(top1Rate).toBeGreaterThanOrEqual(0.75);
 		expect(top3Rate).toBeGreaterThanOrEqual(0.875);
@@ -827,53 +1033,288 @@ describe('stage-catalog', () => {
 		};
 
 		const scenarios: AdversarialScenario[] = [
-			{ family: 'dimension+metric', query: 'industry mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['industry'], top3MustContain: ['mrr_usd'] },
-			{ family: 'dimension+metric', query: 'region revenue', columns: ['region', 'revenue', 'created_at'], top1MustContain: ['region'], top3MustContain: ['revenue'] },
-			{ family: 'dimension+metric', query: 'plan arr', columns: ['plan', 'arr_usd', 'recorded_at'], top1MustContain: ['plan'], top3MustContain: ['arr_usd'] },
-			{ family: 'dimension+metric', query: 'channel sales', columns: ['channel', 'sales_amount', 'order_date'], top1MustContain: ['channel'], top3MustContain: ['sales_amount'] },
-			{ family: 'dimension+metric', query: 'merchant payment volume', columns: ['merchant', 'payment_volume', 'transaction_date'], top1MustContain: ['merchant'], top3MustContain: ['payment_volume'] },
+			{
+				family: 'dimension+metric',
+				query: 'industry mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['industry'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				family: 'dimension+metric',
+				query: 'region revenue',
+				columns: ['region', 'revenue', 'created_at'],
+				top1MustContain: ['region'],
+				top3MustContain: ['revenue']
+			},
+			{
+				family: 'dimension+metric',
+				query: 'plan arr',
+				columns: ['plan', 'arr_usd', 'recorded_at'],
+				top1MustContain: ['plan'],
+				top3MustContain: ['arr_usd']
+			},
+			{
+				family: 'dimension+metric',
+				query: 'channel sales',
+				columns: ['channel', 'sales_amount', 'order_date'],
+				top1MustContain: ['channel'],
+				top3MustContain: ['sales_amount']
+			},
+			{
+				family: 'dimension+metric',
+				query: 'merchant payment volume',
+				columns: ['merchant', 'payment_volume', 'transaction_date'],
+				top1MustContain: ['merchant'],
+				top3MustContain: ['payment_volume']
+			},
 
-			{ family: 'dual-categorical', query: 'priority issue type', columns: ['priority', 'issue_type', 'created_at', 'csat_score'], top1MustContain: ['priority'], top3MustContain: ['issue_type'] },
-			{ family: 'dual-categorical', query: 'region product', columns: ['region', 'product', 'revenue', 'created_at'], top1MustContain: ['region'], top3MustContain: ['product'] },
-			{ family: 'dual-categorical', query: 'carrier route', columns: ['carrier', 'route_type', 'delay_minutes', 'event_time'], top1MustContain: ['carrier'], top3MustContain: ['route_type'] },
-			{ family: 'dual-categorical', query: 'department diagnosis', columns: ['department', 'diagnosis', 'cost', 'visit_date'], top1MustContain: ['department'], top3MustContain: ['diagnosis'] },
-			{ family: 'dual-categorical', query: 'plan region breakdown', columns: ['plan', 'region', 'mrr_usd', 'signup_date'], top1MustContain: ['plan'], top3MustContain: ['region'] },
+			{
+				family: 'dual-categorical',
+				query: 'priority issue type',
+				columns: ['priority', 'issue_type', 'created_at', 'csat_score'],
+				top1MustContain: ['priority'],
+				top3MustContain: ['issue_type']
+			},
+			{
+				family: 'dual-categorical',
+				query: 'region product',
+				columns: ['region', 'product', 'revenue', 'created_at'],
+				top1MustContain: ['region'],
+				top3MustContain: ['product']
+			},
+			{
+				family: 'dual-categorical',
+				query: 'carrier route',
+				columns: ['carrier', 'route_type', 'delay_minutes', 'event_time'],
+				top1MustContain: ['carrier'],
+				top3MustContain: ['route_type']
+			},
+			{
+				family: 'dual-categorical',
+				query: 'department diagnosis',
+				columns: ['department', 'diagnosis', 'cost', 'visit_date'],
+				top1MustContain: ['department'],
+				top3MustContain: ['diagnosis']
+			},
+			{
+				family: 'dual-categorical',
+				query: 'plan region breakdown',
+				columns: ['plan', 'region', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['plan'],
+				top3MustContain: ['region']
+			},
 
-			{ family: 'trend-intent', query: 'trend by signup date mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['signup_date'], top3MustContain: ['mrr_usd'] },
-			{ family: 'trend-intent', query: 'monthly revenue trend', columns: ['region', 'revenue', 'order_date'], top1MustContain: ['order_date'], top3MustContain: ['revenue'] },
-			{ family: 'trend-intent', query: 'temperature trend by recorded at', columns: ['region', 'temperature_c', 'recorded_at', 'humidity_pct'], top1MustContain: ['recorded_at'], top3MustContain: ['temperature_c'] },
-			{ family: 'trend-intent', query: 'time series latency', columns: ['service', 'latency_ms', 'timestamp'], top1MustContain: ['timestamp'], top3MustContain: ['latency_ms'] },
-			{ family: 'trend-intent', query: 'arr timeline', columns: ['segment', 'arr_usd', 'report_date'], top1MustContain: ['report_date'], top3MustContain: ['arr_usd'] },
+			{
+				family: 'trend-intent',
+				query: 'trend by signup date mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['signup_date'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				family: 'trend-intent',
+				query: 'monthly revenue trend',
+				columns: ['region', 'revenue', 'order_date'],
+				top1MustContain: ['order_date'],
+				top3MustContain: ['revenue']
+			},
+			{
+				family: 'trend-intent',
+				query: 'temperature trend by recorded at',
+				columns: ['region', 'temperature_c', 'recorded_at', 'humidity_pct'],
+				top1MustContain: ['recorded_at'],
+				top3MustContain: ['temperature_c']
+			},
+			{
+				family: 'trend-intent',
+				query: 'time series latency',
+				columns: ['service', 'latency_ms', 'timestamp'],
+				top1MustContain: ['timestamp'],
+				top3MustContain: ['latency_ms']
+			},
+			{
+				family: 'trend-intent',
+				query: 'arr timeline',
+				columns: ['segment', 'arr_usd', 'report_date'],
+				top1MustContain: ['report_date'],
+				top3MustContain: ['arr_usd']
+			},
 
-			{ family: 'compare-intent', query: 'compare mrr and churn risk score', columns: ['mrr_usd', 'churn_risk_score', 'industry', 'signup_date'], top1MustContain: ['mrr_usd'], top3MustContain: ['churn_risk_score'] },
-			{ family: 'compare-intent', query: 'vs revenue and cost', columns: ['revenue', 'cost', 'category', 'date'], top1MustContain: ['revenue'], top3MustContain: ['cost'] },
-			{ family: 'compare-intent', query: 'correlation temperature humidity', columns: ['temperature_c', 'humidity_pct', 'region', 'recorded_at'], top1MustContain: ['temperature_c'], top3MustContain: ['humidity_pct'] },
-			{ family: 'compare-intent', query: 'compare delay and cancellations', columns: ['delay_minutes', 'cancellations', 'carrier', 'flight_date'], top1MustContain: ['delay_minutes'], top3MustContain: ['cancellations'] },
-			{ family: 'compare-intent', query: 'compare response time and csat', columns: ['first_response_minutes', 'csat_score', 'priority', 'created_at'], top1MustContain: ['first_response_minutes'], top3MustContain: ['csat_score'] },
+			{
+				family: 'compare-intent',
+				query: 'compare mrr and churn risk score',
+				columns: ['mrr_usd', 'churn_risk_score', 'industry', 'signup_date'],
+				top1MustContain: ['mrr_usd'],
+				top3MustContain: ['churn_risk_score']
+			},
+			{
+				family: 'compare-intent',
+				query: 'vs revenue and cost',
+				columns: ['revenue', 'cost', 'category', 'date'],
+				top1MustContain: ['revenue'],
+				top3MustContain: ['cost']
+			},
+			{
+				family: 'compare-intent',
+				query: 'correlation temperature humidity',
+				columns: ['temperature_c', 'humidity_pct', 'region', 'recorded_at'],
+				top1MustContain: ['temperature_c'],
+				top3MustContain: ['humidity_pct']
+			},
+			{
+				family: 'compare-intent',
+				query: 'compare delay and cancellations',
+				columns: ['delay_minutes', 'cancellations', 'carrier', 'flight_date'],
+				top1MustContain: ['delay_minutes'],
+				top3MustContain: ['cancellations']
+			},
+			{
+				family: 'compare-intent',
+				query: 'compare response time and csat',
+				columns: ['first_response_minutes', 'csat_score', 'priority', 'created_at'],
+				top1MustContain: ['first_response_minutes'],
+				top3MustContain: ['csat_score']
+			},
 
-			{ family: 'outlier-intent', query: 'outliers in mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['mrr_usd'], top3MustContain: ['mrr_usd'] },
-			{ family: 'outlier-intent', query: 'anomaly temperature', columns: ['temperature_c', 'region', 'recorded_at'], top1MustContain: ['temperature_c'], top3MustContain: ['temperature_c'] },
-			{ family: 'outlier-intent', query: 'unusual latency spikes', columns: ['latency_ms', 'service', 'timestamp'], top1MustContain: ['latency_ms'], top3MustContain: ['latency_ms'] },
-			{ family: 'outlier-intent', query: 'detect anomaly cost', columns: ['cost', 'department', 'visit_date'], top1MustContain: ['cost'], top3MustContain: ['cost'] },
-			{ family: 'outlier-intent', query: 'outlier humidity', columns: ['humidity_pct', 'region', 'recorded_at'], top1MustContain: ['humidity_pct'], top3MustContain: ['humidity_pct'] },
+			{
+				family: 'outlier-intent',
+				query: 'outliers in mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['mrr_usd'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				family: 'outlier-intent',
+				query: 'anomaly temperature',
+				columns: ['temperature_c', 'region', 'recorded_at'],
+				top1MustContain: ['temperature_c'],
+				top3MustContain: ['temperature_c']
+			},
+			{
+				family: 'outlier-intent',
+				query: 'unusual latency spikes',
+				columns: ['latency_ms', 'service', 'timestamp'],
+				top1MustContain: ['latency_ms'],
+				top3MustContain: ['latency_ms']
+			},
+			{
+				family: 'outlier-intent',
+				query: 'detect anomaly cost',
+				columns: ['cost', 'department', 'visit_date'],
+				top1MustContain: ['cost'],
+				top3MustContain: ['cost']
+			},
+			{
+				family: 'outlier-intent',
+				query: 'outlier humidity',
+				columns: ['humidity_pct', 'region', 'recorded_at'],
+				top1MustContain: ['humidity_pct'],
+				top3MustContain: ['humidity_pct']
+			},
 
-			{ family: 'rank-intent', query: 'top tenant by spend', columns: ['tenant_name', 'monthly_spend', 'created_at'], top1MustContain: ['tenant_name'], top3MustContain: ['monthly_spend'] },
-			{ family: 'rank-intent', query: 'highest industry mrr', columns: ['industry', 'mrr_usd', 'signup_date'], top1MustContain: ['industry'], top3MustContain: ['mrr_usd'] },
-			{ family: 'rank-intent', query: 'leaderboard region revenue', columns: ['region', 'revenue', 'date'], top1MustContain: ['region'], top3MustContain: ['revenue'] },
-			{ family: 'rank-intent', query: 'rank plan churn risk score', columns: ['plan', 'churn_risk_score', 'created_at'], top1MustContain: ['plan'], top3MustContain: ['churn_risk_score'] },
-			{ family: 'rank-intent', query: 'top issue type count', columns: ['issue_type', 'priority', 'created_at'], top1MustContain: ['issue_type'], top3MustContain: ['issue_type'] },
+			{
+				family: 'rank-intent',
+				query: 'top tenant by spend',
+				columns: ['tenant_name', 'monthly_spend', 'created_at'],
+				top1MustContain: ['tenant_name'],
+				top3MustContain: ['monthly_spend']
+			},
+			{
+				family: 'rank-intent',
+				query: 'highest industry mrr',
+				columns: ['industry', 'mrr_usd', 'signup_date'],
+				top1MustContain: ['industry'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				family: 'rank-intent',
+				query: 'leaderboard region revenue',
+				columns: ['region', 'revenue', 'date'],
+				top1MustContain: ['region'],
+				top3MustContain: ['revenue']
+			},
+			{
+				family: 'rank-intent',
+				query: 'rank plan churn risk score',
+				columns: ['plan', 'churn_risk_score', 'created_at'],
+				top1MustContain: ['plan'],
+				top3MustContain: ['churn_risk_score']
+			},
+			{
+				family: 'rank-intent',
+				query: 'top issue type count',
+				columns: ['issue_type', 'priority', 'created_at'],
+				top1MustContain: ['issue_type'],
+				top3MustContain: ['issue_type']
+			},
 
-			{ family: 'synonym-typo', query: 'brakdown industy rev', columns: ['industry', 'mrr_usd', 'arr_usd', 'signup_date'], top3MustContain: ['industry'] },
-			{ family: 'synonym-typo', query: 'tenent spend', columns: ['tenant_name', 'monthly_spend', 'created_at'], top3MustContain: ['tenant_name'] },
-			{ family: 'synonym-typo', query: 'timline arr', columns: ['arr_usd', 'report_date', 'segment'], top3MustContain: ['report_date'] },
-			{ family: 'synonym-typo', query: 'cmpare mrr churn', columns: ['mrr_usd', 'churn_risk_score', 'industry', 'signup_date'], top3MustContain: ['mrr_usd'] },
-			{ family: 'synonym-typo', query: 'anomly latency', columns: ['latency_ms', 'service', 'timestamp'], top3MustContain: ['latency_ms'] },
+			{
+				family: 'synonym-typo',
+				query: 'brakdown industy rev',
+				columns: ['industry', 'mrr_usd', 'arr_usd', 'signup_date'],
+				top3MustContain: ['industry']
+			},
+			{
+				family: 'synonym-typo',
+				query: 'tenent spend',
+				columns: ['tenant_name', 'monthly_spend', 'created_at'],
+				top3MustContain: ['tenant_name']
+			},
+			{
+				family: 'synonym-typo',
+				query: 'timline arr',
+				columns: ['arr_usd', 'report_date', 'segment'],
+				top3MustContain: ['report_date']
+			},
+			{
+				family: 'synonym-typo',
+				query: 'cmpare mrr churn',
+				columns: ['mrr_usd', 'churn_risk_score', 'industry', 'signup_date'],
+				top3MustContain: ['mrr_usd']
+			},
+			{
+				family: 'synonym-typo',
+				query: 'anomly latency',
+				columns: ['latency_ms', 'service', 'timestamp'],
+				top3MustContain: ['latency_ms']
+			},
 
-			{ family: 'mixed-measure-dimension', query: 'temperature region', columns: ['recorded_at', 'region', 'temperature_c', 'humidity_pct', 'air_quality_index'], top1MustContain: ['temperature_c'], top3MustContain: ['region'] },
-			{ family: 'mixed-measure-dimension', query: 'humidity city', columns: ['city', 'humidity_pct', 'temperature_c', 'recorded_at'], top1MustContain: ['humidity_pct'], top3MustContain: ['city'] },
-			{ family: 'mixed-measure-dimension', query: 'air quality region', columns: ['region', 'air_quality_index', 'recorded_at'], top1MustContain: ['air_quality_index'], top3MustContain: ['region'] },
-			{ family: 'mixed-measure-dimension', query: 'latency service', columns: ['service', 'latency_ms', 'timestamp'], top1MustContain: ['latency_ms'], top3MustContain: ['service'] },
-			{ family: 'mixed-measure-dimension', query: 'risk score plan', columns: ['plan', 'risk_score', 'created_at'], top1MustContain: ['risk_score'], top3MustContain: ['plan'] }
+			{
+				family: 'mixed-measure-dimension',
+				query: 'temperature region',
+				columns: ['recorded_at', 'region', 'temperature_c', 'humidity_pct', 'air_quality_index'],
+				top1MustContain: ['temperature_c'],
+				top3MustContain: ['region']
+			},
+			{
+				family: 'mixed-measure-dimension',
+				query: 'humidity city',
+				columns: ['city', 'humidity_pct', 'temperature_c', 'recorded_at'],
+				top1MustContain: ['humidity_pct'],
+				top3MustContain: ['city']
+			},
+			{
+				family: 'mixed-measure-dimension',
+				query: 'air quality region',
+				columns: ['region', 'air_quality_index', 'recorded_at'],
+				top1MustContain: ['air_quality_index'],
+				top3MustContain: ['region']
+			},
+			{
+				family: 'mixed-measure-dimension',
+				query: 'latency service',
+				columns: ['service', 'latency_ms', 'timestamp'],
+				top1MustContain: ['latency_ms'],
+				top3MustContain: ['service']
+			},
+			{
+				family: 'mixed-measure-dimension',
+				query: 'risk score plan',
+				columns: ['plan', 'risk_score', 'created_at'],
+				top1MustContain: ['risk_score'],
+				top3MustContain: ['plan']
+			}
 		];
 
 		type FamilyStats = {
@@ -884,18 +1325,30 @@ describe('stage-catalog', () => {
 
 		const stats = new Map<string, FamilyStats>();
 		for (const scenario of scenarios) {
-			const prompts = searchAnalysisPrompts({ query: scenario.query, availableColumns: scenario.columns, limit: 8 });
+			const prompts = searchAnalysisPrompts({
+				query: scenario.query,
+				availableColumns: scenario.columns,
+				limit: 8
+			});
 			const top1Text = `${prompts[0]?.label ?? ''} ${prompts[0]?.prompt ?? ''}`.toLowerCase();
-			const top3Text = prompts.slice(0, 3).map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase());
+			const top3Text = prompts
+				.slice(0, 3)
+				.map((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase());
 
 			const familyStats = stats.get(scenario.family) ?? { total: 0, top1Hits: 0, top3Hits: 0 };
 			familyStats.total += 1;
 
-			if ((scenario.top1MustContain ?? []).every((token) => top1Text.includes(token.toLowerCase()))) {
+			if (
+				(scenario.top1MustContain ?? []).every((token) => top1Text.includes(token.toLowerCase()))
+			) {
 				familyStats.top1Hits += 1;
 			}
 
-			if ((scenario.top3MustContain ?? []).every((token) => top3Text.some((entry) => entry.includes(token.toLowerCase())))) {
+			if (
+				(scenario.top3MustContain ?? []).every((token) =>
+					top3Text.some((entry) => entry.includes(token.toLowerCase()))
+				)
+			) {
 				familyStats.top3Hits += 1;
 			}
 
@@ -903,11 +1356,18 @@ describe('stage-catalog', () => {
 		}
 
 		const lines: string[] = [];
-		const underperforming: Array<{ family: string; top1Rate: number; top3Rate: number; total: number }> = [];
+		const underperforming: Array<{
+			family: string;
+			top1Rate: number;
+			top3Rate: number;
+			total: number;
+		}> = [];
 		for (const [family, value] of stats.entries()) {
 			const top1Rate = value.total === 0 ? 0 : value.top1Hits / value.total;
 			const top3Rate = value.total === 0 ? 0 : value.top3Hits / value.total;
-			lines.push(`${family}: top1=${top1Rate.toFixed(2)} top3=${top3Rate.toFixed(2)} n=${value.total}`);
+			lines.push(
+				`${family}: top1=${top1Rate.toFixed(2)} top3=${top3Rate.toFixed(2)} n=${value.total}`
+			);
 			if (top1Rate < 0.6 || top3Rate < 0.8) {
 				underperforming.push({ family, top1Rate, top3Rate, total: value.total });
 			}
@@ -919,7 +1379,9 @@ describe('stage-catalog', () => {
 		}
 		if (underperforming.length > 0) {
 			for (const family of underperforming) {
-				console.warn(`[analysis-adversarial-underperform] ${family.family}: top1=${family.top1Rate.toFixed(2)} top3=${family.top3Rate.toFixed(2)} n=${family.total}`);
+				console.warn(
+					`[analysis-adversarial-underperform] ${family.family}: top1=${family.top1Rate.toFixed(2)} top3=${family.top3Rate.toFixed(2)} n=${family.total}`
+				);
 			}
 		} else {
 			console.info('[analysis-adversarial-underperform] none');
@@ -965,9 +1427,7 @@ describe('stage-catalog', () => {
 		expect(stages[0]?.type).toBe('derive');
 		if (stages[0]?.type === 'derive') {
 			expect(stages[0].columns).toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({ name: 'revenue' })
-				])
+				expect.arrayContaining([expect.objectContaining({ name: 'revenue' })])
 			);
 			const revenueExpr = stages[0].columns.find((column) => column.name === 'revenue');
 			expect(revenueExpr?.expr.mode).toBe('sstring');
@@ -989,17 +1449,36 @@ describe('stage-catalog', () => {
 		const ranked = recommendPresets({
 			stages: [{ type: 'from', table: 'wg' }],
 			availableColumnCount: 7,
-			availableColumns: ['Item Name', 'Category', 'Price (GHS)', 'Units Sold', 'Date Sold', 'Location', 'Customer Type']
+			availableColumns: [
+				'Item Name',
+				'Category',
+				'Price (GHS)',
+				'Units Sold',
+				'Date Sold',
+				'Location',
+				'Customer Type'
+			]
 		});
 
 		const topIds = ranked.slice(0, 6).map((entry) => entry.preset.id);
-		expect(topIds).toEqual(expect.arrayContaining(['group-top', 'temporal-trend', 'contribution-total']));
+		expect(topIds).toEqual(
+			expect.arrayContaining(['group-top', 'temporal-trend', 'contribution-total'])
+		);
 		const groupTop = ranked.find((entry) => entry.preset.id === 'group-top');
 		expect(groupTop?.reasons.some((reason) => /composed metric/i.test(reason))).toBe(true);
 	});
 
 	it('builds all extended advanced presets into non-empty stage chains', () => {
-		const columns = ['event_time', 'region', 'product', 'status', 'amount', 'revenue', 'cost', 'customer_id'];
+		const columns = [
+			'event_time',
+			'region',
+			'product',
+			'status',
+			'amount',
+			'revenue',
+			'cost',
+			'customer_id'
+		];
 		const presets = [
 			'hierarchical-rollup',
 			'contribution-total',
@@ -1203,7 +1682,9 @@ describe('stage-catalog', () => {
 		expect(stages[1]?.type).toBe('group');
 		if (stages[1]?.type === 'group') {
 			expect(stages[1].aggregations).toEqual(
-				expect.arrayContaining([{ name: 'avg_efficiency_ratio', func: 'average', column: 'efficiency_ratio' }])
+				expect.arrayContaining([
+					{ name: 'avg_efficiency_ratio', func: 'average', column: 'efficiency_ratio' }
+				])
 			);
 		}
 	});
@@ -1224,7 +1705,9 @@ describe('stage-catalog', () => {
 			expect(casted).toBeDefined();
 			expect(casted?.expr.mode).toBe('sstring');
 			if (casted?.expr.mode === 'sstring') {
-				expect(casted.expr.template).toContain('cast(nullif(regexp_replace(cast(\\"Balance\\" as varchar)');
+				expect(casted.expr.template).toContain(
+					'cast(nullif(regexp_replace(cast(\\"Balance\\" as varchar)'
+				);
 			}
 		}
 
@@ -1351,7 +1834,9 @@ describe('stage-catalog', () => {
 		});
 
 		const topIds = ranked.slice(0, 6).map((entry) => entry.preset.id);
-		expect(topIds).toEqual(expect.arrayContaining(['group-top', 'segment-anomaly', 'outlier-explain']));
+		expect(topIds).toEqual(
+			expect.arrayContaining(['group-top', 'segment-anomaly', 'outlier-explain'])
+		);
 
 		const groupTop = ranked.find((entry) => entry.preset.id === 'group-top');
 		const nullHotspots = ranked.find((entry) => entry.preset.id === 'null-hotspots');
@@ -1509,7 +1994,11 @@ describe('stage-catalog', () => {
 			stages: [
 				{ type: 'from', table: 'orders' },
 				{ type: 'sort', keys: [{ column: 'created_at', dir: 'desc' }] },
-				{ type: 'filter', conditions: [{ column: 'status', op: '==', value: 'open' }], logic: 'and' }
+				{
+					type: 'filter',
+					conditions: [{ column: 'status', op: '==', value: 'open' }],
+					logic: 'and'
+				}
 			],
 			availableColumns: ['status', 'amount', 'created_at']
 		});
@@ -1620,7 +2109,10 @@ describe('stage-catalog', () => {
 					reason?: string;
 				};
 				const reasons = parsed.inner?.map((item) => item.reason ?? '') ?? [parsed.reason ?? ''];
-				return reasons.length > 0 && reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason));
+				return (
+					reasons.length > 0 &&
+					reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason))
+				);
 			} catch {
 				return false;
 			}
@@ -1664,7 +2156,9 @@ describe('stage-catalog', () => {
 		const periodVariance = makePresetStages('period-variance', {
 			availableColumns: textOnlyColumns
 		});
-		expect(periodVariance.some((stage) => stage.type === 'group' && stage.by.includes('period_month'))).toBe(false);
+		expect(
+			periodVariance.some((stage) => stage.type === 'group' && stage.by.includes('period_month'))
+		).toBe(false);
 		expect(
 			periodVariance.some(
 				(stage) => stage.type === 'sort' && stage.keys.some((key) => key.column === 'period_month')
@@ -1674,14 +2168,18 @@ describe('stage-catalog', () => {
 		const cohort = makePresetStages('cohort-retention', {
 			availableColumns: textOnlyColumns
 		});
-		expect(cohort.some((stage) => stage.type === 'group' && stage.by.includes('period_month'))).toBe(false);
+		expect(
+			cohort.some((stage) => stage.type === 'group' && stage.by.includes('period_month'))
+		).toBe(false);
 
 		const seasonal = makePresetStages('seasonal-pattern', {
 			availableColumns: textOnlyColumns
 		});
 		expect(
 			seasonal.some(
-				(stage) => stage.type === 'group' && stage.by.some((value) => value === 'season_month' || value === 'season_weekday')
+				(stage) =>
+					stage.type === 'group' &&
+					stage.by.some((value) => value === 'season_month' || value === 'season_weekday')
 			)
 		).toBe(false);
 
@@ -1690,7 +2188,8 @@ describe('stage-catalog', () => {
 		});
 		expect(
 			drift.some(
-				(stage) => stage.type === 'derive' && stage.columns.some((column) => column.name === 'drift_delta')
+				(stage) =>
+					stage.type === 'derive' && stage.columns.some((column) => column.name === 'drift_delta')
 			)
 		).toBe(false);
 
@@ -1699,7 +2198,9 @@ describe('stage-catalog', () => {
 		});
 		expect(
 			nullHotspots.some(
-				(stage) => stage.type === 'derive' && stage.columns.some((column) => column.name === 'is_missing_metric')
+				(stage) =>
+					stage.type === 'derive' &&
+					stage.columns.some((column) => column.name === 'is_missing_metric')
 			)
 		).toBe(true);
 		expect(
@@ -1713,17 +2214,32 @@ describe('stage-catalog', () => {
 
 	it('prioritizes strong metric presets for benchmark CSV schemas', () => {
 		const inferProfiles = (columns: string[]) => {
-			const profiles: Record<string, { dataKind: 'numeric' | 'date' | 'boolean' | 'text'; semanticType?: string; confidence?: number }> = {};
+			const profiles: Record<
+				string,
+				{
+					dataKind: 'numeric' | 'date' | 'boolean' | 'text';
+					semanticType?: string;
+					confidence?: number;
+				}
+			> = {};
 			for (const column of columns) {
 				if (/(date|time|_at|recorded|signup|ship|attendance|production|start|end)/i.test(column)) {
 					profiles[column] = { dataKind: 'date', semanticType: 'date', confidence: 0.9 };
 					continue;
 				}
-				if (/^(is_|has_)|(?:^|_)(present|active|admitted|escalated|occupied|passed|returned|alert|fraud|qa_passed|delivered_on_time|pets_allowed)$/i.test(column)) {
+				if (
+					/^(is_|has_)|(?:^|_)(present|active|admitted|escalated|occupied|passed|returned|alert|fraud|qa_passed|delivered_on_time|pets_allowed)$/i.test(
+						column
+					)
+				) {
 					profiles[column] = { dataKind: 'boolean', semanticType: 'flag', confidence: 0.85 };
 					continue;
 				}
-				if (/(amount|price|cost|mrr|seats|units|score|minutes|hours|days|distance|weight|temperature|humidity|wind|rainfall|energy|risk|rate|pct|percent|fx|defect|downtime|kwh|usd|kg|km)/i.test(column)) {
+				if (
+					/(amount|price|cost|mrr|seats|units|score|minutes|hours|days|distance|weight|temperature|humidity|wind|rainfall|energy|risk|rate|pct|percent|fx|defect|downtime|kwh|usd|kg|km)/i.test(
+						column
+					)
+				) {
 					profiles[column] = { dataKind: 'numeric', semanticType: 'metric', confidence: 0.82 };
 					continue;
 				}
@@ -1740,61 +2256,172 @@ describe('stage-catalog', () => {
 		}> = [
 			{
 				name: 'ecommerce_orders',
-				columns: ['order_id', 'order_date', 'customer_name', 'region', 'channel', 'product_category', 'units', 'unit_price', 'discount_pct', 'returned', 'shipping_days'],
+				columns: [
+					'order_id',
+					'order_date',
+					'customer_name',
+					'region',
+					'channel',
+					'product_category',
+					'units',
+					'unit_price',
+					'discount_pct',
+					'returned',
+					'shipping_days'
+				],
 				requires: ['temporal-trend', 'contribution-total'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			},
 			{
 				name: 'hospital_visits',
-				columns: ['visit_id', 'visit_date', 'patient_age', 'patient_gender', 'department', 'triage_level', 'diagnosis', 'cost_usd', 'admitted', 'wait_minutes'],
+				columns: [
+					'visit_id',
+					'visit_date',
+					'patient_age',
+					'patient_gender',
+					'department',
+					'triage_level',
+					'diagnosis',
+					'cost_usd',
+					'admitted',
+					'wait_minutes'
+				],
 				requires: ['temporal-trend'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'anomaly-scan', 'segment-anomaly']
 			},
 			{
 				name: 'logistics_shipments',
-				columns: ['shipment_id', 'ship_date', 'origin', 'destination', 'mode', 'carrier', 'weight_kg', 'distance_km', 'fragile', 'delivered_on_time'],
+				columns: [
+					'shipment_id',
+					'ship_date',
+					'origin',
+					'destination',
+					'mode',
+					'carrier',
+					'weight_kg',
+					'distance_km',
+					'fragile',
+					'delivered_on_time'
+				],
 				requires: ['temporal-trend', 'anomaly-scan'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			},
 			{
 				name: 'real_estate_leases',
-				columns: ['lease_id', 'property_type', 'city', 'tenant_name', 'start_date', 'end_date', 'rent_usd', 'deposit_usd', 'square_meters', 'occupied', 'pets_allowed'],
+				columns: [
+					'lease_id',
+					'property_type',
+					'city',
+					'tenant_name',
+					'start_date',
+					'end_date',
+					'rent_usd',
+					'deposit_usd',
+					'square_meters',
+					'occupied',
+					'pets_allowed'
+				],
 				requires: ['temporal-trend', 'period-variance'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'contribution-total']
 			},
 			{
 				name: 'saas_subscriptions',
-				columns: ['account_id', 'signup_date', 'plan', 'billing_cycle', 'seats', 'mrr_usd', 'active', 'industry', 'churn_risk_score', 'last_login_days_ago'],
+				columns: [
+					'account_id',
+					'signup_date',
+					'plan',
+					'billing_cycle',
+					'seats',
+					'mrr_usd',
+					'active',
+					'industry',
+					'churn_risk_score',
+					'last_login_days_ago'
+				],
 				requires: ['temporal-trend'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'anomaly-scan', 'segment-anomaly']
 			},
 			{
 				name: 'manufacturing_batches',
-				columns: ['batch_id', 'production_date', 'plant', 'product_line', 'units_produced', 'defect_rate_pct', 'downtime_minutes', 'operator_shift', 'qa_passed', 'energy_kwh'],
+				columns: [
+					'batch_id',
+					'production_date',
+					'plant',
+					'product_line',
+					'units_produced',
+					'defect_rate_pct',
+					'downtime_minutes',
+					'operator_shift',
+					'qa_passed',
+					'energy_kwh'
+				],
 				requires: ['temporal-trend', 'anomaly-scan'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			},
 			{
 				name: 'climate_readings',
-				columns: ['station_id', 'recorded_at', 'region', 'temperature_c', 'humidity_pct', 'wind_kph', 'rainfall_mm', 'air_quality_index', 'storm_alert'],
+				columns: [
+					'station_id',
+					'recorded_at',
+					'region',
+					'temperature_c',
+					'humidity_pct',
+					'wind_kph',
+					'rainfall_mm',
+					'air_quality_index',
+					'storm_alert'
+				],
 				requires: ['temporal-trend', 'anomaly-scan'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			},
 			{
 				name: 'support_tickets',
-				columns: ['ticket_id', 'created_at', 'priority', 'channel', 'customer_segment', 'issue_type', 'first_response_minutes', 'resolution_hours', 'csat_score', 'escalated'],
+				columns: [
+					'ticket_id',
+					'created_at',
+					'priority',
+					'channel',
+					'customer_segment',
+					'issue_type',
+					'first_response_minutes',
+					'resolution_hours',
+					'csat_score',
+					'escalated'
+				],
 				requires: ['temporal-trend', 'text-categorize'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			},
 			{
 				name: 'school_attendance',
-				columns: ['student_id', 'student_name', 'grade', 'homeroom', 'attendance_date', 'present', 'arrival_time', 'math_score', 'reading_score', 'club'],
+				columns: [
+					'student_id',
+					'student_name',
+					'grade',
+					'homeroom',
+					'attendance_date',
+					'present',
+					'arrival_time',
+					'math_score',
+					'reading_score',
+					'club'
+				],
 				requires: ['temporal-trend'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'anomaly-scan', 'segment-anomaly']
 			},
 			{
 				name: 'fintech_transactions',
-				columns: ['txn_id', 'txn_time', 'account_type', 'country', 'payment_method', 'merchant_category', 'amount_usd', 'fx_rate', 'is_fraud', 'settlement_status'],
+				columns: [
+					'txn_id',
+					'txn_time',
+					'account_type',
+					'country',
+					'payment_method',
+					'merchant_category',
+					'amount_usd',
+					'fx_rate',
+					'is_fraud',
+					'settlement_status'
+				],
 				requires: ['temporal-trend', 'contribution-total'],
 				oneOf: ['group-top', 'hierarchical-rollup', 'segment-anomaly']
 			}
@@ -1855,11 +2482,14 @@ describe('stage-catalog', () => {
 
 			const stages = plan?.stages ?? [];
 			expect(
-				stages.some((stage) => stage.type === 'group') || stages.some((stage) => stage.type === 'window'),
+				stages.some((stage) => stage.type === 'group') ||
+					stages.some((stage) => stage.type === 'window'),
 				`expected grouped or windowed analysis for query: ${query}`
 			).toBe(true);
 			expect(
-				stages.some((stage) => stage.type === 'sort') || stages.some((stage) => stage.type === 'take') || stages.some((stage) => stage.type === 'filter'),
+				stages.some((stage) => stage.type === 'sort') ||
+					stages.some((stage) => stage.type === 'take') ||
+					stages.some((stage) => stage.type === 'filter'),
 				`expected ranking/filtering stages for query: ${query}`
 			).toBe(true);
 		}
@@ -1868,7 +2498,16 @@ describe('stage-catalog', () => {
 	it('infers a january payment-ranking plan from implicit temporal language', () => {
 		const plan = generatePromptStagePlan({
 			query: 'who did i pay the most in january',
-			availableColumns: ['Receipt No.', 'Completion Time', 'Details', 'Transaction Status', 'Paid In', 'Withdrawn', 'Balance', 'Payee'],
+			availableColumns: [
+				'Receipt No.',
+				'Completion Time',
+				'Details',
+				'Transaction Status',
+				'Paid In',
+				'Withdrawn',
+				'Balance',
+				'Payee'
+			],
 			validateCompile: false
 		});
 
@@ -1877,7 +2516,9 @@ describe('stage-catalog', () => {
 			type: 'filter',
 			conditions: [{ column: 'Completion Time', op: 'like', value: '%-01-%' }]
 		});
-		expect(plan?.stages.some((stage) => stage.type === 'group' && stage.by.includes('Payee'))).toBe(true);
+		expect(plan?.stages.some((stage) => stage.type === 'group' && stage.by.includes('Payee'))).toBe(
+			true
+		);
 		expect(plan?.stages.some((stage) => stage.type === 'sort')).toBe(true);
 	});
 
@@ -1895,7 +2536,10 @@ describe('stage-catalog', () => {
 					reason?: string;
 				};
 				const reasons = parsed.inner?.map((item) => item.reason ?? '') ?? [parsed.reason ?? ''];
-				return reasons.length > 0 && reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason));
+				return (
+					reasons.length > 0 &&
+					reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason))
+				);
 			} catch {
 				return false;
 			}

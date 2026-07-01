@@ -97,7 +97,16 @@ export interface AIChatRequest {
 	/** Non-empty when the schema changed since the previous turn */
 	schemaChangeNote?: string;
 	/** Subagent mode: narrows the system prompt to a specialized role */
-	subagentType?: 'discovery' | 'modeling' | 'sql-gen' | 'sql-review' | 'debug' | 'dashboard' | 'investigation' | 'sprint_planning' | 'documentation';
+	subagentType?:
+		| 'discovery'
+		| 'modeling'
+		| 'sql-gen'
+		| 'sql-review'
+		| 'debug'
+		| 'dashboard'
+		| 'investigation'
+		| 'sprint_planning'
+		| 'documentation';
 	/** When set, the server silently drops tool_call events for tools not in this list */
 	allowedTools?: AIChatToolName[];
 }
@@ -219,5 +228,22 @@ export interface CompareCellsArgs {
 export interface AIChatToolCall {
 	callId: string;
 	tool: AIChatToolName;
-	args: CreateCellArgs | UpdateCellArgs | SetChartArgs | PickChartArgs | SetViewModeArgs | DeleteCellArgs | RunCellsArgs | MoveCellArgs | GetCellResultArgs | GetLineageArgs | SearchWorkspaceArgs | QueryDataArgs | SampleDataArgs | ProfileColumnArgs | RecordDecisionArgs | ValidateResultArgs | CompareCellsArgs;
+	args:
+		| CreateCellArgs
+		| UpdateCellArgs
+		| SetChartArgs
+		| PickChartArgs
+		| SetViewModeArgs
+		| DeleteCellArgs
+		| RunCellsArgs
+		| MoveCellArgs
+		| GetCellResultArgs
+		| GetLineageArgs
+		| SearchWorkspaceArgs
+		| QueryDataArgs
+		| SampleDataArgs
+		| ProfileColumnArgs
+		| RecordDecisionArgs
+		| ValidateResultArgs
+		| CompareCellsArgs;
 }

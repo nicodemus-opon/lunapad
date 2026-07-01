@@ -71,7 +71,10 @@
 				.map((v) => coerceNumber(v))
 				.filter((v): v is number => v !== null)
 				.sort((a, b) => a - b);
-			const sample = nonNullValues.slice(0, 3).map((v) => String(v)).join(', ');
+			const sample = nonNullValues
+				.slice(0, 3)
+				.map((v) => String(v))
+				.join(', ');
 
 			return {
 				column,
@@ -101,25 +104,27 @@
 <div class="space-y-3">
 	<div class="grid grid-cols-2 gap-2 md:grid-cols-4">
 		<div class="rounded-md border bg-card px-3 py-2">
-			<div class="text-[11px] uppercase tracking-wide text-muted-foreground">Dataset</div>
+			<div class="text-[11px] tracking-wide text-muted-foreground uppercase">Dataset</div>
 			<div class="mt-1 text-sm font-semibold">{name}</div>
 		</div>
 		<div class="rounded-md border bg-card px-3 py-2">
-			<div class="text-[11px] uppercase tracking-wide text-muted-foreground">Rows</div>
+			<div class="text-[11px] tracking-wide text-muted-foreground uppercase">Rows</div>
 			<div class="mt-1 text-sm font-semibold">{rows.length.toLocaleString()}</div>
 		</div>
 		<div class="rounded-md border bg-card px-3 py-2">
-			<div class="text-[11px] uppercase tracking-wide text-muted-foreground">Columns</div>
+			<div class="text-[11px] tracking-wide text-muted-foreground uppercase">Columns</div>
 			<div class="mt-1 text-sm font-semibold">{columns.length}</div>
 		</div>
 		<div class="rounded-md border bg-card px-3 py-2">
-			<div class="text-[11px] uppercase tracking-wide text-muted-foreground">Numeric Columns</div>
+			<div class="text-[11px] tracking-wide text-muted-foreground uppercase">Numeric Columns</div>
 			<div class="mt-1 text-sm font-semibold">{numericColumns}</div>
 		</div>
 	</div>
 
 	<div class="rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
-		Null values across all columns: <span class="font-medium text-foreground">{totalNulls.toLocaleString()}</span>
+		Null values across all columns: <span class="font-medium text-foreground"
+			>{totalNulls.toLocaleString()}</span
+		>
 	</div>
 
 	<div class="overflow-auto rounded-md border">
@@ -148,7 +153,9 @@
 						</Table.Cell>
 						<Table.Cell class="text-xs">
 							<div>non-null: {p.nonNull.toLocaleString()}</div>
-							<div class="text-muted-foreground">null: {p.nullCount.toLocaleString()} ({p.nullPct.toFixed(1)}%)</div>
+							<div class="text-muted-foreground">
+								null: {p.nullCount.toLocaleString()} ({p.nullPct.toFixed(1)}%)
+							</div>
 						</Table.Cell>
 						<Table.Cell class="text-xs">
 							<div>unique: {p.unique.toLocaleString()}</div>
@@ -167,7 +174,9 @@
 						<Table.Cell class="text-xs">
 							<div>mean: {fmt(p.mean)}</div>
 							<div>stddev: {fmt(p.stddev)}</div>
-							<div class="text-muted-foreground">numeric values: {p.numericCount.toLocaleString()}</div>
+							<div class="text-muted-foreground">
+								numeric values: {p.numericCount.toLocaleString()}
+							</div>
 						</Table.Cell>
 						<Table.Cell class="max-w-80 truncate text-xs text-muted-foreground" title={p.sample}>
 							{p.sample}

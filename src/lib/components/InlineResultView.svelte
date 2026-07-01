@@ -38,13 +38,23 @@
 	}
 
 	let {
-		rows, columns, name = 'result', compact = false, truncated = false,
-		initialViewMode, initialChartConfig,
-		onViewModeChange, onChartConfigChange,
-		onAddSort, onAddFilter,
-		columnDescriptions, onColumnDescriptionChange,
-		controlsVisible = true, toolbarReserveSpace = true, toolbarActions,
-		executionMs = null,
+		rows,
+		columns,
+		name = 'result',
+		compact = false,
+		truncated = false,
+		initialViewMode,
+		initialChartConfig,
+		onViewModeChange,
+		onChartConfigChange,
+		onAddSort,
+		onAddFilter,
+		columnDescriptions,
+		onColumnDescriptionChange,
+		controlsVisible = true,
+		toolbarReserveSpace = true,
+		toolbarActions,
+		executionMs = null
 	}: Props = $props();
 
 	function fmtMs(ms: number): string {
@@ -108,18 +118,20 @@
 		class="flex items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-150 ease-(--motion-ease-out) {controlsVisible
 			? 'h-7 opacity-100'
 			: toolbarReserveSpace
-				? 'h-7 opacity-0 pointer-events-none'
-				: 'h-0 opacity-0 pointer-events-none'}"
+				? 'pointer-events-none h-7 opacity-0'
+				: 'pointer-events-none h-0 opacity-0'}"
 		aria-hidden={!controlsVisible}
 	>
-		<div class="inline-flex flex-nowrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-0.5">
+		<div
+			class="inline-flex flex-nowrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-0.5"
+		>
 			<Button
 				variant={viewMode === 'table' ? 'secondary' : 'ghost'}
 				size="sm"
 				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('table')}
 			>
-				<Table2 class="w-3 h-3" />
+				<Table2 class="h-3 w-3" />
 				Table
 			</Button>
 			<Button
@@ -128,7 +140,7 @@
 				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('chart')}
 			>
-				<TrendingUp class="w-3 h-3" />
+				<TrendingUp class="h-3 w-3" />
 				Chart
 			</Button>
 			<Button
@@ -137,22 +149,26 @@
 				class="h-6 gap-1 px-2 text-2xs"
 				onclick={() => switchView('stats')}
 			>
-				<Sigma class="w-3 h-3" />
+				<Sigma class="h-3 w-3" />
 				Stats
 			</Button>
 		</div>
 
-		<div class="flex h-7 items-center justify-end gap-1 shrink-0">
+		<div class="flex h-7 shrink-0 items-center justify-end gap-1">
 			{#if executionMs != null}
-				<span class="text-2xs text-muted-foreground tabular-nums" title="Query execution time">{fmtMs(executionMs)}</span>
+				<span class="text-2xs text-muted-foreground tabular-nums" title="Query execution time"
+					>{fmtMs(executionMs)}</span
+				>
 			{/if}
 			{#if viewMode === 'chart' && activeConfig && !compact}
 				<button
-					class="h-7 w-7 flex items-center justify-center rounded transition-colors {showConfigPanel ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
+					class="flex h-7 w-7 items-center justify-center rounded transition-colors {showConfigPanel
+						? 'bg-primary/15 text-primary'
+						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
 					onclick={() => (showConfigPanel = !showConfigPanel)}
 				>
-					<Settings2 class="w-3.5 h-3.5" />
+					<Settings2 class="h-3.5 w-3.5" />
 				</button>
 			{/if}
 			{#if toolbarActions}
@@ -167,18 +183,20 @@
 	{#if viewMode === 'chart' && activeConfig}
 		{#if compact}
 			<!-- Compact stage preview: just the chart, no config panel -->
-			<div class="min-h-40 max-h-52 overflow-hidden">
+			<div class="max-h-52 min-h-40 overflow-hidden">
 				<ChartView {rows} {columns} config={activeConfig} />
 			</div>
 		{:else}
 			<!-- Full cell view: left config panel + chart (matches ResultView layout) -->
 			<div class="flex overflow-hidden rounded-md">
 				{#if showConfigPanel}
-					<div class="w-52 shrink-0 border-r border-border/60 bg-muted/10 overflow-y-auto px-3 py-3">
+					<div
+						class="w-52 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/10 px-3 py-3"
+					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 					</div>
 				{/if}
-				<div class="flex-1 min-w-0 min-h-80">
+				<div class="min-h-80 min-w-0 flex-1">
 					<ChartView {rows} {columns} config={activeConfig} />
 				</div>
 			</div>

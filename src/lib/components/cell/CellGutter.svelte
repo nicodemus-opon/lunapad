@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Loader2, Play, X, XCircle } from '@lucide/svelte';
+	import { Loader2, MessageSquare, Play, X, XCircle } from '@lucide/svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { Snippet } from 'svelte';
 	import type { CellStatus } from '$lib/stores/notebook.svelte';
@@ -13,6 +13,8 @@
 		runTooltip,
 		onRun,
 		onCancel,
+		onComments,
+		commentCount = 0,
 		menu
 	}: {
 		isQueryCell: boolean;
@@ -23,15 +25,16 @@
 		runTooltip: string;
 		onRun: () => void;
 		onCancel: () => void;
+		onComments?: () => void;
+		commentCount?: number;
 		menu: Snippet;
 	} = $props();
 
 	let runHovered = $state(false);
-	// Stale, running, and failed cells keep their run affordance visible at all
-	// times — it's the primary signal and the primary fix in one button.
 	const runAlwaysVisible = $derived(running || needsRun || status === 'error');
+	const commentsAlwaysVisible = $derived(commentCount > 0);
+	const showChrome = $derived(revealed || runAlwaysVisible || commentsAlwaysVisible);
 
-	// Success flash — brief green color after a successful run
 	let justSucceeded = $state(false);
 	let prevStatus: typeof status = 'idle';
 	$effect(() => {
@@ -43,7 +46,6 @@
 		prevStatus = curr;
 	});
 
-	// Stale ring pulse — one-shot ring when needsRun flips to true
 	let stalePulsing = $state(false);
 	let prevNeedsRun = false;
 	$effect(() => {
@@ -54,9 +56,15 @@
 		}
 		prevNeedsRun = curr;
 	});
+
+	const commentBtnClass = $derived(
+		commentsAlwaysVisible
+			? 'border-primary/20 bg-primary/8 text-primary hover:bg-primary/12'
+			: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'
+	);
 </script>
 
-<div class="flex items-start justify-end gap-px pt-1 pr-1 select-none">
+<div class="flex flex-col items-end gap-px pt-1 pr-1 select-none">
 	{#if isQueryCell}
 		<Tooltip.Root>
 			<Tooltip.Trigger>
@@ -65,14 +73,14 @@
 					revealed
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {justSucceeded
-						? 'text-success bg-success/8 border-success/25 run-btn-success-pulse'
+						? 'run-btn-success-pulse border-success/25 bg-success/8 text-success'
 						: stalePulsing
-							? 'run-btn-stale-pulse text-warning bg-warning/8 border-warning/25'
+							? 'run-btn-stale-pulse border-warning/25 bg-warning/8 text-warning'
 							: needsRun && !running
-								? 'text-warning bg-warning/8 border-warning/20 hover:bg-warning/15'
+								? 'border-warning/20 bg-warning/8 text-warning hover:bg-warning/15'
 								: status === 'error' && !running
-									? 'text-destructive bg-destructive/8 border-destructive/20 hover:bg-destructive/15'
-									: 'text-muted-foreground border-transparent hover:bg-muted/60 hover:border-border/40 hover:text-foreground'}"
+									? 'border-destructive/20 bg-destructive/8 text-destructive hover:bg-destructive/15'
+									: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'}"
 					aria-label={running ? 'Cancel run' : 'Run cell'}
 					onclick={() => (running ? onCancel() : onRun())}
 					onmouseenter={() => (runHovered = true)}
@@ -94,6 +102,34 @@
 			<Tooltip.Content>
 				<p class="text-xs">
 					{running ? 'Cancel' : status === 'error' ? 'Run failed — run again' : runTooltip}
+				</p>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	{/if}
+
+	{#if onComments}
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<button
+					class="relative flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showChrome
+						? 'opacity-100'
+						: 'pointer-events-none opacity-0'} {commentBtnClass}"
+					aria-label={commentCount > 0 ? `${commentCount} open threads` : 'Add comment'}
+					onclick={() => onComments()}
+				>
+					<MessageSquare class="h-3 w-3" />
+					{#if commentCount > 0}
+						<span
+							class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar"
+							aria-hidden="true"
+						></span>
+					{/if}
+				</button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<p class="text-xs">
+					{commentCount > 0 ? `${commentCount} open thread${commentCount === 1 ? '' : 's'}` : 'Review'}
+					· ⌘⇧C
 				</p>
 			</Tooltip.Content>
 		</Tooltip.Root>

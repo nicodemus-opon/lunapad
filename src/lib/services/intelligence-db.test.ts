@@ -22,7 +22,10 @@ import {
 	registerSemanticSynonyms
 } from '$lib/services/intelligence-db';
 import { guiToPreql } from '$lib/services/gui-prql';
-import { compile as compileNodePrql, CompileOptions as NodeCompileOptions } from 'prqlc/dist/node/prqlc_js';
+import {
+	compile as compileNodePrql,
+	CompileOptions as NodeCompileOptions
+} from 'prqlc/dist/node/prqlc_js';
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
 
 describe('intelligence-db', () => {
@@ -46,7 +49,9 @@ describe('intelligence-db', () => {
 		});
 
 		expect(initDBMock).toHaveBeenCalled();
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS _lunapad_metadata.table_profiles'));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('CREATE TABLE IF NOT EXISTS _lunapad_metadata.table_profiles')
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("'uploaded'"));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('column_profiles'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic_type'));
@@ -79,11 +84,17 @@ describe('intelligence-db', () => {
 			stages
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.cell_runs'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.stage_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('INSERT INTO _lunapad_metadata.cell_runs')
+		);
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('INSERT INTO _lunapad_metadata.stage_usage')
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('stage_sequence_usage'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic_confidence'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage')
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('result1'));
 	});
 
@@ -158,9 +169,9 @@ describe('intelligence-db', () => {
 		expect(
 			context.columns.some(
 				(column) =>
-					column.semanticType === 'date'
-					|| column.semanticType === 'updated_at'
-					|| column.semanticType === 'event_time'
+					column.semanticType === 'date' ||
+					column.semanticType === 'updated_at' ||
+					column.semanticType === 'event_time'
 			)
 		).toBe(true);
 	});
@@ -179,12 +190,42 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.01, distinct_count: 300, sample_values_json: '["2026-05-01","2026-05-30"]' },
-						{ column_name: 'amount', data_kind: 'numeric', null_ratio: 0.02, distinct_count: 250, sample_values_json: '["120.5"]' },
-						{ column_name: 'is_active', data_kind: 'boolean', null_ratio: 0.0, distinct_count: 2, sample_values_json: '["true","false"]' },
-						{ column_name: 'region', data_kind: 'text', null_ratio: 0.0, distinct_count: 12, sample_values_json: '["EMEA","NA"]' }
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0.01,
+							distinct_count: 300,
+							sample_values_json: '["2026-05-01","2026-05-30"]'
+						},
+						{
+							column_name: 'amount',
+							data_kind: 'numeric',
+							null_ratio: 0.02,
+							distinct_count: 250,
+							sample_values_json: '["120.5"]'
+						},
+						{
+							column_name: 'is_active',
+							data_kind: 'boolean',
+							null_ratio: 0.0,
+							distinct_count: 2,
+							sample_values_json: '["true","false"]'
+						},
+						{
+							column_name: 'region',
+							data_kind: 'text',
+							null_ratio: 0.0,
+							distinct_count: 12,
+							sample_values_json: '["EMEA","NA"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -277,7 +318,8 @@ describe('intelligence-db', () => {
 							semantic_confidence: 0.92,
 							null_ratio: 0.1,
 							distinct_count: 190,
-							sample_values_json: '["This is a long body of content with enough words to clearly exceed fifty characters for deriving lengths."]'
+							sample_values_json:
+								'["This is a long body of content with enough words to clearly exceed fifty characters for deriving lengths."]'
 						}
 					],
 					columns: [
@@ -307,9 +349,20 @@ describe('intelligence-db', () => {
 		});
 
 		expect(chips.length).toBeGreaterThanOrEqual(5);
-		expect(chips.some((chip) => chip.stage.type === 'sort' && chip.label.includes('Updated At'))).toBe(true);
-		expect(chips.some((chip) => chip.stage.type === 'filter' && chip.label.includes('Type'))).toBe(true);
-		expect(chips.some((chip) => chip.stage.type === 'filter' && chip.label.includes('Image') && chip.label.includes('available'))).toBe(true);
+		expect(
+			chips.some((chip) => chip.stage.type === 'sort' && chip.label.includes('Updated At'))
+		).toBe(true);
+		expect(chips.some((chip) => chip.stage.type === 'filter' && chip.label.includes('Type'))).toBe(
+			true
+		);
+		expect(
+			chips.some(
+				(chip) =>
+					chip.stage.type === 'filter' &&
+					chip.label.includes('Image') &&
+					chip.label.includes('available')
+			)
+		).toBe(true);
 		expect(
 			chips.some(
 				(chip) =>
@@ -318,7 +371,14 @@ describe('intelligence-db', () => {
 					(chip.label.includes('Type') || chip.label.includes('Collection Id'))
 			)
 		).toBe(true);
-		expect(chips.some((chip) => chip.stage.type === 'derive' && chip.label.includes('Text Content') && chip.label.includes('length'))).toBe(true);
+		expect(
+			chips.some(
+				(chip) =>
+					chip.stage.type === 'derive' &&
+					chip.label.includes('Text Content') &&
+					chip.label.includes('length')
+			)
+		).toBe(true);
 		expect(chips.some((chip) => chip.label.toLowerCase().includes('round clientside'))).toBe(false);
 	});
 
@@ -330,11 +390,35 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'status', data_kind: 'text', null_ratio: 0, distinct_count: 6, sample_values_json: '["active","inactive"]' },
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.01, distinct_count: 320, sample_values_json: '["2026-05-30"]' },
-						{ column_name: 'amount', data_kind: 'numeric', null_ratio: 0.03, distinct_count: 250, sample_values_json: '["99.1"]' }
+						{
+							column_name: 'status',
+							data_kind: 'text',
+							null_ratio: 0,
+							distinct_count: 6,
+							sample_values_json: '["active","inactive"]'
+						},
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0.01,
+							distinct_count: 320,
+							sample_values_json: '["2026-05-30"]'
+						},
+						{
+							column_name: 'amount',
+							data_kind: 'numeric',
+							null_ratio: 0.03,
+							distinct_count: 250,
+							sample_values_json: '["99.1"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -348,12 +432,14 @@ describe('intelligence-db', () => {
 
 		expect(chips.length).toBeGreaterThan(0);
 		expect(chips.some((chip) => chip.label.includes('Created At'))).toBe(true);
-		expect(chips.some((chip) => chip.label.includes('Created At') && chip.label.includes('2026-05-30'))).toBe(true);
-		expect(chips.some((chip) => chip.icon === 'derive' && chip.label.includes('Round Amount'))).toBe(true);
+		expect(
+			chips.some((chip) => chip.label.includes('Created At') && chip.label.includes('2026-05-30'))
+		).toBe(true);
+		expect(
+			chips.some((chip) => chip.icon === 'derive' && chip.label.includes('Round Amount'))
+		).toBe(true);
 		const filterChip = chips.find(
-			(chip) =>
-				chip.stage.type === 'filter' &&
-				chip.stage.conditions[0]?.column === 'created_at'
+			(chip) => chip.stage.type === 'filter' && chip.stage.conditions[0]?.column === 'created_at'
 		);
 		expect(filterChip?.stage.type).toBe('filter');
 		if (filterChip?.stage.type === 'filter') {
@@ -370,10 +456,28 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.0, distinct_count: 300, sample_values_json: '["2026-05-01","2026-05-30"]' },
-						{ column_name: 'title', data_kind: 'text', null_ratio: 0.0, distinct_count: 300, sample_values_json: '["A"]' }
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0.0,
+							distinct_count: 300,
+							sample_values_json: '["2026-05-01","2026-05-30"]'
+						},
+						{
+							column_name: 'title',
+							data_kind: 'text',
+							null_ratio: 0.0,
+							distinct_count: 300,
+							sample_values_json: '["A"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -386,9 +490,7 @@ describe('intelligence-db', () => {
 		});
 
 		const filterChip = chips.find(
-			(chip) =>
-				chip.stage.type === 'filter' &&
-				chip.stage.conditions[0]?.column === 'created_at'
+			(chip) => chip.stage.type === 'filter' && chip.stage.conditions[0]?.column === 'created_at'
 		);
 		expect(filterChip?.stage.type).toBe('filter');
 		if (filterChip?.stage.type === 'filter') {
@@ -405,10 +507,28 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'total_jobs', data_kind: 'numeric', null_ratio: 0, distinct_count: 20, sample_values_json: '["10","20","30"]' },
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0, distinct_count: 20, sample_values_json: '["2026-05-01","2026-05-30"]' }
+						{
+							column_name: 'total_jobs',
+							data_kind: 'numeric',
+							null_ratio: 0,
+							distinct_count: 20,
+							sample_values_json: '["10","20","30"]'
+						},
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0,
+							distinct_count: 20,
+							sample_values_json: '["2026-05-01","2026-05-30"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -442,7 +562,13 @@ describe('intelligence-db', () => {
 								last_used_ms: now - 10 * 60 * 1000
 							}
 						],
-						columns: ['pipeline_signature', 'stage_type', 'column_name', 'usage_count', 'last_used_ms']
+						columns: [
+							'pipeline_signature',
+							'stage_type',
+							'column_name',
+							'usage_count',
+							'last_used_ms'
+						]
 					};
 				}
 				if (sql.includes('ORDER BY last_used_ms DESC')) {
@@ -456,18 +582,48 @@ describe('intelligence-db', () => {
 								last_used_ms: now - 120 * 24 * 60 * 60 * 1000
 							}
 						],
-						columns: ['pipeline_signature', 'stage_type', 'column_name', 'usage_count', 'last_used_ms']
+						columns: [
+							'pipeline_signature',
+							'stage_type',
+							'column_name',
+							'usage_count',
+							'last_used_ms'
+						]
 					};
 				}
 			}
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'status', data_kind: 'text', null_ratio: 0.01, distinct_count: 6, sample_values_json: '["active","paused"]' },
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.0, distinct_count: 100, sample_values_json: '["2026-05-29","2026-05-30"]' },
-						{ column_name: 'amount', data_kind: 'numeric', null_ratio: 0.02, distinct_count: 90, sample_values_json: '["120.5"]' }
+						{
+							column_name: 'status',
+							data_kind: 'text',
+							null_ratio: 0.01,
+							distinct_count: 6,
+							sample_values_json: '["active","paused"]'
+						},
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0.0,
+							distinct_count: 100,
+							sample_values_json: '["2026-05-29","2026-05-30"]'
+						},
+						{
+							column_name: 'amount',
+							data_kind: 'numeric',
+							null_ratio: 0.02,
+							distinct_count: 90,
+							sample_values_json: '["120.5"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -482,9 +638,13 @@ describe('intelligence-db', () => {
 			availableColumns: ['status', 'created_at', 'amount']
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("pipeline_signature <> 'from > select'"));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining("pipeline_signature <> 'from > select'")
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("LIKE '%select'"));
-		expect(chips.some((chip) => chip.icon === 'filter' && chip.label.toLowerCase().includes('status'))).toBe(true);
+		expect(
+			chips.some((chip) => chip.icon === 'filter' && chip.label.toLowerCase().includes('status'))
+		).toBe(true);
 	});
 
 	it('keeps distinct same-icon chips when semantics differ', async () => {
@@ -495,11 +655,35 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'is_active', data_kind: 'boolean', null_ratio: 0.0, distinct_count: 2, sample_values_json: '["true","false"]' },
-						{ column_name: 'created_at', data_kind: 'date', null_ratio: 0.0, distinct_count: 100, sample_values_json: '["2026-05-30"]' },
-						{ column_name: 'status', data_kind: 'text', null_ratio: 0.0, distinct_count: 8, sample_values_json: '["active","inactive"]' }
+						{
+							column_name: 'is_active',
+							data_kind: 'boolean',
+							null_ratio: 0.0,
+							distinct_count: 2,
+							sample_values_json: '["true","false"]'
+						},
+						{
+							column_name: 'created_at',
+							data_kind: 'date',
+							null_ratio: 0.0,
+							distinct_count: 100,
+							sample_values_json: '["2026-05-30"]'
+						},
+						{
+							column_name: 'status',
+							data_kind: 'text',
+							null_ratio: 0.0,
+							distinct_count: 8,
+							sample_values_json: '["active","inactive"]'
+						}
 					],
-					columns: ['column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -573,8 +757,15 @@ describe('intelligence-db', () => {
 			availableColumns: []
 		});
 
-		expect(chips.some((chip) => chip.icon === 'group' && chip.label.includes('Region') && chip.label.includes('Amount'))).toBe(true);
-		expect(chips.some((chip) => chip.icon === 'filter' && chip.label.includes('Is Active'))).toBe(true);
+		expect(
+			chips.some(
+				(chip) =>
+					chip.icon === 'group' && chip.label.includes('Region') && chip.label.includes('Amount')
+			)
+		).toBe(true);
+		expect(chips.some((chip) => chip.icon === 'filter' && chip.label.includes('Is Active'))).toBe(
+			true
+		);
 	});
 
 	it('registers custom semantic synonyms and backfills semantic signatures', async () => {
@@ -605,7 +796,14 @@ describe('intelligence-db', () => {
 							sample_values_json: '["EMEA","NA"]'
 						}
 					],
-					columns: ['relation_name', 'column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'relation_name',
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -621,10 +819,18 @@ describe('intelligence-db', () => {
 			relationName: 'orders'
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.semantic_synonyms'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('UPDATE _lunapad_metadata.column_profiles'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringMatching(/semantic=(amount|unit_price|currency_amount)/));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage'));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('INSERT INTO _lunapad_metadata.semantic_synonyms')
+		);
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('UPDATE _lunapad_metadata.column_profiles')
+		);
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringMatching(/semantic=(amount|unit_price|currency_amount)/)
+		);
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('INSERT INTO _lunapad_metadata.signature_usage')
+		);
 	});
 
 	it('backfills expanded semantic taxonomy for media, ordinal, event, and relational ids', async () => {
@@ -687,7 +893,14 @@ describe('intelligence-db', () => {
 							sample_values_json: '["1","2","3"]'
 						}
 					],
-					columns: ['relation_name', 'column_name', 'data_kind', 'null_ratio', 'distinct_count', 'sample_values_json']
+					columns: [
+						'relation_name',
+						'column_name',
+						'data_kind',
+						'null_ratio',
+						'distinct_count',
+						'sample_values_json'
+					]
 				};
 			}
 			return { rows: [], columns: [] };
@@ -700,7 +913,9 @@ describe('intelligence-db', () => {
 
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic=session_id'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic=source_id'));
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringMatching(/semantic=(event_type|event_time)/));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringMatching(/semantic=(event_type|event_time)/)
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic=media_url'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic=media_path'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic=ordinal_rank'));
@@ -971,14 +1186,17 @@ describe('intelligence-db', () => {
 		const categorizeDerive = categorize?.stages.find((stage) => stage.type === 'derive');
 		expect(categorizeDerive?.type).toBe('derive');
 		if (categorizeDerive?.type === 'derive') {
-			expect(categorizeDerive.columns.some((column) => column.name === 'Balance_numeric')).toBe(true);
+			expect(categorizeDerive.columns.some((column) => column.name === 'Balance_numeric')).toBe(
+				true
+			);
 		}
 		const categorizeGroup = categorize?.stages.find((stage) => stage.type === 'group');
 		expect(categorizeGroup?.type).toBe('group');
 		if (categorizeGroup?.type === 'group') {
 			expect(
 				categorizeGroup.aggregations.some(
-					(aggregation) => aggregation.name === 'total_Balance' && aggregation.column === 'Balance_numeric'
+					(aggregation) =>
+						aggregation.name === 'total_Balance' && aggregation.column === 'Balance_numeric'
 				)
 			).toBe(true);
 		}
@@ -1094,8 +1312,12 @@ describe('intelligence-db', () => {
 			availableColumns: ['updatedAt', 'name', 'id']
 		});
 
-		expect(chips.some((chip) => chip.icon === 'sort' && chip.label.includes('Updated At'))).toBe(true);
-		expect(chips.some((chip) => chip.icon === 'group' && chip.label.includes('sum id'))).toBe(false);
+		expect(chips.some((chip) => chip.icon === 'sort' && chip.label.includes('Updated At'))).toBe(
+			true
+		);
+		expect(chips.some((chip) => chip.icon === 'group' && chip.label.includes('sum id'))).toBe(
+			false
+		);
 		expect(chips.some((chip) => chip.icon === 'derive')).toBe(false);
 	});
 
@@ -1177,7 +1399,9 @@ describe('intelligence-db', () => {
 		});
 
 		expect(chips.length).toBeGreaterThan(0);
-		expect(chips.some((chip) => /category|item name|revenue|customer type/i.test(chip.label))).toBe(false);
+		expect(chips.some((chip) => /category|item name|revenue|customer type/i.test(chip.label))).toBe(
+			false
+		);
 		expect(chips.some((chip) => /species|sepal|petal/i.test(chip.label))).toBe(true);
 	});
 
@@ -1216,8 +1440,9 @@ describe('intelligence-db', () => {
 			availableColumns: ['Completion Time', 'Paid In', 'Withdrawn', 'Details', 'Payee']
 		});
 
-		const hydratedPreset = presets.find((preset) =>
-			preset.preset.label.includes('Paid In') || preset.preset.label.includes('Withdrawn')
+		const hydratedPreset = presets.find(
+			(preset) =>
+				preset.preset.label.includes('Paid In') || preset.preset.label.includes('Withdrawn')
 		);
 		expect(hydratedPreset).toBeDefined();
 		expect(hydratedPreset?.reasons[0]).toMatch(/Paid In|Withdrawn/);
@@ -1296,8 +1521,10 @@ describe('intelligence-db', () => {
 			availableColumns: ['region', 'product', 'amount', 'event_time']
 		});
 
-		const grouped = presets.find((preset) =>
-			/region \+ product/i.test(preset.preset.label) || /by region \+ product/i.test(preset.preset.label)
+		const grouped = presets.find(
+			(preset) =>
+				/region \+ product/i.test(preset.preset.label) ||
+				/by region \+ product/i.test(preset.preset.label)
 		);
 		expect(grouped).toBeDefined();
 	});
@@ -1324,14 +1551,86 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'event_time', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.9, null_ratio: 0.01, distinct_count: 360, sample_values_json: '["2026-01-01"]' },
-						{ column_name: 'region', data_kind: 'text', semantic_type: 'region', semantic_signature: 'kind=text|semantic=region', semantic_confidence: 0.88, null_ratio: 0.03, distinct_count: 6, sample_values_json: '["EMEA"]' },
-						{ column_name: 'product', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.87, null_ratio: 0.02, distinct_count: 40, sample_values_json: '["A"]' },
-						{ column_name: 'status', data_kind: 'text', semantic_type: 'status', semantic_signature: 'kind=text|semantic=status', semantic_confidence: 0.86, null_ratio: 0.01, distinct_count: 5, sample_values_json: '["won"]' },
-						{ column_name: 'amount', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.92, null_ratio: 0.01, distinct_count: 320, sample_values_json: '["120.0"]' },
-						{ column_name: 'revenue', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.9, null_ratio: 0.01, distinct_count: 310, sample_values_json: '["200.0"]' },
-						{ column_name: 'cost', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.9, null_ratio: 0.01, distinct_count: 300, sample_values_json: '["90.0"]' },
-						{ column_name: 'customer_id', data_kind: 'text', semantic_type: 'foreign_key', semantic_signature: 'kind=text|semantic=foreign_key', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 1200, sample_values_json: '["c1"]' }
+						{
+							column_name: 'event_time',
+							data_kind: 'date',
+							semantic_type: 'updated_at',
+							semantic_signature: 'kind=date|semantic=updated_at',
+							semantic_confidence: 0.9,
+							null_ratio: 0.01,
+							distinct_count: 360,
+							sample_values_json: '["2026-01-01"]'
+						},
+						{
+							column_name: 'region',
+							data_kind: 'text',
+							semantic_type: 'region',
+							semantic_signature: 'kind=text|semantic=region',
+							semantic_confidence: 0.88,
+							null_ratio: 0.03,
+							distinct_count: 6,
+							sample_values_json: '["EMEA"]'
+						},
+						{
+							column_name: 'product',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.87,
+							null_ratio: 0.02,
+							distinct_count: 40,
+							sample_values_json: '["A"]'
+						},
+						{
+							column_name: 'status',
+							data_kind: 'text',
+							semantic_type: 'status',
+							semantic_signature: 'kind=text|semantic=status',
+							semantic_confidence: 0.86,
+							null_ratio: 0.01,
+							distinct_count: 5,
+							sample_values_json: '["won"]'
+						},
+						{
+							column_name: 'amount',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.92,
+							null_ratio: 0.01,
+							distinct_count: 320,
+							sample_values_json: '["120.0"]'
+						},
+						{
+							column_name: 'revenue',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.9,
+							null_ratio: 0.01,
+							distinct_count: 310,
+							sample_values_json: '["200.0"]'
+						},
+						{
+							column_name: 'cost',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.9,
+							null_ratio: 0.01,
+							distinct_count: 300,
+							sample_values_json: '["90.0"]'
+						},
+						{
+							column_name: 'customer_id',
+							data_kind: 'text',
+							semantic_type: 'foreign_key',
+							semantic_signature: 'kind=text|semantic=foreign_key',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 1200,
+							sample_values_json: '["c1"]'
+						}
 					],
 					columns: [
 						'column_name',
@@ -1351,15 +1650,28 @@ describe('intelligence-db', () => {
 		const presets = await getIntelligentPresetSuggestions({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'events' }],
-			availableColumns: ['event_time', 'region', 'product', 'status', 'amount', 'revenue', 'cost', 'customer_id']
+			availableColumns: [
+				'event_time',
+				'region',
+				'product',
+				'status',
+				'amount',
+				'revenue',
+				'cost',
+				'customer_id'
+			]
 		});
 
 		expect(presets.length).toBeGreaterThan(0);
 		expect(
 			presets.some((preset) =>
-				['hierarchical-rollup', 'period-variance', 'segment-anomaly', 'efficiency-lens', 'drift-monitor'].includes(
-					preset.preset.id
-				)
+				[
+					'hierarchical-rollup',
+					'period-variance',
+					'segment-anomaly',
+					'efficiency-lens',
+					'drift-monitor'
+				].includes(preset.preset.id)
 			)
 		).toBe(true);
 	});
@@ -1370,7 +1682,10 @@ describe('intelligence-db', () => {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
-				return { rows: [{ next_stage: 'group', usage_count: 20 }], columns: ['next_stage', 'usage_count'] };
+				return {
+					rows: [{ next_stage: 'group', usage_count: 20 }],
+					columns: ['next_stage', 'usage_count']
+				};
 			}
 			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
@@ -1378,10 +1693,46 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'region', data_kind: 'text', semantic_type: 'region', semantic_signature: 'kind=text|semantic=region', semantic_confidence: 0.92, null_ratio: 0.01, distinct_count: 8, sample_values_json: '["NA"]' },
-						{ column_name: 'product', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.9, null_ratio: 0.03, distinct_count: 40, sample_values_json: '["A"]' },
-						{ column_name: 'notes_blob', data_kind: 'text', semantic_type: 'description', semantic_signature: 'kind=text|semantic=description', semantic_confidence: 0.4, null_ratio: 0.87, distinct_count: 2800, sample_values_json: '["long free form"]' },
-						{ column_name: 'amount', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.93, null_ratio: 0.02, distinct_count: 200, sample_values_json: '["100"]' }
+						{
+							column_name: 'region',
+							data_kind: 'text',
+							semantic_type: 'region',
+							semantic_signature: 'kind=text|semantic=region',
+							semantic_confidence: 0.92,
+							null_ratio: 0.01,
+							distinct_count: 8,
+							sample_values_json: '["NA"]'
+						},
+						{
+							column_name: 'product',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.9,
+							null_ratio: 0.03,
+							distinct_count: 40,
+							sample_values_json: '["A"]'
+						},
+						{
+							column_name: 'notes_blob',
+							data_kind: 'text',
+							semantic_type: 'description',
+							semantic_signature: 'kind=text|semantic=description',
+							semantic_confidence: 0.4,
+							null_ratio: 0.87,
+							distinct_count: 2800,
+							sample_values_json: '["long free form"]'
+						},
+						{
+							column_name: 'amount',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.93,
+							null_ratio: 0.02,
+							distinct_count: 200,
+							sample_values_json: '["100"]'
+						}
 					],
 					columns: [
 						'column_name',
@@ -1415,7 +1766,10 @@ describe('intelligence-db', () => {
 				return { rows: [], columns: [] };
 			}
 			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
-				return { rows: [{ next_stage: 'sort', usage_count: 10 }], columns: ['next_stage', 'usage_count'] };
+				return {
+					rows: [{ next_stage: 'sort', usage_count: 10 }],
+					columns: ['next_stage', 'usage_count']
+				};
 			}
 			if (sql.includes('FROM _lunapad_metadata.signature_usage')) {
 				return { rows: [], columns: [] };
@@ -1423,8 +1777,26 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'scraped_at', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.91, null_ratio: 0.01, distinct_count: 120, sample_values_json: '["2026-05-01"]' },
-						{ column_name: 'total_scraped_at', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.93, null_ratio: 0.01, distinct_count: 88, sample_values_json: '["23.1"]' }
+						{
+							column_name: 'scraped_at',
+							data_kind: 'date',
+							semantic_type: 'updated_at',
+							semantic_signature: 'kind=date|semantic=updated_at',
+							semantic_confidence: 0.91,
+							null_ratio: 0.01,
+							distinct_count: 120,
+							sample_values_json: '["2026-05-01"]'
+						},
+						{
+							column_name: 'total_scraped_at',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.93,
+							null_ratio: 0.01,
+							distinct_count: 88,
+							sample_values_json: '["23.1"]'
+						}
 					],
 					columns: [
 						'column_name',
@@ -1450,7 +1822,9 @@ describe('intelligence-db', () => {
 		const trend = presets.find((preset) => preset.preset.id === 'temporal-trend');
 		const seasonal = presets.find((preset) => preset.preset.id === 'seasonal-pattern');
 		expect(presets.some((preset) => preset.preset.label === 'Temporal trend rollup')).toBe(false);
-		expect(presets.some((preset) => preset.preset.label === 'Seasonal pattern detector')).toBe(false);
+		expect(presets.some((preset) => preset.preset.label === 'Seasonal pattern detector')).toBe(
+			false
+		);
 
 		if (trend) {
 			expect(trend.preset.label).toContain('Monthly');
@@ -1461,7 +1835,9 @@ describe('intelligence-db', () => {
 				trend.stages.some(
 					(stage) =>
 						stage.type === 'derive' &&
-						stage.columns.some((column) => column.name === 'mom_delta' || column.name === 'mom_growth_pct')
+						stage.columns.some(
+							(column) => column.name === 'mom_delta' || column.name === 'mom_growth_pct'
+						)
 				)
 			).toBe(true);
 		}
@@ -1486,8 +1862,26 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'job_title', data_kind: 'text', semantic_type: 'entity_name', semantic_signature: 'kind=text|semantic=entity_name', semantic_confidence: 0.88, null_ratio: 0, distinct_count: 900, sample_values_json: '["Data Analyst"]' },
-						{ column_name: 'role_category', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.85, null_ratio: 0.03, distinct_count: 14, sample_values_json: '["Data"]' }
+						{
+							column_name: 'job_title',
+							data_kind: 'text',
+							semantic_type: 'entity_name',
+							semantic_signature: 'kind=text|semantic=entity_name',
+							semantic_confidence: 0.88,
+							null_ratio: 0,
+							distinct_count: 900,
+							sample_values_json: '["Data Analyst"]'
+						},
+						{
+							column_name: 'role_category',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.85,
+							null_ratio: 0.03,
+							distinct_count: 14,
+							sample_values_json: '["Data"]'
+						}
 					],
 					columns: [
 						'column_name',
@@ -1511,7 +1905,9 @@ describe('intelligence-db', () => {
 		});
 
 		expect(presets.some((preset) => preset.preset.label === 'Temporal trend rollup')).toBe(false);
-		expect(presets.some((preset) => preset.preset.label === 'Seasonal pattern detector')).toBe(false);
+		expect(presets.some((preset) => preset.preset.label === 'Seasonal pattern detector')).toBe(
+			false
+		);
 		expect(presets.some((preset) => preset.preset.label === 'Drift monitor')).toBe(false);
 	});
 
@@ -1535,7 +1931,13 @@ describe('intelligence-db', () => {
 		const chips = await getIntelligentQuickChips({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'links.opportunities' }],
-			availableColumns: ['job_title', 'role_category', 'domain_tags', 'application_deadline', 'scraped_at']
+			availableColumns: [
+				'job_title',
+				'role_category',
+				'domain_tags',
+				'application_deadline',
+				'scraped_at'
+			]
 		});
 
 		const sortChip = chips.find((chip) => chip.icon === 'sort');
@@ -1565,12 +1967,66 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'updated_at', data_kind: 'date', semantic_type: 'updated_at', semantic_signature: 'kind=date|semantic=updated_at', semantic_confidence: 0.91, null_ratio: 0, distinct_count: 66, sample_values_json: '["2026-05-30"]' },
-						{ column_name: 'name', data_kind: 'text', semantic_type: 'entity_name', semantic_signature: 'kind=text|semantic=entity_name', semantic_confidence: 0.92, null_ratio: 0, distinct_count: 64, sample_values_json: '["Track A","Track B"]' },
-						{ column_name: 'genre', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.87, null_ratio: 0, distinct_count: 8, sample_values_json: '["Afro House","Amapiano"]' },
-						{ column_name: 'sub_genre', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.84, null_ratio: 0.02, distinct_count: 12, sample_values_json: '["Deep House","Log Drum"]' },
-						{ column_name: 'mood', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.8, null_ratio: 0.05, distinct_count: 7, sample_values_json: '["Energetic","Calm"]' },
-						{ column_name: 'bpm', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.76, null_ratio: 0, distinct_count: 40, sample_values_json: '["120","128"]' }
+						{
+							column_name: 'updated_at',
+							data_kind: 'date',
+							semantic_type: 'updated_at',
+							semantic_signature: 'kind=date|semantic=updated_at',
+							semantic_confidence: 0.91,
+							null_ratio: 0,
+							distinct_count: 66,
+							sample_values_json: '["2026-05-30"]'
+						},
+						{
+							column_name: 'name',
+							data_kind: 'text',
+							semantic_type: 'entity_name',
+							semantic_signature: 'kind=text|semantic=entity_name',
+							semantic_confidence: 0.92,
+							null_ratio: 0,
+							distinct_count: 64,
+							sample_values_json: '["Track A","Track B"]'
+						},
+						{
+							column_name: 'genre',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.87,
+							null_ratio: 0,
+							distinct_count: 8,
+							sample_values_json: '["Afro House","Amapiano"]'
+						},
+						{
+							column_name: 'sub_genre',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.84,
+							null_ratio: 0.02,
+							distinct_count: 12,
+							sample_values_json: '["Deep House","Log Drum"]'
+						},
+						{
+							column_name: 'mood',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.8,
+							null_ratio: 0.05,
+							distinct_count: 7,
+							sample_values_json: '["Energetic","Calm"]'
+						},
+						{
+							column_name: 'bpm',
+							data_kind: 'numeric',
+							semantic_type: 'metric',
+							semantic_signature: 'kind=numeric|semantic=metric',
+							semantic_confidence: 0.76,
+							null_ratio: 0,
+							distinct_count: 40,
+							sample_values_json: '["120","128"]'
+						}
 					],
 					columns: [
 						'column_name',
@@ -1590,7 +2046,21 @@ describe('intelligence-db', () => {
 		const chips = await getIntelligentQuickChips({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'beats_copy' }],
-			availableColumns: ['created_at', 'updated_at', 'name', 'slug', 'description', 'bpm', 'key', 'genre', 'sub_genre', 'mood', 'user_id', 'release_date', 'free_download']
+			availableColumns: [
+				'created_at',
+				'updated_at',
+				'name',
+				'slug',
+				'description',
+				'bpm',
+				'key',
+				'genre',
+				'sub_genre',
+				'mood',
+				'user_id',
+				'release_date',
+				'free_download'
+			]
 		});
 
 		const filterChip = chips.find((chip) => chip.icon === 'filter');
@@ -1604,7 +2074,21 @@ describe('intelligence-db', () => {
 		const presets = await getIntelligentPresetSuggestions({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'beats_copy' }],
-			availableColumns: ['created_at', 'updated_at', 'name', 'slug', 'description', 'bpm', 'key', 'genre', 'sub_genre', 'mood', 'user_id', 'release_date', 'free_download']
+			availableColumns: [
+				'created_at',
+				'updated_at',
+				'name',
+				'slug',
+				'description',
+				'bpm',
+				'key',
+				'genre',
+				'sub_genre',
+				'mood',
+				'user_id',
+				'release_date',
+				'free_download'
+			]
 		});
 
 		expect(presets.some((preset) => preset.preset.label.includes('(Bpm/Bpm)'))).toBe(false);
@@ -1624,11 +2108,56 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'sepal_length', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 35, sample_values_json: '["5.1"]' },
-						{ column_name: 'sepal_width', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.88, null_ratio: 0, distinct_count: 23, sample_values_json: '["3.5"]' },
-						{ column_name: 'petal_length', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 43, sample_values_json: '["1.4"]' },
-						{ column_name: 'petal_width', data_kind: 'numeric', semantic_type: 'metric', semantic_signature: 'kind=numeric|semantic=metric', semantic_confidence: 0.89, null_ratio: 0, distinct_count: 22, sample_values_json: '["0.2"]' },
-						{ column_name: 'species', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.95, null_ratio: 0, distinct_count: 3, sample_values_json: '["setosa"]' }
+						{
+							column_name: 'sepal_length',
+							data_kind: 'numeric',
+							semantic_type: 'metric',
+							semantic_signature: 'kind=numeric|semantic=metric',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 35,
+							sample_values_json: '["5.1"]'
+						},
+						{
+							column_name: 'sepal_width',
+							data_kind: 'numeric',
+							semantic_type: 'metric',
+							semantic_signature: 'kind=numeric|semantic=metric',
+							semantic_confidence: 0.88,
+							null_ratio: 0,
+							distinct_count: 23,
+							sample_values_json: '["3.5"]'
+						},
+						{
+							column_name: 'petal_length',
+							data_kind: 'numeric',
+							semantic_type: 'metric',
+							semantic_signature: 'kind=numeric|semantic=metric',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 43,
+							sample_values_json: '["1.4"]'
+						},
+						{
+							column_name: 'petal_width',
+							data_kind: 'numeric',
+							semantic_type: 'metric',
+							semantic_signature: 'kind=numeric|semantic=metric',
+							semantic_confidence: 0.89,
+							null_ratio: 0,
+							distinct_count: 22,
+							sample_values_json: '["0.2"]'
+						},
+						{
+							column_name: 'species',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.95,
+							null_ratio: 0,
+							distinct_count: 3,
+							sample_values_json: '["setosa"]'
+						}
 					],
 					columns: []
 				};
@@ -1741,7 +2270,11 @@ describe('intelligence-db', () => {
 			stages: [
 				{ type: 'from', table: 'orders' },
 				{ type: 'sort', keys: [{ column: 'updated_at', dir: 'desc' }] },
-				{ type: 'filter', conditions: [{ column: 'status', op: '==', value: 'open' }], logic: 'and' }
+				{
+					type: 'filter',
+					conditions: [{ column: 'status', op: '==', value: 'open' }],
+					logic: 'and'
+				}
 			],
 			availableColumns: ['updated_at', 'status', 'amount']
 		});
@@ -1825,7 +2358,15 @@ describe('intelligence-db', () => {
 		const chips = await getIntelligentQuickChips({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'since23' }],
-			availableColumns: ['Completion Time', 'Transaction Status', 'Paid In', 'Withdrawn', 'Balance', 'Details', 'Payee']
+			availableColumns: [
+				'Completion Time',
+				'Transaction Status',
+				'Paid In',
+				'Withdrawn',
+				'Balance',
+				'Details',
+				'Payee'
+			]
 		});
 
 		expect(
@@ -1962,7 +2503,9 @@ describe('intelligence-db', () => {
 		expect(recommendations[0]?.xColumn).toBe('event_date');
 		expect(recommendations[0]?.yColumns?.length ?? 0).toBeGreaterThan(0);
 		expect(recommendations.some((entry) => entry.chartType === 'line')).toBe(true);
-		expect(recommendations.some((entry) => entry.chartType === 'bubble' || entry.chartType === 'scatter')).toBe(true);
+		expect(
+			recommendations.some((entry) => entry.chartType === 'bubble' || entry.chartType === 'scatter')
+		).toBe(true);
 	});
 
 	it('uses low-cardinality dimension on x and secondary dimension as color for 2D+1M', () => {
@@ -2018,7 +2561,12 @@ describe('intelligence-db', () => {
 				{ city: 'Mombasa', property_type: 'Retail', sum_rent_usd: 2100, avg_deposit_usd: 980 },
 				{ city: 'Kampala', property_type: 'Office', sum_rent_usd: 3200, avg_deposit_usd: 1500 },
 				{ city: 'Kigali', property_type: 'Office', sum_rent_usd: 2950, avg_deposit_usd: 1430 },
-				{ city: 'Addis Ababa', property_type: 'Warehouse', sum_rent_usd: 5300, avg_deposit_usd: 2600 }
+				{
+					city: 'Addis Ababa',
+					property_type: 'Warehouse',
+					sum_rent_usd: 5300,
+					avg_deposit_usd: 2600
+				}
 			]
 		});
 
@@ -2058,7 +2606,9 @@ describe('intelligence-db', () => {
 			stages: [{ type: 'from', table: 'events' }]
 		});
 
-		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("signature_type, signature_key"));
+		expect(executeSQLMock).toHaveBeenCalledWith(
+			expect.stringContaining('signature_type, signature_key')
+		);
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("'quad'"));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining('semantic-triplet'));
 		expect(executeSQLMock).toHaveBeenCalledWith(expect.stringContaining("'lexical'"));
@@ -2158,7 +2708,10 @@ describe('intelligence-db', () => {
 	it('keeps top-metric preset focused on strong metric columns', async () => {
 		executeSQLMock.mockImplementation(async (sql: string) => {
 			if (sql.includes('FROM _lunapad_metadata.stage_sequence_usage')) {
-				return { rows: [{ next_stage: 'sort', usage_count: 9 }], columns: ['next_stage', 'usage_count'] };
+				return {
+					rows: [{ next_stage: 'sort', usage_count: 9 }],
+					columns: ['next_stage', 'usage_count']
+				};
 			}
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
@@ -2334,13 +2887,76 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'Item Name', data_kind: 'text', semantic_type: 'entity_name', semantic_signature: 'kind=text|semantic=entity_name', semantic_confidence: 0.9, null_ratio: 0.02, distinct_count: 120, sample_values_json: '["Apple"]' },
-						{ column_name: 'Category', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.92, null_ratio: 0.01, distinct_count: 9, sample_values_json: '["Snacks"]' },
-						{ column_name: 'Price (GHS)', data_kind: 'numeric', semantic_type: 'amount', semantic_signature: 'kind=numeric|semantic=amount', semantic_confidence: 0.94, null_ratio: 0.0, distinct_count: 80, sample_values_json: '["10.00"]' },
-						{ column_name: 'Units Sold', data_kind: 'numeric', semantic_type: 'quantity', semantic_signature: 'kind=numeric|semantic=quantity', semantic_confidence: 0.93, null_ratio: 0.0, distinct_count: 25, sample_values_json: '["2"]' },
-						{ column_name: 'Date Sold', data_kind: 'date', semantic_type: 'date', semantic_signature: 'kind=date|semantic=date', semantic_confidence: 0.9, null_ratio: 0.0, distinct_count: 365, sample_values_json: '["2026-05-01"]' },
-						{ column_name: 'Location', data_kind: 'text', semantic_type: 'region', semantic_signature: 'kind=text|semantic=region', semantic_confidence: 0.85, null_ratio: 0.02, distinct_count: 7, sample_values_json: '["Accra"]' },
-						{ column_name: 'Customer Type', data_kind: 'text', semantic_type: 'category', semantic_signature: 'kind=text|semantic=category', semantic_confidence: 0.84, null_ratio: 0.01, distinct_count: 2, sample_values_json: '["Walk-in"]' }
+						{
+							column_name: 'Item Name',
+							data_kind: 'text',
+							semantic_type: 'entity_name',
+							semantic_signature: 'kind=text|semantic=entity_name',
+							semantic_confidence: 0.9,
+							null_ratio: 0.02,
+							distinct_count: 120,
+							sample_values_json: '["Apple"]'
+						},
+						{
+							column_name: 'Category',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.92,
+							null_ratio: 0.01,
+							distinct_count: 9,
+							sample_values_json: '["Snacks"]'
+						},
+						{
+							column_name: 'Price (GHS)',
+							data_kind: 'numeric',
+							semantic_type: 'amount',
+							semantic_signature: 'kind=numeric|semantic=amount',
+							semantic_confidence: 0.94,
+							null_ratio: 0.0,
+							distinct_count: 80,
+							sample_values_json: '["10.00"]'
+						},
+						{
+							column_name: 'Units Sold',
+							data_kind: 'numeric',
+							semantic_type: 'quantity',
+							semantic_signature: 'kind=numeric|semantic=quantity',
+							semantic_confidence: 0.93,
+							null_ratio: 0.0,
+							distinct_count: 25,
+							sample_values_json: '["2"]'
+						},
+						{
+							column_name: 'Date Sold',
+							data_kind: 'date',
+							semantic_type: 'date',
+							semantic_signature: 'kind=date|semantic=date',
+							semantic_confidence: 0.9,
+							null_ratio: 0.0,
+							distinct_count: 365,
+							sample_values_json: '["2026-05-01"]'
+						},
+						{
+							column_name: 'Location',
+							data_kind: 'text',
+							semantic_type: 'region',
+							semantic_signature: 'kind=text|semantic=region',
+							semantic_confidence: 0.85,
+							null_ratio: 0.02,
+							distinct_count: 7,
+							sample_values_json: '["Accra"]'
+						},
+						{
+							column_name: 'Customer Type',
+							data_kind: 'text',
+							semantic_type: 'category',
+							semantic_signature: 'kind=text|semantic=category',
+							semantic_confidence: 0.84,
+							null_ratio: 0.01,
+							distinct_count: 2,
+							sample_values_json: '["Walk-in"]'
+						}
 					],
 					columns: []
 				};
@@ -2351,17 +2967,43 @@ describe('intelligence-db', () => {
 		const presets = await getIntelligentPresetSuggestions({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'wg' }],
-			availableColumns: ['Item Name', 'Category', 'Price (GHS)', 'Units Sold', 'Date Sold', 'Location', 'Customer Type']
+			availableColumns: [
+				'Item Name',
+				'Category',
+				'Price (GHS)',
+				'Units Sold',
+				'Date Sold',
+				'Location',
+				'Customer Type'
+			]
 		});
 
 		const groupTop = presets.find((preset) => preset.preset.id === 'group-top');
 		expect(groupTop).toBeDefined();
-		expect(groupTop?.stages.some((stage) => stage.type === 'derive' && stage.columns.some((column) => column.name === 'revenue'))).toBe(true);
-		expect(groupTop?.stages.some((stage) => stage.type === 'group' && stage.aggregations.some((aggregation) => aggregation.name === 'sum_revenue' && aggregation.column === 'revenue'))).toBe(true);
+		expect(
+			groupTop?.stages.some(
+				(stage) =>
+					stage.type === 'derive' && stage.columns.some((column) => column.name === 'revenue')
+			)
+		).toBe(true);
+		expect(
+			groupTop?.stages.some(
+				(stage) =>
+					stage.type === 'group' &&
+					stage.aggregations.some(
+						(aggregation) => aggregation.name === 'sum_revenue' && aggregation.column === 'revenue'
+					)
+			)
+		).toBe(true);
 
 		const temporal = presets.find((preset) => preset.preset.id === 'temporal-trend');
 		expect(temporal).toBeDefined();
-		expect(temporal?.stages.some((stage) => stage.type === 'derive' && stage.columns.some((column) => column.name === 'revenue'))).toBe(true);
+		expect(
+			temporal?.stages.some(
+				(stage) =>
+					stage.type === 'derive' && stage.columns.some((column) => column.name === 'revenue')
+			)
+		).toBe(true);
 	});
 
 	it('surfaces cashflow and text presets for output.csv-like transaction schemas', async () => {
@@ -2385,13 +3027,76 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'Receipt No.', data_kind: 'text', semantic_type: 'code', semantic_signature: 'kind=text|semantic=code', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 1200, sample_values_json: '["UCIII9QXAY"]' },
-						{ column_name: 'Completion Time', data_kind: 'text', semantic_type: 'event_time', semantic_signature: 'kind=text|semantic=event_time', semantic_confidence: 0.93, null_ratio: 0, distinct_count: 1200, sample_values_json: '["2026-03-18 10:26:39"]' },
-						{ column_name: 'Details', data_kind: 'text', semantic_type: 'description', semantic_signature: 'kind=text|semantic=description', semantic_confidence: 0.88, null_ratio: 0, distinct_count: 1100, sample_values_json: '["Merchant Payment Online"]' },
-						{ column_name: 'Transaction Status', data_kind: 'text', semantic_type: 'status', semantic_signature: 'kind=text|semantic=status', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 3, sample_values_json: '["Completed"]' },
-						{ column_name: 'Paid In', data_kind: 'text', semantic_type: 'inflow', semantic_signature: 'kind=text|semantic=inflow', semantic_confidence: 0.84, null_ratio: 0.75, distinct_count: 300, sample_values_json: '["200.0"]' },
-						{ column_name: 'Withdrawn', data_kind: 'text', semantic_type: 'outflow', semantic_signature: 'kind=text|semantic=outflow', semantic_confidence: 0.9, null_ratio: 0.15, distinct_count: 580, sample_values_json: '["-230.0"]' },
-						{ column_name: 'Balance', data_kind: 'text', semantic_type: 'currency_amount', semantic_signature: 'kind=text|semantic=currency_amount', semantic_confidence: 0.86, null_ratio: 0.03, distinct_count: 970, sample_values_json: '["550.87"]' }
+						{
+							column_name: 'Receipt No.',
+							data_kind: 'text',
+							semantic_type: 'code',
+							semantic_signature: 'kind=text|semantic=code',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 1200,
+							sample_values_json: '["UCIII9QXAY"]'
+						},
+						{
+							column_name: 'Completion Time',
+							data_kind: 'text',
+							semantic_type: 'event_time',
+							semantic_signature: 'kind=text|semantic=event_time',
+							semantic_confidence: 0.93,
+							null_ratio: 0,
+							distinct_count: 1200,
+							sample_values_json: '["2026-03-18 10:26:39"]'
+						},
+						{
+							column_name: 'Details',
+							data_kind: 'text',
+							semantic_type: 'description',
+							semantic_signature: 'kind=text|semantic=description',
+							semantic_confidence: 0.88,
+							null_ratio: 0,
+							distinct_count: 1100,
+							sample_values_json: '["Merchant Payment Online"]'
+						},
+						{
+							column_name: 'Transaction Status',
+							data_kind: 'text',
+							semantic_type: 'status',
+							semantic_signature: 'kind=text|semantic=status',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 3,
+							sample_values_json: '["Completed"]'
+						},
+						{
+							column_name: 'Paid In',
+							data_kind: 'text',
+							semantic_type: 'inflow',
+							semantic_signature: 'kind=text|semantic=inflow',
+							semantic_confidence: 0.84,
+							null_ratio: 0.75,
+							distinct_count: 300,
+							sample_values_json: '["200.0"]'
+						},
+						{
+							column_name: 'Withdrawn',
+							data_kind: 'text',
+							semantic_type: 'outflow',
+							semantic_signature: 'kind=text|semantic=outflow',
+							semantic_confidence: 0.9,
+							null_ratio: 0.15,
+							distinct_count: 580,
+							sample_values_json: '["-230.0"]'
+						},
+						{
+							column_name: 'Balance',
+							data_kind: 'text',
+							semantic_type: 'currency_amount',
+							semantic_signature: 'kind=text|semantic=currency_amount',
+							semantic_confidence: 0.86,
+							null_ratio: 0.03,
+							distinct_count: 970,
+							sample_values_json: '["550.87"]'
+						}
 					],
 					columns: []
 				};
@@ -2402,15 +3107,30 @@ describe('intelligence-db', () => {
 		const presets = await getIntelligentPresetSuggestions({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'mpesa_transactions' }],
-			availableColumns: ['Receipt No.', 'Completion Time', 'Details', 'Transaction Status', 'Paid In', 'Withdrawn', 'Balance']
+			availableColumns: [
+				'Receipt No.',
+				'Completion Time',
+				'Details',
+				'Transaction Status',
+				'Paid In',
+				'Withdrawn',
+				'Balance'
+			]
 		});
 
 		const topIds = presets.slice(0, 7).map((preset) => preset.preset.id);
-		expect(topIds).toEqual(expect.arrayContaining(['cashflow-rollup', 'temporal-trend', 'text-categorize']));
+		expect(topIds).toEqual(
+			expect.arrayContaining(['cashflow-rollup', 'temporal-trend', 'text-categorize'])
+		);
 
 		const cashflow = presets.find((preset) => preset.preset.id === 'cashflow-rollup');
 		expect(cashflow).toBeDefined();
-		expect(cashflow?.stages.some((stage) => stage.type === 'derive' && stage.columns.some((column) => column.name === 'outflow'))).toBe(true);
+		expect(
+			cashflow?.stages.some(
+				(stage) =>
+					stage.type === 'derive' && stage.columns.some((column) => column.name === 'outflow')
+			)
+		).toBe(true);
 	});
 
 	it('emits hydrated semantic-template bundles with dynamic preset ids', async () => {
@@ -2434,10 +3154,46 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'Detected At', data_kind: 'date', semantic_type: 'event_time', semantic_signature: 'kind=date|semantic=event_time', semantic_confidence: 0.95, null_ratio: 0, distinct_count: 500, sample_values_json: '["2026-05-01 10:10:00"]' },
-						{ column_name: 'Downtime Cost USD', data_kind: 'numeric', semantic_type: 'currency_amount', semantic_signature: 'kind=numeric|semantic=currency_amount', semantic_confidence: 0.92, null_ratio: 0, distinct_count: 420, sample_values_json: '["1400"]' },
-						{ column_name: 'Incident Type', data_kind: 'text', semantic_type: 'event_type', semantic_signature: 'kind=text|semantic=event_type', semantic_confidence: 0.87, null_ratio: 0, distinct_count: 8, sample_values_json: '["network"]' },
-						{ column_name: 'Incident ID', data_kind: 'text', semantic_type: 'code', semantic_signature: 'kind=text|semantic=code', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 500, sample_values_json: '["INC-1"]' }
+						{
+							column_name: 'Detected At',
+							data_kind: 'date',
+							semantic_type: 'event_time',
+							semantic_signature: 'kind=date|semantic=event_time',
+							semantic_confidence: 0.95,
+							null_ratio: 0,
+							distinct_count: 500,
+							sample_values_json: '["2026-05-01 10:10:00"]'
+						},
+						{
+							column_name: 'Downtime Cost USD',
+							data_kind: 'numeric',
+							semantic_type: 'currency_amount',
+							semantic_signature: 'kind=numeric|semantic=currency_amount',
+							semantic_confidence: 0.92,
+							null_ratio: 0,
+							distinct_count: 420,
+							sample_values_json: '["1400"]'
+						},
+						{
+							column_name: 'Incident Type',
+							data_kind: 'text',
+							semantic_type: 'event_type',
+							semantic_signature: 'kind=text|semantic=event_type',
+							semantic_confidence: 0.87,
+							null_ratio: 0,
+							distinct_count: 8,
+							sample_values_json: '["network"]'
+						},
+						{
+							column_name: 'Incident ID',
+							data_kind: 'text',
+							semantic_type: 'code',
+							semantic_signature: 'kind=text|semantic=code',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 500,
+							sample_values_json: '["INC-1"]'
+						}
 					],
 					columns: []
 				};
@@ -2451,10 +3207,14 @@ describe('intelligence-db', () => {
 			availableColumns: ['Incident ID', 'Detected At', 'Downtime Cost USD', 'Incident Type']
 		});
 
-		const templatePreset = presets.find((preset) => preset.preset.id.startsWith('semantic-template-'));
+		const templatePreset = presets.find((preset) =>
+			preset.preset.id.startsWith('semantic-template-')
+		);
 		expect(templatePreset).toBeDefined();
 		expect(templatePreset?.preset.id).toMatch(/^semantic-template-/);
-		expect(templatePreset?.snippet?.prql ?? '').toMatch(/Incident Type|Downtime Cost USD|Detected At|Incident ID/);
+		expect(templatePreset?.snippet?.prql ?? '').toMatch(
+			/Incident Type|Downtime Cost USD|Detected At|Incident ID/
+		);
 	});
 
 	it('does not treat downtime metrics as temporal axes in preset labels', async () => {
@@ -2478,11 +3238,56 @@ describe('intelligence-db', () => {
 			if (sql.includes('FROM _lunapad_metadata.column_profiles')) {
 				return {
 					rows: [
-						{ column_name: 'Incident ID', data_kind: 'text', semantic_type: 'code', semantic_signature: 'kind=text|semantic=code', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 500, sample_values_json: '["INC-1"]' },
-						{ column_name: 'Detected At', data_kind: 'text', semantic_type: 'event_time', semantic_signature: 'kind=text|semantic=event_time', semantic_confidence: 0.95, null_ratio: 0, distinct_count: 500, sample_values_json: '["2026-05-01 10:10:00"]' },
-						{ column_name: 'Hosts Affected', data_kind: 'numeric', semantic_type: 'count', semantic_signature: 'kind=numeric|semantic=count', semantic_confidence: 0.9, null_ratio: 0, distinct_count: 40, sample_values_json: '["6"]' },
-						{ column_name: 'Downtime Cost USD', data_kind: 'numeric', semantic_type: 'currency_amount', semantic_signature: 'kind=numeric|semantic=currency_amount', semantic_confidence: 0.92, null_ratio: 0, distinct_count: 420, sample_values_json: '["1400"]' },
-						{ column_name: 'Severity Level', data_kind: 'text', semantic_type: 'status', semantic_signature: 'kind=text|semantic=status', semantic_confidence: 0.85, null_ratio: 0, distinct_count: 4, sample_values_json: '["high"]' }
+						{
+							column_name: 'Incident ID',
+							data_kind: 'text',
+							semantic_type: 'code',
+							semantic_signature: 'kind=text|semantic=code',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 500,
+							sample_values_json: '["INC-1"]'
+						},
+						{
+							column_name: 'Detected At',
+							data_kind: 'text',
+							semantic_type: 'event_time',
+							semantic_signature: 'kind=text|semantic=event_time',
+							semantic_confidence: 0.95,
+							null_ratio: 0,
+							distinct_count: 500,
+							sample_values_json: '["2026-05-01 10:10:00"]'
+						},
+						{
+							column_name: 'Hosts Affected',
+							data_kind: 'numeric',
+							semantic_type: 'count',
+							semantic_signature: 'kind=numeric|semantic=count',
+							semantic_confidence: 0.9,
+							null_ratio: 0,
+							distinct_count: 40,
+							sample_values_json: '["6"]'
+						},
+						{
+							column_name: 'Downtime Cost USD',
+							data_kind: 'numeric',
+							semantic_type: 'currency_amount',
+							semantic_signature: 'kind=numeric|semantic=currency_amount',
+							semantic_confidence: 0.92,
+							null_ratio: 0,
+							distinct_count: 420,
+							sample_values_json: '["1400"]'
+						},
+						{
+							column_name: 'Severity Level',
+							data_kind: 'text',
+							semantic_type: 'status',
+							semantic_signature: 'kind=text|semantic=status',
+							semantic_confidence: 0.85,
+							null_ratio: 0,
+							distinct_count: 4,
+							sample_values_json: '["high"]'
+						}
 					],
 					columns: []
 				};
@@ -2493,7 +3298,13 @@ describe('intelligence-db', () => {
 		const presets = await getIntelligentPresetSuggestions({
 			connectionId: 'builtin.duckdb',
 			stages: [{ type: 'from', table: 'cybersec_incidents' }],
-			availableColumns: ['Incident ID', 'Detected At', 'Hosts Affected', 'Downtime Cost USD', 'Severity Level']
+			availableColumns: [
+				'Incident ID',
+				'Detected At',
+				'Hosts Affected',
+				'Downtime Cost USD',
+				'Severity Level'
+			]
 		});
 
 		const trend = presets.find((preset) => preset.preset.id === 'temporal-trend');
@@ -2601,7 +3412,10 @@ describe('intelligence-db', () => {
 					reason?: string;
 				};
 				const reasons = parsed.inner?.map((item) => item.reason ?? '') ?? [parsed.reason ?? ''];
-				return reasons.length > 0 && reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason));
+				return (
+					reasons.length > 0 &&
+					reasons.every((reason) => /Unknown name|Unknown table|Unknown relation/i.test(reason))
+				);
 			} catch {
 				return false;
 			}

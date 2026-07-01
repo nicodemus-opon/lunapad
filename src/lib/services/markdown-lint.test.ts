@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { detectHardcodedValues, detectHardcodedTextValues, detectHardcodedContent } from './markdown-lint.js';
+import {
+	detectHardcodedValues,
+	detectHardcodedTextValues,
+	detectHardcodedContent
+} from './markdown-lint.js';
 import type { Cell } from '$lib/stores/notebook.svelte';
 
 function makeCell(outputName: string, rows: Record<string, unknown>[]): Cell {
@@ -42,7 +46,11 @@ describe('detectHardcodedValues', () => {
 
 	it('does not flag Markdoc tags', () => {
 		expect(detectHardcodedValues('{% metric value=$orders.revenue label="Revenue" /%}')).toBeNull();
-		expect(detectHardcodedValues('{% grid cols=2 %}{% metric value=$orders.revenue vs=$prev.revenue /%}{% /grid %}')).toBeNull();
+		expect(
+			detectHardcodedValues(
+				'{% grid cols=2 %}{% metric value=$orders.revenue vs=$prev.revenue /%}{% /grid %}'
+			)
+		).toBeNull();
 	});
 
 	it('does not flag a 4-digit year', () => {
@@ -81,7 +89,10 @@ describe('detectHardcodedTextValues', () => {
 
 	it('flags a hardcoded multi-word value, preferring the longer match', () => {
 		const cells = [makeCell('offices', [{ city: 'San Francisco' }])];
-		const hint = detectHardcodedTextValues('Most signups came from San Francisco last week.', cells);
+		const hint = detectHardcodedTextValues(
+			'Most signups came from San Francisco last week.',
+			cells
+		);
 		expect(hint).toContain('San Francisco');
 	});
 

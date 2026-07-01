@@ -1,7 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { PromptLLMConfig } from '$lib/services/prompt-llm';
-import { compile as compileNodePrql, CompileOptions as NodeCompileOptions } from 'prqlc/dist/node/prqlc_js';
+import {
+	compile as compileNodePrql,
+	CompileOptions as NodeCompileOptions
+} from 'prqlc/dist/node/prqlc_js';
 import {
 	normalizeTimeoutMs,
 	normalizeBaseUrl,
@@ -76,7 +79,11 @@ function extractPRQLFromResponse(content: string): { prql: string; reasoning?: s
 		return { prql: prqlBlock };
 	}
 
-	const reasoningMatch = content.match(/reasoning[:\s]+([\s\S]+?)(?=\n(?:filter|derive|group|window|sort|take|join|select)|$)/i)?.[1]?.trim();
+	const reasoningMatch = content
+		.match(
+			/reasoning[:\s]+([\s\S]+?)(?=\n(?:filter|derive|group|window|sort|take|join|select)|$)/i
+		)?.[1]
+		?.trim();
 
 	const prqlKeywords = /^(filter|derive|group|window|sort|take|join|select|append)\b/;
 	const lines = content.split('\n');
@@ -109,7 +116,10 @@ function stripLeadingFromClause(prql: string, sourceTable: string): string {
 		firstLine.startsWith('from ') &&
 		(firstLine.includes(tableNameLower) || firstLine === `from ${tableNameLower}`)
 	) {
-		const rest = lines.slice(firstContentLine + 1).join('\n').trim();
+		const rest = lines
+			.slice(firstContentLine + 1)
+			.join('\n')
+			.trim();
 		return rest;
 	}
 
@@ -121,23 +131,26 @@ function stripLeadingFromClause(prql: string, sourceTable: string): string {
 function prqlCastNote(dataKind: string, sqlType: string | undefined): string | null {
 	if (!sqlType) return null;
 	const sql = sqlType.toUpperCase();
-	if (dataKind === 'date' && (sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))) {
+	if (
+		dataKind === 'date' &&
+		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
+	) {
 		return 'stored as text — cast with ::date or CAST({col} AS DATE) inside s"..."';
 	}
 	if (dataKind === 'date' && sql.includes('TIMESTAMP')) {
 		return 'timestamp — use ::date inside s"..." for date-only comparison';
 	}
-	if (dataKind === 'numeric' && (sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))) {
+	if (
+		dataKind === 'numeric' &&
+		(sql.includes('VARCHAR') || sql.includes('TEXT') || sql.includes('CHAR'))
+	) {
 		return 'stored as text — cast with CAST({col} AS DOUBLE) inside s"..."';
 	}
 	return null;
 }
 
 /** Build a single concrete example from the actual schema to ground the model. */
-function buildDynamicExample(
-	sourceTable: string,
-	columns: GeneratePRQLRequest['columns']
-): string {
+function buildDynamicExample(sourceTable: string, columns: GeneratePRQLRequest['columns']): string {
 	const numericCol = columns.find((c) => c.dataKind === 'numeric');
 	const groupCol = columns.find((c) => c.dataKind === 'text' && c !== numericCol);
 	const dateCol = columns.find((c) => c.dataKind === 'date');
@@ -260,7 +273,12 @@ function tryCompilePRQL(sourceTable: string, prql: string): string | null {
 	}
 }
 
-function postProcessPRQL(prql: string, sourceTable: string, columns: GeneratePRQLRequest['columns'], otherTables?: GeneratePRQLRequest['otherTables']): string {
+function postProcessPRQL(
+	prql: string,
+	sourceTable: string,
+	columns: GeneratePRQLRequest['columns'],
+	otherTables?: GeneratePRQLRequest['otherTables']
+): string {
 	let result = prql
 		.replace(/\\n/g, '\n')
 		.replace(/\\t/g, '\t')
@@ -286,8 +304,11 @@ function postProcessPRQL(prql: string, sourceTable: string, columns: GeneratePRQ
 	const hasSqlJoin = /\bjoin\s+\w+\s+(as\s+\w+\s+)?on\b/i.test(result);
 	const hasSqlWhere = /^\s*where\b/im.test(result);
 	if (hasSqlJoin || hasSqlWhere) {
-		const prqlCompatibleKeywords = /^(filter|derive|group|window|sort|take|select|append|join\s+side:)\b/;
-		const cleanedLines = result.split('\n').filter((line) => prqlCompatibleKeywords.test(line.trim()));
+		const prqlCompatibleKeywords =
+			/^(filter|derive|group|window|sort|take|select|append|join\s+side:)\b/;
+		const cleanedLines = result
+			.split('\n')
+			.filter((line) => prqlCompatibleKeywords.test(line.trim()));
 		if (cleanedLines.length > 0) result = cleanedLines.join('\n');
 	}
 
@@ -295,16 +316,13 @@ function postProcessPRQL(prql: string, sourceTable: string, columns: GeneratePRQ
 
 	const specialCols = columns.map((c) => c.name).filter((n) => /[^A-Za-z0-9_.]/.test(n));
 	if (specialCols.length > 0) {
-		result = result.replace(
-			/s("""[\s\S]*?"""|"(?:[^"\\]|\\.)*")/g,
-			(sstr) => {
-				for (const col of specialCols) {
-					const esc = col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-					sstr = sstr.replace(new RegExp('[{`}]*' + esc + '[{`}]*', 'g'), `"${col}"`);
-				}
-				return sstr;
+		result = result.replace(/s("""[\s\S]*?"""|"(?:[^"\\]|\\.)*")/g, (sstr) => {
+			for (const col of specialCols) {
+				const esc = col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				sstr = sstr.replace(new RegExp('[{`}]*' + esc + '[{`}]*', 'g'), `"${col}"`);
 			}
-		);
+			return sstr;
+		});
 	}
 
 	const allSchemaColumns = [
@@ -382,7 +400,12 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 
 				send({ type: 'status', message: 'Validating output…' });
-				const firstPrql = postProcessPRQL(firstExtracted.prql, req.sourceTable, req.columns, req.otherTables);
+				const firstPrql = postProcessPRQL(
+					firstExtracted.prql,
+					req.sourceTable,
+					req.columns,
+					req.otherTables
+				);
 
 				if (firstPrql.trim()) {
 					const firstCompileError = tryCompilePRQL(req.sourceTable, firstPrql);
@@ -417,7 +440,12 @@ export const POST: RequestHandler = async ({ request }) => {
 					}
 
 					send({ type: 'status', message: 'Validating output…' });
-					const repairedPrql = postProcessPRQL(repairExtracted.prql, req.sourceTable, req.columns, req.otherTables);
+					const repairedPrql = postProcessPRQL(
+						repairExtracted.prql,
+						req.sourceTable,
+						req.columns,
+						req.otherTables
+					);
 					if (!repairedPrql.trim()) {
 						send({ type: 'result', prql: firstPrql, reasoning: firstExtracted.reasoning });
 						return;
@@ -430,7 +458,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						send({
 							type: 'result',
 							prql: repairedPrql,
-							reasoning: `${repairExtracted.reasoning ?? ''} (note: may need manual fixes — ${repairCompileError})`.trim()
+							reasoning:
+								`${repairExtracted.reasoning ?? ''} (note: may need manual fixes — ${repairCompileError})`.trim()
 						});
 					}
 				} else {
@@ -443,7 +472,11 @@ export const POST: RequestHandler = async ({ request }) => {
 				// AbortError: client disconnected — don't send anything
 			} finally {
 				clearTimeout(timeout);
-				try { sc.close(); } catch { /* already closed */ }
+				try {
+					sc.close();
+				} catch {
+					/* already closed */
+				}
 			}
 		},
 		cancel() {
@@ -456,7 +489,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
-			'Connection': 'keep-alive'
+			Connection: 'keep-alive'
 		}
 	});
 };

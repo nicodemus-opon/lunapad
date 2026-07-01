@@ -32,7 +32,11 @@ export const GET: RequestHandler = async ({ url, request }) => {
 				if (sentDone) return;
 				sentDone = true;
 				send({ type: 'done', exitCode });
-				try { controller.close(); } catch { /* ignore */ }
+				try {
+					controller.close();
+				} catch {
+					/* ignore */
+				}
 			}
 
 			job.emitter.on('line', onLine);
@@ -57,7 +61,11 @@ export const GET: RequestHandler = async ({ url, request }) => {
 				job.emitter.off('line', onLine);
 				job.emitter.off('port', onPort);
 				job.emitter.off('done', onDone);
-				try { controller.close(); } catch { /* ignore */ }
+				try {
+					controller.close();
+				} catch {
+					/* ignore */
+				}
 			});
 		}
 	});

@@ -33,10 +33,10 @@ export function startSqlLspClient(_monaco: typeof Monaco): void {
 					documentSelector: SQL_LANGUAGE_IDS.map((language) => ({ language })),
 					errorHandler: {
 						error: () => ({ action: 1 /* Continue */ }),
-						closed: () => ({ action: 2 /* DoNotRestart */ }),
-					},
+						closed: () => ({ action: 2 /* DoNotRestart */ })
+					}
 				},
-				messageTransports: { reader, writer },
+				messageTransports: { reader, writer }
 			});
 
 			client.start();

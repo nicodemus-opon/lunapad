@@ -225,7 +225,9 @@ export function resolveConnection(
 	connectionId: string | null | undefined
 ): Connection {
 	if (!connectionId) return BUILTIN_DUCKDB_CONNECTION;
-	return connections.find((connection) => connection.id === connectionId) ?? BUILTIN_DUCKDB_CONNECTION;
+	return (
+		connections.find((connection) => connection.id === connectionId) ?? BUILTIN_DUCKDB_CONNECTION
+	);
 }
 
 export function isBuiltinDuckDBConnection(connection: Connection | null | undefined): boolean {
@@ -238,8 +240,8 @@ export function slugifyCatalogName(name: string): string {
 		name
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, '_')
-			.replace(/^[^a-z]+/, '')  // strip leading non-alpha
-			.replace(/_+$/, '')       // strip trailing underscores
-		|| 'source'
+			.replace(/^[^a-z]+/, '') // strip leading non-alpha
+			.replace(/_+$/, '') || // strip trailing underscores
+		'source'
 	).slice(0, 64);
 }

@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { WindowStage, SortKey, DeriveStage as DeriveStageModel } from '$lib/types/gui-pipeline';
+	import type {
+		WindowStage,
+		SortKey,
+		DeriveStage as DeriveStageModel
+	} from '$lib/types/gui-pipeline';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Input } from '$lib/components/ui/input';
 	import { InlineChipLabel } from '$lib/components/ui/inline-chip-label';
@@ -37,7 +41,10 @@
 	let pendingNewSortValue = $state('');
 
 	function startAddSort() {
-		pendingNewSortValue = pickSortColumn(availableColumns, stage.sortKeys.map((k) => k.column));
+		pendingNewSortValue = pickSortColumn(
+			availableColumns,
+			stage.sortKeys.map((k) => k.column)
+		);
 		pendingNewSort = true;
 	}
 
@@ -50,7 +57,7 @@
 	}
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	<!-- Frame chip — keep popover (raw PRQL expression, not a column name) -->
 	<Popover.Root>
 		<Popover.Trigger class="{CHIP} px-2 hover:bg-muted/60">
@@ -58,7 +65,7 @@
 		</Popover.Trigger>
 		<Popover.Content class="w-72 p-3">
 			<Input
-				class="h-7 text-xs font-mono"
+				class="h-7 font-mono text-xs"
 				placeholder="rows:-2..0"
 				value={stage.frame}
 				oninput={(event) => onUpdate({ ...stage, frame: (event.target as HTMLInputElement).value })}
@@ -68,20 +75,19 @@
 
 	<!-- Sort key chips — inline column editing (same pattern as SortStage) -->
 	{#each stage.sortKeys as key, idx (`${key.column}-${key.dir}-${idx}`)}
-		{@const invalid = availableColumns.length > 0 && key.column && !availableColumns.includes(key.column)}
-		<div
-			class="{CHIP} cursor-grab active:cursor-grabbing {invalid ? CHIP_INVALID : ''}"
-		>
+		{@const invalid =
+			availableColumns.length > 0 && key.column && !availableColumns.includes(key.column)}
+		<div class="{CHIP} cursor-grab active:cursor-grabbing {invalid ? CHIP_INVALID : ''}">
 			<!-- Direction toggle -->
 			<button
-				class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+				class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
 				onclick={() => toggleSortDir(idx)}
 				title="Click to toggle direction"
 			>
 				{#if key.dir === 'asc'}
-					<ArrowUp class="w-3 h-3" />
+					<ArrowUp class="h-3 w-3" />
 				{:else}
-					<ArrowDown class="w-3 h-3" />
+					<ArrowDown class="h-3 w-3" />
 				{/if}
 			</button>
 
@@ -94,12 +100,8 @@
 				oncommit={(v) => updateSortKey(idx, { column: v })}
 			/>
 
-			<button
-				class={CHIP_X}
-				onclick={() => removeSortKey(idx)}
-				aria-label="Remove sort key"
-			>
-				<X class="w-3 h-3" />
+			<button class={CHIP_X} onclick={() => removeSortKey(idx)} aria-label="Remove sort key">
+				<X class="h-3 w-3" />
 			</button>
 		</div>
 	{/each}
@@ -107,7 +109,9 @@
 	<!-- Pending new sort key -->
 	{#if pendingNewSort}
 		<div class="{CHIP} border-ring/60">
-			<span class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground"><ArrowUp class="w-3 h-3" /></span>
+			<span class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground"
+				><ArrowUp class="h-3 w-3" /></span
+			>
 			<InlineChipLabel
 				value={pendingNewSortValue}
 				suggestions={availableColumns}
@@ -122,11 +126,11 @@
 
 	{#if !pendingNewSort}
 		<button class={CHIP_ADD} onclick={startAddSort}>
-			<Plus class="w-3 h-3" /> sort
+			<Plus class="h-3 w-3" /> sort
 		</button>
 	{/if}
 
-	<div class="basis-full h-0"></div>
+	<div class="h-0 basis-full"></div>
 	<DeriveStageEditor
 		stage={{ type: 'derive', columns: stage.derives }}
 		{availableColumns}

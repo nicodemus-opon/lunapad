@@ -30,7 +30,14 @@
 		class="flex h-8 w-11 items-center justify-center text-foreground/60 hover:bg-muted hover:text-foreground"
 		aria-label="Maximize"
 	>
-		<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1">
+		<svg
+			width="10"
+			height="10"
+			viewBox="0 0 10 10"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1"
+		>
 			<rect x="0.5" y="0.5" width="9" height="9" />
 		</svg>
 	</button>
@@ -39,7 +46,15 @@
 		class="flex h-8 w-11 items-center justify-center text-foreground/60 hover:bg-destructive hover:text-white"
 		aria-label="Close"
 	>
-		<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+		<svg
+			width="10"
+			height="10"
+			viewBox="0 0 10 10"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.2"
+			stroke-linecap="round"
+		>
 			<line x1="1" y1="1" x2="9" y2="9" />
 			<line x1="9" y1="1" x2="1" y2="9" />
 		</svg>

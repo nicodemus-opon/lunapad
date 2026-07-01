@@ -94,7 +94,8 @@ function toRecord(row: {
 export async function createApiKey(
 	userId: string,
 	name: string,
-	expiresAt: Date | null = null
+	expiresAt: Date | null = null,
+	scopes: string[] | null = null
 ): Promise<{ record: ApiKeyRecord; fullKey: string }> {
 	await ensureApiKeyTableOnce();
 	const fullKey = `${KEY_PREFIX}${randomBase62(32)}`;
@@ -112,10 +113,10 @@ export async function createApiKey(
 		expiresAt: string | null;
 		revokedAt: string | null;
 	}>(
-		`INSERT INTO "apiKey" ("id", "userId", "name", "keyHash", "prefix", "expiresAt")
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO "apiKey" ("id", "userId", "name", "keyHash", "prefix", "expiresAt", "scopes")
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING "id", "userId", "name", "prefix", "createdAt", "lastUsedAt", "expiresAt", "revokedAt"`,
-		[id, userId, name, keyHash, prefix, expiresAt]
+		[id, userId, name, keyHash, prefix, expiresAt, scopes]
 	);
 
 	return { record: toRecord(rows[0]), fullKey };
@@ -151,6 +152,7 @@ export async function revokeApiKey(userId: string, keyId: string): Promise<void>
 export interface VerifiedApiKey {
 	userId: string;
 	apiKeyId: string;
+	scopes: string[] | null;
 }
 
 export async function verifyApiKey(presentedKey: string): Promise<VerifiedApiKey | null> {
@@ -162,7 +164,11 @@ export async function verifyApiKey(presentedKey: string): Promise<VerifiedApiKey
 		userId: string;
 		expiresAt: string | null;
 		revokedAt: string | null;
-	}>(`SELECT "id", "userId", "expiresAt", "revokedAt" FROM "apiKey" WHERE "keyHash" = $1`, [hash]);
+		scopes: string[] | null;
+	}>(
+		`SELECT "id", "userId", "expiresAt", "revokedAt", "scopes" FROM "apiKey" WHERE "keyHash" = $1`,
+		[hash]
+	);
 	const row = rows[0];
 	if (!row || row.revokedAt) return null;
 	if (row.expiresAt && new Date(row.expiresAt) < new Date()) return null;
@@ -170,7 +176,7 @@ export async function verifyApiKey(presentedKey: string): Promise<VerifiedApiKey
 	// Best-effort, fire-and-forget — must not block/fail the auth check on this write.
 	query(`UPDATE "apiKey" SET "lastUsedAt" = now() WHERE "id" = $1`, [row.id]).catch(() => {});
 
-	return { userId: row.userId, apiKeyId: row.id };
+	return { userId: row.userId, apiKeyId: row.id, scopes: row.scopes };
 }
 
 export async function getUserById(userId: string): Promise<ApiKeyUser | null> {

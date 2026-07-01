@@ -9,8 +9,15 @@
 
 	const { value, label, format = 'number', deltaPct, trend }: Props = $props();
 
-	const currencyFmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-	const compactFmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+	const currencyFmt = new Intl.NumberFormat(undefined, {
+		style: 'currency',
+		currency: 'USD',
+		maximumFractionDigits: 0
+	});
+	const compactFmt = new Intl.NumberFormat(undefined, {
+		notation: 'compact',
+		maximumFractionDigits: 1
+	});
 
 	const displayValue = $derived.by(() => {
 		const n = typeof value === 'number' ? value : Number(value);

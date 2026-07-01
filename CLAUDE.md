@@ -33,6 +33,7 @@ Run a single test file: `pnpm vitest run src/lib/services/cell-deps.test.ts`
 Lunapad is a **notebook-style dbt IDE** that runs entirely as a SvelteKit SPA. Each notebook cell is a dbt model (PRQL or SQL). Cells reference each other by `outputName` and are assembled into a `WITH` CTE chain at query time — no actual dbt invocations happen for interactive runs.
 
 When a dbt project is open, notebooks are persisted to disk in one of two formats (`Notebook.format` in `notebook.svelte.ts`):
+
 - **`luna`** (default for new notebooks) — one `<name>.luna` file under `models/**`/`analyses/**` holding the whole multi-cell notebook (prose + query cells, document order). Cells here are interactive/inline and aren't dbt models until explicitly promoted.
 - **`flat`** (unset) — one `.prql`/`.sql` file per cell. This is either a pre-existing model file loaded from disk, or the result of "Promote to dbt model" (`promoteCellChain` in `notebook.svelte.ts`), which explodes a `.luna` cell (and its un-promoted upstream chain) into real model files dbt can compile/run.
 
@@ -83,6 +84,7 @@ When a project folder is open, `server/dbt.ts` / `server/dbt-runner.ts` handle c
 ### Vite quirks
 
 Two custom Vite plugins in `vite.config.ts`:
+
 - `svelteNodeModulesStyleFix`: prevents `@tailwindcss/vite` from intercepting `<style>` blocks in node_modules Svelte files.
 - `duckdbWorkerSourceMapFix`: strips a missing sourcemap reference from the DuckDB worker bundle.
 
@@ -109,6 +111,7 @@ The Svelte MCP server (`@sveltejs/mcp`) is configured in `.vscode/mcp.json` and 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
 
 Rules:
+
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.

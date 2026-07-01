@@ -20,7 +20,8 @@
 		Table2,
 		PanelTopClose,
 		AlertCircle,
-		Layers
+		Layers,
+		Workflow
 	} from '@lucide/svelte';
 	import RefPickerMenu from './RefPickerMenu.svelte';
 	import FilterPickerMenu from './FilterPickerMenu.svelte';
@@ -44,7 +45,8 @@
 		onTogglePreview: () => void;
 	}
 
-	const { onFormat, refPickerEntries, onInsertSnippet, onInsertRef, onTogglePreview }: Props = $props();
+	const { onFormat, refPickerEntries, onInsertSnippet, onInsertRef, onTogglePreview }: Props =
+		$props();
 
 	function fmt(action: FormatAction) {
 		return (e: MouseEvent) => {
@@ -55,25 +57,87 @@
 	}
 
 	const inlineButtons = [
-		{ icon: Bold, title: 'Bold (⌘B)', action: { type: 'wrap', prefix: '**', suffix: '**', placeholder: 'bold' } as FormatAction },
-		{ icon: Italic, title: 'Italic (⌘I)', action: { type: 'wrap', prefix: '*', suffix: '*', placeholder: 'italic' } as FormatAction },
-		{ icon: Strikethrough, title: 'Strikethrough', action: { type: 'wrap', prefix: '~~', suffix: '~~', placeholder: 'strikethrough' } as FormatAction },
-		{ icon: Code, title: 'Inline code (⌘`)', action: { type: 'wrap', prefix: '`', suffix: '`', placeholder: 'code' } as FormatAction },
-		{ icon: Link, title: 'Link (⌘K)', action: { type: 'wrap', prefix: '[', suffix: '](url)', placeholder: 'link text' } as FormatAction }
+		{
+			icon: Bold,
+			title: 'Bold (⌘B)',
+			action: { type: 'wrap', prefix: '**', suffix: '**', placeholder: 'bold' } as FormatAction
+		},
+		{
+			icon: Italic,
+			title: 'Italic (⌘I)',
+			action: { type: 'wrap', prefix: '*', suffix: '*', placeholder: 'italic' } as FormatAction
+		},
+		{
+			icon: Strikethrough,
+			title: 'Strikethrough',
+			action: {
+				type: 'wrap',
+				prefix: '~~',
+				suffix: '~~',
+				placeholder: 'strikethrough'
+			} as FormatAction
+		},
+		{
+			icon: Code,
+			title: 'Inline code (⌘`)',
+			action: { type: 'wrap', prefix: '`', suffix: '`', placeholder: 'code' } as FormatAction
+		},
+		{
+			icon: Link,
+			title: 'Link (⌘L)',
+			action: {
+				type: 'wrap',
+				prefix: '[',
+				suffix: '](url)',
+				placeholder: 'link text'
+			} as FormatAction
+		}
 	];
 
 	const headingButtons = [
-		{ icon: Heading1, title: 'Heading 1', action: { type: 'line-prefix', prefix: '# ' } as FormatAction },
-		{ icon: Heading2, title: 'Heading 2', action: { type: 'line-prefix', prefix: '## ' } as FormatAction },
-		{ icon: Heading3, title: 'Heading 3', action: { type: 'line-prefix', prefix: '### ' } as FormatAction }
+		{
+			icon: Heading1,
+			title: 'Heading 1',
+			action: { type: 'line-prefix', prefix: '# ' } as FormatAction
+		},
+		{
+			icon: Heading2,
+			title: 'Heading 2',
+			action: { type: 'line-prefix', prefix: '## ' } as FormatAction
+		},
+		{
+			icon: Heading3,
+			title: 'Heading 3',
+			action: { type: 'line-prefix', prefix: '### ' } as FormatAction
+		}
 	];
 
 	const blockButtons = [
-		{ icon: List, title: 'Bullet list', action: { type: 'line-prefix', prefix: '- ' } as FormatAction },
-		{ icon: ListOrdered, title: 'Numbered list', action: { type: 'line-prefix', prefix: '1. ' } as FormatAction },
-		{ icon: Quote, title: 'Blockquote', action: { type: 'line-prefix', prefix: '> ' } as FormatAction },
-		{ icon: Minus, title: 'Horizontal rule', action: { type: 'snippet', text: '\n---\n' } as FormatAction },
-		{ icon: SquareCode, title: 'Code block', action: { type: 'snippet', text: '```sql\n\n```' } as FormatAction }
+		{
+			icon: List,
+			title: 'Bullet list',
+			action: { type: 'line-prefix', prefix: '- ' } as FormatAction
+		},
+		{
+			icon: ListOrdered,
+			title: 'Numbered list',
+			action: { type: 'line-prefix', prefix: '1. ' } as FormatAction
+		},
+		{
+			icon: Quote,
+			title: 'Blockquote',
+			action: { type: 'line-prefix', prefix: '> ' } as FormatAction
+		},
+		{
+			icon: Minus,
+			title: 'Horizontal rule',
+			action: { type: 'snippet', text: '\n---\n' } as FormatAction
+		},
+		{
+			icon: SquareCode,
+			title: 'Code block',
+			action: { type: 'snippet', text: '```sql\n\n```' } as FormatAction
+		}
 	];
 
 	const widgetButtons = [
@@ -83,7 +147,8 @@
 		{ icon: ChartBar, title: 'Chart', snippet: WIDGET_SNIPPETS.chart },
 		{ icon: LayoutGrid, title: 'Metric', snippet: WIDGET_SNIPPETS.metric },
 		{ icon: Columns2, title: 'Columns', snippet: WIDGET_SNIPPETS.columns },
-		{ icon: Layers, title: 'Tabs', snippet: WIDGET_SNIPPETS.tabs }
+		{ icon: Layers, title: 'Tabs', snippet: WIDGET_SNIPPETS.tabs },
+		{ icon: Workflow, title: 'Mermaid diagram', snippet: WIDGET_SNIPPETS.mermaid }
 	];
 </script>
 
@@ -147,7 +212,10 @@
 				class="md-toolbar-btn"
 				title={btn.title}
 				aria-label={btn.title}
-				onmousedown={(e) => { e.preventDefault(); onInsertSnippet(btn.snippet); }}
+				onmousedown={(e) => {
+					e.preventDefault();
+					onInsertSnippet(btn.snippet);
+				}}
 			>
 				<btn.icon size={13} />
 			</button>
@@ -169,7 +237,10 @@
 		class="md-toolbar-btn md-toolbar-preview-btn"
 		title="Preview (⌘⇧P)"
 		aria-label="Preview"
-		onmousedown={(e) => { e.preventDefault(); onTogglePreview(); }}
+		onmousedown={(e) => {
+			e.preventDefault();
+			onTogglePreview();
+		}}
 	>
 		<Eye size={13} />
 		<span>Preview</span>
@@ -212,7 +283,9 @@
 		background: transparent;
 		border: none;
 		cursor: pointer;
-		transition: color 100ms, background-color 100ms;
+		transition:
+			color 100ms,
+			background-color 100ms;
 		line-height: 1;
 	}
 	:global(.md-toolbar-btn:hover) {

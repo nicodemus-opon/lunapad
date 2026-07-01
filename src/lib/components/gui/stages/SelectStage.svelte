@@ -81,7 +81,7 @@
 	const unselected = $derived(availableColumns.filter((c) => !stage.columns.includes(c)));
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	{#if stage.columns.length === 0 && !pendingNew}
 		<span class="text-xs text-muted-foreground/60 italic">all columns</span>
 	{:else if showSummary}
@@ -91,28 +91,28 @@
 				{stage.columns.length} columns
 			</Popover.Trigger>
 			<Popover.Content class="w-64 p-3">
-				<div class="flex items-center gap-2 mb-2">
-					<Button variant="outline" size="sm" class="h-6 text-xs px-2" onclick={selectAll}
+				<div class="mb-2 flex items-center gap-2">
+					<Button variant="outline" size="sm" class="h-6 px-2 text-xs" onclick={selectAll}
 						>All</Button
 					>
-					<Button variant="outline" size="sm" class="h-6 text-xs px-2" onclick={selectNone}
+					<Button variant="outline" size="sm" class="h-6 px-2 text-xs" onclick={selectNone}
 						>None</Button
 					>
-					<span class="text-xs text-muted-foreground ml-auto"
+					<span class="ml-auto text-xs text-muted-foreground"
 						>{stage.columns.length} / {availableColumns.length}</span
 					>
 				</div>
-				<div class="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+				<div class="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
 					{#each availableColumns as col}
 						{@const selected = stage.columns.includes(col)}
 						<button
-							class="flex items-center gap-1 px-2 py-0.5 rounded text-xs border transition-colors duration-150
+							class="flex items-center gap-1 rounded border px-2 py-0.5 text-xs transition-colors duration-150
 								{selected
-								? 'bg-primary text-primary-foreground border-primary'
-								: 'bg-transparent text-muted-foreground border-border/70 hover:bg-muted/40 hover:text-foreground'}"
+								? 'border-primary bg-primary text-primary-foreground'
+								: 'border-border/70 bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 							onclick={() => toggle(col)}
 						>
-							{#if selected}<CheckSquare class="w-3 h-3" />{:else}<Square class="w-3 h-3" />{/if}
+							{#if selected}<CheckSquare class="h-3 w-3" />{:else}<Square class="h-3 w-3" />{/if}
 							{col}
 						</button>
 					{/each}
@@ -128,23 +128,29 @@
 				draggable="true"
 				ondragstart={() => (dragColIdx = idx)}
 				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); if (dragColIdx !== null && dragColIdx !== idx) { reorderColumns(dragColIdx, idx); dragColIdx = null; } }}
+				ondrop={(e) => {
+					e.preventDefault();
+					if (dragColIdx !== null && dragColIdx !== idx) {
+						reorderColumns(dragColIdx, idx);
+						dragColIdx = null;
+					}
+				}}
 				ondragend={() => (dragColIdx = null)}
-				class="{CHIP} cursor-grab active:cursor-grabbing {dragColIdx !== null && dragColIdx === idx ? 'opacity-40' : ''} {invalid ? CHIP_INVALID : ''}"
+				class="{CHIP} cursor-grab active:cursor-grabbing {dragColIdx !== null && dragColIdx === idx
+					? 'opacity-40'
+					: ''} {invalid ? CHIP_INVALID : ''}"
 			>
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns}
 					class="px-2 py-1 font-mono text-xs"
 					oncommit={(v) => renameCol(idx, v)}
-					oncancel={() => { if (!col) remove(col); }}
+					oncancel={() => {
+						if (!col) remove(col);
+					}}
 				/>
-				<button
-					class={CHIP_X}
-					onclick={() => remove(col)}
-					aria-label="Remove {col}"
-				>
-					<X class="w-3 h-3" />
+				<button class={CHIP_X} onclick={() => remove(col)} aria-label="Remove {col}">
+					<X class="h-3 w-3" />
 				</button>
 			</div>
 		{/each}
@@ -168,7 +174,7 @@
 	<!-- Add button — only shown when not in summary mode -->
 	{#if !showSummary && !pendingNew}
 		<button class={CHIP_ADD} onclick={addPending}>
-			<Plus class="w-3 h-3" /> add
+			<Plus class="h-3 w-3" /> add
 		</button>
 	{/if}
 </div>

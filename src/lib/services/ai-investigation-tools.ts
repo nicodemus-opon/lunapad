@@ -1,7 +1,7 @@
 // Shared client-side execution for the 5 read-only investigation tools (sample_data,
 // profile_column, get_cell_result, get_lineage, search_workspace). Notebook/connection state
 // lives only in the browser store, so these always run client-side regardless of which surface
-// (sidebar chat agent or inline Cmd+K agent) requested them — see `$lib/server/ai-tools.ts` for
+// (sidebar chat agent or inline ⌘⇧K agent) requested them — see `$lib/server/ai-tools.ts` for
 // the matching tool schemas sent to the LLM.
 
 import { executeSQL } from '$lib/services/duckdb.js';
@@ -18,8 +18,18 @@ import {
 	AUTO_LIMIT,
 	type Cell
 } from '$lib/stores/notebook.svelte.js';
-import { buildExecutionCode, buildSQLExecutionCode, resolvePythonDataRefs } from '$lib/services/cell-deps.js';
-import { runPython, watchPythonLogs, cancelPython, isPythonWorkerWarm, type PythonTablePayload } from '$lib/services/python-client.js';
+import {
+	buildExecutionCode,
+	buildSQLExecutionCode,
+	resolvePythonDataRefs
+} from '$lib/services/cell-deps.js';
+import {
+	runPython,
+	watchPythonLogs,
+	cancelPython,
+	isPythonWorkerWarm,
+	type PythonTablePayload
+} from '$lib/services/python-client.js';
 import { rowsToCsv } from '$lib/utils.js';
 import {
 	type Connection,
@@ -103,14 +113,17 @@ export async function runRawQuery(
 	sql: string,
 	table?: string
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
-	const { isBuiltin, connection } = (table && getConnectionForTable(table)) || getDefaultConnection();
+	const { isBuiltin, connection } =
+		(table && getConnectionForTable(table)) || getDefaultConnection();
 	if (isBuiltin) return executeSQL(sql);
 	return queryConnectionSQL(connection, sql);
 }
 
 export function knownTableNames(): string[] {
 	const local = getTables().map((t) => t.name);
-	const external = getExternalSchemaTables().map((t) => (t.schema ? `${t.schema}.${t.name}` : t.name));
+	const external = getExternalSchemaTables().map((t) =>
+		t.schema ? `${t.schema}.${t.name}` : t.name
+	);
 	return [...local, ...external];
 }
 
@@ -140,7 +153,8 @@ export async function executeInvestigationTool(
 				const table = String(call.args.table ?? '');
 				const n = Math.min(Number(call.args.n ?? 10) || 10, 50);
 				const tableError = assertKnownTable(table);
-				if (tableError) return { text: `sample_data failed: ${tableError}`, label: `Unknown table: ${table}` };
+				if (tableError)
+					return { text: `sample_data failed: ${tableError}`, label: `Unknown table: ${table}` };
 				const { isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection();
 				const qt = quoteIdent(table);
 				const sampleSql = isBuiltin
@@ -159,11 +173,15 @@ export async function executeInvestigationTool(
 				const table = String(call.args.table ?? '');
 				const column = String(call.args.column ?? '');
 				const tableError = assertKnownTable(table);
-				if (tableError) return { text: `profile_column failed: ${tableError}`, label: `Unknown table: ${table}` };
+				if (tableError)
+					return { text: `profile_column failed: ${tableError}`, label: `Unknown table: ${table}` };
 				const qCol = quoteIdent(column);
 				const qTable = quoteIdent(table);
 				const [nullRes, statsRes, topRes] = await Promise.all([
-					runRawQuery(`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`, table),
+					runRawQuery(
+						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`,
+						table
+					),
 					runRawQuery(
 						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`,
 						table
@@ -199,7 +217,10 @@ export async function executeInvestigationTool(
 							label: `${cell.outputName ?? cellId}: error`
 						};
 					}
-					return { text: `Cell \`${cellId}\`: no result data — not run yet`, label: `${cellId}: no result` };
+					return {
+						text: `Cell \`${cellId}\`: no result data — not run yet`,
+						label: `${cellId}: no result`
+					};
 				}
 				const rows = cell.result.rows.slice(0, limit);
 				const csv = rowsToCsv(cell.result.columns, rows);
@@ -227,7 +248,10 @@ export async function executeInvestigationTool(
 					.filter((c) => c.outputName !== outputName && re.test(c.code))
 					.map((c) => c.outputName);
 				if (!target) {
-					return { text: `Lineage: \`${outputName}\` not found in notebook`, label: `${outputName}: not found` };
+					return {
+						text: `Lineage: \`${outputName}\` not found in notebook`,
+						label: `${outputName}: not found`
+					};
 				}
 				return {
 					text: `Lineage of \`${outputName}\`:\n- Upstream: ${upstream.join(', ') || 'none'}\n- Downstream: ${downstream.join(', ') || 'none'}`,
@@ -246,7 +270,12 @@ export async function executeInvestigationTool(
 					const data = (await res.json()) as {
 						cells: Array<{ output_name: string; code_snippet: string; similarity: number }>;
 						tables: Array<{ table_name: string; column_names: string; similarity: number }>;
-						memories?: Array<{ slug: string; description: string; type: string; similarity: number }>;
+						memories?: Array<{
+							slug: string;
+							description: string;
+							type: string;
+							similarity: number;
+						}>;
 					};
 					const cellLines = data.cells.map((c) =>
 						c.code_snippet?.trim()
@@ -254,15 +283,17 @@ export async function executeInvestigationTool(
 							: `\`${c.output_name}\` (${(c.similarity * 100).toFixed(0)}% match)`
 					);
 					const tableLines = data.tables.map((t) => `- \`${t.table_name}\`: ${t.column_names}`);
-					const memoryLines = (data.memories ?? []).map(
-						(m) => `- (${m.type}) ${m.description}`
-					);
+					const memoryLines = (data.memories ?? []).map((m) => `- (${m.type}) ${m.description}`);
 					const text =
 						`Search "${query}":\n` +
 						(cellLines.length ? `Relevant cells:\n${cellLines.join('\n\n')}\n` : '') +
 						(tableLines.length ? `Relevant tables:\n${tableLines.join('\n')}\n` : '') +
-						(memoryLines.length ? `Relevant past decisions/discoveries:\n${memoryLines.join('\n')}\n` : '') +
-						(!cellLines.length && !tableLines.length && !memoryLines.length ? 'No matches found.\n' : '');
+						(memoryLines.length
+							? `Relevant past decisions/discoveries:\n${memoryLines.join('\n')}\n`
+							: '') +
+						(!cellLines.length && !tableLines.length && !memoryLines.length
+							? 'No matches found.\n'
+							: '');
 					return { text, label: `Searched "${query}"` };
 				} catch {
 					return {
@@ -283,7 +314,7 @@ export async function executeInvestigationTool(
 // ── Trial execution (self-correction) ──────────────────────────────────────────
 // Actually runs candidate code with upstream deps resolved exactly like a real
 // "Run cell" would, but without writing to cell.result/cell.status or registering
-// any tables/views — used by the inline Cmd+K agent to catch real runtime errors
+// any tables/views — used by the inline ⌘⇧K agent to catch real runtime errors
 // (not just PRQL static-compile errors) before handing code back to the user.
 
 export interface TrialRunResult {
@@ -322,7 +353,8 @@ async function trialRunQuery(
 		const fullPrql = buildExecutionCode(trialCells, idx);
 		const compiled = compilePRQLCached(fullPrql, target);
 		if (compiled.errors.length > 0 || !compiled.sql) {
-			const msg = compiled.errors.map((e) => e.display ?? e.reason).join('; ') || 'PRQL compile error';
+			const msg =
+				compiled.errors.map((e) => e.display ?? e.reason).join('; ') || 'PRQL compile error';
 			return { ok: false, error: msg };
 		}
 		sql = compiled.sql;

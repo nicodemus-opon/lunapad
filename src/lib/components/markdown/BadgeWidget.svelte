@@ -6,7 +6,13 @@
 
 	const { value, color }: Props = $props();
 
-	const CHART_TOKENS = ['var(--chart-1, #3b82f6)', 'var(--chart-2, #16a34a)', 'var(--chart-3, #d97706)', 'var(--chart-4, #8b5cf6)', 'var(--chart-5, #0ea5e9)'];
+	const CHART_TOKENS = [
+		'var(--chart-1, #3b82f6)',
+		'var(--chart-2, #16a34a)',
+		'var(--chart-3, #d97706)',
+		'var(--chart-4, #8b5cf6)',
+		'var(--chart-5, #0ea5e9)'
+	];
 
 	function hashIndex(s: string): number {
 		let h = 0;

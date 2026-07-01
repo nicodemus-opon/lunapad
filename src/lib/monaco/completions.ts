@@ -14,7 +14,10 @@ import { formatDocstring } from '$lib/services/docstring-format';
 export type PythonCellContext = { kind: 'udf' } | { kind: 'data'; notebookId: string };
 const pythonContextByModel = new Map<string, PythonCellContext>();
 
-export function setModelPythonContext(model: Monaco.editor.ITextModel, context: PythonCellContext): void {
+export function setModelPythonContext(
+	model: Monaco.editor.ITextModel,
+	context: PythonCellContext
+): void {
 	pythonContextByModel.set(model.uri.toString(), context);
 }
 
@@ -22,7 +25,9 @@ export function clearModelPythonContext(model: Monaco.editor.ITextModel): void {
 	pythonContextByModel.delete(model.uri.toString());
 }
 
-export function getModelPythonContext(model: Monaco.editor.ITextModel): PythonCellContext | undefined {
+export function getModelPythonContext(
+	model: Monaco.editor.ITextModel
+): PythonCellContext | undefined {
 	return pythonContextByModel.get(model.uri.toString());
 }
 
@@ -61,7 +66,10 @@ export interface CompletionEntry {
 // per cell — this registry maps a model URI to that cell's completion list.
 const completionsByModel = new Map<string, CompletionEntry[]>();
 
-export function setModelCompletions(model: Monaco.editor.ITextModel, items: CompletionEntry[]): void {
+export function setModelCompletions(
+	model: Monaco.editor.ITextModel,
+	items: CompletionEntry[]
+): void {
 	completionsByModel.set(model.uri.toString(), items);
 }
 
@@ -96,9 +104,10 @@ interface ColumnEntry {
 	detail?: string;
 }
 
-export function parseRegistry(
-	items: CompletionEntry[]
-): { tables: Map<string, ColumnEntry[]>; bare: CompletionEntry[] } {
+export function parseRegistry(items: CompletionEntry[]): {
+	tables: Map<string, ColumnEntry[]>;
+	bare: CompletionEntry[];
+} {
 	const tables = new Map<string, ColumnEntry[]>();
 	const bare: CompletionEntry[] = [];
 	for (const item of items) {
@@ -220,11 +229,16 @@ export function registerCompletions(monaco: typeof Monaco): void {
 					// SQL clause context: rank schema vs functions/keywords based on position.
 					// FROM/JOIN → tables only. SELECT/WHERE/etc → schema first, functions after.
 					const fromOrJoin = /\b(FROM|JOIN)\s+[\w`"]*$/i.test(lineBefore);
-					const columnCtx = /\b(SELECT|WHERE|HAVING|ON|GROUP\s+BY|ORDER\s+BY|AND|OR|NOT|SET)\s+[\w`".,\s*]*$/i.test(lineBefore);
+					const columnCtx =
+						/\b(SELECT|WHERE|HAVING|ON|GROUP\s+BY|ORDER\s+BY|AND|OR|NOT|SET)\s+[\w`".,\s*]*$/i.test(
+							lineBefore
+						);
 
 					if (fromOrJoin) {
 						for (const [table, cols] of tables) {
-							const colList = cols.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : '')).join('\n');
+							const colList = cols
+								.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
+								.join('\n');
 							push(table, kinds.Struct, '0', undefined, colList || undefined);
 						}
 						for (const b of bare) push(b.text, kinds.Variable, '1', b.detail);
@@ -233,13 +247,22 @@ export function registerCompletions(monaco: typeof Monaco): void {
 
 					// Sort prefix: schema items first when in a column-expression context
 					const schemaSort = columnCtx ? '1' : '1';
-					const fnSort    = columnCtx ? '4' : '4';
-					const kwSort    = columnCtx ? '5' : '5';
+					const fnSort = columnCtx ? '4' : '4';
+					const kwSort = columnCtx ? '5' : '5';
 
 					for (const [table, cols] of tables) {
-						const colList = cols.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : '')).join('\n');
+						const colList = cols
+							.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
+							.join('\n');
 						push(table, kinds.Struct, schemaSort, undefined, colList || undefined);
-						for (const c of cols) push(`${table}.${c.name}`, kinds.Field, schemaSort + '5', c.detail, c.detail ? `\`${c.detail}\`` : undefined);
+						for (const c of cols)
+							push(
+								`${table}.${c.name}`,
+								kinds.Field,
+								schemaSort + '5',
+								c.detail,
+								c.detail ? `\`${c.detail}\`` : undefined
+							);
 					}
 					for (const b of bare) push(b.text, kinds.Variable, schemaSort + '9', b.detail);
 					for (const fn of getSqlFunctionDocs(dialect)) {
@@ -303,9 +326,37 @@ const UDF_TYPE_HINTS = Object.keys(PY_TYPE_TO_TRINO);
 // run (jedi needs a live worker — see completePython) and merged alongside
 // jedi's results afterwards.
 const PY_KEYWORDS = [
-	'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else',
-	'except', 'False', 'finally', 'for', 'from', 'if', 'import', 'in', 'is', 'lambda',
-	'None', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield'
+	'and',
+	'as',
+	'assert',
+	'break',
+	'class',
+	'continue',
+	'def',
+	'del',
+	'elif',
+	'else',
+	'except',
+	'False',
+	'finally',
+	'for',
+	'from',
+	'if',
+	'import',
+	'in',
+	'is',
+	'lambda',
+	'None',
+	'not',
+	'or',
+	'pass',
+	'raise',
+	'return',
+	'True',
+	'try',
+	'while',
+	'with',
+	'yield'
 ];
 const PY_DATA_CELL_BARE = ['pd', 'go', 'result'];
 

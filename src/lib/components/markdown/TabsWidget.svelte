@@ -17,7 +17,14 @@
 <div class="md-tabs">
 	<div class="md-tabs-strip" role="tablist">
 		{#each tabs as t, i (i)}
-			<button type="button" class="md-tab" class:active={active === i} role="tab" aria-selected={active === i} onclick={() => (active = i)}>
+			<button
+				type="button"
+				class="md-tab"
+				class:active={active === i}
+				role="tab"
+				aria-selected={active === i}
+				onclick={() => (active = i)}
+			>
 				{t.attributes.label}
 			</button>
 		{/each}
@@ -45,7 +52,9 @@
 		font-weight: 600;
 		opacity: 0.6;
 		cursor: pointer;
-		transition: opacity 130ms cubic-bezier(0.16, 1, 0.3, 1), border-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
+		transition:
+			opacity 130ms cubic-bezier(0.16, 1, 0.3, 1),
+			border-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 	.md-tab:hover {
 		opacity: 0.85;

@@ -10,8 +10,13 @@
 	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 	import type { PRQLError } from '$lib/services/prql';
 	import type { CellLanguage } from '$lib/stores/notebook.svelte';
-	import type { CompletionEntry, PythonCellContext, PythonUpstreamSchema } from '$lib/monaco/completions';
+	import type {
+		CompletionEntry,
+		PythonCellContext,
+		PythonUpstreamSchema
+	} from '$lib/monaco/completions';
 	import type { ConnectionType } from '$lib/types/connection';
+	import { shouldForwardFromMonaco } from '$lib/keyboard/monaco-bridge';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
 
@@ -72,17 +77,14 @@
 		| ((m: Monaco.editor.ITextModel, items: CompletionEntry[]) => void)
 		| null = null;
 	let clearModelCompletions: ((m: Monaco.editor.ITextModel) => void) | null = null;
-	let setModelDialect:
-		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
-		| null = null;
+	let setModelDialect: ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void) | null =
+		null;
 	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelPythonContext:
 		| ((m: Monaco.editor.ITextModel, context: PythonCellContext) => void)
 		| null = null;
 	let clearModelPythonContext: ((m: Monaco.editor.ITextModel) => void) | null = null;
-	let setModelPlotGlobals:
-		| ((m: Monaco.editor.ITextModel, dts: string) => void)
-		| null = null;
+	let setModelPlotGlobals: ((m: Monaco.editor.ITextModel, dts: string) => void) | null = null;
 	let clearModelPlotGlobals: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelPythonSchema:
 		| ((m: Monaco.editor.ITextModel, schemas: PythonUpstreamSchema[]) => void)
@@ -96,19 +98,8 @@
 		return isDark ? 'lunapad-dark' : 'lunapad-light';
 	}
 
-	// Monaco intercepts these keys before they bubble; re-dispatch them on the
-	// container so NotebookCell's handleKeydown stays the single source of truth.
-	function shouldForwardKey(be: KeyboardEvent): boolean {
-		const mod = be.metaKey || be.ctrlKey;
-		if (be.key === 'Enter' && (be.shiftKey || mod)) return true;
-		if (mod && be.shiftKey && (be.key.toLowerCase() === 'l' || be.key.toLowerCase() === 't'))
-			return true;
-		// ⌘K: opens the inline "Tell AI what to do" prompt — Monaco's own keybinding
-		// service captures this chord-prefix key even with no bound command.
-		if (mod && !be.shiftKey && be.key.toLowerCase() === 'k') return true;
-		if (be.key === 'Escape' && !monacoWidgetOpen()) return true;
-		return false;
-	}
+	// Monaco may consume some keys before they bubble; re-dispatch when the central
+	// capture dispatcher cannot see them (see monaco-bridge.ts).
 
 	function monacoWidgetOpen(): boolean {
 		const dom = editor?.getDomNode();
@@ -219,7 +210,8 @@
 			// Make this editor's globals live immediately on mount rather than
 			// waiting for an explicit focus click — most plot cells are mounted
 			// because the user just opened/added them.
-			if (language === 'javascript' && activatePlotGlobals) activatePlotGlobals(model.uri.toString());
+			if (language === 'javascript' && activatePlotGlobals)
+				activatePlotGlobals(model.uri.toString());
 		}
 
 		const ed = m.editor.create(container, {
@@ -246,7 +238,8 @@
 			hideCursorInOverviewRuler: true,
 			overviewRulerBorder: false,
 			fontSize: 13.6,
-			fontFamily: "'IBM Plex Mono','JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace",
+			fontFamily:
+				"'IBM Plex Mono','JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace",
 			contextmenu: false,
 			// suggest widget must escape the cell card's overflow clipping
 			fixedOverflowWidgets: true,
@@ -282,7 +275,7 @@
 
 		ed.onKeyDown((e) => {
 			const be = e.browserEvent;
-			if (!shouldForwardKey(be)) return;
+			if (!shouldForwardFromMonaco(be, monacoWidgetOpen())) return;
 			e.preventDefault();
 			e.stopPropagation();
 			container.dispatchEvent(
@@ -384,7 +377,9 @@
 			markers.push({
 				severity: monaco.MarkerSeverity.Error,
 				// prqlc's hint (e.g. "did you mean `derive`?") is otherwise never shown
-				message: e.hint ? `${e.display ?? e.reason ?? 'Error'}\n\n${e.hint}` : e.display ?? e.reason ?? 'Error',
+				message: e.hint
+					? `${e.display ?? e.reason ?? 'Error'}\n\n${e.hint}`
+					: (e.display ?? e.reason ?? 'Error'),
 				startLineNumber: start.lineNumber,
 				startColumn: start.column,
 				endLineNumber: end.lineNumber,
@@ -413,7 +408,7 @@
 
 <div
 	bind:this={container}
-	class="editor-container code-editor relative text-sm border rounded-md"
+	class="editor-container code-editor relative rounded-md border text-sm"
 	class:dark-editor={dark}
 ></div>
 
@@ -424,7 +419,7 @@
 <style>
 	.editor-container {
 		min-height: 80px;
-		
+
 		overflow: hidden;
 	}
 	.editor-container :global(.monaco-editor),

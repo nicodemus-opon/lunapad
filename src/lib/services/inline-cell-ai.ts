@@ -50,7 +50,11 @@ export interface InlineCellEditResult {
 interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
 	content: string | null;
-	tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+	tool_calls?: Array<{
+		id: string;
+		type: 'function';
+		function: { name: string; arguments: string };
+	}>;
 	tool_call_id?: string;
 }
 
@@ -64,7 +68,7 @@ type SSEEvent =
 	| { type: 'status'; message: string }
 	| { type: 'delta'; content: string }
 	| { type: 'tool_call'; calls: EditCellToolCall[]; messages: ChatMessage[] }
-	| ({
+	| {
 			type: 'result';
 			code: string;
 			cellType: 'query' | 'python';
@@ -72,7 +76,7 @@ type SSEEvent =
 			reasoning?: string;
 			suggestedAlternative?: InlineCellEditSuggestedAlternative;
 			messages: ChatMessage[];
-	  })
+	  }
 	| { type: 'error'; error: string };
 
 // Bounds for the agent loop — enough to genuinely investigate without it wandering.
@@ -146,7 +150,10 @@ async function postEditCellTurn(
 			otherTables: input.otherTables,
 			llmConfig: input.llmConfig,
 			timeoutMs: input.timeoutMs,
-			...(continuation && { messages: continuation.messages, toolResults: continuation.toolResults }),
+			...(continuation && {
+				messages: continuation.messages,
+				toolResults: continuation.toolResults
+			}),
 			...(forceFinal && { forceFinal: true })
 		}),
 		signal
@@ -275,7 +282,12 @@ export async function editCellWithAI(
 			};
 
 			onProgress?.('Testing the result…');
-			const trial = await trialRunCandidateCode(input.cellId, result.code, result.cellType, result.language);
+			const trial = await trialRunCandidateCode(
+				input.cellId,
+				result.code,
+				result.cellType,
+				result.language
+			);
 			if (trial.ok || repairAttempts >= MAX_REPAIR_ATTEMPTS) {
 				if (!trial.ok) result.trialError = trial.error;
 				cacheSet(cacheKey, result);
@@ -294,15 +306,21 @@ export async function editCellWithAI(
 			repairAttempts++;
 			onProgress?.('Found an error, fixing…');
 			armTurnTimer();
-			events = await postEditCellTurn(input, signal, {
-				messages: [
-					...resultEvent.messages,
-					{
-						role: 'user',
-						content: `Your code failed when actually run:\n${trial.error}\n\nFix it and return corrected JSON (no tool call needed unless you need to investigate further).`
-					}
-				]
-			}, undefined, onDelta);
+			events = await postEditCellTurn(
+				input,
+				signal,
+				{
+					messages: [
+						...resultEvent.messages,
+						{
+							role: 'user',
+							content: `Your code failed when actually run:\n${trial.error}\n\nFix it and return corrected JSON (no tool call needed unless you need to investigate further).`
+						}
+					]
+				},
+				undefined,
+				onDelta
+			);
 		}
 	} catch (err) {
 		if (signal.aborted) {

@@ -28,7 +28,11 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 								score: 142,
 								confidence: 0.82,
 								stages: [
-									{ type: 'group', by: ['region'], aggregations: [{ name: 'total_revenue', column: 'revenue', func: 'sum' }] },
+									{
+										type: 'group',
+										by: ['region'],
+										aggregations: [{ name: 'total_revenue', column: 'revenue', func: 'sum' }]
+									},
 									{ type: 'sort', keys: [{ column: 'total_revenue', dir: 'desc' }] },
 									{ type: 'take', n: 5 }
 								]
@@ -60,7 +64,11 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 						}
 					]
 				},
-				llmConfig: { provider: 'openapi-compatible', baseUrl: 'http://127.0.0.1:11434', model: 'test-model' }
+				llmConfig: {
+					provider: 'openapi-compatible',
+					baseUrl: 'http://127.0.0.1:11434',
+					model: 'test-model'
+				}
 			})
 		} as never);
 
@@ -82,7 +90,9 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 		expect(payload.top_p).toBe(0.9);
 		expect(payload.frequency_penalty).toBe(0.1);
 		expect(payload.presence_penalty).toBe(0.0);
-		expect(payload.messages[0]?.content).toContain('Produce concrete, non-generic labels and reasons');
+		expect(payload.messages[0]?.content).toContain(
+			'Produce concrete, non-generic labels and reasons'
+		);
 		expect(payload.messages[1]?.content).toContain('avoid generic wording');
 		expect(payload.messages[1]?.content).toContain('avoid lazy count-only plans');
 		expect(payload.messages[1]?.content).toContain('schemaContext');
@@ -115,7 +125,11 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 			request: makeRequest({
 				query: 'top countries by amount',
 				availableColumns: ['country', 'amount'],
-				llmConfig: { provider: 'openapi-compatible', baseUrl: 'http://localhost:9999/v1', model: 'test-model' }
+				llmConfig: {
+					provider: 'openapi-compatible',
+					baseUrl: 'http://localhost:9999/v1',
+					model: 'test-model'
+				}
 			})
 		} as never);
 
@@ -156,8 +170,18 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 									prompt: 'Filter january then rank payees by withdrawn',
 									reasons: ['Uses Completion Time and Payee for january-specific ranking'],
 									stages: [
-										{ type: 'filter', conditions: [{ column: 'Completion Time', op: 'text.contains', value: '2026-01' }], logic: 'and' },
-										{ type: 'group', by: ['Payee'], aggregations: [{ name: 'sum_Withdrawn', column: 'Withdrawn', func: 'sum' }] },
+										{
+											type: 'filter',
+											conditions: [
+												{ column: 'Completion Time', op: 'text.contains', value: '2026-01' }
+											],
+											logic: 'and'
+										},
+										{
+											type: 'group',
+											by: ['Payee'],
+											aggregations: [{ name: 'sum_Withdrawn', column: 'Withdrawn', func: 'sum' }]
+										},
 										{ type: 'sort', keys: [{ column: 'sum_Withdrawn', dir: 'desc' }] },
 										{ type: 'take', n: 10 }
 									],
@@ -175,14 +199,20 @@ describe('POST /api/llm/prompt-stage-plan', () => {
 			request: makeRequest({
 				query: 'who did i pay the most in january',
 				availableColumns: ['Completion Time', 'Payee', 'Withdrawn', 'Paid In'],
-				llmConfig: { provider: 'openapi-compatible', baseUrl: 'http://localhost:9999/v1', model: 'test-model' }
+				llmConfig: {
+					provider: 'openapi-compatible',
+					baseUrl: 'http://localhost:9999/v1',
+					model: 'test-model'
+				}
 			})
 		} as never);
 
 		expect(response.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 
-		const secondPayload = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body)) as {
+		const secondPayload = JSON.parse(
+			String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body)
+		) as {
 			messages: Array<{ role: string; content: string }>;
 		};
 		expect(secondPayload.messages[1]?.content).toContain('Repair instructions');

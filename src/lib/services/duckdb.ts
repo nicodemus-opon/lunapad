@@ -165,6 +165,16 @@ export function sanitizeTableName(rawName: string): string {
 		.replace(/^([0-9])/, '_$1');
 }
 
+/** Ephemeral relations created during upload preview, profiling, or python runs. */
+export function isInternalRelationName(name: string): boolean {
+	return (
+		name === 'prev' ||
+		name === '__upload_preview__' ||
+		name.startsWith('_p_') ||
+		name.startsWith('_pyresult_')
+	);
+}
+
 async function getTableMeta(
 	c: ReturnType<typeof assertConn>,
 	tableName: string
@@ -190,7 +200,8 @@ export async function registerFile(
 	const c = assertConn();
 	// Slice before passing so DuckDB's worker transfer doesn't detach the caller's buffer
 	await db!.registerFileBuffer(fileName, new Uint8Array(buffer.slice(0)));
-	await c.query(`DROP TABLE IF EXISTS "${tableName}"`);
+	// Drop any prior table or view with this name so uploads replace cell output views.
+	await dropRelation(tableName);
 
 	const header = options?.header !== false;
 	let readExpr: string;
@@ -310,13 +321,13 @@ export async function listMainSchemaRelations(): Promise<RelationCatalogEntry[]>
 		`SELECT table_name, table_type
 		 FROM information_schema.tables
 		 WHERE table_schema = 'main'
-		   AND table_name != 'prev'
 		 ORDER BY table_name`
 	);
 
 	const entries: RelationCatalogEntry[] = [];
 	for (const row of relResult.toArray()) {
 		const name = String(row.table_name);
+		if (isInternalRelationName(name)) continue;
 		const relationType: RelationType =
 			String(row.table_type).toUpperCase() === 'VIEW' ? 'view' : 'table';
 
@@ -422,6 +433,7 @@ export async function getDatabaseCatalog(): Promise<DatabaseCatalogEntry[]> {
 		for (const row of colResult.toArray()) {
 			const schema = row.table_schema as string;
 			const table = row.table_name as string;
+			if (isInternalRelationName(table)) continue;
 			const col: CatalogColumn = { name: row.column_name as string, type: row.data_type as string };
 			if (!tablesBySchema.has(schema)) tablesBySchema.set(schema, new Map());
 			const tmap = tablesBySchema.get(schema)!;
@@ -545,4 +557,76 @@ export async function setPrevView(sourceName: string): Promise<void> {
 export async function dropPrevView(): Promise<void> {
 	const c = assertConn();
 	await c.query(`DROP VIEW IF EXISTS "prev"`);
+}
+
+// ── Uploaded-file persistence (IndexedDB) ────────────────────────────────────
+
+const IDB_NAME = 'lunapad-uploaded-files';
+const IDB_STORE = 'files';
+
+interface StoredFile {
+	tableName: string;
+	fileName: string;
+	format: FileFormat;
+	buffer: ArrayBuffer;
+	hasHeader: boolean;
+}
+
+function openFileIDB(): Promise<IDBDatabase> {
+	return new Promise((resolve, reject) => {
+		const req = indexedDB.open(IDB_NAME, 1);
+		req.onupgradeneeded = () => {
+			req.result.createObjectStore(IDB_STORE, { keyPath: 'tableName' });
+		};
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error);
+	});
+}
+
+export async function persistUploadedFile(data: {
+	tableName: string;
+	fileName: string;
+	format: FileFormat;
+	buffer: ArrayBuffer;
+	hasHeader: boolean;
+}): Promise<void> {
+	const idb = await openFileIDB();
+	return new Promise((resolve, reject) => {
+		const tx = idb.transaction(IDB_STORE, 'readwrite');
+		tx.objectStore(IDB_STORE).put(data satisfies StoredFile);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+	});
+}
+
+export async function deletePersistedFile(tableName: string): Promise<void> {
+	const idb = await openFileIDB();
+	return new Promise((resolve, reject) => {
+		const tx = idb.transaction(IDB_STORE, 'readwrite');
+		tx.objectStore(IDB_STORE).delete(tableName);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+	});
+}
+
+export async function restoreUploadedTables(): Promise<void> {
+	let idb: IDBDatabase;
+	try {
+		idb = await openFileIDB();
+	} catch {
+		return;
+	}
+	const files = await new Promise<StoredFile[]>((resolve, reject) => {
+		const tx = idb.transaction(IDB_STORE, 'readonly');
+		const req = tx.objectStore(IDB_STORE).getAll();
+		req.onsuccess = () => resolve(req.result as StoredFile[]);
+		req.onerror = () => reject(req.error);
+	});
+	for (const f of files) {
+		try {
+			await registerFile(f.tableName, f.fileName, f.buffer, f.format, { header: f.hasHeader });
+		} catch {
+			await deletePersistedFile(f.tableName).catch(() => {});
+		}
+	}
 }

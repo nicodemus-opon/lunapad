@@ -3,7 +3,9 @@ import { parseToolCallObject, escapeControlCharsInStrings } from './tool-call-pa
 
 describe('parseToolCallObject', () => {
 	it('parses well-formed tool calls unchanged', () => {
-		const obj = parseToolCallObject('{"tool":"create_cell","callId":"C1","args":{"outputName":"x","code":"SELECT 1"}}');
+		const obj = parseToolCallObject(
+			'{"tool":"create_cell","callId":"C1","args":{"outputName":"x","code":"SELECT 1"}}'
+		);
 		expect(obj?.tool).toBe('create_cell');
 		expect((obj?.args as { code: string }).code).toBe('SELECT 1');
 	});
@@ -24,7 +26,9 @@ describe('parseToolCallObject', () => {
 	});
 
 	it('does not double-escape already-escaped sequences', () => {
-		const obj = parseToolCallObject('{"tool":"create_cell","args":{"code":"SELECT 1\\nFROM t","markdown":"## T\\n\\nBody"}}');
+		const obj = parseToolCallObject(
+			'{"tool":"create_cell","args":{"code":"SELECT 1\\nFROM t","markdown":"## T\\n\\nBody"}}'
+		);
 		expect((obj?.args as { code: string }).code).toBe('SELECT 1\nFROM t');
 		expect((obj?.args as { markdown: string }).markdown).toBe('## T\n\nBody');
 	});

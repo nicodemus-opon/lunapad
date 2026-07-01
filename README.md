@@ -3,6 +3,7 @@
 A notebook-style IDE for [PRQL](https://prql-lang.org/) and SQL that runs entirely in the browser. Each notebook cell is a dbt model — cells reference each other by name, and are assembled into a `WITH` CTE chain at query time with no dbt invocation needed for interactive runs.
 
 **Query engines:**
+
 - **DuckDB WASM** — built-in, zero config, runs in the browser
 - **Trino** — used for all external data sources (Postgres, ClickHouse, MySQL)
 
@@ -22,12 +23,12 @@ docker compose up --build
 docker compose up -d
 ```
 
-| Service | URL |
-|---|---|
-| Lunapad | http://localhost:3000 |
-| Trino | http://localhost:8080 |
+| Service    | URL                   |
+| ---------- | --------------------- |
+| Lunapad    | http://localhost:3000 |
+| Trino      | http://localhost:8080 |
 | Inngest UI | http://localhost:8288 |
-| Postgres | localhost:5432 |
+| Postgres   | localhost:5432        |
 
 **Startup order:** Postgres → Trino (waits for `starting: false`) → App → Inngest. Trino takes ~60s on first start; the app won't serve until it's ready.
 
@@ -81,14 +82,14 @@ pnpm dev          # starts on http://localhost:5173
 
 Required environment variables when running outside Docker:
 
-| Variable | Default | Description |
-|---|---|---|
-| `TRINO_URL` | `http://trino:8080` | Trino coordinator URL |
-| `TRINO_CATALOG_DIR` | — | Path Trino reads catalog `.properties` files from. For Docker compose local dev: `./trino/catalog` |
-| `INNGEST_BASE_URL` | — | Inngest dev server URL (omit to disable scheduling) |
-| `INNGEST_EVENT_KEY` | — | Set to `local` for dev |
-| `INNGEST_SIGNING_KEY` | — | Set to `local` for dev |
-| `PROJECT_FOLDER` | — | Default dbt project folder, auto-opened on startup. If the folder is empty, a dbt-best-practices project is scaffolded into it automatically. |
+| Variable              | Default             | Description                                                                                                                                   |
+| --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRINO_URL`           | `http://trino:8080` | Trino coordinator URL                                                                                                                         |
+| `TRINO_CATALOG_DIR`   | —                   | Path Trino reads catalog `.properties` files from. For Docker compose local dev: `./trino/catalog`                                            |
+| `INNGEST_BASE_URL`    | —                   | Inngest dev server URL (omit to disable scheduling)                                                                                           |
+| `INNGEST_EVENT_KEY`   | —                   | Set to `local` for dev                                                                                                                        |
+| `INNGEST_SIGNING_KEY` | —                   | Set to `local` for dev                                                                                                                        |
+| `PROJECT_FOLDER`      | —                   | Default dbt project folder, auto-opened on startup. If the folder is empty, a dbt-best-practices project is scaffolded into it automatically. |
 
 For local dev pointing at the Docker infra:
 

@@ -21,7 +21,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const controller = runId ? registerQuery(runId) : new AbortController();
 	try {
 		const secret = await getSecret(body.connection.id);
-		const result = await queryExternalConnection(body.connection, secret ?? undefined, body.sql, controller.signal);
+		const result = await queryExternalConnection(
+			body.connection,
+			secret ?? undefined,
+			body.sql,
+			controller.signal
+		);
 		return json(result);
 	} catch (err) {
 		if ((err as Error)?.name === 'AbortError') {

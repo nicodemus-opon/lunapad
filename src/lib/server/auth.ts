@@ -7,15 +7,26 @@ import { getPool, query } from './db.js';
 
 export const SIGN_UP_PATH = '/api/auth/sign-up/email';
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const githubClientId = process.env.GITHUB_CLIENT_ID;
+const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {};
+if (googleClientId && googleClientSecret) {
+	socialProviders.google = { clientId: googleClientId, clientSecret: googleClientSecret };
+}
+if (githubClientId && githubClientSecret) {
+	socialProviders.github = { clientId: githubClientId, clientSecret: githubClientSecret };
+}
+
 export const auth = betterAuth({
 	database: getPool(),
 	emailAndPassword: {
 		enabled: true
-		// Signup is gated to "only when no user exists yet" in hooks.server.ts, not via
-		// better-auth's own disableSignUp flag — that flag blocks signUpEmail even when
-		// called server-side (it's checked unconditionally inside the route handler),
-		// which would make the first-admin bootstrap impossible to implement against it.
+		// Signup is gated in hooks.server.ts — first account only, then closed.
 	},
+	...(Object.keys(socialProviders).length > 0 ? { socialProviders } : {}),
 	plugins: [
 		admin(),
 		// Must be last: lets server-side auth.api.* calls (e.g. the bootstrap signup)
@@ -104,7 +115,9 @@ async function ensureAuthTables(): Promise<void> {
 			"updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
 		)
 	`);
-	await query(`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`);
+	await query(
+		`CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" ("identifier")`
+	);
 }
 
 export function ensureAuthTablesOnce(): Promise<void> {

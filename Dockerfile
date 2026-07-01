@@ -70,8 +70,14 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN sed -i '/^store-dir/d' .npmrc
 
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile && \
+    cp -r /root/.local/share/pnpm/store /pnpm-store
 
 EXPOSE 5173
 
-CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173"]
+# Run pnpm install with the baked-in store before starting the dev server.
+# This ensures node_modules are up-to-date even when the anonymous volume
+# (docker-compose.dev.yml: /app/node_modules) is stale after a --build.
+# CI=true lets pnpm purge without a TTY; --store-dir overrides the host
+# .npmrc's macOS store path that comes in via the source bind-mount.
+CMD ["sh", "-c", "CI=true pnpm install --frozen-lockfile --store-dir /pnpm-store && exec pnpm dev --host 0.0.0.0 --port 5173"]

@@ -8,4 +8,5 @@
 	let { stage }: Props = $props();
 </script>
 
-<pre class="text-xs text-muted-foreground font-mono whitespace-pre-wrap break-all leading-relaxed py-0.5">{stage.prql}</pre>
+<pre
+	class="py-0.5 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-muted-foreground">{stage.prql}</pre>

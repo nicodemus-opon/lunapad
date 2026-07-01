@@ -516,7 +516,11 @@
 												}}
 												aria-label={isExpanded ? 'Collapse cells' : 'Expand cells'}
 											>
-												<ChevronRight class="h-3 w-3 transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}" />
+												<ChevronRight
+													class="h-3 w-3 transition-transform duration-150 {isExpanded
+														? 'rotate-90'
+														: ''}"
+												/>
 											</button>
 										{/if}
 										{@render rowMenu(

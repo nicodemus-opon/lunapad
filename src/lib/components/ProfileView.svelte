@@ -64,16 +64,26 @@
 	function colCategory(type: string): 'numeric' | 'text' | 'bool' | 'temporal' | 'other' {
 		const t = type.toUpperCase();
 		if (
-			t.includes('INT') || t.includes('FLOAT') || t.includes('DOUBLE') ||
-			t.includes('DECIMAL') || t.includes('NUMERIC') || t.includes('REAL') ||
-			t.includes('HUGEINT') || t.includes('UBIGINT')
-		) return 'numeric';
+			t.includes('INT') ||
+			t.includes('FLOAT') ||
+			t.includes('DOUBLE') ||
+			t.includes('DECIMAL') ||
+			t.includes('NUMERIC') ||
+			t.includes('REAL') ||
+			t.includes('HUGEINT') ||
+			t.includes('UBIGINT')
+		)
+			return 'numeric';
 		if (t.includes('BOOL')) return 'bool';
 		if (t.startsWith('DATE') || t.includes('TIMESTAMP') || t.includes('TIME')) return 'temporal';
 		if (
-			t.includes('VARCHAR') || t.includes('TEXT') || t.includes('CHAR') ||
-			t.includes('STRING') || t.includes('BLOB')
-		) return 'text';
+			t.includes('VARCHAR') ||
+			t.includes('TEXT') ||
+			t.includes('CHAR') ||
+			t.includes('STRING') ||
+			t.includes('BLOB')
+		)
+			return 'text';
 		return 'other';
 	}
 
@@ -100,11 +110,26 @@
 
 	function colTypeIcon(type: string) {
 		const t = type.toUpperCase();
-		if (t.includes('INT') || t.includes('FLOAT') || t.includes('DOUBLE') || t.includes('DECIMAL') || t.includes('NUMERIC') || t.includes('REAL')) return Hash;
+		if (
+			t.includes('INT') ||
+			t.includes('FLOAT') ||
+			t.includes('DOUBLE') ||
+			t.includes('DECIMAL') ||
+			t.includes('NUMERIC') ||
+			t.includes('REAL')
+		)
+			return Hash;
 		if (t.includes('BOOL')) return ToggleLeft;
 		if (t.startsWith('DATE')) return Calendar;
 		if (t.includes('TIMESTAMP') || t.includes('TIME')) return Clock;
-		if (t.includes('VARCHAR') || t.includes('TEXT') || t.includes('CHAR') || t.includes('STRING') || t.includes('BLOB')) return Type;
+		if (
+			t.includes('VARCHAR') ||
+			t.includes('TEXT') ||
+			t.includes('CHAR') ||
+			t.includes('STRING') ||
+			t.includes('BLOB')
+		)
+			return Type;
 		if (t.includes('LIST') || t.includes('ARRAY')) return List;
 		if (t.includes('STRUCT') || t.includes('JSON') || t.includes('MAP')) return Braces;
 		if (t.includes('BINARY') || t.includes('BIT')) return Binary;
@@ -113,11 +138,16 @@
 
 	function categoryColor(cat: ReturnType<typeof colCategory>): string {
 		switch (cat) {
-			case 'numeric': return 'bg-[var(--chart-3)]/15 text-[var(--chart-3)]';
-			case 'text': return 'bg-[var(--chart-1)]/15 text-[var(--chart-1)]';
-			case 'bool': return 'bg-[var(--chart-4)]/15 text-[var(--chart-4)]';
-			case 'temporal': return 'bg-[var(--chart-2)]/15 text-[var(--chart-2)]';
-			default: return 'bg-muted text-muted-foreground';
+			case 'numeric':
+				return 'bg-[var(--chart-3)]/15 text-[var(--chart-3)]';
+			case 'text':
+				return 'bg-[var(--chart-1)]/15 text-[var(--chart-1)]';
+			case 'bool':
+				return 'bg-[var(--chart-4)]/15 text-[var(--chart-4)]';
+			case 'temporal':
+				return 'bg-[var(--chart-2)]/15 text-[var(--chart-2)]';
+			default:
+				return 'bg-muted text-muted-foreground';
 		}
 	}
 
@@ -153,45 +183,57 @@
 					// Always: top-10 values
 					const freqPromise = executeSQL(
 						`SELECT ${colExpr}::VARCHAR AS val, COUNT(*) AS cnt ` +
-						`FROM "${tableName}" GROUP BY ${colExpr} ORDER BY cnt DESC LIMIT 10`
-					).then(r => r.rows as unknown as FreqRow[]).catch(() => [] as FreqRow[]);
+							`FROM "${tableName}" GROUP BY ${colExpr} ORDER BY cnt DESC LIMIT 10`
+					)
+						.then((r) => r.rows as unknown as FreqRow[])
+						.catch(() => [] as FreqRow[]);
 
 					let skewKurtPromise: Promise<{ skew: number | null; kurt: number | null }> =
 						Promise.resolve({ skew: null, kurt: null });
-					let textStatsPromise: Promise<{ avgLen: number | null; minLen: number | null; maxLen: number | null; emptyCount: number | null }> =
-						Promise.resolve({ avgLen: null, minLen: null, maxLen: null, emptyCount: null });
+					let textStatsPromise: Promise<{
+						avgLen: number | null;
+						minLen: number | null;
+						maxLen: number | null;
+						emptyCount: number | null;
+					}> = Promise.resolve({ avgLen: null, minLen: null, maxLen: null, emptyCount: null });
 
 					if (cat === 'numeric') {
 						skewKurtPromise = executeSQL(
 							`SELECT skewness(${colExpr}) AS skew, kurtosis(${colExpr}) AS kurt FROM "${tableName}"`
-						).then(r => {
-							const row = r.rows[0] as Record<string, unknown> | undefined;
-							return {
-								skew: row?.skew != null ? Number(row.skew) : null,
-								kurt: row?.kurt != null ? Number(row.kurt) : null
-							};
-						}).catch(() => ({ skew: null, kurt: null }));
+						)
+							.then((r) => {
+								const row = r.rows[0] as Record<string, unknown> | undefined;
+								return {
+									skew: row?.skew != null ? Number(row.skew) : null,
+									kurt: row?.kurt != null ? Number(row.kurt) : null
+								};
+							})
+							.catch(() => ({ skew: null, kurt: null }));
 					}
 
 					if (cat === 'text') {
 						textStatsPromise = executeSQL(
 							`SELECT AVG(LENGTH(${colExpr})) AS avg_len, MIN(LENGTH(${colExpr})) AS min_len, ` +
-							`MAX(LENGTH(${colExpr})) AS max_len, ` +
-							`SUM(CASE WHEN ${colExpr} = '' THEN 1 ELSE 0 END) AS empty_count ` +
-							`FROM "${tableName}"`
-						).then(r => {
-							const row = r.rows[0] as Record<string, unknown> | undefined;
-							return {
-								avgLen: row?.avg_len != null ? Number(row.avg_len) : null,
-								minLen: row?.min_len != null ? Number(row.min_len) : null,
-								maxLen: row?.max_len != null ? Number(row.max_len) : null,
-								emptyCount: row?.empty_count != null ? Number(row.empty_count) : null
-							};
-						}).catch(() => ({ avgLen: null, minLen: null, maxLen: null, emptyCount: null }));
+								`MAX(LENGTH(${colExpr})) AS max_len, ` +
+								`SUM(CASE WHEN ${colExpr} = '' THEN 1 ELSE 0 END) AS empty_count ` +
+								`FROM "${tableName}"`
+						)
+							.then((r) => {
+								const row = r.rows[0] as Record<string, unknown> | undefined;
+								return {
+									avgLen: row?.avg_len != null ? Number(row.avg_len) : null,
+									minLen: row?.min_len != null ? Number(row.min_len) : null,
+									maxLen: row?.max_len != null ? Number(row.max_len) : null,
+									emptyCount: row?.empty_count != null ? Number(row.empty_count) : null
+								};
+							})
+							.catch(() => ({ avgLen: null, minLen: null, maxLen: null, emptyCount: null }));
 					}
 
 					const [topValues, skewKurt, textStats] = await Promise.all([
-						freqPromise, skewKurtPromise, textStatsPromise
+						freqPromise,
+						skewKurtPromise,
+						textStatsPromise
 					]);
 
 					return {
@@ -221,7 +263,7 @@
 		const colCount = columnProfiles.length;
 		const totalCells = totalRows * colCount;
 		const totalMissing = columnProfiles.reduce((sum, p) => {
-			return sum + Math.round(nullPct(p.summarize) / 100 * totalRows);
+			return sum + Math.round((nullPct(p.summarize) / 100) * totalRows);
 		}, 0);
 		const avgCompleteness =
 			columnProfiles.reduce((sum, p) => sum + completeness(p.summarize), 0) / colCount;
@@ -232,8 +274,8 @@
 <div class="flex flex-col gap-6">
 	<!-- Page header -->
 	<div class="flex items-center gap-2">
-		<BarChart2 class="w-4 h-4 text-primary" />
-		<h2 class="text-sm font-semibold font-mono">{tableName}</h2>
+		<BarChart2 class="h-4 w-4 text-primary" />
+		<h2 class="font-mono text-sm font-semibold">{tableName}</h2>
 		<span class="text-xs text-muted-foreground">— Profile Report</span>
 	</div>
 
@@ -249,41 +291,45 @@
 				<Skeleton class="h-48 rounded-lg" />
 			{/each}
 		</div>
-
 	{:else if error}
-		<div class="flex items-start gap-2 text-destructive text-sm border border-destructive/30 rounded-md px-3 py-2 bg-destructive/5">
-			<AlertCircle class="w-4 h-4 mt-0.5 shrink-0" />
+		<div
+			class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+		>
+			<AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
 			<span class="font-mono text-xs">{error}</span>
 		</div>
-
 	{:else}
 		{@const ov = overviewStats}
 
 		<!-- Overview cards -->
 		{#if ov}
-			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-				<div class="border rounded-lg px-4 py-3 bg-card">
-					<p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Rows</p>
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+				<div class="rounded-lg border bg-card px-4 py-3">
+					<p class="mb-1 text-[10px] tracking-wider text-muted-foreground uppercase">Rows</p>
 					<p class="text-xl font-semibold tabular-nums">{totalRows.toLocaleString()}</p>
 				</div>
-				<div class="border rounded-lg px-4 py-3 bg-card">
-					<p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Columns</p>
+				<div class="rounded-lg border bg-card px-4 py-3">
+					<p class="mb-1 text-[10px] tracking-wider text-muted-foreground uppercase">Columns</p>
 					<p class="text-xl font-semibold tabular-nums">{ov.colCount}</p>
 				</div>
-				<div class="border rounded-lg px-4 py-3 bg-card">
-					<p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Missing cells</p>
+				<div class="rounded-lg border bg-card px-4 py-3">
+					<p class="mb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+						Missing cells
+					</p>
 					<p class="text-xl font-semibold tabular-nums">{ov.totalMissing.toLocaleString()}</p>
 					<p class="text-[10px] text-muted-foreground tabular-nums">
 						{ov.totalCells ? fmtNum((ov.totalMissing / ov.totalCells) * 100, 1) : 0}% of {ov.totalCells.toLocaleString()}
 					</p>
 				</div>
-				<div class="border rounded-lg px-4 py-3 bg-card">
-					<p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Avg completeness</p>
+				<div class="rounded-lg border bg-card px-4 py-3">
+					<p class="mb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+						Avg completeness
+					</p>
 					<p class="text-xl font-semibold tabular-nums">{fmtNum(ov.avgCompleteness, 1)}%</p>
 					<!-- completeness bar -->
-					<div class="mt-1.5 h-1.5 rounded-full bg-muted overflow-hidden">
+					<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
 						<div
-						class="h-full rounded-full bg-chart-1 transition-all"
+							class="h-full rounded-full bg-chart-1 transition-all"
 							style="width: {ov.avgCompleteness}%"
 						></div>
 					</div>
@@ -302,53 +348,52 @@
 				{@const nullP = nullPct(s)}
 				{@const compP = completeness(s)}
 				{@const distP = distinctPct(s, totalRows)}
-				{@const missingCount = Math.round(nullP / 100 * totalRows)}
+				{@const missingCount = Math.round((nullP / 100) * totalRows)}
 				{@const maxFreq = profile.topValues[0]?.cnt ?? 1}
 
-				<div class="border rounded-lg bg-card overflow-hidden">
+				<div class="overflow-hidden rounded-lg border bg-card">
 					<!-- Column header -->
-					<div class="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
-						<Icon class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-						<span class="text-sm font-mono font-medium">{s.column_name}</span>
-						<span class="text-[10px] px-1.5 py-0.5 rounded font-medium {categoryColor(cat)}">
+					<div class="flex items-center gap-2 border-b bg-muted/30 px-4 py-3">
+						<Icon class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+						<span class="font-mono text-sm font-medium">{s.column_name}</span>
+						<span class="rounded px-1.5 py-0.5 text-[10px] font-medium {categoryColor(cat)}">
 							{s.column_type.toLowerCase().split('(')[0]}
 						</span>
 					</div>
 
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x">
+					<div class="grid grid-cols-1 gap-0 divide-y md:grid-cols-2 md:divide-x md:divide-y-0">
 						<!-- Left: core stats -->
-						<div class="px-4 py-3 space-y-3">
-
+						<div class="space-y-3 px-4 py-3">
 							<!-- Completeness bar -->
 							<div>
-								<div class="flex items-center justify-between text-[11px] mb-1">
+								<div class="mb-1 flex items-center justify-between text-[11px]">
 									<span class="text-muted-foreground">Completeness</span>
 									<span class="font-medium tabular-nums">{fmtNum(compP, 1)}%</span>
 								</div>
-								<div class="h-2 rounded-full bg-muted overflow-hidden">
+								<div class="h-2 overflow-hidden rounded-full bg-muted">
 									<div class="h-full rounded-full bg-chart-1" style="width: {compP}%"></div>
 								</div>
 								{#if missingCount > 0}
-									<p class="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
+									<p class="mt-0.5 text-[10px] text-muted-foreground tabular-nums">
 										{missingCount.toLocaleString()} missing ({fmtNum(nullP, 1)}%)
 									</p>
 								{:else}
-									<p class="text-[10px] text-chart-1 mt-0.5">No missing values</p>
+									<p class="mt-0.5 text-[10px] text-chart-1">No missing values</p>
 								{/if}
 							</div>
 
 							<!-- Distinct -->
 							<div>
-								<div class="flex items-center justify-between text-[11px] mb-1">
+								<div class="mb-1 flex items-center justify-between text-[11px]">
 									<span class="text-muted-foreground">Distinct</span>
 									<span class="font-medium tabular-nums">
 										{s.approx_unique?.toLocaleString() ?? '—'}
-										<span class="text-muted-foreground font-normal">
+										<span class="font-normal text-muted-foreground">
 											({fmtNum(distP, 1)}%)
 										</span>
 									</span>
 								</div>
-								<div class="h-2 rounded-full bg-muted overflow-hidden">
+								<div class="h-2 overflow-hidden rounded-full bg-muted">
 									<div class="h-full rounded-full bg-chart-3" style="width: {distP}%"></div>
 								</div>
 							</div>
@@ -415,10 +460,18 @@
 									{@const q50x = ((parseFloat(s.q50) - minV) / range) * 100}
 									{@const q75x = ((parseFloat(s.q75) - minV) / range) * 100}
 									<div class="mt-2">
-										<p class="text-[10px] text-muted-foreground mb-1">Distribution (box plot)</p>
-										<svg class="w-full h-8" viewBox="0 0 100 16" preserveAspectRatio="none">
+										<p class="mb-1 text-[10px] text-muted-foreground">Distribution (box plot)</p>
+										<svg class="h-8 w-full" viewBox="0 0 100 16" preserveAspectRatio="none">
 											<!-- Full range line -->
-											<line x1="2" y1="8" x2="98" y2="8" stroke="currentColor" stroke-width="1" class="text-muted-foreground/40" />
+											<line
+												x1="2"
+												y1="8"
+												x2="98"
+												y2="8"
+												stroke="currentColor"
+												stroke-width="1"
+												class="text-muted-foreground/40"
+											/>
 											<!-- IQR box -->
 											<rect
 												x={q25x}
@@ -431,22 +484,41 @@
 											/>
 											<!-- Median line -->
 											<line
-												x1={q50x} y1="3"
-												x2={q50x} y2="13"
+												x1={q50x}
+												y1="3"
+												x2={q50x}
+												y2="13"
 												stroke="hsl(var(--primary))"
 												stroke-width="1.5"
 											/>
 											<!-- Min/max ticks -->
-											<line x1="2" y1="5" x2="2" y2="11" stroke="currentColor" stroke-width="1" class="text-muted-foreground/60" />
-											<line x1="98" y1="5" x2="98" y2="11" stroke="currentColor" stroke-width="1" class="text-muted-foreground/60" />
+											<line
+												x1="2"
+												y1="5"
+												x2="2"
+												y2="11"
+												stroke="currentColor"
+												stroke-width="1"
+												class="text-muted-foreground/60"
+											/>
+											<line
+												x1="98"
+												y1="5"
+												x2="98"
+												y2="11"
+												stroke="currentColor"
+												stroke-width="1"
+												class="text-muted-foreground/60"
+											/>
 										</svg>
-										<div class="flex justify-between text-[10px] text-muted-foreground font-mono tabular-nums -mt-0.5">
+										<div
+											class="-mt-0.5 flex justify-between font-mono text-[10px] text-muted-foreground tabular-nums"
+										>
 											<span>{fmtNum(s.min)}</span>
 											<span>{fmtNum(s.max)}</span>
 										</div>
 									</div>
 								{/if}
-
 							{:else if cat === 'text'}
 								<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
 									<div class="flex justify-between">
@@ -463,34 +535,41 @@
 									</div>
 									<div class="flex justify-between">
 										<span class="text-muted-foreground">Empty strings</span>
-										<span class="font-mono tabular-nums">{profile.emptyCount?.toLocaleString() ?? '—'}</span>
+										<span class="font-mono tabular-nums"
+											>{profile.emptyCount?.toLocaleString() ?? '—'}</span
+										>
 									</div>
 								</div>
-
 							{:else if cat === 'bool'}
-								{@const trueRow = profile.topValues.find(v => v.val?.toLowerCase() === 'true')}
-								{@const falseRow = profile.topValues.find(v => v.val?.toLowerCase() === 'false')}
+								{@const trueRow = profile.topValues.find((v) => v.val?.toLowerCase() === 'true')}
+								{@const falseRow = profile.topValues.find((v) => v.val?.toLowerCase() === 'false')}
 								{@const trueCount = trueRow?.cnt ?? 0}
 								{@const falseCount = falseRow?.cnt ?? 0}
 								{@const total = trueCount + falseCount || 1}
 								{@const truePct = (trueCount / total) * 100}
 								<div class="space-y-1.5 text-[11px]">
 									<div class="flex items-center gap-2">
-							<span class="text-chart-1 w-10">True</span>
-							<div class="flex-1 h-3 rounded bg-muted overflow-hidden">
-								<div class="h-full rounded bg-chart-1" style="width: {truePct}%"></div>
+										<span class="w-10 text-chart-1">True</span>
+										<div class="h-3 flex-1 overflow-hidden rounded bg-muted">
+											<div class="h-full rounded bg-chart-1" style="width: {truePct}%"></div>
 										</div>
-										<span class="font-mono tabular-nums w-12 text-right">{trueCount.toLocaleString()} ({fmtNum(truePct, 1)}%)</span>
+										<span class="w-12 text-right font-mono tabular-nums"
+											>{trueCount.toLocaleString()} ({fmtNum(truePct, 1)}%)</span
+										>
 									</div>
 									<div class="flex items-center gap-2">
-							<span class="text-destructive w-10">False</span>
-							<div class="flex-1 h-3 rounded bg-muted overflow-hidden">
-								<div class="h-full rounded bg-destructive/60" style="width: {100 - truePct}%"></div>
+										<span class="w-10 text-destructive">False</span>
+										<div class="h-3 flex-1 overflow-hidden rounded bg-muted">
+											<div
+												class="h-full rounded bg-destructive/60"
+												style="width: {100 - truePct}%"
+											></div>
 										</div>
-										<span class="font-mono tabular-nums w-12 text-right">{falseCount.toLocaleString()} ({fmtNum(100 - truePct, 1)}%)</span>
+										<span class="w-12 text-right font-mono tabular-nums"
+											>{falseCount.toLocaleString()} ({fmtNum(100 - truePct, 1)}%)</span
+										>
 									</div>
 								</div>
-
 							{:else if cat === 'temporal'}
 								<div class="grid grid-cols-1 gap-y-1 text-[11px]">
 									<div class="flex justify-between">
@@ -511,7 +590,7 @@
 
 						<!-- Right: top-10 value frequencies -->
 						<div class="px-4 py-3">
-							<p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">
+							<p class="mb-2 text-[10px] tracking-wider text-muted-foreground uppercase">
 								Top values
 							</p>
 							{#if profile.topValues.length === 0}
@@ -522,13 +601,18 @@
 										{@const pct = maxFreq > 0 ? (row.cnt / maxFreq) * 100 : 0}
 										{@const rowPct = totalRows > 0 ? (row.cnt / totalRows) * 100 : 0}
 										<div class="flex items-center gap-2 text-[11px]">
-											<span class="font-mono truncate w-3/4 shrink-0 text-foreground/80" title={row.val ?? ''}>
-											{#if row.val != null}{row.val}{:else}<em class="text-muted-foreground">null</em>{/if}
-										</span>
-											<div class="flex-1 h-3 rounded bg-muted overflow-hidden min-w-0">
+											<span
+												class="w-3/4 shrink-0 truncate font-mono text-foreground/80"
+												title={row.val ?? ''}
+											>
+												{#if row.val != null}{row.val}{:else}<em class="text-muted-foreground"
+														>null</em
+													>{/if}
+											</span>
+											<div class="h-3 min-w-0 flex-1 overflow-hidden rounded bg-muted">
 												<div class="h-full rounded bg-primary/50" style="width: {pct}%"></div>
 											</div>
-											<span class="tabular-nums text-muted-foreground w-16 text-right shrink-0">
+											<span class="w-16 shrink-0 text-right text-muted-foreground tabular-nums">
 												{row.cnt.toLocaleString()} ({fmtNum(rowPct, 1)}%)
 											</span>
 										</div>

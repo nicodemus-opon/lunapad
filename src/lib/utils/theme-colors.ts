@@ -63,3 +63,20 @@ export const CHART_COLORWAY_VARS = [
 export function resolveChartColorway(): string[] {
 	return CHART_COLORWAY_VARS.map(resolveCSSColor);
 }
+
+/** Move an sRGB color toward white by `amount` percent (0–100). */
+export function rgbLighten(rgb: string, amount: number): string {
+	const m = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+	if (!m) return rgb;
+	const mix = (n: number) => Math.min(255, Math.round(n + (255 - n) * (amount / 100)));
+	return `rgb(${mix(+m[1])},${mix(+m[2])},${mix(+m[3])})`;
+}
+
+/**
+ * Mermaid's base theme darkens every `cScaleN` by 75 in dark mode (and kanban
+ * darkens again). Pre-lighten so baked-in SVG styles end up near the target
+ * surface color; {@link themeMermaidSvg} then pins the final tokens with CSS vars.
+ */
+export function compensateMermaidCScale(rgb: string, darkMode: boolean): string {
+	return darkMode ? rgbLighten(rgb, 88) : rgbLighten(rgb, 32);
+}

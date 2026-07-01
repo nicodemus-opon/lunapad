@@ -17,7 +17,7 @@
 
 	const { data }: Props = $props();
 
-	const DEFAULT_POLL_MS = 30_000;
+	const DEFAULT_POLL_MS = 300_000;
 
 	let liveResults = $state<
 		Record<string, { rows: Record<string, unknown>[]; columns: string[] } | null>

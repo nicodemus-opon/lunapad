@@ -1,13 +1,20 @@
 <script lang="ts">
-	import { Send, Square, X } from '@lucide/svelte';
-	import { getAIChatOpen, getContextCellIds, removeContextCell, getIsGenerating, abortGeneration, getPendingSuggestion, clearPendingSuggestion } from '$lib/stores/ai-chat.svelte.js';
+	import { Send, Square, X, ChevronDown } from '@lucide/svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import {
+		getContextCellIds,
+		removeContextCell,
+		getIsGenerating,
+		abortGeneration,
+		getPendingSuggestion,
+		clearPendingSuggestion
+	} from '$lib/stores/ai-chat.svelte.js';
 	import { getCells } from '$lib/stores/notebook.svelte.js';
 	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
 
 	type ChatMode = 'auto' | 'build' | 'sprint' | 'fix' | 'dashboard' | 'explore';
 
-	/** Slash-command aliases for the existing mode dropdown — a lightweight shortcut,
-	 *  not a new intent system. Must appear at the very start of the message. */
 	const SLASH_COMMANDS: Record<string, Exclude<ChatMode, 'auto'>> = {
 		fix: 'fix',
 		optimize: 'build',
@@ -17,8 +24,19 @@
 		dashboard: 'dashboard'
 	};
 
-	/** Strip a leading `/command` token and resolve it to a mode, if recognized. */
-	function parseSlashCommand(value: string): { mode: Exclude<ChatMode, 'auto'> | null; rest: string } {
+	const MODE_OPTIONS: { value: ChatMode; label: string; description?: string }[] = [
+		{ value: 'auto', label: 'Auto' },
+		{ value: 'build', label: 'Build', description: 'Create models and queries' },
+		{ value: 'sprint', label: 'Sprint', description: 'Plan tasks before running' },
+		{ value: 'fix', label: 'Fix', description: 'Debug errors in cells' },
+		{ value: 'dashboard', label: 'Visualize', description: 'Build charts and dashboards' },
+		{ value: 'explore', label: 'Explore', description: 'Analyze and explain data' }
+	];
+
+	function parseSlashCommand(value: string): {
+		mode: Exclude<ChatMode, 'auto'> | null;
+		rest: string;
+	} {
 		const match = value.match(/^\/(\w+)\s*/);
 		if (!match) return { mode: null, rest: value };
 		const mode = SLASH_COMMANDS[match[1].toLowerCase()];
@@ -32,6 +50,8 @@
 	let contextCellIds = $derived(getContextCellIds());
 	let cells = $derived(getCells());
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
+
+	let modeLabel = $derived(MODE_OPTIONS.find((m) => m.value === selectedMode)?.label ?? 'Auto');
 
 	function contextPills() {
 		return contextCellIds.map((id) => {
@@ -64,12 +84,15 @@
 		textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, 160)}px`;
 	}
 
+	function selectMode(mode: ChatMode) {
+		selectedMode = mode;
+	}
+
 	$effect(() => {
 		const suggestion = getPendingSuggestion();
 		if (suggestion !== null) {
 			text = suggestion;
 			clearPendingSuggestion();
-			// Wait for DOM to update before adjusting height and focusing
 			Promise.resolve().then(() => {
 				adjustHeight();
 				textareaEl?.focus();
@@ -78,79 +101,98 @@
 	});
 </script>
 
-<div class="ai-chat-input border-t border-border/50 p-2">
-	<!-- Context pills -->
-	{#if contextCellIds.length > 0}
-		<div class="mb-1.5 flex flex-wrap gap-1 px-1">
-			{#each contextPills() as pill}
-				<span class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-2xs text-primary">
-					<span class="font-mono">{pill.name}</span>
-					<button
-						class="rounded-full hover:text-destructive"
-						onclick={() => removeContextCell(pill.id)}
-						aria-label="Remove context"
+<div class="ai-chat-input shrink-0 border-t border-border/50 p-2.5">
+	<div
+		class="rounded-xl border border-border/60 bg-muted/30 focus-within:border-primary/50 focus-within:bg-background"
+	>
+		{#if contextCellIds.length > 0}
+			<div class="flex flex-wrap gap-1 border-b border-border/30 px-2.5 pt-2 pb-1.5">
+				{#each contextPills() as pill}
+					<span
+						class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-xs text-primary"
 					>
-						<X size={9} />
-					</button>
-				</span>
-			{/each}
-		</div>
-	{/if}
+						<span class="font-mono">{pill.name}</span>
+						<button
+							class="rounded-full hover:text-destructive"
+							onclick={() => removeContextCell(pill.id)}
+							aria-label="Remove context"
+						>
+							<X size={10} />
+						</button>
+					</span>
+				{/each}
+			</div>
+		{/if}
 
-	<div class="flex items-end gap-1.5">
 		<textarea
 			bind:this={textareaEl}
 			bind:value={text}
 			oninput={adjustHeight}
 			onkeydown={onKeydown}
 			rows={1}
-			placeholder="Ask anything about your data…"
+			placeholder="Ask anything… (/build, /sprint, /fix)"
 			disabled={isGenerating}
-			class="min-h-8 flex-1 resize-none rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary/60 focus:bg-background disabled:opacity-50"
+			class="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
 			style="height: 36px; overflow-y: hidden;"
 			data-testid="ai-input"
 		></textarea>
 
-		{#if isGenerating}
-			<button
-				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-				onclick={abortGeneration}
-				title="Stop generation"
-				data-testid="ai-stop"
-			>
-				<Square size={14} />
-			</button>
-		{:else}
-			<button
-				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-				disabled={!text.trim()}
-				onclick={submit}
-				title="Send (Enter)"
-				data-testid="ai-send"
-			>
-				<Send size={13} />
-			</button>
-		{/if}
-	</div>
-	<div class="mt-1 flex flex-col gap-1 px-0.5">
-		<div class="flex items-center gap-2">
-			<select
-				bind:value={selectedMode}
-				disabled={isGenerating}
-				class="h-6 rounded border border-border/50 bg-muted/40 px-1.5 text-2xs text-muted-foreground outline-none transition-colors focus:border-primary/60 disabled:opacity-50"
-				aria-label="AI mode"
-			>
-				<option value="auto">Auto</option>
-				<option value="build">Build</option>
-				<option value="sprint">Sprint</option>
-				<option value="fix">Fix</option>
-				<option value="dashboard">Visualize</option>
-				<option value="explore">Explore</option>
-			</select>
-			<p class="text-2xs text-muted-foreground/50">Enter to send · Shift+Enter for new line</p>
+		<div class="flex items-center justify-end gap-1 px-2 pb-2">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					disabled={isGenerating}
+					class="flex h-7 items-center gap-0.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
+					aria-label="AI mode"
+				>
+					{modeLabel}
+					<ChevronDown size={11} class="opacity-50" />
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-48">
+					{#each MODE_OPTIONS as opt}
+						<DropdownMenu.Item
+							onclick={() => selectMode(opt.value)}
+							class="flex flex-col items-start gap-0.5"
+						>
+							<span class={selectedMode === opt.value ? 'font-medium text-foreground' : ''}
+								>{opt.label}</span
+							>
+							{#if opt.description}
+								<span class="text-xs text-muted-foreground">{opt.description}</span>
+							{/if}
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+
+			{#if isGenerating}
+				<button
+					class="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+					onclick={abortGeneration}
+					title="Stop generation"
+					data-testid="ai-stop"
+				>
+					<Square size={13} />
+				</button>
+			{:else}
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+								disabled={!text.trim()}
+								onclick={submit}
+								data-testid="ai-send"
+							>
+								<Send size={13} />
+							</button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content side="top" class="text-xs"
+						>Enter to send · Shift+Enter for new line</Tooltip.Content
+					>
+				</Tooltip.Root>
+			{/if}
 		</div>
-		{#if selectedMode === 'sprint'}
-			<p class="text-2xs text-primary/70">Breaks your request into a task plan you can review before it runs</p>
-		{/if}
 	</div>
 </div>

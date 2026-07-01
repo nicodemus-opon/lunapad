@@ -18,7 +18,11 @@ describe('buildInferredDag', () => {
 	it('creates inferred edges based on relation usage', () => {
 		const dag = buildInferredDag([
 			{ id: 'a', relationName: 'stg_orders', prql: 'from raw_orders' },
-			{ id: 'b', relationName: 'fct_orders', prql: 'from stg_orders\njoin dim_customers (==customer_id)' },
+			{
+				id: 'b',
+				relationName: 'fct_orders',
+				prql: 'from stg_orders\njoin dim_customers (==customer_id)'
+			},
 			{ id: 'c', relationName: 'dim_customers', prql: 'from raw_customers' }
 		]);
 

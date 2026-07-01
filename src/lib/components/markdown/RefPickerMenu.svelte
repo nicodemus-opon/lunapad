@@ -22,7 +22,10 @@
 		const q = query.trim().toLowerCase();
 		if (!q) return entries;
 		return entries
-			.map((e) => ({ cellName: e.cellName, columns: e.columns.filter((c) => `${e.cellName}.${c}`.toLowerCase().includes(q)) }))
+			.map((e) => ({
+				cellName: e.cellName,
+				columns: e.columns.filter((c) => `${e.cellName}.${c}`.toLowerCase().includes(q))
+			}))
 			.filter((e) => e.columns.length > 0 || e.cellName.toLowerCase().includes(q));
 	});
 
@@ -50,8 +53,14 @@
 			{/if}
 			{#each filtered as entry (entry.cellName)}
 				{#each entry.columns as column (column)}
-					<button type="button" class="md-refpicker-item" onclick={() => pick(entry.cellName, column)}>
-						<span class="md-refpicker-cell">{entry.cellName}</span><span class="md-refpicker-dot">.</span><span class="md-refpicker-col">{column}</span>
+					<button
+						type="button"
+						class="md-refpicker-item"
+						onclick={() => pick(entry.cellName, column)}
+					>
+						<span class="md-refpicker-cell">{entry.cellName}</span><span class="md-refpicker-dot"
+							>.</span
+						><span class="md-refpicker-col">{column}</span>
 					</button>
 				{/each}
 			{/each}
@@ -71,7 +80,9 @@
 		background: color-mix(in oklch, currentColor 5%, transparent);
 		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
 		cursor: pointer;
-		transition: color 130ms cubic-bezier(0.16, 1, 0.3, 1), background-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
+		transition:
+			color 130ms cubic-bezier(0.16, 1, 0.3, 1),
+			background-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 	:global(.md-refpicker-trigger:hover) {
 		color: var(--foreground);

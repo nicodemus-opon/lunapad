@@ -14,7 +14,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	const folder = url.searchParams.get('folder');
 	if (!folder) return json({ error: 'folder is required' }, { status: 400 });
 
-	const [conventions, entries] = await Promise.all([readConventions(folder), readIndexEntries(folder)]);
+	const [conventions, entries] = await Promise.all([
+		readConventions(folder),
+		readIndexEntries(folder)
+	]);
 	return json({ conventions, entries });
 };
 
@@ -29,7 +32,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const { slug, entries } = await writeEntry(folder, { type: type === 'discovery' ? 'discovery' : 'decision', text });
+		const { slug, entries } = await writeEntry(folder, {
+			type: type === 'discovery' ? 'discovery' : 'decision',
+			text
+		});
 
 		// Best-effort — embeddings are an enhancement, not a requirement (Postgres/Ollama may not
 		// be configured at all for a plain local project; the lexical fallback in /api/ai/search
@@ -62,7 +68,10 @@ export const DELETE: RequestHandler = async ({ request }) => {
 };
 
 export const PUT: RequestHandler = async ({ request }) => {
-	const { folder, conventions } = (await request.json()) as { folder?: string; conventions?: string };
+	const { folder, conventions } = (await request.json()) as {
+		folder?: string;
+		conventions?: string;
+	};
 	if (!folder || typeof conventions !== 'string') {
 		return json({ error: 'folder and conventions are required' }, { status: 400 });
 	}

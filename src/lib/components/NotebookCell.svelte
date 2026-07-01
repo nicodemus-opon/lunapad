@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { tick, onMount } from 'svelte';
+	import {
+		registerCellMeta,
+		cellBridgeState
+	} from '$lib/keyboard';
+	import { findStageMenuInEditor } from '$lib/keyboard/stage-bridge';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import MarkdownEditor from './markdown/MarkdownEditor.svelte';
+	import type { MarkdownEditorHandle } from './markdown/MarkdownEditor.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
@@ -24,8 +30,6 @@
 		runCell,
 		cancelCell,
 		runCellAndDownstream,
-		removeCell,
-		moveCell,
 		updateCellCode,
 		updateGuiStages,
 		setEditMode,
@@ -34,8 +38,6 @@
 		setStageResultCollapsed,
 		registerInsertCallback,
 		insertCellBefore,
-		addCellBefore,
-		addCellAfter,
 		getTables,
 		getExternalSchemaTables,
 		runGuiStagePreview,
@@ -54,13 +56,7 @@
 		insertCellAfter,
 		getPythonAvailable,
 		setCellMarkdownPreview,
-		duplicateCell,
-		copyCellToClipboard,
-		pasteCellAfter,
-		undo,
-		redo,
 		testCell,
-		openLineageTab,
 		getIsDbtProject,
 		getProjectFolder,
 		getDbtModels,
@@ -88,6 +84,13 @@
 	import CellGutter from './cell/CellGutter.svelte';
 	import CellHeader from './cell/CellHeader.svelte';
 	import CellMenu from './cell/CellMenu.svelte';
+	import {
+		getCellCommentCount,
+		openCommentPanel,
+		refreshCellCount,
+		sendPresence
+	} from '$lib/stores/comments.svelte';
+	import { getReviewMode } from '$lib/stores/comments.svelte';
 	import CellStatusLine from './cell/CellStatusLine.svelte';
 	import CellSqlPreview from './cell/CellSqlPreview.svelte';
 	import CellModeSwitchDialogs from './cell/CellModeSwitchDialogs.svelte';
@@ -98,18 +101,7 @@
 	} from '$lib/types/connection';
 	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
-	import SlashCommandPalette from './markdown/SlashCommandPalette.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
-	import type { SlashCommand } from '$lib/services/markdown-format';
-	import {
-		wrapSelection,
-		toggleLinePrefix,
-		insertAtCursor,
-		getListContinuation,
-		indentListLine,
-		getSlashToken,
-		applySlashCommand
-	} from '$lib/services/markdown-format';
 
 	interface Props {
 		cell: Cell;
@@ -136,6 +128,7 @@
 			name: string,
 			preferredViewMode?: ResultViewMode
 		) => void;
+		collabEnabled?: boolean;
 	}
 
 	let {
@@ -152,8 +145,24 @@
 		onShareWithAI,
 		onFixWithAI,
 		onContinueWithAI,
-		onOpenResultTab
+		onOpenResultTab,
+		collabEnabled = false
 	}: Props = $props();
+
+	const reviewMode = $derived(getReviewMode());
+	const commentCount = $derived(getCellCommentCount(cell.id));
+	const hasOpenComments = $derived(commentCount > 0);
+
+	$effect(() => {
+		if (collabEnabled && notebookId && cellFocused) {
+			void sendPresence(notebookId, cell.id);
+		}
+	});
+
+	function openCellComments(): void {
+		if (!notebookId) return;
+		openCommentPanel({ notebookId, cellId: cell.id });
+	}
 
 	let editorRef: Editor | undefined = $state();
 	let inlinePromptOpen = $state(false);
@@ -161,6 +170,7 @@
 	let sqlExpanded = $state(false);
 	let entering = $state(true);
 	onMount(() => {
+		if (collabEnabled) void refreshCellCount(cell.id);
 		setTimeout(() => (entering = false), 220);
 	});
 	let autoRunTimer: ReturnType<typeof setTimeout> | undefined;
@@ -184,7 +194,10 @@
 			// popover passes — gives the agent more to work with than a bare message.
 			const err = cell.errors[0];
 			inlinePromptPreset = err
-				? [`Fix this error: ${err.display ?? err.reason ?? errorMsg}`, err.hint ? `Hint: ${err.hint}` : null]
+				? [
+						`Fix this error: ${err.display ?? err.reason ?? errorMsg}`,
+						err.hint ? `Hint: ${err.hint}` : null
+					]
 						.filter(Boolean)
 						.join('\n')
 				: `Fix this error: ${errorMsg}`;
@@ -264,14 +277,12 @@
 		}
 	});
 
-	let ddPending = $state(false);
 	let confirmSwitchToGui = $state(false);
 	let confirmSwitchToSql = $state<false | 'with-code' | 'without-code'>(false);
 	let compiledSqlForSwitch = $state('');
 	let confirmSwitchToPrql = $state(false);
-	let markdownTextareaEl: HTMLTextAreaElement | null = $state(null);
 	let markdownEditContainerEl: HTMLDivElement | null = $state(null);
-	let slashToken: string | null = $state(null);
+	let markdownHandle: MarkdownEditorHandle | null = $state(null);
 	const revealed = $derived(
 		!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0)
 	);
@@ -294,19 +305,16 @@
 			.filter((c) => c.cellType === 'query' && c.result)
 			.map((c) => ({ cellName: c.outputName, columns: c.result!.columns }))
 	);
+	const markdownRefEntries = $derived(
+		refPickerEntries.map((e) => ({
+			cellName: e.cellName,
+			columns: e.columns.map((name) => ({ name }))
+		}))
+	);
+	const markdownValidationCells = $derived(getAllCellsAcrossNotebooks());
 
 	function insertMarkdownSnippet(snippet: string) {
-		const text = cell.markdown ?? '';
-		const start = markdownTextareaEl?.selectionStart ?? text.length;
-		const end = markdownTextareaEl?.selectionEnd ?? text.length;
-		const next = text.slice(0, start) + snippet + text.slice(end);
-		updateCellMarkdown(cell.id, next);
-		const pos = start + snippet.length;
-		tick().then(() => {
-			markdownTextareaEl?.focus();
-			markdownTextareaEl?.setSelectionRange(pos, pos);
-			adjustMarkdownHeight();
-		});
+		markdownHandle?.insertText(snippet);
 	}
 
 	function insertMarkdownRef(cellName: string, column: string) {
@@ -341,7 +349,8 @@
 	// of always falling back to the bare "available tables" list.
 	const inlinePromptSourceTable = $derived.by(() => {
 		if (!isQueryCell) return undefined;
-		const fromRe = cell.language === 'sql' ? /\bFROM\s+([a-zA-Z_][\w."]*)/i : /^\s*from\s+([a-zA-Z_][\w.]*)/im;
+		const fromRe =
+			cell.language === 'sql' ? /\bFROM\s+([a-zA-Z_][\w."]*)/i : /^\s*from\s+([a-zA-Z_][\w.]*)/im;
 		const match = cell.code.match(fromRe);
 		if (!match) return undefined;
 		const candidate = match[1].replace(/"/g, '');
@@ -621,398 +630,76 @@
 		registerInsertCallback((text) => editorRef?.insertAtCursor(text));
 	}
 
-	function isEditModeFocus(target: EventTarget | null): boolean {
-		if (!(target instanceof Element)) return false;
-		const tag = (target as HTMLElement).tagName.toLowerCase();
-		if (tag === 'input' || tag === 'textarea') return true;
-		if ((target as HTMLElement).isContentEditable) return true;
-		if (target.closest('.code-editor, .monaco-editor')) return true;
-		return false;
-	}
-
-	function focusAdjacentCell(dir: 'prev' | 'next') {
-		const all = Array.from(document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]'));
-		const idx = all.indexOf(cellContainerEl!);
-		all[dir === 'prev' ? idx - 1 : idx + 1]?.focus();
-	}
-
-	function focusCellById(id: string) {
-		document
-			.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)
-			?.focus();
-	}
-
 	function enterEditMode() {
 		if (isUdfCell || (isQueryCell && cell.editMode === 'prql')) {
 			editorRef?.focus();
 		} else if (isQueryCell && cell.editMode === 'gui') {
 			cellContainerEl?.querySelector<HTMLElement>('.stage-card[tabindex]')?.focus();
 		} else {
-			cellContainerEl?.querySelector<HTMLElement>('textarea, input:not([readonly])')?.focus();
+			markdownHandle?.focus();
 		}
 	}
 
-	function adjustMarkdownHeight() {
-		if (!markdownTextareaEl) return;
-		markdownTextareaEl.style.height = 'auto';
-		markdownTextareaEl.style.height = `${markdownTextareaEl.scrollHeight}px`;
-	}
-
-	$effect(() => {
-		if (!isMarkdownPreviewMode && markdownTextareaEl) adjustMarkdownHeight();
-	});
-
 	// Click-outside-to-preview: fires when user clicks outside the edit container.
+	// Monaco's suggest/find widgets are fixedOverflowWidgets rendered outside the container —
+	// guard against those too so clicking a completion doesn't dismiss edit mode.
 	$effect(() => {
 		if (isMarkdownPreviewMode || !markdownEditContainerEl) return;
 		function handleMousedown(e: MouseEvent) {
 			if (markdownEditContainerEl?.contains(e.target as Node)) return;
+			if (
+				(e.target as HTMLElement)?.closest(
+					'.monaco-editor, .suggest-widget, .parameter-hints-widget, .context-view, .shadow-root-host'
+				)
+			)
+				return;
 			if (cell.markdown?.trim()) setCellMarkdownPreview(cell.id, true);
 		}
 		document.addEventListener('mousedown', handleMousedown);
 		return () => document.removeEventListener('mousedown', handleMousedown);
 	});
 
-	function applyFormatResult(result: { value: string; selectionStart: number; selectionEnd: number }) {
-		updateCellMarkdown(cell.id, result.value);
-		tick().then(() => {
-			markdownTextareaEl?.focus();
-			markdownTextareaEl?.setSelectionRange(result.selectionStart, result.selectionEnd);
-			adjustMarkdownHeight();
+	$effect(() => {
+		return registerCellMeta({
+			cellId: cell.id,
+			canInlinePrompt: canInlinePrompt,
+			isQueryCell,
+			isGuiCell: isQueryCell && cell.editMode === 'gui',
+			isDbtProject: getIsDbtProject(),
+			collapsed,
+			display: effectiveDisplay,
+			outputName: cell.outputName ?? ''
 		});
-	}
+	});
 
-	function getTextAreaState() {
-		const el = markdownTextareaEl;
-		return {
-			value: cell.markdown ?? '',
-			selectionStart: el?.selectionStart ?? (cell.markdown?.length ?? 0),
-			selectionEnd: el?.selectionEnd ?? (cell.markdown?.length ?? 0)
-		};
-	}
+	$effect(() => {
+		if (cellBridgeState.pendingInlinePromptCellId === cell.id) {
+			cellBridgeState.pendingInlinePromptCellId = null;
+			inlinePromptOpen = true;
+		}
+	});
+
+	$effect(() => {
+		if (cellBridgeState.pendingEnterEditCellId === cell.id) {
+			cellBridgeState.pendingEnterEditCellId = null;
+			enterEditMode();
+		}
+	});
+
+	$effect(() => {
+		if (cellBridgeState.pendingGuiSlashCellId !== cell.id) return;
+		cellBridgeState.pendingGuiSlashCellId = null;
+		if (!isQueryCell || cell.editMode !== 'gui') return;
+		enterEditMode();
+		void tick().then(() => {
+			const editor = cellContainerEl?.querySelector<HTMLElement>('.stage-editor');
+			if (!editor) return;
+			findStageMenuInEditor(editor)?.openMenu();
+		});
+	});
 
 	function handleToolbarFormat(action: FormatAction) {
-		const state = getTextAreaState();
-		if (action.type === 'wrap') {
-			applyFormatResult(wrapSelection(state, action.prefix, action.suffix, action.placeholder));
-		} else if (action.type === 'line-prefix') {
-			applyFormatResult(toggleLinePrefix(state, action.prefix));
-		} else {
-			applyFormatResult(insertAtCursor(state, action.text));
-		}
-	}
-
-	function handleSlashSelect(command: SlashCommand) {
-		if (!markdownTextareaEl) return;
-		const state = {
-			value: markdownTextareaEl.value,
-			selectionStart: markdownTextareaEl.selectionStart,
-			selectionEnd: markdownTextareaEl.selectionEnd
-		};
-		applyFormatResult(applySlashCommand(state, command.snippet));
-		slashToken = null;
-	}
-
-	function handleMarkdownKeydown(e: KeyboardEvent) {
-		const el = e.currentTarget as HTMLTextAreaElement;
-		const state = { value: el.value, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd };
-		const mod = e.metaKey || e.ctrlKey;
-
-		// Slash palette keyboard navigation — delegate to the palette via a custom event
-		if (slashToken !== null) {
-			if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || (e.key === 'Enter' && !mod)) {
-				// Forward to palette by dispatching on the palette element
-				const palette = markdownEditContainerEl?.querySelector<HTMLElement>('.md-slash-palette');
-				if (palette) {
-					e.preventDefault();
-					palette.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, bubbles: false }));
-					return;
-				}
-			}
-			if (e.key === 'Escape') {
-				e.preventDefault();
-				slashToken = null;
-				return;
-			}
-		}
-
-		// Formatting shortcuts
-		if (mod && !e.shiftKey && e.key === 'b') {
-			e.preventDefault();
-			applyFormatResult(wrapSelection(state, '**', '**', 'bold'));
-			return;
-		}
-		if (mod && !e.shiftKey && e.key === 'i') {
-			e.preventDefault();
-			applyFormatResult(wrapSelection(state, '*', '*', 'italic'));
-			return;
-		}
-		if (mod && !e.shiftKey && e.key === '`') {
-			e.preventDefault();
-			applyFormatResult(wrapSelection(state, '`', '`', 'code'));
-			return;
-		}
-		if (mod && !e.shiftKey && e.key === 'k') {
-			e.preventDefault();
-			applyFormatResult(wrapSelection(state, '[', '](url)', 'link text'));
-			return;
-		}
-		if (mod && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
-			e.preventDefault();
-			setCellMarkdownPreview(cell.id, true);
-			return;
-		}
-
-		// Tab: indent/unindent list line (no-op on non-list lines, falls through to browser default)
-		if (e.key === 'Tab') {
-			const result = indentListLine(state, e.shiftKey ? 'out' : 'in');
-			if (result) {
-				e.preventDefault();
-				applyFormatResult(result);
-				return;
-			}
-		}
-
-		// Enter: smart list continuation
-		if (e.key === 'Enter' && !mod) {
-			const cont = getListContinuation(state);
-			if (cont !== null) {
-				e.preventDefault();
-				if (cont.removeCurrentPrefix) {
-					applyFormatResult(toggleLinePrefix(state, cont.prefix));
-				} else {
-					applyFormatResult(insertAtCursor(state, '\n' + cont.prefix));
-				}
-				return;
-			}
-		}
-
-		// Slash detection — check on next tick after character is inserted
-		tick().then(() => {
-			if (!markdownTextareaEl) return;
-			const newState = {
-				value: markdownTextareaEl.value,
-				selectionStart: markdownTextareaEl.selectionStart,
-				selectionEnd: markdownTextareaEl.selectionEnd
-			};
-			slashToken = getSlashToken(newState);
-		});
-	}
-
-	function isNativeInputTarget(target: EventTarget | null): boolean {
-		if (!(target instanceof HTMLElement)) return false;
-		const tag = target.tagName.toLowerCase();
-		return tag === 'input' || tag === 'textarea' || tag === 'select';
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		const inCommandMode = e.target === cellContainerEl;
-		const inStageEditor =
-			e.target instanceof Element && !!(e.target as Element).closest('.stage-editor');
-
-		// Always: run cell — but never when focus is on a plain input like the cell name field.
-		// Monaco swallows these keys, so Editor.svelte re-dispatches them on its container div.
-		if (
-			isQueryCell &&
-			e.key === 'Enter' &&
-			(e.shiftKey || e.metaKey || e.ctrlKey) &&
-			!isNativeInputTarget(e.target)
-		) {
-			e.preventDefault();
-			runCell(cell.id);
-			return;
-		}
-
-		// ⌘⇧L: open lineage tab focused on this cell's model
-		if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'l' && !isNativeInputTarget(e.target)) {
-			e.preventDefault();
-			openLineageTab(cell.outputName);
-			return;
-		}
-
-		// ⌘⇧T: run dbt tests for this cell (status surfaces in the tests chip)
-		if (
-			isDbtProject &&
-			(e.metaKey || e.ctrlKey) &&
-			e.shiftKey &&
-			e.key === 't' &&
-			!isNativeInputTarget(e.target)
-		) {
-			e.preventDefault();
-			void testCell(cell.id);
-			return;
-		}
-
-		// ⌘K: open the inline "Tell AI what to do" prompt for this cell (raw code editor
-		// cells only — GUI-mode query cells have their own AI entry via AddStageMenu's "/").
-		if (
-			canInlinePrompt &&
-			(e.metaKey || e.ctrlKey) &&
-			!e.shiftKey &&
-			e.key === 'k' &&
-			!isNativeInputTarget(e.target)
-		) {
-			e.preventDefault();
-			inlinePromptOpen = true;
-			return;
-		}
-
-		// ⌘Z / ⌘⇧Z / ⌘Y: notebook-level undo/redo. Global (not command-mode gated) so it
-		// works while the cell container has focus but the editor doesn't — but Monaco
-		// swallows these keys itself while it has focus, so its own text-undo takes over there.
-		if ((e.metaKey || e.ctrlKey) && !isNativeInputTarget(e.target)) {
-			if (e.key === 'z' && !e.shiftKey) {
-				e.preventDefault();
-				undo();
-				return;
-			}
-			if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
-				e.preventDefault();
-				redo();
-				return;
-			}
-		}
-
-		// Escape: let GUIEditor handle events from inside the stage editor (stage cards, chip inputs)
-		// For everything else (PRQL editor, buttons, cell container) → cell command mode
-		if (e.key === 'Escape' && !inCommandMode && !inStageEditor) {
-			e.preventDefault();
-			cellContainerEl?.focus();
-			return;
-		}
-
-		// / in a GUI cell: enter stage mode then open the Add Stage menu
-		// Works from cell command mode, header buttons, or anywhere outside the stage editor
-		if (
-			e.key === '/' &&
-			isQueryCell &&
-			cell.editMode === 'gui' &&
-			!inStageEditor &&
-			!isEditModeFocus(e.target)
-		) {
-			e.preventDefault();
-			enterEditMode();
-			tick().then(() => {
-				const focused = document.activeElement as HTMLElement | null;
-				if (focused?.classList.contains('stage-card')) {
-					// Dispatch / on the now-focused stage card — bubbles to AddStageMenu's window listener
-					focused.dispatchEvent(
-						new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
-					);
-				}
-			});
-			return;
-		}
-
-		if (!inCommandMode) return;
-
-		switch (e.key) {
-			case 'Enter':
-				e.preventDefault();
-				if (collapsed) {
-					setCellDisplay(cell.id, 'full');
-				} else {
-					enterEditMode();
-				}
-				break;
-			case 'ArrowUp':
-			case 'k':
-				e.preventDefault();
-				focusAdjacentCell('prev');
-				break;
-			case 'ArrowDown':
-			case 'j':
-				e.preventDefault();
-				focusAdjacentCell('next');
-				break;
-			case 'a':
-				e.preventDefault();
-				addCellBefore(cell.id);
-				tick().then(() => focusAdjacentCell('prev'));
-				break;
-			case 'b':
-				e.preventDefault();
-				addCellAfter(cell.id);
-				tick().then(() => focusAdjacentCell('next'));
-				break;
-			case 'd':
-				e.preventDefault();
-				if (ddPending) {
-					const all = Array.from(
-						document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')
-					);
-					const idx = all.indexOf(cellContainerEl!);
-					removeCell(cell.id);
-					ddPending = false;
-					tick().then(() => {
-						const next = Array.from(
-							document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')
-						);
-						(next[idx] ?? next[idx - 1] ?? next[0])?.focus();
-					});
-				} else {
-					ddPending = true;
-					setTimeout(() => (ddPending = false), 500);
-				}
-				break;
-			case 'K':
-				if (e.shiftKey) {
-					e.preventDefault();
-					moveCell(cell.id, 'up');
-				}
-				break;
-			case 'J':
-				if (e.shiftKey) {
-					e.preventDefault();
-					moveCell(cell.id, 'down');
-				}
-				break;
-			case 'c':
-				e.preventDefault();
-				if (e.metaKey || e.ctrlKey) {
-					// ⌘C: copy cell (command-mode only, so it never competes with native text copy)
-					copyCellToClipboard(cell.id);
-				} else {
-					setCellDisplay(cell.id, collapsed ? 'full' : 'collapsed');
-				}
-				break;
-			case 'C':
-				// ⇧C: toggle output-only (hide/show code)
-				if (e.shiftKey && isQueryCell) {
-					e.preventDefault();
-					setCellDisplay(cell.id, cell.display === 'output' ? 'full' : 'output');
-				}
-				break;
-			case 'y':
-				// y: copy cell (vim-style yank)
-				e.preventDefault();
-				copyCellToClipboard(cell.id);
-				break;
-			case 'v':
-				if (e.metaKey || e.ctrlKey) {
-					// ⌘V: paste cell below (command-mode only — see ⌘C above)
-					e.preventDefault();
-					void pasteCellAfter(cell.id).then((newId) => {
-						if (newId) tick().then(() => focusCellById(newId));
-					});
-				}
-				break;
-			case 'p':
-				// p: paste cell below (vim-style)
-				e.preventDefault();
-				void pasteCellAfter(cell.id).then((newId) => {
-					if (newId) tick().then(() => focusCellById(newId));
-				});
-				break;
-			case 'D':
-				if (e.metaKey || e.ctrlKey) {
-					// ⇧⌘D: duplicate cell
-					e.preventDefault();
-					const newId = duplicateCell(cell.id);
-					if (newId) tick().then(() => focusCellById(newId));
-				}
-				break;
-		}
+		markdownHandle?.format(action);
 	}
 
 	function addSortSuggestion(column: string, dir: 'asc' | 'desc') {
@@ -1116,12 +803,13 @@
 				? ''
 				: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
 		? 'cell-ai-ghost bg-primary/5 ring-1 ring-primary/30'
+		: ''} {reviewMode && hasOpenComments && !cellFocused
+		? 'border-l-primary/35 bg-primary/[0.03]'
 		: ''}"
 	hidden={reportView && collapsed}
 	data-focused={cellFocused}
 	data-cell-id={cell.id}
 	tabindex="0"
-	onkeydown={handleKeydown}
 	onfocusin={onCellFocusIn}
 	onfocusout={onCellFocusOut}
 	onmouseenter={() => (cellHovered = true)}
@@ -1143,6 +831,8 @@
 				runTooltip={runTooltipText}
 				onRun={() => (isPythonCell ? runPythonCell(cell.id) : runCell(cell.id))}
 				onCancel={() => cancelCell(cell.id)}
+				commentCount={collabEnabled ? commentCount : 0}
+				onComments={collabEnabled && !reportView ? openCellComments : undefined}
 			>
 				{#snippet menu()}
 					<CellMenu
@@ -1209,7 +899,9 @@
 									autoSubmitInstruction={inlinePromptPreset}
 									onAutoSubmitConsumed={() => (inlinePromptPreset = null)}
 									onApply={(code) =>
-										isPythonCell ? updatePythonCellCode(cell.id, code) : updateCellCode(cell.id, code)}
+										isPythonCell
+											? updatePythonCellCode(cell.id, code)
+											: updateCellCode(cell.id, code)}
 									onCreateAlternative={handleCreateAlternative}
 									onContinueInChat={onContinueWithAI}
 								/>
@@ -1267,12 +959,12 @@
 									onchange={(c) => updatePythonCellCode(cell.id, c)}
 								/>
 								<p class="mt-1 text-2xs text-muted-foreground">
-									Reference upstream cells by name — they're already DataFrames. End the cell
-									with a bare expression (like Jupyter), or assign to <code>result</code> or
+									Reference upstream cells by name — they're already DataFrames. End the cell with a
+									bare expression (like Jupyter), or assign to <code>result</code> or
 									<code>fig</code>, to surface a table or Plotly chart.
 								</p>
 							{:else if !isQueryCell}
-								<div class="group/markdown relative" bind:this={markdownEditContainerEl}>
+								<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
 									{#if isMarkdownPreviewMode}
 										<!-- Preview mode: click to edit -->
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1303,32 +995,13 @@
 											onInsertRef={insertMarkdownRef}
 											onTogglePreview={() => setCellMarkdownPreview(cell.id, true)}
 										/>
-										<div class="relative">
-											<Textarea
-												bind:ref={markdownTextareaEl}
-												value={cell.markdown}
-												placeholder="Write markdown here..."
-												class="min-h-32! resize-none! overflow-hidden! rounded-none! border-0! bg-transparent! px-0! py-0.5! text-sm! leading-6! shadow-none! ring-0! focus-visible:border-transparent! focus-visible:ring-0! focus-visible:outline-none!"
-												oninput={(e: Event) => {
-													updateCellMarkdown(cell.id, (e.target as HTMLTextAreaElement).value);
-													adjustMarkdownHeight();
-												}}
-												onkeydown={handleMarkdownKeydown}
-												onblur={(e: FocusEvent) => {
-													const related = e.relatedTarget as HTMLElement | null;
-													if (related?.closest('.md-refpicker-trigger, .md-refpicker-content, .md-toolbar, .md-slash-palette'))
-														return;
-													// blur handled by click-outside effect; only guard keyboard Tab away
-												}}
-											/>
-											{#if slashToken !== null}
-												<SlashCommandPalette
-													token={slashToken}
-													onSelect={handleSlashSelect}
-													onDismiss={() => (slashToken = null)}
-												/>
-											{/if}
-										</div>
+										<MarkdownEditor
+											bind:handle={markdownHandle}
+											value={cell.markdown ?? ''}
+											onchange={(v) => updateCellMarkdown(cell.id, v)}
+											refEntries={markdownRefEntries}
+											cellsForValidation={markdownValidationCells}
+										/>
 										{#if hasLiveRefs}
 											<p class="mt-0.5 text-2xs text-muted-foreground select-none">
 												⚡ Live refs active — run upstream cells to update values

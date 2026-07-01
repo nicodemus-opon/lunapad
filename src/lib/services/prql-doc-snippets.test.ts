@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { compile as compileNodePrql, CompileOptions as NodeCompileOptions } from 'prqlc/dist/node/prqlc_js';
+import {
+	compile as compileNodePrql,
+	CompileOptions as NodeCompileOptions
+} from 'prqlc/dist/node/prqlc_js';
 
 import { PRQL_DOC_SNIPPETS } from '$lib/services/prql-doc-snippets';
 import { prqlToGuiStages, guiToPreql } from '$lib/services/gui-prql';

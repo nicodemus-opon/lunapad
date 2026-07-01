@@ -107,9 +107,15 @@ export function detectColumnFormat(rows: Record<string, unknown>[], col: string)
 	const isDateInstance = samples.some((v) => v instanceof Date);
 	const dateHits = stringSamples.filter((s) => DATE_PREFIX_RE.test(s)).length;
 	const epochHits = stringSamples.filter((s) => isEpochLike(s)).length;
-	if (isDateInstance || ratio(dateHits, stringSamples.length) >= 0.7 || ratio(epochHits, stringSamples.length) >= 0.7) {
+	if (
+		isDateInstance ||
+		ratio(dateHits, stringSamples.length) >= 0.7 ||
+		ratio(epochHits, stringSamples.length) >= 0.7
+	) {
 		const hasTimeComponent =
-			samples.some((v) => v instanceof Date && (v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0)) ||
+			samples.some(
+				(v) => v instanceof Date && (v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0)
+			) ||
 			stringSamples.some((s) => DATETIME_VALUE_RE.test(s)) ||
 			ratio(epochHits, stringSamples.length) >= 0.7;
 		return { kind: hasTimeComponent ? 'datetime' : 'date' };

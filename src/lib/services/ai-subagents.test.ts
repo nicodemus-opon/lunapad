@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { classifyIntent, classifyComplexity, SUBAGENT_TOOLS, SPRINT_TASK_TOOLS } from './ai-subagents.js';
+import {
+	classifyIntent,
+	classifyComplexity,
+	SUBAGENT_TOOLS,
+	SPRINT_TASK_TOOLS
+} from './ai-subagents.js';
 
 describe('classifyIntent', () => {
 	it('routes model-building requests to creation', () => {
@@ -7,7 +12,7 @@ describe('classifyIntent', () => {
 			'Create a monthly revenue analysis model from ai_sales',
 			'generate a staging table for orders',
 			'build a revenue metric that aggregates fct_orders',
-			'make a fact table for sessions',
+			'make a fact table for sessions'
 		]) {
 			expect(classifyIntent(p), p).toBe('creation');
 		}
@@ -20,7 +25,7 @@ describe('classifyIntent', () => {
 			'make a chart of orders per customer',
 			'visualize the breakdown of revenue by region',
 			'summarize sales into a kpi',
-			'chart my results',
+			'chart my results'
 		]) {
 			expect(classifyIntent(p), p).toBe('dashboard');
 		}
@@ -31,7 +36,7 @@ describe('classifyIntent', () => {
 			'fix the SQL error in monthly_sales',
 			'debug this query',
 			'why is this cell broken',
-			'this result is wrong, fix it',
+			'this result is wrong, fix it'
 		]) {
 			expect(classifyIntent(p), p).toBe('debug');
 		}
@@ -41,7 +46,7 @@ describe('classifyIntent', () => {
 		for (const p of [
 			'explain the revenue cell',
 			'analyze the distribution of order amounts',
-			'trace why this metric dropped',
+			'trace why this metric dropped'
 		]) {
 			expect(classifyIntent(p), p).toBe('investigation');
 		}
@@ -54,7 +59,7 @@ describe('classifyIntent', () => {
 			'rename the cell to revenue',
 			'optimize the join',
 			'how does this query work?',
-			'update the filter to last 90 days',
+			'update the filter to last 90 days'
 		]) {
 			expect(classifyIntent(p), p).toBe('standard');
 		}
@@ -69,7 +74,7 @@ describe('classifyIntent', () => {
 			'build an RFM model',
 			'create a customer LTV analysis',
 			'our MRR needs a model',
-			'give me attribution for marketing',
+			'give me attribution for marketing'
 		]) {
 			expect(classifyIntent(p), p).toBe('creation');
 		}
@@ -80,7 +85,7 @@ describe('classifyIntent', () => {
 			'give me a staging model',
 			'give me a revenue metric',
 			'build me a fact table',
-			'build me a new view',
+			'build me a new view'
 		]) {
 			expect(classifyIntent(p), p).toBe('creation');
 		}
@@ -102,7 +107,7 @@ describe('classifyComplexity', () => {
 			'show me DAU over time',
 			'build a customer LTV model',
 			'create MRR tracking for subscriptions',
-			'attribution model for marketing spend',
+			'attribution model for marketing spend'
 		]) {
 			expect(classifyComplexity(p), p).toBe('complex');
 		}
@@ -113,17 +118,14 @@ describe('classifyComplexity', () => {
 			'build an end-to-end pipeline',
 			'create a multi-layer mart',
 			'design a data warehouse model',
-			'build 7 models for the orders domain',
+			'build 7 models for the orders domain'
 		]) {
 			expect(classifyComplexity(p), p).toBe('complex');
 		}
 	});
 
 	it('classifies single-field edit requests as medium (no analytics/pipeline patterns)', () => {
-		for (const p of [
-			'add a column to the orders table',
-			'add a filter for last 30 days',
-		]) {
+		for (const p of ['add a column to the orders table', 'add a filter for last 30 days']) {
 			expect(classifyComplexity(p), p).toBe('medium');
 		}
 	});
@@ -132,7 +134,7 @@ describe('classifyComplexity', () => {
 		for (const p of [
 			'create a staging table for orders',
 			'build a revenue summary',
-			'generate a new SQL model',
+			'generate a new SQL model'
 		]) {
 			expect(classifyComplexity(p), p).toBe('medium');
 		}
@@ -141,7 +143,13 @@ describe('classifyComplexity', () => {
 
 describe('documentation subagent tooling', () => {
 	it('gives the documentation subagent read + markdown-write tools, no SQL tools', () => {
-		expect(SUBAGENT_TOOLS.documentation).toEqual(['create_cell', 'update_cell', 'get_cell_result', 'list_cells', 'record_decision']);
+		expect(SUBAGENT_TOOLS.documentation).toEqual([
+			'create_cell',
+			'update_cell',
+			'get_cell_result',
+			'list_cells',
+			'record_decision'
+		]);
 		expect(SUBAGENT_TOOLS.documentation).not.toContain('run_cells');
 		expect(SUBAGENT_TOOLS.documentation).not.toContain('query_data');
 	});

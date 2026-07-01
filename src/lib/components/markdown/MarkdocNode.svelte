@@ -15,6 +15,7 @@
 	import DetailsWidget from './DetailsWidget.svelte';
 	import TabsWidget from './TabsWidget.svelte';
 	import CodeBlock from './CodeBlock.svelte';
+	import MermaidDiagram from './MermaidDiagram.svelte';
 	import * as Table from '$lib/components/ui/table';
 
 	interface Props {
@@ -47,7 +48,10 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
 	</div>
 {:else if tag?.name === 'column'}
-	<div class="md-column" style={tag.attributes.width ? `flex-basis:${tag.attributes.width}` : undefined}>
+	<div
+		class="md-column"
+		style={tag.attributes.width ? `flex-basis:${tag.attributes.width}` : undefined}
+	>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
 	</div>
 {:else if tag?.name === 'grid'}
@@ -69,6 +73,8 @@
 	</DetailsWidget>
 {:else if tag?.name === 'tabs'}
 	<TabsWidget tabs={tag.children as Tag[]} {notebookId} />
+{:else if tag?.name === 'mermaid'}
+	<MermaidDiagram code={tag.attributes?.code ?? ''} />
 {:else if tag?.name === 'pre'}
 	<CodeBlock lang={tag.attributes?.['data-language'] ?? ''} children={tag.children} />
 {:else if tag?.name === 'table'}
@@ -88,7 +94,7 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
 	</Table.Row>
 {:else if tag?.name === 'th'}
-	<Table.Head class="p-2 align-middle bg-background text-xs font-semibold" {...tag.attributes}>
+	<Table.Head class="bg-background p-2 align-middle text-xs font-semibold" {...tag.attributes}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
 	</Table.Head>
 {:else if tag?.name === 'td'}

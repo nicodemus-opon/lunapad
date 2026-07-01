@@ -1,7 +1,17 @@
 <script lang="ts">
 	import type { GUIPipelineStage, StageType } from '$lib/types/gui-pipeline';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
-	import { X, Play, Loader2, GripVertical, ChevronDown, ChevronRight, AlertCircle, Eye, EyeOff } from '@lucide/svelte';
+	import {
+		X,
+		Play,
+		Loader2,
+		GripVertical,
+		ChevronDown,
+		ChevronRight,
+		AlertCircle,
+		Eye,
+		EyeOff
+	} from '@lucide/svelte';
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
 	import { slide } from 'svelte/transition';
 	import { SECTION_LABEL } from './chip-styles';
@@ -38,7 +48,26 @@
 		stageErrors?: PRQLStageError[];
 	}
 
-	let { stage, index, active = false, children, draggable = true, isLast = false, collapsed = false, onCollapsedChange, onRemove, onToggleDisabled, onRun, onAddSort, onAddFilter, onAddSuggestedStage, onActivate, resultCollapsed = false, onResultCollapsedChange, stageErrors = [] }: Props = $props();
+	let {
+		stage,
+		index,
+		active = false,
+		children,
+		draggable = true,
+		isLast = false,
+		collapsed = false,
+		onCollapsedChange,
+		onRemove,
+		onToggleDisabled,
+		onRun,
+		onAddSort,
+		onAddFilter,
+		onAddSuggestedStage,
+		onActivate,
+		resultCollapsed = false,
+		onResultCollapsedChange,
+		stageErrors = []
+	}: Props = $props();
 
 	const hasErrors = $derived(stageErrors.length > 0);
 	const presentedStageErrors = $derived(presentStageErrors(stage, stageErrors));
@@ -87,7 +116,7 @@
 		if (stage.type === 'filter') return stage.conditions.length || undefined;
 		if (stage.type === 'derive') return stage.columns.length || undefined;
 		if (stage.type === 'sort') return stage.keys.length || undefined;
-		if (stage.type === 'group') return (stage.aggregations.length + stage.by.length) || undefined;
+		if (stage.type === 'group') return stage.aggregations.length + stage.by.length || undefined;
 		if (stage.type === 'join') return stage.conditions.length || undefined;
 		return undefined;
 	});
@@ -95,7 +124,9 @@
 </script>
 
 <div
-	class="stage-block group/card relative rounded-md outline-none transition-colors duration-150 hover:bg-muted/20 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/40 {active ? 'bg-muted/40' : ''} {stage?.disabled ? 'opacity-60' : ''}"
+	class="stage-block group/card relative rounded-md transition-colors duration-150 outline-none hover:bg-muted/20 focus-visible:ring-1 focus-visible:ring-ring/40 focus-visible:ring-inset {active
+		? 'bg-muted/40'
+		: ''} {stage?.disabled ? 'opacity-60' : ''}"
 	data-testid="stage-card"
 	data-stage-index={index}
 	data-stage-active={active ? 'true' : 'false'}
@@ -105,7 +136,9 @@
 	role="button"
 	aria-pressed={active}
 	aria-label={`Stage ${index + 1}: ${meta.label}`}
-	title={onRemove ? "Keyboard: j/k navigate · ⇧J/⇧K move · / add stage · r run · x remove · c collapse · v disable · ⇧D duplicate · Esc exit" : "Keyboard: j/k navigate · / add stage · r run · c collapse · Esc exit"}
+	title={onRemove
+		? 'Keyboard: j/k navigate · ⇧J/⇧K move · / add stage · r run · x remove · c collapse · v disable · ⇧D duplicate · Esc exit'
+		: 'Keyboard: j/k navigate · / add stage · r run · c collapse · Esc exit'}
 	onfocusin={onActivate}
 	onclick={onActivate}
 	onkeydown={(event) => {
@@ -124,36 +157,51 @@
 					aria-label="Drag to reorder"
 					tabindex="-1"
 				>
-					<GripVertical class="w-3.5 h-3.5" />
+					<GripVertical class="h-3.5 w-3.5" />
 				</button>
 			{/if}
 		</div>
 
 		<!-- keyword: lowercase mono, click to collapse -->
 		<button
-			class="flex h-6 min-w-14 shrink-0 items-center gap-1.5 font-mono text-xs lowercase transition-colors duration-150 {hasErrors ? 'text-destructive' : stage?.disabled ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground hover:text-foreground'}"
-			onclick={(e) => { e.stopPropagation(); onCollapsedChange?.(!collapsed); }}
+			class="flex h-6 min-w-14 shrink-0 items-center gap-1.5 font-mono text-xs lowercase transition-colors duration-150 {hasErrors
+				? 'text-destructive'
+				: stage?.disabled
+					? 'text-muted-foreground/50 line-through'
+					: 'text-muted-foreground hover:text-foreground'}"
+			onclick={(e) => {
+				e.stopPropagation();
+				onCollapsedChange?.(!collapsed);
+			}}
 			title={collapsed ? 'Expand stage' : 'Collapse stage'}
 		>
 			{meta.label}
 			{#if hasErrors}
-				<AlertCircle class="w-3 h-3" />
+				<AlertCircle class="h-3 w-3" />
 			{/if}
 			{#if chipCount}
-				<span class="text-2xs font-normal tabular-nums text-muted-foreground/40">{chipCount}</span>
+				<span class="text-2xs font-normal text-muted-foreground/40 tabular-nums">{chipCount}</span>
 			{/if}
 			{#if preview.kind === 'result'}
-				<span class="rounded bg-muted/50 px-1 text-2xs tabular-nums text-muted-foreground/50">{preview.rows.length.toLocaleString()} rows</span>
+				<span class="rounded bg-muted/50 px-1 text-2xs text-muted-foreground/50 tabular-nums"
+					>{preview.rows.length.toLocaleString()} rows</span
+				>
 			{/if}
 		</button>
 
 		<!-- chips / collapsed summary -->
 		{#if collapsed}
 			<div class="flex min-h-6 min-w-0 flex-1 items-center" transition:slide={{ duration: 150 }}>
-				<span class="font-mono text-xs italic text-muted-foreground/60">{getStageSummary(stage)}</span>
+				<span class="font-mono text-xs text-muted-foreground/60 italic"
+					>{getStageSummary(stage)}</span
+				>
 			</div>
 		{:else}
-			<div class="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 py-0.5" class:err-chips={hasErrors && stage.type !== 'derive'} transition:slide={{ duration: 150 }}>
+			<div
+				class="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 py-0.5"
+				class:err-chips={hasErrors && stage.type !== 'derive'}
+				transition:slide={{ duration: 150 }}
+			>
 				{@render children()}
 			</div>
 		{/if}
@@ -165,15 +213,15 @@
 					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 disabled:opacity-30
 						{preview.kind === 'loading'
 						? 'text-muted-foreground'
-						: 'opacity-0 group-hover/card:opacity-100 text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground'}"
+						: 'text-muted-foreground/60 opacity-0 group-hover/card:opacity-100 hover:bg-muted/60 hover:text-foreground'}"
 					onclick={handleRun}
 					disabled={preview.kind === 'loading'}
 					aria-label="Run pipeline up to this stage"
 				>
 					{#if preview.kind === 'loading'}
-						<Loader2 class="w-3.5 h-3.5 animate-spin" />
+						<Loader2 class="h-3.5 w-3.5 animate-spin" />
 					{:else}
-						<Play class="w-3.5 h-3.5 fill-current" />
+						<Play class="h-3.5 w-3.5 fill-current" />
 					{/if}
 				</button>
 			{:else}
@@ -182,14 +230,16 @@
 
 			{#if onToggleDisabled}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 {stage?.disabled ? 'opacity-100! bg-muted/60 text-muted-foreground' : 'opacity-0 group-hover/card:opacity-100 text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground'}"
+					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 {stage?.disabled
+						? 'bg-muted/60 text-muted-foreground opacity-100!'
+						: 'text-muted-foreground/60 opacity-0 group-hover/card:opacity-100 hover:bg-muted/60 hover:text-foreground'}"
 					onclick={onToggleDisabled}
 					aria-label={stage?.disabled ? 'Enable stage' : 'Disable stage'}
 				>
 					{#if stage?.disabled}
-						<EyeOff class="w-3.5 h-3.5" />
+						<EyeOff class="h-3.5 w-3.5" />
 					{:else}
-						<Eye class="w-3.5 h-3.5" />
+						<Eye class="h-3.5 w-3.5" />
 					{/if}
 				</button>
 			{:else}
@@ -198,11 +248,11 @@
 
 			{#if onRemove}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 opacity-0 group-hover/card:opacity-100 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"
+					class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/card:opacity-100 hover:bg-destructive/10 hover:text-destructive"
 					onclick={onRemove}
 					aria-label="Remove stage"
 				>
-					<X class="w-3.5 h-3.5" />
+					<X class="h-3.5 w-3.5" />
 				</button>
 			{/if}
 		</div>
@@ -212,9 +262,13 @@
 	{#if hasErrors}
 		<div class="mx-2 mb-1 ml-9 space-y-0.5 border-l border-destructive/40 py-0.5 pl-3">
 			{#each presentedStageErrors as err, errIdx (`${err.reason}-${err.hint ?? ''}-${errIdx}`)}
-			<p class="text-xs text-destructive leading-snug">
-				{#if err.lineLabel}<span class="font-medium text-destructive/90">[{err.lineLabel}] </span>{/if}<span class="font-mono">{err.reason}</span>{#if err.hint}<span class="text-destructive/80">: {err.hint}</span>{/if}
-			</p>
+				<p class="text-xs leading-snug text-destructive">
+					{#if err.lineLabel}<span class="font-medium text-destructive/90"
+							>[{err.lineLabel}]
+						</span>{/if}<span class="font-mono">{err.reason}</span>{#if err.hint}<span
+							class="text-destructive/80">: {err.hint}</span
+						>{/if}
+				</p>
 			{/each}
 		</div>
 	{/if}
@@ -223,7 +277,7 @@
 	{#if hasEvidence}
 		<div class="mx-2 mb-1.5 ml-9 border-l border-border/50 pl-3" data-testid="stage-evidence-panel">
 			<div class="flex items-center justify-between gap-2 py-0.5">
-				<div class="flex items-center gap-2 min-w-0">
+				<div class="flex min-w-0 items-center gap-2">
 					<span class="{SECTION_LABEL} text-muted-foreground/70">evidence</span>
 					<span class="truncate text-2xs text-muted-foreground/50">{evidenceSummary}</span>
 				</div>
@@ -234,9 +288,9 @@
 						aria-label={resultCollapsed ? 'Expand evidence panel' : 'Collapse evidence panel'}
 					>
 						{#if resultCollapsed}
-							<ChevronRight class="w-3 h-3" />
+							<ChevronRight class="h-3 w-3" />
 						{:else}
-							<ChevronDown class="w-3 h-3" />
+							<ChevronDown class="h-3 w-3" />
 						{/if}
 					</button>
 				{/if}
@@ -244,7 +298,7 @@
 
 			{#if preview.kind === 'loading'}
 				<div class="inline-flex items-center gap-1.5 py-1 text-2xs text-muted-foreground">
-					<Loader2 class="w-3 h-3 animate-spin" />
+					<Loader2 class="h-3 w-3 animate-spin" />
 					running stage preview...
 				</div>
 			{:else if !resultCollapsed}

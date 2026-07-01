@@ -21,7 +21,10 @@ vi.mock('$lib/server/embeddings.js', () => ({
 	searchSchemaEmbeddings: searchSchemaEmbeddingsMock
 }));
 
-import { resolveExternalSchema, _resetTableCountCacheForTests } from '$lib/server/ai-schema-context.js';
+import {
+	resolveExternalSchema,
+	_resetTableCountCacheForTests
+} from '$lib/server/ai-schema-context.js';
 import type { AIChatSchemaTable } from '$lib/types/ai-chat.js';
 
 const fallback: AIChatSchemaTable[] = [

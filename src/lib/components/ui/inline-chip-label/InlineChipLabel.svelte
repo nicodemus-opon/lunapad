@@ -25,8 +25,12 @@
 	let editing = $state(false);
 	let draft = $state(untrack(() => value)); // initialize from prop so initialEditing pre-fills correctly
 
-	$effect(() => { if (initialEditing) editing = true; });
-	$effect(() => { if (!editing) draft = value; }); // sync when not editing (e.g. external value change)
+	$effect(() => {
+		if (initialEditing) editing = true;
+	});
+	$effect(() => {
+		if (!editing) draft = value;
+	}); // sync when not editing (e.g. external value change)
 
 	let inputEl = $state<HTMLInputElement | undefined>();
 	let mirror = $state<HTMLSpanElement | undefined>();
@@ -59,7 +63,10 @@
 		if (editing && inputEl) {
 			inputEl.focus();
 			inputEl.select();
-			requestAnimationFrame(() => { measureWidth(); updateDropdownPos(); });
+			requestAnimationFrame(() => {
+				measureWidth();
+				updateDropdownPos();
+			});
 		}
 	});
 
@@ -81,7 +88,11 @@
 
 	function commit() {
 		const trimmed = draft.trim();
-		if (trimmed) { oncommit(trimmed); } else { oncancel?.(); }
+		if (trimmed) {
+			oncommit(trimmed);
+		} else {
+			oncancel?.();
+		}
 		editing = false;
 		open = false;
 	}
@@ -101,16 +112,34 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'ArrowDown') { e.preventDefault(); open = true; highlightedIdx = Math.min(highlightedIdx + 1, filtered.length - 1); return; }
-		if (e.key === 'ArrowUp') { e.preventDefault(); highlightedIdx = Math.max(highlightedIdx - 1, 0); return; }
-		if (e.key === 'Enter') {
+		if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			if (open && highlightedIdx >= 0 && highlightedIdx < filtered.length) { selectSuggestion(filtered[highlightedIdx]); }
-			else { commit(); }
+			open = true;
+			highlightedIdx = Math.min(highlightedIdx + 1, filtered.length - 1);
 			return;
 		}
-		if (e.key === 'Escape') { e.preventDefault(); cancel(); return; }
-		if (e.key === 'Tab') { commit(); }
+		if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			highlightedIdx = Math.max(highlightedIdx - 1, 0);
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			if (open && highlightedIdx >= 0 && highlightedIdx < filtered.length) {
+				selectSuggestion(filtered[highlightedIdx]);
+			} else {
+				commit();
+			}
+			return;
+		}
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			cancel();
+			return;
+		}
+		if (e.key === 'Tab') {
+			commit();
+		}
 	}
 
 	function handleInput(e: Event) {
@@ -122,12 +151,19 @@
 	}
 
 	function handleBlur() {
-		setTimeout(() => { if (editing) commit(); }, 120);
+		setTimeout(() => {
+			if (editing) commit();
+		}, 120);
 	}
 </script>
 
 <span class="relative inline-flex items-center" data-editing={editing}>
-	<span bind:this={mirror} aria-hidden="true" class={cn('absolute invisible whitespace-pre pointer-events-none', className)}>{draft || placeholder}</span>
+	<span
+		bind:this={mirror}
+		aria-hidden="true"
+		class={cn('pointer-events-none invisible absolute whitespace-pre', className)}
+		>{draft || placeholder}</span
+	>
 
 	{#if editing}
 		<input
@@ -136,7 +172,7 @@
 			value={draft}
 			{placeholder}
 			style="width: {mirrorWidth}px"
-			class={cn('bg-transparent outline-none min-w-4', className)}
+			class={cn('min-w-4 bg-transparent outline-none', className)}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
 			onblur={handleBlur}
@@ -145,19 +181,29 @@
 			<!-- position:fixed so overflow:hidden on ancestor chip containers doesn't clip this -->
 			<div
 				style="position: fixed; top: {dropdownTop}px; left: {dropdownLeft}px; z-index: 9999;"
-				class="max-h-48 min-w-max max-w-56 overflow-auto rounded-md border bg-popover shadow-md"
+				class="max-h-48 max-w-56 min-w-max overflow-auto rounded-md border bg-popover shadow-md"
 			>
 				{#each filtered as s, i (s)}
 					<button
 						type="button"
-						class={cn('flex w-full items-center px-2 py-1 text-xs font-mono text-left hover:bg-accent hover:text-accent-foreground', i === highlightedIdx && 'bg-accent text-accent-foreground')}
-						onmousedown={(e) => { e.preventDefault(); selectSuggestion(s); }}
-					>{s}</button>
+						class={cn(
+							'flex w-full items-center px-2 py-1 text-left font-mono text-xs hover:bg-accent hover:text-accent-foreground',
+							i === highlightedIdx && 'bg-accent text-accent-foreground'
+						)}
+						onmousedown={(e) => {
+							e.preventDefault();
+							selectSuggestion(s);
+						}}>{s}</button
+					>
 				{/each}
 			</div>
 		{/if}
 	{:else}
-		<button type="button" class={cn('bg-transparent cursor-text text-left', className)} onclick={startEdit}>
+		<button
+			type="button"
+			class={cn('cursor-text bg-transparent text-left', className)}
+			onclick={startEdit}
+		>
 			{value || placeholder}
 		</button>
 	{/if}

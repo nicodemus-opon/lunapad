@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { registerCSV } from '$lib/services/duckdb';
+	import { registerCSV, persistUploadedFile } from '$lib/services/duckdb';
 	import { addTable } from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Upload } from '@lucide/svelte';
@@ -35,6 +35,13 @@
 				.replace(/^([0-9])/, '_$1');
 
 			const { rowCount, columns, columnTypes } = await registerCSV(tableName, buffer);
+			await persistUploadedFile({
+				tableName,
+				fileName: file.name,
+				format: 'csv',
+				buffer,
+				hasHeader: true
+			});
 			addTable({
 				name: tableName,
 				fileName: file.name,
@@ -42,7 +49,9 @@
 				columns,
 				columnTypes
 			});
-			toast.success(`Loaded "${tableName}" — ${rowCount.toLocaleString()} rows, ${columns.length} columns`);
+			toast.success(
+				`Loaded "${tableName}" — ${rowCount.toLocaleString()} rows, ${columns.length} columns`
+			);
 		} catch (err: unknown) {
 			toast.error(`Failed to load CSV: ${(err as Error).message}`);
 		} finally {
@@ -77,16 +86,21 @@
 		{#if uploading}
 			<Skeleton class="h-3.5 w-3.5 rounded-full" />
 		{:else}
-			<Upload class="w-3.5 h-3.5" />
+			<Upload class="h-3.5 w-3.5" />
 		{/if}
 	</Button>
 {:else}
 	<!-- Drop zone -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="relative flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 transition-colors cursor-pointer
-			{dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/60 hover:bg-muted/30'}"
-		ondragover={(e) => { e.preventDefault(); dragOver = true; }}
+		class="relative flex cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2 transition-colors
+			{dragOver
+			? 'border-primary bg-primary/5'
+			: 'border-border hover:border-primary/60 hover:bg-muted/30'}"
+		ondragover={(e) => {
+			e.preventDefault();
+			dragOver = true;
+		}}
 		ondragleave={() => (dragOver = false)}
 		ondrop={onDrop}
 		onclick={() => fileInput.click()}
@@ -99,7 +113,7 @@
 			<Skeleton class="h-4 w-4 rounded-full" />
 			<span class="text-xs text-muted-foreground">Loading…</span>
 		{:else}
-			<Upload class="w-3.5 h-3.5 text-muted-foreground" />
+			<Upload class="h-3.5 w-3.5 text-muted-foreground" />
 			<span class="text-xs text-muted-foreground">
 				{#if dragOver}
 					Drop CSV here
@@ -111,10 +125,4 @@
 	</div>
 {/if}
 
-<input
-	bind:this={fileInput}
-	type="file"
-	accept=".csv"
-	class="hidden"
-	onchange={onFileSelect}
-/>
+<input bind:this={fileInput} type="file" accept=".csv" class="hidden" onchange={onFileSelect} />

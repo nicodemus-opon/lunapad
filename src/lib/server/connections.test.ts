@@ -50,7 +50,12 @@ const clickHouseConnection: Connection = {
 /** Single-page Trino query response (done immediately, no nextUri). */
 function trinoPage(columns: { name: string; type?: string }[], data: unknown[][]): Response {
 	return new Response(
-		JSON.stringify({ id: 'q1', columns: columns.map((c) => ({ type: 'varchar', ...c })), data, stats: { state: 'FINISHED' } }),
+		JSON.stringify({
+			id: 'q1',
+			columns: columns.map((c) => ({ type: 'varchar', ...c })),
+			data,
+			stats: { state: 'FINISHED' }
+		}),
 		{ status: 200 }
 	);
 }
@@ -144,8 +149,12 @@ describe('unregisterCatalog', () => {
 	it('also deletes the Google Sheets and BigQuery credentials files', async () => {
 		fetchMock.mockResolvedValueOnce(trinoOK());
 		await unregisterCatalog('my_gsheets_source');
-		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('secrets/my_gsheets_source-gsheets.json'));
-		expect(unlinkMock).toHaveBeenCalledWith(expect.stringContaining('secrets/my_gsheets_source-bigquery.json'));
+		expect(unlinkMock).toHaveBeenCalledWith(
+			expect.stringContaining('secrets/my_gsheets_source-gsheets.json')
+		);
+		expect(unlinkMock).toHaveBeenCalledWith(
+			expect.stringContaining('secrets/my_gsheets_source-bigquery.json')
+		);
 	});
 
 	it('silently ignores ENOENT when deleting credential files', async () => {
@@ -158,19 +167,35 @@ describe('unregisterCatalog', () => {
 describe('new connector catalog content', () => {
 	it('writes MariaDB JDBC URL with SSL', async () => {
 		const conn: Connection = {
-			id: 'maria-1', name: 'MariaDB', type: 'mariadb', catalogName: 'maria_main',
-			host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: true
+			id: 'maria-1',
+			name: 'MariaDB',
+			type: 'mariadb',
+			catalogName: 'maria_main',
+			host: 'localhost',
+			port: 3306,
+			database: 'mydb',
+			username: 'root',
+			ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING mariadb');
-		expect(content).toContain('jdbc:mariadb://localhost:3306/mydb?useSsl=true&trustServerCertificate=true');
+		expect(content).toContain(
+			'jdbc:mariadb://localhost:3306/mydb?useSsl=true&trustServerCertificate=true'
+		);
 		expect(content).toContain(`"connection-password" = 'pw'`);
 	});
 
 	it('writes Redshift JDBC URL with semicolon-delimited SSL param', async () => {
 		const conn: Connection = {
-			id: 'rs-1', name: 'Redshift', type: 'redshift', catalogName: 'rs_main',
-			host: 'redshift.example.com', port: 5439, database: 'dev', username: 'awsuser', ssl: true
+			id: 'rs-1',
+			name: 'Redshift',
+			type: 'redshift',
+			catalogName: 'rs_main',
+			host: 'redshift.example.com',
+			port: 5439,
+			database: 'dev',
+			username: 'awsuser',
+			ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING redshift');
@@ -179,8 +204,15 @@ describe('new connector catalog content', () => {
 
 	it('writes SingleStore JDBC URL with lowercase useSsl param', async () => {
 		const conn: Connection = {
-			id: 'ss-1', name: 'SingleStore', type: 'singlestore', catalogName: 'ss_main',
-			host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: true
+			id: 'ss-1',
+			name: 'SingleStore',
+			type: 'singlestore',
+			catalogName: 'ss_main',
+			host: 'localhost',
+			port: 3306,
+			database: 'mydb',
+			username: 'root',
+			ssl: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING singlestore');
@@ -189,18 +221,34 @@ describe('new connector catalog content', () => {
 
 	it('writes MongoDB connection-url with URI-encoded credentials', async () => {
 		const conn: Connection = {
-			id: 'mongo-1', name: 'Mongo', type: 'mongodb', catalogName: 'mongo_main',
-			host: 'localhost', port: 27017, database: 'mydb', username: 'appuser', ssl: false
+			id: 'mongo-1',
+			name: 'Mongo',
+			type: 'mongodb',
+			catalogName: 'mongo_main',
+			host: 'localhost',
+			port: 27017,
+			database: 'mydb',
+			username: 'appuser',
+			ssl: false
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING mongodb');
-		expect(content).toContain(`"mongodb.connection-url" = 'mongodb://appuser:pw@localhost:27017/mydb'`);
+		expect(content).toContain(
+			`"mongodb.connection-url" = 'mongodb://appuser:pw@localhost:27017/mydb'`
+		);
 	});
 
 	it('URI-encodes special characters in MongoDB username/password', async () => {
 		const conn: Connection = {
-			id: 'mongo-2', name: 'Mongo', type: 'mongodb', catalogName: 'mongo_special',
-			host: 'localhost', port: 27017, database: 'mydb', username: 'a@b', ssl: false
+			id: 'mongo-2',
+			name: 'Mongo',
+			type: 'mongodb',
+			catalogName: 'mongo_special',
+			host: 'localhost',
+			port: 27017,
+			database: 'mydb',
+			username: 'a@b',
+			ssl: false
 		};
 		const content = await registerAndCapture(conn, { password: 'p/w' });
 		expect(content).toContain(encodeURIComponent('a@b'));
@@ -209,8 +257,14 @@ describe('new connector catalog content', () => {
 
 	it('writes Elasticsearch host/port/schema and auth properties', async () => {
 		const conn: Connection = {
-			id: 'es-1', name: 'ES', type: 'elasticsearch', catalogName: 'es_main',
-			host: 'es.example.com', port: 9200, database: 'default', username: 'elastic'
+			id: 'es-1',
+			name: 'ES',
+			type: 'elasticsearch',
+			catalogName: 'es_main',
+			host: 'es.example.com',
+			port: 9200,
+			database: 'default',
+			username: 'elastic'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING elasticsearch');
@@ -224,8 +278,13 @@ describe('new connector catalog content', () => {
 
 	it('omits Elasticsearch auth properties when no username is set', async () => {
 		const conn: Connection = {
-			id: 'es-2', name: 'ES', type: 'elasticsearch', catalogName: 'es_noauth',
-			host: 'es.example.com', port: 9200, database: 'default'
+			id: 'es-2',
+			name: 'ES',
+			type: 'elasticsearch',
+			catalogName: 'es_noauth',
+			host: 'es.example.com',
+			port: 9200,
+			database: 'default'
 		};
 		const content = await registerAndCapture(conn, undefined);
 		expect(content).not.toContain('elasticsearch.security');
@@ -234,9 +293,16 @@ describe('new connector catalog content', () => {
 
 	it('writes SQL Server semicolon-delimited URL with encrypt=true', async () => {
 		const conn: Connection = {
-			id: 'mssql-1', name: 'SQL Server', type: 'sqlserver', catalogName: 'mssql_main',
-			host: 'sql.example.com', port: 1433, database: 'master', username: 'sa',
-			encrypt: true, trustServerCertificate: true
+			id: 'mssql-1',
+			name: 'SQL Server',
+			type: 'sqlserver',
+			catalogName: 'mssql_main',
+			host: 'sql.example.com',
+			port: 1433,
+			database: 'master',
+			username: 'sa',
+			encrypt: true,
+			trustServerCertificate: true
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING sqlserver');
@@ -247,9 +313,16 @@ describe('new connector catalog content', () => {
 
 	it('writes SQL Server URL with encrypt=false', async () => {
 		const conn: Connection = {
-			id: 'mssql-2', name: 'SQL Server', type: 'sqlserver', catalogName: 'mssql_noenc',
-			host: 'sql.example.com', port: 1433, database: 'master', username: 'sa',
-			encrypt: false, trustServerCertificate: false
+			id: 'mssql-2',
+			name: 'SQL Server',
+			type: 'sqlserver',
+			catalogName: 'mssql_noenc',
+			host: 'sql.example.com',
+			port: 1433,
+			database: 'master',
+			username: 'sa',
+			encrypt: false,
+			trustServerCertificate: false
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('encrypt=false;trustServerCertificate=false');
@@ -257,20 +330,32 @@ describe('new connector catalog content', () => {
 
 	it('writes Oracle Service Name URL (double-slash syntax)', async () => {
 		const conn: Connection = {
-			id: 'ora-1', name: 'Oracle', type: 'oracle', catalogName: 'ora_main',
-			host: 'ora.example.com', port: 1521, username: 'system',
-			identifierType: 'service_name', serviceName: 'ORCLPDB1'
+			id: 'ora-1',
+			name: 'Oracle',
+			type: 'oracle',
+			catalogName: 'ora_main',
+			host: 'ora.example.com',
+			port: 1521,
+			username: 'system',
+			identifierType: 'service_name',
+			serviceName: 'ORCLPDB1'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING oracle');
-		expect(content).toContain("jdbc:oracle:thin:@//ora.example.com:1521/ORCLPDB1");
+		expect(content).toContain('jdbc:oracle:thin:@//ora.example.com:1521/ORCLPDB1');
 	});
 
 	it('writes Oracle SID URL (colon syntax)', async () => {
 		const conn: Connection = {
-			id: 'ora-2', name: 'Oracle', type: 'oracle', catalogName: 'ora_sid',
-			host: 'ora.example.com', port: 1521, username: 'system',
-			identifierType: 'sid', serviceName: 'ORCL'
+			id: 'ora-2',
+			name: 'Oracle',
+			type: 'oracle',
+			catalogName: 'ora_sid',
+			host: 'ora.example.com',
+			port: 1521,
+			username: 'system',
+			identifierType: 'sid',
+			serviceName: 'ORCL'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('jdbc:oracle:thin:@ora.example.com:1521:ORCL');
@@ -278,13 +363,19 @@ describe('new connector catalog content', () => {
 
 	it('writes Snowflake properties with account/warehouse/database as separate keys, with role', async () => {
 		const conn: Connection = {
-			id: 'sf-1', name: 'Snowflake', type: 'snowflake', catalogName: 'sf_main',
-			account: 'xy12345.us-east-1', warehouse: 'COMPUTE_WH', database: 'MYDB',
-			username: 'svc_user', role: 'ANALYST'
+			id: 'sf-1',
+			name: 'Snowflake',
+			type: 'snowflake',
+			catalogName: 'sf_main',
+			account: 'xy12345.us-east-1',
+			warehouse: 'COMPUTE_WH',
+			database: 'MYDB',
+			username: 'svc_user',
+			role: 'ANALYST'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain('USING snowflake');
-		expect(content).toContain("jdbc:snowflake://xy12345.us-east-1.snowflakecomputing.com");
+		expect(content).toContain('jdbc:snowflake://xy12345.us-east-1.snowflakecomputing.com');
 		expect(content).not.toContain('?warehouse'); // not a URL param
 		expect(content).toContain(`"snowflake.account" = 'xy12345.us-east-1'`);
 		expect(content).toContain(`"snowflake.database" = 'MYDB'`);
@@ -294,8 +385,14 @@ describe('new connector catalog content', () => {
 
 	it('omits Snowflake role property when not set', async () => {
 		const conn: Connection = {
-			id: 'sf-2', name: 'Snowflake', type: 'snowflake', catalogName: 'sf_norole',
-			account: 'xy12345.us-east-1', warehouse: 'COMPUTE_WH', database: 'MYDB', username: 'svc_user'
+			id: 'sf-2',
+			name: 'Snowflake',
+			type: 'snowflake',
+			catalogName: 'sf_norole',
+			account: 'xy12345.us-east-1',
+			warehouse: 'COMPUTE_WH',
+			database: 'MYDB',
+			username: 'svc_user'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).not.toContain('snowflake.role');
@@ -303,8 +400,13 @@ describe('new connector catalog content', () => {
 
 	it('writes Cassandra contact-points and required local-dc, no auth when no username', async () => {
 		const conn: Connection = {
-			id: 'cass-1', name: 'Cassandra', type: 'cassandra', catalogName: 'cass_main',
-			contactPoints: '10.0.0.1,10.0.0.2', port: 9042, localDatacenter: 'datacenter1'
+			id: 'cass-1',
+			name: 'Cassandra',
+			type: 'cassandra',
+			catalogName: 'cass_main',
+			contactPoints: '10.0.0.1,10.0.0.2',
+			port: 9042,
+			localDatacenter: 'datacenter1'
 		};
 		const content = await registerAndCapture(conn, undefined);
 		expect(content).toContain('USING cassandra');
@@ -316,8 +418,14 @@ describe('new connector catalog content', () => {
 
 	it('adds Cassandra PASSWORD auth when username is set', async () => {
 		const conn: Connection = {
-			id: 'cass-2', name: 'Cassandra', type: 'cassandra', catalogName: 'cass_auth',
-			contactPoints: '10.0.0.1', port: 9042, localDatacenter: 'datacenter1', username: 'cassandra_user'
+			id: 'cass-2',
+			name: 'Cassandra',
+			type: 'cassandra',
+			catalogName: 'cass_auth',
+			contactPoints: '10.0.0.1',
+			port: 9042,
+			localDatacenter: 'datacenter1',
+			username: 'cassandra_user'
 		};
 		const content = await registerAndCapture(conn, { password: 'pw' });
 		expect(content).toContain(`"cassandra.security" = 'PASSWORD'`);
@@ -327,10 +435,15 @@ describe('new connector catalog content', () => {
 
 	it('writes Google Sheets credentials file and references its path in the catalog properties', async () => {
 		const conn: Connection = {
-			id: 'gs-1', name: 'Sheets', type: 'gsheets', catalogName: 'my_gsheets_source',
+			id: 'gs-1',
+			name: 'Sheets',
+			type: 'gsheets',
+			catalogName: 'my_gsheets_source',
 			metadataSheetId: 'sheet123'
 		};
-		const content = await registerAndCapture(conn, { credentialsJson: '{"type":"service_account"}' });
+		const content = await registerAndCapture(conn, {
+			credentialsJson: '{"type":"service_account"}'
+		});
 
 		const credsCall = writeFileMock.mock.calls.find((c) => String(c[0]).includes('-gsheets.json'));
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
@@ -344,16 +457,24 @@ describe('new connector catalog content', () => {
 
 	it('rejects Google Sheets registration without credentialsJson', async () => {
 		const conn: Connection = {
-			id: 'gs-2', name: 'Sheets', type: 'gsheets', catalogName: 'gs_missing_creds',
+			id: 'gs-2',
+			name: 'Sheets',
+			type: 'gsheets',
+			catalogName: 'gs_missing_creds',
 			metadataSheetId: 'sheet123'
 		};
-		await expect(registerCatalog(conn, undefined)).rejects.toThrow('requires a service-account credentials JSON');
+		await expect(registerCatalog(conn, undefined)).rejects.toThrow(
+			'requires a service-account credentials JSON'
+		);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects Google Sheets registration with invalid JSON', async () => {
 		const conn: Connection = {
-			id: 'gs-3', name: 'Sheets', type: 'gsheets', catalogName: 'gs_bad_json',
+			id: 'gs-3',
+			name: 'Sheets',
+			type: 'gsheets',
+			catalogName: 'gs_bad_json',
 			metadataSheetId: 'sheet123'
 		};
 		await expect(registerCatalog(conn, { credentialsJson: 'not json' })).rejects.toThrow(
@@ -364,10 +485,16 @@ describe('new connector catalog content', () => {
 
 	it('writes BigQuery credentials file and references it via bigquery.credentials-file', async () => {
 		const conn: Connection = {
-			id: 'bq-1', name: 'BigQuery', type: 'bigquery', catalogName: 'my_bigquery_source',
-			projectId: 'my-gcp-project', parentProjectId: 'billing-project'
+			id: 'bq-1',
+			name: 'BigQuery',
+			type: 'bigquery',
+			catalogName: 'my_bigquery_source',
+			projectId: 'my-gcp-project',
+			parentProjectId: 'billing-project'
 		};
-		const content = await registerAndCapture(conn, { credentialsJson: '{"type":"service_account"}' });
+		const content = await registerAndCapture(conn, {
+			credentialsJson: '{"type":"service_account"}'
+		});
 
 		const credsCall = writeFileMock.mock.calls.find((c) => String(c[0]).includes('-bigquery.json'));
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
@@ -382,28 +509,43 @@ describe('new connector catalog content', () => {
 
 	it('omits bigquery.parent-project-id when not set', async () => {
 		const conn: Connection = {
-			id: 'bq-2', name: 'BigQuery', type: 'bigquery', catalogName: 'bq_noparent',
+			id: 'bq-2',
+			name: 'BigQuery',
+			type: 'bigquery',
+			catalogName: 'bq_noparent',
 			projectId: 'my-gcp-project'
 		};
-		const content = await registerAndCapture(conn, { credentialsJson: '{"type":"service_account"}' });
+		const content = await registerAndCapture(conn, {
+			credentialsJson: '{"type":"service_account"}'
+		});
 		expect(content).not.toContain('bigquery.parent-project-id');
 	});
 
 	it('rejects BigQuery registration without credentialsJson', async () => {
 		const conn: Connection = {
-			id: 'bq-3', name: 'BigQuery', type: 'bigquery', catalogName: 'bq_missing_creds',
+			id: 'bq-3',
+			name: 'BigQuery',
+			type: 'bigquery',
+			catalogName: 'bq_missing_creds',
 			projectId: 'my-gcp-project'
 		};
-		await expect(registerCatalog(conn, undefined)).rejects.toThrow('requires a service-account credentials JSON');
+		await expect(registerCatalog(conn, undefined)).rejects.toThrow(
+			'requires a service-account credentials JSON'
+		);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects BigQuery registration with invalid JSON', async () => {
 		const conn: Connection = {
-			id: 'bq-4', name: 'BigQuery', type: 'bigquery', catalogName: 'bq_bad_json',
+			id: 'bq-4',
+			name: 'BigQuery',
+			type: 'bigquery',
+			catalogName: 'bq_bad_json',
 			projectId: 'my-gcp-project'
 		};
-		await expect(registerCatalog(conn, { credentialsJson: 'not json' })).rejects.toThrow('must be valid JSON');
+		await expect(registerCatalog(conn, { credentialsJson: 'not json' })).rejects.toThrow(
+			'must be valid JSON'
+		);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
@@ -415,7 +557,9 @@ describe('testExternalConnection', () => {
 			.mockResolvedValueOnce(trinoOK()) // CREATE CATALOG ...
 			.mockResolvedValueOnce(trinoPage([{ name: '1' }], [[1]])); // probe
 
-		await expect(testExternalConnection(postgresConnection, { password: 'pw' })).resolves.toEqual({ ok: true });
+		await expect(testExternalConnection(postgresConnection, { password: 'pw' })).resolves.toEqual({
+			ok: true
+		});
 
 		const probeBody = fetchMock.mock.calls[2]?.[1]?.body as string;
 		expect(probeBody).toContain('information_schema.schemata');
@@ -428,8 +572,9 @@ describe('testExternalConnection', () => {
 			// Trino returns empty result when it can't reach the underlying DB
 			.mockResolvedValueOnce(trinoPage([{ name: '1' }], []));
 
-		await expect(testExternalConnection(postgresConnection, { password: 'pw' }))
-			.rejects.toThrow('got no response from the postgres database');
+		await expect(testExternalConnection(postgresConnection, { password: 'pw' })).rejects.toThrow(
+			'got no response from the postgres database'
+		);
 	});
 });
 
@@ -439,7 +584,11 @@ describe('queryExternalConnection', () => {
 			trinoPage([{ name: 'id' }, { name: 'title' }], [[1, 'Engineer']])
 		);
 
-		const result = await queryExternalConnection(postgresConnection, undefined, 'SELECT id, title FROM jobs');
+		const result = await queryExternalConnection(
+			postgresConnection,
+			undefined,
+			'SELECT id, title FROM jobs'
+		);
 
 		expect(result.columns).toEqual(['id', 'title']);
 		expect(result.rows).toEqual([{ id: 1, title: 'Engineer' }]);
@@ -453,7 +602,11 @@ describe('queryExternalConnection', () => {
 			// First query fails: catalog not found
 			.mockResolvedValueOnce(
 				new Response(
-					JSON.stringify({ id: 'q1', error: { message: "Catalog 'primary_postgres' does not exist" }, stats: { state: 'FAILED' } }),
+					JSON.stringify({
+						id: 'q1',
+						error: { message: "Catalog 'primary_postgres' does not exist" },
+						stats: { state: 'FAILED' }
+					}),
 					{ status: 200 }
 				)
 			)
@@ -463,20 +616,31 @@ describe('queryExternalConnection', () => {
 			// Retry query succeeds
 			.mockResolvedValueOnce(trinoPage([{ name: 'id' }], [[1]]));
 
-		const result = await queryExternalConnection(postgresConnection, { password: 'pw' }, 'SELECT id FROM t');
+		const result = await queryExternalConnection(
+			postgresConnection,
+			{ password: 'pw' },
+			'SELECT id FROM t'
+		);
 		expect(result.rows).toEqual([{ id: 1 }]);
 	});
 
 	it('handles paginated responses', async () => {
 		fetchMock
 			.mockResolvedValueOnce(
-				new Response(JSON.stringify({
-					id: 'q1', columns: [{ name: 'id' }], data: [[1]],
-					nextUri: 'http://trino:8080/v1/statement/executing/q1?token=1'
-				}), { status: 200 })
+				new Response(
+					JSON.stringify({
+						id: 'q1',
+						columns: [{ name: 'id' }],
+						data: [[1]],
+						nextUri: 'http://trino:8080/v1/statement/executing/q1?token=1'
+					}),
+					{ status: 200 }
+				)
 			)
 			.mockResolvedValueOnce(
-				new Response(JSON.stringify({ id: 'q1', data: [[2], [3]], stats: { state: 'FINISHED' } }), { status: 200 })
+				new Response(JSON.stringify({ id: 'q1', data: [[2], [3]], stats: { state: 'FINISHED' } }), {
+					status: 200
+				})
 			);
 
 		const result = await queryExternalConnection(postgresConnection, undefined, 'SELECT id FROM t');
@@ -540,14 +704,27 @@ describe('fetchExternalConnectionSchema', () => {
 	it('queries catalog information_schema.columns directly', async () => {
 		fetchMock.mockResolvedValueOnce(
 			trinoPage(
-				[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
-				[['public', 'jobs', 'id', 'integer'], ['public', 'jobs', 'title', 'varchar']]
+				[
+					{ name: 'table_schem' },
+					{ name: 'table_name' },
+					{ name: 'column_name' },
+					{ name: 'type_name' }
+				],
+				[
+					['public', 'jobs', 'id', 'integer'],
+					['public', 'jobs', 'title', 'varchar']
+				]
 			)
 		);
 
 		const result = await fetchExternalConnectionSchema(postgresConnection);
 		expect(result.tables).toHaveLength(1);
-		expect(result.tables[0]).toEqual({ name: 'jobs', schema: 'public', columns: ['id', 'title'], columnTypes: ['integer', 'varchar'] });
+		expect(result.tables[0]).toEqual({
+			name: 'jobs',
+			schema: 'public',
+			columns: ['id', 'title'],
+			columnTypes: ['integer', 'varchar']
+		});
 
 		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
 		expect(headers?.['X-Trino-Catalog']).toBe('primary_postgres');
@@ -559,13 +736,26 @@ describe('fetchExternalConnectionSchema', () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
-					[['public', 'jobs', 'id', 'integer'], ['public', 'jobs', 'title', 'varchar']]
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'type_name' }
+					],
+					[
+						['public', 'jobs', 'id', 'integer'],
+						['public', 'jobs', 'title', 'varchar']
+					]
 				)
 			)
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'comment' }],
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'comment' }
+					],
 					[
 						['public', 'jobs', null, 'Job postings'],
 						['public', 'jobs', 'title', 'The job title']
@@ -586,13 +776,23 @@ describe('fetchExternalConnectionSchema', () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'type_name' }
+					],
 					[['analytics', 'events', 'id', 'UInt64']]
 				)
 			)
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'comment' }],
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'comment' }
+					],
 					[['analytics', 'events', 'id', 'Primary key']]
 				)
 			);
@@ -605,20 +805,34 @@ describe('fetchExternalConnectionSchema', () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'type_name' }
+					],
 					[['public', 'jobs', 'id', 'integer']]
 				)
 			)
 			.mockResolvedValueOnce(
 				new Response(
-					JSON.stringify({ id: 'q2', error: { message: 'system.query not supported' }, stats: { state: 'FAILED' } }),
+					JSON.stringify({
+						id: 'q2',
+						error: { message: 'system.query not supported' },
+						stats: { state: 'FAILED' }
+					}),
 					{ status: 200 }
 				)
 			);
 
 		const result = await fetchExternalConnectionSchema(postgresConnection);
 		expect(result.tables).toHaveLength(1);
-		expect(result.tables[0]).toEqual({ name: 'jobs', schema: 'public', columns: ['id'], columnTypes: ['integer'] });
+		expect(result.tables[0]).toEqual({
+			name: 'jobs',
+			schema: 'public',
+			columns: ['id'],
+			columnTypes: ['integer']
+		});
 	});
 
 	it('auto-registers on catalog-not-found then retries', async () => {
@@ -626,7 +840,11 @@ describe('fetchExternalConnectionSchema', () => {
 			// First schema query fails: catalog not found
 			.mockResolvedValueOnce(
 				new Response(
-					JSON.stringify({ id: 'q1', error: { message: "Catalog 'primary_postgres' does not exist" }, stats: { state: 'FAILED' } }),
+					JSON.stringify({
+						id: 'q1',
+						error: { message: "Catalog 'primary_postgres' does not exist" },
+						stats: { state: 'FAILED' }
+					}),
 					{ status: 200 }
 				)
 			)
@@ -636,7 +854,12 @@ describe('fetchExternalConnectionSchema', () => {
 			// Retry returns columns
 			.mockResolvedValueOnce(
 				trinoPage(
-					[{ name: 'table_schem' }, { name: 'table_name' }, { name: 'column_name' }, { name: 'type_name' }],
+					[
+						{ name: 'table_schem' },
+						{ name: 'table_name' },
+						{ name: 'column_name' },
+						{ name: 'type_name' }
+					],
 					[['public', 'orders', 'id', 'integer']]
 				)
 			);
@@ -651,10 +874,21 @@ describe('materializeExternalConnection', () => {
 	it('materializes as view with 3-part Trino DDL', async () => {
 		fetchMock
 			.mockResolvedValueOnce(trinoPage([{ name: 'table_type' }], []))
-			.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'ddl', stats: { state: 'FINISHED' } }), { status: 200 }));
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ id: 'ddl', stats: { state: 'FINISHED' } }), { status: 200 })
+			);
 
-		const result = await materializeExternalConnection(postgresConnection, undefined, 'mart', undefined, 'SELECT 1', 'view');
+		const result = await materializeExternalConnection(
+			postgresConnection,
+			undefined,
+			'mart',
+			undefined,
+			'SELECT 1',
+			'view'
+		);
 		expect(result.type).toBe('view');
-		expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('CREATE OR REPLACE VIEW "primary_postgres"."public"."mart"');
+		expect(fetchMock.mock.calls[1]?.[1]?.body).toContain(
+			'CREATE OR REPLACE VIEW "primary_postgres"."public"."mart"'
+		);
 	});
 });

@@ -37,7 +37,10 @@
 	let pendingNewValue = $state('');
 
 	function addPending() {
-		pendingNewValue = pickSortColumn(availableColumns, stage.keys.map((k) => k.column));
+		pendingNewValue = pickSortColumn(
+			availableColumns,
+			stage.keys.map((k) => k.column)
+		);
 		pendingNew = true;
 	}
 
@@ -54,32 +57,41 @@
 	}
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	{#if stage.keys.length === 0 && !pendingNew}
 		<span class="text-xs text-muted-foreground/60 italic">no sort keys</span>
 	{/if}
 
 	{#each stage.keys as key, idx}
-		{@const invalid = availableColumns.length > 0 && key.column && !availableColumns.includes(key.column)}
+		{@const invalid =
+			availableColumns.length > 0 && key.column && !availableColumns.includes(key.column)}
 		<div
 			role="listitem"
 			draggable="true"
 			ondragstart={() => (dragKeyIdx = idx)}
 			ondragover={(e) => e.preventDefault()}
-			ondrop={(e) => { e.preventDefault(); if (dragKeyIdx !== null && dragKeyIdx !== idx) { reorderKeys(dragKeyIdx, idx); dragKeyIdx = null; } }}
+			ondrop={(e) => {
+				e.preventDefault();
+				if (dragKeyIdx !== null && dragKeyIdx !== idx) {
+					reorderKeys(dragKeyIdx, idx);
+					dragKeyIdx = null;
+				}
+			}}
 			ondragend={() => (dragKeyIdx = null)}
-			class="{CHIP} cursor-grab active:cursor-grabbing {dragKeyIdx !== null && dragKeyIdx === idx ? 'opacity-40' : ''} {invalid ? CHIP_INVALID : ''}"
+			class="{CHIP} cursor-grab active:cursor-grabbing {dragKeyIdx !== null && dragKeyIdx === idx
+				? 'opacity-40'
+				: ''} {invalid ? CHIP_INVALID : ''}"
 		>
 			<!-- Direction toggle -->
 			<button
-				class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+				class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
 				onclick={() => updateKey(idx, { dir: key.dir === 'asc' ? 'desc' : 'asc' })}
 				title="Click to toggle direction"
 			>
 				{#if key.dir === 'asc'}
-					<ArrowUp class="w-3 h-3" />
+					<ArrowUp class="h-3 w-3" />
 				{:else}
-					<ArrowDown class="w-3 h-3" />
+					<ArrowDown class="h-3 w-3" />
 				{/if}
 			</button>
 
@@ -93,12 +105,8 @@
 			/>
 
 			<!-- Delete -->
-			<button
-				class={CHIP_X}
-				onclick={() => removeKey(idx)}
-				aria-label="Remove sort key"
-			>
-				<X class="w-3 h-3" />
+			<button class={CHIP_X} onclick={() => removeKey(idx)} aria-label="Remove sort key">
+				<X class="h-3 w-3" />
 			</button>
 		</div>
 	{/each}
@@ -106,7 +114,9 @@
 	<!-- Pending new key (opens in edit mode immediately) -->
 	{#if pendingNew}
 		<div class="{CHIP} border-ring/60">
-			<span class="flex h-full items-center pl-1.5 pr-0.5 text-muted-foreground"><ArrowUp class="w-3 h-3" /></span>
+			<span class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground"
+				><ArrowUp class="h-3 w-3" /></span
+			>
 			<InlineChipLabel
 				value={pendingNewValue}
 				suggestions={availableColumns}
@@ -122,7 +132,7 @@
 	<!-- Add sort key button -->
 	{#if !pendingNew}
 		<button class={CHIP_ADD} onclick={addPending}>
-			<Plus class="w-3 h-3" /> add
+			<Plus class="h-3 w-3" /> add
 		</button>
 	{/if}
 </div>

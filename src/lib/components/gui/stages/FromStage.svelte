@@ -19,9 +19,7 @@
 		return { schema: name.slice(0, idx), table: name.slice(idx + 1) };
 	}
 
-	const entries = $derived(
-		availableTables.map((name) => ({ name, ...splitSourceName(name) }))
-	);
+	const entries = $derived(availableTables.map((name) => ({ name, ...splitSourceName(name) })));
 
 	const schemaOptions = $derived.by(() => {
 		const out: string[] = [];
@@ -49,15 +47,11 @@
 	});
 
 	const tablesForSchema = $derived(
-		selectedSchema
-			? entries.filter((e) => e.schema === selectedSchema)
-			: entries
+		selectedSchema ? entries.filter((e) => e.schema === selectedSchema) : entries
 	);
 
 	const tableSuggestions = $derived(
-		selectedSchema
-			? tablesForSchema.map((e) => e.table)
-			: tablesForSchema.map((e) => e.name)
+		selectedSchema ? tablesForSchema.map((e) => e.table) : tablesForSchema.map((e) => e.name)
 	);
 
 	const schemaSuggestions = $derived(
@@ -89,10 +83,15 @@
 
 	function onTableInput(rawTable: string): void {
 		const t = rawTable.trim();
-		if (!t) { onUpdate({ ...stage, table: '' }); return; }
+		if (!t) {
+			onUpdate({ ...stage, table: '' });
+			return;
+		}
 
 		if (selectedSchema) {
-			const found = entries.find((e) => e.schema === selectedSchema && (e.table === t || e.name === t));
+			const found = entries.find(
+				(e) => e.schema === selectedSchema && (e.table === t || e.name === t)
+			);
 			const sourceName = selectedSchema === CELL_OUTPUTS_SCHEMA ? t : `${selectedSchema}.${t}`;
 			onUpdate({ ...stage, table: found?.name ?? sourceName });
 		} else {
@@ -116,7 +115,7 @@
 		<ChipInput
 			value={stage.alias}
 			placeholder="alias…"
-			class="pl-2 pr-0.5 py-1 font-mono text-muted-foreground/70"
+			class="py-1 pr-0.5 pl-2 font-mono text-muted-foreground/70"
 			oninput={(v) => onUpdate({ ...stage, alias: v || undefined })}
 			oncommit={(v) => onUpdate({ ...stage, alias: v.trim() || undefined })}
 		/>
@@ -128,7 +127,7 @@
 			value={selectedSchema ? schemaLabel(selectedSchema) : ''}
 			suggestions={schemaSuggestions}
 			placeholder="schema…"
-			class="pl-2.5 py-1 font-mono text-muted-foreground/60"
+			class="py-1 pl-2.5 font-mono text-muted-foreground/60"
 			oninput={onSchemaInput}
 			oncommit={onSchemaInput}
 		/>
@@ -139,7 +138,9 @@
 		value={selectedTableName}
 		suggestions={tableSuggestions}
 		placeholder={hasMultipleSchemas ? 'table…' : 'select source…'}
-		class="{hasMultipleSchemas ? 'pr-2.5' : 'px-2.5'} py-1 font-mono {stage.table ? '' : 'text-muted-foreground'}"
+		class="{hasMultipleSchemas ? 'pr-2.5' : 'px-2.5'} py-1 font-mono {stage.table
+			? ''
+			: 'text-muted-foreground'}"
 		oninput={onTableInput}
 		oncommit={onTableInput}
 	/>
@@ -149,7 +150,7 @@
 		<button
 			class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/from:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 			onclick={() => onUpdate({ ...stage, alias: stage.table?.slice(0, 1) || 't' })}
-			title="Add alias"
-		>≡</button>
+			title="Add alias">≡</button
+		>
 	{/if}
 </div>

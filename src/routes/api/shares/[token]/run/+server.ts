@@ -5,6 +5,7 @@ import { isRateLimited } from '$lib/server/share-rate-limit';
 import { queryExternalConnection } from '$lib/server/connections';
 import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
+import { getCachedResult, setCachedResult, makeQueryCacheKey } from '$lib/server/result-cache';
 
 interface RunRequest {
 	cellId: string;
@@ -36,12 +37,21 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	const sql = substituteFilterTokens(cell.sqlTemplate, body.filters ?? {});
 
+	// Cache TTL matches the share's poll interval so results expire exactly when
+	// the next poll fires — one real DB hit per window, all other viewers get Redis.
+	const ttlMs = share.pollIntervalMs ?? 300_000;
+	const cacheKey = makeQueryCacheKey(token, cell.id, sql);
+
+	const cached = await getCachedResult(cacheKey);
+	if (cached) return json(cached);
+
 	try {
 		const result = await queryExternalConnection(
 			record.connection,
 			record.secret ?? undefined,
 			sql
 		);
+		await setCachedResult(cacheKey, result, ttlMs);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to run query.';

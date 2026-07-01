@@ -22,7 +22,7 @@ import {
 	type SignatureHelpParams,
 	type SignatureHelp,
 	type SignatureInformation,
-	type ParameterInformation,
+	type ParameterInformation
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { createRequire } from 'module';
@@ -34,10 +34,12 @@ const require = createRequire(import.meta.url);
 
 // Load catalogs once at module level — shared across all connections.
 // Paths are relative to this file: src/lib/server/ → src/lib/data/
-const trinoFunctions: { name: string; signature: string; doc: string }[] =
-	require(resolve(__dirname, '../data/trino-functions.json'));
-const duckdbFunctions: { name: string; signature: string; doc: string }[] =
-	require(resolve(__dirname, '../data/duckdb-functions.json'));
+const trinoFunctions: { name: string; signature: string; doc: string }[] = require(
+	resolve(__dirname, '../data/trino-functions.json')
+);
+const duckdbFunctions: { name: string; signature: string; doc: string }[] = require(
+	resolve(__dirname, '../data/duckdb-functions.json')
+);
 
 // Dialect hint is passed in the workspace folder name by the client.
 const TRINO_LANGS = new Set(['trinosql', 'sql']);
@@ -71,9 +73,17 @@ function getFunctionCallContext(
 	let i = offset - 1;
 	while (i >= 0) {
 		const ch = text[i];
-		if (ch === ')') { depth++; i--; continue; }
+		if (ch === ')') {
+			depth++;
+			i--;
+			continue;
+		}
 		if (ch === '(') {
-			if (depth > 0) { depth--; i--; continue; }
+			if (depth > 0) {
+				depth--;
+				i--;
+				continue;
+			}
 			// Found unclosed '(' — scan backwards for identifier
 			let j = i - 1;
 			while (j >= 0 && /\s/.test(text[j])) j--;
@@ -100,36 +110,91 @@ function getFunctionCallContext(
 function parseParams(signature: string): string[] {
 	const m = signature.match(/\(([^)]*)\)/);
 	if (!m) return [];
-	return m[1].split(',').map((p) => p.trim()).filter(Boolean);
+	return m[1]
+		.split(',')
+		.map((p) => p.trim())
+		.filter(Boolean);
 }
 
 // SQL keywords common to both Trino and DuckDB (for completions).
 const SQL_KEYWORDS = [
-	'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT',
-	'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN',
-	'ON', 'AS', 'DISTINCT', 'WITH', 'UNION', 'UNION ALL', 'INTERSECT', 'EXCEPT',
-	'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'DROP TABLE',
-	'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'IN', 'NOT IN', 'EXISTS', 'NOT EXISTS',
-	'BETWEEN', 'LIKE', 'ILIKE', 'IS NULL', 'IS NOT NULL',
-	'ASC', 'DESC', 'NULLS FIRST', 'NULLS LAST',
-	'OVER', 'PARTITION BY', 'ROWS', 'RANGE', 'UNBOUNDED', 'PRECEDING', 'FOLLOWING', 'CURRENT ROW',
-	'CAST', 'TRY_CAST', 'COALESCE', 'NULLIF', 'IF',
-	'TRUE', 'FALSE', 'NULL',
+	'SELECT',
+	'FROM',
+	'WHERE',
+	'GROUP BY',
+	'ORDER BY',
+	'HAVING',
+	'LIMIT',
+	'JOIN',
+	'LEFT JOIN',
+	'RIGHT JOIN',
+	'INNER JOIN',
+	'FULL OUTER JOIN',
+	'CROSS JOIN',
+	'ON',
+	'AS',
+	'DISTINCT',
+	'WITH',
+	'UNION',
+	'UNION ALL',
+	'INTERSECT',
+	'EXCEPT',
+	'INSERT INTO',
+	'UPDATE',
+	'DELETE FROM',
+	'CREATE TABLE',
+	'DROP TABLE',
+	'CASE',
+	'WHEN',
+	'THEN',
+	'ELSE',
+	'END',
+	'IN',
+	'NOT IN',
+	'EXISTS',
+	'NOT EXISTS',
+	'BETWEEN',
+	'LIKE',
+	'ILIKE',
+	'IS NULL',
+	'IS NOT NULL',
+	'ASC',
+	'DESC',
+	'NULLS FIRST',
+	'NULLS LAST',
+	'OVER',
+	'PARTITION BY',
+	'ROWS',
+	'RANGE',
+	'UNBOUNDED',
+	'PRECEDING',
+	'FOLLOWING',
+	'CURRENT ROW',
+	'CAST',
+	'TRY_CAST',
+	'COALESCE',
+	'NULLIF',
+	'IF',
+	'TRUE',
+	'FALSE',
+	'NULL'
 ];
 
 export function startLspForConnection(reader: MessageReader, writer: MessageWriter): void {
 	const connection = createConnection(reader, writer);
 	const documents = new TextDocuments(TextDocument);
 
-	connection.onInitialize((): InitializeResult => ({
-		capabilities: {
-			textDocumentSync: TextDocumentSyncKind.Incremental,
-			completionProvider: { triggerCharacters: ['.', '(', ' '] },
-			hoverProvider: true,
-			signatureHelpProvider: { triggerCharacters: ['(', ','] },
-		},
-		serverInfo: { name: 'lunapad-sql-lsp', version: '1.0.0' },
-	}));
+	connection.onInitialize(
+		(): InitializeResult => ({
+			capabilities: {
+				textDocumentSync: TextDocumentSyncKind.Incremental,
+				completionProvider: { triggerCharacters: ['.', '(', ' '] },
+				hoverProvider: true,
+				signatureHelpProvider: { triggerCharacters: ['(', ','] }
+			},
+			serverInfo: { name: 'lunapad-sql-lsp', version: '1.0.0' }
+		})
+	);
 
 	connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] => {
 		const doc = documents.get(params.textDocument.uri);
@@ -146,7 +211,7 @@ export function startLspForConnection(reader: MessageReader, writer: MessageWrit
 				detail: fn.signature,
 				documentation: { kind: MarkupKind.Markdown, value: fn.doc },
 				insertText: fn.name,
-				sortText: '1' + fn.name,
+				sortText: '1' + fn.name
 			});
 		}
 
@@ -156,7 +221,7 @@ export function startLspForConnection(reader: MessageReader, writer: MessageWrit
 				label: kw,
 				kind: CompletionItemKind.Keyword,
 				insertText: kw,
-				sortText: '2' + kw,
+				sortText: '2' + kw
 			});
 		}
 
@@ -183,8 +248,8 @@ export function startLspForConnection(reader: MessageReader, writer: MessageWrit
 		return {
 			contents: {
 				kind: MarkupKind.Markdown,
-				value: `**\`${fn.signature}\`**\n\n${fn.doc}`,
-			},
+				value: `**\`${fn.signature}\`**\n\n${fn.doc}`
+			}
 		};
 	});
 
@@ -204,13 +269,13 @@ export function startLspForConnection(reader: MessageReader, writer: MessageWrit
 		const sigInfo: SignatureInformation = {
 			label: fn.signature,
 			documentation: { kind: MarkupKind.Markdown, value: fn.doc },
-			parameters: params2.map((p): ParameterInformation => ({ label: p })),
+			parameters: params2.map((p): ParameterInformation => ({ label: p }))
 		};
 
 		return {
 			signatures: [sigInfo],
 			activeSignature: 0,
-			activeParameter: Math.min(ctx.paramIndex, params2.length - 1),
+			activeParameter: Math.min(ctx.paramIndex, params2.length - 1)
 		};
 	});
 

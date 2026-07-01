@@ -14,7 +14,7 @@ describe('InlineResultView controls visibility', () => {
 		expect(source).toContain('controlsVisible?: boolean;');
 		expect(source).toContain('controlsVisible = true');
 		expect(source).toContain('toolbarReserveSpace?: boolean;');
-		expect(source).toContain('toolbarActions?: import(\'svelte\').Snippet;');
+		expect(source).toContain("toolbarActions?: import('svelte').Snippet;");
 		expect(source).toContain("? 'h-7 opacity-100'");
 		expect(source).toContain("? 'h-7 opacity-0 pointer-events-none'");
 		expect(source).toContain(": 'h-0 opacity-0 pointer-events-none'}");

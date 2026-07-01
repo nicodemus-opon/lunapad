@@ -264,13 +264,17 @@
 			</TreeRow>
 		</ContextMenu.Trigger>
 		<ContextMenu.Content class="w-56">
-			<ContextMenu.Label class="text-2xs text-muted-foreground/70 pb-0.5">{qualifiedName}</ContextMenu.Label>
+			<ContextMenu.Label class="pb-0.5 text-2xs text-muted-foreground/70"
+				>{qualifiedName}</ContextMenu.Label
+			>
 			<ContextMenu.Separator />
 			<ContextMenu.Item onclick={() => insertIntoActiveCell(qualifiedName)}>
 				<CornerDownLeft class="h-3.5 w-3.5" />
 				Insert reference
 			</ContextMenu.Item>
-			<ContextMenu.Item onclick={() => insertIntoActiveCell(`SELECT *\nFROM ${qualifiedName}\nLIMIT 100`)}>
+			<ContextMenu.Item
+				onclick={() => insertIntoActiveCell(`SELECT *\nFROM ${qualifiedName}\nLIMIT 100`)}
+			>
 				<CornerDownLeft class="h-3.5 w-3.5" />
 				Insert SELECT *
 			</ContextMenu.Item>
@@ -366,8 +370,12 @@
 					{#each db.schemas as schema (schema.name)}
 						{@const schemaKey = `${dbKey}.${schema.name}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
-						{@render schemaRow(schema.name, schema.tables.length, schemaExpanded, () =>
-							toggleSchema(dbKey, schema.name), db.name
+						{@render schemaRow(
+							schema.name,
+							schema.tables.length,
+							schemaExpanded,
+							() => toggleSchema(dbKey, schema.name),
+							db.name
 						)}
 
 						{#if schemaExpanded}
@@ -383,7 +391,7 @@
 									rowCount !== undefined ? fmtRows(rowCount) : undefined,
 									tableExpanded,
 									() => toggleTable(tableKey),
-									`${schema.name}.${table.name}`
+									schema.name === 'main' ? table.name : `${schema.name}.${table.name}`
 								)}
 
 								{#if tableExpanded}
@@ -415,8 +423,12 @@
 					{#each entry.schemas as [schema, schemaTables] (schema)}
 						{@const schemaKey = `${dbKey}.${schema}`}
 						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
-						{@render schemaRow(schema, schemaTables.length, schemaExpanded, () =>
-							toggleSchema(dbKey, schema), entry.name
+						{@render schemaRow(
+							schema,
+							schemaTables.length,
+							schemaExpanded,
+							() => toggleSchema(dbKey, schema),
+							entry.name
 						)}
 
 						{#if schemaExpanded}
@@ -427,8 +439,12 @@
 										: table.name}
 								{@const tableNodeKey = `${entry.id}:${schema}:${table.name}`}
 								{@const tableExpanded = expandedTable[tableNodeKey] ?? false}
-								{@render tableRow(rawName, undefined, tableExpanded, () =>
-									toggleTable(tableNodeKey), `${schema}.${rawName}`
+								{@render tableRow(
+									rawName,
+									undefined,
+									tableExpanded,
+									() => toggleTable(tableNodeKey),
+									`${schema}.${rawName}`
 								)}
 
 								{#if tableExpanded}

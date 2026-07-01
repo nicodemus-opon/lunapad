@@ -28,8 +28,10 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_CONTEXT_COLUMNS = 24;
-const GENERIC_REASON_PATTERN = /(llm|generated|stage chain|pipeline|analysis|insight|optimiz|improv|efficient|useful|helpful)/i;
-const GENERIC_LABEL_PATTERN = /^(analysis|query|insight|report|generated|llm|plan|stage)(\b|\s|:|-)/i;
+const GENERIC_REASON_PATTERN =
+	/(llm|generated|stage chain|pipeline|analysis|insight|optimiz|improv|efficient|useful|helpful)/i;
+const GENERIC_LABEL_PATTERN =
+	/^(analysis|query|insight|report|generated|llm|plan|stage)(\b|\s|:|-)/i;
 
 function normalizeTimeoutMs(value: unknown): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
@@ -53,7 +55,9 @@ function extractFirstJSONObject(value: string): string | null {
 }
 
 function pickConcreteFallbackReason(query: string, availableColumns: string[]): string {
-	const firstColumn = availableColumns.find((column) => typeof column === 'string' && column.trim().length > 0);
+	const firstColumn = availableColumns.find(
+		(column) => typeof column === 'string' && column.trim().length > 0
+	);
 	if (firstColumn) {
 		return `Aligns with \"${query}\" using ${firstColumn}`;
 	}
@@ -71,15 +75,18 @@ function sanitizeSuggestion(
 
 	const filteredReasons = Array.isArray(candidate.reasons)
 		? candidate.reasons
-				.filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0)
+				.filter(
+					(reason): reason is string => typeof reason === 'string' && reason.trim().length > 0
+				)
 				.map((reason) => reason.trim())
 				.filter((reason) => !GENERIC_REASON_PATTERN.test(reason) || reason.length > 40)
 				.slice(0, 5)
 		: [];
 
-	const reasons = filteredReasons.length > 0
-		? filteredReasons
-		: [pickConcreteFallbackReason(context.query, context.availableColumns)];
+	const reasons =
+		filteredReasons.length > 0
+			? filteredReasons
+			: [pickConcreteFallbackReason(context.query, context.availableColumns)];
 
 	const rawLabel = candidate.label.trim();
 	const label = GENERIC_LABEL_PATTERN.test(rawLabel)
@@ -88,20 +95,24 @@ function sanitizeSuggestion(
 
 	return {
 		label,
-		prompt: typeof candidate.prompt === 'string' && candidate.prompt.trim().length > 0
-			? candidate.prompt.trim()
-			: `${label} for ${context.query}`,
+		prompt:
+			typeof candidate.prompt === 'string' && candidate.prompt.trim().length > 0
+				? candidate.prompt.trim()
+				: `${label} for ${context.query}`,
 		reasons,
 		stages: candidate.stages as ExternalPromptStageSuggestionInput['stages'],
-		score: typeof candidate.score === 'number' && Number.isFinite(candidate.score) ? candidate.score : 130,
-		confidence: typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence) ? candidate.confidence : 0.74
+		score:
+			typeof candidate.score === 'number' && Number.isFinite(candidate.score)
+				? candidate.score
+				: 130,
+		confidence:
+			typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)
+				? candidate.confidence
+				: 0.74
 	};
 }
 
-function buildContextBlock(
-	query: string,
-	llmContext: LLMPlanningContext | undefined
-): string {
+function buildContextBlock(query: string, llmContext: LLMPlanningContext | undefined): string {
 	if (!llmContext || !Array.isArray(llmContext.columns) || llmContext.columns.length === 0) {
 		return 'schemaContext: none';
 	}
@@ -112,8 +123,8 @@ function buildContextBlock(
 
 	const compactColumns = ranked.map((column) => {
 		// Prefer frequency-ranked top values; fall back to random samples
-		const samples = (column.topValues?.slice(0, 4).map((t) => t.v))
-			?? (column.sampleValues ?? []).slice(0, 4);
+		const samples =
+			column.topValues?.slice(0, 4).map((t) => t.v) ?? (column.sampleValues ?? []).slice(0, 4);
 
 		const col: Record<string, unknown> = {
 			name: column.name,
@@ -155,19 +166,17 @@ function buildPrompt(input: {
 	previousSuggestion?: ExternalPromptStageSuggestionInput | null;
 }): string {
 	const repairIssues = input.repairIssues ?? [];
-	const repairSection = repairIssues.length > 0
-		? [
-			'',
-			'Repair instructions:',
-			`- Prior output failed validation with issues: ${JSON.stringify(repairIssues.slice(0, 8))}`,
-			'- Fix invalid columns/expressions and return only corrected JSON.'
-		]
-		: [];
+	const repairSection =
+		repairIssues.length > 0
+			? [
+					'',
+					'Repair instructions:',
+					`- Prior output failed validation with issues: ${JSON.stringify(repairIssues.slice(0, 8))}`,
+					'- Fix invalid columns/expressions and return only corrected JSON.'
+				]
+			: [];
 	const previousSection = input.previousSuggestion
-		? [
-			'',
-			`previousSuggestion: ${JSON.stringify(input.previousSuggestion)}`
-		]
+		? ['', `previousSuggestion: ${JSON.stringify(input.previousSuggestion)}`]
 		: [];
 
 	// Put the column list prominently at the top of rules
@@ -231,7 +240,10 @@ function validateSuggestion(
 	].slice(0, 10);
 
 	return {
-		valid: plan.validation.unknownColumns.length === 0 && plan.validation.issues.length === 0 && plan.stages.length > 0,
+		valid:
+			plan.validation.unknownColumns.length === 0 &&
+			plan.validation.issues.length === 0 &&
+			plan.stages.length > 0,
 		issues
 	};
 }
@@ -260,7 +272,8 @@ async function requestSuggestionFromLLM(input: {
 			messages: [
 				{
 					role: 'system',
-					content: 'Return strict JSON only. No markdown. Produce concrete, non-generic labels and reasons tied to the user query and columns.'
+					content:
+						'Return strict JSON only. No markdown. Produce concrete, non-generic labels and reasons tied to the user query and columns.'
 				},
 				{
 					role: 'user',
@@ -365,7 +378,11 @@ export const POST: RequestHandler = async ({ request }) => {
 				context: requestContext
 			});
 
-			const repairedValidation = validateSuggestion(query, body.availableColumns, repairedSuggestion);
+			const repairedValidation = validateSuggestion(
+				query,
+				body.availableColumns,
+				repairedSuggestion
+			);
 			if (repairedValidation.valid) {
 				return json({ suggestion: repairedSuggestion });
 			}

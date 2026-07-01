@@ -35,7 +35,7 @@
 	}
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	{#if stage.sources.length === 0}
 		<span class="text-xs text-muted-foreground/70 italic">no append sources</span>
 	{/if}
@@ -55,21 +55,17 @@
 					/>
 				</Popover.Content>
 			</Popover.Root>
-			<button
-				class={CHIP_X}
-				onclick={() => removeSource(idx)}
-				aria-label="Remove source"
-			>
-				<X class="w-3 h-3" />
+			<button class={CHIP_X} onclick={() => removeSource(idx)} aria-label="Remove source">
+				<X class="h-3 w-3" />
 			</button>
 		</div>
 	{/each}
 
 	<Popover.Root bind:open={addOpen}>
 		<Popover.Trigger class={CHIP_ADD}>
-			<Plus class="w-3 h-3" /> source
+			<Plus class="h-3 w-3" /> source
 		</Popover.Trigger>
-		<Popover.Content class="w-56 p-2 space-y-2">
+		<Popover.Content class="w-56 space-y-2 p-2">
 			<ColumnInput
 				value={draftSource}
 				suggestions={availableTables}

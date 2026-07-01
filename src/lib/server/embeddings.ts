@@ -123,7 +123,14 @@ export async function upsertCellEmbedding(input: {
 		   embedding    = EXCLUDED.embedding,
 		   code_snippet = EXCLUDED.code_snippet,
 		   updated_at   = NOW()`,
-		[input.notebookId, input.cellId, input.outputName, hash, JSON.stringify(embedding), input.code.slice(0, 500)]
+		[
+			input.notebookId,
+			input.cellId,
+			input.outputName,
+			hash,
+			JSON.stringify(embedding),
+			input.code.slice(0, 500)
+		]
 	).catch(() => {});
 }
 
@@ -136,7 +143,9 @@ export async function upsertSchemaEmbedding(input: {
 }): Promise<void> {
 	const hash = crypto
 		.createHash('sha256')
-		.update(`${input.tableName}|${input.columnNames}|${input.columnTypes}|${input.description ?? ''}`)
+		.update(
+			`${input.tableName}|${input.columnNames}|${input.columnTypes}|${input.description ?? ''}`
+		)
 		.digest('hex');
 
 	const existing = await query<{ content_hash: string }>(
@@ -159,7 +168,14 @@ export async function upsertSchemaEmbedding(input: {
 		   content_hash = EXCLUDED.content_hash,
 		   embedding    = EXCLUDED.embedding,
 		   updated_at   = NOW()`,
-		[input.connectionId, input.tableName, input.columnNames, input.columnTypes, hash, JSON.stringify(embedding)]
+		[
+			input.connectionId,
+			input.tableName,
+			input.columnNames,
+			input.columnTypes,
+			hash,
+			JSON.stringify(embedding)
+		]
 	).catch(() => {});
 }
 
@@ -171,7 +187,9 @@ export async function deleteStaleSchemaEmbeddings(
 	keepTableNames: string[]
 ): Promise<void> {
 	if (keepTableNames.length === 0) {
-		await query(`DELETE FROM schema_embeddings WHERE connection_id = $1`, [connectionId]).catch(() => {});
+		await query(`DELETE FROM schema_embeddings WHERE connection_id = $1`, [connectionId]).catch(
+			() => {}
+		);
 		return;
 	}
 	await query(
@@ -290,9 +308,9 @@ export async function countSchemaEmbeddings(connectionIds: string[]): Promise<nu
 	return Number(rows[0]?.count ?? 0);
 }
 
-export async function listSchemaEmbeddings(connectionIds: string[]): Promise<
-	Array<{ table_name: string; column_names: string; column_types: string | null }>
-> {
+export async function listSchemaEmbeddings(
+	connectionIds: string[]
+): Promise<Array<{ table_name: string; column_names: string; column_types: string | null }>> {
 	if (connectionIds.length === 0) return [];
 	return query<{ table_name: string; column_names: string; column_types: string | null }>(
 		`SELECT table_name, column_names, column_types FROM schema_embeddings WHERE connection_id = ANY($1::text[])`,

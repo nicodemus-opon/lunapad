@@ -33,12 +33,12 @@ There's no built-in hosted model. The assistant talks to whatever you point it a
 
 Open Settings → AI:
 
-| Field | What to put |
-|---|---|
-| Provider | `Ollama` or `OpenAPI-compatible` |
-| Base URL | Your Ollama or API endpoint |
-| API key | Optional, leave blank for a local Ollama with no auth |
-| Model | The model name, e.g. `qwen3:4b` for Ollama |
+| Field    | What to put                                           |
+| -------- | ----------------------------------------------------- |
+| Provider | `Ollama` or `OpenAPI-compatible`                      |
+| Base URL | Your Ollama or API endpoint                           |
+| API key  | Optional, leave blank for a local Ollama with no auth |
+| Model    | The model name, e.g. `qwen3:4b` for Ollama            |
 
 ![Settings → AI configured with an OpenAPI-compatible provider, a base URL, a masked API key, and a model name](images/07-settings-ai.png)
 

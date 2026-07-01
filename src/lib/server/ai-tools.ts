@@ -1,5 +1,5 @@
 // Shared OpenAI-function-calling schemas for the read-only investigation tools. These are the
-// only tools the inline Cmd+K agent (`/api/ai/edit-cell`) is ever given — they look at data and
+// only tools the inline ⌘⇧K agent (`/api/ai/edit-cell`) is ever given — they look at data and
 // notebook state but never mutate anything. The sidebar chat agent (`/api/ai/chat`) also uses
 // these exact definitions (concatenated with its own mutating tools) so both surfaces stay in
 // sync; the actual client-side execution lives in `$lib/services/ai-investigation-tools.ts`.
@@ -83,7 +83,8 @@ export const READONLY_INVESTIGATION_TOOLS = [
 	}
 ] as const;
 
-export type ReadonlyInvestigationToolName = (typeof READONLY_INVESTIGATION_TOOLS)[number]['function']['name'];
+export type ReadonlyInvestigationToolName =
+	(typeof READONLY_INVESTIGATION_TOOLS)[number]['function']['name'];
 
 export const READONLY_INVESTIGATION_TOOL_NAMES: ReadonlyInvestigationToolName[] =
 	READONLY_INVESTIGATION_TOOLS.map((t) => t.function.name);
@@ -100,7 +101,11 @@ export const READONLY_INVESTIGATION_TOOL_NAMES: ReadonlyInvestigationToolName[] 
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
 	content: string | null;
-	tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+	tool_calls?: Array<{
+		id: string;
+		type: 'function';
+		function: { name: string; arguments: string };
+	}>;
 	tool_call_id?: string;
 }
 
@@ -193,7 +198,9 @@ export async function callLLMWithTools(input: {
 		const message = payload.choices?.[0]?.message;
 		const toolCalls: LLMToolCall[] = (message?.tool_calls ?? []).map((tc) => {
 			let args: Record<string, unknown> = {};
-			try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+			try {
+				args = JSON.parse(tc.function.arguments || '{}');
+			} catch {}
 			return { id: tc.id, name: tc.function.name, args };
 		});
 		return { content: message?.content ?? null, toolCalls };
@@ -221,7 +228,18 @@ export async function callLLMWithTools(input: {
 			if (!line.startsWith('data: ')) continue;
 			const raw = line.slice(6).trim();
 			if (raw === '[DONE]') continue;
-			let chunk: { choices?: Array<{ delta?: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> } }> };
+			let chunk: {
+				choices?: Array<{
+					delta?: {
+						content?: string | null;
+						tool_calls?: Array<{
+							index: number;
+							id?: string;
+							function?: { name?: string; arguments?: string };
+						}>;
+					};
+				}>;
+			};
 			try {
 				chunk = JSON.parse(raw);
 			} catch {
@@ -238,12 +256,19 @@ export async function callLLMWithTools(input: {
 				while (remaining) {
 					if (insideThink) {
 						const end = remaining.indexOf('</think>');
-						if (end === -1) { remaining = ''; break; }
+						if (end === -1) {
+							remaining = '';
+							break;
+						}
 						insideThink = false;
 						remaining = remaining.slice(end + '</think>'.length);
 					} else {
 						const start = remaining.indexOf('<think>');
-						if (start === -1) { input.onDelta!(remaining); remaining = ''; break; }
+						if (start === -1) {
+							input.onDelta!(remaining);
+							remaining = '';
+							break;
+						}
 						if (start > 0) input.onDelta!(remaining.slice(0, start));
 						insideThink = true;
 						remaining = remaining.slice(start + '<think>'.length);
@@ -292,7 +317,10 @@ const COMPLETION_DEFAULT_TIMEOUT_MS = 1_800;
 
 export function normalizeCompletionTimeoutMs(value: unknown): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return COMPLETION_DEFAULT_TIMEOUT_MS;
-	return Math.max(COMPLETION_MIN_TIMEOUT_MS, Math.min(COMPLETION_MAX_TIMEOUT_MS, Math.round(value)));
+	return Math.max(
+		COMPLETION_MIN_TIMEOUT_MS,
+		Math.min(COMPLETION_MAX_TIMEOUT_MS, Math.round(value))
+	);
 }
 
 interface OpenAITextResponse {

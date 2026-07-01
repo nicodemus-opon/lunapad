@@ -31,7 +31,8 @@
 		<Table.Body>
 			{#each rowsToShow as row, i (i)}
 				<Table.Row>
-					{#each columns as col (col)}<Table.Cell class="h-7 px-2">{fmt(row[col])}</Table.Cell>{/each}
+					{#each columns as col (col)}<Table.Cell class="h-7 px-2">{fmt(row[col])}</Table.Cell
+						>{/each}
 				</Table.Row>
 			{/each}
 		</Table.Body>
@@ -42,7 +43,12 @@
 	<div class="md-datatable-wrap">
 		{@render table(rows)}
 		{#if data.length > limit}
-			<button class="md-datatable-expand" onclick={() => (fullscreen = true)} title="Show all rows" aria-label="Show all rows">
+			<button
+				class="md-datatable-expand"
+				onclick={() => (fullscreen = true)}
+				title="Show all rows"
+				aria-label="Show all rows"
+			>
 				<Maximize2 class="h-3 w-3" />
 			</button>
 		{/if}
@@ -68,7 +74,11 @@
 	</div>
 {/if}
 
-<svelte:window onkeydown={(e) => { if (fullscreen && e.key === 'Escape') fullscreen = false; }} />
+<svelte:window
+	onkeydown={(e) => {
+		if (fullscreen && e.key === 'Escape') fullscreen = false;
+	}}
+/>
 
 <style>
 	.md-datatable-wrap {

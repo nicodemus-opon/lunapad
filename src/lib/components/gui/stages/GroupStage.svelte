@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { GroupStage, AggFunc, AggregationRow, SortKey, DeriveStage as DeriveStageModel } from '$lib/types/gui-pipeline';
+	import type {
+		GroupStage,
+		AggFunc,
+		AggregationRow,
+		SortKey,
+		DeriveStage as DeriveStageModel
+	} from '$lib/types/gui-pipeline';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Select from '$lib/components/ui/select';
 	import { Input } from '$lib/components/ui/input';
@@ -10,7 +16,17 @@
 	import { ChipInput } from '$lib/components/ui/chip-input';
 	import { pickDefaultAgg, pickGroupByColumn } from '$lib/components/gui/chip-intelligence';
 	import { Button } from '$lib/components/ui/button';
-	import { CHIP, CHIP_ADD, CHIP_EDITING, CHIP_INVALID, CHIP_META, CHIP_SECTION, CHIP_SELECT, CHIP_X, SECTION_LABEL } from '../chip-styles';
+	import {
+		CHIP,
+		CHIP_ADD,
+		CHIP_EDITING,
+		CHIP_INVALID,
+		CHIP_META,
+		CHIP_SECTION,
+		CHIP_SELECT,
+		CHIP_X,
+		SECTION_LABEL
+	} from '../chip-styles';
 
 	interface Props {
 		stage: GroupStage;
@@ -81,7 +97,10 @@
 
 	function parseStructuredAggTerm(text: string): StructuredAggTerm | null {
 		const trimmed = text.trim();
-		const match = /^(sum|avg|average|count_distinct|count|min|max|stddev|all|any|concat_array|first|last)(?:\s+([\s\S]+))?$/i.exec(trimmed);
+		const match =
+			/^(sum|avg|average|count_distinct|count|min|max|stddev|all|any|concat_array|first|last)(?:\s+([\s\S]+))?$/i.exec(
+				trimmed
+			);
 		if (!match) return null;
 		const func = match[1].toLowerCase() as StructuredAggFunc;
 		const rawColumn = (match[2] ?? '').trim();
@@ -210,7 +229,10 @@
 		const suggested = pickDefaultAgg(availableColumns, stage.aggregations);
 		onUpdate({
 			...stage,
-			aggregations: [...stage.aggregations, { name: '', func: suggested.func, column: suggested.column }]
+			aggregations: [
+				...stage.aggregations,
+				{ name: '', func: suggested.func, column: suggested.column }
+			]
 		});
 		requestAnimationFrame(() => (expandedAggIdx = newIdx));
 	}
@@ -261,7 +283,6 @@
 	let dragByIdx = $state<number | null>(null);
 	let dragWinSortIdx = $state<number | null>(null);
 
-
 	function reorderAggs(from: number, to: number) {
 		const aggregations = [...stage.aggregations];
 		const [moved] = aggregations.splice(from, 1);
@@ -307,247 +328,332 @@
 	}
 </script>
 
-<div class="flex flex-col gap-1.5 w-full">
+<div class="flex w-full flex-col gap-1.5">
 	<!-- ── Top row: aggregate / window chips ──────────────────────────────── -->
-	<div class="flex items-center gap-1.5 flex-wrap">
-	{#if stage.window}
-		<!-- ── Window mode: sort keys + window derive columns ────────────── -->
+	<div class="flex flex-wrap items-center gap-1.5">
+		{#if stage.window}
+			<!-- ── Window mode: sort keys + window derive columns ────────────── -->
 
-		<!-- Sort key pills -->
-		{#each stage.window.sortKeys as key, idx (`${key.column}-${key.dir}-${idx}`)}
-			<div
-				role="listitem"
-				draggable="true"
-				ondragstart={() => (dragWinSortIdx = idx)}
-				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); if (dragWinSortIdx !== null && dragWinSortIdx !== idx) { reorderWinSortKeys(dragWinSortIdx, idx); dragWinSortIdx = null; } }}
-				ondragend={() => (dragWinSortIdx = null)}
-				class="{CHIP} cursor-grab active:cursor-grabbing"
-				class:opacity-40={dragWinSortIdx !== null && dragWinSortIdx === idx}
-			>
-				<button
-					class="{CHIP_SECTION} gap-1"
-					onclick={() => toggleWindowSortDir(idx)}
-					title="Toggle sort direction"
+			<!-- Sort key pills -->
+			{#each stage.window.sortKeys as key, idx (`${key.column}-${key.dir}-${idx}`)}
+				<div
+					role="listitem"
+					draggable="true"
+					ondragstart={() => (dragWinSortIdx = idx)}
+					ondragover={(e) => e.preventDefault()}
+					ondrop={(e) => {
+						e.preventDefault();
+						if (dragWinSortIdx !== null && dragWinSortIdx !== idx) {
+							reorderWinSortKeys(dragWinSortIdx, idx);
+							dragWinSortIdx = null;
+						}
+					}}
+					ondragend={() => (dragWinSortIdx = null)}
+					class="{CHIP} cursor-grab active:cursor-grabbing"
+					class:opacity-40={dragWinSortIdx !== null && dragWinSortIdx === idx}
 				>
-					{#if key.dir === 'asc'}
-						<ArrowUp class="w-3 h-3 text-muted-foreground" />
-					{:else}
-						<ArrowDown class="w-3 h-3 text-muted-foreground" />
-					{/if}
-					{key.column}
-				</button>
-				<button
-					class={CHIP_X}
-					onclick={() => removeWindowSortKey(idx)}
-					aria-label="Remove sort key"
-				>
-					<X class="w-3 h-3" />
-				</button>
-			</div>
-		{/each}
-
-		<!-- Add sort key -->
-		<Popover.Root bind:open={addWindowSortOpen}>
-			<Popover.Trigger class={CHIP_ADD} title="Add sort key">
-				<ArrowUp class="w-3 h-3" />
-				<Plus class="w-3 h-3" />
-			</Popover.Trigger>
-			<Popover.Content class="p-2 w-48">
-				<ColumnInput
-					value={draftSortCol}
-					suggestions={availableColumns}
-					placeholder="column…"
-					onchange={(v) => (draftSortCol = v)}
-				/>
-				<Button size="sm" class="mt-1 w-full" onclick={confirmAddWindowSort}>
-					Add sort key
-				</Button>
-			</Popover.Content>
-		</Popover.Root>
-
-		<!-- Separator arrow -->
-		<span class="text-xs text-muted-foreground/50 px-0.5">↳</span>
-		<div class="basis-full h-0"></div>
-		<DeriveStageEditor
-			stage={{ type: 'derive', columns: stage.window.derives }}
-			{availableColumns}
-			onUpdate={(next: DeriveStageModel) =>
-				onUpdate({
-					...stage,
-					window: {
-						...stage.window!,
-						derives: next.columns
-					}
-				})}
-		/>
-
-	{:else}
-		<!-- ── Aggregate mode ──────────────────────────────────────────────── -->
-		<span class="{SECTION_LABEL} w-8 shrink-0 pr-1.5 text-right">agg</span>
-
-		{#if stage.aggregations.length === 0}
-			<span class="text-xs text-muted-foreground/60 italic">none</span>
-		{/if}
-
-		{#each stage.aggregations as agg, idx (`${agg.name}-${agg.func}-${idx}`)}
-			<div
-				role="listitem"
-				draggable={expandedAggIdx !== idx}
-				ondragstart={() => (dragAggIdx = idx)}
-				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); if (dragAggIdx !== null && dragAggIdx !== idx) { reorderAggs(dragAggIdx, idx); dragAggIdx = null; } }}
-				ondragend={() => (dragAggIdx = null)}
-				class="group/pill inline-flex items-center text-xs shrink-0"
-				class:cursor-grab={expandedAggIdx !== idx}
-				class:opacity-40={dragAggIdx !== null && dragAggIdx === idx}
-			>
-				{#if expandedAggIdx === idx && !isRawAgg(agg)}
-					<!-- ── Expanded inline form for structured aggs ── -->
-					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<div
-						class={CHIP_EDITING}
-						onkeydown={(e) => { if (e.key === 'Escape') expandedAggIdx = null; }}
-						onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) expandedAggIdx = null; }}
-						role="group"
+					<button
+						class="{CHIP_SECTION} gap-1"
+						onclick={() => toggleWindowSortDir(idx)}
+						title="Toggle sort direction"
 					>
-						<!-- Alias (optional) -->
-						<ChipInput
-							value={agg.name}
-							placeholder="alias…"
-							class="font-mono text-xs text-muted-foreground"
-							oninput={(v) => updateAgg(idx, { name: v })}
-						/>
-						{#if agg.name}
-							<span class={CHIP_META}>=</span>
+						{#if key.dir === 'asc'}
+							<ArrowUp class="h-3 w-3 text-muted-foreground" />
+						{:else}
+							<ArrowDown class="h-3 w-3 text-muted-foreground" />
 						{/if}
+						{key.column}
+					</button>
+					<button
+						class={CHIP_X}
+						onclick={() => removeWindowSortKey(idx)}
+						aria-label="Remove sort key"
+					>
+						<X class="h-3 w-3" />
+					</button>
+				</div>
+			{/each}
 
-						<!-- Function selector (native select, styled inline) -->
-						<select
-							value={agg.func}
-							class="{CHIP_SELECT} text-foreground"
-							onchange={(e) => updateAgg(idx, { func: (e.target as HTMLSelectElement).value as AggFunc })}
-						>
-							{#each AGG_FUNCS as f (f.value)}
-								<option value={f.value}>{f.value}</option>
-							{/each}
-						</select>
-						<span class="{CHIP_META} font-mono">(</span>
+			<!-- Add sort key -->
+			<Popover.Root bind:open={addWindowSortOpen}>
+				<Popover.Trigger class={CHIP_ADD} title="Add sort key">
+					<ArrowUp class="h-3 w-3" />
+					<Plus class="h-3 w-3" />
+				</Popover.Trigger>
+				<Popover.Content class="w-48 p-2">
+					<ColumnInput
+						value={draftSortCol}
+						suggestions={availableColumns}
+						placeholder="column…"
+						onchange={(v) => (draftSortCol = v)}
+					/>
+					<Button size="sm" class="mt-1 w-full" onclick={confirmAddWindowSort}>Add sort key</Button>
+				</Popover.Content>
+			</Popover.Root>
 
-						<!-- Column input (hidden for count) -->
-						{#if !noColFuncs.includes(agg.func)}
-							<ChipInput
-								value={agg.column}
-								suggestions={availableColumns}
-								placeholder="col…"
-								class="font-mono text-xs"
-								data-testid="group-agg-column"
-								oninput={(v) => updateAgg(idx, { column: v })}
-							/>
-						{/if}
-						<span class="{CHIP_META} font-mono">)</span>
+			<!-- Separator arrow -->
+			<span class="px-0.5 text-xs text-muted-foreground/50">↳</span>
+			<div class="h-0 basis-full"></div>
+			<DeriveStageEditor
+				stage={{ type: 'derive', columns: stage.window.derives }}
+				{availableColumns}
+				onUpdate={(next: DeriveStageModel) =>
+					onUpdate({
+						...stage,
+						window: {
+							...stage.window!,
+							derives: next.columns
+						}
+					})}
+			/>
+		{:else}
+			<!-- ── Aggregate mode ──────────────────────────────────────────────── -->
+			<span class="{SECTION_LABEL} w-8 shrink-0 pr-1.5 text-right">agg</span>
 
-						<!-- Confirm -->
-						<button
-							class="px-1 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-							onclick={() => (expandedAggIdx = null)}
-							aria-label="Done editing"
-						>✓</button>
-					</div>
-				{:else if isRawAgg(agg)}
-					<!-- Raw agg: keep the existing popover (complex structured expr) -->
-					<div class="{CHIP} cursor-grab">
-						<Popover.Root>
-							<Popover.Trigger class={CHIP_SECTION}>
-								{humanizeAgg(agg)}
-							</Popover.Trigger>
-							<Popover.Content class="w-64 p-3 space-y-2">
-								<Input
-									class="h-7 text-xs font-mono"
-									placeholder="alias (optional)…"
-									value={agg.name}
-									oninput={(e) => updateAgg(idx, { name: (e.target as HTMLInputElement).value })}
-								/>
-								<div class="space-y-2">
-									<div class="flex items-center gap-2">
-										<button
-											class="h-7 rounded border px-2 text-xs font-mono transition-colors duration-150 {isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary/40 text-primary' : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-50"
-											disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}
-											title={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg) ? 'Structured mode requires a parseable aggregate expression' : undefined}
-											onclick={() => setRawAggMode(idx, agg, true)}
-										>structured</button>
-										<button
-											class="h-7 rounded border px-2 text-xs font-mono transition-colors duration-150 {!isRawAggStructured(idx, agg) ? 'bg-primary/10 border-primary/40 text-primary' : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
-											onclick={() => setRawAggMode(idx, agg, false)}
-										>raw</button>
-									</div>
-									{#if isRawAggStructured(idx, agg)}
-										{@const parsed = parseStructuredAggExpr(agg.expr ?? '') ?? defaultStructuredAggExpr()}
-										<div class="space-y-2 rounded border p-2 bg-muted/20">
-											<div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
-												<div class="space-y-1">
-													<Select.Root type="single" value={parsed.left.func} onValueChange={(v) => updateStructuredRawAggTerm(idx, 'left', { func: v as StructuredAggFunc })}>
-														<Select.Trigger class="h-7 text-xs w-full">{parsed.left.func}</Select.Trigger>
-														<Select.Content>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item value={func} class="text-xs">{func}</Select.Item>{/each}</Select.Content>
-													</Select.Root>
-													{#if parsed.left.func !== 'count'}
-														<ColumnInput value={parsed.left.column} suggestions={availableColumns} placeholder="column…" onchange={(v) => updateStructuredRawAggTerm(idx, 'left', { column: v })} />
-													{/if}
-												</div>
-												<Select.Root type="single" value={parsed.op} onValueChange={(v) => updateStructuredRawAggExpr(idx, { op: v as StructuredAggOp })}>
-													<Select.Trigger class="h-7 w-14 text-xs">{parsed.op}</Select.Trigger>
-													<Select.Content>{#each STRUCTURED_AGG_OPS as op (op)}<Select.Item value={op} class="text-xs">{op}</Select.Item>{/each}</Select.Content>
-												</Select.Root>
-												<div class="space-y-1">
-													<Select.Root type="single" value={parsed.right.func} onValueChange={(v) => updateStructuredRawAggTerm(idx, 'right', { func: v as StructuredAggFunc })}>
-														<Select.Trigger class="h-7 text-xs w-full">{parsed.right.func}</Select.Trigger>
-														<Select.Content>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item value={func} class="text-xs">{func}</Select.Item>{/each}</Select.Content>
-													</Select.Root>
-													{#if parsed.right.func !== 'count'}
-														<ColumnInput value={parsed.right.column} suggestions={availableColumns} placeholder="column…" onchange={(v) => updateStructuredRawAggTerm(idx, 'right', { column: v })} />
-													{/if}
-												</div>
-											</div>
-											<p class="text-2xs text-muted-foreground font-mono">{structuredAggExprToString(parsed)}</p>
-										</div>
-									{:else}
-										<Input class="h-7 text-xs font-mono" placeholder="PRQL aggregation expression…" value={agg.expr ?? ''} oninput={(e) => updateAgg(idx, { expr: (e.target as HTMLInputElement).value })} />
-									{/if}
-								</div>
-							</Popover.Content>
-						</Popover.Root>
-					</div>
-				{:else}
-					<!-- Collapsed structured agg chip -->
-					<div class={CHIP}>
-						<button
-							class={CHIP_SECTION}
-							onclick={() => (expandedAggIdx = idx)}
-						>{humanizeAgg(agg)}</button>
-					</div>
-				{/if}
+			{#if stage.aggregations.length === 0}
+				<span class="text-xs text-muted-foreground/60 italic">none</span>
+			{/if}
 
-				<!-- Remove button — always outside the inner chip div -->
-				<button
-					class="{CHIP_X} py-1"
-					onclick={() => removeAgg(idx)}
-					aria-label="Remove aggregation"
+			{#each stage.aggregations as agg, idx (`${agg.name}-${agg.func}-${idx}`)}
+				<div
+					role="listitem"
+					draggable={expandedAggIdx !== idx}
+					ondragstart={() => (dragAggIdx = idx)}
+					ondragover={(e) => e.preventDefault()}
+					ondrop={(e) => {
+						e.preventDefault();
+						if (dragAggIdx !== null && dragAggIdx !== idx) {
+							reorderAggs(dragAggIdx, idx);
+							dragAggIdx = null;
+						}
+					}}
+					ondragend={() => (dragAggIdx = null)}
+					class="group/pill inline-flex shrink-0 items-center text-xs"
+					class:cursor-grab={expandedAggIdx !== idx}
+					class:opacity-40={dragAggIdx !== null && dragAggIdx === idx}
 				>
-					<X class="w-3 h-3" />
-				</button>
-			</div>
-		{/each}
+					{#if expandedAggIdx === idx && !isRawAgg(agg)}
+						<!-- ── Expanded inline form for structured aggs ── -->
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+						<div
+							class={CHIP_EDITING}
+							onkeydown={(e) => {
+								if (e.key === 'Escape') expandedAggIdx = null;
+							}}
+							onfocusout={(e) => {
+								if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+									expandedAggIdx = null;
+							}}
+							role="group"
+						>
+							<!-- Alias (optional) -->
+							<ChipInput
+								value={agg.name}
+								placeholder="alias…"
+								class="font-mono text-xs text-muted-foreground"
+								oninput={(v) => updateAgg(idx, { name: v })}
+							/>
+							{#if agg.name}
+								<span class={CHIP_META}>=</span>
+							{/if}
 
-		<!-- Add aggregation — immediate inline (no popover) -->
-		<button class={CHIP_ADD} onclick={addAggInline} aria-label="Add aggregation">
-			<Plus class="w-3 h-3" />
-		</button>
-	{/if}
+							<!-- Function selector (native select, styled inline) -->
+							<select
+								value={agg.func}
+								class="{CHIP_SELECT} text-foreground"
+								onchange={(e) =>
+									updateAgg(idx, { func: (e.target as HTMLSelectElement).value as AggFunc })}
+							>
+								{#each AGG_FUNCS as f (f.value)}
+									<option value={f.value}>{f.value}</option>
+								{/each}
+							</select>
+							<span class="{CHIP_META} font-mono">(</span>
 
-	</div><!-- end top row -->
+							<!-- Column input (hidden for count) -->
+							{#if !noColFuncs.includes(agg.func)}
+								<ChipInput
+									value={agg.column}
+									suggestions={availableColumns}
+									placeholder="col…"
+									class="font-mono text-xs"
+									data-testid="group-agg-column"
+									oninput={(v) => updateAgg(idx, { column: v })}
+								/>
+							{/if}
+							<span class="{CHIP_META} font-mono">)</span>
+
+							<!-- Confirm -->
+							<button
+								class="px-1 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+								onclick={() => (expandedAggIdx = null)}
+								aria-label="Done editing">✓</button
+							>
+						</div>
+					{:else if isRawAgg(agg)}
+						<!-- Raw agg: keep the existing popover (complex structured expr) -->
+						<div class="{CHIP} cursor-grab">
+							<Popover.Root>
+								<Popover.Trigger class={CHIP_SECTION}>
+									{humanizeAgg(agg)}
+								</Popover.Trigger>
+								<Popover.Content class="w-64 space-y-2 p-3">
+									<Input
+										class="h-7 font-mono text-xs"
+										placeholder="alias (optional)…"
+										value={agg.name}
+										oninput={(e) => updateAgg(idx, { name: (e.target as HTMLInputElement).value })}
+									/>
+									<div class="space-y-2">
+										<div class="flex items-center gap-2">
+											<button
+												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-150 {isRawAggStructured(
+													idx,
+													agg
+												)
+													? 'border-primary/40 bg-primary/10 text-primary'
+													: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-50"
+												disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}
+												title={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)
+													? 'Structured mode requires a parseable aggregate expression'
+													: undefined}
+												onclick={() => setRawAggMode(idx, agg, true)}>structured</button
+											>
+											<button
+												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-150 {!isRawAggStructured(
+													idx,
+													agg
+												)
+													? 'border-primary/40 bg-primary/10 text-primary'
+													: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
+												onclick={() => setRawAggMode(idx, agg, false)}>raw</button
+											>
+										</div>
+										{#if isRawAggStructured(idx, agg)}
+											{@const parsed =
+												parseStructuredAggExpr(agg.expr ?? '') ?? defaultStructuredAggExpr()}
+											<div class="space-y-2 rounded border bg-muted/20 p-2">
+												<div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+													<div class="space-y-1">
+														<Select.Root
+															type="single"
+															value={parsed.left.func}
+															onValueChange={(v) =>
+																updateStructuredRawAggTerm(idx, 'left', {
+																	func: v as StructuredAggFunc
+																})}
+														>
+															<Select.Trigger class="h-7 w-full text-xs"
+																>{parsed.left.func}</Select.Trigger
+															>
+															<Select.Content
+																>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item
+																		value={func}
+																		class="text-xs">{func}</Select.Item
+																	>{/each}</Select.Content
+															>
+														</Select.Root>
+														{#if parsed.left.func !== 'count'}
+															<ColumnInput
+																value={parsed.left.column}
+																suggestions={availableColumns}
+																placeholder="column…"
+																onchange={(v) =>
+																	updateStructuredRawAggTerm(idx, 'left', { column: v })}
+															/>
+														{/if}
+													</div>
+													<Select.Root
+														type="single"
+														value={parsed.op}
+														onValueChange={(v) =>
+															updateStructuredRawAggExpr(idx, { op: v as StructuredAggOp })}
+													>
+														<Select.Trigger class="h-7 w-14 text-xs">{parsed.op}</Select.Trigger>
+														<Select.Content
+															>{#each STRUCTURED_AGG_OPS as op (op)}<Select.Item
+																	value={op}
+																	class="text-xs">{op}</Select.Item
+																>{/each}</Select.Content
+														>
+													</Select.Root>
+													<div class="space-y-1">
+														<Select.Root
+															type="single"
+															value={parsed.right.func}
+															onValueChange={(v) =>
+																updateStructuredRawAggTerm(idx, 'right', {
+																	func: v as StructuredAggFunc
+																})}
+														>
+															<Select.Trigger class="h-7 w-full text-xs"
+																>{parsed.right.func}</Select.Trigger
+															>
+															<Select.Content
+																>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item
+																		value={func}
+																		class="text-xs">{func}</Select.Item
+																	>{/each}</Select.Content
+															>
+														</Select.Root>
+														{#if parsed.right.func !== 'count'}
+															<ColumnInput
+																value={parsed.right.column}
+																suggestions={availableColumns}
+																placeholder="column…"
+																onchange={(v) =>
+																	updateStructuredRawAggTerm(idx, 'right', { column: v })}
+															/>
+														{/if}
+													</div>
+												</div>
+												<p class="font-mono text-2xs text-muted-foreground">
+													{structuredAggExprToString(parsed)}
+												</p>
+											</div>
+										{:else}
+											<Input
+												class="h-7 font-mono text-xs"
+												placeholder="PRQL aggregation expression…"
+												value={agg.expr ?? ''}
+												oninput={(e) =>
+													updateAgg(idx, { expr: (e.target as HTMLInputElement).value })}
+											/>
+										{/if}
+									</div>
+								</Popover.Content>
+							</Popover.Root>
+						</div>
+					{:else}
+						<!-- Collapsed structured agg chip -->
+						<div class={CHIP}>
+							<button class={CHIP_SECTION} onclick={() => (expandedAggIdx = idx)}
+								>{humanizeAgg(agg)}</button
+							>
+						</div>
+					{/if}
+
+					<!-- Remove button — always outside the inner chip div -->
+					<button
+						class="{CHIP_X} py-1"
+						onclick={() => removeAgg(idx)}
+						aria-label="Remove aggregation"
+					>
+						<X class="h-3 w-3" />
+					</button>
+				</div>
+			{/each}
+
+			<!-- Add aggregation — immediate inline (no popover) -->
+			<button class={CHIP_ADD} onclick={addAggInline} aria-label="Add aggregation">
+				<Plus class="h-3 w-3" />
+			</button>
+		{/if}
+	</div>
+	<!-- end top row -->
 
 	<!-- ── Bottom row: group-by columns ──────────────────────────────────── -->
-	<div class="flex items-center gap-1.5 flex-wrap">
+	<div class="flex flex-wrap items-center gap-1.5">
 		<span class="{SECTION_LABEL} w-8 shrink-0 pr-1.5 text-right">by</span>
 
 		{#if stage.by.length === 0 && !pendingNewBy}
@@ -561,23 +667,29 @@
 				draggable="true"
 				ondragstart={() => (dragByIdx = idx)}
 				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); if (dragByIdx !== null && dragByIdx !== idx) { reorderBy(dragByIdx, idx); dragByIdx = null; } }}
+				ondrop={(e) => {
+					e.preventDefault();
+					if (dragByIdx !== null && dragByIdx !== idx) {
+						reorderBy(dragByIdx, idx);
+						dragByIdx = null;
+					}
+				}}
 				ondragend={() => (dragByIdx = null)}
-				class="{CHIP} cursor-grab active:cursor-grabbing {dragByIdx !== null && dragByIdx === idx ? 'opacity-40' : ''} {invalid ? CHIP_INVALID : ''}"
+				class="{CHIP} cursor-grab active:cursor-grabbing {dragByIdx !== null && dragByIdx === idx
+					? 'opacity-40'
+					: ''} {invalid ? CHIP_INVALID : ''}"
 			>
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c) || c === col)}
 					class="px-2 py-1 font-mono text-xs"
 					oncommit={(v) => renameBy(idx, v)}
-					oncancel={() => { if (!col) removeGroupByIdx(idx); }}
+					oncancel={() => {
+						if (!col) removeGroupByIdx(idx);
+					}}
 				/>
-				<button
-					class={CHIP_X}
-					onclick={() => removeGroupByIdx(idx)}
-					aria-label="Remove {col}"
-				>
-					<X class="w-3 h-3" />
+				<button class={CHIP_X} onclick={() => removeGroupByIdx(idx)} aria-label="Remove {col}">
+					<X class="h-3 w-3" />
 				</button>
 			</div>
 		{/each}
@@ -600,11 +712,15 @@
 		{#if !pendingNewBy}
 			<button
 				class={CHIP_ADD}
-				onclick={() => { pendingNewByValue = pickGroupByColumn(availableColumns, stage.by); pendingNewBy = true; }}
+				onclick={() => {
+					pendingNewByValue = pickGroupByColumn(availableColumns, stage.by);
+					pendingNewBy = true;
+				}}
 				aria-label="Add group-by column"
 			>
-				<Plus class="w-3 h-3" />
+				<Plus class="h-3 w-3" />
 			</button>
 		{/if}
-	</div><!-- end by row -->
+	</div>
+	<!-- end by row -->
 </div>

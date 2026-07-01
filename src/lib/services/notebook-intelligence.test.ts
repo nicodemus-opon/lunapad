@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotebookIntelligence, recommendNotebookActions } from '$lib/services/notebook-intelligence';
+import {
+	buildNotebookIntelligence,
+	recommendNotebookActions
+} from '$lib/services/notebook-intelligence';
 
 describe('notebook-intelligence actions', () => {
 	it('recommends repair replacement actions from query repair hints', () => {
@@ -24,7 +27,9 @@ describe('notebook-intelligence actions', () => {
 		});
 
 		expect(actions.some((action) => action.kind === 'apply-repair-replacement')).toBe(true);
-		expect(actions.find((action) => action.kind === 'apply-repair-replacement')?.payload).toMatchObject({
+		expect(
+			actions.find((action) => action.kind === 'apply-repair-replacement')?.payload
+		).toMatchObject({
 			from: 'ammount',
 			to: 'amount'
 		});
@@ -38,7 +43,9 @@ describe('notebook-intelligence actions', () => {
 			columns: ['amount', 'status'],
 			executionMs: 4500,
 			errors: [],
-			schemaTables: [{ name: 'big_orders', columns: ['amount', 'status'], columnTypes: ['DOUBLE', 'VARCHAR'] }]
+			schemaTables: [
+				{ name: 'big_orders', columns: ['amount', 'status'], columnTypes: ['DOUBLE', 'VARCHAR'] }
+			]
 		});
 		intelligence.rowCount = 120000;
 
@@ -69,7 +76,11 @@ describe('notebook-intelligence actions', () => {
 			executionMs: 120,
 			errors: [],
 			schemaTables: [
-				{ name: 'orders', columns: ['customer_id', 'amount', 'created_at'], columnTypes: ['INT', 'DOUBLE', 'DATE'] },
+				{
+					name: 'orders',
+					columns: ['customer_id', 'amount', 'created_at'],
+					columnTypes: ['INT', 'DOUBLE', 'DATE']
+				},
 				{ name: 'customers', columns: ['id', 'customer_name'], columnTypes: ['INT', 'VARCHAR'] }
 			]
 		});
@@ -114,9 +125,7 @@ describe('notebook-intelligence actions', () => {
 		const intelligence = buildNotebookIntelligence({
 			connectionId: 'builtin.duckdb',
 			code: 'from very_wide_table',
-			rows: [
-				Object.fromEntries(Array.from({ length: 24 }, (_, idx) => [`col_${idx}`, idx]))
-			],
+			rows: [Object.fromEntries(Array.from({ length: 24 }, (_, idx) => [`col_${idx}`, idx]))],
 			columns: Array.from({ length: 24 }, (_, idx) => `col_${idx}`),
 			executionMs: 3000,
 			errors: [],
@@ -150,16 +159,56 @@ describe('notebook-intelligence actions', () => {
 			connectionId: 'builtin.duckdb',
 			code: 'from wg',
 			rows: [
-				{ 'Item Name': 'A', Category: 'Snacks', 'Price (GHS)': 10, 'Units Sold': 2, 'Date Sold': '2026-01-01', Location: 'Accra', 'Customer Type': 'Walk-in' },
-				{ 'Item Name': 'B', Category: 'Drinks', 'Price (GHS)': 12, 'Units Sold': 3, 'Date Sold': '2026-01-02', Location: 'Kumasi', 'Customer Type': 'Online' }
+				{
+					'Item Name': 'A',
+					Category: 'Snacks',
+					'Price (GHS)': 10,
+					'Units Sold': 2,
+					'Date Sold': '2026-01-01',
+					Location: 'Accra',
+					'Customer Type': 'Walk-in'
+				},
+				{
+					'Item Name': 'B',
+					Category: 'Drinks',
+					'Price (GHS)': 12,
+					'Units Sold': 3,
+					'Date Sold': '2026-01-02',
+					Location: 'Kumasi',
+					'Customer Type': 'Online'
+				}
 			],
-			columns: ['Item Name', 'Category', 'Price (GHS)', 'Units Sold', 'Date Sold', 'Location', 'Customer Type'],
+			columns: [
+				'Item Name',
+				'Category',
+				'Price (GHS)',
+				'Units Sold',
+				'Date Sold',
+				'Location',
+				'Customer Type'
+			],
 			executionMs: 140,
 			errors: [],
-			schemaTables: [{ name: 'wg', columns: ['Item Name', 'Category', 'Price (GHS)', 'Units Sold', 'Date Sold', 'Location', 'Customer Type'], columnTypes: ['VARCHAR', 'VARCHAR', 'DOUBLE', 'INTEGER', 'DATE', 'VARCHAR', 'VARCHAR'] }]
+			schemaTables: [
+				{
+					name: 'wg',
+					columns: [
+						'Item Name',
+						'Category',
+						'Price (GHS)',
+						'Units Sold',
+						'Date Sold',
+						'Location',
+						'Customer Type'
+					],
+					columnTypes: ['VARCHAR', 'VARCHAR', 'DOUBLE', 'INTEGER', 'DATE', 'VARCHAR', 'VARCHAR']
+				}
+			]
 		});
 
-		expect(intelligence.nextAnalyses.some((idea) => /derive .*Price \(GHS\).*Units Sold/i.test(idea))).toBe(true);
+		expect(
+			intelligence.nextAnalyses.some((idea) => /derive .*Price \(GHS\).*Units Sold/i.test(idea))
+		).toBe(true);
 		expect(intelligence.nextAnalyses.some((idea) => /Revenue by Category/i.test(idea))).toBe(true);
 	});
 
@@ -174,7 +223,13 @@ describe('notebook-intelligence actions', () => {
 			columns: ['Item Name', 'Category', 'Location', 'amount'],
 			executionMs: 120,
 			errors: [],
-			schemaTables: [{ name: 'wg', columns: ['Item Name', 'Category', 'Location', 'amount'], columnTypes: ['VARCHAR', 'VARCHAR', 'VARCHAR', 'DOUBLE'] }]
+			schemaTables: [
+				{
+					name: 'wg',
+					columns: ['Item Name', 'Category', 'Location', 'amount'],
+					columnTypes: ['VARCHAR', 'VARCHAR', 'VARCHAR', 'DOUBLE']
+				}
+			]
 		});
 
 		const actions = recommendNotebookActions({
@@ -202,7 +257,13 @@ describe('notebook-intelligence actions', () => {
 			columns: ['Date Sold', 'deposited', 'withdrawn', 'Category'],
 			executionMs: 130,
 			errors: [],
-			schemaTables: [{ name: 'ledger', columns: ['Date Sold', 'deposited', 'withdrawn', 'Category'], columnTypes: ['DATE', 'DOUBLE', 'DOUBLE', 'VARCHAR'] }]
+			schemaTables: [
+				{
+					name: 'ledger',
+					columns: ['Date Sold', 'deposited', 'withdrawn', 'Category'],
+					columnTypes: ['DATE', 'DOUBLE', 'DOUBLE', 'VARCHAR']
+				}
+			]
 		});
 
 		expect(intelligence.nextAnalyses.some((idea) => /net flow analysis/i.test(idea))).toBe(true);

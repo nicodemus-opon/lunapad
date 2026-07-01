@@ -38,7 +38,11 @@ export const GET: RequestHandler = async ({ url, request }) => {
 				if (sentDone) return;
 				sentDone = true;
 				send({ type: 'done', exitCode });
-				try { controller.close(); } catch { /* ignore */ }
+				try {
+					controller.close();
+				} catch {
+					/* ignore */
+				}
 			}
 
 			// Subscribe before replaying so no lines emitted during replay are missed.
@@ -59,7 +63,11 @@ export const GET: RequestHandler = async ({ url, request }) => {
 			request.signal.addEventListener('abort', () => {
 				job.emitter.off('line', onLine);
 				job.emitter.off('done', onDone);
-				try { controller.close(); } catch { /* ignore */ }
+				try {
+					controller.close();
+				} catch {
+					/* ignore */
+				}
 			});
 		}
 	});

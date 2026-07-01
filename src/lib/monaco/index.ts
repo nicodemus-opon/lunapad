@@ -6,6 +6,7 @@ import 'monaco-editor/esm/vs/editor/editor.all.js';
 import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution.js';
+import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js';
 import 'monaco-editor/esm/vs/language/typescript/monaco.contribution.js';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
@@ -15,11 +16,11 @@ import TSWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?work
 // (imported directly — no contribution/worker setup, so no side effects)
 import {
 	conf as trinoConf,
-	language as trinoLanguage,
+	language as trinoLanguage
 } from 'monaco-sql-languages/esm/languages/trino/trino.js';
 import {
 	conf as genericConf,
-	language as genericLanguage,
+	language as genericLanguage
 } from 'monaco-sql-languages/esm/languages/generic/generic.js';
 
 import { registerPRQL } from './prql';
@@ -27,6 +28,7 @@ import { defineThemes } from './themes';
 import { registerCompletions, registerSqlSignatureHelp } from './completions';
 import { registerGhostCompletions } from './ghost-completions';
 import { registerHoverProviders } from './hover';
+import { registerMarkdownHover } from './markdown-hover';
 import { registerPrqlCodeActions } from './prql-actions';
 import { registerPlotlyIntellisense } from './plotly-intellisense';
 import { startSqlLspClient } from './sql-lsp-client';
@@ -72,7 +74,11 @@ export function setSqlModelLanguage(
 
 function registerSqlDialects(): void {
 	// trinosql — all external (Trino-routed) connections
-	monaco.languages.register({ id: 'trinosql', extensions: ['.trinosql'], aliases: ['TrinoSQL', 'Trino'] });
+	monaco.languages.register({
+		id: 'trinosql',
+		extensions: ['.trinosql'],
+		aliases: ['TrinoSQL', 'Trino']
+	});
 	monaco.languages.setLanguageConfiguration('trinosql', trinoConf);
 	monaco.languages.setMonarchTokensProvider('trinosql', trinoLanguage);
 
@@ -98,6 +104,7 @@ export function setupMonaco(): typeof monaco {
 	registerSqlSignatureHelp(monaco);
 	registerGhostCompletions(monaco);
 	registerHoverProviders(monaco);
+	registerMarkdownHover(monaco);
 	registerPrqlCodeActions(monaco);
 	registerPlotlyIntellisense();
 	startSqlLspClient(monaco);

@@ -37,7 +37,9 @@ const DERIVE_FUNCTION_SPECS = (() => {
 	for (const fn of PRQL_FUNCTION_REGISTRY) {
 		specs[fn.value] = getPrqlFunctionArity(fn.value);
 	}
-	for (const [legacy, canonical] of Object.entries(LEGACY_PRQL_FUNCTION_ALIASES) as Array<[ExprFunc, ExprFunc]>) {
+	for (const [legacy, canonical] of Object.entries(LEGACY_PRQL_FUNCTION_ALIASES) as Array<
+		[ExprFunc, ExprFunc]
+	>) {
 		if (!specs[legacy]) {
 			specs[legacy] = specs[canonical] ?? getPrqlFunctionArity(canonical);
 		}
@@ -138,8 +140,14 @@ function stripInlineComment(line: string): string {
 	let inQuote = false;
 	for (let i = 0; i < line.length; i++) {
 		const ch = line[i];
-		if (ch === '\\' && inQuote) { i++; continue; } // skip escaped char inside string
-		if (ch === '"') { inQuote = !inQuote; continue; }
+		if (ch === '\\' && inQuote) {
+			i++;
+			continue;
+		} // skip escaped char inside string
+		if (ch === '"') {
+			inQuote = !inQuote;
+			continue;
+		}
 		if (ch === '#' && !inQuote) return line.slice(0, i);
 	}
 	return line;
@@ -185,9 +193,11 @@ function indexOfAtDepth0(str: string, sub: string): number {
 	let depth = 0;
 	for (let i = 0; i <= str.length - sub.length; i++) {
 		const ch = str[i];
-		if (ch === '(') { depth++; }
-		else if (ch === ')') { depth--; }
-		else if (depth === 0 && str.slice(i, i + sub.length) === sub) {
+		if (ch === '(') {
+			depth++;
+		} else if (ch === ')') {
+			depth--;
+		} else if (depth === 0 && str.slice(i, i + sub.length) === sub) {
 			return i;
 		}
 	}
@@ -208,16 +218,52 @@ function splitCommaSeparated(input: string): string[] {
 	let braceDepth = 0;
 
 	for (const ch of input) {
-		if (escaped) { current += ch; escaped = false; continue; }
-		if (ch === '\\') { current += ch; escaped = true; continue; }
-		if (ch === '"') { inQuote = !inQuote; current += ch; continue; }
+		if (escaped) {
+			current += ch;
+			escaped = false;
+			continue;
+		}
+		if (ch === '\\') {
+			current += ch;
+			escaped = true;
+			continue;
+		}
+		if (ch === '"') {
+			inQuote = !inQuote;
+			current += ch;
+			continue;
+		}
 		if (!inQuote) {
-			if (ch === '(') { parenDepth++; current += ch; continue; }
-			if (ch === ')') { parenDepth--; current += ch; continue; }
-			if (ch === '[') { bracketDepth++; current += ch; continue; }
-			if (ch === ']') { bracketDepth--; current += ch; continue; }
-			if (ch === '{') { braceDepth++; current += ch; continue; }
-			if (ch === '}') { braceDepth--; current += ch; continue; }
+			if (ch === '(') {
+				parenDepth++;
+				current += ch;
+				continue;
+			}
+			if (ch === ')') {
+				parenDepth--;
+				current += ch;
+				continue;
+			}
+			if (ch === '[') {
+				bracketDepth++;
+				current += ch;
+				continue;
+			}
+			if (ch === ']') {
+				bracketDepth--;
+				current += ch;
+				continue;
+			}
+			if (ch === '{') {
+				braceDepth++;
+				current += ch;
+				continue;
+			}
+			if (ch === '}') {
+				braceDepth--;
+				current += ch;
+				continue;
+			}
 		}
 		if (ch === ',' && !inQuote && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
 			const part = current.trim();
@@ -333,7 +379,8 @@ function parseBraceList(input: string): string[] {
 function parseCollectionList(input: string): string[] {
 	const trimmed = input.trim();
 	if (trimmed.startsWith('{') && trimmed.endsWith('}')) return parseBraceList(trimmed);
-	if (trimmed.startsWith('[') && trimmed.endsWith(']')) return splitCommaSeparated(trimmed.slice(1, -1)).map((part) => part.trim());
+	if (trimmed.startsWith('[') && trimmed.endsWith(']'))
+		return splitCommaSeparated(trimmed.slice(1, -1)).map((part) => part.trim());
 	return [];
 }
 
@@ -368,17 +415,21 @@ function splitPipelineStages(prql: string): ParseResult<string[]> {
 				? '('
 				: startsAppendBlock
 					? '['
-				: startsBracketOrBraceBlock
-					? '['
-					: '{';
+					: startsBracketOrBraceBlock
+						? '['
+						: '{';
 			const closeChar = openChar === '(' ? ')' : openChar === '[' ? ']' : '}';
-			let depth = (line.match(new RegExp('\\' + openChar, 'g')) ?? []).length - (line.match(new RegExp('\\' + closeChar, 'g')) ?? []).length;
+			let depth =
+				(line.match(new RegExp('\\' + openChar, 'g')) ?? []).length -
+				(line.match(new RegExp('\\' + closeChar, 'g')) ?? []).length;
 			while (depth > 0) {
 				i += 1;
 				if (i >= lines.length) return null;
 				const next = lines[i];
 				block.push(next);
-				depth += (next.match(new RegExp('\\' + openChar, 'g')) ?? []).length - (next.match(new RegExp('\\' + closeChar, 'g')) ?? []).length;
+				depth +=
+					(next.match(new RegExp('\\' + openChar, 'g')) ?? []).length -
+					(next.match(new RegExp('\\' + closeChar, 'g')) ?? []).length;
 			}
 			stages.push(block.join('\n'));
 			continue;
@@ -423,13 +474,18 @@ function parseAggregateStage(text: string): ParseResult<GroupStage> {
 
 	const singleLine = /^aggregate\s*([\[{][\s\S]*[\]}])$/i.exec(trimmed);
 	if (singleLine) {
-		const parts = splitCommaSeparated(singleLine[1].slice(1, -1)).map((line) => line.trim()).filter(Boolean);
+		const parts = splitCommaSeparated(singleLine[1].slice(1, -1))
+			.map((line) => line.trim())
+			.filter(Boolean);
 		const aggregations = parseAggregateLines(parts);
 		if (!aggregations) return null;
 		return { type: 'group', by: [], aggregations };
 	}
 
-	const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
+	const lines = trimmed
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
 	if (lines.length < 2) return null;
 	const open = /^aggregate\s*([\[{])$/i.exec(lines[0]);
 	if (!open) return null;
@@ -451,7 +507,8 @@ function parseFromStage(text: string): ParseResult<FromStage> {
 	if (!match) return null;
 	const token = match[1].trim();
 	const aliasMatch = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(token);
-	if (aliasMatch) return { type: 'from', table: unquotePRQLIdent(aliasMatch[2].trim()), alias: aliasMatch[1] };
+	if (aliasMatch)
+		return { type: 'from', table: unquotePRQLIdent(aliasMatch[2].trim()), alias: aliasMatch[1] };
 	return { type: 'from', table: unquotePRQLIdent(token) };
 }
 
@@ -508,7 +565,8 @@ function parseFilterCondition(text: string): ParseResult<FilterCondition> {
 		splitAtDepth0(rawValue, '||').length > 1 ||
 		splitAtDepth0(rawValue, ' AND ').length > 1 ||
 		splitAtDepth0(rawValue, ' OR ').length > 1
-	) return null;
+	)
+		return null;
 	// Preserve PRQL date/timestamp literals that start with @
 	const value = rawValue.startsWith('@') ? rawValue : unquoteValue(rawValue);
 	return {
@@ -524,11 +582,16 @@ function parseFilterStage(text: string): ParseResult<FilterStage> {
 	const expr = trimmed.slice('filter '.length).trim();
 
 	const tryMultiCondition = (input: string): ParseResult<FilterStage> => {
-		for (const [andOp, orOp] of [['&&', '||'], [' AND ', ' OR ']] as const) {
+		for (const [andOp, orOp] of [
+			['&&', '||'],
+			[' AND ', ' OR ']
+		] as const) {
 			const orParts = splitAtDepth0(input, orOp);
 			const andParts = splitAtDepth0(input, andOp);
 			const logic: FilterStage['logic'] = orParts.length > 1 ? 'or' : 'and';
-			const parts = (logic === 'or' ? orParts : andParts).map((part) => part.trim()).filter(Boolean);
+			const parts = (logic === 'or' ? orParts : andParts)
+				.map((part) => part.trim())
+				.filter(Boolean);
 			if (parts.length <= 1) continue;
 			const conditions = parts.map(parseFilterCondition);
 			if (conditions.some((c) => c === null)) continue;
@@ -556,7 +619,8 @@ function parseSelectStage(text: string): ParseResult<SelectStage> {
 	const trimmed = text.trim();
 	// Block form: select { col1, col2, ... } or select [col1, col2, ...]
 	const blockMatch = /^select\s*([\[{][\s\S]*[\]}])$/i.exec(trimmed);
-	if (blockMatch) return { type: 'select', columns: parseCollectionList(blockMatch[1]).map(unquotePRQLIdent) };
+	if (blockMatch)
+		return { type: 'select', columns: parseCollectionList(blockMatch[1]).map(unquotePRQLIdent) };
 	// Single-column form: select col (but not select *)
 	const singleMatch = /^select\s+([^{*\s]\S*)$/i.exec(trimmed);
 	if (singleMatch) return { type: 'select', columns: [unquotePRQLIdent(singleMatch[1])] };
@@ -661,12 +725,11 @@ function parseSortStage(text: string): ParseResult<SortStage> {
 		/^sort\s+(.+)$/i.exec(trimmed)?.[1];
 	if (!listText) return null;
 	const listTrimmed = listText.trim();
-	const rawKeys =
-		listTrimmed.startsWith('{')
-			? parseBraceList(listText)
-			: listTrimmed.startsWith('[')
-				? splitCommaSeparated(listTrimmed.slice(1, -1))
-				: [listTrimmed];
+	const rawKeys = listTrimmed.startsWith('{')
+		? parseBraceList(listText)
+		: listTrimmed.startsWith('[')
+			? splitCommaSeparated(listTrimmed.slice(1, -1))
+			: [listTrimmed];
 	const keys = rawKeys.map((key) => {
 		if (key.startsWith('-')) {
 			return { column: unquotePRQLIdent(key.slice(1)), dir: 'desc' as const };
@@ -716,30 +779,30 @@ function parseJoinStage(text: string): ParseResult<JoinStage> {
 		condText === 'true'
 			? []
 			: splitAtDepth0(condText, '&&').flatMap((cond) => {
-				const c = cond.trim();
+					const c = cond.trim();
 
-				// Shorthand: `==column`
-				const shorthandMatch = /^==(.+)$/.exec(c);
-				if (shorthandMatch) {
-					const col = unquotePRQLIdent(shorthandMatch[1].trim());
-					return [{ left: col, right: col, shorthand: true }];
-				}
+					// Shorthand: `==column`
+					const shorthandMatch = /^==(.+)$/.exec(c);
+					if (shorthandMatch) {
+						const col = unquotePRQLIdent(shorthandMatch[1].trim());
+						return [{ left: col, right: col, shorthand: true }];
+					}
 
-				// PRQL also allows same-column join shorthand as `(column)`.
-				if (columnPattern.test(c)) {
-					const col = unquotePRQLIdent(c);
-					return [{ left: col, right: col, shorthand: true }];
-				}
+					// PRQL also allows same-column join shorthand as `(column)`.
+					if (columnPattern.test(c)) {
+						const col = unquotePRQLIdent(c);
+						return [{ left: col, right: col, shorthand: true }];
+					}
 
-				// Standard: `left == ref.right` or `left == right`
-				const condMatch = /^(.+?)\s*==\s*(.+)$/.exec(c);
-				if (!condMatch) return [];
-				const left = condMatch[1].trim();
-				const rightFull = condMatch[2].trim();
-				const prefix = `${ref}.`;
-				const right = rightFull.startsWith(prefix) ? rightFull.slice(prefix.length) : rightFull;
-				return [{ left, right }];
-			});
+					// Standard: `left == ref.right` or `left == right`
+					const condMatch = /^(.+?)\s*==\s*(.+)$/.exec(c);
+					if (!condMatch) return [];
+					const left = condMatch[1].trim();
+					const rightFull = condMatch[2].trim();
+					const prefix = `${ref}.`;
+					const right = rightFull.startsWith(prefix) ? rightFull.slice(prefix.length) : rightFull;
+					return [{ left, right }];
+				});
 
 	return { type: 'join', joinType, table, alias, conditions };
 }
@@ -767,7 +830,10 @@ function parseAggregationLine(line: string): AggregationRow | null {
 	const colPattern = '(?:`[^`]+`|[A-Za-z_][A-Za-z0-9_.]*)';
 
 	const withAlias = new RegExp(
-		`^( |\`[^\`]+\`|[A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(count_distinct|count|sum|avg|average|min|max|first|last|stddev|all|any|concat_array)(?:\\s+(${colPattern}))?$`.replace('^\(\u0000\|', '^('),
+		`^( |\`[^\`]+\`|[A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(count_distinct|count|sum|avg|average|min|max|first|last|stddev|all|any|concat_array)(?:\\s+(${colPattern}))?$`.replace(
+			'^\(\u0000\|',
+			'^('
+		),
 		'i'
 	).exec(trimmed);
 	if (withAlias) {
@@ -856,7 +922,9 @@ function parseWindowGroupBody(bodyLines: string[], by: string[]): ParseResult<Gr
 
 	// Join with space so multi-line expressions (e.g. z = (\n  a - b\n) / c) become one line
 	const joined = innerLines.join(' ');
-	const parts = splitCommaSeparated(joined).map((s) => s.trim()).filter(Boolean);
+	const parts = splitCommaSeparated(joined)
+		.map((s) => s.trim())
+		.filter(Boolean);
 	const derives = parseDeriveColumnParts(parts);
 	if (!derives) return null;
 
@@ -867,19 +935,27 @@ function parseGroupStage(text: string): ParseResult<GroupStage> {
 	// Compact single-line form emitted by LLMs:
 	//   group {col1, col2} (aggregate {name = func col, ...})
 	//   group col (aggregate {name = func col})
-	const compact = /^group\s+(\{[^}]*\}|`[^`]+`|[A-Za-z_][A-Za-z0-9_.]*)\s*\(\s*aggregate\s*(\{[^}]*\})\s*\)$/i.exec(text.trim());
+	const compact =
+		/^group\s+(\{[^}]*\}|`[^`]+`|[A-Za-z_][A-Za-z0-9_.]*)\s*\(\s*aggregate\s*(\{[^}]*\})\s*\)$/i.exec(
+			text.trim()
+		);
 	if (compact) {
 		const byPart = compact[1].trim();
 		const by = byPart.startsWith('{')
 			? parseBraceList(byPart).map(unquotePRQLIdent)
 			: [unquotePRQLIdent(byPart)];
-		const aggParts = splitCommaSeparated(compact[2].slice(1, -1)).map((s) => s.trim()).filter(Boolean);
+		const aggParts = splitCommaSeparated(compact[2].slice(1, -1))
+			.map((s) => s.trim())
+			.filter(Boolean);
 		const aggregations = parseAggregateLines(aggParts);
 		if (!aggregations) return null;
 		return { type: 'group', by, aggregations };
 	}
 
-	const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+	const lines = text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
 	if (lines.length < 3) return null;
 
 	// Support both `group {col1, col2} (` and `group single_col (` (with optional backtick-quoting)
@@ -903,9 +979,12 @@ function parseGroupStage(text: string): ParseResult<GroupStage> {
 		return { type: 'group', by, aggregations: [] };
 	}
 
-	const singleLineAggregate = bodyLines.length === 1 ? /^aggregate\s*([\[{][\s\S]*[\]}])$/i.exec(bodyLines[0]) : null;
+	const singleLineAggregate =
+		bodyLines.length === 1 ? /^aggregate\s*([\[{][\s\S]*[\]}])$/i.exec(bodyLines[0]) : null;
 	if (singleLineAggregate) {
-		const parts = splitCommaSeparated(singleLineAggregate[1].slice(1, -1)).map((line) => line.trim()).filter(Boolean);
+		const parts = splitCommaSeparated(singleLineAggregate[1].slice(1, -1))
+			.map((line) => line.trim())
+			.filter(Boolean);
 		const aggregations = parseAggregateLines(parts);
 		if (!aggregations) return null;
 		return { type: 'group', by, aggregations };
@@ -939,7 +1018,10 @@ function parseGroupStage(text: string): ParseResult<GroupStage> {
 }
 
 function parseWindowStage(text: string): ParseResult<WindowStage> {
-	const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+	const lines = text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
 	if (lines.length < 3) return null;
 
 	const head = /^window\s+(.+)\s*\($/i.exec(lines[0]);
@@ -959,7 +1041,10 @@ function parseWindowStage(text: string): ParseResult<WindowStage> {
 }
 
 function parseLoopStage(text: string): ParseResult<LoopStage> {
-	const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+	const lines = text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
 	if (lines.length < 3) return null;
 	if (!/^loop\s*\($/i.test(lines[0])) return null;
 	if (lines[lines.length - 1] !== ')') return null;
@@ -1095,7 +1180,9 @@ function deriveToPreql(s: DeriveStage): string {
 		// Single column: no braces (matches PRQL idiom)
 		return `derive ${quotePRQLIdent(named[0].name)} = ${deriveExprToPreql(named[0].expr)}`;
 	}
-	const cols = named.map((c) => `  ${quotePRQLIdent(c.name)} = ${deriveExprToPreql(c.expr)}`).join(',\n');
+	const cols = named
+		.map((c) => `  ${quotePRQLIdent(c.name)} = ${deriveExprToPreql(c.expr)}`)
+		.join(',\n');
 	return `derive {\n${cols}\n}`;
 }
 
@@ -1105,7 +1192,9 @@ function groupToPreql(s: GroupStage): string {
 			return 'aggregate {}';
 		}
 		const aggLines = s.aggregations
-			.filter((a) => a.func === 'raw' ? Boolean(a.expr?.trim()) : Boolean(a.column || a.func === 'count'))
+			.filter((a) =>
+				a.func === 'raw' ? Boolean(a.expr?.trim()) : Boolean(a.column || a.func === 'count')
+			)
 			.map((a) => {
 				if (a.func === 'raw') {
 					const expr = a.expr?.trim() ?? '';
@@ -1123,18 +1212,22 @@ function groupToPreql(s: GroupStage): string {
 		return `aggregate {\n${aggLines.join(',\n')}\n}`;
 	}
 
-	const byStr = s.by.length === 1 ? quotePRQLIdent(s.by[0]) : `{${s.by.map(quotePRQLIdent).join(', ')}}`;
+	const byStr =
+		s.by.length === 1 ? quotePRQLIdent(s.by[0]) : `{${s.by.map(quotePRQLIdent).join(', ')}}`;
 
 	if (!s.window && s.take !== undefined && s.by.length > 0) {
 		return `group ${byStr} (\n  take ${s.take}\n)`;
 	}
 
 	if (s.window) {
-		const sortLine = s.window.sortKeys.length > 0
-			? `  sort {${s.window.sortKeys
-					.map((k) => (k.dir === 'desc' ? `-${quotePRQLIdent(k.column)}` : quotePRQLIdent(k.column)))
-					.join(', ')}}\n`
-			: '';
+		const sortLine =
+			s.window.sortKeys.length > 0
+				? `  sort {${s.window.sortKeys
+						.map((k) =>
+							k.dir === 'desc' ? `-${quotePRQLIdent(k.column)}` : quotePRQLIdent(k.column)
+						)
+						.join(', ')}}\n`
+				: '';
 		const deriveCols = s.window.derives
 			.filter((d) => d.name)
 			.map((d) => `    ${quotePRQLIdent(d.name)} = ${deriveExprToPreql(d.expr)}`);
@@ -1148,7 +1241,9 @@ function groupToPreql(s: GroupStage): string {
 		return `group ${byStr} (\n  aggregate {}\n)`;
 	}
 	const aggLines = s.aggregations
-		.filter((a) => a.func === 'raw' ? Boolean(a.expr?.trim()) : Boolean(a.column || a.func === 'count'))
+		.filter((a) =>
+			a.func === 'raw' ? Boolean(a.expr?.trim()) : Boolean(a.column || a.func === 'count')
+		)
 		.map((a) => {
 			if (a.func === 'raw') {
 				const expr = a.expr?.trim() ?? '';
@@ -1168,17 +1263,19 @@ function groupToPreql(s: GroupStage): string {
 
 function windowToPreql(s: WindowStage): string {
 	const frame = s.frame.trim() || 'rows:-2..0';
-	const sortLine = s.sortKeys.length > 0
-		? `  sort {${s.sortKeys
-			.map((k) => (k.dir === 'desc' ? `-${quotePRQLIdent(k.column)}` : quotePRQLIdent(k.column)))
-			.join(', ')}}\n`
-		: '';
+	const sortLine =
+		s.sortKeys.length > 0
+			? `  sort {${s.sortKeys
+					.map((k) =>
+						k.dir === 'desc' ? `-${quotePRQLIdent(k.column)}` : quotePRQLIdent(k.column)
+					)
+					.join(', ')}}\n`
+			: '';
 	const deriveCols = s.derives
 		.filter((d) => d.name)
 		.map((d) => `    ${quotePRQLIdent(d.name)} = ${deriveExprToPreql(d.expr)}`);
-	const deriveBlock = deriveCols.length > 0
-		? `  derive {\n${deriveCols.join(',\n')},\n  }`
-		: '  derive {}';
+	const deriveBlock =
+		deriveCols.length > 0 ? `  derive {\n${deriveCols.join(',\n')},\n  }` : '  derive {}';
 	return `window ${frame} (\n${sortLine}${deriveBlock}\n)`;
 }
 
@@ -1234,23 +1331,38 @@ export { deriveExprToPreql, parseDeriveExpr };
 
 export function stageToPreql(stage: GUIPipelineStage): string {
 	switch (stage.type) {
-		case 'from': return fromToPreql(stage);
-		case 'append': return appendToPreql(stage);
-		case 'filter': return filterToPreql(stage);
-		case 'select': return selectToPreql(stage);
-		case 'derive': return deriveToPreql(stage);
-		case 'group': return groupToPreql(stage);
-		case 'window': return windowToPreql(stage);
-		case 'loop': return loopToPreql(stage);
-		case 'sort': return sortToPreql(stage);
-		case 'take': return takeToPreql(stage);
-		case 'join': return joinToPreql(stage);
-		case 'raw': return rawToPreql(stage);
+		case 'from':
+			return fromToPreql(stage);
+		case 'append':
+			return appendToPreql(stage);
+		case 'filter':
+			return filterToPreql(stage);
+		case 'select':
+			return selectToPreql(stage);
+		case 'derive':
+			return deriveToPreql(stage);
+		case 'group':
+			return groupToPreql(stage);
+		case 'window':
+			return windowToPreql(stage);
+		case 'loop':
+			return loopToPreql(stage);
+		case 'sort':
+			return sortToPreql(stage);
+		case 'take':
+			return takeToPreql(stage);
+		case 'join':
+			return joinToPreql(stage);
+		case 'raw':
+			return rawToPreql(stage);
 	}
 }
 
 export function guiToPreql(stages: GUIPipelineStage[]): string {
-	return stages.filter((s) => !s.disabled).map(stageToPreql).join('\n');
+	return stages
+		.filter((s) => !s.disabled)
+		.map(stageToPreql)
+		.join('\n');
 }
 
 export function prqlToGuiStages(prql: string): GUIPipelineStage[] | null {
@@ -1367,7 +1479,10 @@ export function getFinalColumns(
 	return getAvailableColumns(stages, tableSchemas, stages.length);
 }
 
-function deriveExprReferencesAvailableColumns(expr: DeriveExpr, availableColumns: Set<string>): boolean {
+function deriveExprReferencesAvailableColumns(
+	expr: DeriveExpr,
+	availableColumns: Set<string>
+): boolean {
 	if (expr.mode === 'binary') {
 		const leftOk = expr.left.kind === 'literal' || availableColumns.has(expr.left.value);
 		const rightOk = expr.right.kind === 'literal' || availableColumns.has(expr.right.value);
@@ -1402,7 +1517,9 @@ export function reconcileStagesAfterSourceChange(
 
 		switch (stage.type) {
 			case 'filter': {
-				const conditions = stage.conditions.filter((condition) => availableSet.has(condition.column));
+				const conditions = stage.conditions.filter((condition) =>
+					availableSet.has(condition.column)
+				);
 				if (conditions.length > 0) nextStages.push({ ...stage, conditions });
 				break;
 			}
@@ -1414,18 +1531,32 @@ export function reconcileStagesAfterSourceChange(
 				break;
 			}
 			case 'derive': {
-				const columns = stage.columns.filter((column) => deriveExprReferencesAvailableColumns(column.expr, availableSet));
+				const columns = stage.columns.filter((column) =>
+					deriveExprReferencesAvailableColumns(column.expr, availableSet)
+				);
 				if (columns.length === 0) break;
 				nextStages.push({ ...stage, columns });
-				availableColumns = [...availableColumns, ...columns.map((column) => column.name).filter(Boolean)];
+				availableColumns = [
+					...availableColumns,
+					...columns.map((column) => column.name).filter(Boolean)
+				];
 				break;
 			}
 			case 'group': {
 				if (stage.window) {
 					const allByAvailable = stage.by.every((column) => availableSet.has(column));
-					const allSortKeysAvailable = stage.window.sortKeys.every((key) => availableSet.has(key.column));
-					const derives = stage.window.derives.filter((column) => deriveExprReferencesAvailableColumns(column.expr, availableSet));
-					if (!allByAvailable || !allSortKeysAvailable || derives.length !== stage.window.derives.length) break;
+					const allSortKeysAvailable = stage.window.sortKeys.every((key) =>
+						availableSet.has(key.column)
+					);
+					const derives = stage.window.derives.filter((column) =>
+						deriveExprReferencesAvailableColumns(column.expr, availableSet)
+					);
+					if (
+						!allByAvailable ||
+						!allSortKeysAvailable ||
+						derives.length !== stage.window.derives.length
+					)
+						break;
 					nextStages.push({ ...stage, window: { ...stage.window, derives } });
 					availableColumns = [...stage.by, ...derives.map((column) => column.name).filter(Boolean)];
 					break;
@@ -1448,7 +1579,10 @@ export function reconcileStagesAfterSourceChange(
 				if (stage.by.length > 0 && by.length === 0) break;
 				if (by.length === 0 && aggregations.length === 0) break;
 				nextStages.push({ ...stage, by, aggregations });
-				availableColumns = [...by, ...aggregations.map((aggregation) => aggregation.name).filter(Boolean)];
+				availableColumns = [
+					...by,
+					...aggregations.map((aggregation) => aggregation.name).filter(Boolean)
+				];
 				break;
 			}
 			case 'sort': {
@@ -1464,17 +1598,24 @@ export function reconcileStagesAfterSourceChange(
 				break;
 			case 'window': {
 				const allSortKeysAvailable = stage.sortKeys.every((key) => availableSet.has(key.column));
-				const derives = stage.derives.filter((column) => deriveExprReferencesAvailableColumns(column.expr, availableSet));
+				const derives = stage.derives.filter((column) =>
+					deriveExprReferencesAvailableColumns(column.expr, availableSet)
+				);
 				if (!allSortKeysAvailable || derives.length !== stage.derives.length) break;
 				nextStages.push({ ...stage, derives });
-				availableColumns = [...availableColumns, ...derives.map((column) => column.name).filter(Boolean)];
+				availableColumns = [
+					...availableColumns,
+					...derives.map((column) => column.name).filter(Boolean)
+				];
 				break;
 			}
 			case 'loop':
 				nextStages.push(stage);
 				break;
 			case 'join': {
-				const rightColumns = new Set((tableSchemas[stage.table] ?? []).map((column) => column.trim()));
+				const rightColumns = new Set(
+					(tableSchemas[stage.table] ?? []).map((column) => column.trim())
+				);
 				const conditions = stage.conditions.filter(
 					(condition) => availableSet.has(condition.left) && rightColumns.has(condition.right)
 				);
@@ -1502,9 +1643,15 @@ export function reconcileStagesAfterSourceChange(
 function pickFallbackSortColumn(availableColumns: string[], missingColumn: string): string | null {
 	const candidates = availableColumns.filter((column) => column !== missingColumn);
 	if (candidates.length === 0) return null;
-	return candidates.find((column) => /^(sum|avg|average|min|max|pct|rolling)_|_count$|_sum$|_avg$|row_count|amount|price|cost|balance|paid|withdrawn|score|rate|ratio|total/i.test(column))
-		?? candidates[candidates.length - 1]
-		?? null;
+	return (
+		candidates.find((column) =>
+			/^(sum|avg|average|min|max|pct|rolling)_|_count$|_sum$|_avg$|row_count|amount|price|cost|balance|paid|withdrawn|score|rate|ratio|total/i.test(
+				column
+			)
+		) ??
+		candidates[candidates.length - 1] ??
+		null
+	);
 }
 
 export function reconcileStageSequenceToAvailableColumns(
@@ -1519,7 +1666,9 @@ export function reconcileStageSequenceToAvailableColumns(
 
 		switch (stage.type) {
 			case 'filter': {
-				const conditions = stage.conditions.filter((condition) => availableSet.has(condition.column));
+				const conditions = stage.conditions.filter((condition) =>
+					availableSet.has(condition.column)
+				);
 				if (conditions.length === 0) break;
 				nextStages.push({ ...stage, conditions });
 				break;
@@ -1541,15 +1690,27 @@ export function reconcileStageSequenceToAvailableColumns(
 				);
 				if (columns.length === 0) break;
 				nextStages.push({ ...stage, columns });
-				availableColumns = [...availableColumns, ...columns.map((column) => column.name).filter(Boolean)];
+				availableColumns = [
+					...availableColumns,
+					...columns.map((column) => column.name).filter(Boolean)
+				];
 				break;
 			}
 			case 'group': {
 				if (stage.window) {
 					const allByAvailable = stage.by.every((column) => availableSet.has(column));
-					const allSortKeysAvailable = stage.window.sortKeys.every((key) => availableSet.has(key.column));
-					const derives = stage.window.derives.filter((column) => deriveExprReferencesAvailableColumns(column.expr, availableSet));
-					if (!allByAvailable || !allSortKeysAvailable || derives.length !== stage.window.derives.length) break;
+					const allSortKeysAvailable = stage.window.sortKeys.every((key) =>
+						availableSet.has(key.column)
+					);
+					const derives = stage.window.derives.filter((column) =>
+						deriveExprReferencesAvailableColumns(column.expr, availableSet)
+					);
+					if (
+						!allByAvailable ||
+						!allSortKeysAvailable ||
+						derives.length !== stage.window.derives.length
+					)
+						break;
 					nextStages.push({ ...stage, window: { ...stage.window, derives } });
 					availableColumns = [...stage.by, ...derives.map((column) => column.name).filter(Boolean)];
 					break;
@@ -1572,7 +1733,10 @@ export function reconcileStageSequenceToAvailableColumns(
 				if (stage.by.length > 0 && by.length === 0) break;
 				if (by.length === 0 && aggregations.length === 0) break;
 				nextStages.push({ ...stage, by, aggregations });
-				availableColumns = [...by, ...aggregations.map((aggregation) => aggregation.name).filter(Boolean)];
+				availableColumns = [
+					...by,
+					...aggregations.map((aggregation) => aggregation.name).filter(Boolean)
+				];
 				break;
 			}
 			case 'sort': {
@@ -1595,7 +1759,10 @@ export function reconcileStageSequenceToAvailableColumns(
 			case 'window':
 				nextStages.push(stage);
 				if (stage.type === 'window') {
-					availableColumns = [...availableColumns, ...stage.derives.map((column) => column.name).filter(Boolean)];
+					availableColumns = [
+						...availableColumns,
+						...stage.derives.map((column) => column.name).filter(Boolean)
+					];
 				}
 				break;
 		}
@@ -1700,7 +1867,12 @@ export function mapErrorsToStages(
 			// No location info — fall back to stage 0 (from stage) since most
 			// location-less errors are about the data source (table not found, etc.)
 			const list = result.get(0) ?? [];
-			list.push({ reason: err.reason, hint: err.hint ?? null, display: err.display ?? null, stageLine: null });
+			list.push({
+				reason: err.reason,
+				hint: err.hint ?? null,
+				display: err.display ?? null,
+				stageLine: null
+			});
 			result.set(0, list);
 			continue;
 		}
@@ -1724,7 +1896,12 @@ export function mapErrorsToStages(
 		const stageLine = localRow - stageStartLines[visibleStageIdx];
 		const guiStageIdx = visibleStages[visibleStageIdx].guiIndex;
 		const list = result.get(guiStageIdx) ?? [];
-		list.push({ reason: err.reason, hint: err.hint ?? null, display: err.display ?? null, stageLine });
+		list.push({
+			reason: err.reason,
+			hint: err.hint ?? null,
+			display: err.display ?? null,
+			stageLine
+		});
 		result.set(guiStageIdx, list);
 	}
 

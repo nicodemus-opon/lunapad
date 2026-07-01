@@ -10,6 +10,7 @@ import {
 	SIGN_UP_PATH
 } from '$lib/server/auth';
 import { ensureApiKeyTableOnce, verifyApiKey, getUserById } from '$lib/server/api-keys';
+import { isUserBanned } from '$lib/server/permissions';
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -43,7 +44,17 @@ const authDisabled = testAuthDisabled || DEMO_MODE;
 // people without a Lunapad account can open it. Per-report/per-site `requireAuth` is
 // enforced inside each route's own load function instead, not here, since /r and /s must
 // be reachable before we know which specific report someone's asking for.
-const PUBLIC_PREFIXES = ['/api/auth', '/api/setup', '/api/inngest', '/api/health', '/login', '/setup', '/r', '/s'];
+const PUBLIC_PREFIXES = [
+	'/api/auth',
+	'/api/setup',
+	'/api/inngest',
+	'/api/health',
+	'/login',
+	'/setup',
+	'/invite',
+	'/r',
+	'/s'
+];
 // The live-cell run endpoint a published report's page calls client-side — same
 // public-by-default, per-report-gated reasoning as /r and /s above.
 const PUBLIC_PATH_PATTERNS = [/^\/api\/shares\/[^/]+\/run$/];
@@ -102,6 +113,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = session?.user ?? null;
 	event.locals.session = session?.session ?? null;
 	event.locals.apiKeyId = null;
+	event.locals.apiKeyScopes = null;
+
+	if (event.locals.user && isUserBanned(event.locals.user)) {
+		event.locals.user = null;
+		event.locals.session = null;
+	}
 
 	// API-key fallback for non-browser callers (the /api/v1 and /api/mcp surfaces) —
 	// only checked when no session cookie already authenticated the request, so
@@ -112,9 +129,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 			const verified = await verifyApiKey(presentedKey);
 			if (verified) {
 				const user = await getUserById(verified.userId);
-				if (user && !user.banned) {
+				if (user && !isUserBanned(user)) {
 					event.locals.user = user;
 					event.locals.apiKeyId = verified.apiKeyId;
+					event.locals.apiKeyScopes = verified.scopes;
 				}
 			}
 		}

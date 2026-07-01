@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { RenderableTreeNode } from '@markdoc/markdoc';
+	import MermaidDiagram from './MermaidDiagram.svelte';
 	import hljs from 'highlight.js/lib/core';
 	import sql from 'highlight.js/lib/languages/sql';
 	import python from 'highlight.js/lib/languages/python';
@@ -29,9 +30,7 @@
 	const { lang, children }: Props = $props();
 
 	function extractText(nodes: RenderableTreeNode[]): string {
-		return nodes
-			.map((n) => (typeof n === 'string' ? n : ''))
-			.join('');
+		return nodes.map((n) => (typeof n === 'string' ? n : '')).join('');
 	}
 
 	const rawCode = $derived(extractText(children));
@@ -47,7 +46,11 @@
 	});
 </script>
 
-<pre class="hljs-block"><code class="language-{lang}">{@html highlighted}</code></pre>
+{#if lang === 'mermaid'}
+	<MermaidDiagram code={rawCode} />
+{:else}
+	<pre class="hljs-block"><code class="language-{lang}">{@html highlighted}</code></pre>
+{/if}
 
 <style>
 	.hljs-block {

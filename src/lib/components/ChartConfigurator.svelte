@@ -25,17 +25,17 @@
 				title="Chart settings"
 				{...props}
 			>
-				<Settings2 class="w-3.5 h-3.5" />
+				<Settings2 class="h-3.5 w-3.5" />
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Portal>
 		<Popover.Content
-			class="z-50 w-72 max-h-[80vh] overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-lg p-3"
+			class="z-50 max-h-[80vh] w-72 overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
 			sideOffset={6}
 			align="end"
 		>
-			<ChartConfigPanel {config} {columns} {rows} onUpdate={onUpdate} />
+			<ChartConfigPanel {config} {columns} {rows} {onUpdate} />
 		</Popover.Content>
 	</Popover.Portal>
 </Popover.Root>

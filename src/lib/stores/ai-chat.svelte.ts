@@ -45,7 +45,7 @@ export interface NotebookSnapshot {
 
 const PANEL_WIDTH_KEY = 'lunapad.aichat.width';
 const WORKSPACE_STANDARDS_KEY = 'lunapad.aichat.standards';
-const DEFAULT_WIDTH = 340;
+const DEFAULT_WIDTH = 380;
 
 function loadWidth(): number {
 	if (typeof localStorage === 'undefined') return DEFAULT_WIDTH;
@@ -90,9 +90,22 @@ let _activeController: AbortController | null = null;
 // Per-iteration checkpoint stack (max 5) — for step-undo
 let _checkpoints = $state<NotebookSnapshot[]>([]);
 // Confirmation gate state — resolves when user clicks Proceed/Cancel
-let _confirmationRequest = $state<{ cellCount: number; resolve: (proceed: boolean) => void } | null>(null);
+let _confirmationRequest = $state<{
+	cellCount: number;
+	resolve: (proceed: boolean) => void;
+} | null>(null);
 // Plan proposal gate — resolves when user approves or rejects the modeling plan (before sql-gen starts)
-let _pendingPlanProposal = $state<{ models: Array<{ name: string; grain: string; source?: string; depends_on?: string[]; type?: string }>; note?: string; assertions?: PlanAssertion[] } | null>(null);
+let _pendingPlanProposal = $state<{
+	models: Array<{
+		name: string;
+		grain: string;
+		source?: string;
+		depends_on?: string[];
+		type?: string;
+	}>;
+	note?: string;
+	assertions?: PlanAssertion[];
+} | null>(null);
 let _planProposalResolve = $state<((proceed: boolean) => void) | null>(null);
 
 // Rolling history-summary cache (Improvement: token-budgeted history) — `atMessageCount` is the
@@ -118,11 +131,19 @@ export function initAIChatWidth(): void {
 	_panelWidth = loadWidth();
 }
 
-export function getAIChatOpen(): boolean { return _isOpen; }
-export function setAIChatOpen(v: boolean): void { _isOpen = v; }
-export function toggleAIChat(): void { _isOpen = !_isOpen; }
+export function getAIChatOpen(): boolean {
+	return _isOpen;
+}
+export function setAIChatOpen(v: boolean): void {
+	_isOpen = v;
+}
+export function toggleAIChat(): void {
+	_isOpen = !_isOpen;
+}
 
-export function getAIChatPanelWidth(): number { return _panelWidth; }
+export function getAIChatPanelWidth(): number {
+	return _panelWidth;
+}
 export function setAIChatPanelWidth(w: number): void {
 	_panelWidth = Math.max(260, Math.min(520, w));
 	localStorage.setItem(PANEL_WIDTH_KEY, String(_panelWidth));
@@ -130,27 +151,33 @@ export function setAIChatPanelWidth(w: number): void {
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-export function getMessages(): ChatMessage[] { return _messages; }
+export function getMessages(): ChatMessage[] {
+	return _messages;
+}
 
 export function getHistorySummaryCache(): { atMessageCount: number; summary: string } | null {
 	return _historySummaryCache;
 }
-export function setHistorySummaryCache(cache: { atMessageCount: number; summary: string } | null): void {
+export function setHistorySummaryCache(
+	cache: { atMessageCount: number; summary: string } | null
+): void {
 	_historySummaryCache = cache;
 }
 
-export function appendMessage(msg: Omit<ChatMessage, 'id' | 'createdAt'> & { id?: string }): ChatMessage {
+export function appendMessage(
+	msg: Omit<ChatMessage, 'id' | 'createdAt'> & { id?: string }
+): ChatMessage {
 	const full: ChatMessage = { id: makeId(), createdAt: Date.now(), ...msg };
 	_messages = [..._messages, full];
 	return full;
 }
 
 export function updateMessageText(id: string, delta: string): void {
-	_messages = _messages.map((m) => m.id === id ? { ...m, text: m.text + delta } : m);
+	_messages = _messages.map((m) => (m.id === id ? { ...m, text: m.text + delta } : m));
 }
 
 export function setMessageStreaming(id: string, streaming: boolean): void {
-	_messages = _messages.map((m) => m.id === id ? { ...m, isStreaming: streaming } : m);
+	_messages = _messages.map((m) => (m.id === id ? { ...m, isStreaming: streaming } : m));
 }
 
 export function appendActionEvent(msgId: string, event: ActionEvent): void {
@@ -162,7 +189,13 @@ export function appendActionEvent(msgId: string, event: ActionEvent): void {
 
 /** Append a distinct error message to the thread (rendered with destructive styling). */
 export function appendErrorMessage(text: string): ChatMessage {
-	return appendMessage({ role: 'error', text, isStreaming: false, contextPills: [], actionEvents: [] });
+	return appendMessage({
+		role: 'error',
+		text,
+		isStreaming: false,
+		contextPills: [],
+		actionEvents: []
+	});
 }
 
 export function updateLastActionEvent(msgId: string, update: Partial<ActionEvent>): void {
@@ -175,11 +208,11 @@ export function updateLastActionEvent(msgId: string, update: Partial<ActionEvent
 }
 
 export function setMessageSuggestions(id: string, suggestions: string[]): void {
-	_messages = _messages.map((m) => m.id === id ? { ...m, suggestions } : m);
+	_messages = _messages.map((m) => (m.id === id ? { ...m, suggestions } : m));
 }
 
 export function setMessageError(id: string): void {
-	_messages = _messages.map((m) => m.id === id ? { ...m, hasError: true } : m);
+	_messages = _messages.map((m) => (m.id === id ? { ...m, hasError: true } : m));
 }
 
 export function clearMessages(): void {
@@ -192,14 +225,26 @@ export function clearMessages(): void {
 
 // ── Generation state ──────────────────────────────────────────────────────────
 
-export function getIsGenerating(): boolean { return _isGenerating; }
-export function setIsGenerating(v: boolean): void { _isGenerating = v; }
+export function getIsGenerating(): boolean {
+	return _isGenerating;
+}
+export function setIsGenerating(v: boolean): void {
+	_isGenerating = v;
+}
 
-export function getCurrentActivityLabel(): string | null { return _currentActivityLabel; }
-export function setCurrentActivityLabel(label: string | null): void { _currentActivityLabel = label; }
+export function getCurrentActivityLabel(): string | null {
+	return _currentActivityLabel;
+}
+export function setCurrentActivityLabel(label: string | null): void {
+	_currentActivityLabel = label;
+}
 
-export function getActiveController(): AbortController | null { return _activeController; }
-export function setActiveController(c: AbortController | null): void { _activeController = c; }
+export function getActiveController(): AbortController | null {
+	return _activeController;
+}
+export function setActiveController(c: AbortController | null): void {
+	_activeController = c;
+}
 
 export function abortGeneration(): void {
 	_activeController?.abort();
@@ -211,7 +256,9 @@ export function abortGeneration(): void {
 	_pipelinePhases = [];
 	// Mark any streaming message as stopped so a halted partial answer is clearly
 	// distinguishable from a completed one.
-	_messages = _messages.map((m) => m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m);
+	_messages = _messages.map((m) =>
+		m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m
+	);
 	// Resolve any hanging confirmation or plan-proposal Promise so the old agentic loop exits
 	if (_confirmationRequest) {
 		_confirmationRequest.resolve(false);
@@ -231,7 +278,9 @@ export function abortGeneration(): void {
 
 // ── Context cells ─────────────────────────────────────────────────────────────
 
-export function getContextCellIds(): string[] { return _contextCellIds; }
+export function getContextCellIds(): string[] {
+	return _contextCellIds;
+}
 
 export function addContextCell(id: string): void {
 	if (!_contextCellIds.includes(id)) {
@@ -243,11 +292,15 @@ export function removeContextCell(id: string): void {
 	_contextCellIds = _contextCellIds.filter((cid) => cid !== id);
 }
 
-export function clearContextCells(): void { _contextCellIds = []; }
+export function clearContextCells(): void {
+	_contextCellIds = [];
+}
 
 // ── Ghost cells ───────────────────────────────────────────────────────────────
 
-export function getGhostCellIds(): Set<string> { return _ghostCellIds; }
+export function getGhostCellIds(): Set<string> {
+	return _ghostCellIds;
+}
 
 export function markGhostCell(id: string): void {
 	const next = new Set(_ghostCellIds);
@@ -261,19 +314,31 @@ export function unmarkGhostCell(id: string): void {
 	_ghostCellIds = next;
 }
 
-export function clearGhostCells(): void { _ghostCellIds = new Set(); }
+export function clearGhostCells(): void {
+	_ghostCellIds = new Set();
+}
 
 // ── Snapshot / undo ───────────────────────────────────────────────────────────
 
-export function getPendingSnapshot(): NotebookSnapshot | null { return _pendingSnapshot; }
-export function setPendingSnapshot(snap: NotebookSnapshot | null): void { _pendingSnapshot = snap; }
+export function getPendingSnapshot(): NotebookSnapshot | null {
+	return _pendingSnapshot;
+}
+export function setPendingSnapshot(snap: NotebookSnapshot | null): void {
+	_pendingSnapshot = snap;
+}
 
-export function getUndoAvailable(): boolean { return _undoAvailable; }
-export function setUndoAvailable(v: boolean): void { _undoAvailable = v; }
+export function getUndoAvailable(): boolean {
+	return _undoAvailable;
+}
+export function setUndoAvailable(v: boolean): void {
+	_undoAvailable = v;
+}
 
 // ── Per-iteration checkpoints (step-undo) ─────────────────────────────────────
 
-export function getCheckpointCount(): number { return _checkpoints.length; }
+export function getCheckpointCount(): number {
+	return _checkpoints.length;
+}
 
 export function pushCheckpoint(snap: NotebookSnapshot): void {
 	_checkpoints = [..._checkpoints.slice(-4), snap];
@@ -286,7 +351,9 @@ export function popCheckpoint(): NotebookSnapshot | null {
 	return last;
 }
 
-export function clearCheckpoints(): void { _checkpoints = []; }
+export function clearCheckpoints(): void {
+	_checkpoints = [];
+}
 
 // ── Confirmation gate ─────────────────────────────────────────────────────────
 
@@ -336,9 +403,15 @@ export function resolvePlanApproval(proceed: boolean): void {
 
 // ── Input suggestion ─────────────────────────────────────────────────────────
 
-export function getPendingSuggestion(): string | null { return _pendingSuggestion; }
-export function setPendingSuggestion(text: string): void { _pendingSuggestion = text; }
-export function clearPendingSuggestion(): void { _pendingSuggestion = null; }
+export function getPendingSuggestion(): string | null {
+	return _pendingSuggestion;
+}
+export function setPendingSuggestion(text: string): void {
+	_pendingSuggestion = text;
+}
+export function clearPendingSuggestion(): void {
+	_pendingSuggestion = null;
+}
 
 // ── Workspace standards ───────────────────────────────────────────────────────
 
@@ -346,7 +419,9 @@ export function initWorkspaceStandards(): void {
 	_workspaceStandards = loadWorkspaceStandards();
 }
 
-export function getWorkspaceStandards(): WorkspaceStandards { return _workspaceStandards; }
+export function getWorkspaceStandards(): WorkspaceStandards {
+	return _workspaceStandards;
+}
 
 export function setWorkspaceStandards(s: WorkspaceStandards): void {
 	_workspaceStandards = s;
@@ -357,28 +432,40 @@ export function setWorkspaceStandards(s: WorkspaceStandards): void {
 
 // ── Pipeline phases ───────────────────────────────────────────────────────────
 
-export function getPipelinePhases(): PipelinePhase[] { return _pipelinePhases; }
-
-export function setPipelinePhases(phases: PipelinePhase[]): void { _pipelinePhases = phases; }
-
-export function updatePipelinePhase(id: PipelinePhase['id'], patch: Partial<PipelinePhase>): void {
-	_pipelinePhases = _pipelinePhases.map((p) => p.id === id ? { ...p, ...patch } : p);
+export function getPipelinePhases(): PipelinePhase[] {
+	return _pipelinePhases;
 }
 
-export function clearPipelinePhases(): void { _pipelinePhases = []; }
+export function setPipelinePhases(phases: PipelinePhase[]): void {
+	_pipelinePhases = phases;
+}
+
+export function updatePipelinePhase(id: PipelinePhase['id'], patch: Partial<PipelinePhase>): void {
+	_pipelinePhases = _pipelinePhases.map((p) => (p.id === id ? { ...p, ...patch } : p));
+}
+
+export function clearPipelinePhases(): void {
+	_pipelinePhases = [];
+}
 
 // ── Sprint tasks ──────────────────────────────────────────────────────────────
 
-export function getSprintTasks(): SprintTask[] { return _sprintTasks; }
+export function getSprintTasks(): SprintTask[] {
+	return _sprintTasks;
+}
 
-export function setSprintTasks(tasks: SprintTask[]): void { _sprintTasks = tasks; }
+export function setSprintTasks(tasks: SprintTask[]): void {
+	_sprintTasks = tasks;
+}
 
 export function updateSprintTask(id: string, patch: Partial<SprintTask>): void {
 	const idx = _sprintTasks.findIndex((t) => t.id === id);
 	if (idx >= 0) _sprintTasks[idx] = { ..._sprintTasks[idx], ...patch };
 }
 
-export function clearSprintTasks(): void { _sprintTasks = []; }
+export function clearSprintTasks(): void {
+	_sprintTasks = [];
+}
 
 // ── Sprint plan approval gate ─────────────────────────────────────────────────
 

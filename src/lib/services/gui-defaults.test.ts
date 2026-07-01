@@ -19,7 +19,9 @@ describe('gui-defaults', () => {
 	});
 
 	it('creates a from stage and PRQL that inherit the previous source', () => {
-		expect(makeInheritedGuiStages('orders_clean')).toEqual([{ type: 'from', table: 'orders_clean' }]);
+		expect(makeInheritedGuiStages('orders_clean')).toEqual([
+			{ type: 'from', table: 'orders_clean' }
+		]);
 		expect(makeInheritedGuiCode('orders_clean')).toBe('from orders_clean');
 	});
 

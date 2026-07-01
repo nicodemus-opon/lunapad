@@ -13,7 +13,11 @@ import type {
 // Service-account JSON credentials are shared across all Google-auth connectors
 // (Google Sheets, BigQuery) — each gets its own file, named by suffix, alongside
 // the catalog's .properties file.
-function serviceAccountCredentialsPath(catalogDir: string, catalogName: string, suffix: string): string {
+function serviceAccountCredentialsPath(
+	catalogDir: string,
+	catalogName: string,
+	suffix: string
+): string {
 	return path.join(catalogDir, 'secrets', `${catalogName}-${suffix}.json`);
 }
 
@@ -382,7 +386,8 @@ async function buildCatalogSpec(
 			'bigquery.project-id': connection.projectId,
 			'bigquery.credentials-file': credentialsPath
 		};
-		if (connection.parentProjectId) properties['bigquery.parent-project-id'] = connection.parentProjectId;
+		if (connection.parentProjectId)
+			properties['bigquery.parent-project-id'] = connection.parentProjectId;
 		return { connectorName: 'bigquery', properties };
 	}
 
@@ -526,7 +531,12 @@ function defaultSchema(connection: Exclude<Connection, DuckDBWASMConnection>): s
 	// BigQuery's schema is a dataset with no single default — returning '' lets
 	// buildTrinoHeaders omit the schema header safely and forces an explicit schema for
 	// materialize, rather than guessing wrong.
-	if (connection.type === 'oracle' || connection.type === 'cassandra' || connection.type === 'bigquery') return '';
+	if (
+		connection.type === 'oracle' ||
+		connection.type === 'cassandra' ||
+		connection.type === 'bigquery'
+	)
+		return '';
 	if (connection.type === 'gsheets') return 'default';
 	if (connection.type === 'snowflake') return connection.database;
 	return connection.database;

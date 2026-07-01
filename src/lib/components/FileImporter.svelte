@@ -5,6 +5,7 @@
 		registerFile,
 		detectFormat,
 		sanitizeTableName,
+		persistUploadedFile,
 		ACCEPT_ALL_FORMATS,
 		type FileFormat
 	} from '$lib/services/duckdb';
@@ -26,6 +27,7 @@
 			buffer,
 			format
 		);
+		await persistUploadedFile({ tableName, fileName, format, buffer, hasHeader: true });
 		addTable({ name: tableName, fileName, rowCount, columns, columnTypes });
 		return { tableName, rowCount };
 	}

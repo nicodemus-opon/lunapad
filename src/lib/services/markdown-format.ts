@@ -10,7 +10,10 @@ export interface FormatResult {
 	selectionEnd: number;
 }
 
-function getCurrentLine(text: string, pos: number): { lineStart: number; lineEnd: number; lineText: string } {
+function getCurrentLine(
+	text: string,
+	pos: number
+): { lineStart: number; lineEnd: number; lineText: string } {
 	const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
 	const nextNl = text.indexOf('\n', pos);
 	const lineEnd = nextNl === -1 ? text.length : nextNl;
@@ -29,7 +32,11 @@ export function wrapSelection(
 	const selected = value.slice(ss, se);
 
 	// Toggle off if already wrapped
-	if (selected.startsWith(prefix) && selected.endsWith(suffix) && selected.length >= prefix.length + suffix.length) {
+	if (
+		selected.startsWith(prefix) &&
+		selected.endsWith(suffix) &&
+		selected.length >= prefix.length + suffix.length
+	) {
 		const inner = selected.slice(prefix.length, selected.length - suffix.length);
 		return {
 			value: value.slice(0, ss) + inner + value.slice(se),
@@ -121,10 +128,7 @@ export function getListContinuation(
 }
 
 // Indents/unindents the current list line. Returns null if not applicable (not a list line).
-export function indentListLine(
-	state: TextAreaState,
-	direction: 'in' | 'out'
-): FormatResult | null {
+export function indentListLine(state: TextAreaState, direction: 'in' | 'out'): FormatResult | null {
 	const { value, selectionStart: ss, selectionEnd: se } = state;
 	const { lineStart, lineEnd, lineText } = getCurrentLine(value, ss);
 
@@ -177,7 +181,8 @@ export const WIDGET_SNIPPETS = {
 	tabs: '{% tabs %}\n{% tab label="Tab 1" %}\nContent.\n{% /tab %}\n{% /tabs %}',
 	card: '{% card title="Title" %}\nContent.\n{% /card %}',
 	details: '{% details summary="Click to expand" %}\nHidden content.\n{% /details %}',
-	filter: '{% filter kind="dropdown" param="param" label="Label" options=[] /%}'
+	filter: '{% filter kind="dropdown" param="param" label="Label" options=[] /%}',
+	mermaid: '{% mermaid %}\ngraph TD\n    A --> B\n{% /mermaid %}'
 } as const;
 
 export interface SlashCommand {
@@ -189,19 +194,110 @@ export interface SlashCommand {
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
-	{ id: 'h1', label: 'Heading 1', description: 'Large section header', snippet: '# ', group: 'heading' },
-	{ id: 'h2', label: 'Heading 2', description: 'Medium section header', snippet: '## ', group: 'heading' },
-	{ id: 'h3', label: 'Heading 3', description: 'Small section header', snippet: '### ', group: 'heading' },
-	{ id: 'divider', label: 'Divider', description: 'Horizontal rule', snippet: '\n---\n', group: 'structure' },
+	{
+		id: 'h1',
+		label: 'Heading 1',
+		description: 'Large section header',
+		snippet: '# ',
+		group: 'heading'
+	},
+	{
+		id: 'h2',
+		label: 'Heading 2',
+		description: 'Medium section header',
+		snippet: '## ',
+		group: 'heading'
+	},
+	{
+		id: 'h3',
+		label: 'Heading 3',
+		description: 'Small section header',
+		snippet: '### ',
+		group: 'heading'
+	},
+	{
+		id: 'divider',
+		label: 'Divider',
+		description: 'Horizontal rule',
+		snippet: '\n---\n',
+		group: 'structure'
+	},
 	{ id: 'quote', label: 'Quote', description: 'Blockquote', snippet: '> ', group: 'structure' },
-	{ id: 'code', label: 'Code block', description: 'Fenced code block', snippet: '```sql\n\n```', group: 'structure' },
-	{ id: 'callout', label: 'Callout', description: 'Info / warning box', snippet: WIDGET_SNIPPETS.callout, group: 'widget' },
-	{ id: 'card', label: 'Card', description: 'Bordered card', snippet: WIDGET_SNIPPETS.card, group: 'widget' },
-	{ id: 'metric', label: 'Metric', description: 'KPI metric widget', snippet: WIDGET_SNIPPETS.metric, group: 'widget' },
-	{ id: 'chart', label: 'Chart', description: 'Chart from cell data', snippet: WIDGET_SNIPPETS.chart, group: 'widget' },
-	{ id: 'datatable', label: 'Data table', description: 'Table from cell data', snippet: WIDGET_SNIPPETS.datatable, group: 'widget' },
-	{ id: 'columns', label: 'Columns', description: 'Multi-column layout', snippet: WIDGET_SNIPPETS.columns, group: 'widget' },
-	{ id: 'tabs', label: 'Tabs', description: 'Tabbed sections', snippet: WIDGET_SNIPPETS.tabs, group: 'widget' },
-	{ id: 'details', label: 'Details', description: 'Collapsible section', snippet: WIDGET_SNIPPETS.details, group: 'widget' },
-	{ id: 'filter', label: 'Filter', description: 'Interactive filter widget', snippet: WIDGET_SNIPPETS.filter, group: 'widget' }
+	{
+		id: 'code',
+		label: 'Code block',
+		description: 'Fenced code block',
+		snippet: '```sql\n\n```',
+		group: 'structure'
+	},
+	{
+		id: 'callout',
+		label: 'Callout',
+		description: 'Info / warning box',
+		snippet: WIDGET_SNIPPETS.callout,
+		group: 'widget'
+	},
+	{
+		id: 'card',
+		label: 'Card',
+		description: 'Bordered card',
+		snippet: WIDGET_SNIPPETS.card,
+		group: 'widget'
+	},
+	{
+		id: 'metric',
+		label: 'Metric',
+		description: 'KPI metric widget',
+		snippet: WIDGET_SNIPPETS.metric,
+		group: 'widget'
+	},
+	{
+		id: 'chart',
+		label: 'Chart',
+		description: 'Chart from cell data',
+		snippet: WIDGET_SNIPPETS.chart,
+		group: 'widget'
+	},
+	{
+		id: 'datatable',
+		label: 'Data table',
+		description: 'Table from cell data',
+		snippet: WIDGET_SNIPPETS.datatable,
+		group: 'widget'
+	},
+	{
+		id: 'columns',
+		label: 'Columns',
+		description: 'Multi-column layout',
+		snippet: WIDGET_SNIPPETS.columns,
+		group: 'widget'
+	},
+	{
+		id: 'tabs',
+		label: 'Tabs',
+		description: 'Tabbed sections',
+		snippet: WIDGET_SNIPPETS.tabs,
+		group: 'widget'
+	},
+	{
+		id: 'details',
+		label: 'Details',
+		description: 'Collapsible section',
+		snippet: WIDGET_SNIPPETS.details,
+		group: 'widget'
+	},
+	{
+		id: 'filter',
+		label: 'Filter',
+		description: 'Interactive filter widget',
+		snippet: WIDGET_SNIPPETS.filter,
+		group: 'widget'
+	},
+	{
+		id: 'mermaid',
+		label: 'Mermaid diagram',
+		description: 'Flowchart, sequence, pie, ER, gantt, git…',
+		snippet: '```mermaid\ngraph TD\n    A --> B\n```',
+		group: 'structure'
+	}
 ];

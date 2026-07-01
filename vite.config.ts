@@ -45,7 +45,7 @@ const DUCKDB_FILES = [
 	'duckdb-mvp.wasm',
 	'duckdb-eh.wasm',
 	'duckdb-browser-mvp.worker.js',
-	'duckdb-browser-eh.worker.js',
+	'duckdb-browser-eh.worker.js'
 ];
 
 const duckdbStaticServe: Plugin = {
@@ -67,7 +67,10 @@ const duckdbStaticServe: Plugin = {
 				const filePath = resolve(__dirname, 'node_modules/@duckdb/duckdb-wasm/dist', match[1]);
 				try {
 					const content = readFileSync(filePath);
-					res.setHeader('Content-Type', match[1].endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
+					res.setHeader(
+						'Content-Type',
+						match[1].endsWith('.wasm') ? 'application/wasm' : 'text/javascript'
+					);
 					res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
 					// This middleware runs before Vite's internal middleware, so server.headers
 					// is never applied here. The worker script needs COEP itself: a COEP-isolated
@@ -81,16 +84,22 @@ const duckdbStaticServe: Plugin = {
 			}
 			next();
 		});
-	},
+	}
 };
 
 function toRpcSocket(ws: WebSocket): IWebSocket {
 	return {
 		send: (content) => ws.send(content),
-		onMessage: (cb) => { ws.on('message', (data) => cb(data.toString())); },
-		onError: (cb) => { ws.on('error', cb); },
-		onClose: (cb) => { ws.on('close', (code, reason) => cb(code, reason.toString())); },
-		dispose: () => ws.close(),
+		onMessage: (cb) => {
+			ws.on('message', (data) => cb(data.toString()));
+		},
+		onError: (cb) => {
+			ws.on('error', cb);
+		},
+		onClose: (cb) => {
+			ws.on('close', (code, reason) => cb(code, reason.toString()));
+		},
+		dispose: () => ws.close()
 	};
 }
 
@@ -106,14 +115,20 @@ const sqlLspPlugin: Plugin = {
 				startLspForConnection(conn.reader, conn.writer);
 			});
 		});
-	},
+	}
 };
 
 const viteLogger = createLogger();
 
 export default defineConfig({
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- vite@8/vitest vite@7 Plugin type mismatch
-	plugins: [sqlLspPlugin, duckdbStaticServe, svelteNodeModulesStyleFix, tailwindcss(), sveltekit()] as any,
+	plugins: [
+		sqlLspPlugin,
+		duckdbStaticServe,
+		svelteNodeModulesStyleFix,
+		tailwindcss(),
+		sveltekit()
+	] as any,
 	customLogger: {
 		...viteLogger,
 		warn(msg, options) {

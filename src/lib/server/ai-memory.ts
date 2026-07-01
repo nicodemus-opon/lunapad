@@ -47,8 +47,31 @@ function entryPath(folder: string, slug: string): string {
 }
 
 const STOPWORDS = new Set([
-	'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'is', 'are', 'was',
-	'were', 'this', 'that', 'with', 'as', 'by', 'it', 'be', 'has', 'have', 'not', 'but'
+	'the',
+	'a',
+	'an',
+	'and',
+	'or',
+	'of',
+	'to',
+	'in',
+	'on',
+	'for',
+	'is',
+	'are',
+	'was',
+	'were',
+	'this',
+	'that',
+	'with',
+	'as',
+	'by',
+	'it',
+	'be',
+	'has',
+	'have',
+	'not',
+	'but'
 ]);
 
 export function slugify(text: string): string {
@@ -94,7 +117,12 @@ function flatten(text: string): string {
 	return text.replace(/\r?\n+/g, ' ').trim();
 }
 
-function renderEntry(input: { slug: string; type: MemoryEntryType; text: string; date: string }): string {
+function renderEntry(input: {
+	slug: string;
+	type: MemoryEntryType;
+	text: string;
+	date: string;
+}): string {
 	const flat = flatten(input.text);
 	const description = flat.slice(0, 300);
 	return `---
@@ -195,7 +223,11 @@ export async function writeEntry(
 	const slug = await uniqueSlug(folder, base);
 	const filePath = entryPath(folder, slug);
 	assertSafe(folder, filePath);
-	await fs.writeFile(filePath, renderEntry({ slug, type: input.type, text: input.text, date }), 'utf-8');
+	await fs.writeFile(
+		filePath,
+		renderEntry({ slug, type: input.type, text: input.text, date }),
+		'utf-8'
+	);
 
 	const entries = await regenerateIndex(folder);
 	return { slug, entries };
@@ -252,7 +284,8 @@ export async function searchMemoryLexical(
 	const scored = entries.map((e) => {
 		const entryTokens = tokenize(e.description);
 		const overlap = entryTokens.filter((t) => queryTokens.has(t)).length;
-		const similarity = entryTokens.length > 0 ? overlap / Math.max(queryTokens.size, entryTokens.length) : 0;
+		const similarity =
+			entryTokens.length > 0 ? overlap / Math.max(queryTokens.size, entryTokens.length) : 0;
 		return { ...e, similarity };
 	});
 

@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { registerStageEditor } from '$lib/keyboard/stage-bridge';
 	import Sortable from 'sortablejs';
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { UploadedTable } from '$lib/stores/notebook.svelte';
 	import type { ConnectionType } from '$lib/types/connection';
-	import { getAvailableColumns, deriveChipErrors, reconcileStagesAfterSourceChange } from '$lib/services/gui-prql';
+	import {
+		getAvailableColumns,
+		deriveChipErrors,
+		reconcileStagesAfterSourceChange
+	} from '$lib/services/gui-prql';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import {
 		getIntelligentPresetSuggestions,
@@ -47,7 +52,9 @@
 		connectionId?: string;
 		connectionType?: ConnectionType;
 		onStagesChange: (stages: GUIPipelineStage[]) => void;
-		onRunStage?: (upToStageIdx: number) => Promise<{ rows: Record<string, unknown>[]; columns: string[] } | { error: string }>;
+		onRunStage?: (
+			upToStageIdx: number
+		) => Promise<{ rows: Record<string, unknown>[]; columns: string[] } | { error: string }>;
 		onStageResultCollapsedChange?: (stageIdx: number, collapsed: boolean) => void;
 		onEscapeEditor?: () => void;
 	}
@@ -95,7 +102,12 @@
 	function updateStage(idx: number, stage: GUIPipelineStage) {
 		const current = stages[idx];
 		let next = stages.map((s, i) => (i === idx ? stage : s));
-		if (idx === 0 && current?.type === 'from' && stage.type === 'from' && current.table !== stage.table) {
+		if (
+			idx === 0 &&
+			current?.type === 'from' &&
+			stage.type === 'from' &&
+			current.table !== stage.table
+		) {
 			next = reconcileStagesAfterSourceChange(next, tableSchemas);
 		}
 		onStagesChange(next);
@@ -219,7 +231,10 @@
 		}
 
 		if (stage.type === 'window') {
-			const col = pickSortColumn(cols, stage.sortKeys.map((k) => k.column));
+			const col = pickSortColumn(
+				cols,
+				stage.sortKeys.map((k) => k.column)
+			);
 			updateStage(idx, {
 				...stage,
 				sortKeys: [...stage.sortKeys, { column: col, dir: pickSortDir(col) }]
@@ -231,13 +246,19 @@
 			const suggested = pickDefaultFilter(cols, stage.conditions);
 			updateStage(idx, {
 				...stage,
-				conditions: [...stage.conditions, { column: suggested.column, op: suggested.op, value: suggested.value }]
+				conditions: [
+					...stage.conditions,
+					{ column: suggested.column, op: suggested.op, value: suggested.value }
+				]
 			});
 			return;
 		}
 
 		if (stage.type === 'sort') {
-			const col = pickSortColumn(cols, stage.keys.map((k) => k.column));
+			const col = pickSortColumn(
+				cols,
+				stage.keys.map((k) => k.column)
+			);
 			updateStage(idx, {
 				...stage,
 				keys: [...stage.keys, { column: col, dir: pickSortDir(col) }]
@@ -249,7 +270,10 @@
 			const suggested = pickDefaultAgg(cols, stage.aggregations);
 			updateStage(idx, {
 				...stage,
-				aggregations: [...stage.aggregations, { name: '', func: suggested.func, column: suggested.column }]
+				aggregations: [
+					...stage.aggregations,
+					{ name: '', func: suggested.func, column: suggested.column }
+				]
 			});
 			return;
 		}
@@ -307,7 +331,9 @@
 	});
 
 	// ── Stable stage keys for {#each} — prevents Svelte fighting SortableJS ──
-	function makeKey() { return Math.random().toString(36).slice(2, 10); }
+	function makeKey() {
+		return Math.random().toString(36).slice(2, 10);
+	}
 	let stageKeys = $state<string[]>([]);
 	let stageUsage = $state<Partial<Record<GUIPipelineStage['type'], number>>>({});
 	let activeStageIndex = $state<number | null>(null);
@@ -351,105 +377,97 @@
 		return stageEditorEl.contains(target);
 	}
 
-	function onWindowKeydown(event: KeyboardEvent) {
+	function handleStageEditorKeydown(event: KeyboardEvent): boolean {
 		// Escape from a chip input → focus the parent stage card (not cell command mode)
-		if (event.key === 'Escape' && isTypingTarget(event.target) && isEventInsideEditor(event.target)) {
-			event.preventDefault();
-			event.stopPropagation(); // prevent cell container's broader Escape handler
+		if (
+			event.key === 'Escape' &&
+			isTypingTarget(event.target) &&
+			isEventInsideEditor(event.target)
+		) {
 			const card = (event.target as Element).closest<HTMLElement>('[data-stage-index]');
 			card?.focus();
-			return;
+			return true;
 		}
 
-		if (isTypingTarget(event.target)) return;
-		if (!isEventInsideEditor(event.target) && !isEventInsideEditor(document.activeElement)) return;
+		if (isTypingTarget(event.target)) return false;
+		if (!isEventInsideEditor(event.target) && !isEventInsideEditor(document.activeElement))
+			return false;
 
 		const idx = activeStageIndex;
 		if (idx === null) {
-			// Even with no active stage, Escape from inside the editor exits to cell command mode
 			if (event.key === 'Escape') {
-				event.preventDefault();
 				onEscapeEditor?.();
+				return true;
 			}
-			return;
+			return false;
 		}
 		const key = event.key.toLowerCase();
 
 		if (key === 'x' || event.key === 'Delete' || event.key === 'Backspace') {
-			event.preventDefault();
 			if (idx > 0) removeStage(idx);
-			return;
+			return true;
 		}
 
 		if (event.shiftKey && key === 'd') {
-			event.preventDefault();
 			duplicateStage(idx);
-			return;
+			return true;
 		}
 
 		if (key === 'v') {
 			const current = stages[idx];
-			if (!current || idx === 0) return;
-			event.preventDefault();
+			if (!current || idx === 0) return false;
 			updateStage(idx, { ...current, disabled: !current.disabled });
-			return;
+			return true;
 		}
 
 		if (event.shiftKey && key === 'k') {
-			event.preventDefault();
 			moveStage(idx, idx - 1);
-			return;
+			return true;
 		}
 
 		if (event.shiftKey && key === 'j') {
-			event.preventDefault();
 			moveStage(idx, idx + 1);
-			return;
+			return true;
 		}
 
-		if (key === 'k') {
-			event.preventDefault();
+		if (key === 'k' || event.key === 'ArrowUp') {
 			if (idx > 0) {
 				activeStageIndex = idx - 1;
 				focusStageCard(idx - 1);
 			}
-			// at first stage: stay put — only Escape exits stage mode
-			return;
+			return true;
 		}
 
-		if (key === 'j') {
-			event.preventDefault();
+		if (key === 'j' || event.key === 'ArrowDown') {
 			if (idx < stages.length - 1) {
 				activeStageIndex = idx + 1;
 				focusStageCard(idx + 1);
 			}
-			// at last stage: stay put — only Escape exits stage mode
-			return;
+			return true;
 		}
 
 		if (key === 'n') {
-			event.preventDefault();
 			addChipToStage(idx);
-			return;
+			return true;
 		}
 
 		if (key === 'c') {
-			event.preventDefault();
 			toggleCollapse(idx);
-			return;
+			return true;
 		}
 
 		if (key === 'r') {
-			event.preventDefault();
 			onRunStage?.(idx);
-			return;
+			return true;
 		}
 
 		if (event.key === 'Escape') {
-			event.preventDefault();
 			activeStageIndex = null;
 			onEscapeEditor?.();
+			return true;
 		}
+
+		return false;
 	}
 
 	// ── Drag-and-drop ──────────────────────────────────────────────────────────
@@ -490,9 +508,12 @@
 		});
 		return () => sortable.destroy();
 	});
-</script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+	$effect(() => {
+		if (!stageEditorEl) return;
+		return registerStageEditor(stageEditorEl, { handleKeydown: handleStageEditorKeydown });
+	});
+</script>
 
 <!-- Pipeline stages -->
 <div bind:this={stageEditorEl} class="stage-editor" role="region" aria-label="Pipeline stages">
@@ -504,119 +525,129 @@
 					<div class="insert-zone group/insert">
 						<div class="insert-zone-line"></div>
 						<div class="insert-zone-pills">
-							{#each (['filter', 'select', 'derive', 'sort', 'group'] as const) as stageType}
+							{#each ['filter', 'select', 'derive', 'sort', 'group'] as const as stageType}
 								<button
 									class="insert-type-btn"
-									onclick={() => insertStageAfter(idx - 1, makeIntelligentDefaultStage(stageType, colsAt(idx)))}
-									title="Insert {stageType} after stage {idx}"
-								>{stageType}</button>
+									onclick={() =>
+										insertStageAfter(idx - 1, makeIntelligentDefaultStage(stageType, colsAt(idx)))}
+									title="Insert {stageType} after stage {idx}">{stageType}</button
+								>
 							{/each}
 						</div>
 					</div>
 				{/if}
 				<div class="stage-item" style={`--stage-enter-delay: ${Math.min(idx, 7) * 26}ms`}>
-				<PipelineStageCard
-					{stage}
-					index={idx}
-					active={activeStageIndex === idx}
-					draggable={idx > 0}
-					isLast={idx === stages.length - 1}
-					collapsed={collapsedStages.has(idx)}
-					onCollapsedChange={() => toggleCollapse(idx)}
-					resultCollapsed={stageResultsCollapsed[idx] ?? false}
-					stageErrors={stageErrorMap?.get(idx) ?? []}
-					onActivate={() => activateStage(idx)}
-					onResultCollapsedChange={(c) => onStageResultCollapsedChange?.(idx, c)}
-					onRemove={idx > 0 ? () => removeStage(idx) : undefined}
-					onToggleDisabled={idx > 0 ? () => updateStage(idx, { ...stage, disabled: !stage.disabled }) : undefined}
-					onRun={onRunStage ? () => onRunStage(idx) : undefined}
-					onAddSort={(col, dir) => insertStageAfter(idx, { type: 'sort', keys: [{ column: col, dir }] })}
-					onAddFilter={(col) => insertStageAfter(idx, { type: 'filter', conditions: [{ column: col, op: '==', value: '' }], logic: 'and' })}
-					onAddSuggestedStage={(nextStage) => insertStageAfter(idx, nextStage)}
-				>
-					{#if stage.type === 'from'}
-						<FromStage
-							{stage}
-							availableTables={allSources}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'append'}
-						<AppendStage
-							{stage}
-							availableTables={allSources}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'filter'}
-						<FilterStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-							getUpstreamData={onRunStage && idx > 0 ? () => onRunStage(idx - 1) : undefined}
-						/>
-					{:else if stage.type === 'select'}
-						<SelectStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'derive'}
-						<DeriveStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-							erroredChipIndices={(() => { const e = stageErrorMap?.get(idx); return e?.length ? deriveChipErrors(stage, e) : undefined; })()}
-						/>
-					{:else if stage.type === 'group'}
-						<GroupStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'window'}
-						<WindowStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'loop'}
-						<LoopStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'sort'}
-						<SortStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'take'}
-						<TakeStage
-							{stage}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'join'}
-						<JoinStage
-							{stage}
-							availableColumns={colsAt(idx)}
-							availableTables={allSources}
-							onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
-						/>
-					{:else if stage.type === 'raw'}
-						<RawStage {stage} />
-					{/if}
-				</PipelineStageCard>
-			</div>
-		{/each}
-		</div><!-- end stage-stack -->
-	</div><!-- end stage-wrapper -->
+					<PipelineStageCard
+						{stage}
+						index={idx}
+						active={activeStageIndex === idx}
+						draggable={idx > 0}
+						isLast={idx === stages.length - 1}
+						collapsed={collapsedStages.has(idx)}
+						onCollapsedChange={() => toggleCollapse(idx)}
+						resultCollapsed={stageResultsCollapsed[idx] ?? false}
+						stageErrors={stageErrorMap?.get(idx) ?? []}
+						onActivate={() => activateStage(idx)}
+						onResultCollapsedChange={(c) => onStageResultCollapsedChange?.(idx, c)}
+						onRemove={idx > 0 ? () => removeStage(idx) : undefined}
+						onToggleDisabled={idx > 0
+							? () => updateStage(idx, { ...stage, disabled: !stage.disabled })
+							: undefined}
+						onRun={onRunStage ? () => onRunStage(idx) : undefined}
+						onAddSort={(col, dir) =>
+							insertStageAfter(idx, { type: 'sort', keys: [{ column: col, dir }] })}
+						onAddFilter={(col) =>
+							insertStageAfter(idx, {
+								type: 'filter',
+								conditions: [{ column: col, op: '==', value: '' }],
+								logic: 'and'
+							})}
+						onAddSuggestedStage={(nextStage) => insertStageAfter(idx, nextStage)}
+					>
+						{#if stage.type === 'from'}
+							<FromStage
+								{stage}
+								availableTables={allSources}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'append'}
+							<AppendStage
+								{stage}
+								availableTables={allSources}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'filter'}
+							<FilterStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+								getUpstreamData={onRunStage && idx > 0 ? () => onRunStage(idx - 1) : undefined}
+							/>
+						{:else if stage.type === 'select'}
+							<SelectStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'derive'}
+							<DeriveStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+								erroredChipIndices={(() => {
+									const e = stageErrorMap?.get(idx);
+									return e?.length ? deriveChipErrors(stage, e) : undefined;
+								})()}
+							/>
+						{:else if stage.type === 'group'}
+							<GroupStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'window'}
+							<WindowStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'loop'}
+							<LoopStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'sort'}
+							<SortStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'take'}
+							<TakeStage {stage} onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)} />
+						{:else if stage.type === 'join'}
+							<JoinStage
+								{stage}
+								availableColumns={colsAt(idx)}
+								availableTables={allSources}
+								onUpdate={(s: GUIPipelineStage) => updateStage(idx, s)}
+							/>
+						{:else if stage.type === 'raw'}
+							<RawStage {stage} />
+						{/if}
+					</PipelineStageCard>
+				</div>
+			{/each}
+		</div>
+		<!-- end stage-stack -->
+	</div>
+	<!-- end stage-wrapper -->
 
 	<AddStageMenu
 		onAdd={addStage}
 		onAddPreset={addPreset}
 		{stages}
 		{connectionId}
-		keyboardScope={stageEditorEl}
 		availableColumns={menuColumns}
 		availableColumnCount={menuColumns.length}
 		recentUsage={stageUsage}

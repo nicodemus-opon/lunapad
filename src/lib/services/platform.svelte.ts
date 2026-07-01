@@ -3,8 +3,7 @@ import { browser } from '$app/environment';
 export type PlatformType = 'web' | 'tauri';
 export type OSType = 'macos' | 'windows' | 'linux' | 'unknown';
 
-export const platform: PlatformType =
-	browser && '__TAURI_INTERNALS__' in window ? 'tauri' : 'web';
+export const platform: PlatformType = browser && '__TAURI_INTERNALS__' in window ? 'tauri' : 'web';
 
 export const isDesktop = platform === 'tauri';
 

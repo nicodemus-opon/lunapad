@@ -35,7 +35,9 @@
 	let dropdownTop = $state(0);
 	let dropdownLeft = $state(0);
 
-	$effect(() => { draft = value; });
+	$effect(() => {
+		draft = value;
+	});
 
 	const filtered = $derived(
 		draft.trim()
@@ -82,16 +84,35 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'ArrowDown') { e.preventDefault(); open = true; highlightedIdx = Math.min(highlightedIdx + 1, filtered.length - 1); return; }
-		if (e.key === 'ArrowUp') { e.preventDefault(); highlightedIdx = Math.max(highlightedIdx - 1, 0); return; }
-		if (e.key === 'Enter') {
+		if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			if (open && highlightedIdx >= 0 && highlightedIdx < filtered.length) { select(filtered[highlightedIdx]); }
-			else { oncommit?.(draft); open = false; }
+			open = true;
+			highlightedIdx = Math.min(highlightedIdx + 1, filtered.length - 1);
 			return;
 		}
-		if (e.key === 'Escape') { open = false; oncancel?.(); return; }
-		if (e.key === 'Tab') { open = false; }
+		if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			highlightedIdx = Math.max(highlightedIdx - 1, 0);
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			if (open && highlightedIdx >= 0 && highlightedIdx < filtered.length) {
+				select(filtered[highlightedIdx]);
+			} else {
+				oncommit?.(draft);
+				open = false;
+			}
+			return;
+		}
+		if (e.key === 'Escape') {
+			open = false;
+			oncancel?.();
+			return;
+		}
+		if (e.key === 'Tab') {
+			open = false;
+		}
 	}
 
 	// Holds autorun back while this chip is focused (see chip-edit.svelte.ts)
@@ -129,7 +150,12 @@
 </script>
 
 <span class="relative inline-flex items-center">
-	<span bind:this={mirror} aria-hidden="true" class={cn('absolute invisible whitespace-pre pointer-events-none', className)}>{draft || placeholder}</span>
+	<span
+		bind:this={mirror}
+		aria-hidden="true"
+		class={cn('pointer-events-none invisible absolute whitespace-pre', className)}
+		>{draft || placeholder}</span
+	>
 
 	<input
 		bind:this={inputEl}
@@ -138,7 +164,7 @@
 		{placeholder}
 		data-testid={testId}
 		style="width: {mirrorWidth}px"
-		class={cn('bg-transparent outline-none min-w-4', className)}
+		class={cn('min-w-4 bg-transparent outline-none', className)}
 		oninput={handleInput}
 		onkeydown={handleKeydown}
 		onfocus={handleFocus}
@@ -149,14 +175,20 @@
 		<!-- position:fixed so overflow:hidden on ancestor chip containers doesn't clip this -->
 		<div
 			style="position: fixed; top: {dropdownTop}px; left: {dropdownLeft}px; z-index: 9999;"
-			class="max-h-40 min-w-max max-w-52 overflow-auto rounded-md border bg-popover shadow-md"
+			class="max-h-40 max-w-52 min-w-max overflow-auto rounded-md border bg-popover shadow-md"
 		>
 			{#each filtered as s, i (s)}
 				<button
 					type="button"
-					class={cn('flex w-full items-center px-2 py-1 text-xs font-mono text-left hover:bg-accent hover:text-accent-foreground', i === highlightedIdx && 'bg-accent text-accent-foreground')}
-					onmousedown={(e) => { e.preventDefault(); select(s); }}
-				>{s}</button>
+					class={cn(
+						'flex w-full items-center px-2 py-1 text-left font-mono text-xs hover:bg-accent hover:text-accent-foreground',
+						i === highlightedIdx && 'bg-accent text-accent-foreground'
+					)}
+					onmousedown={(e) => {
+						e.preventDefault();
+						select(s);
+					}}>{s}</button
+				>
 			{/each}
 		</div>
 	{/if}

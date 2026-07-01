@@ -45,15 +45,15 @@
 <div class="flex flex-col gap-4">
 	<!-- Header -->
 	<div class="flex items-center gap-2">
-		<Table2 class="w-4 h-4 text-primary" />
-		<h2 class="text-sm font-semibold font-mono">{tableName}</h2>
+		<Table2 class="h-4 w-4 text-primary" />
+		<h2 class="font-mono text-sm font-semibold">{tableName}</h2>
 		{#if totalRows !== null}
 			<span class="text-xs text-muted-foreground">
 				{totalRows.toLocaleString()} rows
 			</span>
 		{/if}
 		{#if totalRows !== null && totalRows > LIMIT}
-			<span class="text-[10px] bg-(--chart-1)/15 text-chart-1 px-1.5 py-0.5 rounded font-medium">
+			<span class="rounded bg-(--chart-1)/15 px-1.5 py-0.5 text-[10px] font-medium text-chart-1">
 				Showing first {LIMIT.toLocaleString()}
 			</span>
 		{/if}
@@ -68,8 +68,10 @@
 			<Skeleton class="h-6 w-3/5" />
 		</div>
 	{:else if error}
-		<div class="flex items-start gap-2 text-destructive text-sm border border-destructive/30 rounded-md px-3 py-2 bg-destructive/5">
-			<AlertCircle class="w-4 h-4 mt-0.5 shrink-0" />
+		<div
+			class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+		>
+			<AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
 			<span class="font-mono text-xs">{error}</span>
 		</div>
 	{:else if result}
@@ -82,8 +84,8 @@
 			{chartConfig}
 		/>
 	{:else}
-		<div class="flex items-center gap-2 text-muted-foreground text-sm">
-			<Database class="w-4 h-4" />
+		<div class="flex items-center gap-2 text-sm text-muted-foreground">
+			<Database class="h-4 w-4" />
 			No data found.
 		</div>
 	{/if}

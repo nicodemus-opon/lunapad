@@ -2,7 +2,13 @@
  * Heuristics for pre-filling chip values when adding new chips to pipeline stages.
  * Uses column name patterns to make smart guesses without requiring schema type info.
  */
-import type { AggFunc, AggregationRow, FilterCondition, FilterOp, GUIPipelineStage } from '$lib/types/gui-pipeline';
+import type {
+	AggFunc,
+	AggregationRow,
+	FilterCondition,
+	FilterOp,
+	GUIPipelineStage
+} from '$lib/types/gui-pipeline';
 
 // ── Column-picking heuristics ─────────────────────────────────────────────────
 
@@ -15,8 +21,13 @@ function matchesPattern(col: string, patterns: RegExp[]): boolean {
 }
 
 const DATE_PATTERNS = [/date|time|created|updated|_at$|at$/i, /year|month|day|hour|week|period/i];
-const NUMERIC_PATTERNS = [/amount|total|price|revenue|cost|income|value|score|rank|count|sum|avg|balance|qty|quantity/i, /^(n|num|cnt)_/i];
-const CATEGORICAL_PATTERNS = [/name|type|category|status|label|tag|group|class|region|country|city|department/i];
+const NUMERIC_PATTERNS = [
+	/amount|total|price|revenue|cost|income|value|score|rank|count|sum|avg|balance|qty|quantity/i,
+	/^(n|num|cnt)_/i
+];
+const CATEGORICAL_PATTERNS = [
+	/name|type|category|status|label|tag|group|class|region|country|city|department/i
+];
 const ID_PATTERNS = [/^id$|_id$|^pk$|^key$/i];
 
 function findByPattern(candidates: string[], patterns: RegExp[]): string | undefined {
@@ -72,7 +83,10 @@ export function pickDefaultAgg(available: string[], existing: AggregationRow[]):
 }
 
 /** Best default filter condition */
-export function pickDefaultFilter(available: string[], existing: FilterCondition[]): { column: string; op: FilterOp; value: string } {
+export function pickDefaultFilter(
+	available: string[],
+	existing: FilterCondition[]
+): { column: string; op: FilterOp; value: string } {
 	const usedCols = existing.map((c) => c.column).filter(Boolean);
 	const unused = available.filter((c) => !usedCols.includes(c));
 	const candidates = unused.length > 0 ? unused : available;
@@ -126,7 +140,11 @@ export function makeIntelligentDefaultStage(
 	switch (type) {
 		case 'filter': {
 			const s = pickDefaultFilter(availableColumns, []);
-			return { type: 'filter', logic: 'and', conditions: [{ column: s.column, op: s.op, value: s.value }] };
+			return {
+				type: 'filter',
+				logic: 'and',
+				conditions: [{ column: s.column, op: s.op, value: s.value }]
+			};
 		}
 		case 'select':
 			return { type: 'select', columns: [] };
@@ -135,10 +153,17 @@ export function makeIntelligentDefaultStage(
 			const name = leftCol ? `new_${leftCol}` : 'new_col';
 			return {
 				type: 'derive',
-				columns: [{
-					name,
-					expr: { mode: 'binary', left: { kind: 'column', value: leftCol }, op: '+', right: { kind: 'literal', value: '0' } }
-				}]
+				columns: [
+					{
+						name,
+						expr: {
+							mode: 'binary',
+							left: { kind: 'column', value: leftCol },
+							op: '+',
+							right: { kind: 'literal', value: '0' }
+						}
+					}
+				]
 			};
 		}
 		case 'sort': {

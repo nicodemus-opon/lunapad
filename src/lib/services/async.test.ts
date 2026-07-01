@@ -11,8 +11,6 @@ describe('withTimeout', () => {
 		const never = new Promise<string>(() => {
 			// Intentionally unresolved.
 		});
-		await expect(withTimeout(never, 'slow op', 20)).rejects.toThrow(
-			'slow op timed out after 20ms'
-		);
+		await expect(withTimeout(never, 'slow op', 20)).rejects.toThrow('slow op timed out after 20ms');
 	});
 });

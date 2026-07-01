@@ -16,8 +16,17 @@
 </script>
 
 <div class="md-details">
-	<button type="button" class="md-details-summary" onclick={() => (isOpen = !isOpen)} aria-expanded={isOpen}>
-		<ChevronRight class="md-details-chevron" style={isOpen ? 'transform: rotate(90deg)' : undefined} size={14} />
+	<button
+		type="button"
+		class="md-details-summary"
+		onclick={() => (isOpen = !isOpen)}
+		aria-expanded={isOpen}
+	>
+		<ChevronRight
+			class="md-details-chevron"
+			style={isOpen ? 'transform: rotate(90deg)' : undefined}
+			size={14}
+		/>
 		<span>{summary}</span>
 	</button>
 	{#if isOpen}

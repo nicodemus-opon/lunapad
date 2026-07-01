@@ -56,22 +56,24 @@
 			class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 		>
 			<div>
-				<h1 class="text-lg font-serif">Welcome to Lunapad</h1>
+				<h1 class="font-serif text-lg">Welcome to Lunapad</h1>
 				<p class="mt-1 text-xs text-muted-foreground">
-					Create the first account. It becomes the admin for this shared instance, and
-					sign-up closes after this — only an admin can add teammates afterward.
+					Create the first account. It becomes the admin for this shared instance, and sign-up
+					closes after this — only an admin can add teammates afterward.
 				</p>
 			</div>
 
 			<div>
-				<label for="setup-name" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-					>Name</label
+				<label
+					for="setup-name"
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Name</label
 				>
 				<Input id="setup-name" class="h-8 text-xs" bind:value={name} required autocomplete="name" />
 			</div>
 			<div>
-				<label for="setup-email" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-					>Email</label
+				<label
+					for="setup-email"
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Email</label
 				>
 				<Input
 					id="setup-email"
@@ -83,8 +85,9 @@
 				/>
 			</div>
 			<div>
-				<label for="setup-password" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-					>Password</label
+				<label
+					for="setup-password"
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Password</label
 				>
 				<Input
 					id="setup-password"
@@ -99,7 +102,8 @@
 			<div>
 				<label
 					for="setup-confirm-password"
-					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Confirm password</label
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+					>Confirm password</label
 				>
 				<Input
 					id="setup-confirm-password"

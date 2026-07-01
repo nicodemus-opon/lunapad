@@ -346,10 +346,10 @@
 										})}
 								/>
 								<p class="text-xs text-muted-foreground">
-									Reasoning/chat models often burn their token budget "thinking" and return
-									empty ghost-text suggestions. A small dedicated code-completion model works
-									much better here — e.g. <span class="font-mono">qwen2.5-coder:1.5b</span>. Leave
-									blank to reuse the model above.
+									Reasoning/chat models often burn their token budget "thinking" and return empty
+									ghost-text suggestions. A small dedicated code-completion model works much better
+									here — e.g. <span class="font-mono">qwen2.5-coder:1.5b</span>. Leave blank to
+									reuse the model above.
 								</p>
 							</div>
 						</div>

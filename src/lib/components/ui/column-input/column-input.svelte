@@ -112,9 +112,9 @@
 		{placeholder}
 		data-testid={testId}
 		class={cn(
-			'flex h-7 w-full rounded-md border border-input bg-background px-2 py-0.5 text-xs font-mono shadow-sm',
+			'flex h-7 w-full rounded-md border border-input bg-background px-2 py-0.5 font-mono text-xs shadow-sm',
 			'ring-offset-background placeholder:text-muted-foreground',
-			'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+			'focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none',
 			'disabled:cursor-not-allowed disabled:opacity-50',
 			className
 		)}
@@ -131,25 +131,25 @@
 	{#if open}
 		<div
 			data-suggestion-list
-			class="absolute left-0 top-full z-50 mt-0.5 max-h-48 min-w-full overflow-auto rounded-md border bg-popover shadow-md"
+			class="absolute top-full left-0 z-50 mt-0.5 max-h-48 min-w-full overflow-auto rounded-md border bg-popover shadow-md"
 		>
 			{#if filtered.length === 0}
 				<div class="px-2 py-1 text-xs text-muted-foreground">No matches</div>
 			{:else}
 				{#each filtered as col, i (col)}
-				<button
-					type="button"
-					class={cn(
-						'flex w-full items-center px-2 py-1 text-xs font-mono text-left hover:bg-accent hover:text-accent-foreground',
-						i === highlightedIndex && 'bg-accent text-accent-foreground'
-					)}
-					onmousedown={(e) => {
-						e.preventDefault(); // prevent input blur before click
-						select(col);
-					}}
-				>
-					{col}
-				</button>
+					<button
+						type="button"
+						class={cn(
+							'flex w-full items-center px-2 py-1 text-left font-mono text-xs hover:bg-accent hover:text-accent-foreground',
+							i === highlightedIndex && 'bg-accent text-accent-foreground'
+						)}
+						onmousedown={(e) => {
+							e.preventDefault(); // prevent input blur before click
+							select(col);
+						}}
+					>
+						{col}
+					</button>
 				{/each}
 			{/if}
 		</div>

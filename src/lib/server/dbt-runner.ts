@@ -23,8 +23,17 @@ function makeId(): string {
 
 /** Adapters natively supported by dbt-fusion. */
 const FUSION_ADAPTERS = new Set([
-	'duckdb', 'postgres', 'redshift', 'snowflake', 'bigquery',
-	'trino', 'datafusion', 'spark', 'databricks', 'salesforce', 'fabric'
+	'duckdb',
+	'postgres',
+	'redshift',
+	'snowflake',
+	'bigquery',
+	'trino',
+	'datafusion',
+	'spark',
+	'databricks',
+	'salesforce',
+	'fabric'
 ]);
 
 /** Parse the adapter type from a project's profiles.yml (first `type:` match). */
@@ -55,7 +64,10 @@ function scriptSupportsAdapter(scriptPath: string, adapter: string): boolean {
 		// Use os.pathsep to delimit so the command needs no shell escaping.
 		const siteOut = execFileSync(
 			pythonBin,
-			['-c', 'import site,os;print(os.pathsep.join(site.getsitepackages()+[site.getusersitepackages()]))'],
+			[
+				'-c',
+				'import site,os;print(os.pathsep.join(site.getsitepackages()+[site.getusersitepackages()]))'
+			],
 			{ timeout: 3000, encoding: 'utf-8' }
 		);
 		for (const sitePath of siteOut.trim().split(path.delimiter)) {
@@ -93,14 +105,20 @@ function candidatePythonDbtBinaries(): string[] {
 	}
 
 	// Common project-local virtual envs one level under home
-	for (const base of [home, path.join(home, 'Documents', 'projects'), path.join(home, 'Documents', 'projects', 'my_proj')]) {
+	for (const base of [
+		home,
+		path.join(home, 'Documents', 'projects'),
+		path.join(home, 'Documents', 'projects', 'my_proj')
+	]) {
 		try {
 			for (const entry of fs.readdirSync(base)) {
 				for (const envDir of ['env', '.venv', 'venv', '.env']) {
 					candidates.push(path.join(base, entry, envDir, 'bin', 'dbt'));
 				}
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 	}
 
 	return candidates;

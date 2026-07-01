@@ -22,7 +22,9 @@ describe('AddStageMenu command palette layout', () => {
 		expect(source).toContain('matchedColumnForQuery');
 		expect(source).toContain('queryMatchesPresetIntent');
 		expect(source).toContain('detectExplicitStageIntent');
-		expect(source).toContain("if (/\\btop\\s+\\d+\\b/.test(queryValue) && /\\b(by|where|when|per|with)\\b/.test(queryValue)) return null;");
+		expect(source).toContain(
+			'if (/\\btop\\s+\\d+\\b/.test(queryValue) && /\\b(by|where|when|per|with)\\b/.test(queryValue)) return null;'
+		);
 		expect(source).toContain('explicitStageIntent');
 		expect(source).toContain('stageIntentResults');
 		expect(source).toContain('STAGE_INTENT_PHRASES');
@@ -31,17 +33,21 @@ describe('AddStageMenu command palette layout', () => {
 		expect(source).toContain('order by');
 		expect(source).toContain("{ type: 'from', aliases: ['from'] }");
 		expect(source).toContain('queryLooksAnalytical');
-		expect(source).toContain('which|what|how many|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest|expensive|spike|spikes|outlier|anomaly');
+		expect(source).toContain(
+			'which|what|how many|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest|expensive|spike|spikes|outlier|anomaly'
+		);
 		expect(source).toContain('[analysisLane, semanticLane, presetLane, stageLane, functionLane]');
 		expect(source).toContain('meaningfulTokens');
 		expect(source).toContain('earlyTokens');
-		expect(source).toContain("if (/\\b(by|where|when|per|with)\\b/.test(queryValue)) return null;");
+		expect(source).toContain('if (/\\b(by|where|when|per|with)\\b/.test(queryValue)) return null;');
 		expect(source).toContain('fallbackRankedSuggestions');
 		expect(source).toContain('normalizedQuery.length === 0');
 		expect(source).toContain('presetMentionsColumn');
 		expect(source).toContain('Adapted for {matchedColumn}');
 		expect(source).toContain('Prompt or search stages, templates, and columns...');
-		expect(source).toContain('No matching stage, function, semantic combination, analysis prompt, or preset');
+		expect(source).toContain(
+			'No matching stage, function, semantic combination, analysis prompt, or preset'
+		);
 		expect(source).toContain('Stage palette');
 		expect(source).toContain('Function results');
 		expect(source).toContain('Stage primitives');
@@ -59,9 +65,11 @@ describe('AddStageMenu command palette layout', () => {
 		expect(source).not.toContain('Popover.Root');
 		expect(source).toContain('{#if normalizedQuery.length > 0}');
 		expect(source).toContain('{#each queryLanes as lane (lane.key)}');
-		expect(source).toContain('result.kind === \'analysis\'');
+		expect(source).toContain("result.kind === 'analysis'");
 		expect(source).toContain('Likely questions for this schema, translated into stage chains.');
-		expect(source).toContain('{#each filteredPresetSuggestions as suggestion, idx (suggestion.preset.id)}');
+		expect(source).toContain(
+			'{#each filteredPresetSuggestions as suggestion, idx (suggestion.preset.id)}'
+		);
 		expect(source).toContain('add-stage-kind--preset');
 	});
 });

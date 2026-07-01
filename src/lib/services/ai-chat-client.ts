@@ -120,7 +120,11 @@ import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { rowsToCsv } from '$lib/utils.js';
-import { estimateTokens, fitToTokenBudget, DEFAULT_HISTORY_TOKEN_BUDGET } from '$lib/services/token-budget.js';
+import {
+	estimateTokens,
+	fitToTokenBudget,
+	DEFAULT_HISTORY_TOKEN_BUDGET
+} from '$lib/services/token-budget.js';
 import { summarizeOlderTurns } from '$lib/services/history-summarizer.js';
 import { type Connection, isBuiltinDuckDBConnection } from '$lib/types/connection.js';
 import {
@@ -905,7 +909,9 @@ export function selectConversationHistory(
 	const first = allMsgs[0];
 	const last6 = allMsgs.slice(-6);
 	const older = allMsgs.slice(1, -6);
-	const relevant = older.filter((m) => [...activeOutputNames].some((name) => m.content.includes(name)));
+	const relevant = older.filter((m) =>
+		[...activeOutputNames].some((name) => m.content.includes(name))
+	);
 	// Intent-anchor: most recent plan-containing message not already in relevant or last6
 	const relevantSet = new Set(relevant);
 	const planMsg = [...older]
@@ -913,7 +919,8 @@ export function selectConversationHistory(
 		.find((m) => m.role === 'assistant' && m.content.includes('<plan>') && !relevantSet.has(m));
 	// Strip verbose read-tool blocks from stale messages; keep the 2 most recent intact
 	// so the current turn's tool results (list_cells, search, etc.) remain fully visible.
-	const compress = (m: ChatTurn) => (m.role === 'assistant' ? { ...m, content: compressOldMessage(m.content) } : m);
+	const compress = (m: ChatTurn) =>
+		m.role === 'assistant' ? { ...m, content: compressOldMessage(m.content) } : m;
 
 	const compressedFirst = compress(first);
 	const compressedPlanMsg = planMsg ? compress(planMsg) : undefined;
@@ -2768,7 +2775,11 @@ async function runSubagentPipeline(
 			? ['discovery', 'modeling', 'sql-gen', 'sql-review']
 			: ['discovery', 'modeling', 'sql-gen'];
 	setPipelinePhases(
-		phaseIds.map((id) => ({ id, label: PHASE_LABELS[id], status: id === 'discovery' ? 'active' : 'pending' }))
+		phaseIds.map((id) => ({
+			id,
+			label: PHASE_LABELS[id],
+			status: id === 'discovery' ? 'active' : 'pending'
+		}))
 	);
 
 	// Phase 1: Discovery — always run (even medium tasks benefit from reuse detection)

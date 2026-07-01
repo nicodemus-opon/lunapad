@@ -57,7 +57,11 @@ function semanticScore(column: SemanticDeriveColumn): number {
 	return clamp(quality * 0.78 + cardinality * 0.22, 0, 1);
 }
 
-function semanticMatch(column: SemanticDeriveColumn, semanticTypes: string[], fallbackNamePattern: RegExp): boolean {
+function semanticMatch(
+	column: SemanticDeriveColumn,
+	semanticTypes: string[],
+	fallbackNamePattern: RegExp
+): boolean {
 	const semantic = (column.semanticType ?? '').trim().toLowerCase();
 	if (semantic && semanticTypes.includes(semantic)) return true;
 	return fallbackNamePattern.test(column.name);
@@ -71,7 +75,11 @@ function bestCandidate(
 ): SemanticDeriveColumn | null {
 	const ranked = columns
 		.filter((column) => !exclude.has(column.name))
-		.filter((column) => column.kind === 'numeric' || semanticTypes.includes((column.semanticType ?? '').toLowerCase()))
+		.filter(
+			(column) =>
+				column.kind === 'numeric' ||
+				semanticTypes.includes((column.semanticType ?? '').toLowerCase())
+		)
 		.filter((column) => !isIdentifierLikeName(column.name))
 		.filter((column) => semanticMatch(column, semanticTypes, fallbackNamePattern))
 		.sort((a, b) => semanticScore(b) - semanticScore(a));
@@ -97,7 +105,9 @@ function addCandidate(
 	out.push(candidate);
 }
 
-export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): SemanticDeriveCandidate[] {
+export function findSemanticDeriveCandidates(
+	columns: SemanticDeriveColumn[]
+): SemanticDeriveCandidate[] {
 	if (columns.length === 0) return [];
 	const candidates: SemanticDeriveCandidate[] = [];
 	const seen = new Set<string>();
@@ -118,17 +128,21 @@ export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): S
 		seen,
 		multiplicativeLeft && multiplicativeRight
 			? {
-				pattern: 'composed_metric',
-				expressionClass: 'multiply',
-				outputName: 'revenue',
-				leftColumn: multiplicativeLeft.name,
-				rightColumn: multiplicativeRight.name,
-				quality: quality(multiplicativeLeft, multiplicativeRight)
-			}
+					pattern: 'composed_metric',
+					expressionClass: 'multiply',
+					outputName: 'revenue',
+					leftColumn: multiplicativeLeft.name,
+					rightColumn: multiplicativeRight.name,
+					quality: quality(multiplicativeLeft, multiplicativeRight)
+				}
 			: null
 	);
 
-	const inflow = bestCandidate(columns, ['inflow'], /paid\s*in|inflow|deposit|credited|received|credit/i);
+	const inflow = bestCandidate(
+		columns,
+		['inflow'],
+		/paid\s*in|inflow|deposit|credited|received|credit/i
+	);
 	const outflow = bestCandidate(
 		columns,
 		['outflow'],
@@ -140,13 +154,13 @@ export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): S
 		seen,
 		inflow && outflow
 			? {
-				pattern: 'flow_delta',
-				expressionClass: 'subtract',
-				outputName: 'net_flow',
-				leftColumn: inflow.name,
-				rightColumn: outflow.name,
-				quality: quality(inflow, outflow)
-			}
+					pattern: 'flow_delta',
+					expressionClass: 'subtract',
+					outputName: 'net_flow',
+					leftColumn: inflow.name,
+					rightColumn: outflow.name,
+					quality: quality(inflow, outflow)
+				}
 			: null
 	);
 
@@ -166,13 +180,13 @@ export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): S
 		seen,
 		numerator && denominator
 			? {
-				pattern: 'efficiency_ratio',
-				expressionClass: 'divide',
-				outputName: 'efficiency_ratio',
-				leftColumn: numerator.name,
-				rightColumn: denominator.name,
-				quality: quality(numerator, denominator)
-			}
+					pattern: 'efficiency_ratio',
+					expressionClass: 'divide',
+					outputName: 'efficiency_ratio',
+					leftColumn: numerator.name,
+					rightColumn: denominator.name,
+					quality: quality(numerator, denominator)
+				}
 			: null
 	);
 
@@ -192,13 +206,13 @@ export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): S
 		seen,
 		temporal && temporalMetric
 			? {
-				pattern: 'temporal_metric',
-				expressionClass: 'bucket_aggregate',
-				outputName: 'metric_over_time',
-				leftColumn: temporal.name,
-				rightColumn: temporalMetric.name,
-				quality: quality(temporal, temporalMetric)
-			}
+					pattern: 'temporal_metric',
+					expressionClass: 'bucket_aggregate',
+					outputName: 'metric_over_time',
+					leftColumn: temporal.name,
+					rightColumn: temporalMetric.name,
+					quality: quality(temporal, temporalMetric)
+				}
 			: null
 	);
 
@@ -218,13 +232,13 @@ export function findSemanticDeriveCandidates(columns: SemanticDeriveColumn[]): S
 		seen,
 		segment && segmentedMetric
 			? {
-				pattern: 'segment_metric',
-				expressionClass: 'group_aggregate',
-				outputName: 'metric_by_segment',
-				leftColumn: segment.name,
-				rightColumn: segmentedMetric.name,
-				quality: quality(segment, segmentedMetric)
-			}
+					pattern: 'segment_metric',
+					expressionClass: 'group_aggregate',
+					outputName: 'metric_by_segment',
+					leftColumn: segment.name,
+					rightColumn: segmentedMetric.name,
+					quality: quality(segment, segmentedMetric)
+				}
 			: null
 	);
 
@@ -235,5 +249,7 @@ export function findTopDeriveCandidate(
 	columns: SemanticDeriveColumn[],
 	pattern: DerivePattern
 ): SemanticDeriveCandidate | null {
-	return findSemanticDeriveCandidates(columns).find((candidate) => candidate.pattern === pattern) ?? null;
+	return (
+		findSemanticDeriveCandidates(columns).find((candidate) => candidate.pattern === pattern) ?? null
+	);
 }

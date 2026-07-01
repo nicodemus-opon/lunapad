@@ -58,6 +58,7 @@ import {
 	materializeRelation,
 	listMainSchemaRelations,
 	registerPythonResultTable,
+	deletePersistedFile,
 	type MaterializationMode as DBMaterializationMode,
 	type RelationType
 } from '$lib/services/duckdb';
@@ -325,7 +326,9 @@ interface NotebookState {
 	notebookEvents: NotebookEvent[];
 	// 'idle' until initWorkspaceMode() runs; otherwise reflects the last /api/workspace/*
 	// load or save attempt — drives the "offline copy" / "couldn't save, retrying" banner.
-	workspaceSyncStatus: 'idle' | 'synced' | 'offline' | 'error';
+	workspaceSyncStatus: 'idle' | 'synced' | 'offline' | 'error' | 'conflict';
+	workspaceServerUpdatedAt: string | null;
+	workspaceUpdatedBy: string | null;
 	// ── Filesystem / dbt project mode ──
 	storageMode: 'local' | 'filesystem';
 	projectFolder: string | null;
@@ -885,6 +888,8 @@ let state = $state<NotebookState>({
 	},
 	notebookEvents: [],
 	workspaceSyncStatus: 'idle',
+	workspaceServerUpdatedAt: null,
+	workspaceUpdatedBy: null,
 	storageMode: 'local',
 	projectFolder: null,
 	pythonAvailable: false,
@@ -970,7 +975,14 @@ function serialize(persistResults = true): string {
 		theme: state.theme,
 		autoRun: state.autoRun,
 		ghostTextEnabled: state.ghostTextEnabled,
-		llmConfig: state.llmConfig,
+		llmConfig: {
+			provider: state.llmConfig.provider,
+			baseUrl: state.llmConfig.baseUrl,
+			model: state.llmConfig.model,
+			...(state.llmConfig.completionModel
+				? { completionModel: state.llmConfig.completionModel }
+				: {})
+		},
 		notebookEvents: state.notebookEvents,
 		workspaceStandards: getWorkspaceStandards()
 	});
@@ -1869,6 +1881,15 @@ function deserialize(raw: string): void {
 				: (state.openNotebookTabIds[0] ?? state.notebooks[0].id);
 
 		if (data.theme) state.theme = data.theme as NotebookState['theme'];
+		if (Array.isArray(data.tables)) {
+			state.tables = (data.tables as UploadedTable[]).filter(
+				(table) =>
+					table &&
+					typeof table.name === 'string' &&
+					Array.isArray(table.columns) &&
+					Array.isArray(table.columnTypes)
+			);
+		}
 		if (typeof data.autoRun === 'boolean') state.autoRun = data.autoRun;
 		if (typeof data.ghostTextEnabled === 'boolean') state.ghostTextEnabled = data.ghostTextEnabled;
 		if (data.llmConfig && typeof data.llmConfig === 'object') {
@@ -1910,15 +1931,15 @@ function deserialize(raw: string): void {
 	}
 }
 
-export function loadFromStorage(defaultProjectFolder?: string | null): void {
-	if (typeof localStorage === 'undefined') return;
+export function loadFromStorage(defaultProjectFolder?: string | null): Promise<void> {
+	if (typeof localStorage === 'undefined') return Promise.resolve();
 	if (useServerWorkspace) {
-		void loadFromServer(defaultProjectFolder);
-		return;
+		return loadFromServer(defaultProjectFolder);
 	}
 	const raw = localStorage.getItem(STORAGE_KEY);
 	if (raw) deserialize(raw);
 	finishLoad(defaultProjectFolder);
+	return Promise.resolve();
 }
 
 // Postgres-backed hydration for full (authenticated, non-demo) mode. Seeds from the
@@ -1932,16 +1953,23 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 	try {
 		const res = await fetch('/api/workspace/load');
 		if (!res.ok) throw new Error(`Workspace load failed: ${res.status}`);
-		const body = (await res.json()) as { data: unknown };
+		const body = (await res.json()) as {
+			data: unknown;
+			updatedAt: string | null;
+			updatedBy: string | null;
+		};
 		if (body.data) {
 			deserialize(JSON.stringify(body.data));
 			localStorage.setItem(STORAGE_KEY, serialize());
 		}
+		state.workspaceServerUpdatedAt = body.updatedAt ?? null;
+		state.workspaceUpdatedBy = body.updatedBy ?? null;
 		state.workspaceSyncStatus = 'synced';
 	} catch {
 		state.workspaceSyncStatus = 'offline';
 	}
 	finishLoad(defaultProjectFolder);
+	void loadUserLlmSettings();
 }
 
 // Post-processing shared by both the local-only and server-backed load paths — runs
@@ -2022,14 +2050,56 @@ export function scheduleSave(): void {
 }
 
 let workspaceSaveRetryTimer: ReturnType<typeof setTimeout> | null = null;
-async function saveToServer(serializedJson: string): Promise<void> {
+let workspacePollTimer: ReturnType<typeof setInterval> | null = null;
+
+async function loadUserLlmSettings(): Promise<void> {
+	try {
+		const res = await fetch('/api/account/settings');
+		if (!res.ok) return;
+		const body = await res.json();
+		const llm = body.settings?.llmConfig;
+		if (llm && typeof llm === 'object') {
+			state.llmConfig = { ...state.llmConfig, ...llm };
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+export async function saveUserLlmSettings(): Promise<void> {
+	try {
+		await fetch('/api/account/settings', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ settings: { llmConfig: state.llmConfig } })
+		});
+	} catch {
+		/* ignore */
+	}
+}
+
+async function saveToServer(serializedJson: string, force = false): Promise<void> {
 	try {
 		const res = await fetch('/api/workspace/save', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ data: JSON.parse(serializedJson) })
+			body: JSON.stringify({
+				data: JSON.parse(serializedJson),
+				expectedUpdatedAt: state.workspaceServerUpdatedAt,
+				force
+			})
 		});
+		if (res.status === 409) {
+			const body = await res.json();
+			state.workspaceSyncStatus = 'conflict';
+			state.workspaceServerUpdatedAt = body.updatedAt ?? state.workspaceServerUpdatedAt;
+			state.workspaceUpdatedBy = body.updatedBy ?? state.workspaceUpdatedBy;
+			return;
+		}
 		if (!res.ok) throw new Error(`Workspace save failed: ${res.status}`);
+		const body = await res.json();
+		state.workspaceServerUpdatedAt = body.updatedAt ?? state.workspaceServerUpdatedAt;
+		state.workspaceUpdatedBy = body.updatedBy ?? null;
 		state.workspaceSyncStatus = 'synced';
 		if (workspaceSaveRetryTimer) {
 			clearTimeout(workspaceSaveRetryTimer);
@@ -2037,15 +2107,74 @@ async function saveToServer(serializedJson: string): Promise<void> {
 		}
 	} catch {
 		state.workspaceSyncStatus = 'error';
-		// Retry once after 5s. If the user keeps editing in the meantime, scheduleSave's
-		// own debounce will fire a fresher saveToServer call first, making this one moot.
 		if (workspaceSaveRetryTimer) clearTimeout(workspaceSaveRetryTimer);
 		workspaceSaveRetryTimer = setTimeout(() => scheduleSave(), 5000);
 	}
 }
 
-export function getWorkspaceSyncStatus(): 'idle' | 'synced' | 'offline' | 'error' {
+export async function reloadWorkspaceFromServer(): Promise<void> {
+	const res = await fetch('/api/workspace/load');
+	if (!res.ok) throw new Error('Failed to reload workspace');
+	const body = await res.json();
+	if (body.data) {
+		deserialize(JSON.stringify(body.data));
+		localStorage.setItem(STORAGE_KEY, serialize());
+	}
+	state.workspaceServerUpdatedAt = body.updatedAt ?? null;
+	state.workspaceUpdatedBy = body.updatedBy ?? null;
+	state.workspaceSyncStatus = 'synced';
+}
+
+export async function forceSaveWorkspace(): Promise<void> {
+	const json = serialize();
+	await saveToServer(json, true);
+}
+
+export function startWorkspacePolling(): void {
+	if (workspacePollTimer) return;
+	workspacePollTimer = setInterval(() => {
+		void pollWorkspaceVersion();
+	}, 45_000);
+}
+
+export function stopWorkspacePolling(): void {
+	if (workspacePollTimer) clearInterval(workspacePollTimer);
+	workspacePollTimer = null;
+}
+
+async function pollWorkspaceVersion(): Promise<void> {
+	if (!useServerWorkspace || state.workspaceSyncStatus === 'conflict') return;
+	try {
+		const res = await fetch('/api/workspace/load');
+		if (!res.ok) return;
+		const body = await res.json();
+		if (
+			body.updatedAt &&
+			state.workspaceServerUpdatedAt &&
+			body.updatedAt !== state.workspaceServerUpdatedAt
+		) {
+			state.workspaceUpdatedBy = body.updatedBy ?? null;
+			// Don't auto-overwrite — surface conflict state for user choice
+			state.workspaceSyncStatus = 'conflict';
+			state.workspaceServerUpdatedAt = body.updatedAt;
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+export function getWorkspaceSyncStatus(): 'idle' | 'synced' | 'offline' | 'error' | 'conflict' {
 	return state.workspaceSyncStatus;
+}
+
+export function getWorkspaceConflictInfo(): {
+	updatedAt: string | null;
+	updatedBy: string | null;
+} {
+	return {
+		updatedAt: state.workspaceServerUpdatedAt,
+		updatedBy: state.workspaceUpdatedBy
+	};
 }
 
 // ── Filesystem project file saves ────────────────────────────────────────────
@@ -3861,23 +3990,31 @@ export function addCell(): void {
 	addCellWithLanguage(nb.defaultCellLanguage ?? 'sql');
 }
 
-export function addMarkdownCell(): void {
+export function addMarkdownCell(): string {
 	const nb = getActiveNotebook();
-	pushHistoryCheckpoint(nb.id);
+	const notebookId = nb.id;
+	pushHistoryCheckpoint(notebookId);
 
+	let newCell: Cell;
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const outputName = generateUniqueOutputName();
-		const mdCell = makeMarkdownCell('');
-		mdCell.id = outputName;
-		mdCell.outputName = outputName;
-		nb.cells = [...nb.cells, mdCell];
-		scheduleSave();
-		scheduleFileSave(nb.id, mdCell.id);
-		return;
+		newCell = makeMarkdownCell('');
+		newCell.id = outputName;
+		newCell.outputName = outputName;
+	} else {
+		newCell = makeMarkdownCell('');
 	}
 
-	nb.cells = [...nb.cells, makeMarkdownCell('')];
+	// Reassign notebooks (not just nb.cells) so Svelte consumers re-render immediately.
+	state.notebooks = state.notebooks.map((n) =>
+		n.id === notebookId ? { ...n, cells: [...n.cells, newCell] } : n
+	);
+	state.focusedCellId = newCell.id;
 	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		scheduleFileSave(notebookId, newCell.id);
+	}
+	return newCell.id;
 }
 
 /** UDF cells (Python, compiled to Trino's inline `WITH FUNCTION` syntax) have no
@@ -4081,33 +4218,39 @@ export function appendCellAtEnd(data: {
 	return newCell.id;
 }
 
-export function insertMarkdownCellAfter(id: string): void {
+export function insertMarkdownCellAfter(id: string): string {
 	const nb = getActiveNotebook();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		// Filesystem mode has no mid-list insert (cells map to files); append.
-		addMarkdownCell();
-		return;
+		return addMarkdownCell();
 	}
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return '';
+	const notebookId = nb.id;
+	const newCell = makeMarkdownCell('');
 	const cells = [...nb.cells];
-	cells.splice(idx + 1, 0, makeMarkdownCell(''));
-	nb.cells = cells;
+	cells.splice(idx + 1, 0, newCell);
+	state.notebooks = state.notebooks.map((n) => (n.id === notebookId ? { ...n, cells } : n));
+	state.focusedCellId = newCell.id;
 	scheduleSave();
+	return newCell.id;
 }
 
-export function insertMarkdownCellBefore(id: string): void {
+export function insertMarkdownCellBefore(id: string): string {
 	const nb = getActiveNotebook();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
-		addMarkdownCell();
-		return;
+		return addMarkdownCell();
 	}
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return '';
+	const notebookId = nb.id;
+	const newCell = makeMarkdownCell('');
 	const cells = [...nb.cells];
-	cells.splice(idx, 0, makeMarkdownCell(''));
-	nb.cells = cells;
+	cells.splice(idx, 0, newCell);
+	state.notebooks = state.notebooks.map((n) => (n.id === notebookId ? { ...n, cells } : n));
+	state.focusedCellId = newCell.id;
 	scheduleSave();
+	return newCell.id;
 }
 
 export function addCellBefore(id: string): void {
@@ -4747,7 +4890,12 @@ export function updateCellName(
 		return { ok: false, error: `"${name}" is already used by another model in this project` };
 	}
 	const oldName = cell.outputName;
-	if (state.storageMode === 'filesystem' && state.projectFolder && cell.outputName && nb.format === 'luna') {
+	if (
+		state.storageMode === 'filesystem' &&
+		state.projectFolder &&
+		cell.outputName &&
+		nb.format === 'luna'
+	) {
 		// One file holds the whole notebook — a cell's outputName is independent of
 		// the notebook's own id/file path, so only the cell changes; the .luna file
 		// gets re-saved with the new name embedded, no per-cell file rename.
@@ -6046,14 +6194,18 @@ export async function runAllStale(): Promise<void> {
 
 export async function refreshTablesFromCatalog(cascadeAutoRun = false): Promise<void> {
 	const relations = await listMainSchemaRelations();
-	state.tables = relations.map((r) => ({
-		name: r.name,
-		fileName: `${r.name}.${r.relationType}`,
-		rowCount: r.rowCount,
-		columns: r.columns,
-		columnTypes: r.columnTypes,
-		relationType: r.relationType
-	}));
+	const existingByName = new Map(state.tables.map((table) => [table.name, table]));
+	state.tables = relations.map((r) => {
+		const existing = existingByName.get(r.name);
+		return {
+			name: r.name,
+			fileName: existing?.fileName ?? `${r.name}.${r.relationType}`,
+			rowCount: r.rowCount,
+			columns: r.columns,
+			columnTypes: r.columnTypes,
+			relationType: r.relationType
+		};
+	});
 	scheduleSave();
 	if (cascadeAutoRun && state.autoRun) {
 		markCellsForConnectionStale(BUILTIN_DUCKDB_CONNECTION_ID);
@@ -6264,6 +6416,8 @@ export function __resetStateForTests(): void {
 		},
 		notebookEvents: [],
 		workspaceSyncStatus: 'idle',
+		workspaceServerUpdatedAt: null,
+		workspaceUpdatedBy: null,
 		storageMode: 'local',
 		projectFolder: null,
 		pythonAvailable: false,
@@ -6281,10 +6435,24 @@ export function __resetStateForTests(): void {
 
 // ── Table actions ─────────────────────────────────────────────────────────────
 export function addTable(table: UploadedTable): void {
-	state.tables = [
-		...state.tables.filter((t) => t.name !== table.name),
-		{ ...table, relationType: table.relationType ?? 'table' }
-	];
+	void addTableAsync(table);
+}
+
+async function addTableAsync(table: UploadedTable): Promise<void> {
+	await refreshTablesFromCatalog();
+	if (!state.tables.some((entry) => entry.name === table.name)) {
+		// DuckDB doesn't have this relation — avoid showing a ghost table in the sidebar.
+		return;
+	}
+	state.tables = state.tables.map((entry) =>
+		entry.name === table.name
+			? {
+					...entry,
+					fileName: table.fileName,
+					relationType: table.relationType ?? entry.relationType ?? 'table'
+				}
+			: entry
+	);
 	void Promise.resolve(
 		recordUploadedTableMetadata({
 			connectionId: BUILTIN_DUCKDB_CONNECTION_ID,
@@ -6300,6 +6468,7 @@ export function addTable(table: UploadedTable): void {
 
 export function removeTable(name: string): void {
 	dropRelation(name).catch(() => {});
+	deletePersistedFile(name).catch(() => {});
 	state.tables = state.tables.filter((t) => t.name !== name);
 	scheduleSave();
 }

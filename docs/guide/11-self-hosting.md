@@ -24,26 +24,26 @@ docker compose down -v      # stop and wipe everything (fresh start)
 
 Set these on the `app` service. The committed `docker-compose.yml` ships working defaults for local trial use, replace the secrets before deploying anywhere real.
 
-| Variable | Default in the compose file | What it's for |
-|---|---|---|
-| `DATABASE_URL` | `postgresql://lunapad:lunapad@db:5432/lunapad` | Connection string for the shared Postgres instance |
-| `BETTER_AUTH_SECRET` | `change-me-to-a-random-32-byte-secret` | Signs session tokens. **Replace this before any real deployment.** |
-| `SECRETS_ENCRYPTION_KEY` | `change-me-to-a-random-32-byte-base64-key` | Encrypts stored connection passwords at rest. **Replace this too, and never reuse the value from `BETTER_AUTH_SECRET`.** |
-| `TRINO_URL` | `http://trino:8080` | Where the app reaches Trino |
-| `TRINO_CATALOG_DIR` | `/trino-catalog` | Where catalog `.properties` files are written when you add a data source |
-| `PROJECT_FOLDER` | `/app/project` | A dbt project folder to auto-open on startup. If it's empty, a starter project is scaffolded into it. Opening a different folder from the UI overrides this on later reloads. |
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Reaches an Ollama install running on the host machine, only relevant if you're using Ollama for the AI assistant |
-| `INNGEST_BASE_URL` / `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | `http://inngest:8288` / `local` / `local` | Scheduler connection. Omit `INNGEST_BASE_URL` entirely to disable scheduling |
-| `DEMO_MODE` | unset | Set to `1` to run a public, read-only-ish demo deployment, see below |
+| Variable                                                         | Default in the compose file                    | What it's for                                                                                                                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                   | `postgresql://lunapad:lunapad@db:5432/lunapad` | Connection string for the shared Postgres instance                                                                                                                            |
+| `BETTER_AUTH_SECRET`                                             | `change-me-to-a-random-32-byte-secret`         | Signs session tokens. **Replace this before any real deployment.**                                                                                                            |
+| `SECRETS_ENCRYPTION_KEY`                                         | `change-me-to-a-random-32-byte-base64-key`     | Encrypts stored connection passwords at rest. **Replace this too, and never reuse the value from `BETTER_AUTH_SECRET`.**                                                      |
+| `TRINO_URL`                                                      | `http://trino:8080`                            | Where the app reaches Trino                                                                                                                                                   |
+| `TRINO_CATALOG_DIR`                                              | `/trino-catalog`                               | Where catalog `.properties` files are written when you add a data source                                                                                                      |
+| `PROJECT_FOLDER`                                                 | `/app/project`                                 | A dbt project folder to auto-open on startup. If it's empty, a starter project is scaffolded into it. Opening a different folder from the UI overrides this on later reloads. |
+| `OLLAMA_BASE_URL`                                                | `http://host.docker.internal:11434`            | Reaches an Ollama install running on the host machine, only relevant if you're using Ollama for the AI assistant                                                              |
+| `INNGEST_BASE_URL` / `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | `http://inngest:8288` / `local` / `local`      | Scheduler connection. Omit `INNGEST_BASE_URL` entirely to disable scheduling                                                                                                  |
+| `DEMO_MODE`                                                      | unset                                          | Set to `1` to run a public, read-only-ish demo deployment, see below                                                                                                          |
 
 ## What's stored where
 
-| Location | Holds |
-|---|---|
-| Postgres | Accounts and sessions, the entire shared workspace (notebooks, cells, AI settings) in full mode, connection metadata, encrypted connection secrets |
-| Your browser's local storage | A cache of the workspace for offline use, not the source of truth in full mode |
-| Your project folder (if one is open) | Your actual dbt project: model files, `.luna` notebook files, `schema.yml`, `dbt_project.yml` |
-| `./trino/catalog/` | One `.properties` file per external data source you've registered |
+| Location                             | Holds                                                                                                                                              |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres                             | Accounts and sessions, the entire shared workspace (notebooks, cells, AI settings) in full mode, connection metadata, encrypted connection secrets |
+| Your browser's local storage         | A cache of the workspace for offline use, not the source of truth in full mode                                                                     |
+| Your project folder (if one is open) | Your actual dbt project: model files, `.luna` notebook files, `schema.yml`, `dbt_project.yml`                                                      |
+| `./trino/catalog/`                   | One `.properties` file per external data source you've registered                                                                                  |
 
 This matters mainly for backups: back up the Postgres volume and your project folder, and you've covered everything that isn't trivially reconstructible.
 

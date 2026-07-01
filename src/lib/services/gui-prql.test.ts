@@ -24,12 +24,34 @@ describe('prqlToGuiStages', () => {
 					{ column: 'status', op: 'in', value: 'paid, shipped' }
 				]
 			},
-			{ type: 'derive', columns: [{ name: 'amount_taxed', expr: { mode: 'binary', left: { kind: 'column', value: 'amount' }, op: '*', right: { kind: 'literal', value: '1.16' } } }] },
+			{
+				type: 'derive',
+				columns: [
+					{
+						name: 'amount_taxed',
+						expr: {
+							mode: 'binary',
+							left: { kind: 'column', value: 'amount' },
+							op: '*',
+							right: { kind: 'literal', value: '1.16' }
+						}
+					}
+				]
+			},
 			{ type: 'select', columns: ['id', 'amount_taxed'] },
 			{ type: 'sort', keys: [{ column: 'id', dir: 'desc' }] },
 			{ type: 'take', n: 100 },
-			{ type: 'join', joinType: 'left', table: 'customers', conditions: [{ left: 'customer_id', right: 'id' }] },
-			{ type: 'group', by: ['customer_id'], aggregations: [{ name: 'total', func: 'sum', column: 'amount' }] }
+			{
+				type: 'join',
+				joinType: 'left',
+				table: 'customers',
+				conditions: [{ left: 'customer_id', right: 'id' }]
+			},
+			{
+				type: 'group',
+				by: ['customer_id'],
+				aggregations: [{ name: 'total', func: 'sum', column: 'amount' }]
+			}
 		];
 
 		const prql = guiToPreql(stages);
@@ -205,7 +227,10 @@ filter (application_deadline >= current_date AND application_deadline <= current
 filter Col > 0 && (application_deadline >= current_date AND application_deadline <= current_date + 30)`);
 		expect(parsed).not.toBeNull();
 		expect(parsed).toHaveLength(2);
-		expect(parsed![1]).toEqual({ type: 'raw', prql: 'filter Col > 0 && (application_deadline >= current_date AND application_deadline <= current_date + 30)' });
+		expect(parsed![1]).toEqual({
+			type: 'raw',
+			prql: 'filter Col > 0 && (application_deadline >= current_date AND application_deadline <= current_date + 30)'
+		});
 	});
 
 	it('parses bracket-form derives inside group and window stages', () => {
@@ -232,7 +257,17 @@ window rows:-1..0 (
 			type: 'window',
 			frame: 'rows:-1..0',
 			sortKeys: [],
-			derives: [{ name: 'delta', expr: { mode: 'binary', left: { kind: 'column', value: 'salary' }, op: '-', right: { kind: 'column', value: 'lag_salary' } } }]
+			derives: [
+				{
+					name: 'delta',
+					expr: {
+						mode: 'binary',
+						left: { kind: 'column', value: 'salary' },
+						op: '-',
+						right: { kind: 'column', value: 'lag_salary' }
+					}
+				}
+			]
 		});
 	});
 
@@ -243,9 +278,40 @@ window rows:-1..0 (
 				type: 'derive',
 				columns: [
 					{ name: 'captured_at', expr: { mode: 'func', func: 'date.now', args: [] } },
-					{ name: 'month_start', expr: { mode: 'func', func: 'date.trunc', args: [{ kind: 'literal', value: 'month' }, { kind: 'column', value: 'event_time' }] } },
-					{ name: 'score_log', expr: { mode: 'func', func: 'math.log', args: [{ kind: 'literal', value: '10' }, { kind: 'column', value: 'score' }] } },
-					{ name: 'tag_slice', expr: { mode: 'func', func: 'text.extract', args: [{ kind: 'literal', value: '1' }, { kind: 'literal', value: '3' }, { kind: 'column', value: 'tag' }] } }
+					{
+						name: 'month_start',
+						expr: {
+							mode: 'func',
+							func: 'date.trunc',
+							args: [
+								{ kind: 'literal', value: 'month' },
+								{ kind: 'column', value: 'event_time' }
+							]
+						}
+					},
+					{
+						name: 'score_log',
+						expr: {
+							mode: 'func',
+							func: 'math.log',
+							args: [
+								{ kind: 'literal', value: '10' },
+								{ kind: 'column', value: 'score' }
+							]
+						}
+					},
+					{
+						name: 'tag_slice',
+						expr: {
+							mode: 'func',
+							func: 'text.extract',
+							args: [
+								{ kind: 'literal', value: '1' },
+								{ kind: 'literal', value: '3' },
+								{ kind: 'column', value: 'tag' }
+							]
+						}
+					}
 				]
 			}
 		];
@@ -345,7 +411,8 @@ group {title, artist} (
 	});
 
 	it('parses group with backtick-quoted single group-by column (user bug report)', () => {
-		const prql = 'from employees\ngroup `Role Category` (\n  aggregate {\n    total = count `Scraped At`\n  }\n)';
+		const prql =
+			'from employees\ngroup `Role Category` (\n  aggregate {\n    total = count `Scraped At`\n  }\n)';
 		const parsed = prqlToGuiStages(prql);
 		expect(parsed).not.toBeNull();
 		expect(parsed![1]).toEqual({
@@ -379,7 +446,15 @@ group {title, artist} (
 				type: 'derive',
 				columns: [
 					{ name: 'Full Name', expr: { mode: 'raw', expr: 'first_name' } },
-					{ name: 'gross cost', expr: { mode: 'binary', left: { kind: 'column', value: 'salary' }, op: '+', right: { kind: 'column', value: 'benefits' } } }
+					{
+						name: 'gross cost',
+						expr: {
+							mode: 'binary',
+							left: { kind: 'column', value: 'salary' },
+							op: '+',
+							right: { kind: 'column', value: 'benefits' }
+						}
+					}
 				]
 			}
 		];
@@ -434,11 +509,25 @@ derive [
 		});
 		expect(parsed![1].columns[1].expr.mode).toBe('raw');
 		expect((parsed![1].columns[1].expr as { mode: 'raw'; expr: string }).expr).toContain('case [');
-		expect((parsed![1].columns[1].expr as { mode: 'raw'; expr: string }).expr).toContain('`Paid In` != null => "inflow"');
-		expect(parsed![1].columns[2].expr).toEqual({ mode: 'sstring', template: 'to_timestamp("Completion Time" / 1000)' });
-		expect(parsed![1].columns[3].expr).toEqual({ mode: 'sstring', template: 'date(to_timestamp("Completion Time" / 1000))' });
-		expect(parsed![1].columns[4].expr).toEqual({ mode: 'sstring', template: 'date_trunc(\'month\', to_timestamp("Completion Time" / 1000))' });
-		expect(parsed![1].columns[5].expr).toEqual({ mode: 'sstring', template: 'date_trunc(\'year\', to_timestamp("Completion Time" / 1000))' });
+		expect((parsed![1].columns[1].expr as { mode: 'raw'; expr: string }).expr).toContain(
+			'`Paid In` != null => "inflow"'
+		);
+		expect(parsed![1].columns[2].expr).toEqual({
+			mode: 'sstring',
+			template: 'to_timestamp("Completion Time" / 1000)'
+		});
+		expect(parsed![1].columns[3].expr).toEqual({
+			mode: 'sstring',
+			template: 'date(to_timestamp("Completion Time" / 1000))'
+		});
+		expect(parsed![1].columns[4].expr).toEqual({
+			mode: 'sstring',
+			template: 'date_trunc(\'month\', to_timestamp("Completion Time" / 1000))'
+		});
+		expect(parsed![1].columns[5].expr).toEqual({
+			mode: 'sstring',
+			template: 'date_trunc(\'year\', to_timestamp("Completion Time" / 1000))'
+		});
 	});
 
 	it('parses the mpesa example queries without falling back to raw stages', () => {
@@ -597,7 +686,7 @@ select [
 	Payee,
 	spend,
 	Details
-]`,
+]`
 		];
 
 		for (const query of queries) {
@@ -630,10 +719,12 @@ group month (
 		net = sum amount
 	]
 		)`;
-			const { letBindings, mainPrql } = extractLetBindings(letQuery);
-			expect(letBindings).toHaveLength(1);
-			expect(prqlToGuiStages(letBindings[0].rawCode)?.some((stage) => stage.type === 'raw')).toBe(false);
-			expect(prqlToGuiStages(mainPrql)?.some((stage) => stage.type === 'raw')).toBe(false);
+		const { letBindings, mainPrql } = extractLetBindings(letQuery);
+		expect(letBindings).toHaveLength(1);
+		expect(prqlToGuiStages(letBindings[0].rawCode)?.some((stage) => stage.type === 'raw')).toBe(
+			false
+		);
+		expect(prqlToGuiStages(mainPrql)?.some((stage) => stage.type === 'raw')).toBe(false);
 	});
 
 	it('preserves raw aggregate expressions inside group stages', () => {
@@ -697,7 +788,9 @@ describe('full query round-trip', () => {
 
 	it('preserves @-prefixed date literal in filter', () => {
 		const stages = prqlToGuiStages(FULL_QUERY)!;
-		const filter = stages.find(s => s.type === 'filter' && s.conditions[0]?.value?.startsWith('@'));
+		const filter = stages.find(
+			(s) => s.type === 'filter' && s.conditions[0]?.value?.startsWith('@')
+		);
 		expect(filter).toBeDefined();
 		const cond = (filter as any).conditions[0];
 		expect(cond.column).toBe('invoice_date');
@@ -708,7 +801,7 @@ describe('full query round-trip', () => {
 	it('parses fstring derive', () => {
 		const stages = prqlToGuiStages(FULL_QUERY)!;
 		const derive = stages.find(
-			s => s.type === 'derive' && s.columns.some((c: any) => c.expr?.mode === 'fstring')
+			(s) => s.type === 'derive' && s.columns.some((c: any) => c.expr?.mode === 'fstring')
 		) as any;
 		expect(derive).toBeDefined();
 		const col = derive.columns.find((c: any) => c.expr?.mode === 'fstring');
@@ -718,7 +811,7 @@ describe('full query round-trip', () => {
 	it('parses sstring derive', () => {
 		const stages = prqlToGuiStages(FULL_QUERY)!;
 		const derive = stages.find(
-			s => s.type === 'derive' && s.columns.some((c: any) => c.expr?.mode === 'sstring')
+			(s) => s.type === 'derive' && s.columns.some((c: any) => c.expr?.mode === 'sstring')
 		) as any;
 		expect(derive).toBeDefined();
 		const col = derive.columns.find((c: any) => c.expr?.mode === 'sstring');
@@ -727,7 +820,7 @@ describe('full query round-trip', () => {
 
 	it('parses join with alias and shorthand condition', () => {
 		const stages = prqlToGuiStages(FULL_QUERY)!;
-		const join = stages.find(s => s.type === 'join') as any;
+		const join = stages.find((s) => s.type === 'join') as any;
 		expect(join).toBeDefined();
 		expect(join.alias).toBe('c');
 		expect(join.table).toBe('customers');
@@ -737,7 +830,7 @@ describe('full query round-trip', () => {
 
 	it('parses group with average no-alias aggregation', () => {
 		const stages = prqlToGuiStages(FULL_QUERY)!;
-		const group = stages.find(s => s.type === 'group') as any;
+		const group = stages.find((s) => s.type === 'group') as any;
 		expect(group).toBeDefined();
 		expect(group.by).toContain('customer_id');
 		const avgAgg = group.aggregations.find((a: any) => a.func === 'average');
@@ -838,7 +931,12 @@ sort {-revenue}`;
 
 		const { letBindings, mainPrql } = extractLetBindings(query);
 		expect(letBindings).toHaveLength(5);
-		expect(letBindings.every((binding) => prqlToGuiStages(binding.rawCode)?.some((stage) => stage.type === 'raw') === false)).toBe(true);
+		expect(
+			letBindings.every(
+				(binding) =>
+					prqlToGuiStages(binding.rawCode)?.some((stage) => stage.type === 'raw') === false
+			)
+		).toBe(true);
 
 		const parsed = prqlToGuiStages(mainPrql);
 		expect(parsed).not.toBeNull();
@@ -860,10 +958,18 @@ sort {-revenue}`;
 		]);
 
 		const regenerated = guiToPreql(parsed ?? []);
-		expect(regenerated).toContain('join side:left item_stats (`Item Name` == item_stats.`Item Name`)');
-		expect(regenerated).toContain('join side:left category_stats (Category == category_stats.Category)');
-		expect(regenerated).toContain('join side:left location_stats (Location == location_stats.Location)');
-		expect(regenerated).toContain('join side:left customer_stats (`Customer Type` == customer_stats.`Customer Type`)');
+		expect(regenerated).toContain(
+			'join side:left item_stats (`Item Name` == item_stats.`Item Name`)'
+		);
+		expect(regenerated).toContain(
+			'join side:left category_stats (Category == category_stats.Category)'
+		);
+		expect(regenerated).toContain(
+			'join side:left location_stats (Location == location_stats.Location)'
+		);
+		expect(regenerated).toContain(
+			'join side:left customer_stats (`Customer Type` == customer_stats.`Customer Type`)'
+		);
 	});
 });
 
@@ -917,7 +1023,13 @@ describe('reconcileStagesAfterSourceChange', () => {
 				]
 			},
 			{ type: 'select', columns: ['priority', 'resolution_hours', 'customer_segment'] },
-			{ type: 'sort', keys: [{ column: 'resolution_hours', dir: 'desc' }, { column: 'priority', dir: 'asc' }] },
+			{
+				type: 'sort',
+				keys: [
+					{ column: 'resolution_hours', dir: 'desc' },
+					{ column: 'priority', dir: 'asc' }
+				]
+			},
 			{ type: 'take', n: 20 }
 		];
 
@@ -943,8 +1055,16 @@ describe('reconcileStageSequenceToAvailableColumns', () => {
 	it('repairs stale sort aliases against the current stage sequence output', () => {
 		const next = reconcileStageSequenceToAvailableColumns(
 			[
-				{ type: 'group', by: ['Payee'], aggregations: [{ name: 'row_count', func: 'count', column: '' }] },
-				{ type: 'group', by: ['Payee'], aggregations: [{ name: 'sum_row_count', func: 'sum', column: 'row_count' }] },
+				{
+					type: 'group',
+					by: ['Payee'],
+					aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+				},
+				{
+					type: 'group',
+					by: ['Payee'],
+					aggregations: [{ name: 'sum_row_count', func: 'sum', column: 'row_count' }]
+				},
 				{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] },
 				{ type: 'take', n: 20 }
 			],
@@ -1161,7 +1281,14 @@ describe('iris window group query', () => {
 
 	it('stage types are correct', () => {
 		const stages = prqlToGuiStages(IRIS_QUERY)!;
-		expect(stages.map((s) => s.type)).toEqual(['from', 'derive', 'group', 'derive', 'select', 'sort']);
+		expect(stages.map((s) => s.type)).toEqual([
+			'from',
+			'derive',
+			'group',
+			'derive',
+			'select',
+			'sort'
+		]);
 	});
 
 	it('group stage has window property (not aggregate mode)', () => {
@@ -1299,7 +1426,11 @@ describe('mapErrorsToStages', () => {
 	});
 
 	it('preserves reason and hint in attributed error', () => {
-		const map = mapErrorsToStages(threeStages, [makeError(1, 'col not found', 'did you mean x?')], 0);
+		const map = mapErrorsToStages(
+			threeStages,
+			[makeError(1, 'col not found', 'did you mean x?')],
+			0
+		);
 		const err = map.get(1)![0];
 		expect(err.reason).toBe('col not found');
 		expect(err.hint).toBe('did you mean x?');
@@ -1337,7 +1468,12 @@ describe('mapErrorsToStages', () => {
 	it('maps errors to GUI indices when disabled stages are present', () => {
 		const stagesWithHidden: GUIPipelineStage[] = [
 			{ type: 'from', table: 'employees' },
-			{ type: 'filter', logic: 'and', conditions: [{ column: 'age', op: '>', value: '30' }], disabled: true },
+			{
+				type: 'filter',
+				logic: 'and',
+				conditions: [{ column: 'age', op: '>', value: '30' }],
+				disabled: true
+			},
 			{ type: 'derive', columns: [{ name: 'age2', expr: { mode: 'raw', expr: 'age + 1' } }] }
 		];
 
@@ -1383,8 +1519,14 @@ describe('derive f/s triple-quoted strings', () => {
 	it('always emits triple-quoted form when generating PRQL', () => {
 		const stages: GUIPipelineStage[] = [
 			{ type: 'from', table: 'employees' },
-			{ type: 'derive', columns: [{ name: 'label', expr: { mode: 'fstring', template: '{name}' } }] },
-			{ type: 'derive', columns: [{ name: 'snippet', expr: { mode: 'sstring', template: 'version()' } }] }
+			{
+				type: 'derive',
+				columns: [{ name: 'label', expr: { mode: 'fstring', template: '{name}' } }]
+			},
+			{
+				type: 'derive',
+				columns: [{ name: 'snippet', expr: { mode: 'sstring', template: 'version()' } }]
+			}
 		];
 
 		const prql = guiToPreql(stages);
@@ -1397,7 +1539,12 @@ describe('mergeParsedWithHiddenStages', () => {
 	it('preserves disabled stages in original positions', () => {
 		const previous: GUIPipelineStage[] = [
 			{ type: 'from', table: 'employees' },
-			{ type: 'filter', logic: 'and', conditions: [{ column: 'age', op: '>', value: '30' }], disabled: true },
+			{
+				type: 'filter',
+				logic: 'and',
+				conditions: [{ column: 'age', op: '>', value: '30' }],
+				disabled: true
+			},
 			{ type: 'derive', columns: [{ name: 'age2', expr: { mode: 'raw', expr: 'age + 1' } }] }
 		];
 
@@ -1408,7 +1555,12 @@ describe('mergeParsedWithHiddenStages', () => {
 
 		expect(mergeParsedWithHiddenStages(previous, parsed)).toEqual([
 			{ type: 'from', table: 'employees' },
-			{ type: 'filter', logic: 'and', conditions: [{ column: 'age', op: '>', value: '30' }], disabled: true },
+			{
+				type: 'filter',
+				logic: 'and',
+				conditions: [{ column: 'age', op: '>', value: '30' }],
+				disabled: true
+			},
 			{ type: 'derive', columns: [{ name: 'age3', expr: { mode: 'raw', expr: 'age + 2' } }] }
 		]);
 	});

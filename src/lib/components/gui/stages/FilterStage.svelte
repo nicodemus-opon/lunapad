@@ -5,7 +5,15 @@
 	import { ChipInput } from '$lib/components/ui/chip-input';
 	import { pickDefaultFilter } from '$lib/components/gui/chip-intelligence';
 	import { Plus, X, Loader2 } from '@lucide/svelte';
-	import { CHIP, CHIP_ADD, CHIP_EDITING, CHIP_INVALID, CHIP_SECTION, CHIP_SELECT, CHIP_X } from '../chip-styles';
+	import {
+		CHIP,
+		CHIP_ADD,
+		CHIP_EDITING,
+		CHIP_INVALID,
+		CHIP_SECTION,
+		CHIP_SELECT,
+		CHIP_X
+	} from '../chip-styles';
 
 	interface UpstreamResult {
 		rows: Record<string, unknown>[];
@@ -170,14 +178,19 @@
 		const suggested = pickDefaultFilter(availableColumns, stage.conditions);
 		onUpdate({
 			...stage,
-			conditions: [...stage.conditions, { column: suggested.column, op: suggested.op, value: suggested.value }]
+			conditions: [
+				...stage.conditions,
+				{ column: suggested.column, op: suggested.op, value: suggested.value }
+			]
 		});
 		// expand immediately — use requestAnimationFrame so the DOM updates first
 		requestAnimationFrame(() => {
 			expandedCondIdx = newIdx;
 			ensureUpstreamData();
 			requestAnimationFrame(() => {
-				const input = document.querySelector<HTMLInputElement>('[data-testid="filter-column-input"]');
+				const input = document.querySelector<HTMLInputElement>(
+					'[data-testid="filter-column-input"]'
+				);
 				input?.focus();
 			});
 		});
@@ -197,44 +210,46 @@
 				{#if selected.length > 0}
 					<div class="flex flex-wrap gap-1">
 						{#each selected as item (item)}
-							<span class="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-2xs">
+							<span
+								class="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-2xs"
+							>
 								{item}
 								<button
 									class="text-muted-foreground/60 transition-colors duration-150 hover:text-destructive"
 									onclick={() => onChange(serializeMultiValue(selected.filter((s) => s !== item)))}
 									aria-label="Remove {item}"
 								>
-									<X class="w-2.5 h-2.5" />
+									<X class="h-2.5 w-2.5" />
 								</button>
 							</span>
 						{/each}
 					</div>
 				{/if}
 				{#if distinctVals.length > 0}
-					<div class="max-h-36 overflow-y-auto rounded-md border border-border/60 divide-y text-xs">
+					<div class="max-h-36 divide-y overflow-y-auto rounded-md border border-border/60 text-xs">
 						{#each distinctVals as val (val)}
 							{@const checked = selected.includes(val)}
-							<label class="flex items-center gap-2 px-2 py-1 hover:bg-muted/50 cursor-pointer">
+							<label class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-muted/50">
 								<input
 									type="checkbox"
 									class="accent-primary"
 									{checked}
 									onchange={() => onChange(toggleMultiValue(value, val))}
 								/>
-								<span class="font-mono truncate">{val}</span>
+								<span class="truncate font-mono">{val}</span>
 							</label>
 						{/each}
 					</div>
 				{:else}
 					<Input
-						class="h-7 text-xs font-mono w-full"
+						class="h-7 w-full font-mono text-xs"
 						placeholder="a, b, c"
 						{value}
 						oninput={(e) => onChange((e.target as HTMLInputElement).value)}
 					/>
 					{#if upstreamLoading}
 						<div class="flex items-center gap-1 text-2xs text-muted-foreground">
-							<Loader2 class="w-3 h-3 animate-spin" /> loading suggestions…
+							<Loader2 class="h-3 w-3 animate-spin" /> loading suggestions…
 						</div>
 					{/if}
 				{/if}
@@ -251,20 +266,20 @@
 			<!-- Text / numeric input with suggestions -->
 			<div class="space-y-1">
 				<Input
-					class="h-7 text-xs font-mono w-full"
+					class="h-7 w-full font-mono text-xs"
 					placeholder="value…"
 					{value}
 					oninput={(e) => onChange((e.target as HTMLInputElement).value)}
 				/>
 				{#if upstreamLoading}
 					<div class="flex items-center gap-1 text-2xs text-muted-foreground">
-						<Loader2 class="w-3 h-3 animate-spin" /> loading suggestions…
+						<Loader2 class="h-3 w-3 animate-spin" /> loading suggestions…
 					</div>
 				{:else if distinctVals.length > 0}
-					<div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+					<div class="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
 						{#each distinctVals.slice(0, 12) as val (val)}
 							<button
-								class="rounded bg-muted/50 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground truncate max-w-full"
+								class="max-w-full truncate rounded bg-muted/50 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
 								onclick={() => onChange(val)}
 								title={val}
 							>
@@ -278,7 +293,7 @@
 	{/if}
 {/snippet}
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	{#if stage.conditions.length === 0}
 		<span class="text-xs text-muted-foreground/60 italic">no conditions</span>
 	{/if}
@@ -287,7 +302,7 @@
 		{#if idx > 0}
 			<!-- AND / OR logic toggle badge -->
 			<button
-				class="inline-flex h-5 shrink-0 items-center rounded bg-muted/50 px-1.5 font-mono text-2xs lowercase text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+				class="inline-flex h-5 shrink-0 items-center rounded bg-muted/50 px-1.5 font-mono text-2xs text-muted-foreground lowercase transition-colors duration-150 hover:bg-muted hover:text-foreground"
 				onclick={toggleLogic}
 				title="Click to toggle AND / OR"
 			>
@@ -301,9 +316,15 @@
 			draggable={expandedCondIdx !== idx}
 			ondragstart={() => (dragCondIdx = idx)}
 			ondragover={(e) => e.preventDefault()}
-			ondrop={(e) => { e.preventDefault(); if (dragCondIdx !== null && dragCondIdx !== idx) { reorderConditions(dragCondIdx, idx); dragCondIdx = null; } }}
+			ondrop={(e) => {
+				e.preventDefault();
+				if (dragCondIdx !== null && dragCondIdx !== idx) {
+					reorderConditions(dragCondIdx, idx);
+					dragCondIdx = null;
+				}
+			}}
 			ondragend={() => (dragCondIdx = null)}
-			class="inline-flex items-center text-xs group/pill shrink-0"
+			class="group/pill inline-flex shrink-0 items-center text-xs"
 			class:opacity-40={dragCondIdx !== null && dragCondIdx === idx}
 			class:cursor-grab={expandedCondIdx !== idx}
 			class:active:cursor-grabbing={expandedCondIdx !== idx}
@@ -311,12 +332,17 @@
 			{#if expandedCondIdx === idx}
 				<!-- ── Expanded inline form ── -->
 				{@const distinctVals = getDistinctValues(cond.column)}
-				{@const invalid = availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
+				{@const invalid =
+					availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<div
 					class={CHIP_EDITING}
-					onkeydown={(e) => { if (e.key === 'Escape') collapseCond(); }}
-					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) collapseCond(); }}
+					onkeydown={(e) => {
+						if (e.key === 'Escape') collapseCond();
+					}}
+					onfocusout={(e) => {
+						if (!e.currentTarget.contains(e.relatedTarget as Node | null)) collapseCond();
+					}}
 					role="group"
 				>
 					<!-- Column input with proper autocomplete -->
@@ -326,14 +352,18 @@
 						placeholder="column…"
 						class="font-mono text-xs {invalid ? 'text-destructive' : ''}"
 						data-testid="filter-column-input"
-						oninput={(v) => { updateCond(idx, { column: v }); ensureUpstreamData(); }}
+						oninput={(v) => {
+							updateCond(idx, { column: v });
+							ensureUpstreamData();
+						}}
 					/>
 
 					<!-- Op select -->
 					<select
 						value={cond.op}
 						class={CHIP_SELECT}
-						onchange={(e) => updateCond(idx, { op: (e.target as HTMLSelectElement).value as FilterOp })}
+						onchange={(e) =>
+							updateCond(idx, { op: (e.target as HTMLSelectElement).value as FilterOp })}
 					>
 						{#each OPS as op}
 							<option value={op.value}>{op.short}</option>
@@ -345,11 +375,15 @@
 						{#if multiValueOps.includes(cond.op)}
 							<!-- Multi-value: keep popover for this complex case -->
 							<Popover.Root>
-								<Popover.Trigger class="font-mono text-xs text-muted-foreground hover:text-foreground transition-colors px-1">
+								<Popover.Trigger
+									class="px-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+								>
 									{cond.value ? `${parseMultiValue(cond.value).length} values` : 'values…'}
 								</Popover.Trigger>
 								<Popover.Content class="w-72 p-3">
-									{@render valueEditor(cond.column, cond.op, cond.value, (v) => updateCond(idx, { value: v }))}
+									{@render valueEditor(cond.column, cond.op, cond.value, (v) =>
+										updateCond(idx, { value: v })
+									)}
 								</Popover.Content>
 							</Popover.Root>
 						{:else}
@@ -374,7 +408,8 @@
 				</div>
 			{:else}
 				<!-- ── Collapsed chip ── -->
-				{@const invalid = availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
+				{@const invalid =
+					availableColumns.length > 0 && cond.column && !availableColumns.includes(cond.column)}
 				<div class="{CHIP} {invalid ? CHIP_INVALID : ''}">
 					<button
 						class="{CHIP_SECTION} text-left"
@@ -383,12 +418,8 @@
 					>
 						{humanize(cond)}
 					</button>
-					<button
-						class={CHIP_X}
-						onclick={() => removeCond(idx)}
-						aria-label="Remove condition"
-					>
-						<X class="w-3 h-3" />
+					<button class={CHIP_X} onclick={() => removeCond(idx)} aria-label="Remove condition">
+						<X class="h-3 w-3" />
 					</button>
 				</div>
 			{/if}
@@ -397,6 +428,6 @@
 
 	<!-- Add condition — immediate inline add (no popover) -->
 	<button class={CHIP_ADD} onclick={addInline}>
-		<Plus class="w-3 h-3" /> add
+		<Plus class="h-3 w-3" /> add
 	</button>
 </div>

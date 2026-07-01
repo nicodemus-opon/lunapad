@@ -149,7 +149,9 @@ describe('notebook store', () => {
 		// so a project-wide check must skip to "metrics_copy2".
 		openNotebookTab(notebookA.id);
 		const clonedId = duplicateCell(notebookA.cells[0].id);
-		const clone = getNotebooks().flatMap((n) => n.cells).find((c) => c.id === clonedId);
+		const clone = getNotebooks()
+			.flatMap((n) => n.cells)
+			.find((c) => c.id === clonedId);
 		expect(clone?.outputName).toBe('metrics_copy2');
 	});
 
@@ -245,40 +247,79 @@ describe('notebook store', () => {
 
 		it('round-trips a MariaDB connection', () => {
 			const restored = roundTrip({
-				id: 'maria-1', name: 'MariaDB', type: 'mariadb', catalogName: 'maria_main',
-				host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: true
+				id: 'maria-1',
+				name: 'MariaDB',
+				type: 'mariadb',
+				catalogName: 'maria_main',
+				host: 'localhost',
+				port: 3306,
+				database: 'mydb',
+				username: 'root',
+				ssl: true
 			});
-			expect(restored).toMatchObject({ type: 'mariadb', host: 'localhost', port: 3306, database: 'mydb', ssl: true });
+			expect(restored).toMatchObject({
+				type: 'mariadb',
+				host: 'localhost',
+				port: 3306,
+				database: 'mydb',
+				ssl: true
+			});
 		});
 
 		it('round-trips a Redshift connection', () => {
 			const restored = roundTrip({
-				id: 'rs-1', name: 'Redshift', type: 'redshift', catalogName: 'rs_main',
-				host: 'redshift.example.com', port: 5439, database: 'dev', username: 'awsuser', ssl: true
+				id: 'rs-1',
+				name: 'Redshift',
+				type: 'redshift',
+				catalogName: 'rs_main',
+				host: 'redshift.example.com',
+				port: 5439,
+				database: 'dev',
+				username: 'awsuser',
+				ssl: true
 			});
 			expect(restored).toMatchObject({ type: 'redshift', database: 'dev' });
 		});
 
 		it('round-trips a SingleStore connection', () => {
 			const restored = roundTrip({
-				id: 'ss-1', name: 'SingleStore', type: 'singlestore', catalogName: 'ss_main',
-				host: 'localhost', port: 3306, database: 'mydb', username: 'root', ssl: false
+				id: 'ss-1',
+				name: 'SingleStore',
+				type: 'singlestore',
+				catalogName: 'ss_main',
+				host: 'localhost',
+				port: 3306,
+				database: 'mydb',
+				username: 'root',
+				ssl: false
 			});
 			expect(restored).toMatchObject({ type: 'singlestore', port: 3306 });
 		});
 
 		it('round-trips a MongoDB connection', () => {
 			const restored = roundTrip({
-				id: 'mongo-1', name: 'Mongo', type: 'mongodb', catalogName: 'mongo_main',
-				host: 'localhost', port: 27017, database: 'mydb', username: 'appuser', ssl: false
+				id: 'mongo-1',
+				name: 'Mongo',
+				type: 'mongodb',
+				catalogName: 'mongo_main',
+				host: 'localhost',
+				port: 27017,
+				database: 'mydb',
+				username: 'appuser',
+				ssl: false
 			});
 			expect(restored).toMatchObject({ type: 'mongodb', port: 27017 });
 		});
 
 		it('round-trips an Elasticsearch connection without a username', () => {
 			const restored = roundTrip({
-				id: 'es-1', name: 'ES', type: 'elasticsearch', catalogName: 'es_main',
-				host: 'es.example.com', port: 9200, database: 'default'
+				id: 'es-1',
+				name: 'ES',
+				type: 'elasticsearch',
+				catalogName: 'es_main',
+				host: 'es.example.com',
+				port: 9200,
+				database: 'default'
 			});
 			expect(restored).toMatchObject({ type: 'elasticsearch', database: 'default' });
 			expect((restored as { username?: string })?.username).toBeUndefined();
@@ -286,59 +327,117 @@ describe('notebook store', () => {
 
 		it('round-trips a SQL Server connection with encrypt/trustServerCertificate', () => {
 			const restored = roundTrip({
-				id: 'mssql-1', name: 'SQL Server', type: 'sqlserver', catalogName: 'mssql_main',
-				host: 'sql.example.com', port: 1433, database: 'master', username: 'sa',
-				encrypt: true, trustServerCertificate: true
+				id: 'mssql-1',
+				name: 'SQL Server',
+				type: 'sqlserver',
+				catalogName: 'mssql_main',
+				host: 'sql.example.com',
+				port: 1433,
+				database: 'master',
+				username: 'sa',
+				encrypt: true,
+				trustServerCertificate: true
 			});
-			expect(restored).toMatchObject({ type: 'sqlserver', encrypt: true, trustServerCertificate: true });
+			expect(restored).toMatchObject({
+				type: 'sqlserver',
+				encrypt: true,
+				trustServerCertificate: true
+			});
 		});
 
 		it('round-trips an Oracle connection (no database field)', () => {
 			const restored = roundTrip({
-				id: 'ora-1', name: 'Oracle', type: 'oracle', catalogName: 'ora_main',
-				host: 'ora.example.com', port: 1521, username: 'system',
-				identifierType: 'service_name', serviceName: 'ORCLPDB1'
+				id: 'ora-1',
+				name: 'Oracle',
+				type: 'oracle',
+				catalogName: 'ora_main',
+				host: 'ora.example.com',
+				port: 1521,
+				username: 'system',
+				identifierType: 'service_name',
+				serviceName: 'ORCLPDB1'
 			});
-			expect(restored).toMatchObject({ type: 'oracle', identifierType: 'service_name', serviceName: 'ORCLPDB1' });
+			expect(restored).toMatchObject({
+				type: 'oracle',
+				identifierType: 'service_name',
+				serviceName: 'ORCLPDB1'
+			});
 			expect(restored && 'database' in restored).toBe(false);
 		});
 
 		it('round-trips a Snowflake connection (no host/port)', () => {
 			const restored = roundTrip({
-				id: 'sf-1', name: 'Snowflake', type: 'snowflake', catalogName: 'sf_main',
-				account: 'xy12345.us-east-1', warehouse: 'COMPUTE_WH', database: 'MYDB', username: 'svc_user', role: 'ANALYST'
+				id: 'sf-1',
+				name: 'Snowflake',
+				type: 'snowflake',
+				catalogName: 'sf_main',
+				account: 'xy12345.us-east-1',
+				warehouse: 'COMPUTE_WH',
+				database: 'MYDB',
+				username: 'svc_user',
+				role: 'ANALYST'
 			});
-			expect(restored).toMatchObject({ type: 'snowflake', account: 'xy12345.us-east-1', warehouse: 'COMPUTE_WH', role: 'ANALYST' });
+			expect(restored).toMatchObject({
+				type: 'snowflake',
+				account: 'xy12345.us-east-1',
+				warehouse: 'COMPUTE_WH',
+				role: 'ANALYST'
+			});
 			expect(restored && 'host' in restored).toBe(false);
 		});
 
 		it('round-trips a Cassandra connection with contact points and local datacenter', () => {
 			const restored = roundTrip({
-				id: 'cass-1', name: 'Cassandra', type: 'cassandra', catalogName: 'cass_main',
-				contactPoints: '10.0.0.1,10.0.0.2', port: 9042, localDatacenter: 'datacenter1'
+				id: 'cass-1',
+				name: 'Cassandra',
+				type: 'cassandra',
+				catalogName: 'cass_main',
+				contactPoints: '10.0.0.1,10.0.0.2',
+				port: 9042,
+				localDatacenter: 'datacenter1'
 			});
-			expect(restored).toMatchObject({ type: 'cassandra', contactPoints: '10.0.0.1,10.0.0.2', localDatacenter: 'datacenter1' });
+			expect(restored).toMatchObject({
+				type: 'cassandra',
+				contactPoints: '10.0.0.1,10.0.0.2',
+				localDatacenter: 'datacenter1'
+			});
 		});
 
 		it('round-trips a Google Sheets connection (metadata sheet ID only)', () => {
 			const restored = roundTrip({
-				id: 'gs-1', name: 'Sheets', type: 'gsheets', catalogName: 'gs_main', metadataSheetId: 'sheet123'
+				id: 'gs-1',
+				name: 'Sheets',
+				type: 'gsheets',
+				catalogName: 'gs_main',
+				metadataSheetId: 'sheet123'
 			});
 			expect(restored).toMatchObject({ type: 'gsheets', metadataSheetId: 'sheet123' });
 		});
 
 		it('round-trips a BigQuery connection with a parent project', () => {
 			const restored = roundTrip({
-				id: 'bq-1', name: 'BigQuery', type: 'bigquery', catalogName: 'bq_main',
-				projectId: 'my-gcp-project', parentProjectId: 'billing-project'
+				id: 'bq-1',
+				name: 'BigQuery',
+				type: 'bigquery',
+				catalogName: 'bq_main',
+				projectId: 'my-gcp-project',
+				parentProjectId: 'billing-project'
 			});
-			expect(restored).toMatchObject({ type: 'bigquery', projectId: 'my-gcp-project', parentProjectId: 'billing-project' });
+			expect(restored).toMatchObject({
+				type: 'bigquery',
+				projectId: 'my-gcp-project',
+				parentProjectId: 'billing-project'
+			});
 			expect(restored && 'host' in restored).toBe(false);
 		});
 
 		it('round-trips a BigQuery connection without a parent project', () => {
 			const restored = roundTrip({
-				id: 'bq-2', name: 'BigQuery', type: 'bigquery', catalogName: 'bq_noparent', projectId: 'my-gcp-project'
+				id: 'bq-2',
+				name: 'BigQuery',
+				type: 'bigquery',
+				catalogName: 'bq_noparent',
+				projectId: 'my-gcp-project'
 			});
 			expect(restored).toMatchObject({ type: 'bigquery', projectId: 'my-gcp-project' });
 			expect((restored as { parentProjectId?: string })?.parentProjectId).toBeUndefined();
@@ -371,8 +470,13 @@ describe('notebook store', () => {
 					theme: 'system',
 					connections: [
 						{
-							id: 'sf-bad', name: 'Bad Snowflake', type: 'snowflake', catalogName: 'sf_bad',
-							account: 'xy12345', database: 'MYDB', username: 'svc_user'
+							id: 'sf-bad',
+							name: 'Bad Snowflake',
+							type: 'snowflake',
+							catalogName: 'sf_bad',
+							account: 'xy12345',
+							database: 'MYDB',
+							username: 'svc_user'
 							// missing `warehouse`
 						}
 					]
@@ -402,7 +506,11 @@ describe('notebook store', () => {
 
 		setNotebookConnection(notebook.id, 'pg-main');
 
-		expect(notebook.cells.filter((cell) => cell.cellType === 'query').every((cell) => cell.connectionId === 'pg-main')).toBe(true);
+		expect(
+			notebook.cells
+				.filter((cell) => cell.cellType === 'query')
+				.every((cell) => cell.connectionId === 'pg-main')
+		).toBe(true);
 		expect(notebook.cells.find((cell) => cell.cellType === 'markdown')?.connectionId).toBeNull();
 	});
 

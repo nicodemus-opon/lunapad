@@ -6,48 +6,44 @@
 
 	interface Props {
 		tasks: SprintTask[];
+		/** When true, render only the task list (no outer header bar). */
+		embedded?: boolean;
 	}
 
-	let { tasks }: Props = $props();
+	let { tasks, embedded = false }: Props = $props();
 
 	let collapsed = $state(false);
 	let activityLabel = $derived(getCurrentActivityLabel());
-
-	let allDone = $derived(tasks.length > 0 && tasks.every((t) => t.status === 'done' || t.status === 'skipped'));
 </script>
 
-<div class="border-b border-border/40 bg-muted/20" data-testid="sprint-board">
-	<!-- Header -->
-	<button
-		class="flex w-full items-center justify-between px-3 py-1.5 text-left"
-		onclick={() => (collapsed = !collapsed)}
-	>
-		<span class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-			Sprint · {tasks.filter((t) => t.status === 'done').length}/{tasks.length}
-		</span>
-		<span class="text-[10px] text-muted-foreground/60">{collapsed ? '▸' : '▾'}</span>
-	</button>
+<div class={embedded ? '' : 'border-b border-border/40 bg-muted/20'} data-testid="sprint-board">
+	{#if !embedded}
+		<button
+			class="flex w-full items-center justify-between px-3 py-1.5 text-left"
+			onclick={() => (collapsed = !collapsed)}
+		>
+			<span class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+				Sprint · {tasks.filter((t) => t.status === 'done').length}/{tasks.length}
+			</span>
+			<span class="text-xs text-muted-foreground/60">{collapsed ? '▸' : '▾'}</span>
+		</button>
+	{/if}
 
-	<!-- Task list -->
-	{#if !collapsed}
-		<ul class="pb-2">
+	{#if embedded || !collapsed}
+		<ul class={embedded ? 'py-1' : 'pb-2'}>
 			{#each tasks as task (task.id)}
 				{@const style = SPRINT_TASK_STYLE[task.type]}
 				{@const TypeIcon = style.icon}
 				<li
 					class="flex items-start gap-2 border-l-2 px-2.5 py-0.5"
-					style="border-color: {task.status === 'pending' ? 'transparent' : `var(${style.colorVar})`}"
+					style="border-color: {task.status === 'pending'
+						? 'transparent'
+						: `var(${style.colorVar})`}"
 				>
-					<!-- Type icon -->
-					<span
-						class="mt-0.5 shrink-0"
-						style="color: var({style.colorVar})"
-						title={style.label}
-					>
+					<span class="mt-0.5 shrink-0" style="color: var({style.colorVar})" title={style.label}>
 						<TypeIcon size={11} />
 					</span>
 
-					<!-- Status icon -->
 					<span class="mt-0.5 shrink-0">
 						{#if task.status === 'done'}
 							<CheckCircle size={13} class="text-green-500" />
@@ -60,21 +56,27 @@
 						{/if}
 					</span>
 
-					<!-- Title + result -->
 					<div class="min-w-0 flex-1">
 						<span
-							class="block truncate text-[12px] leading-relaxed
-								{task.status === 'done' ? 'text-foreground/60 line-through' :
-								 task.status === 'active' ? 'text-foreground font-medium' :
-								 task.status === 'failed' ? 'text-destructive' :
-								 'text-muted-foreground'}"
+							class="block truncate text-xs leading-relaxed
+								{task.status === 'done'
+								? 'text-foreground/60 line-through'
+								: task.status === 'active'
+									? 'font-medium text-foreground'
+									: task.status === 'failed'
+										? 'text-destructive'
+										: 'text-muted-foreground'}"
 						>
 							{task.title}
 						</span>
 						{#if task.status === 'active' && activityLabel}
-							<span class="block truncate text-[10px] text-primary/70">{activityLabel}</span>
+							<span class="block truncate text-xs text-primary/70">{activityLabel}</span>
 						{:else if task.result && (task.status === 'done' || task.status === 'failed')}
-							<span class="block truncate text-[10px] {task.status === 'failed' ? 'text-destructive/70' : 'text-muted-foreground/50'}">{task.result}</span>
+							<span
+								class="block truncate text-xs {task.status === 'failed'
+									? 'text-destructive/70'
+									: 'text-muted-foreground/50'}">{task.result}</span
+							>
 						{/if}
 					</div>
 				</li>

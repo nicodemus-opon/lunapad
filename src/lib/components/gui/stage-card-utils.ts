@@ -32,7 +32,11 @@ export interface StageErrorPresentation {
 function inferErrorHint(stage: GUIPipelineStage, error: PRQLStageError): string {
 	const haystack = `${error.reason} ${error.hint ?? ''} ${error.display ?? ''}`.toLowerCase();
 
-	if (haystack.includes("can't find") || haystack.includes('not found') || haystack.includes('unknown')) {
+	if (
+		haystack.includes("can't find") ||
+		haystack.includes('not found') ||
+		haystack.includes('unknown')
+	) {
 		if (stage.type === 'from') {
 			return 'Select an existing source table or use the schema-qualified name.';
 		}
@@ -116,7 +120,10 @@ function isDateLike(value: unknown): boolean {
 	return /^\d{4}-\d{2}-\d{2}/.test(value.trim());
 }
 
-function summarizeColumns(rows: Record<string, unknown>[], columns: string[]): {
+function summarizeColumns(
+	rows: Record<string, unknown>[],
+	columns: string[]
+): {
 	numericColumns: string[];
 	dateColumns: string[];
 	textColumns: string[];
@@ -134,7 +141,9 @@ function summarizeColumns(rows: Record<string, unknown>[], columns: string[]): {
 
 	for (const column of columns) {
 		const values = sample.map((row) => row[column]);
-		const nullCount = values.filter((value) => value === null || value === undefined || value === '').length;
+		const nullCount = values.filter(
+			(value) => value === null || value === undefined || value === ''
+		).length;
 		const present = values.filter((value) => value !== null && value !== undefined && value !== '');
 		const numericHits = present.filter((value) => isNumericLike(value)).length;
 		const dateHits = present.filter((value) => isDateLike(value)).length;
@@ -151,10 +160,18 @@ function summarizeColumns(rows: Record<string, unknown>[], columns: string[]): {
 			textColumns.push(column);
 		}
 		if (values.length > 0 && nullCount / values.length >= 0.4) nullHeavyColumns.push(column);
-		if (present.length >= 20 && distinctCount / present.length >= 0.8) highCardinalityColumns.push(column);
+		if (present.length >= 20 && distinctCount / present.length >= 0.8)
+			highCardinalityColumns.push(column);
 	}
 
-	return { numericColumns, dateColumns, textColumns, boolColumns, nullHeavyColumns, highCardinalityColumns };
+	return {
+		numericColumns,
+		dateColumns,
+		textColumns,
+		boolColumns,
+		nullHeavyColumns,
+		highCardinalityColumns
+	};
 }
 
 function pickFilterPrefill(preview: Extract<StageEvidenceState, { kind: 'result' }>): {
@@ -192,7 +209,9 @@ function pickFilterPrefill(preview: Extract<StageEvidenceState, { kind: 'result'
 
 	if (dateColumns.length > 0) {
 		const column = dateColumns[0];
-		const values = sampleValues(column).map((value) => String(value).trim()).sort();
+		const values = sampleValues(column)
+			.map((value) => String(value).trim())
+			.sort();
 		if (values.length > 0) {
 			const mid = Math.floor(values.length / 2);
 			return { column, op: '>=', value: values[mid] ?? values[0] ?? '' };
@@ -277,7 +296,10 @@ function makeStageFromType(
 	const columns = preview.columns;
 	const firstColumn = columns[0] ?? '';
 	const firstValue = preview.rows[0]?.[firstColumn];
-	const { numericColumns, dateColumns, textColumns } = summarizeColumns(preview.rows, preview.columns);
+	const { numericColumns, dateColumns, textColumns } = summarizeColumns(
+		preview.rows,
+		preview.columns
+	);
 	const groupByColumn = textColumns[0] ?? dateColumns[0] ?? firstColumn;
 	const metricColumn = numericColumns[0] ?? firstColumn;
 
@@ -297,7 +319,9 @@ function makeStageFromType(
 									column: firstColumn,
 									op: '==',
 									value:
-										typeof firstValue === 'string' || typeof firstValue === 'number' || typeof firstValue === 'boolean'
+										typeof firstValue === 'string' ||
+										typeof firstValue === 'number' ||
+										typeof firstValue === 'boolean'
 											? String(firstValue)
 											: ''
 								}
@@ -366,18 +390,15 @@ function makeStageFromType(
 			};
 		case 'take':
 			return { type: 'take', n: preview.rows.length > 1000 ? 200 : 100 };
-		case 'join':
-			{
-				const joinKey = pickJoinKey(columns);
-				return {
-					type: 'join',
-					joinType: 'inner',
-					table: '',
-					conditions: joinKey
-						? [{ left: joinKey, right: joinKey, shorthand: true }]
-						: []
-				};
-			}
+		case 'join': {
+			const joinKey = pickJoinKey(columns);
+			return {
+				type: 'join',
+				joinType: 'inner',
+				table: '',
+				conditions: joinKey ? [{ left: joinKey, right: joinKey, shorthand: true }] : []
+			};
+		}
 		case 'from':
 			return { type: 'from', table: '' };
 	}
@@ -390,7 +411,8 @@ export function getStageSummary(stage: GUIPipelineStage): string {
 		case 'select':
 			return stage.columns.length === 0
 				? 'all columns'
-				: stage.columns.slice(0, 3).join(', ') + (stage.columns.length > 3 ? ` +${stage.columns.length - 3}` : '');
+				: stage.columns.slice(0, 3).join(', ') +
+						(stage.columns.length > 3 ? ` +${stage.columns.length - 3}` : '');
 		case 'filter':
 			return stage.conditions.length === 0
 				? 'no conditions'
@@ -412,7 +434,9 @@ export function getStageSummary(stage: GUIPipelineStage): string {
 						.map((k) => `${k.dir === 'asc' ? '↑' : '↓'}${k.column}`)
 						.join(', ') + (stage.keys.length > 2 ? ` +${stage.keys.length - 2}` : '');
 		case 'take':
-			return stage.rangeFrom !== undefined ? `${stage.rangeFrom}..${stage.n} rows` : `${stage.n} rows`;
+			return stage.rangeFrom !== undefined
+				? `${stage.rangeFrom}..${stage.n} rows`
+				: `${stage.n} rows`;
 		case 'join':
 			return `${stage.joinType.toUpperCase()} ${stage.table || '?'}`;
 		case 'window':
@@ -503,15 +527,17 @@ export function getNextStageRecommendations(
 		stageOverride?: Exclude<GUIPipelineStage, { type: 'raw' }>
 	) => {
 		if (recommendations.some((item) => item.type === type)) return;
-		recommendations.push({ type, reason, stage: stageOverride ?? makeStageFromType(type, preview) });
+		recommendations.push({
+			type,
+			reason,
+			stage: stageOverride ?? makeStageFromType(type, preview)
+		});
 	};
 
 	if (preview.kind === 'result') {
 		const rowCount = preview.rows.length;
-		const { numericColumns, dateColumns, textColumns, boolColumns, nullHeavyColumns } = summarizeColumns(
-			preview.rows,
-			preview.columns
-		);
+		const { numericColumns, dateColumns, textColumns, boolColumns, nullHeavyColumns } =
+			summarizeColumns(preview.rows, preview.columns);
 
 		if (nullHeavyColumns.length > 0 && stageType !== 'filter') {
 			const nullColumn = nullHeavyColumns[0];
@@ -522,9 +548,15 @@ export function getNextStageRecommendations(
 			});
 		}
 
-		if (numericColumns.length > 0 && (textColumns.length > 0 || dateColumns.length > 0 || boolColumns.length > 0) && stageType !== 'group') {
-			const dimension = textColumns[0] ?? dateColumns[0] ?? boolColumns[0] ?? preview.columns[0] ?? '';
-			const metric = numericColumns.find((column) => column !== dimension) ?? numericColumns[0] ?? '';
+		if (
+			numericColumns.length > 0 &&
+			(textColumns.length > 0 || dateColumns.length > 0 || boolColumns.length > 0) &&
+			stageType !== 'group'
+		) {
+			const dimension =
+				textColumns[0] ?? dateColumns[0] ?? boolColumns[0] ?? preview.columns[0] ?? '';
+			const metric =
+				numericColumns.find((column) => column !== dimension) ?? numericColumns[0] ?? '';
 			push('group', `Summarize ${metric} by ${dimension}`, {
 				type: 'group',
 				by: dimension ? [dimension] : [],
@@ -542,16 +574,14 @@ export function getNextStageRecommendations(
 
 		if (rowCount > 300 && stageType !== 'take') {
 			const suggestedN = rowCount > 3000 ? 200 : 100;
-			push('take', `Limit to ${suggestedN} rows for faster iteration`, { type: 'take', n: suggestedN });
+			push('take', `Limit to ${suggestedN} rows for faster iteration`, {
+				type: 'take',
+				n: suggestedN
+			});
 		}
 
 		if (preview.columns.length > 10 && stageType !== 'select') {
-			const ranked = [
-				...dateColumns,
-				...textColumns,
-				...boolColumns,
-				...numericColumns
-			];
+			const ranked = [...dateColumns, ...textColumns, ...boolColumns, ...numericColumns];
 			const deduped = [...new Set(ranked)].filter((column) => preview.columns.includes(column));
 			const keepColumns = (deduped.length > 0 ? deduped : preview.columns).slice(0, 6);
 			push('select', `Keep a focused set of ${keepColumns.length} columns`, {

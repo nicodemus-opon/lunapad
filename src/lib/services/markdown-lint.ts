@@ -62,8 +62,26 @@ export function detectHardcodedValues(markdown: string): string | null {
 // match a string value sitting in some upstream row — flagging these would mostly
 // produce noise rather than catch a real hardcoded-from-data violation.
 const TEXT_STOPLIST = new Set([
-	'yes', 'no', 'ok', 'okay', 'true', 'false', 'null', 'none', 'n/a', 'na',
-	'unknown', 'other', 'total', 'all', 'various', 'and', 'or', 'the', 'a', 'is'
+	'yes',
+	'no',
+	'ok',
+	'okay',
+	'true',
+	'false',
+	'null',
+	'none',
+	'n/a',
+	'na',
+	'unknown',
+	'other',
+	'total',
+	'all',
+	'various',
+	'and',
+	'or',
+	'the',
+	'a',
+	'is'
 ]);
 
 const MAX_ROWS_PER_CELL = 200;

@@ -10,10 +10,6 @@
 	}: WithoutChild<PopoverPrimitive.TriggerProps> = $props();
 </script>
 
-<PopoverPrimitive.Trigger
-	bind:ref
-	class={cn(className)}
-	{...restProps}
->
+<PopoverPrimitive.Trigger bind:ref class={cn(className)} {...restProps}>
 	{@render children?.()}
 </PopoverPrimitive.Trigger>

@@ -93,7 +93,9 @@
 	}
 
 	function getFuncOption(func: ExprFunc): FuncOption {
-		return FUNC_OPTIONS.find((option) => option.value === canonicalizeFunc(func)) ?? FUNC_OPTIONS[0];
+		return (
+			FUNC_OPTIONS.find((option) => option.value === canonicalizeFunc(func)) ?? FUNC_OPTIONS[0]
+		);
 	}
 
 	function getFuncCategory(func: ExprFunc): FuncCategory {
@@ -127,14 +129,14 @@
 	}
 
 	function humanizeOperand(op: DeriveOperand): string {
-		return op.kind === 'column' ? (op.value || '?') : `"${op.value}"`;
+		return op.kind === 'column' ? op.value || '?' : `"${op.value}"`;
 	}
 
 	// ── Humanize ────────────────────────────────────────────────────────────
 	function humanizeExpr(expr: DeriveColumn['expr']): string {
 		if (expr.mode === 'binary') {
-			const l = expr.left.kind === 'column' ? (expr.left.value || '?') : `"${expr.left.value}"`;
-			const r = expr.right.kind === 'column' ? (expr.right.value || '?') : `"${expr.right.value}"`;
+			const l = expr.left.kind === 'column' ? expr.left.value || '?' : `"${expr.left.value}"`;
+			const r = expr.right.kind === 'column' ? expr.right.value || '?' : `"${expr.right.value}"`;
 			return `${l} ${expr.op} ${r}`;
 		}
 		if (expr.mode === 'func') {
@@ -185,7 +187,12 @@
 	function setMode(idx: number, mode: ExprMode) {
 		let expr: DeriveColumn['expr'];
 		if (mode === 'binary') {
-			expr = { mode: 'binary', left: { kind: 'column', value: availableColumns[0] ?? '' }, op: '+', right: { kind: 'literal', value: '0' } } satisfies DeriveExprBinary;
+			expr = {
+				mode: 'binary',
+				left: { kind: 'column', value: availableColumns[0] ?? '' },
+				op: '+',
+				right: { kind: 'literal', value: '0' }
+			} satisfies DeriveExprBinary;
 		} else if (mode === 'func') {
 			expr = createFuncExpr('coalesce') satisfies DeriveExprFunc;
 		} else if (mode === 'fstring') {
@@ -201,39 +208,74 @@
 	function setBinaryLeftCol(idx: number, value: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, left: { kind: 'column', value } } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...col.expr, left: { kind: 'column', value } } } : c
+			)
+		});
 	}
 	function setBinaryLeftLiteral(idx: number, value: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, left: { kind: 'literal', value } } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...col.expr, left: { kind: 'literal', value } } } : c
+			)
+		});
 	}
 	function setBinaryRightCol(idx: number, value: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, right: { kind: 'column', value } } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...col.expr, right: { kind: 'column', value } } } : c
+			)
+		});
 	}
 	function setBinaryRightLiteral(idx: number, value: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, right: { kind: 'literal', value } } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...col.expr, right: { kind: 'literal', value } } } : c
+			)
+		});
 	}
 	function setBinaryOp(idx: number, op: ExprOp) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, op } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) => (i === idx ? { ...c, expr: { ...col.expr, op } } : c))
+		});
 	}
 	function toggleBinaryLeftKind(idx: number) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		const left = col.expr.left.kind === 'column' ? { kind: 'literal' as const, value: '' } : { kind: 'column' as const, value: availableColumns[0] ?? '' };
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, left } } : c) });
+		const left =
+			col.expr.left.kind === 'column'
+				? { kind: 'literal' as const, value: '' }
+				: { kind: 'column' as const, value: availableColumns[0] ?? '' };
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) => (i === idx ? { ...c, expr: { ...col.expr, left } } : c))
+		});
 	}
 	function toggleBinaryRightKind(idx: number) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'binary') return;
-		const right = col.expr.right.kind === 'column' ? { kind: 'literal' as const, value: '' } : { kind: 'column' as const, value: availableColumns[0] ?? '' };
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, right } } : c) });
+		const right =
+			col.expr.right.kind === 'column'
+				? { kind: 'literal' as const, value: '' }
+				: { kind: 'column' as const, value: availableColumns[0] ?? '' };
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) => (i === idx ? { ...c, expr: { ...col.expr, right } } : c))
+		});
 	}
 	function updateFuncArg(idx: number, argIdx: number, nextArg: DeriveOperand) {
 		const col = stage.columns[idx];
@@ -241,7 +283,12 @@
 		const fexpr = col.expr;
 		const args = [...getFuncArgs(fexpr)];
 		args[argIdx] = nextArg;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...fexpr, func: canonicalizeFunc(fexpr.func), args } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...fexpr, func: canonicalizeFunc(fexpr.func), args } } : c
+			)
+		});
 	}
 	function setFuncArgCol(idx: number, argIdx: number, value: string) {
 		updateFuncArg(idx, argIdx, { kind: 'column', value });
@@ -255,16 +302,17 @@
 		const option = getFuncOption(col.expr.func);
 		const currentArg = getFuncArgs(col.expr)[argIdx] ?? defaultOperand(option.args[argIdx]);
 		const spec = option.args[argIdx];
-		const nextArg = currentArg.kind === 'column'
-			? { kind: 'literal' as const, value: spec?.defaultValue ?? '' }
-			: { kind: 'column' as const, value: availableColumns[0] ?? '' };
+		const nextArg =
+			currentArg.kind === 'column'
+				? { kind: 'literal' as const, value: spec?.defaultValue ?? '' }
+				: { kind: 'column' as const, value: availableColumns[0] ?? '' };
 		updateFuncArg(idx, argIdx, nextArg);
 	}
 	function setFunc(idx: number, func: ExprFunc) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'func') return;
 		const expr = createFuncExpr(func);
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr } : c) });
+		onUpdate({ ...stage, columns: stage.columns.map((c, i) => (i === idx ? { ...c, expr } : c)) });
 	}
 	function setFuncCategory(idx: number, category: FuncCategory) {
 		const nextFunc = optionsForCategory(category)[0]?.value;
@@ -274,12 +322,20 @@
 	function setTemplate(idx: number, template: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'fstring' && col.expr.mode !== 'sstring') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, template } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) =>
+				i === idx ? { ...c, expr: { ...col.expr, template } } : c
+			)
+		});
 	}
 	function setRawExpr(idx: number, expr: string) {
 		const col = stage.columns[idx];
 		if (col.expr.mode !== 'raw') return;
-		onUpdate({ ...stage, columns: stage.columns.map((c, i) => i === idx ? { ...c, expr: { ...col.expr, expr } } : c) });
+		onUpdate({
+			...stage,
+			columns: stage.columns.map((c, i) => (i === idx ? { ...c, expr: { ...col.expr, expr } } : c))
+		});
 	}
 
 	// ── Drag-to-reorder columns ──────────────────────────────────────────────
@@ -293,9 +349,7 @@
 	}
 </script>
 
-
-
-<div class="flex items-center gap-1.5 flex-wrap" role="list" aria-label="Derived columns">
+<div class="flex flex-wrap items-center gap-1.5" role="list" aria-label="Derived columns">
 	{#if stage.columns.length === 0}
 		<span class="text-xs text-muted-foreground/60 italic">no columns</span>
 	{/if}
@@ -304,9 +358,21 @@
 		<div
 			role="listitem"
 			draggable="true"
-			ondragstart={(e) => { if (!(e.target as HTMLElement).closest('[data-drag-handle]')) { e.preventDefault(); return; } dragColIdx = idx; }}
+			ondragstart={(e) => {
+				if (!(e.target as HTMLElement).closest('[data-drag-handle]')) {
+					e.preventDefault();
+					return;
+				}
+				dragColIdx = idx;
+			}}
 			ondragover={(e) => e.preventDefault()}
-			ondrop={(e) => { e.preventDefault(); if (dragColIdx !== null && dragColIdx !== idx) { reorderCols(dragColIdx, idx); dragColIdx = null; } }}
+			ondrop={(e) => {
+				e.preventDefault();
+				if (dragColIdx !== null && dragColIdx !== idx) {
+					reorderCols(dragColIdx, idx);
+					dragColIdx = null;
+				}
+			}}
 			ondragend={() => (dragColIdx = null)}
 			class={CHIP}
 			class:err-chip={erroredChipIndices?.has(idx)}
@@ -315,14 +381,14 @@
 			<!-- Drag handle — only spot dragging can start from -->
 			<span
 				data-drag-handle
-				class="flex h-full shrink-0 cursor-grab items-center pl-1 pr-0.5 text-muted-foreground/20 transition-colors duration-150 hover:text-muted-foreground/50 active:cursor-grabbing"
-				title="Drag to reorder"
-			><GripVertical class="w-3 h-3" /></span>
+				class="flex h-full shrink-0 cursor-grab items-center pr-0.5 pl-1 text-muted-foreground/20 transition-colors duration-150 hover:text-muted-foreground/50 active:cursor-grabbing"
+				title="Drag to reorder"><GripVertical class="h-3 w-3" /></span
+			>
 
 			<!-- Mode selector — click to switch expression type -->
 			<select
 				value={col.expr.mode}
-				class="h-full shrink-0 cursor-pointer bg-transparent px-1 font-mono text-2xs text-muted-foreground/60 outline-none transition-colors duration-150 hover:text-foreground"
+				class="h-full shrink-0 cursor-pointer bg-transparent px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 outline-none hover:text-foreground"
 				title="Expression type"
 				onchange={(e) => setMode(idx, (e.target as HTMLSelectElement).value as ExprMode)}
 			>
@@ -344,10 +410,10 @@
 				<span class="{CHIP_META} px-0.5">=</span>
 				<!-- Left operand -->
 				<button
-					class="select-none px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
+					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 select-none hover:text-foreground"
 					onclick={() => toggleBinaryLeftKind(idx)}
-					title="Toggle column / literal"
-				>{bexpr.left.kind === 'column' ? 'col' : 'lit'}</button>
+					title="Toggle column / literal">{bexpr.left.kind === 'column' ? 'col' : 'lit'}</button
+				>
 				{#if bexpr.left.kind === 'column'}
 					<InlineChipLabel
 						value={bexpr.left.value}
@@ -367,7 +433,7 @@
 				<!-- Op dropdown -->
 				<select
 					value={bexpr.op}
-					class="h-full cursor-pointer bg-transparent px-0.5 font-mono text-xs text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground"
+					class="h-full cursor-pointer bg-transparent px-0.5 font-mono text-xs text-muted-foreground transition-colors duration-150 outline-none hover:text-foreground"
 					onchange={(e) => setBinaryOp(idx, (e.target as HTMLSelectElement).value as ExprOp)}
 				>
 					{#each BINARY_OPS as op (op.value)}
@@ -376,10 +442,10 @@
 				</select>
 				<!-- Right operand -->
 				<button
-					class="select-none px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
+					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 select-none hover:text-foreground"
 					onclick={() => toggleBinaryRightKind(idx)}
-					title="Toggle column / literal"
-				>{bexpr.right.kind === 'column' ? 'col' : 'lit'}</button>
+					title="Toggle column / literal">{bexpr.right.kind === 'column' ? 'col' : 'lit'}</button
+				>
 				{#if bexpr.right.kind === 'column'}
 					<InlineChipLabel
 						value={bexpr.right.value}
@@ -406,174 +472,184 @@
 				/>
 				<span class="{CHIP_META} px-0.5">=</span>
 				<Popover.Root>
-				<Popover.Trigger class="inline-flex h-full items-center px-1.5 font-mono text-muted-foreground/80 transition-colors duration-150 hover:bg-muted/60 hover:text-foreground">
-					{humanizeExpr(col.expr)}
-				</Popover.Trigger>
-				<Popover.Content class="w-72 p-0 overflow-hidden">
-					<!-- Body: expression type + fields -->
-					<div class="px-3 py-3 space-y-3">
-						<!-- Mode segmented control -->
-						<div>
-							<p class="text-2xs font-medium text-muted-foreground mb-1.5">Expression type</p>
-							<div class="flex rounded-md border overflow-hidden w-full">
-								{#each MODE_BUTTONS as btn (btn.value)}
-									<button
-										type="button"
-										class="flex-1 py-1 text-xs font-mono border-r last:border-r-0 transition-colors duration-150
+					<Popover.Trigger
+						class="inline-flex h-full items-center px-1.5 font-mono text-muted-foreground/80 transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+					>
+						{humanizeExpr(col.expr)}
+					</Popover.Trigger>
+					<Popover.Content class="w-72 overflow-hidden p-0">
+						<!-- Body: expression type + fields -->
+						<div class="space-y-3 px-3 py-3">
+							<!-- Mode segmented control -->
+							<div>
+								<p class="mb-1.5 text-2xs font-medium text-muted-foreground">Expression type</p>
+								<div class="flex w-full overflow-hidden rounded-md border">
+									{#each MODE_BUTTONS as btn (btn.value)}
+										<button
+											type="button"
+											class="flex-1 border-r py-1 font-mono text-xs transition-colors duration-150 last:border-r-0
 											{col.expr.mode === btn.value
-											? 'bg-primary text-primary-foreground'
-											: 'bg-background text-muted-foreground hover:bg-muted/50'}"
-										onclick={() => setMode(idx, btn.value as ExprMode)}
-										data-testid={btn.testid}
-									>{btn.label}</button>
-								{/each}
-							</div>
-						</div>
-
-						<!-- Expression fields (binary is handled inline — popover only for non-binary modes) -->
-						{#if col.expr.mode === 'func'}
-							{@const fexpr = col.expr}
-							{@const activeCategory = getFuncCategory(fexpr.func)}
-							{@const activeFunction = getFuncOption(fexpr.func)}
-							{@const functionOptions = optionsForCategory(activeCategory)}
-							{@const fargs = getFuncArgs(fexpr)}
-							<div class="space-y-2">
-								<div>
-									<p class="text-2xs font-medium text-muted-foreground mb-1">Category</p>
-									<div class="grid grid-cols-4 rounded-md border overflow-hidden">
-										{#each FUNC_CATEGORIES as category (category.value)}
-											<button
-												type="button"
-												class="py-1 text-xs font-mono border-r last:border-r-0 transition-colors duration-150
-													{activeCategory === category.value
-													? 'bg-primary text-primary-foreground'
-													: 'bg-background text-muted-foreground hover:bg-muted/50'}"
-												onclick={() => setFuncCategory(idx, category.value)}
-											>{category.label}</button>
-										{/each}
-									</div>
-								</div>
-								<div>
-									<p class="text-2xs font-medium text-muted-foreground mb-1">Function</p>
-									<Select.Root
-										type="single"
-										value={activeFunction.value}
-										onValueChange={(v) => setFunc(idx, v as ExprFunc)}
-									>
-										<Select.Trigger class="h-7 text-xs w-full">
-											{activeFunction.label}
-										</Select.Trigger>
-										<Select.Content>
-											{#each functionOptions as f (f.value)}
-												<Select.Item value={f.value} class="text-xs">{f.label}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-									<p class="mt-1 text-2xs leading-relaxed text-muted-foreground">{activeFunction.detail}</p>
-								</div>
-								{#if activeFunction.args.length === 0}
-									<div class="rounded-md border border-dashed border-border/70 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
-										This function inserts a value directly, no inputs required.
-									</div>
-								{:else}
-									{#each activeFunction.args as argSpec, argIdx (`${activeFunction.value}-${argIdx}-${argSpec.label}`)}
-										{@const arg = fargs[argIdx] ?? defaultOperand(argSpec)}
-										<div>
-											<p class="text-2xs font-medium text-muted-foreground mb-1">{argSpec.label}</p>
-											<div class="flex gap-1.5 items-center">
-												<button
-													class="text-2xs px-1.5 py-0.5 rounded border shrink-0 transition-colors duration-150
-														{arg.kind === 'column' ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border/70 hover:bg-muted/40 hover:text-foreground'}"
-													onclick={() => toggleFuncArgKind(idx, argIdx)}
-													title="Toggle column / literal"
-												>{arg.kind === 'column' ? 'col' : 'lit'}</button>
-												{#if arg.kind === 'column'}
-													<ColumnInput
-														class="flex-1"
-														value={arg.value}
-														suggestions={availableColumns}
-														data-testid={`derive-func-arg-${argIdx}`}
-														onchange={(v) => setFuncArgCol(idx, argIdx, v)}
-													/>
-												{:else}
-													<Input
-														class="h-7 text-xs font-mono flex-1"
-														placeholder={argSpec.placeholder}
-														value={arg.value}
-														oninput={(e) => setFuncArgLiteral(idx, argIdx, (e.target as HTMLInputElement).value)}
-													/>
-												{/if}
-											</div>
-										</div>
+												? 'bg-primary text-primary-foreground'
+												: 'bg-background text-muted-foreground hover:bg-muted/50'}"
+											onclick={() => setMode(idx, btn.value as ExprMode)}
+											data-testid={btn.testid}>{btn.label}</button
+										>
 									{/each}
-								{/if}
-							</div>
-
-						{:else if col.expr.mode === 'fstring'}
-							{@const fsexpr = col.expr}
-							<div>
-								<p class="text-2xs font-medium text-muted-foreground mb-1">Template</p>
-								<div class="flex items-center gap-1">
-									<span class="text-xs font-mono text-primary shrink-0">f"""</span>
-									<Input
-										class="h-7 text-xs font-mono flex-1"
-										placeholder={'{c.col1}, {c.col2}…'}
-										value={fsexpr.template}
-										data-testid="derive-fstring-template"
-										oninput={(e) => setTemplate(idx, (e.target as HTMLInputElement).value)}
-									/>
-									<span class="text-xs font-mono text-primary shrink-0">"""</span>
 								</div>
 							</div>
 
-						{:else if col.expr.mode === 'sstring'}
-							{@const ssexpr = col.expr}
-							<div>
-								<p class="text-2xs font-medium text-muted-foreground mb-1">SQL template</p>
-								<div class="flex items-center gap-1">
-									<span class="text-xs font-mono text-warning shrink-0">s"""</span>
-									<Input
-										class="h-7 text-xs font-mono flex-1"
-										placeholder="raw SQL expression…"
-										value={ssexpr.template}
-										data-testid="derive-sstring-template"
-										oninput={(e) => setTemplate(idx, (e.target as HTMLInputElement).value)}
-									/>
-									<span class="text-xs font-mono text-warning shrink-0">"""</span>
+							<!-- Expression fields (binary is handled inline — popover only for non-binary modes) -->
+							{#if col.expr.mode === 'func'}
+								{@const fexpr = col.expr}
+								{@const activeCategory = getFuncCategory(fexpr.func)}
+								{@const activeFunction = getFuncOption(fexpr.func)}
+								{@const functionOptions = optionsForCategory(activeCategory)}
+								{@const fargs = getFuncArgs(fexpr)}
+								<div class="space-y-2">
+									<div>
+										<p class="mb-1 text-2xs font-medium text-muted-foreground">Category</p>
+										<div class="grid grid-cols-4 overflow-hidden rounded-md border">
+											{#each FUNC_CATEGORIES as category (category.value)}
+												<button
+													type="button"
+													class="border-r py-1 font-mono text-xs transition-colors duration-150 last:border-r-0
+													{activeCategory === category.value
+														? 'bg-primary text-primary-foreground'
+														: 'bg-background text-muted-foreground hover:bg-muted/50'}"
+													onclick={() => setFuncCategory(idx, category.value)}
+													>{category.label}</button
+												>
+											{/each}
+										</div>
+									</div>
+									<div>
+										<p class="mb-1 text-2xs font-medium text-muted-foreground">Function</p>
+										<Select.Root
+											type="single"
+											value={activeFunction.value}
+											onValueChange={(v) => setFunc(idx, v as ExprFunc)}
+										>
+											<Select.Trigger class="h-7 w-full text-xs">
+												{activeFunction.label}
+											</Select.Trigger>
+											<Select.Content>
+												{#each functionOptions as f (f.value)}
+													<Select.Item value={f.value} class="text-xs">{f.label}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+										<p class="mt-1 text-2xs leading-relaxed text-muted-foreground">
+											{activeFunction.detail}
+										</p>
+									</div>
+									{#if activeFunction.args.length === 0}
+										<div
+											class="rounded-md border border-dashed border-border/70 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground"
+										>
+											This function inserts a value directly, no inputs required.
+										</div>
+									{:else}
+										{#each activeFunction.args as argSpec, argIdx (`${activeFunction.value}-${argIdx}-${argSpec.label}`)}
+											{@const arg = fargs[argIdx] ?? defaultOperand(argSpec)}
+											<div>
+												<p class="mb-1 text-2xs font-medium text-muted-foreground">
+													{argSpec.label}
+												</p>
+												<div class="flex items-center gap-1.5">
+													<button
+														class="shrink-0 rounded border px-1.5 py-0.5 text-2xs transition-colors duration-150
+														{arg.kind === 'column'
+															? 'border-primary/30 bg-primary/10 text-primary'
+															: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
+														onclick={() => toggleFuncArgKind(idx, argIdx)}
+														title="Toggle column / literal"
+														>{arg.kind === 'column' ? 'col' : 'lit'}</button
+													>
+													{#if arg.kind === 'column'}
+														<ColumnInput
+															class="flex-1"
+															value={arg.value}
+															suggestions={availableColumns}
+															data-testid={`derive-func-arg-${argIdx}`}
+															onchange={(v) => setFuncArgCol(idx, argIdx, v)}
+														/>
+													{:else}
+														<Input
+															class="h-7 flex-1 font-mono text-xs"
+															placeholder={argSpec.placeholder}
+															value={arg.value}
+															oninput={(e) =>
+																setFuncArgLiteral(
+																	idx,
+																	argIdx,
+																	(e.target as HTMLInputElement).value
+																)}
+														/>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									{/if}
 								</div>
-							</div>
-
-						{:else if col.expr.mode === 'raw'}
-							{@const rawexpr = col.expr}
-							<div>
-								<p class="text-2xs font-medium text-muted-foreground mb-1">Expression</p>
-								<ColumnInput
-									class="w-full"
-									value={rawexpr.expr}
-									suggestions={availableColumns}
-									placeholder="any PRQL expression…"
-									data-testid="derive-raw-expr"
-									onchange={(v) => setRawExpr(idx, v)}
-								/>
-							</div>
-						{/if}
-					</div>
-				</Popover.Content>
-			</Popover.Root>
+							{:else if col.expr.mode === 'fstring'}
+								{@const fsexpr = col.expr}
+								<div>
+									<p class="mb-1 text-2xs font-medium text-muted-foreground">Template</p>
+									<div class="flex items-center gap-1">
+										<span class="shrink-0 font-mono text-xs text-primary">f"""</span>
+										<Input
+											class="h-7 flex-1 font-mono text-xs"
+											placeholder={'{c.col1}, {c.col2}…'}
+											value={fsexpr.template}
+											data-testid="derive-fstring-template"
+											oninput={(e) => setTemplate(idx, (e.target as HTMLInputElement).value)}
+										/>
+										<span class="shrink-0 font-mono text-xs text-primary">"""</span>
+									</div>
+								</div>
+							{:else if col.expr.mode === 'sstring'}
+								{@const ssexpr = col.expr}
+								<div>
+									<p class="mb-1 text-2xs font-medium text-muted-foreground">SQL template</p>
+									<div class="flex items-center gap-1">
+										<span class="shrink-0 font-mono text-xs text-warning">s"""</span>
+										<Input
+											class="h-7 flex-1 font-mono text-xs"
+											placeholder="raw SQL expression…"
+											value={ssexpr.template}
+											data-testid="derive-sstring-template"
+											oninput={(e) => setTemplate(idx, (e.target as HTMLInputElement).value)}
+										/>
+										<span class="shrink-0 font-mono text-xs text-warning">"""</span>
+									</div>
+								</div>
+							{:else if col.expr.mode === 'raw'}
+								{@const rawexpr = col.expr}
+								<div>
+									<p class="mb-1 text-2xs font-medium text-muted-foreground">Expression</p>
+									<ColumnInput
+										class="w-full"
+										value={rawexpr.expr}
+										suggestions={availableColumns}
+										placeholder="any PRQL expression…"
+										data-testid="derive-raw-expr"
+										onchange={(v) => setRawExpr(idx, v)}
+									/>
+								</div>
+							{/if}
+						</div>
+					</Popover.Content>
+				</Popover.Root>
 			{/if}<!-- end binary/non-binary -->
-			<button
-				class={CHIP_X}
-				onclick={() => removeCol(idx)}
-				aria-label="Remove column"
-			>
-				<X class="w-3 h-3" />
+			<button class={CHIP_X} onclick={() => removeCol(idx)} aria-label="Remove column">
+				<X class="h-3 w-3" />
 			</button>
 		</div>
 	{/each}
 
 	<!-- Add column -->
 	<button class={CHIP_ADD} onclick={addColumn} aria-label="Add derived column">
-		<Plus class="w-3 h-3" />
+		<Plus class="h-3 w-3" />
 	</button>
 </div>
 

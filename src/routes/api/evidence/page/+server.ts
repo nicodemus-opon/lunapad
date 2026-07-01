@@ -18,7 +18,11 @@ export const GET: RequestHandler = async ({ url }) => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		const { folder, path: pagePath, content } = (await request.json()) as {
+		const {
+			folder,
+			path: pagePath,
+			content
+		} = (await request.json()) as {
 			folder?: string;
 			path?: string;
 			content?: string;

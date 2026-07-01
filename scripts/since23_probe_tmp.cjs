@@ -9,7 +9,11 @@ const QUERIES = [
 ];
 
 async function switchToGuiMode(page) {
-	const btn = page.locator('.notebook-cell').first().getByRole('button', { name: /Switch to GUI mode/i }).first();
+	const btn = page
+		.locator('.notebook-cell')
+		.first()
+		.getByRole('button', { name: /Switch to GUI mode/i })
+		.first();
 	if (await btn.count()) await btn.click({ force: true });
 	await page.waitForSelector('[data-testid="stage-card"]', { timeout: 15000 });
 }
@@ -27,7 +31,9 @@ async function setFromTable(page, table) {
 async function openPalette(page) {
 	await page.locator('[data-testid="stage-card"]').first().focus();
 	await page.keyboard.press('a');
-	await page.getByPlaceholder('Prompt or search stages, templates, and columns...').waitFor({ timeout: 10000 });
+	await page
+		.getByPlaceholder('Prompt or search stages, templates, and columns...')
+		.waitFor({ timeout: 10000 });
 }
 
 (async () => {
@@ -50,10 +56,36 @@ async function openPalette(page) {
 			await page.getByRole('button', { name: 'Generate fast' }).first().click();
 			await page.waitForTimeout(1000);
 
-			const lanes = (await page.locator('.chip-lane-heading').allTextContents()).map((s) => s.trim());
-			const topResult = (await page.locator('section button').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-			const generated = (await page.locator('text=/Generated block:/').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-			const draftMsg = (await page.locator('text=/Generated draft needs edits before apply|draft generated|No prompt plan/').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+			const lanes = (await page.locator('.chip-lane-heading').allTextContents()).map((s) =>
+				s.trim()
+			);
+			const topResult = (
+				await page
+					.locator('section button')
+					.first()
+					.innerText()
+					.catch(() => '')
+			)
+				.replace(/\s+/g, ' ')
+				.trim();
+			const generated = (
+				await page
+					.locator('text=/Generated block:/')
+					.first()
+					.innerText()
+					.catch(() => '')
+			)
+				.replace(/\s+/g, ' ')
+				.trim();
+			const draftMsg = (
+				await page
+					.locator('text=/Generated draft needs edits before apply|draft generated|No prompt plan/')
+					.first()
+					.innerText()
+					.catch(() => '')
+			)
+				.replace(/\s+/g, ' ')
+				.trim();
 
 			records.push({ query, lanes, topResult, generated, draftMsg });
 			await page.keyboard.press('Escape');

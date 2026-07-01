@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { registerStageMenu } from '$lib/keyboard/stage-bridge';
 	import type { StageType, GUIPipelineStage } from '$lib/types/gui-pipeline';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -23,10 +24,18 @@
 	} from '$lib/services/stage-catalog';
 	import { getLLMPlanningContext } from '$lib/services/intelligence-db';
 	import { getLLMConfig, getTables, getConnections } from '$lib/stores/notebook.svelte';
-	import { inferPromptStageSuggestionWithLLM, generateFullPRQLWithLLM, cancelActiveGenerate, type FullPRQLGenerationResult } from '$lib/services/prompt-llm';
+	import {
+		inferPromptStageSuggestionWithLLM,
+		generateFullPRQLWithLLM,
+		cancelActiveGenerate,
+		type FullPRQLGenerationResult
+	} from '$lib/services/prompt-llm';
 	import { fetchAndProfileExternalTable } from '$lib/services/intelligence-db';
 	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
-	import { reconcileStageSequenceToAvailableColumns, prqlToGuiStages } from '$lib/services/gui-prql';
+	import {
+		reconcileStageSequenceToAvailableColumns,
+		prqlToGuiStages
+	} from '$lib/services/gui-prql';
 	import {
 		ArrowUpDown,
 		BarChart2,
@@ -66,7 +75,6 @@
 		availableColumns?: string[];
 		availableColumnCount: number;
 		connectionId?: string;
-		keyboardScope?: HTMLElement;
 		recentUsage?: Partial<Record<StageType, number>>;
 		quickChips?: QuickChip[];
 		presetSuggestions?: StagePresetSuggestion[];
@@ -79,7 +87,6 @@
 		availableColumns = [],
 		availableColumnCount,
 		connectionId = 'builtin.duckdb',
-		keyboardScope,
 		recentUsage = {},
 		quickChips: quickChipsProp = [],
 		presetSuggestions: presetSuggestionsProp = []
@@ -95,7 +102,7 @@
 	let llmGenerating = $state(false);
 	let llmFullQuery = $state<FullPRQLGenerationResult | null>(null);
 
-	const PROMPT_AUTO_APPLY_THRESHOLD = 0.90;
+	const PROMPT_AUTO_APPLY_THRESHOLD = 0.9;
 
 	const ICONS: Record<StageType, typeof Plus> = {
 		append: Plus,
@@ -176,10 +183,16 @@
 
 	function detectExplicitStageIntent(queryValue: string): StageType | null {
 		if (!queryValue) return null;
-		if (/\btop\s+\d+\b/.test(queryValue) && /\b(by|where|when|per|with)\b/.test(queryValue)) return null;
+		if (/\btop\s+\d+\b/.test(queryValue) && /\b(by|where|when|per|with)\b/.test(queryValue))
+			return null;
 		const queryTokens = queryValue
 			.split(/\s+/g)
-			.map((token) => token.trim().toLowerCase().replace(/[^a-z0-9_]+/g, ''))
+			.map((token) =>
+				token
+					.trim()
+					.toLowerCase()
+					.replace(/[^a-z0-9_]+/g, '')
+			)
 			.filter(Boolean);
 		if (queryTokens.length === 0) return null;
 
@@ -194,7 +207,12 @@
 		for (const token of earlyTokens) {
 			for (const mapping of STAGE_QUERY_ALIASES) {
 				if (!mapping.aliases.includes(token)) continue;
-				if (mapping.type === 'take' && token === 'top' && /^\d+$/.test(earlyTokens[1] ?? '') && /\b(by|where|when|per|with)\b/.test(queryValue)) {
+				if (
+					mapping.type === 'take' &&
+					token === 'top' &&
+					/^\d+$/.test(earlyTokens[1] ?? '') &&
+					/\b(by|where|when|per|with)\b/.test(queryValue)
+				) {
 					return null;
 				}
 				return mapping.type;
@@ -212,28 +230,42 @@
 	}
 
 	const explicitStageIntent = $derived(detectExplicitStageIntent(normalizedQuery));
-	const queryLooksAnalytical = $derived((() => {
-		if (!normalizedQuery) return false;
-		if (/\b(group by|order by)\b/.test(normalizedQuery)) return true;
-		if (/\b(by|trend|over time|month|monthly|year|yearly|daily|weekly|top|compare|correlation|breakdown|which|what|how many|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest|expensive|spike|spikes|outlier|anomaly)\b/.test(normalizedQuery)) return true;
-		return false;
-	})());
-	const stageIntentResults = $derived((() => {
-		if (!explicitStageIntent) return stageResults;
+	const queryLooksAnalytical = $derived(
+		(() => {
+			if (!normalizedQuery) return false;
+			if (/\b(group by|order by)\b/.test(normalizedQuery)) return true;
+			if (
+				/\b(by|trend|over time|month|monthly|year|yearly|daily|weekly|top|compare|correlation|breakdown|which|what|how many|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest|expensive|spike|spikes|outlier|anomaly)\b/.test(
+					normalizedQuery
+				)
+			)
+				return true;
+			return false;
+		})()
+	);
+	const stageIntentResults = $derived(
+		(() => {
+			if (!explicitStageIntent) return stageResults;
 
-		const directMatches = stageResults.filter((result) => result.type === explicitStageIntent);
-		if (directMatches.length > 0) {
-			const remaining = stageResults.filter((result) => result.type !== explicitStageIntent);
-			return [...directMatches, ...remaining];
-		}
+			const directMatches = stageResults.filter((result) => result.type === explicitStageIntent);
+			if (directMatches.length > 0) {
+				const remaining = stageResults.filter((result) => result.type !== explicitStageIntent);
+				return [...directMatches, ...remaining];
+			}
 
-		const fallback = searchStages(explicitStageIntent).find((result) => result.type === explicitStageIntent);
-		if (!fallback) return stageResults;
-		return [fallback, ...stageResults.filter((result) => result.type !== explicitStageIntent)];
-	})());
+			const fallback = searchStages(explicitStageIntent).find(
+				(result) => result.type === explicitStageIntent
+			);
+			if (!fallback) return stageResults;
+			return [fallback, ...stageResults.filter((result) => result.type !== explicitStageIntent)];
+		})()
+	);
 
 	function normalizeToken(value: string): string {
-		return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+		return value
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '');
 	}
 
 	function matchedColumnForQuery(queryValue: string): string | null {
@@ -252,7 +284,8 @@
 		if (!normalizedQueryToken) return null;
 
 		return (
-			availableColumns.find((column) => normalizeToken(column).includes(normalizedQueryToken)) ?? null
+			availableColumns.find((column) => normalizeToken(column).includes(normalizedQueryToken)) ??
+			null
 		);
 	}
 
@@ -262,11 +295,11 @@
 		presetSuggestionsProp.length > 0
 			? presetSuggestionsProp
 			: recommendPresets({
-				stages,
-				availableColumns,
-				availableColumnCount,
-				recentUsage
-			})
+					stages,
+					availableColumns,
+					availableColumnCount,
+					recentUsage
+				})
 	);
 
 	function presetMentionsColumn(suggestion: StagePresetSuggestion, column: string | null): boolean {
@@ -286,7 +319,10 @@
 		);
 	}
 
-	function queryMatchesPresetIntent(queryValue: string, suggestion: StagePresetSuggestion): boolean {
+	function queryMatchesPresetIntent(
+		queryValue: string,
+		suggestion: StagePresetSuggestion
+	): boolean {
 		if (!queryValue) return false;
 
 		function isTemporalSuggestion(candidate: StagePresetSuggestion): boolean {
@@ -331,18 +367,19 @@
 			.join(' ')
 			.toLowerCase();
 
-		return searchableText.includes(queryValue) || normalizeToken(searchableText).includes(normalizeToken(queryValue));
+		return (
+			searchableText.includes(queryValue) ||
+			normalizeToken(searchableText).includes(normalizeToken(queryValue))
+		);
 	}
 
 	const rankedPresetSuggestions = $derived(
-		basePresetSuggestions
-			.slice()
-			.sort((a, b) => {
-				const aColumnMatch = presetMentionsColumn(a, matchedColumn);
-				const bColumnMatch = presetMentionsColumn(b, matchedColumn);
-				if (aColumnMatch !== bColumnMatch) return aColumnMatch ? -1 : 1;
-				return b.score - a.score;
-			})
+		basePresetSuggestions.slice().sort((a, b) => {
+			const aColumnMatch = presetMentionsColumn(a, matchedColumn);
+			const bColumnMatch = presetMentionsColumn(b, matchedColumn);
+			if (aColumnMatch !== bColumnMatch) return aColumnMatch ? -1 : 1;
+			return b.score - a.score;
+		})
 	);
 
 	const presetSearchIds = $derived(new Set(searchPresets(query).map((preset) => preset.id)));
@@ -374,7 +411,10 @@
 				return /(time|temporal|period|month|date|season|rolling|lag|trend)/i.test(semanticText);
 			}
 
-			function buildSemanticFallbackColumns(queryValue: string, matchedColumnValue: string | null): string[] {
+			function buildSemanticFallbackColumns(
+				queryValue: string,
+				matchedColumnValue: string | null
+			): string[] {
 				const hints = ['order_date', 'created_at', 'timestamp', 'date', 'month', 'year', 'amount'];
 				const queryTokens = queryValue
 					.split(/[^a-z0-9_]+/i)
@@ -404,7 +444,8 @@
 				availableColumnCount: Math.max(availableColumnCount, semanticFallbackColumns.length),
 				recentUsage
 			});
-			const suggestionPool = rankedPresetSuggestions.length > 0 ? rankedPresetSuggestions : fallbackRankedSuggestions;
+			const suggestionPool =
+				rankedPresetSuggestions.length > 0 ? rankedPresetSuggestions : fallbackRankedSuggestions;
 
 			if (normalizedQuery.length === 0) return suggestionPool;
 
@@ -426,91 +467,108 @@
 			const queryLikeTemporal = /(date|time|timestamp|_at|month|year|day)/i.test(normalizedQuery);
 			if (!queryLikeTemporal) return matched;
 
-			const temporalMatches = suggestionPool.filter((suggestion) => isTemporalSuggestion(suggestion));
+			const temporalMatches = suggestionPool.filter((suggestion) =>
+				isTemporalSuggestion(suggestion)
+			);
 			if (temporalMatches.length > 0) return temporalMatches;
 
 			return semanticFallbackSuggestions.filter((suggestion) => isTemporalSuggestion(suggestion));
 		})()
 	);
 
-	const queryLanes = $derived((() => {
-		if (normalizedQuery.length === 0) return [] as QueryLane[];
+	const queryLanes = $derived(
+		(() => {
+			if (normalizedQuery.length === 0) return [] as QueryLane[];
 
-		const stageLane: Omit<QueryLane, 'startIndex'> = {
+			const stageLane: Omit<QueryLane, 'startIndex'> = {
 				key: 'stages',
 				title: 'Stage primitives',
 				description: 'Raw stage types that match your search.',
-				results: stageIntentResults.map((stage): CommandResult => ({
-					kind: 'stage',
-					type: stage.type,
-					label: stage.label,
-					description: stage.description
-				}))
+				results: stageIntentResults.map(
+					(stage): CommandResult => ({
+						kind: 'stage',
+						type: stage.type,
+						label: stage.label,
+						description: stage.description
+					})
+				)
 			};
 
-		const semanticLane: Omit<QueryLane, 'startIndex'> = {
+			const semanticLane: Omit<QueryLane, 'startIndex'> = {
 				key: 'semantic',
 				title: 'Semantic combinations',
 				description: 'Typed stage names expanded across semantic columns.',
-				results: semanticResults.map((suggestion): CommandResult => ({
-					kind: 'semantic',
-					suggestion
-				}))
+				results: semanticResults.map(
+					(suggestion): CommandResult => ({
+						kind: 'semantic',
+						suggestion
+					})
+				)
 			};
 
-		const analysisLane: Omit<QueryLane, 'startIndex'> = {
+			const analysisLane: Omit<QueryLane, 'startIndex'> = {
 				key: 'analysis',
 				title: 'Analysis prompts',
 				description: 'Likely questions for this schema, translated into stage chains.',
-				results: analysisResults.map((suggestion): CommandResult => ({
-					kind: 'analysis',
-					suggestion
-				}))
+				results: analysisResults.map(
+					(suggestion): CommandResult => ({
+						kind: 'analysis',
+						suggestion
+					})
+				)
 			};
 
-		const presetLane: Omit<QueryLane, 'startIndex'> = {
+			const presetLane: Omit<QueryLane, 'startIndex'> = {
 				key: 'presets',
 				title: 'Template chains',
 				description: 'Multi-stage recipes tuned to this schema.',
-				results: filteredPresetSuggestions.map((suggestion): CommandResult => ({
-					kind: 'preset',
-					suggestion
-				}))
+				results: filteredPresetSuggestions.map(
+					(suggestion): CommandResult => ({
+						kind: 'preset',
+						suggestion
+					})
+				)
 			};
 
-		const hasExplicitStageIntent = !!explicitStageIntent;
-		const nonFunctionResultCount = [stageLane, semanticLane, analysisLane, presetLane]
-			.reduce((count, lane) => count + lane.results.length, 0);
-		const functionLane: Omit<QueryLane, 'startIndex'> = {
-			key: 'functions',
-			title: 'Function results',
-			description: 'Derived functions that match your query.',
-			results: (hasExplicitStageIntent && nonFunctionResultCount > 0)
-				? []
-				: functionResults.map((suggestion): CommandResult => ({
-					kind: 'function',
-					suggestion
-				}))
-		};
+			const hasExplicitStageIntent = !!explicitStageIntent;
+			const nonFunctionResultCount = [stageLane, semanticLane, analysisLane, presetLane].reduce(
+				(count, lane) => count + lane.results.length,
+				0
+			);
+			const functionLane: Omit<QueryLane, 'startIndex'> = {
+				key: 'functions',
+				title: 'Function results',
+				description: 'Derived functions that match your query.',
+				results:
+					hasExplicitStageIntent && nonFunctionResultCount > 0
+						? []
+						: functionResults.map(
+								(suggestion): CommandResult => ({
+									kind: 'function',
+									suggestion
+								})
+							)
+			};
 
-		const lanes: Array<Omit<QueryLane, 'startIndex'>> = hasExplicitStageIntent
-			? [stageLane, semanticLane, analysisLane, presetLane, functionLane]
-			: queryLooksAnalytical
-				? [analysisLane, semanticLane, presetLane, stageLane, functionLane]
-				: [functionLane, stageLane, semanticLane, analysisLane, presetLane];
+			const lanes: Array<Omit<QueryLane, 'startIndex'>> = hasExplicitStageIntent
+				? [stageLane, semanticLane, analysisLane, presetLane, functionLane]
+				: queryLooksAnalytical
+					? [analysisLane, semanticLane, presetLane, stageLane, functionLane]
+					: [functionLane, stageLane, semanticLane, analysisLane, presetLane];
 
-		let startIndex = 0;
-		return lanes
-			.filter((lane) => lane.results.length > 0)
-			.map((lane) => {
-				const nextLane = {
-					...lane,
-					startIndex
-				};
-				startIndex += lane.results.length;
-				return nextLane;
-			});
-	})());
+			let startIndex = 0;
+			return lanes
+				.filter((lane) => lane.results.length > 0)
+				.map((lane) => {
+					const nextLane = {
+						...lane,
+						startIndex
+					};
+					startIndex += lane.results.length;
+					return nextLane;
+				});
+		})()
+	);
 
 	const commandResults = $derived(queryLanes.flatMap((lane) => lane.results));
 
@@ -544,9 +602,10 @@
 		const normalized = normalizeStageSequence(stagesToAdd);
 		// Skip reconciliation when availableColumns is empty — no reference to validate against,
 		// so reconcile would silently drop every stage.
-		const normalizedStages = availableColumns.length > 0
-			? reconcileStageSequenceToAvailableColumns(normalized, availableColumns)
-			: normalized;
+		const normalizedStages =
+			availableColumns.length > 0
+				? reconcileStageSequenceToAvailableColumns(normalized, availableColumns)
+				: normalized;
 		if (onAddPreset) {
 			onAddPreset(normalizedStages);
 			return;
@@ -575,7 +634,11 @@
 				autoApplyThreshold: FAST_PATH_LLM_BYPASS_THRESHOLD,
 				validateCompile: false
 			});
-			if (fastPrecheck && fastPrecheck.validation.isValid && fastPrecheck.confidence >= FAST_PATH_LLM_BYPASS_THRESHOLD) {
+			if (
+				fastPrecheck &&
+				fastPrecheck.validation.isValid &&
+				fastPrecheck.confidence >= FAST_PATH_LLM_BYPASS_THRESHOLD
+			) {
 				promptPlan = fastPrecheck;
 				promptPlanSource = 'fast';
 				promptPlanMessage = `Fast match (${Math.round(fastPrecheck.confidence * 100)}% confidence) — no LLM needed.`;
@@ -595,7 +658,9 @@
 				// For external connections with no profiles yet, proactively fetch a sample
 				// Fire-and-forget — won't block this call but enriches the next one
 				if (connectionId !== BUILTIN_DUCKDB_CONNECTION_ID) {
-					const fromSt = stages.find((s) => s.type === 'from') as { type: 'from'; table: string } | undefined;
+					const fromSt = stages.find((s) => s.type === 'from') as
+						| { type: 'from'; table: string }
+						| undefined;
 					const extTable = fromSt?.table;
 					if (extTable) {
 						const extConn = getConnections().find((c) => c.id === connectionId);
@@ -603,7 +668,10 @@
 							void fetchAndProfileExternalTable({
 								connectionId,
 								sourceTable: extTable,
-								connection: extConn as unknown as Record<string, unknown> & { id: string; type: string }
+								connection: extConn as unknown as Record<string, unknown> & {
+									id: string;
+									type: string;
+								}
 							}).catch(() => {});
 						}
 					}
@@ -618,14 +686,18 @@
 				});
 
 				// Determine source table from the first from-stage
-				const fromStage = stages.find((s) => s.type === 'from') as { type: 'from'; table: string } | undefined;
+				const fromStage = stages.find((s) => s.type === 'from') as
+					| { type: 'from'; table: string }
+					| undefined;
 				const sourceTable = llmContext.sourceTable ?? fromStage?.table ?? '';
 
 				// Include other loaded tables for join suggestions + SQL type lookup
 				const loadedTables = getTables();
 				const sourceTableMeta = loadedTables.find((t) => t.name === sourceTable);
 				const sqlTypeByColumn = new Map(
-					(sourceTableMeta?.columns ?? []).map((col, i) => [col, sourceTableMeta?.columnTypes[i]] as const)
+					(sourceTableMeta?.columns ?? []).map(
+						(col, i) => [col, sourceTableMeta?.columnTypes[i]] as const
+					)
 				);
 
 				// Build typed column list from llmContext — include all rich fields for ranking + context
@@ -658,7 +730,9 @@
 						llmConfig,
 						timeoutMs: 150_000
 					},
-					(msg) => { promptPlanMessage = msg; }
+					(msg) => {
+						promptPlanMessage = msg;
+					}
 				);
 
 				if (result && result.prql.trim()) {
@@ -713,9 +787,10 @@
 		}
 
 		if (!plan.validation.isValid) {
-			const reason = plan.validation.compileIssues[0]
-				?? plan.validation.issues[0]
-				?? (plan.validation.unknownColumns.length > 0
+			const reason =
+				plan.validation.compileIssues[0] ??
+				plan.validation.issues[0] ??
+				(plan.validation.unknownColumns.length > 0
 					? `unresolved columns: ${plan.validation.unknownColumns.join(', ')}`
 					: 'validation failed');
 			promptPlanMessage = `Generated draft needs edits before apply (${reason}).`;
@@ -731,7 +806,9 @@
 		// Try to reconstruct proper GUI stages from the generated PRQL continuation.
 		// prqlToGuiStages needs a full query starting with `from`, so we prepend the
 		// source table, parse, then drop the from-stage (already in the pipeline).
-		const fromStage = stages.find((s) => s.type === 'from') as { type: 'from'; table: string } | undefined;
+		const fromStage = stages.find((s) => s.type === 'from') as
+			| { type: 'from'; table: string }
+			| undefined;
 		if (fromStage?.table) {
 			const fullPreql = `from ${fromStage.table}\n${llmFullQuery.prql}`;
 			const parsed = prqlToGuiStages(fullPreql);
@@ -739,7 +816,9 @@
 			if (continuation && continuation.length > 0 && !continuation.some((s) => s.type === 'raw')) {
 				// Skip reconciliation: AI output is a coherent complete pipeline.
 				// Reconciliation silently drops columns it can't verify, mangling group/select stages.
-				const normalized = normalizeStageSequence(continuation as Exclude<GUIPipelineStage, { type: 'raw' }>[]);
+				const normalized = normalizeStageSequence(
+					continuation as Exclude<GUIPipelineStage, { type: 'raw' }>[]
+				);
 				if (onAddPreset) {
 					onAddPreset(normalized);
 				} else {
@@ -760,7 +839,8 @@
 	function applyPromptPlan() {
 		if (!promptPlan) return;
 		if (!promptPlan.validation.isValid) {
-			promptPlanMessage = 'Prompt plan is not valid yet. Refine the query or pick a suggestion manually.';
+			promptPlanMessage =
+				'Prompt plan is not valid yet. Refine the query or pick a suggestion manually.';
 			return;
 		}
 		applyStageSequence(promptPlan.stages);
@@ -823,76 +903,50 @@
 		if (stage) choose(stage.type);
 	}
 
-	function isTypingTarget(target: EventTarget | null) {
-		if (!(target instanceof HTMLElement)) return false;
-		const tag = target.tagName.toLowerCase();
-		return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
-	}
+	let menuScopeEl: HTMLElement | undefined = $state();
 
-	function isInsideScope(target: EventTarget | null) {
-		if (!keyboardScope || !(target instanceof Node)) return true;
-		return keyboardScope.contains(target);
-	}
-
-	function onWindowKeydown(event: KeyboardEvent) {
-		if ((event.metaKey || event.ctrlKey) && !event.altKey && open && event.key === 'Enter') {
-			event.preventDefault();
-			void runPromptGeneration('llm', true);
-			return;
-		}
-		if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-		if (open) {
-			if (event.key === 'Escape') {
-				event.preventDefault();
+	$effect(() => {
+		if (!menuScopeEl) return;
+		return registerStageMenu(menuScopeEl, {
+			isOpen: () => open,
+			openMenu: () => {
+				query = '';
+				open = true;
+			},
+			closeMenu: () => {
 				open = false;
-				return;
-			}
-
-			if (/^[1-9]$/.test(event.key)) {
-				event.preventDefault();
-				chooseByIndex(Number(event.key) - 1);
-				return;
-			}
-
-			if (event.key === 'Enter' && isTypingTarget(event.target) && normalizedQuery.length > 0) {
-				event.preventDefault();
-				void runPromptGeneration('llm', event.shiftKey);
-				return;
-			}
-
-			if (event.key === 'Enter' && !isTypingTarget(event.target)) {
-				event.preventDefault();
-				if (normalizedQuery.length > 0) {
-					void runPromptGeneration('llm', event.shiftKey);
+			},
+			chooseByIndex,
+			handleEnter: ({ shiftKey, fromTyping }) => {
+				if (fromTyping && normalizedQuery.length > 0) {
+					void runPromptGeneration('llm', shiftKey);
 					return;
 				}
-				if (quickChips.length > 0) {
-					chooseQuickChip(0);
-					return;
+				if (!fromTyping) {
+					if (normalizedQuery.length > 0) {
+						void runPromptGeneration('llm', shiftKey);
+						return;
+					}
+					if (quickChips.length > 0) {
+						chooseQuickChip(0);
+						return;
+					}
+					const firstStage = stageResults[0];
+					if (firstStage) choose(firstStage.type);
 				}
-				const firstStage = stageResults[0];
-				if (firstStage) choose(firstStage.type);
-			}
-			return;
-		}
-
-		if (!isInsideScope(event.target) && !isInsideScope(document.activeElement)) return;
-		if (event.key !== '/') return;
-		if (isTypingTarget(event.target)) return;
-		event.preventDefault();
-		query = '';
-		open = true;
-	}
+			},
+			runCmdEnter: () => void runPromptGeneration('llm', true)
+		});
+	});
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
-
-<div class="border-t pt-2 mt-1">
+<div bind:this={menuScopeEl} class="mt-1 border-t pt-2" data-keyboard-scope="stage-menu">
 	<div class="flex items-center justify-between gap-2">
-		<div class="add-stage-title flex items-center gap-1.5 font-mono text-2xs lowercase text-muted-foreground/60">
-			<Sparkles class="w-3 h-3" />
-				<span>add stage</span>
+		<div
+			class="add-stage-title flex items-center gap-1.5 font-mono text-2xs text-muted-foreground/60 lowercase"
+		>
+			<Sparkles class="h-3 w-3" />
+			<span>add stage</span>
 		</div>
 
 		<Dialog.Root bind:open>
@@ -905,25 +959,54 @@
 						aria-label="Open stage picker"
 						title="Keyboard: A to open, 1-8 to pick"
 					>
-						<Plus class="w-3.5 h-3.5" />
+						<Plus class="h-3.5 w-3.5" />
 					</Button>
 				</span>
 			</Dialog.Trigger>
 
-			<Dialog.Content class="max-w-180 overflow-hidden border-border/70 bg-background/98 p-0 shadow-2xl">
-				<div class="sticky top-0 z-10 border-b border-border/60 bg-background/96 px-3 pt-2.5 pb-2 backdrop-blur-sm">
+			<Dialog.Content
+				class="max-w-180 overflow-hidden border-border/70 bg-background/98 p-0 shadow-2xl"
+				data-keyboard-scope="stage-menu"
+			>
+				<div
+					class="sticky top-0 z-10 border-b border-border/60 bg-background/96 px-3 pt-2.5 pb-2 backdrop-blur-sm"
+				>
 					<div class="flex items-center gap-2">
 						<div class="relative flex-1">
-							<Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
-							<Input bind:ref={searchRef} bind:value={query} autofocus placeholder="Prompt or search stages, templates, and columns..." class="h-8 border-border/60 bg-muted/15 pl-8 text-xs placeholder:text-muted-foreground/50" oninput={onQueryInput} />
+							<Search
+								class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60"
+							/>
+							<Input
+								bind:ref={searchRef}
+								bind:value={query}
+								autofocus
+								placeholder="Prompt or search stages, templates, and columns..."
+								class="h-8 border-border/60 bg-muted/15 pl-8 text-xs placeholder:text-muted-foreground/50"
+								oninput={onQueryInput}
+							/>
 						</div>
 						{#if llmGenerating}
-							<Button variant="outline" size="sm" class="h-8 px-3 text-xs shrink-0" onclick={() => { cancelActiveGenerate(); llmGenerating = false; promptPlanMessage = null; }}>
+							<Button
+								variant="outline"
+								size="sm"
+								class="h-8 shrink-0 px-3 text-xs"
+								onclick={() => {
+									cancelActiveGenerate();
+									llmGenerating = false;
+									promptPlanMessage = null;
+								}}
+							>
 								<Sparkles class="mr-1 h-3 w-3 animate-spin" />
 								Cancel
 							</Button>
 						{:else}
-							<Button variant="secondary" size="sm" class="h-8 px-3 text-xs shrink-0" onclick={() => void runPromptGeneration('llm', false)} disabled={normalizedQuery.length === 0}>
+							<Button
+								variant="secondary"
+								size="sm"
+								class="h-8 shrink-0 px-3 text-xs"
+								onclick={() => void runPromptGeneration('llm', false)}
+								disabled={normalizedQuery.length === 0}
+							>
 								<Sparkles class="mr-1.5 h-3 w-3" />
 								Generate
 							</Button>
@@ -931,69 +1014,108 @@
 					</div>
 					<!-- Compact keyboard hint row -->
 					<div class="flex items-center gap-2 pt-1.5 pb-0.5">
-						<span class="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/50 mr-0.5">Stage palette</span>
+						<span class="mr-0.5 text-[9px] tracking-[0.18em] text-muted-foreground/50 uppercase"
+							>Stage palette</span
+						>
 						{#each [['/', 'open'], ['1–9', 'pick'], ['↵', 'AI generate'], ['⌘↵', 'AI + apply']] as [key, hint]}
 							<span class="inline-flex items-center gap-1 text-[9px] text-muted-foreground/50">
-								<kbd class="rounded border border-border/50 bg-muted/40 px-1 py-0.5 font-mono text-[8px] leading-none">{key}</kbd>
+								<kbd
+									class="rounded border border-border/50 bg-muted/40 px-1 py-0.5 font-mono text-[8px] leading-none"
+									>{key}</kbd
+								>
 								{hint}
 							</span>
 						{/each}
 					</div>
 				</div>
 
-				<div class="max-h-[70vh] overflow-auto px-3 pb-3 pt-2">
+				<div class="max-h-[70vh] overflow-auto px-3 pt-2 pb-3">
 					{#if normalizedQuery.length > 0}
 						{#if llmFullQuery}
 							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
-								<div class="flex items-center justify-between gap-2 flex-wrap">
-									<p class="text-[11px] text-primary font-medium flex items-center gap-1.5">
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<p class="flex items-center gap-1.5 text-[11px] font-medium text-primary">
 										<Sparkles class="h-3 w-3" />
 										AI full query — window / join / analytics
 									</p>
 									<div class="flex items-center gap-2">
-										<span class="add-stage-badge bg-primary/15 text-primary border-primary/30">AI</span>
-										<Button variant="outline" size="sm" class="h-7 px-2 text-[10px] border-primary/30 hover:bg-primary/10" onclick={applyLLMFullQuery}>
+										<span class="add-stage-badge border-primary/30 bg-primary/15 text-primary"
+											>AI</span
+										>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-7 border-primary/30 px-2 text-[10px] hover:bg-primary/10"
+											onclick={applyLLMFullQuery}
+										>
 											Apply
 										</Button>
 									</div>
 								</div>
-								<pre class="mt-2 text-[10px] leading-relaxed text-muted-foreground bg-muted/20 rounded p-2 overflow-x-auto max-h-40 whitespace-pre font-mono">{llmFullQuery.prql}</pre>
+								<pre
+									class="mt-2 max-h-40 overflow-x-auto rounded bg-muted/20 p-2 font-mono text-[10px] leading-relaxed whitespace-pre text-muted-foreground">{llmFullQuery.prql}</pre>
 							</div>
 						{/if}
 
 						{#if promptPlan}
 							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-2">
-								<div class="flex items-center justify-between gap-2 flex-wrap">
-									<p class="text-[11px] text-primary/95">Generated block: {promptPlan.suggestion.label}</p>
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<p class="text-[11px] text-primary/95">
+										Generated block: {promptPlan.suggestion.label}
+									</p>
 									<div class="flex items-center gap-2">
 										<span class="add-stage-badge">Fast</span>
-										<span class="add-stage-badge">{Math.round(promptPlan.confidence * 100)}% confidence</span>
-										<Button variant="ghost" size="sm" class="h-7 px-2 text-[10px] text-muted-foreground" onclick={() => void runPromptGeneration('llm', false)} disabled={llmGenerating}>
+										<span class="add-stage-badge"
+											>{Math.round(promptPlan.confidence * 100)}% confidence</span
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="h-7 px-2 text-[10px] text-muted-foreground"
+											onclick={() => void runPromptGeneration('llm', false)}
+											disabled={llmGenerating}
+										>
 											<Sparkles class="mr-1 h-3 w-3" />
 											Use AI
 										</Button>
-										<Button variant="outline" size="sm" class="h-7 px-2 text-[10px]" onclick={applyPromptPlan} disabled={!promptPlan.validation.isValid}>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-7 px-2 text-[10px]"
+											onclick={applyPromptPlan}
+											disabled={!promptPlan.validation.isValid}
+										>
 											Apply block
 										</Button>
 									</div>
 								</div>
-								<p class="mt-1 text-[10px] text-muted-foreground line-clamp-2">{promptPlan.suggestion.prompt}</p>
+								<p class="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
+									{promptPlan.suggestion.prompt}
+								</p>
 							</div>
 						{/if}
 
 						{#if promptPlanMessage}
-							<p class="mb-2 rounded-md border border-border/65 bg-muted/15 px-2.5 py-1.5 text-[10px] text-muted-foreground">{promptPlanMessage}</p>
+							<p
+								class="mb-2 rounded-md border border-border/65 bg-muted/15 px-2.5 py-1.5 text-[10px] text-muted-foreground"
+							>
+								{promptPlanMessage}
+							</p>
 						{/if}
 
 						{#if matchedColumn}
-							<div class="mb-2 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-1.5">
+							<div
+								class="mb-2 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-1.5"
+							>
 								<p class="text-[11px] text-primary/95">Semantic column match detected</p>
 								<span class="add-stage-badge">Adapted for {matchedColumn}</span>
 							</div>
 						{/if}
 
 						{#if commandResults.length === 0}
-							<p class="px-2 py-5 text-center text-xs text-muted-foreground">No matching stage, function, semantic combination, analysis prompt, or preset</p>
+							<p class="px-2 py-5 text-center text-xs text-muted-foreground">
+								No matching stage, function, semantic combination, analysis prompt, or preset
+							</p>
 						{:else}
 							<div class="space-y-3">
 								{#each queryLanes as lane (lane.key)}
@@ -1008,7 +1130,10 @@
 												onclick={() => chooseCommand(result)}
 											>
 												<div class="flex items-center gap-2">
-													<span class="w-3.5 shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60">{lane.startIndex + idx + 1}</span>
+													<span
+														class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														>{lane.startIndex + idx + 1}</span
+													>
 													{#if result.kind === 'stage'}
 														{@const ItemIcon = ICONS[result.type]}
 														<ItemIcon class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
@@ -1017,7 +1142,7 @@
 													{:else}
 														<WandSparkles class="h-3.5 w-3.5 shrink-0 text-primary/70" />
 													{/if}
-													<div class="min-w-0 flex items-baseline gap-1.5">
+													<div class="flex min-w-0 items-baseline gap-1.5">
 														<p class="shrink-0 text-xs font-medium text-foreground">
 															{#if result.kind === 'stage'}{result.label}
 															{:else if result.kind === 'preset'}{result.suggestion.preset.label}
@@ -1025,7 +1150,10 @@
 															{:else if result.kind === 'analysis'}{result.suggestion.label}
 															{:else}{result.suggestion.label}{/if}
 														</p>
-														<span class="add-stage-kind shrink-0" class:add-stage-kind--preset={result.kind === 'preset'}>
+														<span
+															class="add-stage-kind shrink-0"
+															class:add-stage-kind--preset={result.kind === 'preset'}
+														>
 															{#if result.kind === 'stage'}Stage
 															{:else if result.kind === 'preset'}Template
 															{:else if result.kind === 'function'}Function
@@ -1034,7 +1162,8 @@
 														</span>
 														<p class="truncate text-[10px] text-muted-foreground/65">
 															{#if result.kind === 'stage'}{result.description}
-															{:else if result.kind === 'preset'}{result.suggestion.reasons[0] ?? result.suggestion.preset.description}
+															{:else if result.kind === 'preset'}{result.suggestion.reasons[0] ??
+																	result.suggestion.preset.description}
 															{:else if result.kind === 'function'}{result.suggestion.description}
 															{:else if result.kind === 'analysis'}{result.suggestion.prompt}
 															{:else}{result.suggestion.description}{/if}
@@ -1055,11 +1184,24 @@
 									<div class="space-y-0.5">
 										{#each quickChips as chip, idx (chip.id)}
 											{@const ItemIcon = ICONS[chip.icon]}
-											<button class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-120 hover:border-border/80 hover:bg-accent" onclick={() => chooseQuickChip(idx)} title={chip.label}>
+											<button
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-120 hover:border-border/80 hover:bg-accent"
+												onclick={() => chooseQuickChip(idx)}
+												title={chip.label}
+											>
 												<div class="flex items-center gap-2">
-													<span class="w-3.5 text-[10px] font-mono tabular-nums text-muted-foreground/60">{idx + 1}</span>
-													<ItemIcon class="h-3.5 w-3.5 shrink-0 {chip.tone === 'primary' ? 'text-primary' : 'text-muted-foreground/70'}" />
-													<p class="min-w-0 truncate text-xs font-medium text-foreground">{chip.label}</p>
+													<span
+														class="w-3.5 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														>{idx + 1}</span
+													>
+													<ItemIcon
+														class="h-3.5 w-3.5 shrink-0 {chip.tone === 'primary'
+															? 'text-primary'
+															: 'text-muted-foreground/70'}"
+													/>
+													<p class="min-w-0 truncate text-xs font-medium text-foreground">
+														{chip.label}
+													</p>
 												</div>
 											</button>
 										{/each}
@@ -1080,11 +1222,18 @@
 											onclick={() => choose(item.type)}
 											title={item.description}
 										>
-											<span class="w-3.5 shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60">{idx + 1}</span>
+											<span
+												class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+												>{idx + 1}</span
+											>
 											<ItemIcon class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
 											<div class="min-w-0">
-												<p class="text-xs font-medium text-foreground leading-tight">{item.label}</p>
-												<p class="truncate text-[10px] text-muted-foreground/70">{item.description}</p>
+												<p class="text-xs leading-tight font-medium text-foreground">
+													{item.label}
+												</p>
+												<p class="truncate text-[10px] text-muted-foreground/70">
+													{item.description}
+												</p>
 											</div>
 										</button>
 									{/each}
@@ -1093,13 +1242,15 @@
 
 							<!-- Templates + analysis collapsed behind toggle -->
 							<button
-								class="flex w-full items-center gap-1.5 px-0.5 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+								class="flex w-full items-center gap-1.5 px-0.5 text-[10px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
 								onclick={() => (showMoreStageOptions = !showMoreStageOptions)}
 							>
 								<span class="text-[9px]">{showMoreStageOptions ? '▾' : '▸'}</span>
 								Templates &amp; analysis prompts
 								{#if filteredPresetSuggestions.length + analysisResults.length > 0}
-									<span class="text-[9px] opacity-60">({filteredPresetSuggestions.length + analysisResults.length})</span>
+									<span class="text-[9px] opacity-60"
+										>({filteredPresetSuggestions.length + analysisResults.length})</span
+									>
 								{/if}
 							</button>
 
@@ -1111,18 +1262,31 @@
 									</div>
 									<div class="space-y-0.5">
 										{#each filteredPresetSuggestions as suggestion, idx (suggestion.preset.id)}
-											{@const referencesMatchedColumn = presetMentionsColumn(suggestion, matchedColumn)}
+											{@const referencesMatchedColumn = presetMentionsColumn(
+												suggestion,
+												matchedColumn
+											)}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-120 hover:border-border/80 hover:bg-accent {matchedColumn && !referencesMatchedColumn ? 'opacity-55' : ''}"
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-120 hover:border-border/80 hover:bg-accent {matchedColumn &&
+												!referencesMatchedColumn
+													? 'opacity-55'
+													: ''}"
 												onclick={() => choosePreset(suggestion.stages)}
 												title={suggestion.preset.description}
 											>
 												<div class="flex items-center gap-2">
-													<span class="w-3.5 shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60">{idx + 1}</span>
+													<span
+														class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														>{idx + 1}</span
+													>
 													<WandSparkles class="h-3 w-3 shrink-0 text-primary/70" />
 													<div class="min-w-0">
-														<p class="truncate text-xs font-medium text-foreground">{suggestion.preset.label}</p>
-														<p class="truncate text-[10px] text-muted-foreground/70">{suggestion.reasons[0] ?? suggestion.preset.description}</p>
+														<p class="truncate text-xs font-medium text-foreground">
+															{suggestion.preset.label}
+														</p>
+														<p class="truncate text-[10px] text-muted-foreground/70">
+															{suggestion.reasons[0] ?? suggestion.preset.description}
+														</p>
 													</div>
 												</div>
 											</button>
@@ -1141,11 +1305,18 @@
 													title={suggestion.prompt}
 												>
 													<div class="flex items-center gap-2">
-														<span class="w-3.5 shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60">{idx + 1}</span>
+														<span
+															class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+															>{idx + 1}</span
+														>
 														<Sparkles class="h-3 w-3 shrink-0 text-primary/70" />
 														<div class="min-w-0">
-															<p class="truncate text-xs font-medium text-foreground">{suggestion.label}</p>
-															<p class="truncate text-[10px] text-muted-foreground/70">{suggestion.prompt}</p>
+															<p class="truncate text-xs font-medium text-foreground">
+																{suggestion.label}
+															</p>
+															<p class="truncate text-[10px] text-muted-foreground/70">
+																{suggestion.prompt}
+															</p>
 														</div>
 													</div>
 												</button>

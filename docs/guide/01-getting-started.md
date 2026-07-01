@@ -9,12 +9,12 @@ docker compose up -d        # subsequent starts
 
 This starts four services:
 
-| Service | What it's for | URL |
-|---|---|---|
-| Lunapad | the app | http://localhost:3967 |
-| Trino | query engine for external data sources | http://localhost:8067 |
-| Postgres | shared workspace, accounts, connection secrets | localhost:5432 |
-| Inngest | scheduler for cron model runs | http://localhost:8267 |
+| Service  | What it's for                                  | URL                   |
+| -------- | ---------------------------------------------- | --------------------- |
+| Lunapad  | the app                                        | http://localhost:3967 |
+| Trino    | query engine for external data sources         | http://localhost:8067 |
+| Postgres | shared workspace, accounts, connection secrets | localhost:5432        |
+| Inngest  | scheduler for cron model runs                  | http://localhost:8267 |
 
 Trino takes about a minute to finish starting. The app won't serve requests until Trino reports healthy, so the first `docker compose up` will sit for a bit before Lunapad responds. Run `docker compose ps` to check status, everything should say `healthy`.
 

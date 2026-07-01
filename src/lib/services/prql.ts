@@ -54,7 +54,7 @@ function structuralDepthDelta(line: string): number {
 			escaped = true;
 			continue;
 		}
-		if (!inDouble && !inBacktick && ch === '\'') {
+		if (!inDouble && !inBacktick && ch === "'") {
 			inSingle = !inSingle;
 			continue;
 		}
@@ -107,7 +107,12 @@ export function sanitizePRQLInput(query: string): string {
 		const line = lines[i];
 		const trimmedLine = line.trim();
 
-		if (kept.length > 0 && depth <= 0 && isMarkdownBoundary(trimmedLine) && !isPrqlStarter(trimmedLine)) {
+		if (
+			kept.length > 0 &&
+			depth <= 0 &&
+			isMarkdownBoundary(trimmedLine) &&
+			!isPrqlStarter(trimmedLine)
+		) {
 			break;
 		}
 
@@ -125,9 +130,11 @@ let _initPromise: Promise<void> | null = null;
 export async function initPRQL(): Promise<void> {
 	if (_initialized) return;
 	if (_initPromise) return _initPromise;
-	_initPromise = withTimeout(initWasm({ module_or_path: wasmUrl }), 'Initializing PRQL WASM').then(() => {
-		_initialized = true;
-	});
+	_initPromise = withTimeout(initWasm({ module_or_path: wasmUrl }), 'Initializing PRQL WASM').then(
+		() => {
+			_initialized = true;
+		}
+	);
 	_initPromise = _initPromise.catch((err) => {
 		_initPromise = null;
 		throw err;

@@ -13,25 +13,33 @@
 		defaultValue?: string;
 	}
 
-	const { notebookId = '', kind = 'dropdown', param = '', label, options, optionsColumn, defaultValue }: Props = $props();
+	const {
+		notebookId = '',
+		kind = 'dropdown',
+		param = '',
+		label,
+		options,
+		optionsColumn,
+		defaultValue
+	}: Props = $props();
 
 	// Falls back to the global notebook store when no context is provided (the main app
 	// never sets this context, so existing in-app behavior is unchanged). A public report
 	// page sets its own per-viewer-scoped context instead, so a stranger's filter choice
 	// never touches the owner's actual notebook.
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
-	const ctx: FilterContextValue =
-		filterCtx ?? {
-			getValue: (p) => getNotebookFilterValue(notebookId, p),
-			setValue: (p, v) => setNotebookFilterValue(notebookId, p, v)
-		};
+	const ctx: FilterContextValue = filterCtx ?? {
+		getValue: (p) => getNotebookFilterValue(notebookId, p),
+		setValue: (p, v) => setNotebookFilterValue(notebookId, p, v)
+	};
 
 	const effectiveOptions = $derived.by((): string[] => {
 		if (!Array.isArray(options)) return [];
 		return options
 			.map((opt) => {
 				if (typeof opt === 'string' || typeof opt === 'number') return String(opt);
-				if (optionsColumn && opt && typeof opt === 'object') return String((opt as Record<string, unknown>)[optionsColumn] ?? '');
+				if (optionsColumn && opt && typeof opt === 'object')
+					return String((opt as Record<string, unknown>)[optionsColumn] ?? '');
 				return null;
 			})
 			.filter((v): v is string => v !== null && v !== '');
@@ -54,7 +62,12 @@
 	{#if label}<span class="md-filter-label">{label}</span>{/if}
 
 	{#if kind === 'dropdown'}
-		<select class="md-filter-control" aria-label={label} {value} onchange={(e) => onChange((e.target as HTMLSelectElement).value)}>
+		<select
+			class="md-filter-control"
+			aria-label={label}
+			{value}
+			onchange={(e) => onChange((e.target as HTMLSelectElement).value)}
+		>
 			{#if !defaultValue}<option value="">All</option>{/if}
 			{#each effectiveOptions as opt (opt)}<option value={opt}>{opt}</option>{/each}
 		</select>
@@ -69,14 +82,29 @@
 	{:else if kind === 'date-range'}
 		{@const [startVal, endVal] = value ? value.split(',') : ['', '']}
 		<span class="md-filter-daterange">
-			<input type="date" class="md-filter-control" value={startVal ?? ''} onchange={(e) => onChange(`${(e.target as HTMLInputElement).value},${endVal ?? ''}`)} />
+			<input
+				type="date"
+				class="md-filter-control"
+				value={startVal ?? ''}
+				onchange={(e) => onChange(`${(e.target as HTMLInputElement).value},${endVal ?? ''}`)}
+			/>
 			<span>–</span>
-			<input type="date" class="md-filter-control" value={endVal ?? ''} onchange={(e) => onChange(`${startVal ?? ''},${(e.target as HTMLInputElement).value}`)} />
+			<input
+				type="date"
+				class="md-filter-control"
+				value={endVal ?? ''}
+				onchange={(e) => onChange(`${startVal ?? ''},${(e.target as HTMLInputElement).value}`)}
+			/>
 		</span>
 	{:else if kind === 'button-group'}
 		<span class="md-filter-buttons">
 			{#each effectiveOptions as opt (opt)}
-				<button type="button" class="md-filter-btn" class:active={value === opt} onclick={() => onChange(opt)}>{opt}</button>
+				<button
+					type="button"
+					class="md-filter-btn"
+					class:active={value === opt}
+					onclick={() => onChange(opt)}>{opt}</button
+				>
 			{/each}
 		</span>
 	{/if}

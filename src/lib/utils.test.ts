@@ -200,7 +200,11 @@ describe('inferSmartChartConfigForType', () => {
 			profit: 400 + i * 8,
 			units: 50 + i
 		}));
-		const config = inferSmartChartConfigForType(['ds', 'revenue', 'cost', 'profit', 'units'], rows, 'line');
+		const config = inferSmartChartConfigForType(
+			['ds', 'revenue', 'cost', 'profit', 'units'],
+			rows,
+			'line'
+		);
 
 		expect(config.yColumns.length).toBeGreaterThan(0);
 		expect((config.yColumnsSecondary ?? []).length).toBeGreaterThan(0);
@@ -217,7 +221,11 @@ describe('inferSmartChartConfigForType', () => {
 			{ city: 'Addis Ababa', property_type: 'Warehouse', sum_rent_usd: 5300 }
 		];
 
-		const config = inferSmartChartConfigForType(['city', 'property_type', 'sum_rent_usd'], rows, 'bar');
+		const config = inferSmartChartConfigForType(
+			['city', 'property_type', 'sum_rent_usd'],
+			rows,
+			'bar'
+		);
 
 		expect(config.xColumn).toBe('property_type');
 		expect(config.colorColumn).toBe('city');

@@ -5,14 +5,19 @@
 
 	interface Props {
 		phases: PipelinePhase[];
+		/** When true, render without outer border bar styling. */
+		embedded?: boolean;
 	}
 
-	let { phases }: Props = $props();
+	let { phases, embedded = false }: Props = $props();
 
 	let activityLabel = $derived(getCurrentActivityLabel());
 </script>
 
-<div class="border-b border-border/40 bg-muted/20 px-3 py-1.5" data-testid="ai-pipeline-stepper">
+<div
+	class={embedded ? 'px-2 py-1.5' : 'border-b border-border/40 bg-muted/20 px-3 py-1.5'}
+	data-testid="ai-pipeline-stepper"
+>
 	<ul class="flex flex-wrap items-center gap-x-1 gap-y-1">
 		{#each phases as phase, i (phase.id)}
 			<li class="flex items-center gap-1">
@@ -24,10 +29,12 @@
 					<Circle size={11} class="text-muted-foreground/40" />
 				{/if}
 				<span
-					class="text-[11px] leading-relaxed
-						{phase.status === 'done' ? 'text-muted-foreground/60' :
-						 phase.status === 'active' ? 'font-medium text-foreground' :
-						 'text-muted-foreground/40'}"
+					class="text-xs leading-relaxed
+						{phase.status === 'done'
+						? 'text-muted-foreground/60'
+						: phase.status === 'active'
+							? 'font-medium text-foreground'
+							: 'text-muted-foreground/40'}"
 				>
 					{phase.label}
 				</span>
@@ -38,6 +45,6 @@
 		{/each}
 	</ul>
 	{#if activityLabel}
-		<p class="mt-0.5 truncate text-[10px] text-primary/70">{activityLabel}</p>
+		<p class="mt-0.5 truncate text-xs text-primary/70">{activityLabel}</p>
 	{/if}
 </div>

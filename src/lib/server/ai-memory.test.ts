@@ -62,8 +62,14 @@ describe('writeEntry / readIndexEntries', () => {
 
 describe('slug collisions', () => {
 	it('appends a numeric suffix when two entries slugify to the same base', async () => {
-		const a = await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per line item.' });
-		const b = await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per order header, confirmed.' });
+		const a = await writeEntry(dir, {
+			type: 'decision',
+			text: 'Orders grain is one row per line item.'
+		});
+		const b = await writeEntry(dir, {
+			type: 'decision',
+			text: 'Orders grain is one row per order header, confirmed.'
+		});
 
 		expect(a.slug).toBe('orders-grain-is-one-row-per');
 		expect(b.slug).toBe('orders-grain-is-one-row-per-2');
@@ -86,7 +92,8 @@ describe('removeEntry', () => {
 
 describe('adversarial content', () => {
 	it('survives a decision containing literal frontmatter-fence and colon characters', async () => {
-		const text = 'Watch out: revenue --- column can be negative: refunds are stored as positive amounts.';
+		const text =
+			'Watch out: revenue --- column can be negative: refunds are stored as positive amounts.';
 		const { slug, entries } = await writeEntry(dir, { type: 'discovery', text });
 
 		expect(entries).toHaveLength(1);
@@ -100,7 +107,8 @@ describe('adversarial content', () => {
 	});
 
 	it('strips embedded newlines so they never reach the frontmatter block', async () => {
-		const text = 'Line one of a decision.\nLine two that should not break parsing.\n---\nLine three.';
+		const text =
+			'Line one of a decision.\nLine two that should not break parsing.\n---\nLine three.';
 		const { entries } = await writeEntry(dir, { type: 'decision', text });
 
 		expect(entries).toHaveLength(1);
@@ -111,7 +119,8 @@ describe('adversarial content', () => {
 
 describe('conventions.md', () => {
 	it('round-trips raw freeform text, including markdown headings', async () => {
-		const text = 'Always use UTC timestamps.\n\n## Decisions\nThis heading-like text must not be parsed.';
+		const text =
+			'Always use UTC timestamps.\n\n## Decisions\nThis heading-like text must not be parsed.';
 		await writeConventions(dir, text);
 		expect(await readConventions(dir)).toBe(text);
 	});
@@ -124,7 +133,10 @@ describe('conventions.md', () => {
 describe('searchMemoryLexical', () => {
 	it('ranks entries by keyword overlap with the query', async () => {
 		await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per line item.' });
-		await writeEntry(dir, { type: 'discovery', text: 'Customers email column has a high null rate.' });
+		await writeEntry(dir, {
+			type: 'discovery',
+			text: 'Customers email column has a high null rate.'
+		});
 
 		const results = await searchMemoryLexical(dir, 'what is the grain of orders', 5);
 		expect(results.length).toBeGreaterThan(0);

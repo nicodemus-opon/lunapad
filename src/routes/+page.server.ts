@@ -7,6 +7,6 @@ import type { PageServerLoad } from './$types';
 // the client otherwise has no way to see this server-only env var.
 export const load: PageServerLoad = () => {
 	const demoMode = process.env.DEMO_MODE === '1';
-	const defaultProjectFolder = demoMode ? null : process.env.PROJECT_FOLDER ?? null;
+	const defaultProjectFolder = demoMode ? null : (process.env.PROJECT_FOLDER ?? null);
 	return { defaultProjectFolder, demoMode };
 };

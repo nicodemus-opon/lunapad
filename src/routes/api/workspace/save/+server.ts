@@ -1,20 +1,53 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { saveWorkspaceState } from '$lib/server/workspace-store';
+import {
+	saveWorkspaceState,
+	WorkspaceConflictError
+} from '$lib/server/workspace-store';
+import { logAuditEvent } from '$lib/server/audit';
+import { can, userFromLocals } from '$lib/server/permissions';
 
 interface SaveWorkspaceRequest {
 	data: unknown;
+	expectedUpdatedAt?: string | null;
+	force?: boolean;
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
+	const user = userFromLocals(locals.user);
+	if (!can(user, 'workspace:write')) {
+		return json({ error: 'Forbidden' }, { status: 403 });
+	}
 	const body = (await request.json()) as Partial<SaveWorkspaceRequest>;
 	if (!body || typeof body !== 'object' || !('data' in body)) {
 		return json({ error: 'Workspace payload is required.' }, { status: 400 });
 	}
 	try {
-		await saveWorkspaceState(body.data, locals.user?.id ?? null);
-		return json({ ok: true });
+		const row = await saveWorkspaceState(body.data, locals.user?.id ?? null, {
+			expectedUpdatedAt: body.expectedUpdatedAt ?? null,
+			force: body.force === true
+		});
+		if (body.force) {
+			await logAuditEvent({
+				actorId: locals.user?.id,
+				action: 'workspace.force_save',
+				resourceType: 'workspace',
+				resourceId: 'singleton'
+			});
+		}
+		return json({ ok: true, updatedAt: row.updatedAt, updatedBy: row.updatedBy });
 	} catch (err) {
+		if (err instanceof WorkspaceConflictError) {
+			return json(
+				{
+					error: err.message,
+					conflict: true,
+					updatedAt: err.updatedAt,
+					updatedBy: err.updatedBy
+				},
+				{ status: 409 }
+			);
+		}
 		const message = err instanceof Error ? err.message : 'Failed to save workspace state.';
 		return json({ error: message }, { status: 503 });
 	}

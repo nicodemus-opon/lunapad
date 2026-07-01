@@ -11,7 +11,7 @@ describe('FromStage combobox behavior guards', () => {
 	it('clears source when schema input is cleared', () => {
 		const source = readFileSync(sourcePath, 'utf8');
 
-		expect(source).toContain("if (!schema) {");
+		expect(source).toContain('if (!schema) {');
 		expect(source).toContain("onUpdate({ ...stage, table: '' });");
 	});
 

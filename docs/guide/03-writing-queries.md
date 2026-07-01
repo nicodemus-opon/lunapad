@@ -26,20 +26,20 @@ Write plain SQL if you'd rather not use PRQL. SQL cells still get the CTE auto-w
 
 A drag-and-drop, no-code way to build the same kind of pipeline as PRQL, stage by stage. Useful if you don't want to write PRQL by hand, or want to hand a query off to someone who doesn't.
 
-| Stage | What it does |
-|---|---|
-| From | Set or replace the source table |
-| Filter | Keep rows that match conditions |
-| Select | Choose columns to keep |
-| Derive | Create computed columns |
-| Group | Aggregate rows by keys |
-| Window | Apply window expressions over sorted rows |
-| Loop | Iteratively apply a PRQL loop body |
-| Sort | Order rows by one or more columns |
-| Take | Limit result row count |
-| Join | Combine rows from another source |
-| Append | Append rows from one or more sources |
-| Raw | Drop in a raw block of PRQL inside the pipeline, for anything the other stages don't cover |
+| Stage  | What it does                                                                               |
+| ------ | ------------------------------------------------------------------------------------------ |
+| From   | Set or replace the source table                                                            |
+| Filter | Keep rows that match conditions                                                            |
+| Select | Choose columns to keep                                                                     |
+| Derive | Create computed columns                                                                    |
+| Group  | Aggregate rows by keys                                                                     |
+| Window | Apply window expressions over sorted rows                                                  |
+| Loop   | Iteratively apply a PRQL loop body                                                         |
+| Sort   | Order rows by one or more columns                                                          |
+| Take   | Limit result row count                                                                     |
+| Join   | Combine rows from another source                                                           |
+| Append | Append rows from one or more sources                                                       |
+| Raw    | Drop in a raw block of PRQL inside the pipeline, for anything the other stages don't cover |
 
 Stages stack as cards. Add, remove, and reorder them without touching code, and switch to the code view at any point to see (and edit) the exact PRQL the pipeline produces.
 

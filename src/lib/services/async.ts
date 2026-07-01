@@ -1,8 +1,4 @@
-export function withTimeout<T>(
-	promise: Promise<T>,
-	label: string,
-	timeoutMs = 20_000
-): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 20_000): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	const timeoutPromise = new Promise<T>((_, reject) => {
 		timer = setTimeout(() => {

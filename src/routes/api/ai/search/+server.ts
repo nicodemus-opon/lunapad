@@ -1,6 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { searchCellEmbeddings, searchSchemaEmbeddings, searchMemoryEmbeddings } from '$lib/server/embeddings.js';
+import {
+	searchCellEmbeddings,
+	searchSchemaEmbeddings,
+	searchMemoryEmbeddings
+} from '$lib/server/embeddings.js';
 import { searchMemoryLexical } from '$lib/server/ai-memory.js';
 
 export const POST: RequestHandler = async ({ request }) => {

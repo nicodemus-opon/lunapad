@@ -44,8 +44,14 @@ export const dbtRunFunction = inngest.createFunction(
 			// Wait for the dbt subprocess to finish
 			const exitCode = await new Promise<number>((resolve) => {
 				const job = getJob(jobId);
-				if (!job) { resolve(-1); return; }
-				if (job.done) { resolve(job.exitCode ?? -1); return; }
+				if (!job) {
+					resolve(-1);
+					return;
+				}
+				if (job.done) {
+					resolve(job.exitCode ?? -1);
+					return;
+				}
 				job.emitter.once('done', (code: number) => resolve(code));
 			});
 

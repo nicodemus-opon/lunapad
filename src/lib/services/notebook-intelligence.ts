@@ -130,7 +130,10 @@ function profileColumns(rows: Record<string, unknown>[], columns: string[]): Col
 	});
 }
 
-function buildDataQualityChecks(rows: Record<string, unknown>[], profiles: ColumnProfile[]): DataQualityCheck[] {
+function buildDataQualityChecks(
+	rows: Record<string, unknown>[],
+	profiles: ColumnProfile[]
+): DataQualityCheck[] {
 	const checks: DataQualityCheck[] = [];
 	const rowCount = rows.length;
 
@@ -146,7 +149,10 @@ function buildDataQualityChecks(rows: Record<string, unknown>[], profiles: Colum
 	});
 
 	const uniqueCandidate = profiles.find(
-		(profile) => profile.distinctCount === rowCount && rowCount > 0 && /(^id$|_id$|uuid|key)/i.test(profile.name)
+		(profile) =>
+			profile.distinctCount === rowCount &&
+			rowCount > 0 &&
+			/(^id$|_id$|uuid|key)/i.test(profile.name)
 	);
 	checks.push({
 		id: 'unique-key',
@@ -157,7 +163,9 @@ function buildDataQualityChecks(rows: Record<string, unknown>[], profiles: Colum
 			: 'No obvious unique key column detected'
 	});
 
-	const staleDate = profiles.find((profile) => profile.kind === 'date' && profile.sampleValues.length > 0);
+	const staleDate = profiles.find(
+		(profile) => profile.kind === 'date' && profile.sampleValues.length > 0
+	);
 	checks.push({
 		id: 'freshness-signal',
 		label: 'Freshness signal',
@@ -181,7 +189,10 @@ function buildPerformanceAdvice(input: {
 		advice.push({
 			severity: 'warn',
 			headline: 'Execution took more than 2 seconds',
-			actions: ['Add a filter earlier in the pipeline', 'Materialize this intermediate result if reused']
+			actions: [
+				'Add a filter earlier in the pipeline',
+				'Materialize this intermediate result if reused'
+			]
 		});
 	}
 	if (input.rowCount > 50_000) {
@@ -212,7 +223,8 @@ function nearestToken(value: string, candidates: string[]): string | null {
 	if (!value || candidates.length === 0) return null;
 	let best: { word: string; score: number } | null = null;
 	for (const candidate of candidates) {
-		const distance = Math.abs(candidate.length - value.length) + (candidate.includes(value[0]) ? 0 : 1);
+		const distance =
+			Math.abs(candidate.length - value.length) + (candidate.includes(value[0]) ? 0 : 1);
 		if (!best || distance < best.score) best = { word: candidate, score: distance };
 	}
 	return best?.word ?? null;
@@ -224,12 +236,17 @@ function buildQueryRepairHints(errorMessages: string[], schemaTables: SchemaTabl
 	const allTables = schemaTables.map((table) => normalizeName(table));
 	for (const message of errorMessages) {
 		const lower = message.toLowerCase();
-		const missingColumnMatch = lower.match(/column\s+"?([a-z0-9_\.]+)"?\s+(does not exist|not found)/i);
+		const missingColumnMatch = lower.match(
+			/column\s+"?([a-z0-9_\.]+)"?\s+(does not exist|not found)/i
+		);
 		if (missingColumnMatch) {
 			const candidate = nearestToken(missingColumnMatch[1], allColumns);
-			if (candidate) hints.add(`Unknown column '${missingColumnMatch[1]}'. Did you mean '${candidate}'?`);
+			if (candidate)
+				hints.add(`Unknown column '${missingColumnMatch[1]}'. Did you mean '${candidate}'?`);
 		}
-		const missingTableMatch = lower.match(/table\s+"?([a-z0-9_\.]+)"?\s+(does not exist|not found)/i);
+		const missingTableMatch = lower.match(
+			/table\s+"?([a-z0-9_\.]+)"?\s+(does not exist|not found)/i
+		);
 		if (missingTableMatch) {
 			const candidate = nearestToken(missingTableMatch[1], allTables);
 			if (candidate) hints.add(`Unknown table '${missingTableMatch[1]}'. Try '${candidate}'.`);
@@ -246,7 +263,9 @@ function buildQueryRepairHints(errorMessages: string[], schemaTables: SchemaTabl
 
 function buildNextAnalyses(profiles: ColumnProfile[]): string[] {
 	const ideas: string[] = [];
-	const numeric = profiles.filter((profile) => profile.kind === 'numeric').map((profile) => profile.name);
+	const numeric = profiles
+		.filter((profile) => profile.kind === 'numeric')
+		.map((profile) => profile.name);
 	const date = profiles.find((profile) => profile.kind === 'date')?.name;
 	const text = profiles.filter((profile) => profile.kind === 'text').map((profile) => profile.name);
 	const deriveCandidates = findSemanticDeriveCandidates(
@@ -264,7 +283,11 @@ function buildNextAnalyses(profiles: ColumnProfile[]): string[] {
 	const businessDimensions = profiles
 		.filter((profile) => profile.kind === 'text')
 		.map((profile) => profile.name)
-		.filter((name) => /(category|segment|location|region|country|city|customer\s*type|channel|type|status)/i.test(name));
+		.filter((name) =>
+			/(category|segment|location|region|country|city|customer\s*type|channel|type|status)/i.test(
+				name
+			)
+		);
 	const bestDimension = businessDimensions[0] ?? text[0];
 
 	if (composed) {
@@ -423,7 +446,12 @@ function firstLikelyDimension(profiles: ColumnProfile[]): string | null {
 		})
 		.map((profile) => {
 			let score = 0;
-			if (/(category|segment|location|region|country|city|customer\s*type|channel|status|type)/i.test(profile.name)) score += 4;
+			if (
+				/(category|segment|location|region|country|city|customer\s*type|channel|status|type)/i.test(
+					profile.name
+				)
+			)
+				score += 4;
 			if (/(name|title|label)/i.test(profile.name)) score -= 1.5;
 			if (profile.distinctCount <= 60) score += 1.5;
 			if (profile.distinctCount > 180) score -= 0.8;
@@ -434,8 +462,15 @@ function firstLikelyDimension(profiles: ColumnProfile[]): string | null {
 	return candidates[0]?.profile.name ?? null;
 }
 
-function actionCategory(kind: NotebookActionKind): 'repair' | 'cost' | 'run' | 'shape' | 'insight' | 'branch' {
-	if (kind === 'apply-repair-replacement' || kind === 'apply-repair-alias' || kind === 'apply-repair-cast') return 'repair';
+function actionCategory(
+	kind: NotebookActionKind
+): 'repair' | 'cost' | 'run' | 'shape' | 'insight' | 'branch' {
+	if (
+		kind === 'apply-repair-replacement' ||
+		kind === 'apply-repair-alias' ||
+		kind === 'apply-repair-cast'
+	)
+		return 'repair';
 	if (kind === 'materialize-cell') return 'cost';
 	if (kind === 'run-cell-and-downstream' || kind === 'set-schedule-segment') return 'run';
 	if (
@@ -557,7 +592,9 @@ export function recommendNotebookActions(input: {
 			payload: { limit: 100 }
 		});
 		if (intelligence.columnCount >= 20) {
-			const selectedColumns = intelligence.columnProfiles.slice(0, 8).map((profile) => profile.name);
+			const selectedColumns = intelligence.columnProfiles
+				.slice(0, 8)
+				.map((profile) => profile.name);
 			pushAction(actions, {
 				id: 'select:trim-wide-shape',
 				kind: 'add-select-stage',

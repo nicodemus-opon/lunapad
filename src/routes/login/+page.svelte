@@ -41,11 +41,12 @@
 		onsubmit={handleSubmit}
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
-		<h1 class="text-lg font-serif">Sign in to Lunapad</h1>
+		<h1 class="font-serif text-lg">Sign in to Lunapad</h1>
 
 		<div>
-			<label for="login-email" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-				>Email</label
+			<label
+				for="login-email"
+				class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Email</label
 			>
 			<Input
 				id="login-email"
@@ -57,8 +58,9 @@
 			/>
 		</div>
 		<div>
-			<label for="login-password" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-				>Password</label
+			<label
+				for="login-password"
+				class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Password</label
 			>
 			<Input
 				id="login-password"

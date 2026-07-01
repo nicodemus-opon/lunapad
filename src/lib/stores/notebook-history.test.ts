@@ -16,7 +16,8 @@ const { dropViewMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/services/duckdb', async () => {
-	const actual = await vi.importActual<typeof import('$lib/services/duckdb')>('$lib/services/duckdb');
+	const actual =
+		await vi.importActual<typeof import('$lib/services/duckdb')>('$lib/services/duckdb');
 	return { ...actual, dropView: dropViewMock };
 });
 

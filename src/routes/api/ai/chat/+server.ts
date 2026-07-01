@@ -11,7 +11,10 @@ import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
 import { selectSchemaForPrompt, resolveExternalSchema } from '$lib/server/ai-schema-context.js';
-import { DEFAULT_SCHEMA_TOKEN_BUDGET, SMALL_MODEL_SCHEMA_TOKEN_BUDGET } from '$lib/services/token-budget.js';
+import {
+	DEFAULT_SCHEMA_TOKEN_BUDGET,
+	SMALL_MODEL_SCHEMA_TOKEN_BUDGET
+} from '$lib/services/token-budget.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -509,9 +512,7 @@ function buildSubagentSystemPrompt(
 	const schemaList =
 		schema
 			.map((t) => {
-				const cols = t.columns
-					.map((col) => (col.includes(' ') ? `"${col}"` : col))
-					.join(', ');
+				const cols = t.columns.map((col) => (col.includes(' ') ? `"${col}"` : col)).join(', ');
 				const rowNote = t.rowCount != null ? ` [${t.rowCount.toLocaleString()} rows]` : '';
 				return `  ${t.name}: ${cols}${rowNote}`;
 			})
@@ -1742,7 +1743,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	// unified, token-budgeted selection pass over local + external tables together
 	// (selectSchemaForPrompt) — replaces what used to be four independent, inconsistent
 	// truncation implementations scattered across this file and prompt-stage-plan/+server.ts.
-	const latestUserMessage = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+	const latestUserMessage =
+		[...req.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 	const resolvedExternalSchema = await resolveExternalSchema({
 		connectionIds: externalConnectionIds,
 		userQuery: latestUserMessage,

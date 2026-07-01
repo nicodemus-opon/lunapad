@@ -1,7 +1,10 @@
 import { Search, SquarePlay, ChartBar, LayoutGrid, FileText } from '@lucide/svelte';
 import type { SprintTaskType } from '$lib/types/ai-chat.js';
 
-export const SPRINT_TASK_STYLE: Record<SprintTaskType, { icon: typeof Search; colorVar: string; label: string }> = {
+export const SPRINT_TASK_STYLE: Record<
+	SprintTaskType,
+	{ icon: typeof Search; colorVar: string; label: string }
+> = {
 	investigate: { icon: Search, colorVar: '--chart-1', label: 'Investigate' },
 	build: { icon: SquarePlay, colorVar: '--chart-4', label: 'Build' },
 	visualize: { icon: ChartBar, colorVar: '--chart-2', label: 'Visualize' },

@@ -87,7 +87,7 @@
 		{#if onOpenInlinePrompt}
 			<DropdownMenu.Item onclick={onOpenInlinePrompt}>
 				<Sparkles class="h-3.5 w-3.5" /> Tell AI what to do
-				<DropdownMenu.Shortcut>⌘K</DropdownMenu.Shortcut>
+				<DropdownMenu.Shortcut>⌘⇧K</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 		{/if}

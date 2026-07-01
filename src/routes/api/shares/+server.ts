@@ -10,6 +10,8 @@ import {
 import type { ShareSnapshot } from '$lib/server/shared-reports';
 import type { Connection } from '$lib/types/connection';
 import { getSecret } from '$lib/server/connection-secrets';
+import { can, userFromLocals } from '$lib/server/permissions';
+import { logAuditEvent } from '$lib/server/audit';
 
 interface UpsertShareRequest {
 	notebookId: string;
@@ -49,7 +51,11 @@ export const GET: RequestHandler = async ({ url }) => {
 	});
 };
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
+	if (!can(userFromLocals(locals.user), 'shares:publish')) {
+		return json({ error: 'Forbidden' }, { status: 403 });
+	}
 	const body = (await request.json()) as Partial<UpsertShareRequest>;
 	if (
 		!body?.notebookId ||
@@ -78,6 +84,13 @@ export const POST: RequestHandler = async ({ request }) => {
 			requireAuth: body.requireAuth,
 			slug: body.slug,
 			connections
+		});
+		await logAuditEvent({
+			actorId: locals.user.id,
+			action: 'share.published',
+			resourceType: 'share',
+			resourceId: share.token,
+			metadata: { notebookId: body.notebookId }
 		});
 		return json({ token: share.token, slug: share.slug });
 	} catch (err) {

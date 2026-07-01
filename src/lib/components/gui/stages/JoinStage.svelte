@@ -49,10 +49,7 @@
 		const leftCol = pickJoinColumn(availableColumns);
 		onUpdate({
 			...stage,
-			conditions: [
-				...stage.conditions,
-				{ left: leftCol, right: leftCol, shorthand: false }
-			]
+			conditions: [...stage.conditions, { left: leftCol, right: leftCol, shorthand: false }]
 		});
 		requestAnimationFrame(() => (expandedCondIdx = newIdx));
 	}
@@ -64,7 +61,7 @@
 	}
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap">
+<div class="flex flex-wrap items-center gap-1.5">
 	<!-- Main join chip: join type segmented + table reference -->
 	<div class={CHIP} data-testid="join-main-pill">
 		<!-- Join type segmented control (inner/left/right/full) — no popover needed -->
@@ -76,8 +73,8 @@
 						? 'bg-muted font-medium text-foreground'
 						: 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 					onclick={() => onUpdate({ ...stage, joinType: jt.value })}
-					title="{jt.short} JOIN"
-				>{jt.value}</button>
+					title="{jt.short} JOIN">{jt.value}</button
+				>
 			{/each}
 		</div>
 
@@ -98,7 +95,13 @@
 			suggestions={availableTables}
 			placeholder="table…"
 			class="px-1.5 py-1 font-mono text-xs"
-			oncommit={(v) => onUpdate({ ...stage, table: v, alias: stage.alias, conditions: stage.table !== v ? [] : stage.conditions })}
+			oncommit={(v) =>
+				onUpdate({
+					...stage,
+					table: v,
+					alias: stage.alias,
+					conditions: stage.table !== v ? [] : stage.conditions
+				})}
 		/>
 
 		<!-- Add alias button (if no alias yet) -->
@@ -106,8 +109,8 @@
 			<button
 				class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 transition-colors duration-150 hover:bg-muted/60 hover:text-muted-foreground"
 				onclick={() => onUpdate({ ...stage, alias: stage.table.slice(0, 1) })}
-				title="Add alias"
-			>≡</button>
+				title="Add alias">≡</button
+			>
 		{/if}
 	</div>
 
@@ -122,9 +125,15 @@
 				draggable={expandedCondIdx !== idx}
 				ondragstart={() => (dragCondIdx = idx)}
 				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); if (dragCondIdx !== null && dragCondIdx !== idx) { reorderConditions(dragCondIdx, idx); dragCondIdx = null; } }}
+				ondrop={(e) => {
+					e.preventDefault();
+					if (dragCondIdx !== null && dragCondIdx !== idx) {
+						reorderConditions(dragCondIdx, idx);
+						dragCondIdx = null;
+					}
+				}}
 				ondragend={() => (dragCondIdx = null)}
-				class="inline-flex items-center text-xs shrink-0"
+				class="inline-flex shrink-0 items-center text-xs"
 				class:opacity-40={dragCondIdx !== null && dragCondIdx === idx}
 				class:cursor-grab={expandedCondIdx !== idx}
 			>
@@ -133,7 +142,9 @@
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<div
 						class={CHIP_EDITING}
-						onkeydown={(e) => { if (e.key === 'Escape') expandedCondIdx = null; }}
+						onkeydown={(e) => {
+							if (e.key === 'Escape') expandedCondIdx = null;
+						}}
 						role="group"
 					>
 						{#if cond.shorthand}
@@ -166,29 +177,26 @@
 						<!-- shorthand toggle -->
 						<button
 							class="ml-0.5 rounded border border-border/60 px-1 py-0.5 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
-							onclick={() => updateCond(idx, { shorthand: !cond.shorthand, right: cond.shorthand ? '' : cond.left })}
-							title="Toggle shorthand / full"
-						>{cond.shorthand ? '==' : 'l==r'}</button>
+							onclick={() =>
+								updateCond(idx, {
+									shorthand: !cond.shorthand,
+									right: cond.shorthand ? '' : cond.left
+								})}
+							title="Toggle shorthand / full">{cond.shorthand ? '==' : 'l==r'}</button
+						>
 						<button
 							class="px-1 text-muted-foreground transition-colors duration-150 hover:text-foreground"
-							onclick={() => (expandedCondIdx = null)}
-						>✓</button>
+							onclick={() => (expandedCondIdx = null)}>✓</button
+						>
 					</div>
 				{:else}
 					<!-- Collapsed pill -->
 					<div class={CHIP}>
-						<button
-							class={CHIP_SECTION}
-							onclick={() => (expandedCondIdx = idx)}
-						>
+						<button class={CHIP_SECTION} onclick={() => (expandedCondIdx = idx)}>
 							{humanizeCond(cond)}
 						</button>
-						<button
-							class={CHIP_X}
-							onclick={() => removeCond(idx)}
-							aria-label="Remove condition"
-						>
-							<X class="w-3 h-3" />
+						<button class={CHIP_X} onclick={() => removeCond(idx)} aria-label="Remove condition">
+							<X class="h-3 w-3" />
 						</button>
 					</div>
 				{/if}
@@ -197,7 +205,7 @@
 
 		<!-- Add ON condition — immediate inline -->
 		<button class={CHIP_ADD} onclick={addCondInline}>
-			<Plus class="w-3 h-3" /> on
+			<Plus class="h-3 w-3" /> on
 		</button>
 	{/if}
 </div>

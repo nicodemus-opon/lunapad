@@ -2,7 +2,12 @@ import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { PRQL_DOCS } from './prql';
 import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
 import { getSqlFunctionDoc } from './sql-dialects';
-import { getModelDialect, getModelPythonContext, getModelCompletions, parseRegistry } from './completions';
+import {
+	getModelDialect,
+	getModelPythonContext,
+	getModelCompletions,
+	parseRegistry
+} from './completions';
 import { hoverPython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
 
@@ -41,7 +46,9 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 						position.lineNumber,
 						word.endColumn
 					),
-					contents: [{ value: `**${word.word}** → \`${trinoType}\` (Trino UDF parameter/return type)` }]
+					contents: [
+						{ value: `**${word.word}** → \`${trinoType}\` (Trino UDF parameter/return type)` }
+					]
 				};
 			}
 
@@ -72,48 +79,49 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 		}
 	});
 
-	for (const langId of ['sql', 'trinosql', 'genericsql'] as const) monaco.languages.registerHoverProvider(langId, {
-		provideHover(model, position) {
-			const word = model.getWordAtPosition(position);
-			if (!word) return null;
-			const range = new monaco.Range(
-				position.lineNumber,
-				word.startColumn,
-				position.lineNumber,
-				word.endColumn
-			);
+	for (const langId of ['sql', 'trinosql', 'genericsql'] as const)
+		monaco.languages.registerHoverProvider(langId, {
+			provideHover(model, position) {
+				const word = model.getWordAtPosition(position);
+				if (!word) return null;
+				const range = new monaco.Range(
+					position.lineNumber,
+					word.startColumn,
+					position.lineNumber,
+					word.endColumn
+				);
 
-			// Schema hover: table name → column list card; column name → type annotation.
-			const { tables } = parseRegistry(getModelCompletions(model));
-			const tableCols = tables.get(word.word);
-			if (tableCols && tableCols.length > 0) {
-				const body = tableCols
-					.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
-					.join('\n');
-				return { range, contents: [{ value: `**${word.word}**\n\n${body}` }] };
-			}
-			const lineText = model.getLineContent(position.lineNumber);
-			const colPattern = new RegExp(`([A-Za-z_]\\w*)\\.(${word.word})\\b`);
-			const colMatch = lineText.match(colPattern);
-			if (colMatch) {
-				const cols = tables.get(colMatch[1]);
-				const col = cols?.find((c) => c.name === word.word);
-				if (col?.detail) {
-					return {
-						range,
-						contents: [{ value: `**${colMatch[1]}.${word.word}** — \`${col.detail}\`` }]
-					};
+				// Schema hover: table name → column list card; column name → type annotation.
+				const { tables } = parseRegistry(getModelCompletions(model));
+				const tableCols = tables.get(word.word);
+				if (tableCols && tableCols.length > 0) {
+					const body = tableCols
+						.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
+						.join('\n');
+					return { range, contents: [{ value: `**${word.word}**\n\n${body}` }] };
 				}
-			}
+				const lineText = model.getLineContent(position.lineNumber);
+				const colPattern = new RegExp(`([A-Za-z_]\\w*)\\.(${word.word})\\b`);
+				const colMatch = lineText.match(colPattern);
+				if (colMatch) {
+					const cols = tables.get(colMatch[1]);
+					const col = cols?.find((c) => c.name === word.word);
+					if (col?.detail) {
+						return {
+							range,
+							contents: [{ value: `**${colMatch[1]}.${word.word}** — \`${col.detail}\`` }]
+						};
+					}
+				}
 
-			// Function hover from catalog.
-			const dialect = getModelDialect(model);
-			const fn = getSqlFunctionDoc(word.word.toLowerCase(), dialect);
-			if (!fn) return null;
-			return {
-				range,
-				contents: [{ value: `**${fn.signature}**\n\n${fn.doc}` }]
-			};
-		}
-	});
+				// Function hover from catalog.
+				const dialect = getModelDialect(model);
+				const fn = getSqlFunctionDoc(word.word.toLowerCase(), dialect);
+				if (!fn) return null;
+				return {
+					range,
+					contents: [{ value: `**${fn.signature}**\n\n${fn.doc}` }]
+				};
+			}
+		});
 }

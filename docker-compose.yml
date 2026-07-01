@@ -6,12 +6,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lunapad}
       POSTGRES_DB: ${POSTGRES_DB:-lunapad}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-pgvector.sql:/docker-entrypoint-initdb.d/01-pgvector.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lunapad -d lunapad"]
+      test: ['CMD-SHELL', 'pg_isready -U lunapad -d lunapad']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,7 +21,7 @@ services:
     # Pin to the version referenced in connections.ts (catalog.management=dynamic behavior).
     image: trinodb/trino:481
     ports:
-      - "8067:8080"
+      - '8067:8080'
     configs:
       # Inline config avoids Coolify's bind-mount path pre-creation (which creates directories
       # at file mount paths, causing "not a directory" errors on container start).
@@ -35,11 +35,25 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/info | grep -q '\"starting\":false'"]
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8080/v1/info | grep -q ''"starting":false''']
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 60s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   app:
@@ -47,11 +61,13 @@ services:
       context: .
       target: runner
     ports:
-      - "3967:3000"
+      - '3967:3000'
     depends_on:
       db:
         condition: service_healthy
       trino:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       # Set ORIGIN to the URL your users reach the app at (e.g. https://yourdomain.com).
@@ -83,6 +99,7 @@ services:
       INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest:8288}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-local}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-local}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Default dbt project folder — auto-opened (and scaffolded into a dbt-best-practices
       # project if empty) on first load, and used by the Inngest scheduler. Bind-mounted
       # below so it persists on the host and survives `down`/`up`.
@@ -90,12 +107,12 @@ services:
     extra_hosts:
       # On Linux, Docker does not resolve host.docker.internal by default.
       # This maps it to the host gateway so Ollama is reachable from the container.
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     volumes:
       - ./trino/catalog:/trino-catalog
       - ./project:/app/project
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null"]
+      test: ['CMD-SHELL', 'curl -sf http://localhost:3000/api/health > /dev/null']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -111,7 +128,7 @@ services:
     image: inngest/inngest:latest
     command: inngest dev -u http://app:3000/api/inngest --no-discovery
     ports:
-      - "8267:8288"
+      - '8267:8288'
     depends_on:
       app:
         condition: service_healthy
@@ -128,6 +145,7 @@ services:
 
 volumes:
   pgdata:
+  redis-data:
 
 configs:
   trino_config:

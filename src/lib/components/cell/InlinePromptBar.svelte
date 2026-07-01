@@ -210,7 +210,9 @@
 		{/if}
 
 		{#if errorMessage}
-			<p data-testid="inline-prompt-error" class="mt-1.5 px-0.5 text-2xs text-destructive">{errorMessage}</p>
+			<p data-testid="inline-prompt-error" class="mt-1.5 px-0.5 text-2xs text-destructive">
+				{errorMessage}
+			</p>
 		{/if}
 
 		{#if result}

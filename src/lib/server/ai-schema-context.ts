@@ -6,9 +6,17 @@
 // inconsistent positional-truncation implementations.
 
 import type { AIChatSchemaTable } from '$lib/types/ai-chat.js';
-import { estimateTokens, fitToTokenBudget, DEFAULT_SCHEMA_TOKEN_BUDGET } from '$lib/services/token-budget.js';
+import {
+	estimateTokens,
+	fitToTokenBudget,
+	DEFAULT_SCHEMA_TOKEN_BUDGET
+} from '$lib/services/token-budget.js';
 import { hasPostgres, hasOllama } from '$lib/server/ai-capabilities.js';
-import { countSchemaEmbeddings, listSchemaEmbeddings, searchSchemaEmbeddings } from '$lib/server/embeddings.js';
+import {
+	countSchemaEmbeddings,
+	listSchemaEmbeddings,
+	searchSchemaEmbeddings
+} from '$lib/server/embeddings.js';
 
 export interface SchemaColumn {
 	name: string;
@@ -243,7 +251,11 @@ function tokenizeForRelevance(text: string): string[] {
 		.filter((t) => t.length > 1);
 }
 
-function tableRelevanceScore(queryTokens: Set<string>, table: AIChatSchemaTable, isActive: boolean): number {
+function tableRelevanceScore(
+	queryTokens: Set<string>,
+	table: AIChatSchemaTable,
+	isActive: boolean
+): number {
 	const nameTokens = tokenizeForRelevance(table.name);
 	const columnTokens = table.columns.flatMap(tokenizeForRelevance);
 	const descriptionTokens = table.description ? tokenizeForRelevance(table.description) : [];
@@ -258,7 +270,11 @@ function tableRelevanceScore(queryTokens: Set<string>, table: AIChatSchemaTable,
 
 /** Returns the indices of the top `maxColumns` columns by relevance, in their original order —
  *  callers use these indices to trim parallel arrays (columns, columnTypes) in lock-step. */
-function selectColumnIndicesByRelevance(queryTokens: Set<string>, columns: string[], maxColumns: number): number[] {
+function selectColumnIndicesByRelevance(
+	queryTokens: Set<string>,
+	columns: string[],
+	maxColumns: number
+): number[] {
 	if (columns.length <= maxColumns) return columns.map((_, idx) => idx);
 	return columns
 		.map((name, idx) => ({
@@ -288,7 +304,14 @@ export interface SchemaSelectionInput {
 }
 
 export function selectSchemaForPrompt(input: SchemaSelectionInput): AIChatSchemaTable[] {
-	const { query, tables, tokenBudget, maxTables = 40, maxColumnsPerTable = 30, activeTableNames } = input;
+	const {
+		query,
+		tables,
+		tokenBudget,
+		maxTables = 40,
+		maxColumnsPerTable = 30,
+		activeTableNames
+	} = input;
 	if (tables.length === 0) return [];
 
 	const queryTokens = new Set(tokenizeForRelevance(query));
@@ -296,12 +319,18 @@ export function selectSchemaForPrompt(input: SchemaSelectionInput): AIChatSchema
 		.map((table, idx) => ({
 			table,
 			idx,
-			score: tableRelevanceScore(queryTokens, table, activeTableNames?.has(table.name.toLowerCase()) ?? false)
+			score: tableRelevanceScore(
+				queryTokens,
+				table,
+				activeTableNames?.has(table.name.toLowerCase()) ?? false
+			)
 		}))
 		.sort((a, b) => b.score - a.score || a.idx - b.idx)
 		.map((r) => r.table);
 
-	const { kept } = fitToTokenBudget(ranked, tokenBudget, (t) => estimateTokens(approximateTableText(t)));
+	const { kept } = fitToTokenBudget(ranked, tokenBudget, (t) =>
+		estimateTokens(approximateTableText(t))
+	);
 	return kept.slice(0, maxTables).map((table) => {
 		const indices = selectColumnIndicesByRelevance(queryTokens, table.columns, maxColumnsPerTable);
 		return {

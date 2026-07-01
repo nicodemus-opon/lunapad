@@ -9,7 +9,11 @@
 		SortStage as SortStageModel,
 		TakeStage as TakeStageModel
 	} from '$lib/types/gui-pipeline';
-	import { getAvailableColumns, loopMiniStagesToBody, parseLoopBodyToMiniStages } from '$lib/services/gui-prql';
+	import {
+		getAvailableColumns,
+		loopMiniStagesToBody,
+		parseLoopBodyToMiniStages
+	} from '$lib/services/gui-prql';
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import FilterStageEditor from './FilterStage.svelte';
@@ -116,7 +120,10 @@
 
 	function miniColsAt(idx: number): string[] {
 		const structured = currentStructuredBody();
-		const prefix: GUIPipelineStage[] = [{ type: 'from', table: '__loop__' }, ...structured.slice(0, idx)];
+		const prefix: GUIPipelineStage[] = [
+			{ type: 'from', table: '__loop__' },
+			...structured.slice(0, idx)
+		];
 		return getAvailableColumns(prefix, { __loop__: availableColumns }, prefix.length);
 	}
 
@@ -125,19 +132,27 @@
 </script>
 
 <div class="w-full space-y-3">
-	<div class="flex items-center gap-2 flex-wrap">
+	<div class="flex flex-wrap items-center gap-2">
 		<span class="{CHIP} px-2">
-			loop {effectiveMode} ({stage.body.split('\n').length} line{stage.body.split('\n').length === 1 ? '' : 's'})
+			loop {effectiveMode} ({stage.body.split('\n').length} line{stage.body.split('\n').length === 1
+				? ''
+				: 's'})
 		</span>
 		<div class="inline-flex items-center rounded border border-border/60 bg-muted/20 p-0.5">
 			<button
-				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode === 'structured' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode ===
+				'structured'
+					? 'bg-background text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchMode('structured')}
 			>
 				structured
 			</button>
 			<button
-				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode === 'raw' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode ===
+				'raw'
+					? 'bg-background text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchMode('raw')}
 			>
 				raw PRQL
@@ -149,7 +164,7 @@
 		<p class={SECTION_LABEL}>loop body PRQL</p>
 		<Textarea
 			rows={8}
-			class="text-xs font-mono"
+			class="font-mono text-xs"
 			placeholder="filter n < 4\nselect n = n + 1"
 			value={stage.body}
 			oninput={(event: Event) =>
@@ -174,7 +189,12 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Button variant="outline" size="sm" class="h-7 gap-1 font-mono text-xs" onclick={addMiniStage}>
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-7 gap-1 font-mono text-xs"
+					onclick={addMiniStage}
+				>
 					<Plus class="h-3 w-3" /> add stage
 				</Button>
 			</div>
@@ -199,7 +219,7 @@
 							</Select.Content>
 						</Select.Root>
 						<button
-							class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-mono text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+							class="inline-flex h-7 items-center gap-1 rounded px-2 font-mono text-xs text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
 							onclick={() => removeMiniStage(idx)}
 						>
 							<X class="h-3 w-3" /> remove

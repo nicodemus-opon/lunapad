@@ -72,7 +72,13 @@ export function buildShareSnapshot(notebook: Notebook): ShareSnapshotResult {
 		const isLive = !isBuiltinDuckDBConnection(connection);
 
 		if (!isLive) {
-			return { ...base, isLive: false, connectionId: cell.connectionId, frozenResult: cell.result, sqlTemplate: null };
+			return {
+				...base,
+				isLive: false,
+				connectionId: cell.connectionId,
+				frozenResult: cell.result,
+				sqlTemplate: null
+			};
 		}
 
 		const templateCode = getExecutionCodeForTemplate(cells, idx);
@@ -88,7 +94,13 @@ export function buildShareSnapshot(notebook: Notebook): ShareSnapshotResult {
 			});
 		}
 
-		return { ...base, isLive: true, connectionId: cell.connectionId, frozenResult: null, sqlTemplate };
+		return {
+			...base,
+			isLive: true,
+			connectionId: cell.connectionId,
+			frozenResult: null,
+			sqlTemplate
+		};
 	});
 
 	// Shares always render output-only, regardless of the owner's in-app reportView toggle —

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { initDB } from '$lib/services/duckdb';
+	import { initDB, restoreUploadedTables } from '$lib/services/duckdb';
 	import { initPRQL } from '$lib/services/prql';
 	import { withTimeout } from '$lib/services/async';
 	import { authClient } from '$lib/auth-client';
@@ -47,6 +47,11 @@
 		loadFromStorage,
 		initWorkspaceMode,
 		getWorkspaceSyncStatus,
+		getWorkspaceConflictInfo,
+		reloadWorkspaceFromServer,
+		forceSaveWorkspace,
+		startWorkspacePolling,
+		stopWorkspacePolling,
 		updateCellCode,
 		setEditMode,
 		updateGuiStages,
@@ -83,7 +88,8 @@
 		setAllCellsDisplay,
 		setNotebookReportView,
 		undo,
-		redo
+		redo,
+		getFocusedCellId
 	} from '$lib/stores/notebook.svelte';
 	import Sortable from 'sortablejs';
 	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
@@ -105,6 +111,21 @@
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ReviewPanel from '$lib/components/comments/ReviewPanel.svelte';
+	import {
+		closeCommentPanel,
+		getInboxUnread,
+		getPresence,
+		getReviewPanelOpen,
+		getReviewPanelWidth,
+		openCommentPanel,
+		openInbox,
+		refreshPresence,
+		sendPresence,
+		setReviewPanelWidth,
+		startCommentsPolling,
+		stopCommentsPolling
+	} from '$lib/stores/comments.svelte';
 	import ResultView from '$lib/components/ResultView.svelte';
 	import TableView from '$lib/components/TableView.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
@@ -154,6 +175,7 @@
 		Bug,
 		Sparkles,
 		Share2,
+		MessageSquare,
 		LogOut,
 		ShieldUser
 	} from '@lucide/svelte';
@@ -170,12 +192,26 @@
 		initWorkspaceStandards
 	} from '$lib/stores/ai-chat.svelte';
 	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
+	import {
+		mountKeyboardDispatcher,
+		registerPageBridge,
+		shortcutsByGroup
+	} from '$lib/keyboard';
 	import type { PageProps } from './$types';
 
+	const SHORTCUT_GROUPS: { key: string; title: string }[] = [
+		{ key: 'global', title: 'Notebook — global' },
+		{ key: 'command-mode', title: 'Notebook — command mode' },
+		{ key: 'cell-editor', title: 'Cell editor' },
+		{ key: 'gui-stages', title: 'GUI pipeline stages' },
+		{ key: 'markdown-editor', title: 'Markdown editor' }
+	];
+	const shortcutTables = $derived(shortcutsByGroup());
+
 	let { data }: PageProps = $props();
+	const collabEnabled = $derived(!data.demoMode);
 
 	// ── Reactive state ──────────────────────────────────────────────────────
-	const cells = $derived(getCells());
 	const tables = $derived(getTables());
 	const connections = $derived(getConnections());
 	const theme = $derived(getTheme());
@@ -197,6 +233,8 @@
 			!openExtraTabs.some((t) => t.id === activeTabId)
 	);
 	const activeNotebook = $derived(allNotebooks.find((n) => n.id === activeTabId) ?? null);
+	// Bind directly to the active notebook's cells array so new cells render without refresh.
+	const cells = $derived(activeNotebook?.cells ?? []);
 	const activeNotebookConnectionValue = $derived.by(() => {
 		if (!activeNotebook) return BUILTIN_DUCKDB_CONNECTION_ID;
 		const queryCells = activeNotebook.cells.filter((cell) => cell.cellType === 'query');
@@ -215,6 +253,16 @@
 	const reportView = $derived(Boolean(activeNotebook?.reportView));
 	const aiChatOpen = $derived(getAIChatOpen());
 	const aiPanelWidth = $derived(getAIChatPanelWidth());
+	const reviewPanelOpen = $derived(getReviewPanelOpen());
+	const reviewPanelWidth = $derived(getReviewPanelWidth());
+	const inboxUnread = $derived(getInboxUnread());
+	const notebookPresence = $derived(getPresence());
+
+	$effect(() => {
+		if (!collabEnabled || !isNotebookTab) return;
+		void sendPresence(activeTabId, null);
+		void refreshPresence(activeTabId);
+	});
 	const ghostCellIds = $derived(getGhostCellIds());
 
 	// ── Cell list: insert dividers + drag reorder ─────────────────────────────
@@ -272,7 +320,9 @@
 
 	let cellListEl: HTMLElement | undefined = $state();
 	$effect(() => {
-		if (!cellListEl) return;
+		// Re-init when cells are added/removed — Sortable otherwise fights Svelte's {#each}.
+		const cellKey = cells.map((c) => c.id).join('\0');
+		if (!cellListEl || !cellKey) return;
 		const sortable = Sortable.create(cellListEl, {
 			handle: '[data-drag-handle]',
 			animation: 150,
@@ -314,6 +364,8 @@
 		await goto('/login');
 	}
 	let shareDialogOpen = $state(false);
+	let reviewPanelResizeStartX = 0;
+	let reviewPanelResizeStartWidth = 360;
 	let commandPaletteOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
 	let uploadDialogOpen = $state(false);
@@ -360,6 +412,25 @@
 
 	function onAIPanelPointerUp() {
 		isDraggingAIPanel = false;
+	}
+
+	let isDraggingReviewPanel = $state(false);
+
+	function onReviewPanelPointerDown(e: PointerEvent) {
+		isDraggingReviewPanel = true;
+		reviewPanelResizeStartX = e.clientX;
+		reviewPanelResizeStartWidth = getReviewPanelWidth();
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function onReviewPanelPointerMove(e: PointerEvent) {
+		if (!isDraggingReviewPanel) return;
+		const delta = reviewPanelResizeStartX - e.clientX;
+		setReviewPanelWidth(reviewPanelResizeStartWidth + delta);
+	}
+
+	function onReviewPanelPointerUp() {
+		isDraggingReviewPanel = false;
 	}
 
 	function clamp(value: number, min: number, max: number): number {
@@ -428,12 +499,62 @@
 				'Initializing application runtime',
 				70_000
 			);
+			await restoreUploadedTables();
 			await refreshTablesFromCatalog();
 			dbReady = true;
 		} catch (err: unknown) {
 			dbError = err instanceof Error ? err.message : String(err);
 		}
 	}
+
+	onMount(() => {
+		const unmountKeyboard = mountKeyboardDispatcher();
+		const unregisterPageBridge = registerPageBridge({
+			isCommandPaletteOpen: () => commandPaletteOpen,
+			isShortcutsOpen: () => shortcutsOpen,
+			toggleCommandPalette: () => {
+				commandPaletteOpen = !commandPaletteOpen;
+			},
+			openShortcuts: () => {
+				shortcutsOpen = true;
+			},
+			toggleSidebar: toggleSidebarCollapsed,
+			saveAll: () => {
+				if (getStorageMode() !== 'filesystem') return;
+				const tabId = getActiveTabId();
+				const nb = getNotebooks().find((n) => n.id === tabId);
+				if (!nb) return;
+				nb.cells.forEach((cell) => scheduleFileSave(nb.id, cell.id));
+			},
+			switchNotebookTab: (index) => {
+				const tab = getOpenNotebookTabs()[index];
+				if (tab) setActiveTab(tab.id);
+			},
+			toggleAIChat: () => setAIChatOpen(!getAIChatOpen()),
+			openComments: () => {
+				if (!collabEnabled) return;
+				const tabId = getActiveTabId();
+				openCommentPanel({
+					notebookId: tabId,
+					cellId: getFocusedCellId() ?? undefined
+				});
+			},
+			addPrqlCell: () => addCellWithLanguage('prql'),
+			addMarkdownCell: () => addMarkdownCell(),
+			runAll: () => void handleRunAll(),
+			isNotebookTab: () => {
+				const tabId = getActiveTabId();
+				return (
+					getNotebooks().some((n) => n.id === tabId) &&
+					!getOpenExtraTabs().some((t) => t.id === tabId)
+				);
+			}
+		});
+		return () => {
+			unmountKeyboard();
+			unregisterPageBridge();
+		};
+	});
 
 	onMount(async () => {
 		const savedSidebarWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -448,14 +569,21 @@
 		window.addEventListener('pointerup', onSidebarPointerUp);
 		window.addEventListener('pointermove', onAIPanelPointerMove);
 		window.addEventListener('pointerup', onAIPanelPointerUp);
+		window.addEventListener('pointermove', onReviewPanelPointerMove);
+		window.addEventListener('pointerup', onReviewPanelPointerUp);
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		initAIChatWidth();
 		initWorkspaceStandards();
 		initWorkspaceMode(data.demoMode);
 		try {
-			loadFromStorage(data.defaultProjectFolder);
+			await loadFromStorage(data.defaultProjectFolder);
 		} catch {
 			toast.error('Stored workspace state is invalid and was ignored.');
+		}
+
+		if (collabEnabled) {
+			startCommentsPolling(getActiveTabId());
+			startWorkspacePolling();
 		}
 
 		// Expose test helpers on window for Playwright E2E tests (dev/test only)
@@ -486,6 +614,10 @@
 		window.removeEventListener('pointerup', onSidebarPointerUp);
 		window.removeEventListener('pointermove', onAIPanelPointerMove);
 		window.removeEventListener('pointerup', onAIPanelPointerUp);
+		window.removeEventListener('pointermove', onReviewPanelPointerMove);
+		window.removeEventListener('pointerup', onReviewPanelPointerUp);
+		stopCommentsPolling();
+		stopWorkspacePolling();
 	});
 
 	// Persistent (non-auto-dismissing) notice when the Postgres-backed workspace load/save
@@ -504,6 +636,23 @@
 				id: workspaceSyncToastId,
 				duration: Infinity
 			});
+		} else if (status === 'conflict') {
+			const info = getWorkspaceConflictInfo();
+			workspaceSyncToastId = toast.warning(
+				`Workspace updated by a teammate${info.updatedBy ? ` (${info.updatedBy})` : ''}.`,
+				{
+					id: workspaceSyncToastId,
+					duration: Infinity,
+					action: {
+						label: 'Reload',
+						onClick: () => void reloadWorkspaceFromServer()
+					},
+					cancel: {
+						label: 'Keep mine',
+						onClick: () => void forceSaveWorkspace()
+					}
+				}
+			);
 		} else if (workspaceSyncToastId !== undefined) {
 			toast.dismiss(workspaceSyncToastId);
 			workspaceSyncToastId = undefined;
@@ -641,13 +790,6 @@
 		openResultTab(cellId, notebookId, name, preferredViewMode);
 	}
 
-	// ── Global keyboard shortcuts ─────────────────────────────────────────────
-	function isTypingTarget(target: EventTarget | null): boolean {
-		if (!(target instanceof HTMLElement)) return false;
-		const tag = target.tagName.toLowerCase();
-		return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
-	}
-
 	// Auto-focus first cell once per notebook tab, but only after dbReady
 	let lastAutoFocusedTab = '';
 	$effect(() => {
@@ -664,81 +806,11 @@
 		});
 	});
 
-	function onGlobalKeydown(e: KeyboardEvent) {
-		// A cell-level handler (NotebookCell.svelte) already preventDefault()'d this key —
-		// don't double-handle it here (this fallback only covers "no cell has focus").
-		if (e.defaultPrevented) return;
-		const mod = e.metaKey || e.ctrlKey;
-		// Cmd+S: immediate save (also works when typing target is focused)
-		if (mod && (e.key === 's' || e.key === 'S')) {
-			e.preventDefault();
-			if (storageMode === 'filesystem' && activeNotebook) {
-				activeNotebook.cells.forEach((cell) => scheduleFileSave(activeNotebook!.id, cell.id));
-			}
-			return;
-		}
-		if (isTypingTarget(e.target)) return;
-		if (e.key === '?') {
-			e.preventDefault();
-			shortcutsOpen = true;
-			return;
-		}
-		// Cmd+1-9: switch to notebook tab by position
-		if (mod && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-			const idx = parseInt(e.key) - 1;
-			if (notebooks[idx]) {
-				e.preventDefault();
-				setActiveTab(notebooks[idx].id);
-				return;
-			}
-		}
-		if (mod && (e.key === 'k' || e.key === 'K') && !e.shiftKey) {
-			e.preventDefault();
-			commandPaletteOpen = !commandPaletteOpen;
-			return;
-		}
-		if (mod && (e.key === 'b' || e.key === 'B')) {
-			e.preventDefault();
-			toggleSidebarCollapsed();
-			return;
-		}
-		if (mod && (e.key === 'j' || e.key === 'J')) {
-			e.preventDefault();
-			setAIChatOpen(!getAIChatOpen());
-			return;
-		}
-		if (!isNotebookTab) return;
-		if (mod && e.shiftKey && e.key === 'Enter') {
-			e.preventDefault();
-			addCellWithLanguage('prql');
-		}
-		if (mod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-			e.preventDefault();
-			addMarkdownCell();
-		}
-		if (mod && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
-			e.preventDefault();
-			void handleRunAll();
-		}
-		// Fallback undo/redo for when no cell container has focus (e.g. focus is on the
-		// sidebar or a toolbar button) — when a cell IS focused, NotebookCell.svelte's own
-		// handler runs first and preventDefault()s, so we never reach here (see top of fn).
-		if (mod && e.key === 'z' && !e.shiftKey) {
-			e.preventDefault();
-			undo();
-		}
-		if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
-			e.preventDefault();
-			redo();
-		}
-	}
 </script>
 
 <svelte:head>
 	<title>Lunapad | Analytics Workspace</title>
 </svelte:head>
-
-<svelte:window onkeydown={onGlobalKeydown} />
 
 <!-- Loading screen -->
 {#if !dbReady}
@@ -995,6 +1067,49 @@
 
 				<div class="flex items-center gap-2">
 					{#if isNotebookTab}
+						{#if collabEnabled && notebookPresence.length > 0}
+							<div class="hidden items-center -space-x-1.5 md:flex" aria-label="Teammates viewing">
+								{#each notebookPresence.slice(0, 4) as person (person.userId)}
+									<span
+										class="flex h-6 w-6 items-center justify-center rounded-full border border-background bg-muted text-[9px] font-semibold text-muted-foreground"
+										title={person.userName}
+									>
+										{person.userName
+											.split(/\s+/)
+											.map((p) => p[0])
+											.join('')
+											.slice(0, 2)
+											.toUpperCase()}
+									</span>
+								{/each}
+							</div>
+						{/if}
+						{#if collabEnabled}
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									<button
+										class="relative flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {reviewPanelOpen
+											? 'bg-primary/15 text-primary'
+											: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+										onclick={() => {
+											if (reviewPanelOpen) closeCommentPanel();
+											else openInbox();
+										}}
+										aria-pressed={reviewPanelOpen}
+										aria-label="Open review inbox"
+									>
+										<MessageSquare class="h-3.5 w-3.5" />
+										<span class="hidden sm:inline">Review</span>
+										{#if inboxUnread > 0}
+											<span
+												class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background"
+											></span>
+										{/if}
+									</button>
+								</Tooltip.Trigger>
+								<Tooltip.Content side="bottom">Review threads & inbox</Tooltip.Content>
+							</Tooltip.Root>
+						{/if}
 						<Tooltip.Root>
 							<Tooltip.Trigger>
 								<button
@@ -1554,8 +1669,16 @@
 												30s
 											{:else if activeNotebook.autoRefreshIntervalMs === 60000}
 												1m
-											{:else}
+											{:else if activeNotebook.autoRefreshIntervalMs === 300000}
 												5m
+											{:else if activeNotebook.autoRefreshIntervalMs === 900000}
+												15m
+											{:else if activeNotebook.autoRefreshIntervalMs === 1800000}
+												30m
+											{:else if activeNotebook.autoRefreshIntervalMs === 3600000}
+												1h
+											{:else}
+												{Math.round(activeNotebook.autoRefreshIntervalMs / 60_000)}m
 											{/if}
 										</Select.Trigger>
 										<Select.Content>
@@ -1563,6 +1686,9 @@
 											<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
 											<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
 											<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
+											<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
+											<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
+											<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
 										</Select.Content>
 									</Select.Root>
 								</div>
@@ -1656,6 +1782,7 @@
 														setPendingSuggestion(instruction);
 													}}
 													onOpenResultTab={handleOpenResultTab}
+													collabEnabled={collabEnabled}
 												/>
 											</div>
 										{/each}
@@ -1677,6 +1804,9 @@
 						</main>
 						{#if aiChatOpen}
 							<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
+						{/if}
+						{#if collabEnabled && reviewPanelOpen}
+							<ReviewPanel width={reviewPanelWidth} onStartResize={onReviewPanelPointerDown} />
 						{/if}
 					</div>
 				{:else if activeExtraTab}
@@ -1769,57 +1899,41 @@
 />
 
 <Dialog.Root bind:open={shortcutsOpen}>
-	<Dialog.Content class="max-h-[85vh] max-w-2xl overflow-y-auto p-6">
+	<Dialog.Content class="max-h-[85vh] max-w-2xl overflow-y-auto p-6" data-keyboard-scope="modal">
 		<h2 class="mb-4 text-sm font-semibold">Keyboard shortcuts</h2>
 
 		<div class="grid grid-cols-2 gap-6 text-xs">
-			<div>
-				<p class="mb-2 text-2xs font-semibold text-muted-foreground">Notebook — command mode</p>
-				<p class="mb-2 text-2xs text-muted-foreground italic">
-					Activate: press <code class="rounded bg-muted px-1 font-mono text-2xs">Esc</code> from any editor
-				</p>
-				<table class="w-full">
-					<tbody class="divide-y divide-border/40">
-						{#each [['Enter', 'Enter edit mode'], ['↑ / k', 'Focus previous cell'], ['↓ / j', 'Focus next cell'], ['a', 'Insert cell above'], ['b', 'Insert cell below'], ['d d', 'Delete cell'], ['⇧K', 'Move cell up'], ['⇧J', 'Move cell down'], ['c', 'Collapse / expand cell'], ['y / ⌘C', 'Copy cell'], ['p / ⌘V', 'Paste cell below'], ['⇧⌘D', 'Duplicate cell'], ['⇧↵ / ⌘↵', 'Run cell']] as [key, desc]}
-							<tr>
-								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
-								<td class="py-1 text-muted-foreground">{desc}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-
-			<div>
-				<p class="mb-2 text-2xs font-semibold text-muted-foreground">Notebook — global</p>
-				<table class="mb-4 w-full">
-					<tbody class="divide-y divide-border/40">
-						{#each [['⌘⇧↵', 'Add PRQL cell'], ['⌘⇧M', 'Add markdown cell'], ['⌘⇧R', 'Run all cells'], ['⌘Z', 'Undo'], ['⌘⇧Z / ⌘Y', 'Redo'], ['⌘B', 'Toggle sidebar'], ['⌘1–9', 'Switch to notebook tab']] as [key, desc]}
-							<tr>
-								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
-								<td class="py-1 text-muted-foreground">{desc}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-
-				<p class="mb-2 text-2xs font-semibold text-muted-foreground">GUI pipeline stages</p>
-				<p class="mb-2 text-2xs text-muted-foreground italic">
-					Activate: click a stage or press <code class="rounded bg-muted px-1 font-mono text-2xs"
-						>Enter</code
-					> in command mode
-				</p>
-				<table class="w-full">
-					<tbody class="divide-y divide-border/40">
-						{#each [['j / ↓', 'Navigate to next stage'], ['k / ↑', 'Navigate to prev stage'], ['⇧J', 'Move stage down'], ['⇧K', 'Move stage up'], ['r', 'Run stage preview'], ['x / Del', 'Remove stage'], ['⇧D', 'Duplicate stage'], ['v', 'Toggle stage disabled'], ['n', 'Add chip to stage'], ['c', 'Collapse / expand stage'], ['/', 'Open Add Stage menu'], ['1–9', 'Pick result from menu'], ['↵', 'Apply fast plan'], ['⌘↵', 'Run AI generation'], ['Esc', 'Exit to cell command mode']] as [key, desc]}
-							<tr>
-								<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{key}</td>
-								<td class="py-1 text-muted-foreground">{desc}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			{#each SHORTCUT_GROUPS as group}
+				{@const rows = shortcutTables[group.key] ?? []}
+				{#if rows.length > 0}
+					<div>
+						<p class="mb-2 text-2xs font-semibold text-muted-foreground">{group.title}</p>
+						{#if group.key === 'command-mode'}
+							<p class="mb-2 text-2xs text-muted-foreground italic">
+								Activate: press <code class="rounded bg-muted px-1 font-mono text-2xs">Esc</code> from
+								any editor
+							</p>
+						{/if}
+						{#if group.key === 'gui-stages'}
+							<p class="mb-2 text-2xs text-muted-foreground italic">
+								Activate: click a stage or press <code class="rounded bg-muted px-1 font-mono text-2xs"
+									>Enter</code
+								> in command mode
+							</p>
+						{/if}
+						<table class="w-full">
+							<tbody class="divide-y divide-border/40">
+								{#each rows as row}
+									<tr>
+										<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{row.chord}</td>
+										<td class="py-1 text-muted-foreground">{row.label}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			{/each}
 		</div>
 	</Dialog.Content>
 </Dialog.Root>

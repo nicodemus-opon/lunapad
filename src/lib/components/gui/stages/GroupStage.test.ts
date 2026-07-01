@@ -24,9 +24,11 @@ describe('GroupStage window derive editor', () => {
 		expect(source).toContain('canUseStructuredRawAgg');
 		expect(source).toContain('parseStructuredAggExpr');
 		expect(source).toContain('structuredAggExprToString');
-		expect(source).toContain("onclick={() => setRawAggMode(idx, agg, true)}");
-		expect(source).toContain("onclick={() => setRawAggMode(idx, agg, false)}");
-		expect(source).toContain('disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}');
+		expect(source).toContain('onclick={() => setRawAggMode(idx, agg, true)}');
+		expect(source).toContain('onclick={() => setRawAggMode(idx, agg, false)}');
+		expect(source).toContain(
+			'disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}'
+		);
 		expect(source).toContain('placeholder="PRQL aggregation expression…"');
 	});
 });

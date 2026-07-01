@@ -29,7 +29,9 @@
 	const theme = $derived(getTheme());
 	const resolvedTheme = $derived(
 		theme === 'system'
-			? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+			? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+				? 'dark'
+				: 'light'
 			: theme
 	);
 
@@ -66,4 +68,3 @@
 	</TooltipProvider>
 	<Toaster richColors theme={resolvedTheme === 'dark' ? 'dark' : 'light'} />
 </div>
-

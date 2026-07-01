@@ -2,6 +2,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
 	import { Loader2, Copy, RefreshCw, Ban, UploadCloud, History, Undo2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { buildShareSnapshot } from '$lib/services/share-snapshot';
@@ -37,7 +38,7 @@
 	let loading = $state(false);
 	let publishing = $state(false);
 	let token = $state<string | null>(null);
-	let pollIntervalSeconds = $state(30);
+	let pollIntervalSeconds = $state(300);
 	let requireAuth = $state(false);
 	let savedSlug = $state<string | null>(null);
 	let slugInput = $state('');
@@ -68,7 +69,7 @@
 			const body = await res.json();
 			if (body.share) {
 				token = body.share.token;
-				pollIntervalSeconds = Math.round((body.share.pollIntervalMs ?? 30_000) / 1000);
+				pollIntervalSeconds = Math.round((body.share.pollIntervalMs ?? 300_000) / 1000);
 				requireAuth = body.share.requireAuth ?? false;
 				savedSlug = body.share.slug ?? null;
 				slugInput = savedSlug ?? '';
@@ -320,15 +321,31 @@
 
 				<div class="flex items-center gap-2">
 					<span class="shrink-0 text-[11px] text-muted-foreground">Refresh every</span>
-					<Input
-						type="number"
-						min="5"
-						class="h-7 text-xs"
+					<Select.Root
+						type="single"
 						value={String(pollIntervalSeconds)}
-						oninput={(e) =>
-							(pollIntervalSeconds = Number((e.target as HTMLInputElement).value) || 30)}
-					/>
-					<span class="shrink-0 text-[11px] text-muted-foreground">sec</span>
+						onValueChange={(v) => (pollIntervalSeconds = Number(v))}
+					>
+						<Select.Trigger class="h-7 text-xs">
+							{#if pollIntervalSeconds === 60}1 min
+							{:else if pollIntervalSeconds === 300}5 min
+							{:else if pollIntervalSeconds === 900}15 min
+							{:else if pollIntervalSeconds === 1800}30 min
+							{:else if pollIntervalSeconds === 3600}1 hr
+							{:else if pollIntervalSeconds === 21600}6 hr
+							{:else if pollIntervalSeconds === 86400}24 hr
+							{:else}{pollIntervalSeconds}s{/if}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="60" class="text-xs">Every 1 min</Select.Item>
+							<Select.Item value="300" class="text-xs">Every 5 min</Select.Item>
+							<Select.Item value="900" class="text-xs">Every 15 min</Select.Item>
+							<Select.Item value="1800" class="text-xs">Every 30 min</Select.Item>
+							<Select.Item value="3600" class="text-xs">Every 1 hr</Select.Item>
+							<Select.Item value="21600" class="text-xs">Every 6 hr</Select.Item>
+							<Select.Item value="86400" class="text-xs">Every 24 hr</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
 
 				<label class="flex cursor-pointer items-center gap-1.5">

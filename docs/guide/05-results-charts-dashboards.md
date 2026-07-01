@@ -8,20 +8,20 @@ Query results render as a sortable, paginated table right below the cell. For a 
 
 Any result can be turned into a chart instead of a table. Pick a type based on what you're trying to show:
 
-| Type | Use it for |
-|---|---|
-| Table | Raw rows, when a chart wouldn't add anything |
-| KPI / Value / Delta | A single number, optionally compared against a previous value |
-| Line / Area | A metric over time |
-| Bar / Horizontal bar | Comparing a metric across categories |
-| Scatter / Bubble | Relationships between two (or three) numeric fields |
-| Pie | Share of a whole, for a small number of categories |
-| Histogram | Distribution of a single numeric column |
-| Heatmap / Calendar heatmap | Density across two dimensions, or across days |
-| Funnel | Drop-off across ordered stages |
-| Box plot | Spread and outliers across groups |
-| Sankey | Flow between categories |
-| Custom | Anything the above don't cover |
+| Type                       | Use it for                                                    |
+| -------------------------- | ------------------------------------------------------------- |
+| Table                      | Raw rows, when a chart wouldn't add anything                  |
+| KPI / Value / Delta        | A single number, optionally compared against a previous value |
+| Line / Area                | A metric over time                                            |
+| Bar / Horizontal bar       | Comparing a metric across categories                          |
+| Scatter / Bubble           | Relationships between two (or three) numeric fields           |
+| Pie                        | Share of a whole, for a small number of categories            |
+| Histogram                  | Distribution of a single numeric column                       |
+| Heatmap / Calendar heatmap | Density across two dimensions, or across days                 |
+| Funnel                     | Drop-off across ordered stages                                |
+| Box plot                   | Spread and outliers across groups                             |
+| Sankey                     | Flow between categories                                       |
+| Custom                     | Anything the above don't cover                                |
 
 Charts pick up sensible defaults from the result columns and can be adjusted from there, axes, color grouping, stacking, sort order.
 

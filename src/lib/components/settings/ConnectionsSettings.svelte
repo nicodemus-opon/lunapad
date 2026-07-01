@@ -153,13 +153,16 @@
 	function defaultsForType(type: FormType): Partial<ConnectionForm> {
 		if (type === 'clickhouse')
 			return { port: '8123', database: 'default', username: 'default', secure: 'false' };
-		if (type === 'mysql') return { port: '3306', database: 'mydb', username: 'root', secure: 'false' };
-		if (type === 'mariadb') return { port: '3306', database: 'mydb', username: 'root', secure: 'false' };
+		if (type === 'mysql')
+			return { port: '3306', database: 'mydb', username: 'root', secure: 'false' };
+		if (type === 'mariadb')
+			return { port: '3306', database: 'mydb', username: 'root', secure: 'false' };
 		if (type === 'redshift')
 			return { port: '5439', database: 'dev', username: 'awsuser', secure: 'true' };
 		if (type === 'singlestore')
 			return { port: '3306', database: 'mydb', username: 'root', secure: 'true' };
-		if (type === 'mongodb') return { port: '27017', database: 'mydb', username: '', secure: 'false' };
+		if (type === 'mongodb')
+			return { port: '27017', database: 'mydb', username: '', secure: 'false' };
 		if (type === 'elasticsearch') return { port: '9200', database: 'default', username: '' };
 		if (type === 'sqlserver')
 			return {
@@ -170,8 +173,14 @@
 				trustServerCertificate: 'true'
 			};
 		if (type === 'oracle')
-			return { port: '1521', username: 'system', identifierType: 'service_name', serviceName: 'ORCLPDB1' };
-		if (type === 'snowflake') return { warehouse: 'COMPUTE_WH', database: 'MYDB', username: '', role: '' };
+			return {
+				port: '1521',
+				username: 'system',
+				identifierType: 'service_name',
+				serviceName: 'ORCLPDB1'
+			};
+		if (type === 'snowflake')
+			return { warehouse: 'COMPUTE_WH', database: 'MYDB', username: '', role: '' };
 		if (type === 'cassandra')
 			return { port: '9042', contactPoints: '', localDatacenter: 'datacenter1', username: '' };
 		if (type === 'gsheets') return { metadataSheetId: '', credentialsJson: '' };
@@ -298,7 +307,8 @@
 
 	function parsePort(value: string): number {
 		const port = Number(value);
-		if (!Number.isFinite(port) || port <= 0) throw new Error('Port must be a valid positive number.');
+		if (!Number.isFinite(port) || port <= 0)
+			throw new Error('Port must be a valid positive number.');
 		return port;
 	}
 
@@ -334,7 +344,12 @@
 		}
 
 		if (form.type === 'snowflake') {
-			if (!form.account.trim() || !form.warehouse.trim() || !form.database.trim() || !form.username.trim()) {
+			if (
+				!form.account.trim() ||
+				!form.warehouse.trim() ||
+				!form.database.trim() ||
+				!form.username.trim()
+			) {
 				throw new Error('Account, warehouse, database, and username are required.');
 			}
 			return {
@@ -672,15 +687,22 @@
 	<div class="space-y-2 rounded border bg-background p-2">
 		<div class="grid grid-cols-2 gap-2">
 			<div class="col-span-2">
-				<label for="connection-type" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-					>Type</label
+				<label
+					for="connection-type"
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Type</label
 				>
 				<Select.Root
 					type="single"
 					value={form.type}
 					onValueChange={(value) => {
 						const t = value as FormType;
-						form = { ...emptyForm(t), id: form.id, name: form.name, catalogName: form.catalogName, ...defaultsForType(t) };
+						form = {
+							...emptyForm(t),
+							id: form.id,
+							name: form.name,
+							catalogName: form.catalogName,
+							...defaultsForType(t)
+						};
 					}}
 				>
 					<Select.Trigger id="connection-type" class="h-7 text-xs"
@@ -715,8 +737,9 @@
 			</div>
 
 			<div class="col-span-2">
-				<label for="connection-name" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-					>Name</label
+				<label
+					for="connection-name"
+					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Name</label
 				>
 				<Input
 					id="connection-name"
@@ -780,14 +803,17 @@
 						id="connection-credentials"
 						class="h-20 w-full rounded border bg-background p-1.5 font-mono text-2xs"
 						bind:value={form.credentialsJson}
-						placeholder={editingId ? 'Leave blank to keep current credentials' : 'Paste service-account JSON'}
+						placeholder={editingId
+							? 'Leave blank to keep current credentials'
+							: 'Paste service-account JSON'}
 					></textarea>
 				</div>
 			{:else if group === 'bigquery'}
 				<div>
 					<label
 						for="connection-project-id"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Project ID</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Project ID</label
 					>
 					<Input
 						id="connection-project-id"
@@ -819,13 +845,16 @@
 						id="connection-credentials"
 						class="h-20 w-full rounded border bg-background p-1.5 font-mono text-2xs"
 						bind:value={form.credentialsJson}
-						placeholder={editingId ? 'Leave blank to keep current credentials' : 'Paste service-account JSON'}
+						placeholder={editingId
+							? 'Leave blank to keep current credentials'
+							: 'Paste service-account JSON'}
 					></textarea>
 				</div>
 			{:else if group === 'snowflake'}
 				<div>
-					<label for="connection-account" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Account</label
+					<label
+						for="connection-account"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Account</label
 					>
 					<Input
 						id="connection-account"
@@ -837,7 +866,8 @@
 				<div>
 					<label
 						for="connection-warehouse"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Warehouse</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Warehouse</label
 					>
 					<Input
 						id="connection-warehouse"
@@ -849,7 +879,8 @@
 				<div>
 					<label
 						for="connection-database"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Database</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Database</label
 					>
 					<Input
 						id="connection-database"
@@ -859,22 +890,35 @@
 					/>
 				</div>
 				<div>
-					<label for="connection-role" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+					<label
+						for="connection-role"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
 						>Role (optional)</label
 					>
-					<Input id="connection-role" class="h-7 font-mono text-xs" bind:value={form.role} placeholder="ANALYST" />
+					<Input
+						id="connection-role"
+						class="h-7 font-mono text-xs"
+						bind:value={form.role}
+						placeholder="ANALYST"
+					/>
 				</div>
 				<div>
 					<label
 						for="connection-username"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Username</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Username</label
 					>
-					<Input id="connection-username" class="h-7 font-mono text-xs" bind:value={form.username} />
+					<Input
+						id="connection-username"
+						class="h-7 font-mono text-xs"
+						bind:value={form.username}
+					/>
 				</div>
 				<div>
 					<label
 						for="connection-password"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Password</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Password</label
 					>
 					<Input
 						id="connection-password"
@@ -897,18 +941,27 @@
 						bind:value={form.contactPoints}
 						placeholder="10.0.0.1,10.0.0.2"
 					/>
-					<p class="mt-0.5 text-2xs text-muted-foreground/70">Comma-separated cluster contact-point hosts.</p>
+					<p class="mt-0.5 text-2xs text-muted-foreground/70">
+						Comma-separated cluster contact-point hosts.
+					</p>
 				</div>
 				<div>
-					<label for="connection-port" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Port</label
+					<label
+						for="connection-port"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Port</label
 					>
-					<Input id="connection-port" class="h-7 font-mono text-xs" bind:value={form.port} placeholder="9042" />
+					<Input
+						id="connection-port"
+						class="h-7 font-mono text-xs"
+						bind:value={form.port}
+						placeholder="9042"
+					/>
 				</div>
 				<div>
 					<label
 						for="connection-local-dc"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Local datacenter</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Local datacenter</label
 					>
 					<Input
 						id="connection-local-dc"
@@ -923,7 +976,11 @@
 						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
 						>Username (optional)</label
 					>
-					<Input id="connection-username" class="h-7 font-mono text-xs" bind:value={form.username} />
+					<Input
+						id="connection-username"
+						class="h-7 font-mono text-xs"
+						bind:value={form.username}
+					/>
 				</div>
 				<div>
 					<label
@@ -941,21 +998,34 @@
 				</div>
 			{:else if group === 'oracle'}
 				<div>
-					<label for="connection-host" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Host</label
+					<label
+						for="connection-host"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Host</label
 					>
-					<Input id="connection-host" class="h-7 font-mono text-xs" bind:value={form.host} placeholder="localhost" />
+					<Input
+						id="connection-host"
+						class="h-7 font-mono text-xs"
+						bind:value={form.host}
+						placeholder="localhost"
+					/>
 				</div>
 				<div>
-					<label for="connection-port" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Port</label
+					<label
+						for="connection-port"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Port</label
 					>
-					<Input id="connection-port" class="h-7 font-mono text-xs" bind:value={form.port} placeholder="1521" />
+					<Input
+						id="connection-port"
+						class="h-7 font-mono text-xs"
+						bind:value={form.port}
+						placeholder="1521"
+					/>
 				</div>
 				<div>
 					<label
 						for="connection-identifier-type"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Identifier type</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Identifier type</label
 					>
 					<Select.Root
 						type="single"
@@ -987,14 +1057,20 @@
 				<div>
 					<label
 						for="connection-username"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Username</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Username</label
 					>
-					<Input id="connection-username" class="h-7 font-mono text-xs" bind:value={form.username} />
+					<Input
+						id="connection-username"
+						class="h-7 font-mono text-xs"
+						bind:value={form.username}
+					/>
 				</div>
 				<div>
 					<label
 						for="connection-password"
-						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Password</label
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+						>Password</label
 					>
 					<Input
 						id="connection-password"
@@ -1006,8 +1082,9 @@
 				</div>
 			{:else}
 				<div>
-					<label for="connection-host" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Host</label
+					<label
+						for="connection-host"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Host</label
 					>
 					<Input
 						id="connection-host"
@@ -1023,8 +1100,9 @@
 					{/if}
 				</div>
 				<div>
-					<label for="connection-port" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
-						>Port</label
+					<label
+						for="connection-port"
+						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Port</label
 					>
 					<Input
 						id="connection-port"
@@ -1094,11 +1172,15 @@
 								value={form.secure}
 								onValueChange={(value) => (form.secure = value as PostgresSSLMode)}
 							>
-								<Select.Trigger id="connection-secure" class="h-7 text-xs">{pgSecureLabel}</Select.Trigger>
+								<Select.Trigger id="connection-secure" class="h-7 text-xs"
+									>{pgSecureLabel}</Select.Trigger
+								>
 								<Select.Content>
 									<Select.Item value="disable" class="text-xs">Disabled</Select.Item>
 									<Select.Item value="require" class="text-xs">Enabled (no cert check)</Select.Item>
-									<Select.Item value="verify-full" class="text-xs">Enabled (verify cert)</Select.Item>
+									<Select.Item value="verify-full" class="text-xs"
+										>Enabled (verify cert)</Select.Item
+									>
 								</Select.Content>
 							</Select.Root>
 						{:else}
@@ -1131,7 +1213,9 @@
 							onValueChange={(value) => (form.trustServerCertificate = value as 'false' | 'true')}
 						>
 							<Select.Trigger id="connection-trust-cert" class="h-7 text-xs"
-								>{form.trustServerCertificate === 'true' ? 'Trusted' : 'Verify cert'}</Select.Trigger
+								>{form.trustServerCertificate === 'true'
+									? 'Trusted'
+									: 'Verify cert'}</Select.Trigger
 							>
 							<Select.Content>
 								<Select.Item value="true" class="text-xs">Trusted (no cert check)</Select.Item>

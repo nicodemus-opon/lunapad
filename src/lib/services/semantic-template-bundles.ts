@@ -414,7 +414,11 @@ function prqlColumnIdentifier(column: string): string {
 	return `\"${column.replace(/\"/g, '\\\"')}\"`;
 }
 
-function chooseColumnByRegex(columns: string[], regex: RegExp, fallback?: string | null): string | null {
+function chooseColumnByRegex(
+	columns: string[],
+	regex: RegExp,
+	fallback?: string | null
+): string | null {
 	const hit = columns.find((column) => regex.test(column));
 	if (hit) return hit;
 	return fallback ?? null;
@@ -426,41 +430,97 @@ function chooseBySemantic(profiles: ProfileLike[], semanticPattern: RegExp): str
 }
 
 function chooseTextColumn(columns: string[], profiles: ProfileLike[]): string | null {
-	const bySemantic = chooseBySemantic(profiles, /(description|text|status|category|event_type|entity_name)/i);
+	const bySemantic = chooseBySemantic(
+		profiles,
+		/(description|text|status|category|event_type|entity_name)/i
+	);
 	if (bySemantic) return bySemantic;
-	return chooseColumnByRegex(columns, /(description|message|text|comment|body|details|status|category|type)/i, columns[0] ?? null);
+	return chooseColumnByRegex(
+		columns,
+		/(description|message|text|comment|body|details|status|category|type)/i,
+		columns[0] ?? null
+	);
 }
 
 function chooseMetricColumn(columns: string[], profiles: ProfileLike[]): string | null {
-	const bySemantic = chooseBySemantic(profiles, /(amount|metric|count|ratio|percentage|quantity|duration|score)/i);
+	const bySemantic = chooseBySemantic(
+		profiles,
+		/(amount|metric|count|ratio|percentage|quantity|duration|score)/i
+	);
 	if (bySemantic) return bySemantic;
-	return chooseColumnByRegex(columns, /(amount|value|metric|score|count|total|price|cost|rate|ratio|duration|revenue|margin|conversion)/i, null);
+	return chooseColumnByRegex(
+		columns,
+		/(amount|value|metric|score|count|total|price|cost|rate|ratio|duration|revenue|margin|conversion)/i,
+		null
+	);
 }
 
 function chooseTemporalColumn(columns: string[], profiles: ProfileLike[]): string | null {
 	const bySemantic = chooseBySemantic(profiles, /(event_time|created_at|updated_at|date)/i);
 	if (bySemantic) return bySemantic;
-	return chooseColumnByRegex(columns, /(date|time|timestamp|_at|day|month|year|period|submitted|event_ts|log_ts)/i, null);
+	return chooseColumnByRegex(
+		columns,
+		/(date|time|timestamp|_at|day|month|year|period|submitted|event_ts|log_ts)/i,
+		null
+	);
 }
 
 function chooseIdColumn(columns: string[], profiles: ProfileLike[]): string | null {
-	const bySemantic = chooseBySemantic(profiles, /(id|foreign_key|session_id|source_id|target_id|parent_id)/i);
+	const bySemantic = chooseBySemantic(
+		profiles,
+		/(id|foreign_key|session_id|source_id|target_id|parent_id)/i
+	);
 	if (bySemantic) return bySemantic;
-	return chooseColumnByRegex(columns, /(^id$|_id$|uuid|guid|key$|session|source|target|parent|customer_id|user_id)/i, null);
+	return chooseColumnByRegex(
+		columns,
+		/(^id$|_id$|uuid|guid|key$|session|source|target|parent|customer_id|user_id)/i,
+		null
+	);
 }
 
-function buildBindingResolver(columns: string[], profiles: ProfileLike[]): (token: string) => string | null {
+function buildBindingResolver(
+	columns: string[],
+	profiles: ProfileLike[]
+): (token: string) => string | null {
 	const temporal = chooseTemporalColumn(columns, profiles);
 	const metric = chooseMetricColumn(columns, profiles);
 	const text = chooseTextColumn(columns, profiles);
 	const id = chooseIdColumn(columns, profiles);
-	const lat = chooseColumnByRegex(columns, /(^lat$|latitude)/i, chooseBySemantic(profiles, /(latitude|geo_point)/i));
-	const lon = chooseColumnByRegex(columns, /(^lon$|^lng$|longitude)/i, chooseBySemantic(profiles, /(longitude|geo_point)/i));
-	const country = chooseColumnByRegex(columns, /(country|region|state|province)/i, chooseBySemantic(profiles, /(country|region)/i));
-	const url = chooseColumnByRegex(columns, /(url|link|website|image_url|media_url)/i, chooseBySemantic(profiles, /(media_url|url)/i));
-	const path = chooseColumnByRegex(columns, /(file_path|path|asset|media_path|image_path)/i, chooseBySemantic(profiles, /(media_path|media_extension)/i));
-	const binary = chooseColumnByRegex(columns, /(is_|has_|flag|converted|churned|active|recovered)/i, chooseBySemantic(profiles, /(flag|binary_outcome)/i));
-	const category = chooseColumnByRegex(columns, /(status|category|type|segment|plan|country|region|stage|rating)/i, text ?? country);
+	const lat = chooseColumnByRegex(
+		columns,
+		/(^lat$|latitude)/i,
+		chooseBySemantic(profiles, /(latitude|geo_point)/i)
+	);
+	const lon = chooseColumnByRegex(
+		columns,
+		/(^lon$|^lng$|longitude)/i,
+		chooseBySemantic(profiles, /(longitude|geo_point)/i)
+	);
+	const country = chooseColumnByRegex(
+		columns,
+		/(country|region|state|province)/i,
+		chooseBySemantic(profiles, /(country|region)/i)
+	);
+	const url = chooseColumnByRegex(
+		columns,
+		/(url|link|website|image_url|media_url)/i,
+		chooseBySemantic(profiles, /(media_url|url)/i)
+	);
+	const path = chooseColumnByRegex(
+		columns,
+		/(file_path|path|asset|media_path|image_path)/i,
+		chooseBySemantic(profiles, /(media_path|media_extension)/i)
+	);
+	const binary = chooseColumnByRegex(
+		columns,
+		/(is_|has_|flag|converted|churned|active|recovered)/i,
+		chooseBySemantic(profiles, /(flag|binary_outcome)/i)
+	);
+	const category = chooseColumnByRegex(
+		columns,
+		/(status|category|type|segment|plan|country|region|stage|rating)/i,
+		text ?? country
+	);
 	const sourceId = chooseColumnByRegex(columns, /(source_id|src_id|from_id|source)/i, id);
 	const targetId = chooseColumnByRegex(columns, /(target_id|dst_id|to_id|target)/i, id);
 	const parentId = chooseColumnByRegex(columns, /(parent_id|ancestor_id|root_id|parent)/i, id);
@@ -513,7 +573,13 @@ function buildBindingResolver(columns: string[], profiles: ProfileLike[]): (toke
 			case 'source_id':
 			case 'target_id':
 			case 'parent_id':
-				return token === 'source_id' ? sourceId : token === 'target_id' ? targetId : token === 'parent_id' ? parentId : id;
+				return token === 'source_id'
+					? sourceId
+					: token === 'target_id'
+						? targetId
+						: token === 'parent_id'
+							? parentId
+							: id;
 			case 'user_id':
 				return userId;
 			case 'event_type':
@@ -543,7 +609,9 @@ function extractPlaceholders(prql: string): string[] {
 	return [...new Set(matches)];
 }
 
-export function hydrateSemanticTemplateBundles(input: SemanticTemplateHydrationInput): HydratedSemanticTemplateBundle[] {
+export function hydrateSemanticTemplateBundles(
+	input: SemanticTemplateHydrationInput
+): HydratedSemanticTemplateBundle[] {
 	const columns = [...new Set((input.availableColumns ?? []).filter(Boolean))];
 	if (columns.length === 0) return [];
 	const profiles = input.profileRows ?? [];
@@ -570,7 +638,8 @@ export function hydrateSemanticTemplateBundles(input: SemanticTemplateHydrationI
 			prql = prql.replaceAll(`{${token}}`, value);
 		}
 
-		const matchRatio = placeholders.length === 0 ? 1 : Object.keys(bindings).length / placeholders.length;
+		const matchRatio =
+			placeholders.length === 0 ? 1 : Object.keys(bindings).length / placeholders.length;
 		out.push({
 			id: template.id,
 			title: template.title,

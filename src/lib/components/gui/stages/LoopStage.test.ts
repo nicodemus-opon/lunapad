@@ -11,7 +11,7 @@ describe('LoopStage structured mode', () => {
 	it('supports structured mini-stage mode alongside raw mode', () => {
 		const source = readFileSync(sourcePath, 'utf8');
 
-		expect(source).toContain("const effectiveMode = $derived(");
+		expect(source).toContain('const effectiveMode = $derived(');
 		expect(source).toContain("switchMode('structured')");
 		expect(source).toContain("switchMode('raw')");
 		expect(source).not.toContain('Popover.Root');

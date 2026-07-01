@@ -606,19 +606,50 @@ export const STAGE_PRESETS: StagePresetItem[] = [
 		id: 'temporal-trend',
 		label: 'Temporal trend rollup',
 		description: 'Bucket any date column by period, aggregate a metric, and sort chronologically',
-		keywords: ['trend', 'time series', 'temporal', 'rollup', 'historical', 'over time', 'progression', 'timeline']
+		keywords: [
+			'trend',
+			'time series',
+			'temporal',
+			'rollup',
+			'historical',
+			'over time',
+			'progression',
+			'timeline'
+		]
 	},
 	{
 		id: 'text-categorize',
 		label: 'Categorize text and aggregate',
 		description: 'Apply regex-based case buckets to a text column and roll up totals',
-		keywords: ['categorize', 'regex', 'case', 'text', 'breakdown', 'classify', 'label', 'bucket', 'tag', 'cluster']
+		keywords: [
+			'categorize',
+			'regex',
+			'case',
+			'text',
+			'breakdown',
+			'classify',
+			'label',
+			'bucket',
+			'tag',
+			'cluster'
+		]
 	},
 	{
 		id: 'anomaly-scan',
 		label: 'Top outliers by metric',
 		description: 'Rank rows by absolute metric magnitude to surface unusual values',
-		keywords: ['outlier', 'anomaly', 'largest', 'threshold', 'scan', 'unusual', 'extreme', 'spike', 'suspicious', 'irregular']
+		keywords: [
+			'outlier',
+			'anomaly',
+			'largest',
+			'threshold',
+			'scan',
+			'unusual',
+			'extreme',
+			'spike',
+			'suspicious',
+			'irregular'
+		]
 	},
 	{
 		id: 'frequency-ranking',
@@ -641,14 +672,33 @@ export const STAGE_PRESETS: StagePresetItem[] = [
 	{
 		id: 'contribution-total',
 		label: 'Contribution to total',
-		description: 'Compute each segment\'s share as a percentage of the global total',
-		keywords: ['contribution', 'share', 'percent', 'total', 'percentage', 'proportion', 'breakdown', 'share of total']
+		description: "Compute each segment's share as a percentage of the global total",
+		keywords: [
+			'contribution',
+			'share',
+			'percent',
+			'total',
+			'percentage',
+			'proportion',
+			'breakdown',
+			'share of total'
+		]
 	},
 	{
 		id: 'period-variance',
 		label: 'Period-over-period variance',
 		description: 'Compare metric values across consecutive periods and compute growth deltas',
-		keywords: ['variance', 'delta', 'growth', 'month-over-month', 'comparison', 'change', 'YoY', 'WoW', 'difference']
+		keywords: [
+			'variance',
+			'delta',
+			'growth',
+			'month-over-month',
+			'comparison',
+			'change',
+			'YoY',
+			'WoW',
+			'difference'
+		]
 	},
 	{
 		id: 'segment-anomaly',
@@ -666,19 +716,46 @@ export const STAGE_PRESETS: StagePresetItem[] = [
 		id: 'duplicate-fingerprint',
 		label: 'Duplicate fingerprint finder',
 		description: 'Group rows by a key column and surface the most duplicated entries',
-		keywords: ['duplicate', 'fingerprint', 'dedup', 'key', 'repeated', 'matches', 'collision', 'duplicated records']
+		keywords: [
+			'duplicate',
+			'fingerprint',
+			'dedup',
+			'key',
+			'repeated',
+			'matches',
+			'collision',
+			'duplicated records'
+		]
 	},
 	{
 		id: 'cohort-retention',
 		label: 'Cohort retention starter',
 		description: 'Group rows by first-seen period and track activity over time',
-		keywords: ['cohort', 'retention', 'first seen', 'lifecycle', 'groups', 'engagement', 'first event', 'user groups']
+		keywords: [
+			'cohort',
+			'retention',
+			'first seen',
+			'lifecycle',
+			'groups',
+			'engagement',
+			'first event',
+			'user groups'
+		]
 	},
 	{
 		id: 'funnel-dropoff',
 		label: 'Funnel drop-off scaffold',
 		description: 'Count rows at each status stage and compute progression percentages',
-		keywords: ['funnel', 'drop-off', 'conversion', 'stage', 'pipeline', 'steps', 'conversion rate', 'progress']
+		keywords: [
+			'funnel',
+			'drop-off',
+			'conversion',
+			'stage',
+			'pipeline',
+			'steps',
+			'conversion rate',
+			'progress'
+		]
 	},
 	{
 		id: 'outlier-explain',
@@ -696,13 +773,31 @@ export const STAGE_PRESETS: StagePresetItem[] = [
 		id: 'efficiency-lens',
 		label: 'Efficiency lens',
 		description: 'Derive a ratio of cost to revenue per segment and rank weakest performers',
-		keywords: ['efficiency', 'ratio', 'cost', 'revenue', 'performance', 'margin', 'profitability', 'ROI']
+		keywords: [
+			'efficiency',
+			'ratio',
+			'cost',
+			'revenue',
+			'performance',
+			'margin',
+			'profitability',
+			'ROI'
+		]
 	},
 	{
 		id: 'drift-monitor',
 		label: 'Drift monitor',
 		description: 'Compare metric behavior in a recent window versus a historical baseline',
-		keywords: ['drift', 'recent', 'baseline', 'monitor', 'change', 'shift', 'before after', 'current vs past']
+		keywords: [
+			'drift',
+			'recent',
+			'baseline',
+			'monitor',
+			'change',
+			'shift',
+			'before after',
+			'current vs past'
+		]
 	},
 	{
 		id: 'append-union-stack',
@@ -751,15 +846,71 @@ function preferColumn(columns: string[], hints: string[]): string | null {
 }
 
 function pickMetricColumn(columns: string[]): string | null {
-	const preferred = preferColumn(columns, ['amount', 'revenue', 'sales', 'balance', 'paid', 'withdrawn', 'received', 'disbursed', 'credited', 'debited', 'count', 'value', 'price', 'cost', 'score', 'metric', 'total', 'net', 'gross', 'margin', 'income', 'profit', 'budget', 'spend', 'fee', 'tax', 'earnings', 'clicks', 'views', 'impressions', 'visits', 'sessions', 'conversions', 'duration', 'size', 'area']);
-	if (preferred && !isTemporalColumn(preferred) && !isIdentifierColumn(preferred) && (isRoundWorthyNumericColumn(preferred) || isCountLikeNumericColumn(preferred))) return preferred;
-	const measurementLike = columns.find((column) =>
-		/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement|area|size|duration|elapsed|bandwidth|throughput)/i.test(column) &&
-		!isTemporalColumn(column) &&
-		!isIdentifierColumn(column)
+	const preferred = preferColumn(columns, [
+		'amount',
+		'revenue',
+		'sales',
+		'balance',
+		'paid',
+		'withdrawn',
+		'received',
+		'disbursed',
+		'credited',
+		'debited',
+		'count',
+		'value',
+		'price',
+		'cost',
+		'score',
+		'metric',
+		'total',
+		'net',
+		'gross',
+		'margin',
+		'income',
+		'profit',
+		'budget',
+		'spend',
+		'fee',
+		'tax',
+		'earnings',
+		'clicks',
+		'views',
+		'impressions',
+		'visits',
+		'sessions',
+		'conversions',
+		'duration',
+		'size',
+		'area'
+	]);
+	if (
+		preferred &&
+		!isTemporalColumn(preferred) &&
+		!isIdentifierColumn(preferred) &&
+		(isRoundWorthyNumericColumn(preferred) || isCountLikeNumericColumn(preferred))
+	)
+		return preferred;
+	const measurementLike = columns.find(
+		(column) =>
+			/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement|area|size|duration|elapsed|bandwidth|throughput)/i.test(
+				column
+			) &&
+			!isTemporalColumn(column) &&
+			!isIdentifierColumn(column)
 	);
 	if (measurementLike) return measurementLike;
-	return columns.find((column) => /(amount|revenue|sales|balance|paid|withdrawn|received|disbursed|credited|debited|count|value|price|cost|score|metric|total|net|gross|margin|income|profit|budget|spend|fee|tax|earnings|clicks|views|impressions|visits|sessions|conversions|duration|size|area)/i.test(column) && !isTemporalColumn(column) && !isIdentifierColumn(column) && (isRoundWorthyNumericColumn(column) || isCountLikeNumericColumn(column))) ?? null;
+	return (
+		columns.find(
+			(column) =>
+				/(amount|revenue|sales|balance|paid|withdrawn|received|disbursed|credited|debited|count|value|price|cost|score|metric|total|net|gross|margin|income|profit|budget|spend|fee|tax|earnings|clicks|views|impressions|visits|sessions|conversions|duration|size|area)/i.test(
+					column
+				) &&
+				!isTemporalColumn(column) &&
+				!isIdentifierColumn(column) &&
+				(isRoundWorthyNumericColumn(column) || isCountLikeNumericColumn(column))
+		) ?? null
+	);
 }
 
 function pickProfileMetricColumn(input: StagePresetBuildInput): string | null {
@@ -773,7 +924,12 @@ function pickProfileMetricColumn(input: StagePresetBuildInput): string | null {
 			if (!profile) return false;
 			if (profile.dataKind !== 'numeric') return false;
 			if (isTemporalColumn(column) || isIdentifierColumn(column)) return false;
-			if (/(id|foreign_key|status|category|entity_name|description|text)/i.test(profile.semanticType ?? '')) return false;
+			if (
+				/(id|foreign_key|status|category|entity_name|description|text)/i.test(
+					profile.semanticType ?? ''
+				)
+			)
+				return false;
 			return true;
 		});
 
@@ -785,7 +941,12 @@ function pickProfileMetricColumn(input: StagePresetBuildInput): string | null {
 			const semantic = profile?.semanticType ?? '';
 			if (/(amount|currency_amount|unit_price|inflow|outflow)/i.test(semantic)) score += 2.3;
 			if (/(metric|quantity|count|ratio|percentage|volume_measure)/i.test(semantic)) score += 1.6;
-			if (/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement)/i.test(column)) score += 1.3;
+			if (
+				/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement)/i.test(
+					column
+				)
+			)
+				score += 1.3;
 			if (/(amount|revenue|sales|cost|price|balance)/i.test(column)) score += 1.7;
 			if (/(count|total|num|number)/i.test(column)) score -= 0.2;
 			return { column, score };
@@ -810,7 +971,12 @@ function isQuantityLikeColumn(column: string, profile: PresetColumnProfile | nul
 	if (isTemporalColumn(column) || isIdentifierColumn(column)) return false;
 	const semantic = profile?.semanticType ?? '';
 	if (/(id|foreign_key|status|category|entity_name|description|text)/i.test(semantic)) return false;
-	if (/(units?|qty|quantit|count|volume|sold|items?|pieces?|ordered|purchased|shipped|delivered|produced|invoiced|consumed|allocated)/i.test(column)) return true;
+	if (
+		/(units?|qty|quantit|count|volume|sold|items?|pieces?|ordered|purchased|shipped|delivered|produced|invoiced|consumed|allocated)/i.test(
+			column
+		)
+	)
+		return true;
 	if (/(quantity|count)/i.test(semantic)) return true;
 	return false;
 }
@@ -823,7 +989,10 @@ interface CompositeMetricPlan {
 	quantityColumn: string;
 }
 
-function findCompositeMetricPlan(input: StagePresetBuildInput, dialect: CoercionDialect): CompositeMetricPlan | null {
+function findCompositeMetricPlan(
+	input: StagePresetBuildInput,
+	dialect: CoercionDialect
+): CompositeMetricPlan | null {
 	const columns = input.availableColumns ?? [];
 	if (columns.length < 2) return null;
 
@@ -862,7 +1031,44 @@ function findCompositeMetricPlan(input: StagePresetBuildInput, dialect: Coercion
 
 function pickDimensionColumn(columns: string[]): string | null {
 	if (columns.length === 0) return null;
-	const hints = ['species', 'class', 'target', 'genre', 'sub_genre', 'mood', 'category', 'segment', 'region', 'country', 'city', 'customer', 'vendor', 'merchant', 'payee', 'type', 'status', 'group', 'label', 'department', 'team', 'project', 'source', 'platform', 'channel', 'plan', 'tier', 'branch', 'zone', 'division', 'sector', 'campaign', 'medium', 'product', 'brand', 'office'];
+	const hints = [
+		'species',
+		'class',
+		'target',
+		'genre',
+		'sub_genre',
+		'mood',
+		'category',
+		'segment',
+		'region',
+		'country',
+		'city',
+		'customer',
+		'vendor',
+		'merchant',
+		'payee',
+		'type',
+		'status',
+		'group',
+		'label',
+		'department',
+		'team',
+		'project',
+		'source',
+		'platform',
+		'channel',
+		'plan',
+		'tier',
+		'branch',
+		'zone',
+		'division',
+		'sector',
+		'campaign',
+		'medium',
+		'product',
+		'brand',
+		'office'
+	];
 	const normalized = columns.map((column) => ({
 		column,
 		normalized: column.trim().toLowerCase()
@@ -899,16 +1105,63 @@ function pickTimestampColumn(columns: string[]): string | null {
 }
 
 function pickEntityColumn(columns: string[]): string | null {
-	return preferColumn(columns, ['payee', 'merchant', 'vendor', 'customer', 'user', 'account', 'company', 'name', 'entity', 'partner', 'supplier', 'provider', 'owner', 'member', 'subscriber', 'employee', 'agent', 'client', 'contact']);
+	return preferColumn(columns, [
+		'payee',
+		'merchant',
+		'vendor',
+		'customer',
+		'user',
+		'account',
+		'company',
+		'name',
+		'entity',
+		'partner',
+		'supplier',
+		'provider',
+		'owner',
+		'member',
+		'subscriber',
+		'employee',
+		'agent',
+		'client',
+		'contact'
+	]);
 }
 
 function pickDetailTextColumn(columns: string[]): string | null {
-	return preferColumn(columns, ['details', 'detail', 'description', 'memo', 'message', 'note', 'narrative', 'title']);
+	return preferColumn(columns, [
+		'details',
+		'detail',
+		'description',
+		'memo',
+		'message',
+		'note',
+		'narrative',
+		'title'
+	]);
 }
 
-function pickInflowOutflowColumns(columns: string[]): { inflow: string | null; outflow: string | null } {
-	const inflow = preferColumn(columns, ['paid in', 'inflow', 'credit', 'credited', 'deposit', 'received']);
-	const outflow = preferColumn(columns, ['withdrawn', 'outflow', 'debit', 'debited', 'spent', 'payment', 'charge']);
+function pickInflowOutflowColumns(columns: string[]): {
+	inflow: string | null;
+	outflow: string | null;
+} {
+	const inflow = preferColumn(columns, [
+		'paid in',
+		'inflow',
+		'credit',
+		'credited',
+		'deposit',
+		'received'
+	]);
+	const outflow = preferColumn(columns, [
+		'withdrawn',
+		'outflow',
+		'debit',
+		'debited',
+		'spent',
+		'payment',
+		'charge'
+	]);
 	return { inflow, outflow };
 }
 
@@ -955,12 +1208,15 @@ function columnProfileFor(
 
 function isNumericSemanticHint(semanticType?: string): boolean {
 	if (!semanticType) return false;
-	return /(amount|metric|count|ratio|percentage|quantity|value|price|cost|revenue|sales|balance|score|total)/i.test(semanticType);
+	return /(amount|metric|count|ratio|percentage|quantity|value|price|cost|revenue|sales|balance|score|total)/i.test(
+		semanticType
+	);
 }
 
 function isOutflowLikeMetric(column: string, profile: PresetColumnProfile | null): boolean {
 	if (!column) return false;
-	if (/(withdrawn|outflow|debit|debited|spent|payment|charge|expense|cost)/i.test(column)) return true;
+	if (/(withdrawn|outflow|debit|debited|spent|payment|charge|expense|cost)/i.test(column))
+		return true;
 	return /(outflow|debit|expense|cost)/i.test(profile?.semanticType ?? '');
 }
 
@@ -976,7 +1232,11 @@ function shouldCoerceMetricToNumeric(column: string, profile: PresetColumnProfil
 	if (profile.dataKind === 'date' || profile.dataKind === 'boolean') return false;
 	if (profile.dataKind === 'text') {
 		if (isNumericSemanticHint(profile.semanticType)) return true;
-		if (profile.semanticType && /status|category|entity|name|description|text|id|foreign_key/i.test(profile.semanticType)) return false;
+		if (
+			profile.semanticType &&
+			/status|category|entity|name|description|text|id|foreign_key/i.test(profile.semanticType)
+		)
+			return false;
 		return true;
 	}
 	return true;
@@ -997,7 +1257,11 @@ function buildNullSafeNumericSqlExpr(column: string, dialect: CoercionDialect): 
 	return `coalesce(${buildCoercedMetricSqlExpr(column, dialect)}, 0)`;
 }
 
-function buildTemporalSqlExpr(column: string, profile: PresetColumnProfile | null, dialect: CoercionDialect): string {
+function buildTemporalSqlExpr(
+	column: string,
+	profile: PresetColumnProfile | null,
+	dialect: CoercionDialect
+): string {
 	const id = quotedSqlIdentifier(column);
 	if (profile?.dataKind === 'date' || isTemporalSemanticHint(profile?.semanticType)) {
 		if (dialect === 'clickhouse') return `parseDateTime64BestEffortOrNull(toString(${id}))`;
@@ -1063,13 +1327,19 @@ function humanizeColumnName(name: string): string {
 
 function isTemporalColumn(column: string): boolean {
 	const lower = column.toLowerCase();
-	if (/(on_time|delivered_on_time|returned|present|active|approved|rejected|passed|failed|escalated|admitted|occupied|fraud|alert)/i.test(lower)
-		&& !/(date|timestamp|created|updated|arrival|departure|start|end)/i.test(lower)) {
+	if (
+		/(on_time|delivered_on_time|returned|present|active|approved|rejected|passed|failed|escalated|admitted|occupied|fraud|alert)/i.test(
+			lower
+		) &&
+		!/(date|timestamp|created|updated|arrival|departure|start|end)/i.test(lower)
+	) {
 		return false;
 	}
 	if (lower.includes('createdat') || lower.includes('updatedat')) return true;
 	if (lower.endsWith('_at') || lower.endsWith('at')) return true;
-	return /(^|_|\b)(date|time|timestamp|deadline|due|expires?|created_at|updated_at)($|_|\b)/i.test(column);
+	return /(^|_|\b)(date|time|timestamp|deadline|due|expires?|created_at|updated_at)($|_|\b)/i.test(
+		column
+	);
 }
 
 function isIdentifierColumn(column: string): boolean {
@@ -1077,15 +1347,21 @@ function isIdentifierColumn(column: string): boolean {
 }
 
 function isLikelyTextColumn(column: string): boolean {
-	return /(name|title|label|status|state|type|category|segment|city|country|region|description)/i.test(column);
+	return /(name|title|label|status|state|type|category|segment|city|country|region|description)/i.test(
+		column
+	);
 }
 
 function isCountLikeNumericColumn(column: string): boolean {
-	return /(count|total|num|number|qty|quantity|jobs|visits|users|orders|records|rows)/i.test(column);
+	return /(count|total|num|number|qty|quantity|jobs|visits|users|orders|records|rows)/i.test(
+		column
+	);
 }
 
 function isRoundWorthyNumericColumn(column: string): boolean {
-	return /(amount|price|cost|revenue|sales|balance|paid|withdrawn|credited|debited|avg|mean|ratio|rate|percent|pct|score|value|metric|units?|qty|quantity|seats?|distance|weight|temperature|temp|humidity|wind|rainfall|energy|kwh|minutes?|hours?|days?|latency|downtime|risk|defect|fx|mrr|arr)/i.test(column);
+	return /(amount|price|cost|revenue|sales|balance|paid|withdrawn|credited|debited|avg|mean|ratio|rate|percent|pct|score|value|metric|units?|qty|quantity|seats?|distance|weight|temperature|temp|humidity|wind|rainfall|energy|kwh|minutes?|hours?|days?|latency|downtime|risk|defect|fx|mrr|arr)/i.test(
+		column
+	);
 }
 
 function pickNonTemporalMetricColumn(columns: string[]): string | null {
@@ -1106,8 +1382,25 @@ function pickDimensionFallback(columns: string[], metric: string | null): string
 
 function pickDimensionColumns(columns: string[], metric: string | null, maxCount = 2): string[] {
 	const hints = [
-		'species', 'class', 'target', 'region', 'country', 'city', 'product', 'category', 'segment', 'channel',
-		'status', 'stage', 'type', 'group', 'cohort', 'merchant', 'vendor', 'customer', 'payee'
+		'species',
+		'class',
+		'target',
+		'region',
+		'country',
+		'city',
+		'product',
+		'category',
+		'segment',
+		'channel',
+		'status',
+		'stage',
+		'type',
+		'group',
+		'cohort',
+		'merchant',
+		'vendor',
+		'customer',
+		'payee'
 	];
 	const selected: string[] = [];
 	for (const hint of hints) {
@@ -1125,18 +1418,27 @@ function pickDimensionColumns(columns: string[], metric: string | null, maxCount
 
 	if (selected.length < maxCount) {
 		const hasPreferredSemanticDimension = selected.length > 0;
-		const hasNonMeasurementFallback = columns.some((column) =>
-			!(metric && column === metric) &&
-			!isTemporalColumn(column) &&
-			!isIdentifierColumn(column) &&
-			!/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement)/i.test(column)
+		const hasNonMeasurementFallback = columns.some(
+			(column) =>
+				!(metric && column === metric) &&
+				!isTemporalColumn(column) &&
+				!isIdentifierColumn(column) &&
+				!/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement)/i.test(
+					column
+				)
 		);
 		for (const column of columns) {
 			if (selected.includes(column)) continue;
 			if (metric && column === metric) continue;
 			if (isTemporalColumn(column) || isIdentifierColumn(column)) continue;
 			if (hasPreferredSemanticDimension && /(name|title|label)/i.test(column)) continue;
-			if (hasNonMeasurementFallback && /(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement)/i.test(column)) continue;
+			if (
+				hasNonMeasurementFallback &&
+				/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement)/i.test(
+					column
+				)
+			)
+				continue;
 			selected.push(column);
 			if (selected.length >= maxCount) break;
 		}
@@ -1153,10 +1455,19 @@ export function makePresetStages(
 	const availableColumns = input.availableColumns ?? [];
 	const availableColumnProfiles = input.availableColumnProfiles;
 	const compositeMetricPlan = findCompositeMetricPlan(input, dialect);
-	const metric = compositeMetricPlan?.name ?? pickMetricColumn(availableColumns) ?? pickProfileMetricColumn(input) ?? '';
-	const dimension = pickDimensionColumn(availableColumns) ?? pickDimensionFallback(availableColumns, metric || null) ?? '';
+	const metric =
+		compositeMetricPlan?.name ??
+		pickMetricColumn(availableColumns) ??
+		pickProfileMetricColumn(input) ??
+		'';
+	const dimension =
+		pickDimensionColumn(availableColumns) ??
+		pickDimensionFallback(availableColumns, metric || null) ??
+		'';
 	const timestamp = pickTimestampColumn(availableColumns) ?? '';
-	const metricProfile = compositeMetricPlan ? null : columnProfileFor(availableColumnProfiles, metric);
+	const metricProfile = compositeMetricPlan
+		? null
+		: columnProfileFor(availableColumnProfiles, metric);
 	const timestampProfile = columnProfileFor(availableColumnProfiles, timestamp);
 	const entityKey = preferColumn(availableColumns, ['id', 'uuid', 'key', '_id']) ?? '';
 	const entity = pickEntityColumn(availableColumns) ?? dimension;
@@ -1164,19 +1475,24 @@ export function makePresetStages(
 	const { inflow, outflow } = pickInflowOutflowColumns(availableColumns);
 	const effectiveMetric = metric || '';
 	const secondaryMetric =
-		availableColumns.find((column) =>
-			column !== effectiveMetric &&
-			!isTemporalColumn(column) &&
-			!isIdentifierColumn(column) &&
-			/(revenue|income|sales|paid|credited|inflow|cost|expense|withdrawn|debited|outflow|amount|balance|value)/i.test(column)
+		availableColumns.find(
+			(column) =>
+				column !== effectiveMetric &&
+				!isTemporalColumn(column) &&
+				!isIdentifierColumn(column) &&
+				/(revenue|income|sales|paid|credited|inflow|cost|expense|withdrawn|debited|outflow|amount|balance|value)/i.test(
+					column
+				)
 		) ?? '';
 	const dimensions = pickDimensionColumns(availableColumns, effectiveMetric || null, 2);
 	const primaryDimension = dimensions[0] ?? dimension ?? entity;
 	const secondaryDimension = dimensions[1] ?? null;
 	const metricToken = safeStageToken(effectiveMetric || 'value');
 	const metricRef = effectiveMetric ? quotePrqlIdentifier(effectiveMetric) : '';
-	const coercedMetricColumn = !compositeMetricPlan && effectiveMetric ? `${metricToken}_numeric` : '';
-	const useCoercedMetric = !compositeMetricPlan && shouldCoerceMetricToNumeric(effectiveMetric, metricProfile);
+	const coercedMetricColumn =
+		!compositeMetricPlan && effectiveMetric ? `${metricToken}_numeric` : '';
+	const useCoercedMetric =
+		!compositeMetricPlan && shouldCoerceMetricToNumeric(effectiveMetric, metricProfile);
 	const metricAggregationColumn = effectiveMetric
 		? compositeMetricPlan
 			? compositeMetricPlan.name
@@ -1184,70 +1500,122 @@ export function makePresetStages(
 				? coercedMetricColumn
 				: effectiveMetric
 		: '';
-	const metricCoercionDerive = effectiveMetric && useCoercedMetric
-		? [{ name: coercedMetricColumn, expr: { mode: 'sstring' as const, template: buildCoercedMetricSqlExpr(effectiveMetric, dialect) } }]
-		: [];
+	const metricCoercionDerive =
+		effectiveMetric && useCoercedMetric
+			? [
+					{
+						name: coercedMetricColumn,
+						expr: {
+							mode: 'sstring' as const,
+							template: buildCoercedMetricSqlExpr(effectiveMetric, dialect)
+						}
+					}
+				]
+			: [];
 	const compositeMetricDerive = compositeMetricPlan
-		? [{ name: compositeMetricPlan.name, expr: { mode: 'sstring' as const, template: compositeMetricPlan.expressionSql } }]
+		? [
+				{
+					name: compositeMetricPlan.name,
+					expr: { mode: 'sstring' as const, template: compositeMetricPlan.expressionSql }
+				}
+			]
 		: [];
 	const metricPreparationDerive = [...metricCoercionDerive, ...compositeMetricDerive];
 	const absoluteMetricColumn = effectiveMetric ? `${metricToken}_abs` : '';
-	const useAbsoluteMetric = !compositeMetricPlan && effectiveMetric ? isOutflowLikeMetric(effectiveMetric, metricProfile) : false;
+	const useAbsoluteMetric =
+		!compositeMetricPlan && effectiveMetric
+			? isOutflowLikeMetric(effectiveMetric, metricProfile)
+			: false;
 	const metricAbsDerive = useAbsoluteMetric
-		? [{
-			name: absoluteMetricColumn,
-			expr: {
-				mode: 'sstring' as const,
-				template: useCoercedMetric
-					? `abs(coalesce(${buildCoercedMetricSqlExpr(effectiveMetric, dialect)}, 0))`
-					: dialect === 'postgres'
-						? `abs(coalesce(cast(${quotedSqlIdentifier(effectiveMetric)} as double precision), 0))`
-						: `abs(coalesce(cast(${quotedSqlIdentifier(effectiveMetric)} as double), 0))`
-			}
-		}]
+		? [
+				{
+					name: absoluteMetricColumn,
+					expr: {
+						mode: 'sstring' as const,
+						template: useCoercedMetric
+							? `abs(coalesce(${buildCoercedMetricSqlExpr(effectiveMetric, dialect)}, 0))`
+							: dialect === 'postgres'
+								? `abs(coalesce(cast(${quotedSqlIdentifier(effectiveMetric)} as double precision), 0))`
+								: `abs(coalesce(cast(${quotedSqlIdentifier(effectiveMetric)} as double), 0))`
+					}
+				}
+			]
 		: [];
 	const metricPreparationWithAbs = [...metricPreparationDerive, ...metricAbsDerive];
-	const effectiveAggregationMetricColumn = useAbsoluteMetric ? absoluteMetricColumn : metricAggregationColumn;
-	const metricSortColumn = effectiveAggregationMetricColumn || metricAggregationColumn || effectiveMetric;
-	const temporalBaseExpr = timestamp ? buildTemporalSqlExpr(timestamp, timestampProfile, dialect) : '';
-	const timestampExpr = timestamp && temporalBaseExpr
-		? `date_trunc('month', ${temporalBaseExpr})`
+	const effectiveAggregationMetricColumn = useAbsoluteMetric
+		? absoluteMetricColumn
+		: metricAggregationColumn;
+	const metricSortColumn =
+		effectiveAggregationMetricColumn || metricAggregationColumn || effectiveMetric;
+	const temporalBaseExpr = timestamp
+		? buildTemporalSqlExpr(timestamp, timestampProfile, dialect)
 		: '';
+	const timestampExpr =
+		timestamp && temporalBaseExpr ? `date_trunc('month', ${temporalBaseExpr})` : '';
 	const metricAggFunc = (() => {
 		if (!effectiveMetric) return 'count' as const;
 		const profile = columnProfileFor(availableColumnProfiles, effectiveMetric);
-		if (/(amount|revenue|sales|price|cost|balance|currency_amount|unit_price|inflow|outflow)/i.test(effectiveMetric) || /(amount|currency_amount|unit_price|inflow|outflow)/i.test(profile?.semanticType ?? '')) {
+		if (
+			/(amount|revenue|sales|price|cost|balance|currency_amount|unit_price|inflow|outflow)/i.test(
+				effectiveMetric
+			) ||
+			/(amount|currency_amount|unit_price|inflow|outflow)/i.test(profile?.semanticType ?? '')
+		) {
 			return 'sum' as const;
 		}
-		if (/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement)/i.test(effectiveMetric) || /(metric|ratio|percentage)/i.test(profile?.semanticType ?? '')) {
+		if (
+			/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|score|index|measurement)/i.test(
+				effectiveMetric
+			) ||
+			/(metric|ratio|percentage)/i.test(profile?.semanticType ?? '')
+		) {
 			return 'average' as const;
 		}
-		if (/(count|total|num|number)/i.test(effectiveMetric) || /(count)/i.test(profile?.semanticType ?? '')) {
+		if (
+			/(count|total|num|number)/i.test(effectiveMetric) ||
+			/(count)/i.test(profile?.semanticType ?? '')
+		) {
 			return 'sum' as const;
 		}
 		return 'average' as const;
 	})();
-	const periodKey = timestampExpr ? 'period_month' : (timestamp || '');
-	const temporalExtractExpr = (part: 'dow' | 'month'): string => `extract(${part} from ${temporalBaseExpr})`;
+	const periodKey = timestampExpr ? 'period_month' : timestamp || '';
+	const temporalExtractExpr = (part: 'dow' | 'month'): string =>
+		`extract(${part} from ${temporalBaseExpr})`;
 
 	switch (presetId) {
 		case 'top-metric':
 			return [
-				...(metricPreparationWithAbs.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationWithAbs }] : []),
+				...(metricPreparationWithAbs.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationWithAbs }]
+					: []),
 				{ type: 'sort', keys: metricSortColumn ? [{ column: metricSortColumn, dir: 'desc' }] : [] },
 				{ type: 'take', n: 25 }
 			];
 		case 'group-top':
 			return [
-				...(metricPreparationWithAbs.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationWithAbs }] : []),
+				...(metricPreparationWithAbs.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationWithAbs }]
+					: []),
 				{
 					type: 'group',
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: effectiveMetric
-						? [{ name: `${metricAggFunc === 'sum' ? 'sum' : 'avg'}_${metricToken}`, func: metricAggFunc, column: effectiveAggregationMetricColumn }]
+						? [
+								{
+									name: `${metricAggFunc === 'sum' ? 'sum' : 'avg'}_${metricToken}`,
+									func: metricAggFunc,
+									column: effectiveAggregationMetricColumn
+								}
+							]
 						: [{ name: 'row_count', func: 'count', column: '' }]
 				},
-				{ type: 'sort', keys: effectiveMetric ? [{ column: `${metricAggFunc === 'sum' ? 'sum' : 'avg'}_${metricToken}`, dir: 'desc' }] : [{ column: 'row_count', dir: 'desc' }] },
+				{
+					type: 'sort',
+					keys: effectiveMetric
+						? [{ column: `${metricAggFunc === 'sum' ? 'sum' : 'avg'}_${metricToken}`, dir: 'desc' }]
+						: [{ column: 'row_count', dir: 'desc' }]
+				},
 				{ type: 'take', n: 20 }
 			];
 		case 'dedup-exact': {
@@ -1263,20 +1631,26 @@ export function makePresetStages(
 		}
 		case 'dedup-latest':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{ type: 'sort', keys: timestamp ? [{ column: timestamp, dir: 'desc' }] : [] },
 				{
 					type: 'group',
-					by: entityKey ? [entityKey] : (primaryDimension ? [primaryDimension] : []),
+					by: entityKey ? [entityKey] : primaryDimension ? [primaryDimension] : [],
 					aggregations: effectiveMetric
 						? [{ name: `latest_${metricToken}`, func: 'first', column: metricAggregationColumn }]
 						: []
 				}
 			];
 		case 'temporal-trend':
-			const trendCountColumn = timestampExpr ? 'period_month' : (timestamp || effectiveMetric || dimension || '');
+			const trendCountColumn = timestampExpr
+				? 'period_month'
+				: timestamp || effectiveMetric || dimension || '';
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'derive' as const,
 					columns: timestampExpr
@@ -1293,14 +1667,22 @@ export function makePresetStages(
 					by: timestampExpr ? ['period_month'] : timestamp ? [timestamp] : [],
 					aggregations: [
 						...(effectiveMetric
-							? [{ name: `total_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }]
+							? [
+									{
+										name: `total_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
 							: []),
 						{ name: 'tx_count', func: 'count' as const, column: trendCountColumn }
 					]
 				},
 				{
 					type: 'sort' as const,
-					keys: [{ column: timestampExpr ? 'period_month' : (timestamp || ''), dir: 'asc' as const }].filter((key): key is { column: string; dir: 'asc' } => !!key.column)
+					keys: [
+						{ column: timestampExpr ? 'period_month' : timestamp || '', dir: 'asc' as const }
+					].filter((key): key is { column: string; dir: 'asc' } => !!key.column)
 				}
 			];
 		case 'text-categorize':
@@ -1324,31 +1706,50 @@ export function makePresetStages(
 				},
 				{
 					type: 'group' as const,
-					by: detail ? ['category_bucket'] : (dimension ? [dimension] : []),
+					by: detail ? ['category_bucket'] : dimension ? [dimension] : [],
 					aggregations: [
 						...(effectiveMetric
-							? [{ name: `total_${metricToken}`, func: 'sum' as const, column: effectiveAggregationMetricColumn }]
+							? [
+									{
+										name: `total_${metricToken}`,
+										func: 'sum' as const,
+										column: effectiveAggregationMetricColumn
+									}
+								]
 							: []),
 						{ name: 'tx_count', func: 'count' as const, column: '' }
 					]
 				},
-				{ type: 'sort' as const, keys: [{ column: effectiveMetric ? `total_${metricToken}` : 'tx_count', dir: 'desc' as const }] }
+				{
+					type: 'sort' as const,
+					keys: [
+						{ column: effectiveMetric ? `total_${metricToken}` : 'tx_count', dir: 'desc' as const }
+					]
+				}
 			];
 		case 'anomaly-scan':
 			return [
-				...(metricPreparationWithAbs.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationWithAbs }] : []),
+				...(metricPreparationWithAbs.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationWithAbs }]
+					: []),
 				{
 					type: 'derive' as const,
 					columns: effectiveMetric
 						? [
 								{
 									name: `abs_${metricToken}`,
-									expr: { mode: 'raw' as const, expr: nullSafeNumeric(quotePrqlIdentifier(effectiveAggregationMetricColumn)) }
+									expr: {
+										mode: 'raw' as const,
+										expr: nullSafeNumeric(quotePrqlIdentifier(effectiveAggregationMetricColumn))
+									}
 								}
 							]
 						: []
 				},
-				{ type: 'sort' as const, keys: effectiveMetric ? [{ column: `abs_${metricToken}`, dir: 'desc' as const }] : [] },
+				{
+					type: 'sort' as const,
+					keys: effectiveMetric ? [{ column: `abs_${metricToken}`, dir: 'desc' as const }] : []
+				},
 				{ type: 'take' as const, n: 25 }
 			];
 		case 'frequency-ranking':
@@ -1365,16 +1766,31 @@ export function makePresetStages(
 			const hasPairedFlows = Boolean(inflow && outflow && inflow !== outflow);
 			if (!hasPairedFlows) {
 				return [
-					...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+					...(metricPreparationDerive.length > 0
+						? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+						: []),
 					{
 						type: 'group',
 						by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 						aggregations: [
-							...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
+							...(effectiveMetric
+								? [
+										{
+											name: `sum_${metricToken}`,
+											func: 'sum' as const,
+											column: metricAggregationColumn
+										}
+									]
+								: []),
 							{ name: 'tx_count', func: 'count', column: '' }
 						]
 					},
-					{ type: 'sort' as const, keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'tx_count', dir: 'desc' as const }] },
+					{
+						type: 'sort' as const,
+						keys: [
+							{ column: effectiveMetric ? `sum_${metricToken}` : 'tx_count', dir: 'desc' as const }
+						]
+					},
 					{ type: 'take' as const, n: 25 }
 				];
 			}
@@ -1388,7 +1804,10 @@ export function makePresetStages(
 							? [
 									{
 										name: 'inflow',
-										expr: { mode: 'sstring' as const, template: buildNullSafeNumericSqlExpr(inflowCol, dialect) }
+										expr: {
+											mode: 'sstring' as const,
+											template: buildNullSafeNumericSqlExpr(inflowCol, dialect)
+										}
 									}
 								]
 							: []),
@@ -1415,7 +1834,7 @@ export function makePresetStages(
 				},
 				{
 					type: 'group' as const,
-					by: timestampExpr ? ['period_month'] : (timestamp ? [timestamp] : []),
+					by: timestampExpr ? ['period_month'] : timestamp ? [timestamp] : [],
 					aggregations: [
 						{ name: 'total_in', func: 'sum' as const, column: 'inflow' },
 						{ name: 'total_out', func: 'sum' as const, column: 'outflow' },
@@ -1430,32 +1849,59 @@ export function makePresetStages(
 				},
 				{
 					type: 'sort' as const,
-					keys: [{ column: timestampExpr ? 'period_month' : (timestamp || ''), dir: 'asc' as const }].filter((key): key is { column: string; dir: 'asc' } => !!key.column)
+					keys: [
+						{ column: timestampExpr ? 'period_month' : timestamp || '', dir: 'asc' as const }
+					].filter((key): key is { column: string; dir: 'asc' } => !!key.column)
 				}
 			];
 		}
 		case 'hierarchical-rollup':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'group' as const,
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: [
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'row_count', func: 'count' as const, column: '' }
 					]
 				},
-				{ type: 'sort' as const, keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' as const }] },
+				{
+					type: 'sort' as const,
+					keys: [
+						{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' as const }
+					]
+				},
 				{ type: 'take' as const, n: 50 }
 			];
 		case 'contribution-total':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'group' as const,
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: [
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'row_count', func: 'count' as const, column: '' }
 					]
 				},
@@ -1473,17 +1919,27 @@ export function makePresetStages(
 							]
 						: []
 				},
-				{ type: 'sort' as const, keys: [{ column: effectiveMetric ? `pct_${metricToken}` : 'row_count', dir: 'desc' as const }] },
+				{
+					type: 'sort' as const,
+					keys: [
+						{ column: effectiveMetric ? `pct_${metricToken}` : 'row_count', dir: 'desc' as const }
+					]
+				},
 				{ type: 'take' as const, n: 30 }
 			];
 		case 'period-variance':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'derive' as const,
 					columns: timestampExpr
 						? [
-								{ name: 'period_month', expr: { mode: 'sstring' as const, template: timestampExpr } }
+								{
+									name: 'period_month',
+									expr: { mode: 'sstring' as const, template: timestampExpr }
+								}
 							]
 						: []
 				},
@@ -1491,29 +1947,64 @@ export function makePresetStages(
 					type: 'group' as const,
 					by: [periodKey, primaryDimension].filter(Boolean) as string[],
 					aggregations: [
-						...(effectiveMetric ? [{ name: `total_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `total_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'tx_count', func: 'count' as const, column: '' }
 					]
 				},
-				{ type: 'sort' as const, keys: [{ column: periodKey || primaryDimension, dir: 'asc' as const }].filter((key): key is { column: string; dir: 'asc' } => !!key.column) }
+				{
+					type: 'sort' as const,
+					keys: [{ column: periodKey || primaryDimension, dir: 'asc' as const }].filter(
+						(key): key is { column: string; dir: 'asc' } => !!key.column
+					)
+				}
 			];
 		case 'segment-anomaly':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'group',
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: [
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
-						...(effectiveMetric ? [{ name: `avg_${metricToken}`, func: 'average' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
+						...(effectiveMetric
+							? [
+									{
+										name: `avg_${metricToken}`,
+										func: 'average' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'row_count', func: 'count', column: '' }
 					]
 				},
-				{ type: 'sort', keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' }] },
+				{
+					type: 'sort',
+					keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' }]
+				},
 				{ type: 'take', n: 25 }
 			];
 		case 'null-hotspots':
-			const missingTarget = effectiveMetric || primaryDimension || secondaryDimension || availableColumns[0] || '';
+			const missingTarget =
+				effectiveMetric || primaryDimension || secondaryDimension || availableColumns[0] || '';
 			return [
 				{
 					type: 'derive',
@@ -1535,22 +2026,42 @@ export function makePresetStages(
 					aggregations: [
 						{ name: 'row_count', func: 'count', column: '' },
 						...(missingTarget
-							? [{ name: 'missing_count', func: 'raw' as const, column: '', expr: 'sum is_missing_metric' }]
+							? [
+									{
+										name: 'missing_count',
+										func: 'raw' as const,
+										column: '',
+										expr: 'sum is_missing_metric'
+									}
+								]
 							: [])
 					]
 				},
-				{ type: 'sort', keys: [{ column: missingTarget ? 'missing_count' : 'row_count', dir: 'desc' }] },
+				{
+					type: 'sort',
+					keys: [{ column: missingTarget ? 'missing_count' : 'row_count', dir: 'desc' }]
+				},
 				{ type: 'take', n: 30 }
 			];
 		case 'duplicate-fingerprint':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'group',
 					by: [entityKey, primaryDimension].filter(Boolean) as string[],
 					aggregations: [
 						{ name: 'dup_count', func: 'count', column: '' },
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : [])
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: [])
 					]
 				},
 				{ type: 'sort' as const, keys: [{ column: 'dup_count', dir: 'desc' as const }] },
@@ -1561,9 +2072,21 @@ export function makePresetStages(
 				{
 					type: 'derive' as const,
 					columns: [
-						...(timestampExpr ? [{ name: 'period_month', expr: { mode: 'sstring' as const, template: timestampExpr } }] : []),
+						...(timestampExpr
+							? [
+									{
+										name: 'period_month',
+										expr: { mode: 'sstring' as const, template: timestampExpr }
+									}
+								]
+							: []),
 						...(entityKey
-							? [{ name: 'entity_key', expr: { mode: 'raw' as const, expr: quotePrqlIdentifier(entityKey) } }]
+							? [
+									{
+										name: 'entity_key',
+										expr: { mode: 'raw' as const, expr: quotePrqlIdentifier(entityKey) }
+									}
+								]
 							: [])
 					]
 				},
@@ -1577,65 +2100,118 @@ export function makePresetStages(
 						{ name: 'activity_count', func: 'count' as const, column: '' }
 					]
 				},
-				{ type: 'sort' as const, keys: [{ column: periodKey || primaryDimension, dir: 'asc' as const }].filter((key): key is { column: string; dir: 'asc' } => !!key.column) }
+				{
+					type: 'sort' as const,
+					keys: [{ column: periodKey || primaryDimension, dir: 'asc' as const }].filter(
+						(key): key is { column: string; dir: 'asc' } => !!key.column
+					)
+				}
 			];
 		case 'funnel-dropoff':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'group',
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: [
 						{ name: 'stage_count', func: 'count', column: '' },
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : [])
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: [])
 					]
 				},
 				{ type: 'sort', keys: [{ column: 'stage_count', dir: 'desc' }] }
 			];
 		case 'outlier-explain':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'derive',
 					columns: effectiveMetric
-						? [{ name: `abs_${metricToken}`, expr: { mode: 'raw', expr: nullSafeNumeric(quotePrqlIdentifier(metricAggregationColumn)) } }]
+						? [
+								{
+									name: `abs_${metricToken}`,
+									expr: {
+										mode: 'raw',
+										expr: nullSafeNumeric(quotePrqlIdentifier(metricAggregationColumn))
+									}
+								}
+							]
 						: []
 				},
-				{ type: 'sort', keys: effectiveMetric ? [{ column: `abs_${metricToken}`, dir: 'desc' }] : [] },
+				{
+					type: 'sort',
+					keys: effectiveMetric ? [{ column: `abs_${metricToken}`, dir: 'desc' }] : []
+				},
 				{ type: 'take', n: 50 }
 			];
 		case 'seasonal-pattern':
 			return [
-				...(metricPreparationDerive.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationDerive }] : []),
+				...(metricPreparationDerive.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationDerive }]
+					: []),
 				{
 					type: 'derive',
 					columns: timestamp
 						? [
-								{ name: 'season_weekday', expr: { mode: 'sstring', template: temporalExtractExpr('dow') } },
-								{ name: 'season_month', expr: { mode: 'sstring', template: temporalExtractExpr('month') } }
+								{
+									name: 'season_weekday',
+									expr: { mode: 'sstring', template: temporalExtractExpr('dow') }
+								},
+								{
+									name: 'season_month',
+									expr: { mode: 'sstring', template: temporalExtractExpr('month') }
+								}
 							]
 						: []
 				},
 				{
 					type: 'group',
-					by: timestamp ? ['season_month', 'season_weekday'] : [primaryDimension, secondaryDimension].filter(Boolean) as string[],
+					by: timestamp
+						? ['season_month', 'season_weekday']
+						: ([primaryDimension, secondaryDimension].filter(Boolean) as string[]),
 					aggregations: [
-						...(effectiveMetric ? [{ name: `avg_${metricToken}`, func: 'average' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `avg_${metricToken}`,
+										func: 'average' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'tx_count', func: 'count', column: '' }
 					]
 				},
 				{
 					type: 'sort',
 					keys: timestamp
-						? [{ column: 'season_month', dir: 'asc' }, { column: 'season_weekday', dir: 'asc' }]
+						? [
+								{ column: 'season_month', dir: 'asc' },
+								{ column: 'season_weekday', dir: 'asc' }
+							]
 						: [{ column: effectiveMetric ? `avg_${metricToken}` : 'tx_count', dir: 'desc' }]
 				}
 			];
 		case 'efficiency-lens': {
 			const revenueLike =
-				availableColumns.find((column) => /revenue|income|sales|paid|credited|inflow/i.test(column)) ?? effectiveMetric;
+				availableColumns.find((column) =>
+					/revenue|income|sales|paid|credited|inflow/i.test(column)
+				) ?? effectiveMetric;
 			const costLike =
-				availableColumns.find((column) => /cost|expense|withdrawn|debited|outflow|charge/i.test(column)) ?? secondaryMetric;
+				availableColumns.find((column) =>
+					/cost|expense|withdrawn|debited|outflow|charge/i.test(column)
+				) ?? secondaryMetric;
 			return [
 				{
 					type: 'derive',
@@ -1681,11 +2257,22 @@ export function makePresetStages(
 					type: 'group',
 					by: [primaryDimension, secondaryDimension].filter(Boolean) as string[],
 					aggregations: [
-						...(effectiveMetric ? [{ name: `sum_${metricToken}`, func: 'sum' as const, column: metricAggregationColumn }] : []),
+						...(effectiveMetric
+							? [
+									{
+										name: `sum_${metricToken}`,
+										func: 'sum' as const,
+										column: metricAggregationColumn
+									}
+								]
+							: []),
 						{ name: 'row_count', func: 'count', column: '' }
 					]
 				},
-				{ type: 'sort', keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' }] },
+				{
+					type: 'sort',
+					keys: [{ column: effectiveMetric ? `sum_${metricToken}` : 'row_count', dir: 'desc' }]
+				},
 				{ type: 'take', n: 30 }
 			];
 		}
@@ -1693,14 +2280,21 @@ export function makePresetStages(
 			const windowMetric = metricSortColumn || effectiveMetric;
 			const sortColumn = timestamp || windowMetric || primaryDimension;
 			return [
-				...(metricPreparationWithAbs.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationWithAbs }] : []),
+				...(metricPreparationWithAbs.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationWithAbs }]
+					: []),
 				{ type: 'sort', keys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [] },
 				{
 					type: 'window',
 					frame: 'rows:-6..0',
 					sortKeys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [],
 					derives: windowMetric
-						? [{ name: `rolling_avg_${metricToken}`, expr: { mode: 'raw', expr: `average ${quotePrqlIdentifier(windowMetric)}` } }]
+						? [
+								{
+									name: `rolling_avg_${metricToken}`,
+									expr: { mode: 'raw', expr: `average ${quotePrqlIdentifier(windowMetric)}` }
+								}
+							]
 						: []
 				}
 			];
@@ -1711,11 +2305,18 @@ export function makePresetStages(
 			if (!windowMetric) {
 				return [
 					{ type: 'sort', keys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [] },
-					{ type: 'window', frame: 'rows:-1..0', sortKeys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [], derives: [] }
+					{
+						type: 'window',
+						frame: 'rows:-1..0',
+						sortKeys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [],
+						derives: []
+					}
 				];
 			}
 			return [
-				...(metricPreparationWithAbs.length > 0 ? [{ type: 'derive' as const, columns: metricPreparationWithAbs }] : []),
+				...(metricPreparationWithAbs.length > 0
+					? [{ type: 'derive' as const, columns: metricPreparationWithAbs }]
+					: []),
 				{ type: 'sort', keys: sortColumn ? [{ column: sortColumn, dir: 'asc' }] : [] },
 				{
 					type: 'window',
@@ -1791,20 +2392,35 @@ export function makePresetStages(
 					aggregations: [
 						...(timestamp
 							? [
-									{ name: 'recent_rows', func: 'raw' as const, column: '', expr: 'sum is_recent_window' },
-									{ name: 'baseline_rows', func: 'raw' as const, column: '', expr: 'sum is_baseline_window' }
+									{
+										name: 'recent_rows',
+										func: 'raw' as const,
+										column: '',
+										expr: 'sum is_recent_window'
+									},
+									{
+										name: 'baseline_rows',
+										func: 'raw' as const,
+										column: '',
+										expr: 'sum is_baseline_window'
+									}
 								]
 							: [{ name: 'row_count', func: 'count' as const, column: '' }])
 					]
 				},
 				...(timestamp
 					? [
-						{
-							type: 'derive' as const,
-							columns: [{ name: 'drift_delta', expr: { mode: 'raw' as const, expr: 'recent_rows - baseline_rows' } }]
-						},
-						{ type: 'sort' as const, keys: [{ column: 'drift_delta', dir: 'desc' as const }] }
-					]
+							{
+								type: 'derive' as const,
+								columns: [
+									{
+										name: 'drift_delta',
+										expr: { mode: 'raw' as const, expr: 'recent_rows - baseline_rows' }
+									}
+								]
+							},
+							{ type: 'sort' as const, keys: [{ column: 'drift_delta', dir: 'desc' as const }] }
+						]
 					: [{ type: 'sort' as const, keys: [{ column: 'row_count', dir: 'desc' as const }] }]),
 				{ type: 'take', n: 30 }
 			];
@@ -1861,12 +2477,18 @@ function scoreFromContext(type: StageType, input: StageRecommendationInput): Sta
 		score -= 20;
 	}
 
-	if (availableColumnCount === 0 && ['append', 'filter', 'select', 'derive', 'group', 'window', 'sort'].includes(type)) {
+	if (
+		availableColumnCount === 0 &&
+		['append', 'filter', 'select', 'derive', 'group', 'window', 'sort'].includes(type)
+	) {
 		score -= 14;
 		reasons.push('needs available columns');
 	}
 
-	if (last?.type === 'from' && (type === 'append' || type === 'filter' || type === 'select' || type === 'derive')) {
+	if (
+		last?.type === 'from' &&
+		(type === 'append' || type === 'filter' || type === 'select' || type === 'derive')
+	) {
 		score += 18;
 		reasons.push('common after source');
 	}
@@ -1911,7 +2533,9 @@ function scoreFromContext(type: StageType, input: StageRecommendationInput): Sta
 }
 
 export function recommendStages(input: StageRecommendationInput): StageRecommendation[] {
-	return STAGE_CATALOG.map((item) => scoreFromContext(item.type, input)).sort((a, b) => b.score - a.score);
+	return STAGE_CATALOG.map((item) => scoreFromContext(item.type, input)).sort(
+		(a, b) => b.score - a.score
+	);
 }
 
 export function searchStages(query: string): StageCatalogItem[] {
@@ -1941,7 +2565,10 @@ export function searchPresets(query: string): StagePresetItem[] {
 }
 
 function normalizeSearchToken(value: string): string {
-	return value.trim().toLowerCase().replace(/[^a-z0-9_\.]+/g, '');
+	return value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9_\.]+/g, '');
 }
 
 function findBestQueryColumn(query: string, availableColumns: string[]): string | null {
@@ -1964,9 +2591,14 @@ function findBestQueryColumn(query: string, availableColumns: string[]): string 
 	);
 }
 
-function defaultColumnNameForFunction(option: PrqlFunctionOption, selectedColumn: string | null): string {
+function defaultColumnNameForFunction(
+	option: PrqlFunctionOption,
+	selectedColumn: string | null
+): string {
 	const suffix = option.value.split('.').pop() ?? option.value;
-	const stem = (selectedColumn ? humanizeColumnName(selectedColumn) : 'Value').replace(/\s+/g, '_').toLowerCase();
+	const stem = (selectedColumn ? humanizeColumnName(selectedColumn) : 'Value')
+		.replace(/\s+/g, '_')
+		.toLowerCase();
 	return `${stem}_${suffix}`.replace(/[^a-z0-9_]/g, '_');
 }
 
@@ -1974,8 +2606,13 @@ function scoreFunctionSuggestion(option: PrqlFunctionOption, query: string): num
 	if (!query.trim()) return 0;
 	const q = query.trim().toLowerCase();
 	const normalizedQ = normalizeSearchToken(q);
-	const tokens = q.split(/[^a-z0-9._-]+/g).map((token) => token.trim()).filter(Boolean);
-	const text = [option.value, option.label, option.detail, ...option.keywords].join(' ').toLowerCase();
+	const tokens = q
+		.split(/[^a-z0-9._-]+/g)
+		.map((token) => token.trim())
+		.filter(Boolean);
+	const text = [option.value, option.label, option.detail, ...option.keywords]
+		.join(' ')
+		.toLowerCase();
 
 	let score = 0;
 	if (option.value.includes(q) || option.label.toLowerCase().includes(q)) score += 12;
@@ -1997,26 +2634,45 @@ function looksTemporal(column: string): boolean {
 
 function looksMetric(column: string): boolean {
 	if (isIdentifierColumn(column)) return false;
-	return /amount|revenue|sales|income|cost|price|balance|value|metric|score|count|qty|quantity|volume|rate|ratio|percent|pct|units?|minutes?|hours?|days?|seconds?|ms|kwh|usd|kg|km|temperature|temp|humidity|pressure|index/i.test(column);
+	return /amount|revenue|sales|income|cost|price|balance|value|metric|score|count|qty|quantity|volume|rate|ratio|percent|pct|units?|minutes?|hours?|days?|seconds?|ms|kwh|usd|kg|km|temperature|temp|humidity|pressure|index/i.test(
+		column
+	);
 }
 
 function looksDimension(column: string): boolean {
-	return !looksTemporal(column) && !looksMetric(column) && !isIdentifierColumn(column) && /category|segment|group|channel|region|country|city|status|type|stage|name|label|class|genre|mood|style|product|customer|merchant|payee|department|plan|industry|priority|mode|carrier|plant|property|issue|diagnosis|account_type|payment_method/i.test(column);
+	return (
+		!looksTemporal(column) &&
+		!looksMetric(column) &&
+		!isIdentifierColumn(column) &&
+		/category|segment|group|channel|region|country|city|status|type|stage|name|label|class|genre|mood|style|product|customer|merchant|payee|department|plan|industry|priority|mode|carrier|plant|property|issue|diagnosis|account_type|payment_method/i.test(
+			column
+		)
+	);
 }
 
 function looksMeasureLikeColumn(column: string): boolean {
 	if (isIdentifierColumn(column) || isTemporalColumn(column)) return false;
 	if (looksMetric(column)) return true;
 	if (isRoundWorthyNumericColumn(column) || isCountLikeNumericColumn(column)) return true;
-	return /(temperature|temp|humidity|pressure|index|score|pct|percent|ratio|rate|latency|duration|minutes?|seconds?|hours?|kwh|kw|voltage|current|speed|distance|weight|mass|risk)/i.test(column);
+	return /(temperature|temp|humidity|pressure|index|score|pct|percent|ratio|rate|latency|duration|minutes?|seconds?|hours?|kwh|kw|voltage|current|speed|distance|weight|mass|risk)/i.test(
+		column
+	);
 }
 
 function preferredAggregationForMetric(column: string): 'sum' | 'avg' {
 	if (!column) return 'sum';
-	if (/(temperature|temp|humidity|pressure|index|score|pct|percent|ratio|rate|latency|duration|minutes?|seconds?|hours?|risk)/i.test(column)) {
+	if (
+		/(temperature|temp|humidity|pressure|index|score|pct|percent|ratio|rate|latency|duration|minutes?|seconds?|hours?|risk)/i.test(
+			column
+		)
+	) {
 		return 'avg';
 	}
-	if (/(count|qty|quantity|units?|volume|amount|revenue|sales|income|cost|price|balance|kwh|usd)/i.test(column)) {
+	if (
+		/(count|qty|quantity|units?|volume|amount|revenue|sales|income|cost|price|balance|kwh|usd)/i.test(
+			column
+		)
+	) {
 		return 'sum';
 	}
 	return 'avg';
@@ -2025,10 +2681,15 @@ function preferredAggregationForMetric(column: string): 'sum' | 'avg' {
 function isBooleanOutcomeColumn(column: string, profile?: PresetColumnProfile | null): boolean {
 	if (!column) return false;
 	if (profile?.dataKind === 'boolean') return true;
-	return /(^is_|^has_|\b(returned|return|refund|delivered_on_time|on_time|present|active|enabled|allowed|approved|rejected|passed|failed|escalated|admitted|occupied|fraud|alert|churn)\b)/i.test(column);
+	return /(^is_|^has_|\b(returned|return|refund|delivered_on_time|on_time|present|active|enabled|allowed|approved|rejected|passed|failed|escalated|admitted|occupied|fraud|alert|churn)\b)/i.test(
+		column
+	);
 }
 
-function preferredAggregationForQueryMetric(column: string, profile?: PresetColumnProfile | null): 'sum' | 'avg' {
+function preferredAggregationForQueryMetric(
+	column: string,
+	profile?: PresetColumnProfile | null
+): 'sum' | 'avg' {
 	if (isBooleanOutcomeColumn(column, profile)) return 'avg';
 	return preferredAggregationForMetric(column);
 }
@@ -2039,20 +2700,44 @@ function detectIntentMetricColumn(
 	profiles?: Partial<Record<string, PresetColumnProfile>>
 ): string | null {
 	const intentPatterns: Array<{ query: RegExp; column: RegExp }> = [
-		{ query: /\b(pay|paid|spend|spent|purchase|purchased|bought|cost me)\b/i, column: /(withdrawn|outflow|debit|debited|spent|payment|charge|cost|amount)/i },
+		{
+			query: /\b(pay|paid|spend|spent|purchase|purchased|bought|cost me)\b/i,
+			column: /(withdrawn|outflow|debit|debited|spent|payment|charge|cost|amount)/i
+		},
 		{ query: /\b(return|returns|returned|refund)\b/i, column: /(return|returned|refund)/i },
-		{ query: /\b(delivery|deliver(ed)?|on[-\s]?time|late)\b/i, column: /(deliver|delivered|delivered_on_time|on[_\s-]?time|shipping|shipped)/i },
-		{ query: /\b(attendance|attending|present|absence|absent)\b/i, column: /(attendance|present|arrival|absent)/i },
-		{ query: /\b(resolution|resolved|resolve|resolving|response|respond)\b/i, column: /(resolution|response)/i },
-		{ query: /\b(wait|waits|waiting|longest wait|slow|slower|slowest)\b/i, column: /(wait|latency|duration|delay|minutes?)/i },
+		{
+			query: /\b(delivery|deliver(ed)?|on[-\s]?time|late)\b/i,
+			column: /(deliver|delivered|delivered_on_time|on[_\s-]?time|shipping|shipped)/i
+		},
+		{
+			query: /\b(attendance|attending|present|absence|absent)\b/i,
+			column: /(attendance|present|arrival|absent)/i
+		},
+		{
+			query: /\b(resolution|resolved|resolve|resolving|response|respond)\b/i,
+			column: /(resolution|response)/i
+		},
+		{
+			query: /\b(wait|waits|waiting|longest wait|slow|slower|slowest)\b/i,
+			column: /(wait|latency|duration|delay|minutes?)/i
+		},
 		{ query: /\b(defect|defects|quality)\b/i, column: /(defect|reject|scrap|failure|quality)/i },
-		{ query: /\b(air|pollution|air quality|dirty)\b/i, column: /(air_quality|aqi|pollution|pm2|pm10)/i },
+		{
+			query: /\b(air|pollution|air quality|dirty)\b/i,
+			column: /(air_quality|aqi|pollution|pm2|pm10)/i
+		},
 		{ query: /\b(rent|lease)\b/i, column: /(rent|lease|price)/i },
 		{ query: /\b(distance|farthest|furthest|far)\b/i, column: /(distance|km|miles?)/i },
 		{ query: /\b(churn)\b/i, column: /(churn|attrition|retention)/i },
-		{ query: /\b(fraud|fraudulent|chargeback|chargebacks|risk)\b/i, column: /\b(is_)?fraud|chargeback|risk\b/i },
+		{
+			query: /\b(fraud|fraudulent|chargeback|chargebacks|risk)\b/i,
+			column: /\b(is_)?fraud|chargeback|risk\b/i
+		},
 		{ query: /\b(units?|quantity|qty|sold)\b/i, column: /(units?|quantity|qty|sold)/i },
-		{ query: /\b(amount|revenue|sales|mrr|arr|cost|price|usd|temperature|humidity)\b/i, column: /(amount|revenue|sales|mrr|arr|cost|price|usd|temperature|humidity)/i }
+		{
+			query: /\b(amount|revenue|sales|mrr|arr|cost|price|usd|temperature|humidity)\b/i,
+			column: /(amount|revenue|sales|mrr|arr|cost|price|usd|temperature|humidity)/i
+		}
 	];
 
 	for (const intent of intentPatterns) {
@@ -2068,7 +2753,10 @@ function detectIntentMetricColumn(
 		const profile = columnProfileFor(profiles, column);
 		if (!profile) return false;
 		if (isIdentifierColumn(column) || isTemporalColumn(column)) return false;
-		return isBooleanOutcomeColumn(column, profile) && new RegExp(column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(query);
+		return (
+			isBooleanOutcomeColumn(column, profile) &&
+			new RegExp(column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(query)
+		);
 	});
 	if (profilesFallback) return profilesFallback;
 
@@ -2100,11 +2788,17 @@ function resolveBestColumnFromPhrase(phrase: string, availableColumns: string[])
 			const spacedColumn = column.toLowerCase().replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
 			const spacedPhrase = phrase.toLowerCase().replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
 			const phraseTokens = spacedPhrase.split(/\s+/g).filter(Boolean);
-			const informativeTokens = phraseTokens.filter((token) => token.length >= 2 && !genericTokens.has(token));
+			const informativeTokens = phraseTokens.filter(
+				(token) => token.length >= 2 && !genericTokens.has(token)
+			);
 			let score = 0;
 			if (normalizedColumn === normalizedPhrase) score += 60;
 			if (spacedColumn === spacedPhrase) score += 50;
-			if (normalizedColumn.includes(normalizedPhrase) || normalizedPhrase.includes(normalizedColumn)) score += 32;
+			if (
+				normalizedColumn.includes(normalizedPhrase) ||
+				normalizedPhrase.includes(normalizedColumn)
+			)
+				score += 32;
 			if (spacedPhrase.includes(spacedColumn) || spacedColumn.includes(spacedPhrase)) score += 24;
 			for (const token of phraseTokens) {
 				if (token.length < 2) continue;
@@ -2150,12 +2844,20 @@ const MONTH_NAME_TO_INDEX: Record<string, string> = {
 	december: '12'
 };
 
-function parseTemporalPhraseFilterIntent(query: string, availableColumns: string[]): ParsedFilterIntent | null {
+function parseTemporalPhraseFilterIntent(
+	query: string,
+	availableColumns: string[]
+): ParsedFilterIntent | null {
 	const temporalColumn = pickTimestampColumn(availableColumns);
 	if (!temporalColumn) return null;
 
-	const monthMatch = query.match(/\b(?:in|during|for)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i)
-		?? query.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
+	const monthMatch =
+		query.match(
+			/\b(?:in|during|for)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+		) ??
+		query.match(
+			/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+		);
 	if (!monthMatch) return null;
 
 	const monthName = monthMatch[1]?.toLowerCase() ?? '';
@@ -2168,7 +2870,9 @@ function parseTemporalPhraseFilterIntent(query: string, availableColumns: string
 		.trim();
 	const subjectColumn = /\bwho\b/i.test(prefix)
 		? (pickEntityColumn(availableColumns) ?? resolveBestColumnFromPhrase(prefix, availableColumns))
-		: (prefix ? resolveBestColumnFromPhrase(prefix, availableColumns) : null);
+		: prefix
+			? resolveBestColumnFromPhrase(prefix, availableColumns)
+			: null;
 
 	return {
 		filterColumn: temporalColumn,
@@ -2190,7 +2894,9 @@ function parseFilterIntent(query: string, availableColumns: string[]): ParsedFil
 	const whereClause = whereMatch[2]?.trim() ?? '';
 	if (!whereClause) return null;
 
-	const explicitCondition = whereClause.match(/^(.+?)\s*(==|=|!=|<>|>=|<=|>|<|is|equals?|like|contains)\s+(.+)$/i);
+	const explicitCondition = whereClause.match(
+		/^(.+?)\s*(==|=|!=|<>|>=|<=|>|<|is|equals?|like|contains)\s+(.+)$/i
+	);
 	const implicitCondition = whereClause.match(/^([a-z0-9_\.\s]+)\s+([a-z0-9_\."'`-]+)$/i);
 	const leftPhrase = explicitCondition?.[1]?.trim() ?? implicitCondition?.[1]?.trim() ?? null;
 	const rawOp = explicitCondition?.[2]?.trim().toLowerCase() ?? 'is';
@@ -2200,7 +2906,9 @@ function parseFilterIntent(query: string, availableColumns: string[]): ParsedFil
 	const filterColumn = resolveBestColumnFromPhrase(leftPhrase, availableColumns);
 	if (!filterColumn) return null;
 
-	const subjectColumn = prefixPhrase ? resolveBestColumnFromPhrase(prefixPhrase, availableColumns) : null;
+	const subjectColumn = prefixPhrase
+		? resolveBestColumnFromPhrase(prefixPhrase, availableColumns)
+		: null;
 	const filterValue = cleanFilterValue(rawValue);
 	if (!filterValue) return null;
 
@@ -2227,27 +2935,51 @@ function parseFilterIntent(query: string, availableColumns: string[]): ParsedFil
 	};
 }
 
-function parseGroupTopIntent(query: string, availableColumns: string[]): ParsedGroupTopIntent | null {
-	if (!/\b(top|rank|count|show|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\b/i.test(query)) return null;
+function parseGroupTopIntent(
+	query: string,
+	availableColumns: string[]
+): ParsedGroupTopIntent | null {
+	if (
+		!/\b(top|rank|count|show|most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\b/i.test(
+			query
+		)
+	)
+		return null;
 
 	const groupedPhrase =
-		query.match(/\bgroup\s+by\s+(.+?)(?:\s+\b(?:and|with|show|top|rank|where|order|limit)\b|$)/i)?.[1]
-		?? query.match(/\bgroup\s+(.+?)(?:\s+\b(?:and|with|show|top|rank|where|order|limit)\b|$)/i)?.[1]
-		?? query.match(/\btop(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)\s+\bby\b/i)?.[1]
-		?? query.match(/\bwhich\s+([a-z0-9_\.\s]+?)\s+\b(?:has|have|is|are)\b\s+(?:the\s+)?(?:most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\b/i)?.[1]
-		?? (/\bwho\s+(?:did\s+)?i\s+(?:pay|paid|spend|spent)\b/i.test(query) ? pickEntityColumn(availableColumns) : null);
+		query.match(
+			/\bgroup\s+by\s+(.+?)(?:\s+\b(?:and|with|show|top|rank|where|order|limit)\b|$)/i
+		)?.[1] ??
+		query.match(/\bgroup\s+(.+?)(?:\s+\b(?:and|with|show|top|rank|where|order|limit)\b|$)/i)?.[1] ??
+		query.match(/\btop(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)\s+\bby\b/i)?.[1] ??
+		query.match(
+			/\bwhich\s+([a-z0-9_\.\s]+?)\s+\b(?:has|have|is|are)\b\s+(?:the\s+)?(?:most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\b/i
+		)?.[1] ??
+		(/\bwho\s+(?:did\s+)?i\s+(?:pay|paid|spend|spent)\b/i.test(query)
+			? pickEntityColumn(availableColumns)
+			: null);
 	if (!groupedPhrase) return null;
 
 	const groupColumn = resolveBestColumnFromPhrase(groupedPhrase, availableColumns);
 	if (!groupColumn) return null;
 
 	const metricPhrase =
-		query.match(/\bby\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:where|for|in|per|on|at|order|limit)\b|$)/i)?.[1]
-		?? query.match(/\btop(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:by|for|where|in|per|on|at)\b|$)/i)?.[1]
-		?? query.match(/\bshow\s+top(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:by|for|where|in|per|on|at)\b|$)/i)?.[1]
-		?? query.match(/\b(?:most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:where|for|in|per|on|at)\b|$)/i)?.[1]
-		?? null;
-	const metricColumn = metricPhrase ? resolveBestColumnFromPhrase(metricPhrase, availableColumns) : null;
+		query.match(
+			/\bby\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:where|for|in|per|on|at|order|limit)\b|$)/i
+		)?.[1] ??
+		query.match(
+			/\btop(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:by|for|where|in|per|on|at)\b|$)/i
+		)?.[1] ??
+		query.match(
+			/\bshow\s+top(?:\s+\d+)?\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:by|for|where|in|per|on|at)\b|$)/i
+		)?.[1] ??
+		query.match(
+			/\b(?:most|least|highest|lowest|best|worst|longest|shortest|cheapest|farthest)\s+([a-z0-9_\.\s]+?)(?:\s+\b(?:where|for|in|per|on|at)\b|$)/i
+		)?.[1] ??
+		null;
+	const metricColumn = metricPhrase
+		? resolveBestColumnFromPhrase(metricPhrase, availableColumns)
+		: null;
 	const topN = Number(query.match(/\btop\s+(\d{1,3})\b/i)?.[1] ?? '20');
 
 	return {
@@ -2260,7 +2992,10 @@ function parseGroupTopIntent(query: string, availableColumns: string[]): ParsedG
 function inferSemanticColumnKind(column: string): SemanticDeriveColumn['kind'] {
 	if (looksTemporal(column)) return 'date';
 	if (looksMetric(column)) return 'numeric';
-	if (/^(is_|has_)/i.test(column) || /\b(flag|active|enabled|allowed|present|approved|rejected|passed|failed)\b/i.test(column)) {
+	if (
+		/^(is_|has_)/i.test(column) ||
+		/\b(flag|active|enabled|allowed|present|approved|rejected|passed|failed)\b/i.test(column)
+	) {
 		return 'boolean';
 	}
 	return 'text';
@@ -2304,7 +3039,8 @@ function buildSemanticStageDescription(stageType: StageType, reasons: string[]):
 	if (stageType === 'sort') return 'Semantic columns ranked by their likely ordering signal.';
 	if (stageType === 'select') return 'Semantic column sets surfaced as a column subset.';
 	if (stageType === 'join') return 'Semantic keys surfaced as a join scaffold.';
-	if (stageType === 'window') return 'Semantic time-series candidates surfaced as a window scaffold.';
+	if (stageType === 'window')
+		return 'Semantic time-series candidates surfaced as a window scaffold.';
 	if (stageType === 'append') return 'Semantic source stacks surfaced as append scaffolds.';
 	if (stageType === 'loop') return 'Iterative refinement scaffolds based on semantic narrowing.';
 	return reasons[0] ?? 'Semantic stage fan-out.';
@@ -2337,17 +3073,19 @@ function buildAnalysisPromptSuggestion(input: {
 	reasons: string[];
 	score: number;
 }): StageAnalysisPromptSuggestion {
-	const normalizedStages: Exclude<GUIPipelineStage, { type: 'raw' }>[] = input.stages.map((stage) => {
-		if (stage.type !== 'group') return stage;
-		if (stage.aggregations.length > 0) return stage;
-		if (stage.window && (stage.window.sortKeys.length > 0 || stage.window.derives.length > 0)) {
-			return stage;
+	const normalizedStages: Exclude<GUIPipelineStage, { type: 'raw' }>[] = input.stages.map(
+		(stage) => {
+			if (stage.type !== 'group') return stage;
+			if (stage.aggregations.length > 0) return stage;
+			if (stage.window && (stage.window.sortKeys.length > 0 || stage.window.derives.length > 0)) {
+				return stage;
+			}
+			return {
+				...stage,
+				aggregations: [{ name: 'row_count', func: 'count' as const, column: '' }]
+			};
 		}
-		return {
-			...stage,
-			aggregations: [{ name: 'row_count', func: 'count' as const, column: '' }]
-		};
-	});
+	);
 
 	const confidence = Math.max(0.2, Math.min(0.98, input.score / 210));
 	return {
@@ -2367,7 +3105,23 @@ const ANALYSIS_TOKEN_SYNONYMS: Record<string, string[]> = {
 	trend: ['trend', 'timeline', 'timeseries', 'time-series', 'over time', 'trending', 'time'],
 	compare: ['compare', 'comparison', 'versus', 'vs', 'against', 'correlation'],
 	outlier: ['outlier', 'outliers', 'anomaly', 'anomalies', 'spike', 'spikes', 'weird', 'unusual'],
-	rank: ['rank', 'ranking', 'top', 'highest', 'lowest', 'least', 'most', 'best', 'worst', 'longest', 'shortest', 'cheapest', 'expensive', 'farthest', 'leaderboard'],
+	rank: [
+		'rank',
+		'ranking',
+		'top',
+		'highest',
+		'lowest',
+		'least',
+		'most',
+		'best',
+		'worst',
+		'longest',
+		'shortest',
+		'cheapest',
+		'expensive',
+		'farthest',
+		'leaderboard'
+	],
 	revenue: ['revenue', 'rev'],
 	amount: ['amount', 'value', 'metric', 'measure'],
 	quantity: ['quantity', 'qty', 'volume', 'units'],
@@ -2429,41 +3183,40 @@ export function searchFunctionActions(input: {
 	const availableColumns = input.availableColumns ?? [];
 	const selectedColumn = findBestQueryColumn(input.query, availableColumns);
 
-	const ranked = PRQL_FUNCTION_REGISTRY
-		.map((option) => {
-			const args = option.args.map((arg) => {
-				if (arg.defaultKind === 'column') {
-					return { kind: 'column' as const, value: selectedColumn ?? '' };
-				}
-				return { kind: 'literal' as const, value: arg.defaultValue ?? '' };
-			});
+	const ranked = PRQL_FUNCTION_REGISTRY.map((option) => {
+		const args = option.args.map((arg) => {
+			if (arg.defaultKind === 'column') {
+				return { kind: 'column' as const, value: selectedColumn ?? '' };
+			}
+			return { kind: 'literal' as const, value: arg.defaultValue ?? '' };
+		});
 
-			const canonicalFunc = canonicalizePrqlFunction(option.value);
-			const stage: Extract<GUIPipelineStage, { type: 'derive' }> = {
-				type: 'derive',
-				columns: [
-					{
-						name: defaultColumnNameForFunction(option, selectedColumn),
-						expr: {
-							mode: 'func',
-							func: canonicalFunc,
-							args
-						}
+		const canonicalFunc = canonicalizePrqlFunction(option.value);
+		const stage: Extract<GUIPipelineStage, { type: 'derive' }> = {
+			type: 'derive',
+			columns: [
+				{
+					name: defaultColumnNameForFunction(option, selectedColumn),
+					expr: {
+						mode: 'func',
+						func: canonicalFunc,
+						args
 					}
-				]
-			};
+				}
+			]
+		};
 
-			const score = scoreFunctionSuggestion(option, input.query);
-			return {
-				id: option.value,
-				label: `${option.category} ${option.label}`,
-				description: option.detail,
-				keywords: option.keywords,
-				stage,
-				category: option.category,
-				score
-			};
-		})
+		const score = scoreFunctionSuggestion(option, input.query);
+		return {
+			id: option.value,
+			label: `${option.category} ${option.label}`,
+			description: option.detail,
+			keywords: option.keywords,
+			stage,
+			category: option.category,
+			score
+		};
+	})
 		.filter((entry) => (input.query.trim().length === 0 ? false : entry.score > 0))
 		.sort((a, b) => b.score - a.score);
 
@@ -2490,9 +3243,15 @@ export function searchSemanticStageCombinations(input: {
 	const semanticColumns = semanticDeriveColumns(availableColumns);
 	const semanticDeriveCandidates = findSemanticDeriveCandidates(semanticColumns);
 	const dimensions = availableColumns.filter((column) => looksDimension(column));
-	const metrics = availableColumns.filter((column) => looksMetric(column) || inferSemanticColumnKind(column) === 'numeric');
+	const metrics = availableColumns.filter(
+		(column) => looksMetric(column) || inferSemanticColumnKind(column) === 'numeric'
+	);
 	const temporal = availableColumns.filter((column) => looksTemporal(column));
-	const categories = availableColumns.filter((column) => /status|stage|type|category|segment|group|region|country|city|channel|class|genre|mood|style/i.test(column));
+	const categories = availableColumns.filter((column) =>
+		/status|stage|type|category|segment|group|region|country|city|channel|class|genre|mood|style/i.test(
+			column
+		)
+	);
 
 	const suggestions: StageSemanticFanoutSuggestion[] = [];
 	const seen = new Set<string>();
@@ -2513,7 +3272,9 @@ export function searchSemanticStageCombinations(input: {
 							? `${candidate.leftColumn} / ${candidate.rightColumn}`
 							: null;
 			if (!expression) continue;
-			const columns = candidate.rightColumn ? [candidate.leftColumn, candidate.rightColumn] : [candidate.leftColumn];
+			const columns = candidate.rightColumn
+				? [candidate.leftColumn, candidate.rightColumn]
+				: [candidate.leftColumn];
 			const stage: Exclude<GUIPipelineStage, { type: 'raw' }> = {
 				type: 'derive',
 				columns: [
@@ -2526,13 +3287,18 @@ export function searchSemanticStageCombinations(input: {
 					}
 				]
 			};
-			pushSuggestion(buildSemanticStageSuggestion({
-				stageType: 'derive',
-				columns,
-				stage,
-				reasons: [`semantic pair: ${candidate.pattern}`, `quality ${candidate.quality.toFixed(2)}`],
-				score: candidate.quality * 100
-			}));
+			pushSuggestion(
+				buildSemanticStageSuggestion({
+					stageType: 'derive',
+					columns,
+					stage,
+					reasons: [
+						`semantic pair: ${candidate.pattern}`,
+						`quality ${candidate.quality.toFixed(2)}`
+					],
+					score: candidate.quality * 100
+				})
+			);
 		}
 	}
 
@@ -2547,13 +3313,17 @@ export function searchSemanticStageCombinations(input: {
 						? [{ name: `sum_${metric.replace(/\W+/g, '_')}`, func: 'sum', column: metric }]
 						: [{ name: 'row_count', func: 'count', column: '' }]
 				};
-				pushSuggestion(buildSemanticStageSuggestion({
-					stageType: 'group',
-					columns: metric ? [dimension, metric] : [dimension],
-					stage,
-					reasons: metric ? [`dimension ${dimension}`, `metric ${metric}`] : [`dimension ${dimension}`, 'count rows'],
-					score: metric ? 82 : 70
-				}));
+				pushSuggestion(
+					buildSemanticStageSuggestion({
+						stageType: 'group',
+						columns: metric ? [dimension, metric] : [dimension],
+						stage,
+						reasons: metric
+							? [`dimension ${dimension}`, `metric ${metric}`]
+							: [`dimension ${dimension}`, 'count rows'],
+						score: metric ? 82 : 70
+					})
+				);
 			}
 		}
 	}
@@ -2564,13 +3334,15 @@ export function searchSemanticStageCombinations(input: {
 				type: 'sort',
 				keys: [{ column, dir: looksTemporal(column) ? 'desc' : 'asc' }]
 			};
-			pushSuggestion(buildSemanticStageSuggestion({
-				stageType: 'sort',
-				columns: [column],
-				stage,
-				reasons: [looksTemporal(column) ? 'temporal ordering' : 'semantic ranking'],
-				score: looksTemporal(column) ? 74 : 62
-			}));
+			pushSuggestion(
+				buildSemanticStageSuggestion({
+					stageType: 'sort',
+					columns: [column],
+					stage,
+					reasons: [looksTemporal(column) ? 'temporal ordering' : 'semantic ranking'],
+					score: looksTemporal(column) ? 74 : 62
+				})
+			);
 		}
 	}
 
@@ -2581,19 +3353,19 @@ export function searchSemanticStageCombinations(input: {
 				conditions: [{ column, op: '==', value: '' }],
 				logic: 'and'
 			};
-			pushSuggestion(buildSemanticStageSuggestion({
-				stageType: 'filter',
-				columns: [column],
-				stage,
-				reasons: ['semantic filter target'],
-				score: 58
-			}));
+			pushSuggestion(
+				buildSemanticStageSuggestion({
+					stageType: 'filter',
+					columns: [column],
+					stage,
+					reasons: ['semantic filter target'],
+					score: 58
+				})
+			);
 		}
 	}
 
-	return suggestions
-		.sort((a, b) => b.score - a.score)
-		.slice(0, Math.max(1, input.limit ?? 18));
+	return suggestions.sort((a, b) => b.score - a.score).slice(0, Math.max(1, input.limit ?? 18));
 }
 
 export function searchAnalysisPrompts(input: {
@@ -2609,10 +3381,36 @@ export function searchAnalysisPrompts(input: {
 	const dialect = normalizeCoercionDialect(input.dialect);
 	const query = input.query.trim().toLowerCase();
 	const normalizedQuery = normalizeSearchToken(query);
-	const rawTokens = query.split(/[^a-z0-9_\.]+/g).map((token) => token.trim()).filter(Boolean);
+	const rawTokens = query
+		.split(/[^a-z0-9_\.]+/g)
+		.map((token) => token.trim())
+		.filter(Boolean);
 	const stopTokens = new Set([
-		'a', 'an', 'the', 'for', 'to', 'of', 'in', 'on', 'and', 'or', 'with', 'me', 'show', 'find', 'list',
-		'from', 'at', 'by', 'about', 'please', 'analysis', 'analyze', 'analyse', 'look', 'into'
+		'a',
+		'an',
+		'the',
+		'for',
+		'to',
+		'of',
+		'in',
+		'on',
+		'and',
+		'or',
+		'with',
+		'me',
+		'show',
+		'find',
+		'list',
+		'from',
+		'at',
+		'by',
+		'about',
+		'please',
+		'analysis',
+		'analyze',
+		'analyse',
+		'look',
+		'into'
 	]);
 	const normalizeIntentToken = (token: string): string => {
 		const lowered = token.toLowerCase();
@@ -2620,8 +3418,38 @@ export function searchAnalysisPrompts(input: {
 		if (['tenants'].includes(lowered)) return 'tenant';
 		if (['names'].includes(lowered)) return 'name';
 		if (['ranked', 'ranking'].includes(lowered)) return 'rank';
-		if (['highest', 'lowest', 'least', 'most', 'best', 'worst', 'longest', 'shortest', 'cheapest', 'expensive', 'farthest'].includes(lowered)) return 'rank';
-		if (['trends', 'timeline', 'timeseries', 'time-series', 'becoming', 'recently', 'lately', 'increase', 'increasing', 'rising', 'growing'].includes(lowered)) return 'trend';
+		if (
+			[
+				'highest',
+				'lowest',
+				'least',
+				'most',
+				'best',
+				'worst',
+				'longest',
+				'shortest',
+				'cheapest',
+				'expensive',
+				'farthest'
+			].includes(lowered)
+		)
+			return 'rank';
+		if (
+			[
+				'trends',
+				'timeline',
+				'timeseries',
+				'time-series',
+				'becoming',
+				'recently',
+				'lately',
+				'increase',
+				'increasing',
+				'rising',
+				'growing'
+			].includes(lowered)
+		)
+			return 'trend';
 		if (['anomalies', 'outliers'].includes(lowered)) return 'outlier';
 		if (['spikes'].includes(lowered)) return 'outlier';
 		if (['compare', 'comparison', 'versus', 'vs'].includes(lowered)) return 'compare';
@@ -2636,7 +3464,10 @@ export function searchAnalysisPrompts(input: {
 		const phrases: string[] = [];
 		for (let n = maxGram; n >= 1; n -= 1) {
 			for (let i = 0; i <= parts.length - n; i += 1) {
-				const phrase = parts.slice(i, i + n).join(' ').trim();
+				const phrase = parts
+					.slice(i, i + n)
+					.join(' ')
+					.trim();
 				if (phrase.length >= 3) phrases.push(phrase);
 			}
 		}
@@ -2653,22 +3484,52 @@ export function searchAnalysisPrompts(input: {
 		return null;
 	})();
 	const hasTemporalGranularityIntent = queryTemporalGrain !== null;
-	const wantsGroup = tokenSet.has('group') || tokenSet.has('segment') || tokenSet.has('count') || query.includes('group by');
-	const wantsTrend = tokenSet.has('trend') || tokenSet.has('time') || tokenSet.has('date') || tokenSet.has('temporal') || hasTemporalGranularityIntent || /\b(becoming|recently|lately|increasing|rising|growing)\b/.test(query);
-	const prefersAscendingRank = /\b(least|lowest|cheapest|smallest|minimum|min|shortest)\b/.test(query);
-	const prefersDescendingRank = /\b(most|highest|largest|biggest|maximum|max|longest|worst|best|farthest|expensive)\b/.test(query);
-	const wantsTop = tokenSet.has('top') || tokenSet.has('rank') || tokenSet.has('leaderboard') || prefersAscendingRank || prefersDescendingRank;
+	const wantsGroup =
+		tokenSet.has('group') ||
+		tokenSet.has('segment') ||
+		tokenSet.has('count') ||
+		query.includes('group by');
+	const wantsTrend =
+		tokenSet.has('trend') ||
+		tokenSet.has('time') ||
+		tokenSet.has('date') ||
+		tokenSet.has('temporal') ||
+		hasTemporalGranularityIntent ||
+		/\b(becoming|recently|lately|increasing|rising|growing)\b/.test(query);
+	const prefersAscendingRank = /\b(least|lowest|cheapest|smallest|minimum|min|shortest)\b/.test(
+		query
+	);
+	const prefersDescendingRank =
+		/\b(most|highest|largest|biggest|maximum|max|longest|worst|best|farthest|expensive)\b/.test(
+			query
+		);
+	const wantsTop =
+		tokenSet.has('top') ||
+		tokenSet.has('rank') ||
+		tokenSet.has('leaderboard') ||
+		prefersAscendingRank ||
+		prefersDescendingRank;
 	const wantsOutlier = tokenSet.has('outlier') || tokenSet.has('anomaly');
-	const wantsCompare = tokenSet.has('compare') || tokenSet.has('correlation') || query.includes(' vs ');
-	const derivePlan = findCompositeMetricPlan({ availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }, dialect);
+	const wantsCompare =
+		tokenSet.has('compare') || tokenSet.has('correlation') || query.includes(' vs ');
+	const derivePlan = findCompositeMetricPlan(
+		{ availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect },
+		dialect
+	);
 	const temporal = pickTimestampColumn(availableColumns);
-	const metric = pickProfileMetricColumn({ availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect })
-		?? pickMetricColumn(availableColumns)
-		?? availableColumns.find((column) => looksMetric(column))
-		?? null;
-	const dimension = pickDimensionColumn(availableColumns)
-		?? availableColumns.find((column) => looksDimension(column))
-		?? null;
+	const metric =
+		pickProfileMetricColumn({
+			availableColumns,
+			availableColumnProfiles: input.availableColumnProfiles,
+			dialect
+		}) ??
+		pickMetricColumn(availableColumns) ??
+		availableColumns.find((column) => looksMetric(column)) ??
+		null;
+	const dimension =
+		pickDimensionColumn(availableColumns) ??
+		availableColumns.find((column) => looksDimension(column)) ??
+		null;
 
 	const prompts: StageAnalysisPromptSuggestion[] = [];
 	const push = (suggestion: StageAnalysisPromptSuggestion): void => {
@@ -2680,7 +3541,10 @@ export function searchAnalysisPrompts(input: {
 		.map((column) => {
 			const lowered = column.toLowerCase();
 			const normalized = normalizeSearchToken(column);
-			const spaced = lowered.replace(/[_\.]+/g, ' ').replace(/\s+/g, ' ').trim();
+			const spaced = lowered
+				.replace(/[_\.]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim();
 			const columnWords = spaced.split(/\s+/g).filter(Boolean);
 			let score = 0;
 
@@ -2696,8 +3560,24 @@ export function searchAnalysisPrompts(input: {
 				if (spaced.includes(phrase)) score += 9;
 				if (normalized.includes(normalizeSearchToken(phrase))) score += 8;
 			}
-			if (expandedTokens.length > 1 && expandedTokens.every((token) => lowered.includes(token) || columnWords.some((word) => isNearMatchToken(token, word)))) score += 6;
-			if (expandedTokens.length > 1 && expandedTokens.some((token) => token === 'group') && expandedTokens.filter((token) => token !== 'group').every((token) => lowered.includes(token) || columnWords.some((word) => isNearMatchToken(token, word)))) {
+			if (
+				expandedTokens.length > 1 &&
+				expandedTokens.every(
+					(token) =>
+						lowered.includes(token) || columnWords.some((word) => isNearMatchToken(token, word))
+				)
+			)
+				score += 6;
+			if (
+				expandedTokens.length > 1 &&
+				expandedTokens.some((token) => token === 'group') &&
+				expandedTokens
+					.filter((token) => token !== 'group')
+					.every(
+						(token) =>
+							lowered.includes(token) || columnWords.some((word) => isNearMatchToken(token, word))
+					)
+			) {
 				score += 8;
 			}
 
@@ -2707,45 +3587,84 @@ export function searchAnalysisPrompts(input: {
 		.sort((a, b) => b.score - a.score)
 		.slice(0, 5);
 
-	const matchedMetricColumn = matchedColumns
-		.map((entry) => entry.column)
-		.find((column) => {
-			const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
-			return looksMetric(column) || isNumericSemanticHint(semantic);
-		}) ?? null;
-	const matchedDimensionColumn = matchedColumns
-		.map((entry) => entry.column)
-		.find((column) => {
-			const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
-			const semanticCategory = ['category', 'dimension', 'segment', 'status', 'class', 'group'].some((hint) =>
-				(semantic ?? '').toLowerCase().includes(hint)
-			);
-			return looksDimension(column) || semanticCategory;
-		}) ?? null;
-	const matchedTemporalColumn = matchedColumns
-		.map((entry) => entry.column)
-		.find((column) => {
-			const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
-			return isTemporalColumn(column) || isTemporalSemanticHint(semantic);
-		}) ?? null;
-	const intentMetricColumn = detectIntentMetricColumn(query, availableColumns, input.availableColumnProfiles);
-	const intentMetricProfile = intentMetricColumn ? columnProfileFor(input.availableColumnProfiles, intentMetricColumn) : null;
+	const matchedMetricColumn =
+		matchedColumns
+			.map((entry) => entry.column)
+			.find((column) => {
+				const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
+				return looksMetric(column) || isNumericSemanticHint(semantic);
+			}) ?? null;
+	const matchedDimensionColumn =
+		matchedColumns
+			.map((entry) => entry.column)
+			.find((column) => {
+				const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
+				const semanticCategory = [
+					'category',
+					'dimension',
+					'segment',
+					'status',
+					'class',
+					'group'
+				].some((hint) => (semantic ?? '').toLowerCase().includes(hint));
+				return looksDimension(column) || semanticCategory;
+			}) ?? null;
+	const matchedTemporalColumn =
+		matchedColumns
+			.map((entry) => entry.column)
+			.find((column) => {
+				const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
+				return isTemporalColumn(column) || isTemporalSemanticHint(semantic);
+			}) ?? null;
+	const intentMetricColumn = detectIntentMetricColumn(
+		query,
+		availableColumns,
+		input.availableColumnProfiles
+	);
+	const intentMetricProfile = intentMetricColumn
+		? columnProfileFor(input.availableColumnProfiles, intentMetricColumn)
+		: null;
 	const filterIntent = parseFilterIntent(query, availableColumns);
 	const groupTopIntent = parseGroupTopIntent(query, availableColumns);
-	const derivedRevenueIntent = /\b(revenue|total|totals|sales|spend|gmv)\b/.test(query) && derivePlan;
-	const explicitMetricKeywordIntent = expandedTokens.some((token) => /mrr|arr|revenue|sales|amount|price|cost|value|metric|score|usd|kwh|qty|quantity|units?|hours?|minutes?|temperature|humidity|risk|rate/.test(token));
-	const queryEntityCountIntent = /\b(leases?|orders?|tickets?|shipments?|visits?|transactions?|batches?|attendance|sessions?)\b/.test(query);
+	const derivedRevenueIntent =
+		/\b(revenue|total|totals|sales|spend|gmv)\b/.test(query) && derivePlan;
+	const explicitMetricKeywordIntent = expandedTokens.some((token) =>
+		/mrr|arr|revenue|sales|amount|price|cost|value|metric|score|usd|kwh|qty|quantity|units?|hours?|minutes?|temperature|humidity|risk|rate/.test(
+			token
+		)
+	);
+	const queryEntityCountIntent =
+		/\b(leases?|orders?|tickets?|shipments?|visits?|transactions?|batches?|attendance|sessions?)\b/.test(
+			query
+		);
 	const queryMetric = derivedRevenueIntent
 		? 'revenue'
-		: intentMetricColumn
-			?? ((queryEntityCountIntent && !explicitMetricKeywordIntent) ? null : (matchedMetricColumn ?? metric));
+		: (intentMetricColumn ??
+			(queryEntityCountIntent && !explicitMetricKeywordIntent
+				? null
+				: (matchedMetricColumn ?? metric)));
 	const queryHasMetricIntent =
-		expandedTokens.some((token) => /mrr|arr|revenue|sales|total|spend|gmv|amount|price|cost|value|metric|score|usd|kwh|qty|quantity|units?|hours?|minutes?|temperature|humidity|attendance|delivery|returns?|resolution|fraud|risk|lease/.test(token))
-		|| !!intentMetricColumn
-		|| !!matchedMetricColumn;
-	const rankSortDirection: 'asc' | 'desc' = prefersAscendingRank && !prefersDescendingRank ? 'asc' : 'desc';
+		expandedTokens.some((token) =>
+			/mrr|arr|revenue|sales|total|spend|gmv|amount|price|cost|value|metric|score|usd|kwh|qty|quantity|units?|hours?|minutes?|temperature|humidity|attendance|delivery|returns?|resolution|fraud|risk|lease/.test(
+				token
+			)
+		) ||
+		!!intentMetricColumn ||
+		!!matchedMetricColumn;
+	const rankSortDirection: 'asc' | 'desc' =
+		prefersAscendingRank && !prefersDescendingRank ? 'asc' : 'desc';
 	let queryIntent = {
-		action: wantsGroup ? 'group' : wantsTrend ? 'trend' : wantsCompare ? 'compare' : wantsOutlier ? 'outlier' : wantsTop ? 'rank' : null,
+		action: wantsGroup
+			? 'group'
+			: wantsTrend
+				? 'trend'
+				: wantsCompare
+					? 'compare'
+					: wantsOutlier
+						? 'outlier'
+						: wantsTop
+							? 'rank'
+							: null,
 		wantsGroup,
 		wantsTrend,
 		wantsTop,
@@ -2775,17 +3694,24 @@ export function searchAnalysisPrompts(input: {
 		.map((entry) => entry.column)
 		.filter((column) => {
 			const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
-			const semanticCategory = ['category', 'dimension', 'segment', 'status', 'class', 'group'].some((hint) =>
-				(semantic ?? '').toLowerCase().includes(hint)
-			);
+			const semanticCategory = [
+				'category',
+				'dimension',
+				'segment',
+				'status',
+				'class',
+				'group'
+			].some((hint) => (semantic ?? '').toLowerCase().includes(hint));
 			const temporalLike = isTemporalColumn(column) || isTemporalSemanticHint(semantic);
 			const measureLike = looksMeasureLikeColumn(column) || isNumericSemanticHint(semantic);
-			const textLikeDimension = looksDimension(column) || semanticCategory || isLikelyTextColumn(column);
+			const textLikeDimension =
+				looksDimension(column) || semanticCategory || isLikelyTextColumn(column);
 			return !temporalLike && !measureLike && textLikeDimension;
 		});
 	const dualDimensionIntent = !queryHasMetricIntent && matchedCategoricalColumns.length >= 2;
 	const focusDimensions = dualDimensionIntent ? matchedCategoricalColumns.slice(0, 2) : [];
-	const hasMixedMeasureDimensionIntent = !dualDimensionIntent && !!matchedMetricColumn && !!matchedDimensionColumn;
+	const hasMixedMeasureDimensionIntent =
+		!dualDimensionIntent && !!matchedMetricColumn && !!matchedDimensionColumn;
 	const focusCandidateColumns = matchedColumns.slice(0, 4);
 	const classifyPairKind = (column: string): 'temporal' | 'metric' | 'dimension' => {
 		const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
@@ -2795,7 +3721,12 @@ export function searchAnalysisPrompts(input: {
 	};
 	const classifyPairType = (
 		kinds: Array<'temporal' | 'metric' | 'dimension'>
-	): 'temporal-temporal' | 'metric-metric' | 'metric-dimension' | 'dimension-dimension' | 'mixed' => {
+	):
+		| 'temporal-temporal'
+		| 'metric-metric'
+		| 'metric-dimension'
+		| 'dimension-dimension'
+		| 'mixed' => {
 		if (kinds.every((kind) => kind === 'temporal')) return 'temporal-temporal';
 		if (kinds.every((kind) => kind === 'metric')) return 'metric-metric';
 		if (kinds.includes('metric') && kinds.includes('dimension')) return 'metric-dimension';
@@ -2805,7 +3736,12 @@ export function searchAnalysisPrompts(input: {
 	const focusPairCandidates: Array<{
 		columns: [string, string];
 		kinds: ['temporal' | 'metric' | 'dimension', 'temporal' | 'metric' | 'dimension'];
-		type: 'temporal-temporal' | 'metric-metric' | 'metric-dimension' | 'dimension-dimension' | 'mixed';
+		type:
+			| 'temporal-temporal'
+			| 'metric-metric'
+			| 'metric-dimension'
+			| 'dimension-dimension'
+			| 'mixed';
 		score: number;
 	}> = [];
 	for (let i = 0; i < focusCandidateColumns.length; i += 1) {
@@ -2831,41 +3767,57 @@ export function searchAnalysisPrompts(input: {
 
 	if (filterIntent) {
 		const filterValueText = filterIntent.displayValue ?? filterIntent.filterValue;
-		const filterConditionValue = filterIntent.op === 'like' ? `%${filterIntent.filterValue}%` : filterIntent.filterValue;
+		const filterConditionValue =
+			filterIntent.op === 'like' ? `%${filterIntent.filterValue}%` : filterIntent.filterValue;
 		const filterReason = `${filterIntent.filterColumn} matched your where-clause intent`;
 		const filterPromptText = `${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}`;
 		const safeLabel = filterPromptText.replace(/\s+/g, ' ').trim();
-		const filterSummaryMetric = queryHasMetricIntent && queryIntent.metricHint && queryIntent.metricHint !== filterIntent.filterColumn
-			? queryIntent.metricHint
-			: null;
-		const filterSummaryDimension = filterIntent.subjectColumn && filterIntent.subjectColumn !== filterIntent.filterColumn
-			? filterIntent.subjectColumn
-			: matchedDimensionColumn
-				&& matchedDimensionColumn !== filterIntent.filterColumn
-				&& matchedDimensionColumn !== temporal
-				? matchedDimensionColumn
-			: null;
-		push(buildAnalysisPromptSuggestion({
-			label: `Rows where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}`,
-			prompt: `Rows where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}: filter ${filterIntent.filterColumn}`,
-			reasons: [filterReason, 'explicit where-clause intent'],
-			stages: [
-				{
-					type: 'filter',
-					conditions: [{ column: filterIntent.filterColumn, op: filterIntent.op, value: filterConditionValue }],
-					logic: 'and'
-				}
-			],
-			score: 190
-		}));
+		const filterSummaryMetric =
+			queryHasMetricIntent &&
+			queryIntent.metricHint &&
+			queryIntent.metricHint !== filterIntent.filterColumn
+				? queryIntent.metricHint
+				: null;
+		const filterSummaryDimension =
+			filterIntent.subjectColumn && filterIntent.subjectColumn !== filterIntent.filterColumn
+				? filterIntent.subjectColumn
+				: matchedDimensionColumn &&
+					  matchedDimensionColumn !== filterIntent.filterColumn &&
+					  matchedDimensionColumn !== temporal
+					? matchedDimensionColumn
+					: null;
+		push(
+			buildAnalysisPromptSuggestion({
+				label: `Rows where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}`,
+				prompt: `Rows where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}: filter ${filterIntent.filterColumn}`,
+				reasons: [filterReason, 'explicit where-clause intent'],
+				stages: [
+					{
+						type: 'filter',
+						conditions: [
+							{
+								column: filterIntent.filterColumn,
+								op: filterIntent.op,
+								value: filterConditionValue
+							}
+						],
+						logic: 'and'
+					}
+				],
+				score: 190
+			})
+		);
 
 		if (filterSummaryMetric) {
-			const metricProfile = columnProfileFor(input.availableColumnProfiles, filterSummaryMetric) ?? intentMetricProfile;
+			const metricProfile =
+				columnProfileFor(input.availableColumnProfiles, filterSummaryMetric) ?? intentMetricProfile;
 			const metricAgg = preferredAggregationForQueryMetric(filterSummaryMetric, metricProfile);
 			const metricSlug = filterSummaryMetric.replace(/\W+/g, '_');
 			const metricAggName = `${metricAgg}_${metricSlug}`;
 			const summaryBy = [
-				...(hasTemporalGranularityIntent && temporal && temporal !== filterIntent.filterColumn ? [temporal] : []),
+				...(hasTemporalGranularityIntent && temporal && temporal !== filterIntent.filterColumn
+					? [temporal]
+					: []),
 				...(filterSummaryDimension ? [filterSummaryDimension] : [])
 			];
 
@@ -2873,165 +3825,242 @@ export function searchAnalysisPrompts(input: {
 				const groupLabel = summaryBy.map((column) => humanizeColumnName(column)).join(' by ');
 				const grainPrefix = queryTemporalGrain ? `${queryTemporalGrain} ` : '';
 				const summarySortColumn = queryIntent.wantsTop ? metricAggName : summaryBy[0];
-				push(buildAnalysisPromptSuggestion({
-					label: `${humanizeColumnName(filterSummaryMetric)} by ${groupLabel} with ${safeLabel}`,
-					prompt: `${humanizeColumnName(filterSummaryMetric)} by ${groupLabel} with ${safeLabel}: ${metricAgg} ${filterSummaryMetric} by ${grainPrefix}${summaryBy.join(' and ')}`,
-					reasons: [filterReason, `${filterSummaryMetric} matched the metric intent after filtering`],
-					stages: [
-						{
-							type: 'filter',
-							conditions: [{ column: filterIntent.filterColumn, op: filterIntent.op, value: filterConditionValue }],
-							logic: 'and'
-						},
-						{
-							type: 'group',
-							by: summaryBy,
-							aggregations: [{ name: metricAggName, func: metricAgg, column: filterSummaryMetric }]
-						},
-						{ type: 'sort', keys: [{ column: summarySortColumn, dir: queryIntent.wantsTop ? rankSortDirection : 'asc' }] },
-						...(queryIntent.wantsTop ? [{ type: 'take' as const, n: groupTopIntent?.take ?? 15 }] : [])
-					],
-					score: 212
-				}));
+				push(
+					buildAnalysisPromptSuggestion({
+						label: `${humanizeColumnName(filterSummaryMetric)} by ${groupLabel} with ${safeLabel}`,
+						prompt: `${humanizeColumnName(filterSummaryMetric)} by ${groupLabel} with ${safeLabel}: ${metricAgg} ${filterSummaryMetric} by ${grainPrefix}${summaryBy.join(' and ')}`,
+						reasons: [
+							filterReason,
+							`${filterSummaryMetric} matched the metric intent after filtering`
+						],
+						stages: [
+							{
+								type: 'filter',
+								conditions: [
+									{
+										column: filterIntent.filterColumn,
+										op: filterIntent.op,
+										value: filterConditionValue
+									}
+								],
+								logic: 'and'
+							},
+							{
+								type: 'group',
+								by: summaryBy,
+								aggregations: [
+									{ name: metricAggName, func: metricAgg, column: filterSummaryMetric }
+								]
+							},
+							{
+								type: 'sort',
+								keys: [
+									{
+										column: summarySortColumn,
+										dir: queryIntent.wantsTop ? rankSortDirection : 'asc'
+									}
+								]
+							},
+							...(queryIntent.wantsTop
+								? [{ type: 'take' as const, n: groupTopIntent?.take ?? 15 }]
+								: [])
+						],
+						score: 212
+					})
+				);
 			}
 		}
 
 		if (filterIntent.subjectColumn && filterIntent.subjectColumn !== filterIntent.filterColumn) {
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(filterIntent.subjectColumn)} where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}`,
-				prompt: `${humanizeColumnName(filterIntent.subjectColumn)} where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}: count rows by ${filterIntent.subjectColumn}`,
-				reasons: [filterReason, `${filterIntent.subjectColumn} matched the subject phrase before where`],
-				stages: [
-					{
-						type: 'filter',
-						conditions: [{ column: filterIntent.filterColumn, op: filterIntent.op, value: filterConditionValue }],
-						logic: 'and'
-					},
-					{
-						type: 'group',
-						by: [filterIntent.subjectColumn],
-						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
-					},
-					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
-				],
-				score: 200
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(filterIntent.subjectColumn)} where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}`,
+					prompt: `${humanizeColumnName(filterIntent.subjectColumn)} where ${humanizeColumnName(filterIntent.filterColumn)} ${filterIntent.op === '!=' ? 'is not' : 'is'} ${filterValueText}: count rows by ${filterIntent.subjectColumn}`,
+					reasons: [
+						filterReason,
+						`${filterIntent.subjectColumn} matched the subject phrase before where`
+					],
+					stages: [
+						{
+							type: 'filter',
+							conditions: [
+								{
+									column: filterIntent.filterColumn,
+									op: filterIntent.op,
+									value: filterConditionValue
+								}
+							],
+							logic: 'and'
+						},
+						{
+							type: 'group',
+							by: [filterIntent.subjectColumn],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
+					],
+					score: 200
+				})
+			);
 		}
 
 		if (groupTopIntent && groupTopIntent.groupColumn !== filterIntent.filterColumn) {
 			const topMetric = groupTopIntent.metricColumn ?? queryIntent.metricHint ?? null;
-			const topMetricProfile = topMetric ? columnProfileFor(input.availableColumnProfiles, topMetric) : null;
+			const topMetricProfile = topMetric
+				? columnProfileFor(input.availableColumnProfiles, topMetric)
+				: null;
 			const topAgg: 'sum' | 'average' = topMetric
-				? (preferredAggregationForQueryMetric(topMetric, topMetricProfile) === 'avg' ? 'average' : 'sum')
+				? preferredAggregationForQueryMetric(topMetric, topMetricProfile) === 'avg'
+					? 'average'
+					: 'sum'
 				: 'sum';
 			const topMetricSlug = topMetric ? topMetric.replace(/\W+/g, '_') : 'rows';
-			const topAggName = topMetric ? `${topAgg === 'average' ? 'avg' : 'sum'}_${topMetricSlug}` : 'row_count';
+			const topAggName = topMetric
+				? `${topAgg === 'average' ? 'avg' : 'sum'}_${topMetricSlug}`
+				: 'row_count';
 
-			push(buildAnalysisPromptSuggestion({
-				label: `Top ${groupTopIntent.take} ${humanizeColumnName(groupTopIntent.groupColumn)} by ${topMetric ? humanizeColumnName(topMetric) : 'row count'} with ${safeLabel}`,
-				prompt: `Top ${groupTopIntent.take} ${humanizeColumnName(groupTopIntent.groupColumn)} by ${topMetric ? humanizeColumnName(topMetric) : 'row count'} with ${safeLabel}: filter then rank`,
-				reasons: [filterReason, 'explicit top-N intent after filtering'],
-				stages: [
-					{
-						type: 'filter',
-						conditions: [{ column: filterIntent.filterColumn, op: filterIntent.op, value: filterConditionValue }],
-						logic: 'and'
-					},
-					{
-						type: 'group',
-						by: [groupTopIntent.groupColumn],
-						aggregations: topMetric
-							? [{ name: topAggName, func: topAgg, column: topMetric }]
-							: [{ name: 'row_count', func: 'count', column: '' }]
-					},
-					{ type: 'sort', keys: [{ column: topAggName, dir: 'desc' }] },
-					{ type: 'take', n: groupTopIntent.take }
-				],
-				score: 230
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Top ${groupTopIntent.take} ${humanizeColumnName(groupTopIntent.groupColumn)} by ${topMetric ? humanizeColumnName(topMetric) : 'row count'} with ${safeLabel}`,
+					prompt: `Top ${groupTopIntent.take} ${humanizeColumnName(groupTopIntent.groupColumn)} by ${topMetric ? humanizeColumnName(topMetric) : 'row count'} with ${safeLabel}: filter then rank`,
+					reasons: [filterReason, 'explicit top-N intent after filtering'],
+					stages: [
+						{
+							type: 'filter',
+							conditions: [
+								{
+									column: filterIntent.filterColumn,
+									op: filterIntent.op,
+									value: filterConditionValue
+								}
+							],
+							logic: 'and'
+						},
+						{
+							type: 'group',
+							by: [groupTopIntent.groupColumn],
+							aggregations: topMetric
+								? [{ name: topAggName, func: topAgg, column: topMetric }]
+								: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: topAggName, dir: 'desc' }] },
+						{ type: 'take', n: groupTopIntent.take }
+					],
+					score: 230
+				})
+			);
 		}
 
 		if (queryIntent.dimensionHint && queryIntent.dimensionHint !== filterIntent.filterColumn) {
 			const dimension = queryIntent.dimensionHint;
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(dimension)} with ${safeLabel}`,
-				prompt: `${humanizeColumnName(dimension)} with ${safeLabel}: group by ${dimension} after filtering`,
-				reasons: [filterReason, `dimension ${dimension} can be summarized after filtering`],
-				stages: [
-					{
-						type: 'filter',
-						conditions: [{ column: filterIntent.filterColumn, op: filterIntent.op, value: filterConditionValue }],
-						logic: 'and'
-					},
-					{
-						type: 'group',
-						by: [dimension],
-						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
-					},
-					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
-				],
-				score: 186
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(dimension)} with ${safeLabel}`,
+					prompt: `${humanizeColumnName(dimension)} with ${safeLabel}: group by ${dimension} after filtering`,
+					reasons: [filterReason, `dimension ${dimension} can be summarized after filtering`],
+					stages: [
+						{
+							type: 'filter',
+							conditions: [
+								{
+									column: filterIntent.filterColumn,
+									op: filterIntent.op,
+									value: filterConditionValue
+								}
+							],
+							logic: 'and'
+						},
+						{
+							type: 'group',
+							by: [dimension],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
+					],
+					score: 186
+				})
+			);
 		}
 	}
 
 	if (groupTopIntent) {
 		const metricColumn = groupTopIntent.metricColumn ?? queryIntent.metricHint ?? null;
-		const metricProfile = metricColumn ? columnProfileFor(input.availableColumnProfiles, metricColumn) : null;
+		const metricProfile = metricColumn
+			? columnProfileFor(input.availableColumnProfiles, metricColumn)
+			: null;
 		const agg: 'sum' | 'average' = metricColumn
-			? (preferredAggregationForQueryMetric(metricColumn, metricProfile) === 'avg' ? 'average' : 'sum')
+			? preferredAggregationForQueryMetric(metricColumn, metricProfile) === 'avg'
+				? 'average'
+				: 'sum'
 			: 'sum';
 		const metricSlug = metricColumn ? metricColumn.replace(/\W+/g, '_') : 'rows';
-		const aggName = metricColumn ? `${agg === 'average' ? 'avg' : 'sum'}_${metricSlug}` : 'row_count';
+		const aggName = metricColumn
+			? `${agg === 'average' ? 'avg' : 'sum'}_${metricSlug}`
+			: 'row_count';
 		const derivedTotalIntent =
 			!groupTopIntent.metricColumn &&
 			!!derivePlan &&
 			/\b(total|revenue|sales|spend)\b/i.test(query);
 
 		if (derivedTotalIntent && derivePlan) {
-			push(buildAnalysisPromptSuggestion({
-				label: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by Revenue`,
-				prompt: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by Revenue: derive ${derivePlan.priceColumn} * ${derivePlan.quantityColumn}`,
-				reasons: ['explicit top-total intent inferred a composed revenue metric'],
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by Revenue`,
+					prompt: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by Revenue: derive ${derivePlan.priceColumn} * ${derivePlan.quantityColumn}`,
+					reasons: ['explicit top-total intent inferred a composed revenue metric'],
+					stages: [
+						{
+							type: 'derive',
+							columns: [
+								{
+									name: derivePlan.name,
+									expr: { mode: 'sstring', template: derivePlan.expressionSql }
+								}
+							]
+						},
+						{
+							type: 'group',
+							by: [groupTopIntent.groupColumn],
+							aggregations: [{ name: 'sum_revenue', func: 'sum', column: derivePlan.name }]
+						},
+						{ type: 'sort', keys: [{ column: 'sum_revenue', dir: 'desc' }] },
+						{ type: 'take', n: groupTopIntent.take }
+					],
+					score: 216
+				})
+			);
+		}
+
+		push(
+			buildAnalysisPromptSuggestion({
+				label: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by ${metricColumn ? humanizeColumnName(metricColumn) : 'row count'}`,
+				prompt: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by ${metricColumn ? humanizeColumnName(metricColumn) : 'row count'}: group by ${groupTopIntent.groupColumn}`,
+				reasons: ['explicit group and top intent detected in prompt'],
 				stages: [
-					{
-						type: 'derive',
-						columns: [{ name: derivePlan.name, expr: { mode: 'sstring', template: derivePlan.expressionSql } }]
-					},
 					{
 						type: 'group',
 						by: [groupTopIntent.groupColumn],
-						aggregations: [{ name: 'sum_revenue', func: 'sum', column: derivePlan.name }]
+						aggregations: metricColumn
+							? [{ name: aggName, func: agg, column: metricColumn }]
+							: [{ name: 'row_count', func: 'count', column: '' }]
 					},
-					{ type: 'sort', keys: [{ column: 'sum_revenue', dir: 'desc' }] },
+					{ type: 'sort', keys: [{ column: aggName, dir: rankSortDirection }] },
 					{ type: 'take', n: groupTopIntent.take }
 				],
-				score: 216
-			}));
-		}
-
-		push(buildAnalysisPromptSuggestion({
-			label: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by ${metricColumn ? humanizeColumnName(metricColumn) : 'row count'}`,
-			prompt: `Top ${humanizeColumnName(groupTopIntent.groupColumn)} by ${metricColumn ? humanizeColumnName(metricColumn) : 'row count'}: group by ${groupTopIntent.groupColumn}`,
-			reasons: ['explicit group and top intent detected in prompt'],
-			stages: [
-				{
-					type: 'group',
-					by: [groupTopIntent.groupColumn],
-					aggregations: metricColumn
-						? [{ name: aggName, func: agg, column: metricColumn }]
-						: [{ name: 'row_count', func: 'count', column: '' }]
-				},
-				{ type: 'sort', keys: [{ column: aggName, dir: rankSortDirection }] },
-				{ type: 'take', n: groupTopIntent.take }
-			],
-			score: 214
-		}));
+				score: 214
+			})
+		);
 	}
 
 	if (temporal && hasTemporalGranularityIntent) {
 		const temporalMetric = queryMetric && queryMetric !== temporal ? queryMetric : null;
-		const grainSqlMap: Record<string, string> = { monthly: 'month', weekly: 'week', daily: 'day', yearly: 'year', quarterly: 'quarter' };
+		const grainSqlMap: Record<string, string> = {
+			monthly: 'month',
+			weekly: 'week',
+			daily: 'day',
+			yearly: 'year',
+			quarterly: 'quarter'
+		};
 		const grainSql = queryTemporalGrain ? (grainSqlMap[queryTemporalGrain] ?? 'month') : 'month';
 		const periodKey = `period_${grainSql}`;
 		const temporalColProfile = columnProfileFor(input.availableColumnProfiles, temporal);
@@ -3039,269 +4068,381 @@ export function searchAnalysisPrompts(input: {
 		const truncExpr = temporalBaseExpr ? `date_trunc('${grainSql}', ${temporalBaseExpr})` : '';
 		const groupByColumn = truncExpr ? periodKey : temporal;
 		const deriveStage: Exclude<GUIPipelineStage, { type: 'raw' }>[] = truncExpr
-			? [{ type: 'derive', columns: [{ name: periodKey, expr: { mode: 'sstring' as const, template: truncExpr } }] }]
+			? [
+					{
+						type: 'derive',
+						columns: [{ name: periodKey, expr: { mode: 'sstring' as const, template: truncExpr } }]
+					}
+				]
 			: [];
 
 		if (temporalMetric) {
-			const metricProfile = columnProfileFor(input.availableColumnProfiles, temporalMetric) ?? intentMetricProfile;
+			const metricProfile =
+				columnProfileFor(input.availableColumnProfiles, temporalMetric) ?? intentMetricProfile;
 			const metricAgg = preferredAggregationForQueryMetric(temporalMetric, metricProfile);
 			const grainPrefix = queryTemporalGrain ? `${queryTemporalGrain} ` : '';
 			const metricSlug = temporalMetric.replace(/\W+/g, '_');
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(temporalMetric)} ${queryTemporalGrain ?? ''} trend`.trim(),
-				prompt: `${humanizeColumnName(temporalMetric)} trend: ${metricAgg} ${temporalMetric} by ${grainPrefix}${temporal}`,
-				reasons: ['temporal-granularity intent with matched metric column'],
-				stages: [
-					...deriveStage,
-					{
-						type: 'group',
-						by: [groupByColumn],
-						aggregations: [{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }]
-					},
-					{ type: 'sort', keys: [{ column: groupByColumn, dir: 'asc' }] }
-				],
-				score: 178
-			}));
-
-			// When the query has an explicit "by <dimension>" pattern, also generate a 2D prompt
-			// that groups by both the dimension and the temporal bucket
-			if (explicitDimensionIntent && queryIntent.dimensionHint && queryIntent.dimensionHint !== temporal) {
-				const dimHint = queryIntent.dimensionHint;
-				push(buildAnalysisPromptSuggestion({
-					label: `${humanizeColumnName(temporalMetric)} by ${humanizeColumnName(dimHint)} ${queryTemporalGrain ?? 'monthly'} trend`.trim(),
-					prompt: `${humanizeColumnName(temporalMetric)} ${grainPrefix}trend by ${dimHint}: ${metricAgg} ${temporalMetric} by ${dimHint} and ${grainPrefix}${temporal}`,
-					reasons: ['temporal-granularity and explicit dimension intent in query'],
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(temporalMetric)} ${queryTemporalGrain ?? ''} trend`.trim(),
+					prompt: `${humanizeColumnName(temporalMetric)} trend: ${metricAgg} ${temporalMetric} by ${grainPrefix}${temporal}`,
+					reasons: ['temporal-granularity intent with matched metric column'],
 					stages: [
 						...deriveStage,
 						{
 							type: 'group',
-							by: [dimHint, groupByColumn],
-							aggregations: [{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }]
+							by: [groupByColumn],
+							aggregations: [
+								{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }
+							]
 						},
 						{ type: 'sort', keys: [{ column: groupByColumn, dir: 'asc' }] }
 					],
-					score: 188
-				}));
+					score: 178
+				})
+			);
+
+			// When the query has an explicit "by <dimension>" pattern, also generate a 2D prompt
+			// that groups by both the dimension and the temporal bucket
+			if (
+				explicitDimensionIntent &&
+				queryIntent.dimensionHint &&
+				queryIntent.dimensionHint !== temporal
+			) {
+				const dimHint = queryIntent.dimensionHint;
+				push(
+					buildAnalysisPromptSuggestion({
+						label:
+							`${humanizeColumnName(temporalMetric)} by ${humanizeColumnName(dimHint)} ${queryTemporalGrain ?? 'monthly'} trend`.trim(),
+						prompt: `${humanizeColumnName(temporalMetric)} ${grainPrefix}trend by ${dimHint}: ${metricAgg} ${temporalMetric} by ${dimHint} and ${grainPrefix}${temporal}`,
+						reasons: ['temporal-granularity and explicit dimension intent in query'],
+						stages: [
+							...deriveStage,
+							{
+								type: 'group',
+								by: [dimHint, groupByColumn],
+								aggregations: [
+									{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }
+								]
+							},
+							{ type: 'sort', keys: [{ column: groupByColumn, dir: 'asc' }] }
+						],
+						score: 188
+					})
+				);
 			}
 		}
 
 		if (queryEntityCountIntent || !temporalMetric) {
-			push(buildAnalysisPromptSuggestion({
-				label: `${queryTemporalGrain ?? 'temporal'} activity trend`,
-				prompt: `${queryTemporalGrain ?? 'temporal'} activity trend: count rows by ${temporal}`,
-				reasons: ['temporal-granularity intent with entity/count framing'],
-				stages: [
-					...deriveStage,
-					{ type: 'group', by: [groupByColumn], aggregations: [{ name: 'row_count', func: 'count', column: '' }] },
-					{ type: 'sort', keys: [{ column: groupByColumn, dir: 'asc' }] }
-				],
-				score: 174
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${queryTemporalGrain ?? 'temporal'} activity trend`,
+					prompt: `${queryTemporalGrain ?? 'temporal'} activity trend: count rows by ${temporal}`,
+					reasons: ['temporal-granularity intent with entity/count framing'],
+					stages: [
+						...deriveStage,
+						{
+							type: 'group',
+							by: [groupByColumn],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: groupByColumn, dir: 'asc' }] }
+					],
+					score: 174
+				})
+			);
 		}
 	}
 
 	if (temporal && queryIntent.wantsTrend && !hasTemporalGranularityIntent) {
-		const temporalMetric = queryMetric && queryMetric !== temporal
-			? queryMetric
-			: (intentMetricColumn && intentMetricColumn !== temporal ? intentMetricColumn : null);
+		const temporalMetric =
+			queryMetric && queryMetric !== temporal
+				? queryMetric
+				: intentMetricColumn && intentMetricColumn !== temporal
+					? intentMetricColumn
+					: null;
 		const trendTemporalColProfile = columnProfileFor(input.availableColumnProfiles, temporal);
 		const trendTemporalBaseExpr = buildTemporalSqlExpr(temporal, trendTemporalColProfile, dialect);
-		const trendTruncExpr = trendTemporalBaseExpr ? `date_trunc('month', ${trendTemporalBaseExpr})` : '';
+		const trendTruncExpr = trendTemporalBaseExpr
+			? `date_trunc('month', ${trendTemporalBaseExpr})`
+			: '';
 		const trendGroupByColumn = trendTruncExpr ? 'period_month' : temporal;
 		const trendDeriveStage: Exclude<GUIPipelineStage, { type: 'raw' }>[] = trendTruncExpr
-			? [{ type: 'derive', columns: [{ name: 'period_month', expr: { mode: 'sstring' as const, template: trendTruncExpr } }] }]
+			? [
+					{
+						type: 'derive',
+						columns: [
+							{ name: 'period_month', expr: { mode: 'sstring' as const, template: trendTruncExpr } }
+						]
+					}
+				]
 			: [];
 
 		if (temporalMetric) {
-			const metricProfile = columnProfileFor(input.availableColumnProfiles, temporalMetric) ?? intentMetricProfile;
+			const metricProfile =
+				columnProfileFor(input.availableColumnProfiles, temporalMetric) ?? intentMetricProfile;
 			const metricAgg = preferredAggregationForQueryMetric(temporalMetric, metricProfile);
 			const metricSlug = temporalMetric.replace(/\W+/g, '_');
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(temporalMetric)} trend over time`,
-				prompt: `${humanizeColumnName(temporalMetric)} trend over time: ${metricAgg} ${temporalMetric} by ${temporal}`,
-				reasons: ['explicit over-time trend intent with matched temporal and metric columns'],
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(temporalMetric)} trend over time`,
+					prompt: `${humanizeColumnName(temporalMetric)} trend over time: ${metricAgg} ${temporalMetric} by ${temporal}`,
+					reasons: ['explicit over-time trend intent with matched temporal and metric columns'],
+					stages: [
+						...trendDeriveStage,
+						{
+							type: 'group',
+							by: [trendGroupByColumn],
+							aggregations: [
+								{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }
+							]
+						},
+						{ type: 'sort', keys: [{ column: trendGroupByColumn, dir: 'asc' }] }
+					],
+					score: 206
+				})
+			);
+		}
+
+		push(
+			buildAnalysisPromptSuggestion({
+				label: 'Activity trend over time',
+				prompt: `Activity trend over time: count rows by ${temporal}`,
+				reasons: ['explicit over-time trend intent without explicit grain'],
 				stages: [
 					...trendDeriveStage,
 					{
 						type: 'group',
 						by: [trendGroupByColumn],
-						aggregations: [{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: temporalMetric }]
+						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
 					},
 					{ type: 'sort', keys: [{ column: trendGroupByColumn, dir: 'asc' }] }
 				],
-				score: 206
-			}));
-		}
-
-		push(buildAnalysisPromptSuggestion({
-			label: 'Activity trend over time',
-			prompt: `Activity trend over time: count rows by ${temporal}`,
-			reasons: ['explicit over-time trend intent without explicit grain'],
-			stages: [
-				...trendDeriveStage,
-				{ type: 'group', by: [trendGroupByColumn], aggregations: [{ name: 'row_count', func: 'count', column: '' }] },
-				{ type: 'sort', keys: [{ column: trendGroupByColumn, dir: 'asc' }] }
-			],
-			score: 188
-		}));
+				score: 188
+			})
+		);
 	}
 
 	if (intentMetricColumn && matchedDimensionColumn && !hasTemporalGranularityIntent) {
-		const metricLooksMonetary = /(price|cost|rent|fee|amount|usd|revenue|sales|spend)/i.test(intentMetricColumn);
-		const agg = (prefersAscendingRank && metricLooksMonetary)
-			? 'avg'
-			: preferredAggregationForQueryMetric(intentMetricColumn, intentMetricProfile);
+		const metricLooksMonetary = /(price|cost|rent|fee|amount|usd|revenue|sales|spend)/i.test(
+			intentMetricColumn
+		);
+		const agg =
+			prefersAscendingRank && metricLooksMonetary
+				? 'avg'
+				: preferredAggregationForQueryMetric(intentMetricColumn, intentMetricProfile);
 		const metricSlug = intentMetricColumn.replace(/\W+/g, '_');
-		push(buildAnalysisPromptSuggestion({
-			label: `${humanizeColumnName(intentMetricColumn)} by ${humanizeColumnName(matchedDimensionColumn)}`,
-			prompt: `${humanizeColumnName(intentMetricColumn)} by ${humanizeColumnName(matchedDimensionColumn)}: ${agg} ${intentMetricColumn} by ${matchedDimensionColumn}`,
-			reasons: ['query intent phrase mapped to domain-specific metric column'],
-			stages: [
-				{
-					type: 'group',
-					by: [matchedDimensionColumn],
-					aggregations: [{ name: `${agg}_${metricSlug}`, func: agg, column: intentMetricColumn }]
-				},
-				{ type: 'sort', keys: [{ column: `${agg}_${metricSlug}`, dir: rankSortDirection }] },
-				{ type: 'take', n: 15 }
-			],
-			score: 172
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: `${humanizeColumnName(intentMetricColumn)} by ${humanizeColumnName(matchedDimensionColumn)}`,
+				prompt: `${humanizeColumnName(intentMetricColumn)} by ${humanizeColumnName(matchedDimensionColumn)}: ${agg} ${intentMetricColumn} by ${matchedDimensionColumn}`,
+				reasons: ['query intent phrase mapped to domain-specific metric column'],
+				stages: [
+					{
+						type: 'group',
+						by: [matchedDimensionColumn],
+						aggregations: [{ name: `${agg}_${metricSlug}`, func: agg, column: intentMetricColumn }]
+					},
+					{ type: 'sort', keys: [{ column: `${agg}_${metricSlug}`, dir: rankSortDirection }] },
+					{ type: 'take', n: 15 }
+				],
+				score: 172
+			})
+		);
 	}
 
 	if (queryIntent.wantsOutlier && queryMetric) {
-		push(buildAnalysisPromptSuggestion({
-			label: `Outlier scan for ${humanizeColumnName(queryMetric)}`,
-			prompt: `Outlier scan for ${humanizeColumnName(queryMetric)}: inspect unusually high or low ${queryMetric} values`,
-			reasons: ['explicit outlier intent with matched metric column'],
-			stages: makePresetStages('anomaly-scan', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-			score: 208
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: `Outlier scan for ${humanizeColumnName(queryMetric)}`,
+				prompt: `Outlier scan for ${humanizeColumnName(queryMetric)}: inspect unusually high or low ${queryMetric} values`,
+				reasons: ['explicit outlier intent with matched metric column'],
+				stages: makePresetStages('anomaly-scan', {
+					availableColumns,
+					availableColumnProfiles: input.availableColumnProfiles,
+					dialect
+				}),
+				score: 208
+			})
+		);
 	}
 
 	for (const match of matchedColumns) {
 		const column = match.column;
 		const semantic = columnProfileFor(input.availableColumnProfiles, column)?.semanticType;
-		const looksSemanticCategory = ['category', 'dimension', 'segment', 'status', 'class', 'group'].some((hint) =>
-			(semantic ?? '').toLowerCase().includes(hint)
-		);
+		const looksSemanticCategory = [
+			'category',
+			'dimension',
+			'segment',
+			'status',
+			'class',
+			'group'
+		].some((hint) => (semantic ?? '').toLowerCase().includes(hint));
 		const looksTemporal = isTemporalColumn(column) || isTemporalSemanticHint(semantic);
 		const looksNumeric = looksMetric(column) || isNumericSemanticHint(semantic);
-		const looksCategorical = looksDimension(column) || looksSemanticCategory || (!looksTemporal && !looksNumeric);
+		const looksCategorical =
+			looksDimension(column) || looksSemanticCategory || (!looksTemporal && !looksNumeric);
 
 		if (looksCategorical) {
 			const scorePenaltyForMetricQuery = queryHasMetricIntent ? 18 : 0;
 			const scorePenaltyForMixedMeasureIntent = hasMixedMeasureDimensionIntent ? 12 : 0;
 			const scorePenaltyForTrendQuery = queryIntent.wantsTrend ? 24 : 0;
-			push(buildAnalysisPromptSuggestion({
-				label: `Group by ${humanizeColumnName(column)}`,
-				prompt: `Group by ${humanizeColumnName(column)}: count rows per ${column}`,
-				reasons: [`${column} matched your query and supports grouped analysis`],
-				stages: [
-					{
-						type: 'group',
-						by: [column],
-						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
-					},
-					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
-				],
-				score: 102 + match.score + (queryIntent.wantsGroup ? 10 : 0) - scorePenaltyForMetricQuery - scorePenaltyForMixedMeasureIntent - scorePenaltyForTrendQuery
-			}));
-
-			push(buildAnalysisPromptSuggestion({
-				label: `Value counts for ${humanizeColumnName(column)}`,
-				prompt: `Value counts for ${humanizeColumnName(column)}: group by ${column} and count rows`,
-				reasons: [`${column} matched your query and behaves like a grouping dimension`],
-				stages: [
-					{
-						type: 'group',
-						by: [column],
-						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
-					},
-					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] },
-					{ type: 'take', n: 15 }
-				],
-				score: 98 + match.score + (queryIntent.wantsGroup ? 8 : 0) - scorePenaltyForMetricQuery - scorePenaltyForMixedMeasureIntent - scorePenaltyForTrendQuery
-			}));
-
-			if (queryMetric && queryMetric !== column) {
-				const metricSlug = queryMetric.replace(/\W+/g, '_');
-				const metricAgg = preferredAggregationForMetric(queryMetric);
-				push(buildAnalysisPromptSuggestion({
-					label: `${humanizeColumnName(queryMetric)} by ${humanizeColumnName(column)}`,
-					prompt: `${humanizeColumnName(queryMetric)} by ${humanizeColumnName(column)}: ${metricAgg} ${queryMetric} by ${column}`,
-					reasons: [`${column} matched your query and can segment ${queryMetric}`],
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Group by ${humanizeColumnName(column)}`,
+					prompt: `Group by ${humanizeColumnName(column)}: count rows per ${column}`,
+					reasons: [`${column} matched your query and supports grouped analysis`],
 					stages: [
 						{
 							type: 'group',
 							by: [column],
-							aggregations: [{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: queryMetric }]
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
 						},
-						{ type: 'sort', keys: [{ column: `${metricAgg}_${metricSlug}`, dir: 'desc' }] },
+						{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
+					],
+					score:
+						102 +
+						match.score +
+						(queryIntent.wantsGroup ? 10 : 0) -
+						scorePenaltyForMetricQuery -
+						scorePenaltyForMixedMeasureIntent -
+						scorePenaltyForTrendQuery
+				})
+			);
+
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Value counts for ${humanizeColumnName(column)}`,
+					prompt: `Value counts for ${humanizeColumnName(column)}: group by ${column} and count rows`,
+					reasons: [`${column} matched your query and behaves like a grouping dimension`],
+					stages: [
+						{
+							type: 'group',
+							by: [column],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] },
 						{ type: 'take', n: 15 }
 					],
-					score: 94 + match.score + (queryIntent.wantsGroup ? 6 : 0) + (queryIntent.wantsTop ? 4 : 0) + (queryHasMetricIntent ? 10 : 0) + (hasMixedMeasureDimensionIntent ? 10 : 0)
-				}));
+					score:
+						98 +
+						match.score +
+						(queryIntent.wantsGroup ? 8 : 0) -
+						scorePenaltyForMetricQuery -
+						scorePenaltyForMixedMeasureIntent -
+						scorePenaltyForTrendQuery
+				})
+			);
+
+			if (queryMetric && queryMetric !== column) {
+				const metricSlug = queryMetric.replace(/\W+/g, '_');
+				const metricAgg = preferredAggregationForMetric(queryMetric);
+				push(
+					buildAnalysisPromptSuggestion({
+						label: `${humanizeColumnName(queryMetric)} by ${humanizeColumnName(column)}`,
+						prompt: `${humanizeColumnName(queryMetric)} by ${humanizeColumnName(column)}: ${metricAgg} ${queryMetric} by ${column}`,
+						reasons: [`${column} matched your query and can segment ${queryMetric}`],
+						stages: [
+							{
+								type: 'group',
+								by: [column],
+								aggregations: [
+									{ name: `${metricAgg}_${metricSlug}`, func: metricAgg, column: queryMetric }
+								]
+							},
+							{ type: 'sort', keys: [{ column: `${metricAgg}_${metricSlug}`, dir: 'desc' }] },
+							{ type: 'take', n: 15 }
+						],
+						score:
+							94 +
+							match.score +
+							(queryIntent.wantsGroup ? 6 : 0) +
+							(queryIntent.wantsTop ? 4 : 0) +
+							(queryHasMetricIntent ? 10 : 0) +
+							(hasMixedMeasureDimensionIntent ? 10 : 0)
+					})
+				);
 			}
 		}
 
 		if (looksNumeric) {
-			push(buildAnalysisPromptSuggestion({
-				label: `Outlier scan for ${humanizeColumnName(column)}`,
-				prompt: `Outlier scan for ${humanizeColumnName(column)}: inspect unusually high or low values`,
-				reasons: [`${column} matched your query and behaves like a numeric metric`],
-				stages: makePresetStages('anomaly-scan', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-				score: 90 + match.score + (queryIntent.wantsOutlier ? 8 : 0)
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Outlier scan for ${humanizeColumnName(column)}`,
+					prompt: `Outlier scan for ${humanizeColumnName(column)}: inspect unusually high or low values`,
+					reasons: [`${column} matched your query and behaves like a numeric metric`],
+					stages: makePresetStages('anomaly-scan', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 90 + match.score + (queryIntent.wantsOutlier ? 8 : 0)
+				})
+			);
 
 			if (temporal && temporal !== column) {
 				const metricAgg = preferredAggregationForMetric(column);
 				const grainPrefix = queryTemporalGrain ? `${queryTemporalGrain} ` : '';
-				push(buildAnalysisPromptSuggestion({
-					label: `${queryTemporalGrain ? `${humanizeColumnName(column)} ${queryTemporalGrain} trend` : `${humanizeColumnName(column)} trend`}`,
-					prompt: `${humanizeColumnName(column)} trend: ${metricAgg} ${column} by ${grainPrefix}${temporal}`,
-					reasons: [`${column} matched your query and can be trended by ${temporal}`],
-					stages: [
-						{
-							type: 'group',
-							by: [temporal],
-							aggregations: [{ name: `${metricAgg}_${column.replace(/\W+/g, '_')}`, func: metricAgg, column }]
-						},
-						{ type: 'sort', keys: [{ column: temporal, dir: 'asc' }] }
-					],
-					score: 92 + match.score + (queryIntent.wantsTrend ? 8 : 0)
-				}));
+				push(
+					buildAnalysisPromptSuggestion({
+						label: `${queryTemporalGrain ? `${humanizeColumnName(column)} ${queryTemporalGrain} trend` : `${humanizeColumnName(column)} trend`}`,
+						prompt: `${humanizeColumnName(column)} trend: ${metricAgg} ${column} by ${grainPrefix}${temporal}`,
+						reasons: [`${column} matched your query and can be trended by ${temporal}`],
+						stages: [
+							{
+								type: 'group',
+								by: [temporal],
+								aggregations: [
+									{ name: `${metricAgg}_${column.replace(/\W+/g, '_')}`, func: metricAgg, column }
+								]
+							},
+							{ type: 'sort', keys: [{ column: temporal, dir: 'asc' }] }
+						],
+						score: 92 + match.score + (queryIntent.wantsTrend ? 8 : 0)
+					})
+				);
 			}
 		}
 
 		if (looksTemporal) {
-			push(buildAnalysisPromptSuggestion({
-				label: `Trend over ${humanizeColumnName(column)}`,
-				prompt: `Trend over ${humanizeColumnName(column)}: aggregate ${metric ?? 'rows'} by ${column}`,
-				reasons: [`${column} matched your query and behaves like a temporal axis`],
-				stages: makePresetStages('temporal-trend', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-				score: 91 + match.score + (queryIntent.wantsTrend ? 10 : 0)
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Trend over ${humanizeColumnName(column)}`,
+					prompt: `Trend over ${humanizeColumnName(column)}: aggregate ${metric ?? 'rows'} by ${column}`,
+					reasons: [`${column} matched your query and behaves like a temporal axis`],
+					stages: makePresetStages('temporal-trend', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 91 + match.score + (queryIntent.wantsTrend ? 10 : 0)
+				})
+			);
 		}
 	}
 
 	if (focusDimensions.length === 2) {
 		const [firstDimension, secondDimension] = focusDimensions;
-		push(buildAnalysisPromptSuggestion({
-			label: `${humanizeColumnName(firstDimension)} by ${humanizeColumnName(secondDimension)}`,
-			prompt: `${humanizeColumnName(firstDimension)} by ${humanizeColumnName(secondDimension)}: count rows by ${firstDimension} and ${secondDimension}`,
-			reasons: [`query mentions ${firstDimension} and ${secondDimension}`, 'two categorical dimensions suggest a cross-breakdown'],
-			stages: [
-				{
-					type: 'group',
-					by: [firstDimension, secondDimension],
-					aggregations: [{ name: 'row_count', func: 'count', column: '' }]
-				},
-				{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] },
-				{ type: 'take', n: 20 }
-			],
-			score: 160
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: `${humanizeColumnName(firstDimension)} by ${humanizeColumnName(secondDimension)}`,
+				prompt: `${humanizeColumnName(firstDimension)} by ${humanizeColumnName(secondDimension)}: count rows by ${firstDimension} and ${secondDimension}`,
+				reasons: [
+					`query mentions ${firstDimension} and ${secondDimension}`,
+					'two categorical dimensions suggest a cross-breakdown'
+				],
+				stages: [
+					{
+						type: 'group',
+						by: [firstDimension, secondDimension],
+						aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+					},
+					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] },
+					{ type: 'take', n: 20 }
+				],
+				score: 160
+			})
+		);
 	}
 
 	for (const [pairIndex, pairCandidate] of focusPairCandidates.slice(0, 3).entries()) {
@@ -3312,24 +4453,32 @@ export function searchAnalysisPrompts(input: {
 			const pairGapDays = `days_between_${pairB.replace(/\W+/g, '_')}_and_${pairA.replace(/\W+/g, '_')}`;
 			const pairAProfile = columnProfileFor(input.availableColumnProfiles, pairA);
 			const pairBProfile = columnProfileFor(input.availableColumnProfiles, pairB);
-			const pairGapDaysExpr = buildTemporalGapDaysSql(pairA, pairB, pairAProfile, pairBProfile, dialect);
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(pairB)} vs ${humanizeColumnName(pairA)}`,
-				prompt: `Temporal relation: average days between ${pairA} and ${pairB}`,
-				reasons: ['paired temporal columns are best analyzed as a relationship'],
-				stages: [
-					{
-						type: 'derive',
-						columns: [{ name: pairGapDays, expr: { mode: 'sstring', template: pairGapDaysExpr } }]
-					},
-					{
-						type: 'group',
-						by: [],
-						aggregations: [{ name: `avg_${pairGapDays}`, func: 'avg', column: pairGapDays }]
-					}
-				],
-				score: 166 + pairScoreOffset
-			}));
+			const pairGapDaysExpr = buildTemporalGapDaysSql(
+				pairA,
+				pairB,
+				pairAProfile,
+				pairBProfile,
+				dialect
+			);
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(pairB)} vs ${humanizeColumnName(pairA)}`,
+					prompt: `Temporal relation: average days between ${pairA} and ${pairB}`,
+					reasons: ['paired temporal columns are best analyzed as a relationship'],
+					stages: [
+						{
+							type: 'derive',
+							columns: [{ name: pairGapDays, expr: { mode: 'sstring', template: pairGapDaysExpr } }]
+						},
+						{
+							type: 'group',
+							by: [],
+							aggregations: [{ name: `avg_${pairGapDays}`, func: 'avg', column: pairGapDays }]
+						}
+					],
+					score: 166 + pairScoreOffset
+				})
+			);
 		}
 
 		if (pairCandidate.type === 'metric-dimension') {
@@ -3337,144 +4486,206 @@ export function searchAnalysisPrompts(input: {
 			const dimensionColumn = metricColumn === pairA ? pairB : pairA;
 			const agg = preferredAggregationForMetric(metricColumn);
 			const metricSlug = metricColumn.replace(/\W+/g, '_');
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(metricColumn)} by ${humanizeColumnName(dimensionColumn)}`,
-				prompt: `${humanizeColumnName(metricColumn)} by ${humanizeColumnName(dimensionColumn)}: ${agg} ${metricColumn} by ${dimensionColumn}`,
-				reasons: ['paired measure and dimension map to grouped aggregation'],
-				stages: [
-					{
-						type: 'group',
-						by: [dimensionColumn],
-						aggregations: [{ name: `${agg}_${metricSlug}`, func: agg, column: metricColumn }]
-					},
-					{ type: 'sort', keys: [{ column: `${agg}_${metricSlug}`, dir: 'desc' }] },
-					{ type: 'take', n: 15 }
-				],
-				score: 164 + pairScoreOffset
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(metricColumn)} by ${humanizeColumnName(dimensionColumn)}`,
+					prompt: `${humanizeColumnName(metricColumn)} by ${humanizeColumnName(dimensionColumn)}: ${agg} ${metricColumn} by ${dimensionColumn}`,
+					reasons: ['paired measure and dimension map to grouped aggregation'],
+					stages: [
+						{
+							type: 'group',
+							by: [dimensionColumn],
+							aggregations: [{ name: `${agg}_${metricSlug}`, func: agg, column: metricColumn }]
+						},
+						{ type: 'sort', keys: [{ column: `${agg}_${metricSlug}`, dir: 'desc' }] },
+						{ type: 'take', n: 15 }
+					],
+					score: 164 + pairScoreOffset
+				})
+			);
 		}
 
 		if (pairCandidate.type === 'metric-metric') {
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(pairA)} vs ${humanizeColumnName(pairB)}`,
-				prompt: `Correlation check: compare ${pairA} and ${pairB}`,
-				reasons: ['paired numeric signals suggest direct comparison'],
-				stages: makePresetStages('segment-anomaly', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-				score: 162 + pairScoreOffset
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(pairA)} vs ${humanizeColumnName(pairB)}`,
+					prompt: `Correlation check: compare ${pairA} and ${pairB}`,
+					reasons: ['paired numeric signals suggest direct comparison'],
+					stages: makePresetStages('segment-anomaly', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 162 + pairScoreOffset
+				})
+			);
 		}
 
 		if (pairCandidate.type === 'dimension-dimension' && !queryHasMetricIntent) {
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(pairA)} by ${humanizeColumnName(pairB)}`,
-				prompt: `${humanizeColumnName(pairA)} by ${humanizeColumnName(pairB)}: count rows by ${pairA} and ${pairB}`,
-				reasons: ['paired categorical columns suggest a cross-breakdown'],
-				stages: [
-					{ type: 'group', by: [pairA, pairB], aggregations: [{ name: 'row_count', func: 'count', column: '' }] },
-					{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
-				],
-				score: 160 + pairScoreOffset
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(pairA)} by ${humanizeColumnName(pairB)}`,
+					prompt: `${humanizeColumnName(pairA)} by ${humanizeColumnName(pairB)}: count rows by ${pairA} and ${pairB}`,
+					reasons: ['paired categorical columns suggest a cross-breakdown'],
+					stages: [
+						{
+							type: 'group',
+							by: [pairA, pairB],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						},
+						{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
+					],
+					score: 160 + pairScoreOffset
+				})
+			);
 		}
 	}
 
 	if (derivePlan) {
-		const derivedRevenueStages = makePresetStages('group-top', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect });
-		push(buildAnalysisPromptSuggestion({
-			label: 'Revenue analysis',
-			prompt: `Revenue analysis: derive ${derivePlan.priceColumn} * ${derivePlan.quantityColumn}`,
-			reasons: ['price and quantity columns support a composed revenue metric'],
-			stages: derivedRevenueStages,
-			score: 124
-		}));
+		const derivedRevenueStages = makePresetStages('group-top', {
+			availableColumns,
+			availableColumnProfiles: input.availableColumnProfiles,
+			dialect
+		});
+		push(
+			buildAnalysisPromptSuggestion({
+				label: 'Revenue analysis',
+				prompt: `Revenue analysis: derive ${derivePlan.priceColumn} * ${derivePlan.quantityColumn}`,
+				reasons: ['price and quantity columns support a composed revenue metric'],
+				stages: derivedRevenueStages,
+				score: 124
+			})
+		);
 
 		if (dimension) {
-			push(buildAnalysisPromptSuggestion({
-				label: `Revenue by ${humanizeColumnName(dimension)}`,
-				prompt: `Revenue by ${humanizeColumnName(dimension)}: aggregate derived revenue by ${dimension}`,
-				reasons: [`${dimension} is the strongest business dimension for a revenue breakdown`],
-				stages: derivedRevenueStages,
-				score: 118
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `Revenue by ${humanizeColumnName(dimension)}`,
+					prompt: `Revenue by ${humanizeColumnName(dimension)}: aggregate derived revenue by ${dimension}`,
+					reasons: [`${dimension} is the strongest business dimension for a revenue breakdown`],
+					stages: derivedRevenueStages,
+					score: 118
+				})
+			);
 		}
 
 		if (temporal) {
-			push(buildAnalysisPromptSuggestion({
-				label: 'Daily revenue trend',
-				prompt: `Daily revenue trend: aggregate derived revenue by ${temporal}`,
-				reasons: [`${temporal} supports a time-series revenue rollup`],
-				stages: makePresetStages('temporal-trend', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-				score: 116
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: 'Daily revenue trend',
+					prompt: `Daily revenue trend: aggregate derived revenue by ${temporal}`,
+					reasons: [`${temporal} supports a time-series revenue rollup`],
+					stages: makePresetStages('temporal-trend', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 116
+				})
+			);
 		}
 	}
 
 	if (metric && dimension) {
-		push(buildAnalysisPromptSuggestion({
-			label: 'Top contributors',
-			prompt: `Top contributors: rank ${dimension} by ${metric}`,
-			reasons: [`${dimension} and ${metric} support a ranked breakdown`],
-			stages: makePresetStages('group-top', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-			score: 84
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: 'Top contributors',
+				prompt: `Top contributors: rank ${dimension} by ${metric}`,
+				reasons: [`${dimension} and ${metric} support a ranked breakdown`],
+				stages: makePresetStages('group-top', {
+					availableColumns,
+					availableColumnProfiles: input.availableColumnProfiles,
+					dialect
+				}),
+				score: 84
+			})
+		);
 
 		if (queryIntent.wantsOutlier) {
-			push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(metric)} outliers by ${humanizeColumnName(dimension)}`,
-				prompt: `${humanizeColumnName(metric)} outliers by ${humanizeColumnName(dimension)}: inspect anomalous ${metric} across ${dimension}`,
-				reasons: ['outlier intent with both metric and segment context'],
-				stages: makePresetStages('segment-anomaly', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-				score: 220
-			}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(metric)} outliers by ${humanizeColumnName(dimension)}`,
+					prompt: `${humanizeColumnName(metric)} outliers by ${humanizeColumnName(dimension)}: inspect anomalous ${metric} across ${dimension}`,
+					reasons: ['outlier intent with both metric and segment context'],
+					stages: makePresetStages('segment-anomaly', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 220
+				})
+			);
 		}
 	}
 
 	if (metric) {
-		push(buildAnalysisPromptSuggestion({
-			label: 'Outlier scan',
-			prompt: `Outlier scan: check ${metric} beyond IQR bounds`,
-			reasons: [`${metric} is a numeric measure worth inspecting for outliers`],
-			stages: makePresetStages('anomaly-scan', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-			score: 78
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: 'Outlier scan',
+				prompt: `Outlier scan: check ${metric} beyond IQR bounds`,
+				reasons: [`${metric} is a numeric measure worth inspecting for outliers`],
+				stages: makePresetStages('anomaly-scan', {
+					availableColumns,
+					availableColumnProfiles: input.availableColumnProfiles,
+					dialect
+				}),
+				score: 78
+			})
+		);
 	}
 
 	if (metric && temporal) {
 		const grainPrefix = queryTemporalGrain ? `${queryTemporalGrain} ` : '';
-		push(buildAnalysisPromptSuggestion({
-			label: queryTemporalGrain ? `${queryTemporalGrain} trend over time` : 'Trend over time',
-			prompt: `Trend over time: aggregate ${metric} by ${grainPrefix}${temporal}`,
-			reasons: [`${metric} and ${temporal} support a trend analysis`],
-			stages: makePresetStages('temporal-trend', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-			score: 80 + (hasTemporalGranularityIntent ? 8 : 0)
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: queryTemporalGrain ? `${queryTemporalGrain} trend over time` : 'Trend over time',
+				prompt: `Trend over time: aggregate ${metric} by ${grainPrefix}${temporal}`,
+				reasons: [`${metric} and ${temporal} support a trend analysis`],
+				stages: makePresetStages('temporal-trend', {
+					availableColumns,
+					availableColumnProfiles: input.availableColumnProfiles,
+					dialect
+				}),
+				score: 80 + (hasTemporalGranularityIntent ? 8 : 0)
+			})
+		);
 	}
 
 	if (metric && tokens.length > 1) {
 		const numericCandidates = availableColumns.filter((column) => looksMeasureLikeColumn(column));
-		const left = numericCandidates.find((column) => tokens.some((token) => column.toLowerCase().includes(token)))
-			?? (numericCandidates.includes(metric) ? metric : numericCandidates[0]);
+		const left =
+			numericCandidates.find((column) =>
+				tokens.some((token) => column.toLowerCase().includes(token))
+			) ?? (numericCandidates.includes(metric) ? metric : numericCandidates[0]);
 		const right = numericCandidates.find((column) => column !== left);
 		if (left && right) {
-		push(buildAnalysisPromptSuggestion({
-			label: 'Correlation check',
-			prompt: `Correlation check: compare ${left} and ${right}`,
-			reasons: ['multiple numeric signals can be compared directly'],
-			stages: makePresetStages('segment-anomaly', { availableColumns, availableColumnProfiles: input.availableColumnProfiles, dialect }),
-			score: 72 + (queryIntent.wantsCompare ? 10 : 0)
-		}));
+			push(
+				buildAnalysisPromptSuggestion({
+					label: 'Correlation check',
+					prompt: `Correlation check: compare ${left} and ${right}`,
+					reasons: ['multiple numeric signals can be compared directly'],
+					stages: makePresetStages('segment-anomaly', {
+						availableColumns,
+						availableColumnProfiles: input.availableColumnProfiles,
+						dialect
+					}),
+					score: 72 + (queryIntent.wantsCompare ? 10 : 0)
+				})
+			);
 		}
 	}
 
 	if (prompts.length === 0) {
 		const fallbackStage = makeDefaultStage('select') as Exclude<GUIPipelineStage, { type: 'raw' }>;
-		push(buildAnalysisPromptSuggestion({
-			label: 'Inspect value counts',
-			prompt: `Inspect value counts for ${availableColumns[0]}`,
-			reasons: ['fallback prompt for categorical inspection'],
-			stages: [fallbackStage],
-			score: 40
-		}));
+		push(
+			buildAnalysisPromptSuggestion({
+				label: 'Inspect value counts',
+				prompt: `Inspect value counts for ${availableColumns[0]}`,
+				reasons: ['fallback prompt for categorical inspection'],
+				stages: [fallbackStage],
+				score: 40
+			})
+		);
 	}
 
 	const queryBoost = (prompt: StageAnalysisPromptSuggestion): number => {
@@ -3494,26 +4705,69 @@ export function searchAnalysisPrompts(input: {
 			if (!hasFilterStage) score -= 26;
 			if (text.includes(filterColumnLower)) score += 14;
 			if (text.includes(filterValueLower)) score += 10;
-			if (filterIntent.subjectColumn && text.includes(filterIntent.subjectColumn.toLowerCase())) score += 8;
+			if (filterIntent.subjectColumn && text.includes(filterIntent.subjectColumn.toLowerCase()))
+				score += 8;
 		}
 		if (query.includes('revenue') && /revenue/i.test(prompt.prompt)) score += 6;
 		if (query.includes('category') && /category/i.test(prompt.prompt)) score += 5;
 		if (query.includes('date') && /trend|time|daily|temporal/i.test(prompt.prompt)) score += 4;
-		if (queryIntent.wantsGroup && /group by|value counts|contributors/i.test(prompt.prompt)) score += 8;
+		if (queryIntent.wantsGroup && /group by|value counts|contributors/i.test(prompt.prompt))
+			score += 8;
 		if (queryIntent.wantsTrend && /trend|time|daily|temporal/i.test(prompt.prompt)) score += 8;
 		if (queryIntent.wantsTrend && /trend|time|daily|temporal/i.test(prompt.label)) score += 10;
-		if (queryIntent.wantsTrend && !/trend|time|daily|weekly|monthly|quarterly|yearly|temporal/.test(text)) score -= 36;
-		if (queryIntent.wantsTrend && /group by|value counts|top contributors/.test(text) && !/trend|time|daily|weekly|monthly|quarterly|yearly|temporal/.test(text)) score -= 16;
-		if (queryIntent.wantsTrend && queryIntent.temporalHint && !text.includes(queryIntent.temporalHint.toLowerCase())) score -= 20;
+		if (
+			queryIntent.wantsTrend &&
+			!/trend|time|daily|weekly|monthly|quarterly|yearly|temporal/.test(text)
+		)
+			score -= 36;
+		if (
+			queryIntent.wantsTrend &&
+			/group by|value counts|top contributors/.test(text) &&
+			!/trend|time|daily|weekly|monthly|quarterly|yearly|temporal/.test(text)
+		)
+			score -= 16;
+		if (
+			queryIntent.wantsTrend &&
+			queryIntent.temporalHint &&
+			!text.includes(queryIntent.temporalHint.toLowerCase())
+		)
+			score -= 20;
 		if (queryIntent.wantsTrend && /top contributors|rank/i.test(prompt.label)) score -= 8;
-		if (hasTemporalGranularityIntent && /trend|time|daily|weekly|monthly|quarterly|yearly|temporal/i.test(prompt.prompt)) score += 10;
-		if (hasTemporalGranularityIntent && queryTemporalGrain && (prompt.label.toLowerCase().includes(queryTemporalGrain) || prompt.prompt.toLowerCase().includes(queryTemporalGrain))) score += 12;
-		if (hasTemporalGranularityIntent && /outlier|correlation|top contributors/i.test(prompt.label)) score -= 20;
-		if (hasTemporalGranularityIntent && temporal && !text.includes(temporal.toLowerCase()) && !/trend|time|monthly|weekly|daily|yearly|quarterly/.test(text)) score -= 18;
+		if (
+			hasTemporalGranularityIntent &&
+			/trend|time|daily|weekly|monthly|quarterly|yearly|temporal/i.test(prompt.prompt)
+		)
+			score += 10;
+		if (
+			hasTemporalGranularityIntent &&
+			queryTemporalGrain &&
+			(prompt.label.toLowerCase().includes(queryTemporalGrain) ||
+				prompt.prompt.toLowerCase().includes(queryTemporalGrain))
+		)
+			score += 12;
+		if (hasTemporalGranularityIntent && /outlier|correlation|top contributors/i.test(prompt.label))
+			score -= 20;
+		if (
+			hasTemporalGranularityIntent &&
+			temporal &&
+			!text.includes(temporal.toLowerCase()) &&
+			!/trend|time|monthly|weekly|daily|yearly|quarterly/.test(text)
+		)
+			score -= 18;
 		if (intentMetricColumn && text.includes(intentMetricColumn.toLowerCase())) score += 14;
-		if (intentMetricColumn && !text.includes(intentMetricColumn.toLowerCase()) && !/count rows/.test(text)) score -= 10;
+		if (
+			intentMetricColumn &&
+			!text.includes(intentMetricColumn.toLowerCase()) &&
+			!/count rows/.test(text)
+		)
+			score -= 10;
 		if (queryIntent.wantsTop && /top|rank|contributors|sort/i.test(prompt.prompt)) score += 6;
-		if (queryIntent.wantsTop && /least|lowest|cheapest|minimum|min/.test(query) && /\basc\b|low|small|minimum/.test(text)) score += 6;
+		if (
+			queryIntent.wantsTop &&
+			/least|lowest|cheapest|minimum|min/.test(query) &&
+			/\basc\b|low|small|minimum/.test(text)
+		)
+			score += 6;
 		if (queryIntent.wantsOutlier && /outlier|anomaly|iqr/i.test(prompt.prompt)) score += 7;
 		if (queryIntent.wantsOutlier && !/outlier|anomaly|iqr|spike/.test(text)) score -= 16;
 		if (queryIntent.wantsCompare && /correlation|compare|versus/i.test(prompt.prompt)) score += 6;
@@ -3522,32 +4776,67 @@ export function searchAnalysisPrompts(input: {
 		if (wantsRate && hasFilterStage && /avg|average|rate/i.test(text)) score += 10;
 		if (prompt.stages.some((stage) => stage.type === 'group') && queryIntent.wantsGroup) score += 4;
 		if (queryMetric && prompt.prompt.toLowerCase().includes(queryMetric.toLowerCase())) score += 12;
-		if (queryMetric && queryHasMetricIntent && !prompt.prompt.toLowerCase().includes(queryMetric.toLowerCase()) && /count rows|value counts/i.test(prompt.prompt)) score -= 10;
-		if (matchedColumns.some((entry) => prompt.prompt.toLowerCase().includes(entry.column.toLowerCase()))) score += 8;
-		if (queryIntent.dimensionHint && prompt.prompt.toLowerCase().includes(queryIntent.dimensionHint.toLowerCase())) score += 6;
-		if (queryIntent.temporalHint && /trend|time|daily|temporal/i.test(prompt.prompt) && prompt.prompt.toLowerCase().includes(queryIntent.temporalHint.toLowerCase())) score += 6;
+		if (
+			queryMetric &&
+			queryHasMetricIntent &&
+			!prompt.prompt.toLowerCase().includes(queryMetric.toLowerCase()) &&
+			/count rows|value counts/i.test(prompt.prompt)
+		)
+			score -= 10;
+		if (
+			matchedColumns.some((entry) =>
+				prompt.prompt.toLowerCase().includes(entry.column.toLowerCase())
+			)
+		)
+			score += 8;
+		if (
+			queryIntent.dimensionHint &&
+			prompt.prompt.toLowerCase().includes(queryIntent.dimensionHint.toLowerCase())
+		)
+			score += 6;
+		if (
+			queryIntent.temporalHint &&
+			/trend|time|daily|temporal/i.test(prompt.prompt) &&
+			prompt.prompt.toLowerCase().includes(queryIntent.temporalHint.toLowerCase())
+		)
+			score += 6;
 		if (focusDimensions.length > 0) {
-			const missingFocusCount = focusDimensions.filter((column) => !text.includes(column.toLowerCase())).length;
+			const missingFocusCount = focusDimensions.filter(
+				(column) => !text.includes(column.toLowerCase())
+			).length;
 			if (missingFocusCount === 0) score += 14;
 			if (missingFocusCount === 1) score -= 3;
 			if (missingFocusCount >= 2) score -= 14;
 		}
 		if (focusCandidateColumns.length >= 3) {
 			const focusColumns = focusCandidateColumns.map((entry) => entry.column);
-			const matchedFocusCount = focusColumns.filter((column) => text.includes(column.toLowerCase())).length;
+			const matchedFocusCount = focusColumns.filter((column) =>
+				text.includes(column.toLowerCase())
+			).length;
 			if (matchedFocusCount >= 3) score += 12;
 			if (matchedFocusCount === 2) score += 5;
 			if (matchedFocusCount <= 1) score -= 8;
 		} else if (focusPairColumns.length === 2) {
-			const missingPairCount = focusPairColumns.filter((column) => !text.includes(column.toLowerCase())).length;
+			const missingPairCount = focusPairColumns.filter(
+				(column) => !text.includes(column.toLowerCase())
+			).length;
 			if (missingPairCount === 0) score += 12;
 			if (missingPairCount === 1) score -= 2;
 			if (missingPairCount >= 2) score -= 10;
 		}
-		if (focusPairType === 'temporal-temporal' && /trend over .*aggregate rows by/i.test(prompt.prompt.toLowerCase())) score -= 9;
+		if (
+			focusPairType === 'temporal-temporal' &&
+			/trend over .*aggregate rows by/i.test(prompt.prompt.toLowerCase())
+		)
+			score -= 9;
 		if (dualDimensionIntent && /count rows by/i.test(prompt.prompt)) score += 8;
-		if (dualDimensionIntent && /top contributors|outlier|trend over time|correlation check/i.test(prompt.label)) score -= 8;
-		if (query.includes('duplicate') && /outlier|inspect|count|value/i.test(prompt.prompt)) score += 2;
+		if (
+			dualDimensionIntent &&
+			/top contributors|outlier|trend over time|correlation check/i.test(prompt.label)
+		)
+			score -= 8;
+		if (query.includes('duplicate') && /outlier|inspect|count|value/i.test(prompt.prompt))
+			score += 2;
 
 		// Penalize when the query has "by <dim>" intent but the dimension token doesn't resolve to any
 		// available column — the fast planner can't address it, so confidence should fall below the
@@ -3556,13 +4845,20 @@ export function searchAnalysisPrompts(input: {
 			const intentSynonymValues = new Set(Object.values(ANALYSIS_TOKEN_SYNONYMS).flat());
 			const unresolvableCount = rawTokens.filter((t) => {
 				if (stopTokens.has(t)) return false;
-				if (/^(month|monthly|week|weekly|day|daily|year|yearly|quarter|quarterly)$/.test(t)) return false;
-				if (/^(sales|revenue|amount|cost|price|mrr|arr|usd|count|sum|total|avg|average|rate|spend|value|metric|score)$/.test(t)) return false;
+				if (/^(month|monthly|week|weekly|day|daily|year|yearly|quarter|quarterly)$/.test(t))
+					return false;
+				if (
+					/^(sales|revenue|amount|cost|price|mrr|arr|usd|count|sum|total|avg|average|rate|spend|value|metric|score)$/.test(
+						t
+					)
+				)
+					return false;
 				if (intentSynonymValues.has(t)) return false;
 				if (t.length < 4) return false;
-				return !availableColumns.some((col) =>
-					col.toLowerCase().includes(t) ||
-					normalizeSearchToken(col).includes(normalizeSearchToken(t))
+				return !availableColumns.some(
+					(col) =>
+						col.toLowerCase().includes(t) ||
+						normalizeSearchToken(col).includes(normalizeSearchToken(t))
 				);
 			}).length;
 			if (unresolvableCount > 0) score -= unresolvableCount * 75;
@@ -3573,7 +4869,8 @@ export function searchAnalysisPrompts(input: {
 
 	const classifyPrompt = (prompt: StageAnalysisPromptSuggestion): string => {
 		const text = `${prompt.label} ${prompt.prompt}`.toLowerCase();
-		if (/\bwhere\b|\bfilter\b/.test(text) || prompt.stages.some((stage) => stage.type === 'filter')) return 'filter';
+		if (/\bwhere\b|\bfilter\b/.test(text) || prompt.stages.some((stage) => stage.type === 'filter'))
+			return 'filter';
 		if (/outlier|anomaly|iqr/.test(text)) return 'outlier';
 		if (/correlation|compare|versus/.test(text)) return 'compare';
 		if (/trend|time|daily|temporal/.test(text)) return 'trend';
@@ -3583,7 +4880,7 @@ export function searchAnalysisPrompts(input: {
 	};
 
 	const requiredColumns = [
-		...(hasTemporalGranularityIntent ? [] : (focusPairColumns.length === 2 ? focusPairColumns : [])),
+		...(hasTemporalGranularityIntent ? [] : focusPairColumns.length === 2 ? focusPairColumns : []),
 		...(hasTemporalGranularityIntent && queryIntent.temporalHint ? [queryIntent.temporalHint] : []),
 		...(hasTemporalGranularityIntent && intentMetricColumn ? [intentMetricColumn] : []),
 		...(focusDimensions.length > 0 ? focusDimensions : []),
@@ -3594,35 +4891,60 @@ export function searchAnalysisPrompts(input: {
 	let ranked = prompts
 		.map((prompt) => {
 			const text = `${prompt.label} ${prompt.prompt}`.toLowerCase();
-			const missingRequired = requiredColumns.filter((column) => !text.includes(column.toLowerCase())).length;
+			const missingRequired = requiredColumns.filter(
+				(column) => !text.includes(column.toLowerCase())
+			).length;
 			const finalScore = prompt.score + queryBoost(prompt) - missingRequired * 4;
 			const confidence = Math.max(0.2, Math.min(0.98, finalScore / 210));
 			return { ...prompt, score: finalScore, confidence, missingRequired };
 		})
-		.sort((a, b) => (a.missingRequired - b.missingRequired) || (b.score - a.score));
+		.sort((a, b) => a.missingRequired - b.missingRequired || b.score - a.score);
 
 	if (hasTemporalGranularityIntent) {
-		const temporalPrompts = ranked.filter((prompt) => /trend|time|monthly|weekly|daily|yearly|quarterly|temporal/.test(`${prompt.label} ${prompt.prompt}`.toLowerCase()));
-		const nonTemporalPrompts = ranked.filter((prompt) => !/trend|time|monthly|weekly|daily|yearly|quarterly|temporal/.test(`${prompt.label} ${prompt.prompt}`.toLowerCase()));
+		const temporalPrompts = ranked.filter((prompt) =>
+			/trend|time|monthly|weekly|daily|yearly|quarterly|temporal/.test(
+				`${prompt.label} ${prompt.prompt}`.toLowerCase()
+			)
+		);
+		const nonTemporalPrompts = ranked.filter(
+			(prompt) =>
+				!/trend|time|monthly|weekly|daily|yearly|quarterly|temporal/.test(
+					`${prompt.label} ${prompt.prompt}`.toLowerCase()
+				)
+		);
 		ranked = [...temporalPrompts, ...nonTemporalPrompts];
 	}
 
 	if (queryIntent.metricHint && queryHasMetricIntent && !queryIntent.wantsTrend) {
 		const metricLower = queryIntent.metricHint.toLowerCase();
-		const metricPrompts = ranked.filter((prompt) => `${prompt.label} ${prompt.prompt}`.toLowerCase().includes(metricLower));
-		const nonMetricPrompts = ranked.filter((prompt) => !`${prompt.label} ${prompt.prompt}`.toLowerCase().includes(metricLower));
+		const metricPrompts = ranked.filter((prompt) =>
+			`${prompt.label} ${prompt.prompt}`.toLowerCase().includes(metricLower)
+		);
+		const nonMetricPrompts = ranked.filter(
+			(prompt) => !`${prompt.label} ${prompt.prompt}`.toLowerCase().includes(metricLower)
+		);
 		const topMetric = metricPrompts.slice(0, 3);
 		ranked = [...topMetric, ...metricPrompts.slice(3), ...nonMetricPrompts];
 	}
 
 	if (filterIntent) {
-		const filterPrompts = ranked.filter((prompt) => prompt.stages.some((stage) => stage.type === 'filter'));
-		const nonFilterPrompts = ranked.filter((prompt) => !prompt.stages.some((stage) => stage.type === 'filter'));
+		const filterPrompts = ranked.filter((prompt) =>
+			prompt.stages.some((stage) => stage.type === 'filter')
+		);
+		const nonFilterPrompts = ranked.filter(
+			(prompt) => !prompt.stages.some((stage) => stage.type === 'filter')
+		);
 		const prioritizedFilterPrompts = filterPrompts.sort((a, b) => {
 			const aText = `${a.label} ${a.prompt}`.toLowerCase();
 			const bText = `${b.label} ${b.prompt}`.toLowerCase();
-			const aSubject = filterIntent.subjectColumn && aText.includes(filterIntent.subjectColumn.toLowerCase()) ? 1 : 0;
-			const bSubject = filterIntent.subjectColumn && bText.includes(filterIntent.subjectColumn.toLowerCase()) ? 1 : 0;
+			const aSubject =
+				filterIntent.subjectColumn && aText.includes(filterIntent.subjectColumn.toLowerCase())
+					? 1
+					: 0;
+			const bSubject =
+				filterIntent.subjectColumn && bText.includes(filterIntent.subjectColumn.toLowerCase())
+					? 1
+					: 0;
 			if (aSubject !== bSubject) return bSubject - aSubject;
 			return b.score - a.score;
 		});
@@ -3651,45 +4973,71 @@ export function searchAnalysisPrompts(input: {
 		usedIds.add(prompt.id);
 	}
 
-	if (selected.length === 0 || (selected[0]?.confidence ?? 0) < 0.50) {
-		const fallbackDimension = focusDimensions[0] ?? queryIntent.dimensionHint ?? matchedColumns[0]?.column ?? availableColumns[0];
-		const fallbackMetric = queryHasMetricIntent ? (queryIntent.metricHint ?? matchedMetricColumn ?? null) : null;
+	if (selected.length === 0 || (selected[0]?.confidence ?? 0) < 0.5) {
+		const fallbackDimension =
+			focusDimensions[0] ??
+			queryIntent.dimensionHint ??
+			matchedColumns[0]?.column ??
+			availableColumns[0];
+		const fallbackMetric = queryHasMetricIntent
+			? (queryIntent.metricHint ?? matchedMetricColumn ?? null)
+			: null;
 		const conservative: StageAnalysisPromptSuggestion[] = [];
 		if (fallbackDimension) {
-			conservative.push(buildAnalysisPromptSuggestion({
-				label: `Group by ${humanizeColumnName(fallbackDimension)}`,
-				prompt: `Group by ${humanizeColumnName(fallbackDimension)}: count rows per ${fallbackDimension}`,
-				reasons: ['low-confidence fallback', `dimension ${fallbackDimension}`],
-				stages: [{ type: 'group', by: [fallbackDimension], aggregations: [{ name: 'row_count', func: 'count', column: '' }] }],
-				score: 62
-			}));
+			conservative.push(
+				buildAnalysisPromptSuggestion({
+					label: `Group by ${humanizeColumnName(fallbackDimension)}`,
+					prompt: `Group by ${humanizeColumnName(fallbackDimension)}: count rows per ${fallbackDimension}`,
+					reasons: ['low-confidence fallback', `dimension ${fallbackDimension}`],
+					stages: [
+						{
+							type: 'group',
+							by: [fallbackDimension],
+							aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+						}
+					],
+					score: 62
+				})
+			);
 		}
 		if (fallbackDimension && fallbackMetric && fallbackMetric !== fallbackDimension) {
 			const metricSlug = fallbackMetric.replace(/\W+/g, '_');
-			conservative.push(buildAnalysisPromptSuggestion({
-				label: `${humanizeColumnName(fallbackMetric)} by ${humanizeColumnName(fallbackDimension)}`,
-				prompt: `${humanizeColumnName(fallbackMetric)} by ${humanizeColumnName(fallbackDimension)}: aggregate ${fallbackMetric} by ${fallbackDimension}`,
-				reasons: ['low-confidence fallback', `metric ${fallbackMetric}`],
-				stages: [{ type: 'group', by: [fallbackDimension], aggregations: [{ name: `sum_${metricSlug}`, func: 'sum', column: fallbackMetric }] }],
-				score: 60
-			}));
+			conservative.push(
+				buildAnalysisPromptSuggestion({
+					label: `${humanizeColumnName(fallbackMetric)} by ${humanizeColumnName(fallbackDimension)}`,
+					prompt: `${humanizeColumnName(fallbackMetric)} by ${humanizeColumnName(fallbackDimension)}: aggregate ${fallbackMetric} by ${fallbackDimension}`,
+					reasons: ['low-confidence fallback', `metric ${fallbackMetric}`],
+					stages: [
+						{
+							type: 'group',
+							by: [fallbackDimension],
+							aggregations: [{ name: `sum_${metricSlug}`, func: 'sum', column: fallbackMetric }]
+						}
+					],
+					score: 60
+				})
+			);
 		}
 		if (conservative.length > 0) return conservative.slice(0, limit);
 	}
 
 	return selected.map((prompt) => ({
 		...prompt,
-		confidence: Math.max(0.2, Math.min(0.98, prompt.confidence ?? (prompt.score / 210)))
+		confidence: Math.max(0.2, Math.min(0.98, prompt.confidence ?? prompt.score / 210))
 	}));
 }
 
 function isCompileResolutionIssue(reason: string): boolean {
-	return /Unknown\s+(name|table|relation|column|field|variable|identifier)|cannot\s+resolve|not\s+found/i.test(reason);
+	return /Unknown\s+(name|table|relation|column|field|variable|identifier)|cannot\s+resolve|not\s+found/i.test(
+		reason
+	);
 }
 
 function chooseClosestColumnName(column: string, availableColumns: string[]): string | null {
 	if (!column) return null;
-	const exact = availableColumns.find((candidate) => candidate.toLowerCase() === column.toLowerCase());
+	const exact = availableColumns.find(
+		(candidate) => candidate.toLowerCase() === column.toLowerCase()
+	);
 	if (exact) return exact;
 
 	const normalizedColumn = normalizeSearchToken(column);
@@ -3827,9 +5175,15 @@ function repairPromptStages(
 							column: repaired
 						};
 					})
-					.filter((aggregation): aggregation is NonNullable<typeof aggregation> => aggregation !== null);
+					.filter(
+						(aggregation): aggregation is NonNullable<typeof aggregation> => aggregation !== null
+					);
 
-				if (stage.aggregations.length === 0 && (!stage.window || (stage.window.sortKeys.length === 0 && stage.window.derives.length === 0))) {
+				if (
+					stage.aggregations.length === 0 &&
+					(!stage.window ||
+						(stage.window.sortKeys.length === 0 && stage.window.derives.length === 0))
+				) {
 					stage.aggregations = [{ name: 'row_count', func: 'count', column: '' }];
 					repairState.repaired = true;
 					repairState.issues.push('inferred row_count aggregation for empty group stage');
@@ -3871,7 +5225,9 @@ function repairPromptStages(
 						const left = chooseClosestColumnName(condition.left, currentAvailableColumns);
 						const right = chooseClosestColumnName(condition.right, currentAvailableColumns);
 						if (!left || !right) {
-							repairState.issues.push(`unknown join condition: ${condition.left} == ${condition.right}`);
+							repairState.issues.push(
+								`unknown join condition: ${condition.left} == ${condition.right}`
+							);
 							return null;
 						}
 						if (left !== condition.left || right !== condition.right) {
@@ -3975,7 +5331,9 @@ function collectUnknownPromptColumns(
 	let currentAvailableColumns = [...availableColumns];
 	const pushUnknown = (column: string): void => {
 		if (!column) return;
-		const normalizedAvailable = new Set(currentAvailableColumns.map((candidate) => normalizeSearchToken(candidate)));
+		const normalizedAvailable = new Set(
+			currentAvailableColumns.map((candidate) => normalizeSearchToken(candidate))
+		);
 		if (normalizedAvailable.has(normalizeSearchToken(column))) return;
 		unknown.add(column);
 	};
@@ -4002,7 +5360,10 @@ function collectUnknownPromptColumns(
 						}
 					}
 				}
-				currentAvailableColumns = [...currentAvailableColumns, ...stage.columns.map((column) => column.name).filter(Boolean)];
+				currentAvailableColumns = [
+					...currentAvailableColumns,
+					...stage.columns.map((column) => column.name).filter(Boolean)
+				];
 				break;
 			case 'group':
 				for (const byColumn of stage.by) pushUnknown(byColumn);
@@ -4010,9 +5371,15 @@ function collectUnknownPromptColumns(
 					if (aggregation.column) pushUnknown(aggregation.column);
 				}
 				if (stage.window) {
-					currentAvailableColumns = [...stage.by, ...stage.window.derives.map((derive) => derive.name).filter(Boolean)];
+					currentAvailableColumns = [
+						...stage.by,
+						...stage.window.derives.map((derive) => derive.name).filter(Boolean)
+					];
 				} else {
-					currentAvailableColumns = [...stage.by, ...stage.aggregations.map((aggregation) => aggregation.name).filter(Boolean)];
+					currentAvailableColumns = [
+						...stage.by,
+						...stage.aggregations.map((aggregation) => aggregation.name).filter(Boolean)
+					];
 				}
 				break;
 			case 'sort':
@@ -4038,7 +5405,10 @@ function collectUnknownPromptColumns(
 						}
 					}
 				}
-				currentAvailableColumns = [...currentAvailableColumns, ...stage.derives.map((derive) => derive.name).filter(Boolean)];
+				currentAvailableColumns = [
+					...currentAvailableColumns,
+					...stage.derives.map((derive) => derive.name).filter(Boolean)
+				];
 				break;
 			default:
 				break;
@@ -4056,12 +5426,12 @@ function buildFallbackPromptSuggestion(input: {
 	const groupTopIntent = parseGroupTopIntent(input.query, input.availableColumns);
 	if (groupTopIntent) {
 		const metricColumn =
-			groupTopIntent.metricColumn
-			?? pickProfileMetricColumn({
+			groupTopIntent.metricColumn ??
+			pickProfileMetricColumn({
 				availableColumns: input.availableColumns,
 				availableColumnProfiles: input.availableColumnProfiles
-			})
-			?? pickMetricColumn(input.availableColumns);
+			}) ??
+			pickMetricColumn(input.availableColumns);
 		const metricProfile = metricColumn
 			? columnProfileFor(input.availableColumnProfiles, metricColumn)
 			: null;
@@ -4090,7 +5460,8 @@ function buildFallbackPromptSuggestion(input: {
 		});
 	}
 
-	const dimension = pickDimensionColumn(input.availableColumns) ?? input.availableColumns[0] ?? null;
+	const dimension =
+		pickDimensionColumn(input.availableColumns) ?? input.availableColumns[0] ?? null;
 	if (!dimension) return null;
 
 	return buildAnalysisPromptSuggestion({
@@ -4098,7 +5469,11 @@ function buildFallbackPromptSuggestion(input: {
 		prompt: `Group by ${humanizeColumnName(dimension)}: count rows per ${dimension}`,
 		reasons: ['fallback prompt synthesis from available schema columns'],
 		stages: [
-			{ type: 'group', by: [dimension], aggregations: [{ name: 'row_count', func: 'count', column: '' }] },
+			{
+				type: 'group',
+				by: [dimension],
+				aggregations: [{ name: 'row_count', func: 'count', column: '' }]
+			},
 			{ type: 'sort', keys: [{ column: 'row_count', dir: 'desc' }] }
 		],
 		score: 72
@@ -4155,9 +5530,7 @@ export function generatePromptStagePlanFromSuggestion(input: {
 	if (availableColumns.length === 0) return null;
 	if (!input.suggestion || input.suggestion.stages.length === 0) return null;
 
-	const score = Number.isFinite(input.suggestion.score)
-		? Number(input.suggestion.score)
-		: 130;
+	const score = Number.isFinite(input.suggestion.score) ? Number(input.suggestion.score) : 130;
 	const builtSuggestion = buildAnalysisPromptSuggestion({
 		label: input.suggestion.label,
 		prompt: input.suggestion.prompt ?? `${input.suggestion.label}: generated from prompt inference`,
@@ -4208,7 +5581,8 @@ function finalizePromptStagePlanFromSuggestion(input: {
 	}
 
 	const validation: PromptStageValidation = {
-		isValid: unknownColumns.length === 0 && compileIssues.length === 0 && repaired.stages.length > 0,
+		isValid:
+			unknownColumns.length === 0 && compileIssues.length === 0 && repaired.stages.length > 0,
 		repaired: repaired.repaired,
 		unknownColumns,
 		issues: validationIssues,
@@ -4235,11 +5609,14 @@ function finalizePromptStagePlanFromSuggestion(input: {
 export function recommendPresets(input: StageRecommendationInput): StagePresetSuggestion[] {
 	const { stages, availableColumns = [], availableColumnCount, availableColumnProfiles } = input;
 	const dialect = normalizeCoercionDialect(input.dialect);
-	const compositeMetricPlan = findCompositeMetricPlan({
-		availableColumns,
-		availableColumnProfiles,
+	const compositeMetricPlan = findCompositeMetricPlan(
+		{
+			availableColumns,
+			availableColumnProfiles,
+			dialect
+		},
 		dialect
-	}, dialect);
+	);
 	const hasGroup = stages.some((stage) => stage.type === 'group');
 	const hasSort = stages.some((stage) => stage.type === 'sort');
 	const hasTake = stages.some((stage) => stage.type === 'take');
@@ -4257,45 +5634,73 @@ export function recommendPresets(input: StageRecommendationInput): StagePresetSu
 	const hasProfileMetric = profileMetric !== null;
 	const hasTemporal =
 		availableColumns.some((column) => isTemporalColumn(column)) ||
-		availableColumns.some((column) => isTemporalSemanticHint(columnProfileFor(availableColumnProfiles, column)?.semanticType));
-	const hasMetric = pickNonTemporalMetricColumn(availableColumns) !== null || hasProfileMetricSignal({
-		availableColumns,
-		availableColumnProfiles,
-		dialect
-	});
+		availableColumns.some((column) =>
+			isTemporalSemanticHint(columnProfileFor(availableColumnProfiles, column)?.semanticType)
+		);
+	const hasMetric =
+		pickNonTemporalMetricColumn(availableColumns) !== null ||
+		hasProfileMetricSignal({
+			availableColumns,
+			availableColumnProfiles,
+			dialect
+		});
 	const hasEntity = availableColumns.some((column) =>
-		/(payee|merchant|vendor|customer|user|account|company|name|entity|tenant|patient|student|operator|carrier)/i.test(column)
+		/(payee|merchant|vendor|customer|user|account|company|name|entity|tenant|patient|student|operator|carrier)/i.test(
+			column
+		)
 	);
 	const hasDetail = availableColumns.some((column) =>
-		/(details|detail|description|memo|message|note|narrative|title|diagnosis|issue|reason|summary)/i.test(column)
+		/(details|detail|description|memo|message|note|narrative|title|diagnosis|issue|reason|summary)/i.test(
+			column
+		)
 	);
 	const hasInflowOutflowPair =
 		availableColumns.some((column) => /(paid in|inflow|credit|deposit|received)/i.test(column)) &&
-		availableColumns.some((column) => /(withdrawn|outflow|debit|spent|payment|charge)/i.test(column));
+		availableColumns.some((column) =>
+			/(withdrawn|outflow|debit|spent|payment|charge)/i.test(column)
+		);
 	const candidateDimensions = availableColumns.filter((column) => {
 		if (isTemporalColumn(column) || isIdentifierColumn(column)) return false;
 		if (column === profileMetric) return false;
-		if (/(region|country|city|product|category|segment|channel|status|type|stage|payee|merchant|customer|department|plan|industry|grade|homeroom|priority|mode|carrier|plant|property|issue|diagnosis|account_type|payment_method|team|project|platform|source|medium|branch|office|division|tier|zone|class|brand|campaign)/i.test(column)) {
+		if (
+			/(region|country|city|product|category|segment|channel|status|type|stage|payee|merchant|customer|department|plan|industry|grade|homeroom|priority|mode|carrier|plant|property|issue|diagnosis|account_type|payment_method|team|project|platform|source|medium|branch|office|division|tier|zone|class|brand|campaign)/i.test(
+				column
+			)
+		) {
 			return true;
 		}
 		const profile = columnProfileFor(availableColumnProfiles, column);
-		return /(category|status|region|country|city|entity_name|code)/i.test(profile?.semanticType ?? '');
+		return /(category|status|region|country|city|entity_name|code)/i.test(
+			profile?.semanticType ?? ''
+		);
 	});
 	const hasTwoDimensions = candidateDimensions.length >= 2;
-	const hasKey = availableColumns.some((column) => /(^id$|_id$|uuid|key|receipt|reference|ref)/i.test(column));
-	const hasStageLike = availableColumns.some((column) => /(status|state|stage|step|phase|funnel|lifecycle)/i.test(column));
-	const hasRevenueLike = availableColumns.some((column) => /(revenue|income|sales|paid|credited|inflow)/i.test(column));
-	const hasCostLike = availableColumns.some((column) => /(cost|expense|withdrawn|debited|outflow|charge)/i.test(column));
-	const hasComposedMetric = Boolean(compositeMetricPlan);
-	const numericMeasurementColumns = availableColumns.filter((column) =>
-		/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|feature|score|index)/i.test(column) &&
-		!isTemporalColumn(column) &&
-		!isIdentifierColumn(column)
+	const hasKey = availableColumns.some((column) =>
+		/(^id$|_id$|uuid|key|receipt|reference|ref)/i.test(column)
 	);
-	const classLikeColumns = availableColumns.filter((column) =>
-		/(species|class|target|label|category|type|status|segment|group)/i.test(column) &&
-		!isTemporalColumn(column) &&
-		!isIdentifierColumn(column)
+	const hasStageLike = availableColumns.some((column) =>
+		/(status|state|stage|step|phase|funnel|lifecycle)/i.test(column)
+	);
+	const hasRevenueLike = availableColumns.some((column) =>
+		/(revenue|income|sales|paid|credited|inflow)/i.test(column)
+	);
+	const hasCostLike = availableColumns.some((column) =>
+		/(cost|expense|withdrawn|debited|outflow|charge)/i.test(column)
+	);
+	const hasComposedMetric = Boolean(compositeMetricPlan);
+	const numericMeasurementColumns = availableColumns.filter(
+		(column) =>
+			/(length|width|height|depth|diameter|radius|mass|weight|petal|sepal|measurement|feature|score|index)/i.test(
+				column
+			) &&
+			!isTemporalColumn(column) &&
+			!isIdentifierColumn(column)
+	);
+	const classLikeColumns = availableColumns.filter(
+		(column) =>
+			/(species|class|target|label|category|type|status|segment|group)/i.test(column) &&
+			!isTemporalColumn(column) &&
+			!isIdentifierColumn(column)
 	);
 	const hasMeasurementMatrix =
 		numericMeasurementColumns.length >= 3 &&
@@ -4708,11 +6113,22 @@ export function recommendPresets(input: StageRecommendationInput): StagePresetSu
 				reasons.push('measurement matrix: class-frequency baseline is useful');
 			}
 
-			if (preset.id === 'null-hotspots' || preset.id === 'duplicate-fingerprint' || preset.id === 'hierarchical-rollup') {
+			if (
+				preset.id === 'null-hotspots' ||
+				preset.id === 'duplicate-fingerprint' ||
+				preset.id === 'hierarchical-rollup'
+			) {
 				score -= 16;
 				reasons.push('deprioritized low-signal quality preset for dense feature matrix');
 			}
-			if (preset.id === 'cashflow-rollup' || preset.id === 'cohort-retention' || preset.id === 'funnel-dropoff' || preset.id === 'drift-monitor' || preset.id === 'dedup-latest' || preset.id === 'dedup-exact') {
+			if (
+				preset.id === 'cashflow-rollup' ||
+				preset.id === 'cohort-retention' ||
+				preset.id === 'funnel-dropoff' ||
+				preset.id === 'drift-monitor' ||
+				preset.id === 'dedup-latest' ||
+				preset.id === 'dedup-exact'
+			) {
 				score -= 18;
 				reasons.push('deprioritized incompatible preset for non-temporal feature matrix');
 			}
@@ -4748,19 +6164,28 @@ export function recommendPresets(input: StageRecommendationInput): StagePresetSu
 	}).sort((a, b) => b.score - a.score);
 }
 
-export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | 'availableColumns'>): QuickChip[] {
+export function getQuickChips(
+	input: Pick<StageRecommendationInput, 'stages' | 'availableColumns'>
+): QuickChip[] {
 	const columns = input.availableColumns ?? [];
 	if (columns.length === 0) return [];
 
 	const hasType = (type: StageType): boolean => input.stages.some((stage) => stage.type === type);
-	const baseFrom = input.stages.find((stage): stage is Extract<GUIPipelineStage, { type: 'from' }> => stage.type === 'from')?.table ?? '';
-	const quick: Array<Omit<QuickChip, 'snippet'> & { score: number; snippet?: StageSuggestionSnippet }> = [];
+	const baseFrom =
+		input.stages.find(
+			(stage): stage is Extract<GUIPipelineStage, { type: 'from' }> => stage.type === 'from'
+		)?.table ?? '';
+	const quick: Array<
+		Omit<QuickChip, 'snippet'> & { score: number; snippet?: StageSuggestionSnippet }
+	> = [];
 
 	const metric = pickNonTemporalMetricColumn(columns) ?? '';
 	const dimension = pickDimensionFallback(columns, metric || null) ?? '';
 	const timestamp = pickTimestampColumn(columns);
 	const filterColumn =
-		preferColumn(columns, ['status', 'state', 'category', 'type', 'kind', 'segment']) ?? columns[0] ?? '';
+		preferColumn(columns, ['status', 'state', 'category', 'type', 'kind', 'segment']) ??
+		columns[0] ??
+		'';
 
 	if (!hasType('sort')) {
 		const sortColumn = timestamp ?? metric;
@@ -4869,18 +6294,14 @@ export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | '
 	if (!hasType('derive')) {
 		const textDeriveColumn = columns.find(
 			(column) =>
-				!isTemporalColumn(column) &&
-				!isIdentifierColumn(column) &&
-				isLikelyTextColumn(column)
+				!isTemporalColumn(column) && !isIdentifierColumn(column) && isLikelyTextColumn(column)
 		);
 
 		const numericDeriveColumn =
 			(metric && !isTemporalColumn(metric) && !isIdentifierColumn(metric) ? metric : null) ??
 			columns.find(
 				(column) =>
-					!isTemporalColumn(column) &&
-					!isIdentifierColumn(column) &&
-					!isLikelyTextColumn(column)
+					!isTemporalColumn(column) && !isIdentifierColumn(column) && !isLikelyTextColumn(column)
 			);
 
 		const deriveColumn = textDeriveColumn ?? numericDeriveColumn ?? null;
@@ -4900,7 +6321,14 @@ export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | '
 					: `Derive ${humanizeColumnName(deriveColumn)} rounded`;
 				const deriveExpr: DeriveExpr = textLike
 					? { mode: 'func', func: 'text.lower', args: [{ kind: 'column', value: deriveColumn }] }
-					: { mode: 'func', func: 'math.round', args: [{ kind: 'literal', value: '0' }, { kind: 'column', value: deriveColumn }] };
+					: {
+							mode: 'func',
+							func: 'math.round',
+							args: [
+								{ kind: 'literal', value: '0' },
+								{ kind: 'column', value: deriveColumn }
+							]
+						};
 				const deriveStage: Exclude<GUIPipelineStage, { type: 'raw' }> = {
 					type: 'derive',
 					columns: [
@@ -4926,7 +6354,10 @@ export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | '
 
 	if (!hasType('select') && columns.length >= 9) {
 		const chosen = columns.slice(0, 6);
-		const selectStage: Exclude<GUIPipelineStage, { type: 'raw' }> = { type: 'select', columns: chosen };
+		const selectStage: Exclude<GUIPipelineStage, { type: 'raw' }> = {
+			type: 'select',
+			columns: chosen
+		};
 		const selectLabel = `Select ${chosen.length} cols`;
 		quick.push({
 			id: 'select-focus',
@@ -4962,7 +6393,12 @@ export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | '
 				frame: 'rows:-6..0',
 				sortKeys: [{ column: windowSort, dir: 'asc' }],
 				derives: windowMetric
-					? [{ name: `rolling_avg_${windowMetric.replace(/\W+/g, '_')}`, expr: { mode: 'raw', expr: `average ${quotePrqlIdentifier(windowMetric)}` } }]
+					? [
+							{
+								name: `rolling_avg_${windowMetric.replace(/\W+/g, '_')}`,
+								expr: { mode: 'raw', expr: `average ${quotePrqlIdentifier(windowMetric)}` }
+							}
+						]
 					: []
 			};
 			const windowLabel = windowMetric
@@ -5009,10 +6445,12 @@ export function getQuickChips(input: Pick<StageRecommendationInput, 'stages' | '
 		.slice(0, 8)
 		.map(({ score, ...chip }) => ({
 			...chip,
-			snippet: chip.snippet ?? buildSnippet({
-				title: chip.label,
-				stages: [chip.stage],
-				tags: [chip.stage.type, chip.icon]
-			})
+			snippet:
+				chip.snippet ??
+				buildSnippet({
+					title: chip.label,
+					stages: [chip.stage],
+					tags: [chip.stage.type, chip.icon]
+				})
 		}));
 }

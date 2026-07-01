@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { CircleCheck, CircleX, ExternalLink } from '@lucide/svelte';
 	import { coerceNumber } from '$lib/utils';
-	import { truncateMiddle, paletteSeedForValue, type ColumnFormat } from '$lib/services/column-format';
+	import {
+		truncateMiddle,
+		paletteSeedForValue,
+		type ColumnFormat
+	} from '$lib/services/column-format';
 
 	interface Props {
 		value: unknown;
@@ -34,7 +38,11 @@
 		return Number.isNaN(d.getTime()) ? null : d;
 	}
 
-	const dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	const dateFmt = new Intl.DateTimeFormat(undefined, {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric'
+	});
 	const datetimeFmt = new Intl.DateTimeFormat(undefined, {
 		year: 'numeric',
 		month: 'short',
@@ -65,9 +73,9 @@
 {#if format.kind === 'boolean'}
 	<span aria-label={value ? 'true' : 'false'}>
 		{#if value}
-			<CircleCheck class="w-3.5 h-3.5 text-success" />
+			<CircleCheck class="h-3.5 w-3.5 text-success" />
 		{:else}
-			<CircleX class="w-3.5 h-3.5 text-muted-foreground" />
+			<CircleX class="h-3.5 w-3.5 text-muted-foreground" />
 		{/if}
 	</span>
 {:else if format.kind === 'id'}
@@ -75,7 +83,7 @@
 {:else if format.kind === 'email'}
 	<a
 		href="mailto:{value}"
-		class="text-xs text-primary hover:underline truncate"
+		class="truncate text-xs text-primary hover:underline"
 		onclick={(e) => e.stopPropagation()}
 	>
 		{plainText}
@@ -85,11 +93,11 @@
 		href={String(value)}
 		target="_blank"
 		rel="noopener noreferrer"
-		class="text-xs text-primary hover:underline truncate inline-flex items-center gap-0.5"
+		class="inline-flex items-center gap-0.5 truncate text-xs text-primary hover:underline"
 		onclick={(e) => e.stopPropagation()}
 	>
 		{plainText}
-		<ExternalLink class="w-2.5 h-2.5 opacity-60 shrink-0" />
+		<ExternalLink class="h-2.5 w-2.5 shrink-0 opacity-60" />
 	</a>
 {:else if (format.kind === 'date' || format.kind === 'datetime') && formattedDate}
 	<span class="font-mono text-xs tabular-nums">{formattedDate}</span>

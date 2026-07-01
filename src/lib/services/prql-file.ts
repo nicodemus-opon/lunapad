@@ -164,9 +164,7 @@ export function serializeCell(cell: Cell, knownModels: string[] = [], notebookId
 
 	// Content: inject refs for query cells, plain text for markdown
 	const content =
-		cell.cellType === 'markdown'
-			? cell.markdown
-			: injectRefs(cell.code.trim(), knownModels);
+		cell.cellType === 'markdown' ? cell.markdown : injectRefs(cell.code.trim(), knownModels);
 
 	lines.push(content);
 
@@ -205,7 +203,10 @@ export interface ParsedCellFile {
  *                      'prql' (default) for .prql files. The @json language field takes
  *                      precedence when present.
  */
-export function parseCellFile(content: string, fileLanguage: CellLanguage = 'prql'): ParsedCellFile {
+export function parseCellFile(
+	content: string,
+	fileLanguage: CellLanguage = 'prql'
+): ParsedCellFile {
 	const lines = content.split('\n');
 	let cellType: CellType = 'query';
 	let connectionId: string | null = null;
@@ -245,9 +246,9 @@ export function parseCellFile(content: string, fileLanguage: CellLanguage = 'prq
 				connectionId = value || null;
 				break;
 			case 'materialized':
-				materializeMode = (['table', 'view', 'incremental', 'ephemeral'] as CellMaterializationMode[]).includes(
-					value as CellMaterializationMode
-				)
+				materializeMode = (
+					['table', 'view', 'incremental', 'ephemeral'] as CellMaterializationMode[]
+				).includes(value as CellMaterializationMode)
 					? (value as CellMaterializationMode)
 					: 'table';
 				break;
@@ -255,7 +256,12 @@ export function parseCellFile(content: string, fileLanguage: CellLanguage = 'prq
 				dbtSchema = value || null;
 				break;
 			case 'tags':
-				dbtTags = value ? value.split(',').map((t) => t.trim()).filter(Boolean) : [];
+				dbtTags = value
+					? value
+							.split(',')
+							.map((t) => t.trim())
+							.filter(Boolean)
+					: [];
 				break;
 			case 'json':
 				try {
@@ -272,10 +278,24 @@ export function parseCellFile(content: string, fileLanguage: CellLanguage = 'prq
 	const rawContent = lines.slice(contentStart).join('\n').trimEnd();
 
 	// Language: @json field wins over file extension hint
-	const language: CellLanguage = meta.language === 'sql' || (meta.language !== 'prql' && fileLanguage === 'sql') ? 'sql' : 'prql';
+	const language: CellLanguage =
+		meta.language === 'sql' || (meta.language !== 'prql' && fileLanguage === 'sql')
+			? 'sql'
+			: 'prql';
 
 	if (cellType === 'markdown') {
-		return { cellType, language, connectionId, materializeMode, dbtSchema, dbtTags, meta, code: '', markdown: rawContent, notebookId };
+		return {
+			cellType,
+			language,
+			connectionId,
+			materializeMode,
+			dbtSchema,
+			dbtTags,
+			meta,
+			code: '',
+			markdown: rawContent,
+			notebookId
+		};
 	}
 
 	let code: string;
@@ -297,7 +317,11 @@ export function parseCellFile(content: string, fileLanguage: CellLanguage = 'prq
 			}
 			if (dbtTags.length === 0) {
 				const t = cfg.match(/tags\s*=\s*\[([^\]]*)\]/);
-				if (t) dbtTags = t[1].split(',').map((x) => x.trim().replace(/['"]/g, '')).filter(Boolean);
+				if (t)
+					dbtTags = t[1]
+						.split(',')
+						.map((x) => x.trim().replace(/['"]/g, ''))
+						.filter(Boolean);
 			}
 		}
 		code = rawContent

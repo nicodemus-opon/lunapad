@@ -14,9 +14,7 @@
 
 	const isRange = $derived(stage.rangeFrom !== undefined);
 
-	const label = $derived(
-		isRange ? `${stage.rangeFrom}..${stage.n}` : `${stage.n}`
-	);
+	const label = $derived(isRange ? `${stage.rangeFrom}..${stage.n}` : `${stage.n}`);
 
 	function decrement() {
 		if (isRange) return;
@@ -71,23 +69,23 @@
 			<Popover.Trigger class={CHIP_SECTION}>
 				{label} rows
 			</Popover.Trigger>
-			<Popover.Content class="w-52 p-3 space-y-3">
+			<Popover.Content class="w-52 space-y-3 p-3">
 				<div>
-					<p class="text-2xs font-medium text-muted-foreground mb-1">From</p>
+					<p class="mb-1 text-2xs font-medium text-muted-foreground">From</p>
 					<Input
 						type="number"
 						min="1"
-						class="h-7 text-xs font-mono w-full"
+						class="h-7 w-full font-mono text-xs"
 						value={stage.rangeFrom}
 						oninput={(e) => setRangeFrom((e.target as HTMLInputElement).value)}
 					/>
 				</div>
 				<div>
-					<p class="text-2xs font-medium text-muted-foreground mb-1">To</p>
+					<p class="mb-1 text-2xs font-medium text-muted-foreground">To</p>
 					<Input
 						type="number"
 						min="1"
-						class="h-7 text-xs font-mono w-full"
+						class="h-7 w-full font-mono text-xs"
 						value={stage.n}
 						oninput={(e) => setRangeTo((e.target as HTMLInputElement).value)}
 					/>
@@ -100,10 +98,10 @@
 	{:else}
 		<!-- Limit mode: inline ±  stepper -->
 		<button
-			class="flex h-full select-none items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
+			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={decrement}
-			aria-label="Decrease by 10"
-		>−</button>
+			aria-label="Decrease by 10">−</button
+		>
 
 		{#if editing}
 			<input
@@ -112,14 +110,16 @@
 				min="1"
 				value={stage.n}
 				size={Math.max(2, String(stage.n).length + 1)}
-				class="font-mono bg-transparent outline-none text-center px-1 py-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+				class="[appearance:textfield] bg-transparent px-1 py-1 text-center font-mono outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 				oninput={(e) => setN((e.target as HTMLInputElement).value)}
 				onblur={() => (editing = false)}
-				onkeydown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') editing = false; }}
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === 'Escape') editing = false;
+				}}
 			/>
 		{:else}
 			<button
-				class="font-mono px-1 py-1 hover:bg-muted/60 transition-colors tabular-nums"
+				class="px-1 py-1 font-mono tabular-nums transition-colors hover:bg-muted/60"
 				onclick={() => (editing = true)}
 				title="Click to edit"
 			>
@@ -127,20 +127,20 @@
 			</button>
 		{/if}
 
-		<span class="select-none pr-1 text-muted-foreground/60">rows</span>
+		<span class="pr-1 text-muted-foreground/60 select-none">rows</span>
 
 		<button
-			class="flex h-full select-none items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
+			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={increment}
-			aria-label="Increase by 10"
-		>+</button>
+			aria-label="Increase by 10">+</button
+		>
 
 		<!-- ⋯ opens range/limit toggle -->
 		<Popover.Root>
 			<Popover.Trigger
 				class="flex h-full items-center px-1.5 text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
-				title="Switch to range mode"
-			>⋯</Popover.Trigger>
+				title="Switch to range mode">⋯</Popover.Trigger
+			>
 			<Popover.Content class="w-44 p-3">
 				<Button variant="outline" size="sm" class="w-full" onclick={toggleRange}>
 					Switch to range

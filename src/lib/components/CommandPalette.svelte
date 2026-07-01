@@ -50,13 +50,19 @@
 			kind: 'action',
 			label: 'Run all cells',
 			sub: '⌘⇧R',
-			run: () => { void runAll(); close(); }
+			run: () => {
+				void runAll();
+				close();
+			}
 		},
 		{
 			kind: 'action',
 			label: 'Toggle sidebar',
 			sub: '⌘B',
-			run: () => { onToggleSidebar?.(); close(); }
+			run: () => {
+				onToggleSidebar?.();
+				close();
+			}
 		},
 		{
 			kind: 'action',
@@ -73,9 +79,7 @@
 	const filtered = $derived.by(() => {
 		if (!query.trim()) return allItems.slice(0, 12);
 		const q = query.toLowerCase();
-		return allItems
-			.filter((item) => item.label.toLowerCase().includes(q))
-			.slice(0, 12);
+		return allItems.filter((item) => item.label.toLowerCase().includes(q)).slice(0, 12);
 	});
 
 	$effect(() => {
@@ -137,7 +141,7 @@
 
 	<!-- Palette panel -->
 	<div
-		class="fixed top-[20vh] left-1/2 z-(--z-modal) w-full max-w-md -translate-x-1/2 rounded-xl border border-border/70 bg-popover text-popover-foreground shadow-xl surface-raised outline-none overflow-hidden"
+		class="surface-raised fixed top-[20vh] left-1/2 z-(--z-modal) w-full max-w-md -translate-x-1/2 overflow-hidden rounded-xl border border-border/70 bg-popover text-popover-foreground shadow-xl outline-none"
 		transition:fly={{ y: -8, duration: 220 }}
 		role="dialog"
 		aria-label="Command palette"
@@ -151,9 +155,12 @@
 				bind:this={inputEl}
 				bind:value={query}
 				placeholder="Search notebooks, cells, actions…"
-				class="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 outline-none border-0"
+				class="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
 			/>
-			<kbd class="text-2xs font-mono text-muted-foreground/50 border border-border/40 rounded px-1 py-0.5">esc</kbd>
+			<kbd
+				class="rounded border border-border/40 px-1 py-0.5 font-mono text-2xs text-muted-foreground/50"
+				>esc</kbd
+			>
 		</div>
 
 		<!-- Results list -->
@@ -163,22 +170,25 @@
 			{:else}
 				{#each filtered as item, i (item.label + i)}
 					<button
-						class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors {i === selectedIndex ? 'bg-primary/14 text-foreground ring-1 ring-inset ring-primary/18' : 'text-foreground/80 hover:bg-muted/60 hover:text-foreground'}"
+						class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors {i ===
+						selectedIndex
+							? 'bg-primary/14 text-foreground ring-1 ring-primary/18 ring-inset'
+							: 'text-foreground/80 hover:bg-muted/60 hover:text-foreground'}"
 						onclick={() => selectItem(item)}
 						onmouseenter={() => (selectedIndex = i)}
 					>
 						{#if item.kind === 'notebook'}
 							<FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 							<span class="flex-1 truncate font-medium">{item.label}</span>
-							<span class="text-2xs text-muted-foreground/50 font-mono">notebook</span>
+							<span class="font-mono text-2xs text-muted-foreground/50">notebook</span>
 						{:else if item.kind === 'cell'}
 							<Table2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 							<span class="flex-1 truncate font-mono text-xs">{item.label}</span>
-							<span class="text-2xs text-muted-foreground/50 truncate max-w-24">{item.sub}</span>
+							<span class="max-w-24 truncate text-2xs text-muted-foreground/50">{item.sub}</span>
 						{:else}
 							<Zap class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 							<span class="flex-1 truncate">{item.label}</span>
-							<kbd class="text-2xs font-mono text-muted-foreground/50">{item.sub}</kbd>
+							<kbd class="font-mono text-2xs text-muted-foreground/50">{item.sub}</kbd>
 						{/if}
 					</button>
 				{/each}

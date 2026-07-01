@@ -24,10 +24,10 @@ export interface PlanAssertion {
 }
 
 export interface ReviewScores {
-	correctness: number;  // 0-3: SQL runs? Grain matches? Assertions passed?
+	correctness: number; // 0-3: SQL runs? Grain matches? Assertions passed?
 	completeness: number; // 0-3: Required columns? No unexpected nulls?
-	performance: number;  // 0-2: Row count sane? No fan-out?
-	convention: number;   // 0-2: Naming prefix? No WITH clauses? CTE style?
+	performance: number; // 0-2: Row count sane? No fan-out?
+	convention: number; // 0-2: Naming prefix? No WITH clauses? CTE style?
 }
 
 export interface ReviewResult {
