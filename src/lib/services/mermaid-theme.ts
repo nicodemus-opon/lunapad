@@ -1,6 +1,8 @@
 import {
 	compensateMermaidCScale,
 	resolveCSSColor,
+	resolveCSSFontFamily,
+	resolveCSSLengthPx,
 	resolveChartColorway
 } from '$lib/utils/theme-colors';
 
@@ -29,6 +31,19 @@ const MERMAID_SVG_THEME_STYLE = `<style id="lunapad-mermaid-theme">
     stroke: var(--border) !important;
   }
 
+  /* Corner radius — matches --radius (overrides Mermaid's baked rx/ry) */
+  .node rect, .basic.label-container,
+  .kanban-ticket-link,
+  .actor rect, .er.entityBox,
+  .state rect, .statediagram-state rect,
+  .task rect, .note rect,
+  .edgeLabel rect,
+  [class*="section-"] rect,
+  .cluster rect, .state-group rect {
+    rx: var(--radius) !important;
+    ry: var(--radius) !important;
+  }
+
   /* Column / cluster / subgraph backgrounds */
   [class*="section-"] rect,
   [class*="section-"] path,
@@ -51,6 +66,7 @@ const MERMAID_SVG_THEME_STYLE = `<style id="lunapad-mermaid-theme">
   [class*="section-"] text, .section-root text {
     fill: var(--foreground) !important;
     color: var(--foreground) !important;
+    font-family: var(--font-sans) !important;
   }
 
   .node-icon text, .node-icon tspan {
@@ -128,6 +144,9 @@ export function buildMermaidThemeVars(darkMode: boolean): Record<string, string 
 	return {
 		darkMode,
 		useGradient: false,
+		dropShadow: 'none',
+		radius: String(resolveCSSLengthPx('--radius')),
+		strokeWidth: '1',
 		// Kanban item cards use `background` for fill — must be elevated, not page bg.
 		background: popover,
 		edgeLabelBackground: popover,
@@ -186,7 +205,9 @@ export function buildMermaidThemeVars(darkMode: boolean): Record<string, string 
 		pieStrokeColor: border,
 		pieOuterStrokeColor: border,
 		pieOpacity: '1',
-		fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif",
+		fontFamily:
+			resolveCSSFontFamily('--font-sans') ||
+			"'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif",
 		fontSize: '13px',
 		...cScale,
 		...cScaleLabel,

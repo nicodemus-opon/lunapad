@@ -22,9 +22,8 @@ describe('AddStageMenu command palette layout', () => {
 		expect(source).toContain('matchedColumnForQuery');
 		expect(source).toContain('queryMatchesPresetIntent');
 		expect(source).toContain('detectExplicitStageIntent');
-		expect(source).toContain(
-			'if (/\\btop\\s+\\d+\\b/.test(queryValue) && /\\b(by|where|when|per|with)\\b/.test(queryValue)) return null;'
-		);
+		expect(source).toContain('/\\btop\\s+\\d+\\b/.test(queryValue)');
+		expect(source).toContain('/\\b(by|where|when|per|with)\\b/.test(queryValue)');
 		expect(source).toContain('explicitStageIntent');
 		expect(source).toContain('stageIntentResults');
 		expect(source).toContain('STAGE_INTENT_PHRASES');

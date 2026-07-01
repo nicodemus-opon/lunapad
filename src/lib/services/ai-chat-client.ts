@@ -105,8 +105,6 @@ import type {
 	PipelinePhase
 } from '$lib/types/ai-chat.js';
 import {
-	classifyIntent,
-	classifyComplexity,
 	buildDiscoverySummary,
 	parseReviewResult,
 	formatReviewFeedback,
@@ -136,6 +134,14 @@ import {
 	knownTableNames,
 	assertKnownTable
 } from '$lib/services/ai-investigation-tools.js';
+import {
+	emitAgentTelemetry,
+	resetAgentSessionId,
+	flushAgentTelemetry
+} from '$lib/agent/telemetry.js';
+import { authorizeAITool, clearAIToolAuthCache } from '$lib/agent/tools/authorize.js';
+import { routeAgentIntent } from '$lib/agent/router/intent-router.js';
+import { createFsmContext, transitionFsm, applyTransition } from '$lib/agent/fsm/agent-fsm.js';
 
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -349,6 +355,8 @@ export function resetAISession(): void {
 	_idlePreflightDone = false;
 	_lastSchemaHash = null;
 	clearCheckpoints();
+	resetAgentSessionId();
+	clearAIToolAuthCache();
 }
 
 // Tracks which project folder's memory is currently loaded into session state, so a folder
@@ -1355,6 +1363,18 @@ async function executeToolCallWithResult(
 	call: AIChatToolCall,
 	aiMsgId: string
 ): Promise<string | null> {
+	const allowed = await authorizeAITool(call.tool);
+	if (!allowed) {
+		emitAgentTelemetry({
+			type: 'tool',
+			tool: call.tool,
+			metadata: { denied: true }
+		});
+		return `${call.tool}: permission denied — your role cannot run this AI tool`;
+	}
+
+	emitAgentTelemetry({ type: 'tool', tool: call.tool });
+
 	// Read-only inspection tools — inject result as text, also return for LLM re-injection
 	if (
 		call.tool === 'get_lineage' ||
@@ -2598,7 +2618,7 @@ async function runSprintLoop(
 						: task.type === 'visualize'
 							? 'Call pick_chart on the cell to chart it, then output <done>.'
 							: task.type === 'dashboard'
-								? 'Call create_dashboard and add_dashboard_block to build the dashboard, then output <done>.'
+								? 'Call list_cells, then create_cell with cellType:"markdown" using {% grid %}, {% metric %}, and {% chart %} tags, then output <done>.'
 								: 'Call create_cell with the SQL, then run_cells to validate it, then output <done>.';
 				taskInjection = { role: 'user', content: `You have not completed the task yet. ${hint}` };
 				taskDepth++;
@@ -3399,24 +3419,18 @@ export async function submitAIMessage(
 		]);
 
 		// Route to the most appropriate loop based on intent.
-		const intentMap = {
-			build: 'creation',
-			sprint: 'creation',
-			fix: 'debug',
-			dashboard: 'dashboard',
-			explore: 'investigation'
-		} as const;
-		const intent = forcedIntent ? intentMap[forcedIntent] : classifyIntent(userText);
-		// Simple creation tasks (add a column, rename, tweak a filter) don't need discovery/
-		// modeling/review overhead — route them directly to the standard agentic loop.
-		// 'sprint' forces complex (sprint planning + SQL eval); 'build' still auto-detects.
-		const complexity =
-			forcedIntent === 'sprint'
-				? 'complex'
-				: intent === 'creation'
-					? classifyComplexity(userText)
-					: 'medium';
+		const route = routeAgentIntent(userText, forcedIntent);
+		const intent = route.intent;
+		const complexity = route.complexity;
+		emitAgentTelemetry({
+			type: 'intent',
+			intent,
+			loop: route.loop,
+			metadata: { tier: route.tier, requiresPlanApproval: route.requiresPlanApproval }
+		});
 		if (intent === 'creation') {
+			const loopName = complexity === 'complex' ? 'sprint' : 'pipeline';
+			emitAgentTelemetry({ type: 'loop_start', loop: loopName, intent });
 			if (complexity === 'complex') {
 				// Complex tasks use the sprint loop: plan → discovery → per-task loops → review
 				await runSprintLoop(
@@ -3450,6 +3464,7 @@ export async function submitAIMessage(
 				);
 			}
 		} else if (intent === 'debug') {
+			emitAgentTelemetry({ type: 'loop_start', loop: 'debug', intent });
 			await runDebugLoop(
 				userText,
 				aiMsg.id,
@@ -3458,6 +3473,7 @@ export async function submitAIMessage(
 				abortController.signal
 			);
 		} else if (intent === 'dashboard') {
+			emitAgentTelemetry({ type: 'loop_start', loop: 'dashboard', intent });
 			await runDashboardLoop(
 				userText,
 				aiMsg.id,
@@ -3466,6 +3482,7 @@ export async function submitAIMessage(
 				abortController.signal
 			);
 		} else if (intent === 'investigation') {
+			emitAgentTelemetry({ type: 'loop_start', loop: 'investigation', intent });
 			await runInvestigationLoop(
 				userText,
 				aiMsg.id,
@@ -3474,6 +3491,9 @@ export async function submitAIMessage(
 				abortController.signal
 			);
 		} else {
+			emitAgentTelemetry({ type: 'loop_start', loop: 'standard', intent });
+			const fsm = createFsmContext({ loop: 'standard', maxTurns: 30 });
+			applyTransition(fsm, transitionFsm(fsm, { type: 'routed', loop: 'standard' }));
 			// ── Agentic loop ─────────────────────────────────────────────────────────
 			// Higher depth needed: each result-critical tool call (run_cells, sample_data, etc.)
 			// now occupies its own iteration so a 3-cell task uses ~8–12 turns instead of 2–3.
@@ -3511,6 +3531,10 @@ export async function submitAIMessage(
 			const MAX_STREAM_ERROR_RETRIES = 2;
 
 			while (depth < MAX_DEPTH) {
+				if (abortController.signal.aborted) {
+					didCancel = true;
+					break;
+				}
 				// Save per-iteration checkpoint BEFORE any mutations in this iteration
 				pushCheckpoint(takeSnapshot());
 
@@ -3538,6 +3562,31 @@ export async function submitAIMessage(
 					streamError
 				} = await streamOneTurn(reqBody, aiMsg.id, abortController.signal);
 				if (aborted) break;
+
+				if (allToolResults.length > 0) {
+					applyTransition(fsm, transitionFsm(fsm, { type: 'tool_calls' }));
+					applyTransition(fsm, transitionFsm(fsm, { type: 'tools_done' }));
+				} else if (signalledDone) {
+					applyTransition(fsm, transitionFsm(fsm, { type: 'done' }));
+				} else if (!streamError && !wasTruncated && allToolResults.length === 0) {
+					const stall = transitionFsm(fsm, { type: 'prose_only' });
+					if (stall.next === 'stall_recovery') {
+						emitAgentTelemetry({
+							type: 'stall',
+							stallReason: stall.reason,
+							turn: fsm.turn,
+							metadata: { loop: 'standard' }
+						});
+					}
+					applyTransition(fsm, stall);
+				}
+
+				if (wasTruncated) {
+					emitAgentTelemetry({ type: 'truncation', turn: depth, metadata: { loop: 'standard' } });
+				}
+				if (streamError) {
+					emitAgentTelemetry({ type: 'stream_error', turn: depth, metadata: { loop: 'standard' } });
+				}
 
 				// Transient stream/connection error mid-response. The old code let this throw and
 				// silently end the run; instead retry the turn (bounded) so a network blip doesn't
@@ -3905,5 +3954,7 @@ export async function submitAIMessage(
 		if (!didCancel) setUndoAvailable(_madeNotebookChanges);
 		// Resolve any dangling confirmation request (e.g., if generation was aborted)
 		resolveConfirmation(false);
+		emitAgentTelemetry({ type: 'loop_end', metadata: { didCancel } });
+		void flushAgentTelemetry();
 	}
 }

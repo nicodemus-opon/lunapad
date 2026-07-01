@@ -8,6 +8,7 @@
 		type InlineCellEditColumn
 	} from '$lib/services/inline-cell-ai';
 	import { getLLMConfig } from '$lib/stores/notebook.svelte';
+	import type Editor from '$lib/components/Editor.svelte';
 
 	interface Props {
 		open?: boolean;
@@ -20,6 +21,7 @@
 		sourceTable?: string;
 		columns?: InlineCellEditColumn[];
 		otherTables?: Array<{ name: string; columns: string[]; columnTypes: string[] }>;
+		editorRef?: Editor;
 		onApply: (code: string) => void;
 		onCreateAlternative?: (alt: {
 			cellType: 'query' | 'python';
@@ -27,10 +29,6 @@
 			code: string;
 		}) => void;
 		onContinueInChat?: (instruction: string) => void;
-		/** Set (alongside open=true) to pre-fill and immediately submit — e.g. "Fix with AI"
-		 *  from the error popover skipping the extra click of typing the same instruction.
-		 *  Caller should clear this (via onAutoSubmitConsumed) so a later manual open doesn't
-		 *  silently replay a stale instruction. */
 		autoSubmitInstruction?: string | null;
 		onAutoSubmitConsumed?: () => void;
 	}
@@ -46,6 +44,7 @@
 		sourceTable,
 		columns = [],
 		otherTables = [],
+		editorRef,
 		onApply,
 		onCreateAlternative,
 		onContinueInChat,
@@ -61,15 +60,38 @@
 	let errorMessage = $state<string | null>(null);
 	let originalCode = $state<string | null>(null);
 
-	function extractPartialCode(raw: string): string | null {
-		const match = /"code"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw);
-		if (!match) return null;
-		return match[1]
+	function unescapeJsonString(raw: string): string {
+		return raw
 			.replace(/\\n/g, '\n')
 			.replace(/\\t/g, '\t')
 			.replace(/\\r/g, '\r')
 			.replace(/\\\\/g, '\\')
 			.replace(/\\"/g, '"');
+	}
+
+	function extractPartialCode(raw: string): string | null {
+		const jsonStart = raw.indexOf('{');
+		if (jsonStart >= 0) {
+			const tail = raw.slice(jsonStart);
+			try {
+				const parsed = JSON.parse(tail) as { code?: string };
+				if (typeof parsed.code === 'string') return parsed.code;
+			} catch {
+				// partial JSON while streaming
+			}
+		}
+		const match = /"code"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw);
+		if (!match) return null;
+		return unescapeJsonString(match[1]);
+	}
+
+	function previewCode(next: string): void {
+		if (editorRef) editorRef.setPreviewCode(next);
+		else onApply(next);
+	}
+
+	function restorePreview(): void {
+		if (originalCode !== null) previewCode(originalCode);
 	}
 
 	$effect(() => {
@@ -83,8 +105,10 @@
 		queueMicrotask(() => inputEl?.focus());
 	});
 
-	function close() {
+	function finishClose(): void {
 		cancelActiveCellEdit();
+		editorRef?.setInlineEditActive(false);
+		editorRef?.clearPreviewLock();
 		open = false;
 		instruction = '';
 		generating = false;
@@ -94,19 +118,35 @@
 		originalCode = null;
 	}
 
+	function close() {
+		restorePreview();
+		finishClose();
+	}
+
 	function discard() {
-		if (originalCode !== null) onApply(originalCode);
-		close();
+		if (originalCode !== null) {
+			previewCode(originalCode);
+			onApply(originalCode);
+		}
+		finishClose();
 	}
 
 	async function submit() {
 		const value = instruction.trim();
 		if (!value || generating) return;
+
+		const llmConfig = getLLMConfig();
+		if (!llmConfig.baseUrl?.trim() || !llmConfig.model?.trim()) {
+			errorMessage = 'Configure an LLM in Settings → AI.';
+			return;
+		}
+
 		generating = true;
 		statusMessage = null;
 		result = null;
 		errorMessage = null;
 		originalCode = code;
+		editorRef?.setInlineEditActive(true);
 		let accumulated = '';
 		try {
 			const res = await editCellWithAI(
@@ -119,7 +159,7 @@
 					sourceTable,
 					columns: columns.length > 0 ? columns : undefined,
 					otherTables: otherTables.length > 0 ? otherTables : undefined,
-					llmConfig: getLLMConfig()
+					llmConfig
 				},
 				(msg) => {
 					statusMessage = msg;
@@ -127,27 +167,30 @@
 				(chunk) => {
 					accumulated += chunk;
 					const partial = extractPartialCode(accumulated);
-					if (partial !== null) onApply(partial);
+					if (partial !== null) previewCode(partial);
 				}
 			);
 			if (res) {
-				onApply(res.code);
+				previewCode(res.code);
 				result = res;
 			} else {
+				restorePreview();
 				errorMessage = 'AI did not return a result.';
 			}
 		} catch (err) {
-			if (originalCode !== null) onApply(originalCode);
+			restorePreview();
 			if (err instanceof CellEditCancelledError) return;
 			errorMessage = err instanceof Error ? err.message : 'AI cell edit failed.';
 		} finally {
+			editorRef?.setInlineEditActive(false);
 			generating = false;
 			statusMessage = null;
 		}
 	}
 
 	function apply() {
-		close();
+		if (result) onApply(result.code);
+		finishClose();
 	}
 
 	function createAlternative() {
@@ -161,7 +204,7 @@
 
 	function continueInChat() {
 		const value = instruction.trim();
-		close();
+		finishClose();
 		onContinueInChat?.(
 			value
 				? `For cell \`${outputName ?? cellId}\`: ${value}`

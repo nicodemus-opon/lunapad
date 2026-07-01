@@ -21,7 +21,12 @@ docker compose up --build
 
 # Subsequent starts
 docker compose up -d
+
+# Public read-only demo (no login, auto-loads sample notebook)
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
 ```
+
+See [docs/guide/11-self-hosting.md](docs/guide/11-self-hosting.md#demo-mode) for demo deployment details.
 
 | Service    | URL                   |
 | ---------- | --------------------- |

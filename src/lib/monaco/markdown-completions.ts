@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import { LUNAPAD_MARKDOWN_LANG } from '$lib/monaco/lunapad-markdown';
 import { SLASH_COMMANDS } from '$lib/services/markdown-format';
 import {
 	MARKDOC_FUNCTIONS,
@@ -7,6 +8,8 @@ import {
 	type MarkdownRefEntry,
 	isSelfClosingTag
 } from '$lib/services/markdoc-catalog';
+
+export const MARKDOWN_LANG_IDS = ['markdown', LUNAPAD_MARKDOWN_LANG] as const;
 
 export interface MarkdownRange {
 	startLineNumber: number;
@@ -27,10 +30,30 @@ export type MarkdownCompletionContext =
 			range: MarkdownRange;
 	  }
 	| { kind: 'attr-enum'; tagName: string; attrName: string; partial: string; range: MarkdownRange }
+	| {
+			kind: 'attr-column';
+			tagName: string;
+			attrName: string;
+			cellName: string;
+			partial: string;
+			range: MarkdownRange;
+	  }
 	| { kind: 'ref-root'; partial: string; range: MarkdownRange }
 	| { kind: 'ref-member'; cellName: string; partial: string; range: MarkdownRange }
 	| { kind: 'function'; partial: string; range: MarkdownRange }
 	| { kind: 'none' };
+
+const COLUMN_ATTRS = new Set([
+	'x',
+	'y',
+	'yColumns',
+	'yColumnsSecondary',
+	'colorColumn',
+	'sizeColumn',
+	'cols',
+	'optionsColumn',
+	'by'
+]);
 
 const markdownModelRefs = new Map<string, MarkdownRefEntry[]>();
 let completionProviderRegistered = false;
@@ -66,10 +89,13 @@ export function getOpenMarkdocTags(markdown: string): string[] {
 	return stack;
 }
 
-function resolveActiveTag(lineUpToCursor: string): { tagName: string; fragment: string } | null {
-	const openIdx = lineUpToCursor.lastIndexOf('{%');
+/** Nearest unclosed {% tag %} before cursor (supports multi-line open tags). */
+export function resolveActiveTag(
+	textUpToCursor: string
+): { tagName: string; fragment: string } | null {
+	const openIdx = textUpToCursor.lastIndexOf('{%');
 	if (openIdx < 0) return null;
-	const fragment = lineUpToCursor.slice(openIdx);
+	const fragment = textUpToCursor.slice(openIdx);
 	if (fragment.includes('%}')) return null;
 	const tagMatch = fragment.match(/^\{%\s*\/?(\w+)([\s\S]*)$/);
 	if (!tagMatch) return null;
@@ -84,13 +110,34 @@ function parseUsedAttrs(fragment: string): Set<string> {
 	return used;
 }
 
+function inferCellFromTagFragment(fragment: string): string | null {
+	const m = fragment.match(/\b(?:data|ref|value)\s*=\s*\$(\w+)/);
+	return m?.[1] ?? null;
+}
+
+function isExpressionContext(fragment: string): boolean {
+	let depth = 0;
+	for (const ch of fragment) {
+		if (ch === '(') depth++;
+		else if (ch === ')') depth = Math.max(0, depth - 1);
+	}
+	return depth > 0;
+}
+
+function lineUpToCursorFromText(textUpToCursor: string): string {
+	const nl = textUpToCursor.lastIndexOf('\n');
+	return nl < 0 ? textUpToCursor : textUpToCursor.slice(nl + 1);
+}
+
 export function detectMarkdownCompletionContext(
-	lineUpToCursor: string,
-	fullText: string,
-	column: number
+	textUpToCursor: string,
+	fullText: string
 ): MarkdownCompletionContext {
+	const lineUpToCursor = lineUpToCursorFromText(textUpToCursor);
+	const column = lineUpToCursor.length + 1;
+
 	const makeRange = (startColumn: number): MarkdownRange => ({
-		startLineNumber: 0, // caller fills line number
+		startLineNumber: 0,
 		startColumn,
 		endLineNumber: 0,
 		endColumn: column
@@ -108,25 +155,61 @@ export function detectMarkdownCompletionContext(
 		};
 	}
 
-	// Enum attribute value: attr="partial
-	const enumMatch = lineUpToCursor.match(/\b(\w+)\s*=\s*"([^"]*)$/);
-	if (enumMatch) {
-		const active = resolveActiveTag(lineUpToCursor);
-		if (active) {
-			const partial = enumMatch[2];
-			const attrStart = column - partial.length;
+	const active = resolveActiveTag(textUpToCursor);
+
+	// Enum / column attribute value: attr="partial
+	const enumMatch = textUpToCursor.match(/\b(\w+)\s*=\s*"([^"]*)$/);
+	if (enumMatch && active) {
+		const partial = enumMatch[2];
+		const attrName = enumMatch[1];
+		const attrStart = column - partial.length;
+
+		if (COLUMN_ATTRS.has(attrName)) {
+			const cellName = inferCellFromTagFragment(active.fragment);
+			if (cellName) {
+				return {
+					kind: 'attr-column',
+					tagName: active.tagName,
+					attrName,
+					cellName,
+					partial,
+					range: makeRange(attrStart)
+				};
+			}
+		}
+
+		const tag = MARKDOC_TAG_CATALOG[active.tagName];
+		if (tag?.attributes?.[attrName]?.enum) {
 			return {
 				kind: 'attr-enum',
 				tagName: active.tagName,
-				attrName: enumMatch[1],
+				attrName,
 				partial,
 				range: makeRange(attrStart)
 			};
 		}
 	}
 
+	// Function names inside tag expressions ({% if gt(… %})
+	if (active && isExpressionContext(active.fragment)) {
+		const fnPartialMatch = active.fragment.match(/(\w*)$/);
+		if (fnPartialMatch) {
+			const partial = fnPartialMatch[1];
+			const fnNames = Object.keys(MARKDOC_FUNCTIONS);
+			const matchesFn =
+				partial.length === 0 ||
+				fnNames.some((f) => f.toLowerCase().startsWith(partial.toLowerCase()));
+			if (matchesFn) {
+				return {
+					kind: 'function',
+					partial,
+					range: makeRange(column - partial.length)
+				};
+			}
+		}
+	}
+
 	// Attribute name inside open tag (after tag name + whitespace)
-	const active = resolveActiveTag(lineUpToCursor);
 	if (active && /\s/.test(active.fragment)) {
 		const attrPartialMatch = active.fragment.match(/(?:^|\s)(\w*)$/);
 		if (attrPartialMatch && !active.fragment.trimEnd().endsWith('=')) {
@@ -215,23 +298,25 @@ function filterByPartial(items: string[], partial: string): string[] {
 function buildRefMemberSuggestions(
 	m: typeof Monaco,
 	entry: MarkdownRefEntry | undefined,
-	cellName: string,
 	partial: string,
-	range: MarkdownRange
+	range: MarkdownRange,
+	columnsOnly = false
 ): Monaco.languages.CompletionItem[] {
 	const kinds = m.languages.CompletionItemKind;
 	const suggestions: Monaco.languages.CompletionItem[] = [];
 
-	for (const field of MARKDOC_REF_PSEUDO_FIELDS) {
-		if (partial && !field.name.startsWith(partial)) continue;
-		suggestions.push({
-			label: field.name,
-			kind: kinds.Property,
-			detail: field.detail,
-			insertText: field.name,
-			range,
-			sortText: `0_${field.name}`
-		});
+	if (!columnsOnly) {
+		for (const field of MARKDOC_REF_PSEUDO_FIELDS) {
+			if (partial && !field.name.startsWith(partial)) continue;
+			suggestions.push({
+				label: field.name,
+				kind: kinds.Property,
+				detail: field.detail,
+				insertText: field.name,
+				range,
+				sortText: `0_${field.name}`
+			});
+		}
 	}
 
 	if (entry) {
@@ -341,6 +426,11 @@ function contextSuggestions(
 			}));
 		}
 
+		case 'attr-column': {
+			const entry = refs.find((r) => r.cellName === ctx.cellName);
+			return buildRefMemberSuggestions(m, entry, ctx.partial, range, true);
+		}
+
 		case 'ref-root':
 			return filterByPartial(
 				refs.map((r) => r.cellName),
@@ -355,7 +445,7 @@ function contextSuggestions(
 
 		case 'ref-member': {
 			const entry = refs.find((r) => r.cellName === ctx.cellName);
-			return buildRefMemberSuggestions(m, entry, ctx.cellName, ctx.partial, range);
+			return buildRefMemberSuggestions(m, entry, ctx.partial, range);
 		}
 
 		case 'function':
@@ -382,17 +472,17 @@ export function registerMarkdownCompletions(m: typeof Monaco): void {
 	if (completionProviderRegistered) return;
 	completionProviderRegistered = true;
 
-	m.languages.registerCompletionItemProvider('markdown', {
-		triggerCharacters: ['/', '$', '{', '"', '=', '.'],
+	const provider: Monaco.languages.CompletionItemProvider = {
+		triggerCharacters: ['/', '$', '{', '"', '=', '.', '%'],
 		provideCompletionItems(model, position) {
-			const lineUpToCursor = model.getValueInRange({
-				startLineNumber: position.lineNumber,
+			const textUpToCursor = model.getValueInRange({
+				startLineNumber: 1,
 				startColumn: 1,
 				endLineNumber: position.lineNumber,
 				endColumn: position.column
 			});
 			const fullText = model.getValue();
-			const ctx = detectMarkdownCompletionContext(lineUpToCursor, fullText, position.column);
+			const ctx = detectMarkdownCompletionContext(textUpToCursor, fullText);
 			if (ctx.kind === 'none') return { suggestions: [] };
 
 			const refs = getMarkdownModelRefs(model.uri.toString());
@@ -400,5 +490,9 @@ export function registerMarkdownCompletions(m: typeof Monaco): void {
 				suggestions: contextSuggestions(m, ctx, refs, position.lineNumber)
 			};
 		}
-	});
+	};
+
+	for (const langId of MARKDOWN_LANG_IDS) {
+		m.languages.registerCompletionItemProvider(langId, provider);
+	}
 }

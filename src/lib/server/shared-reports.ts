@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import { query } from './db.js';
 import type { Connection, ConnectionSecret } from '$lib/types/connection';
-import type { ShareCellSnapshot } from '$lib/services/share-snapshot';
+import type { ShareCellSnapshot, SharePublishRole } from '$lib/services/share-snapshot';
 
 export interface ShareSnapshot {
 	cells: ShareCellSnapshot[];
 	reportView: boolean;
 }
+
+export type ShareTheme = 'light' | 'dark' | 'system';
 
 export interface ShareRecord {
 	token: string;
@@ -16,6 +18,9 @@ export interface ShareRecord {
 	snapshot: ShareSnapshot;
 	pollIntervalMs: number | null;
 	requireAuth: boolean;
+	theme: ShareTheme;
+	description: string | null;
+	expiresAt: string | null;
 	currentVersion: number;
 	revoked: boolean;
 	createdAt: string;
@@ -53,6 +58,7 @@ export interface PublicShareCell {
 	cellType: ShareCellSnapshot['cellType'];
 	outputName: string;
 	display: ShareCellSnapshot['display'];
+	publishRole: SharePublishRole;
 	language: ShareCellSnapshot['language'];
 	markdown: string;
 	isLive: boolean;
@@ -64,6 +70,8 @@ export interface PublicShareCell {
 export interface PublicShareView {
 	token: string;
 	notebookName: string;
+	description: string | null;
+	theme: ShareTheme;
 	reportView: boolean;
 	pollIntervalMs: number | null;
 	cells: PublicShareCell[];
@@ -74,6 +82,8 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 	return {
 		token: share.token,
 		notebookName: share.notebookName,
+		description: share.description,
+		theme: share.theme,
 		reportView: share.snapshot.reportView,
 		pollIntervalMs: share.pollIntervalMs,
 		cells: share.snapshot.cells.map((cell) => ({
@@ -81,6 +91,7 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 			cellType: cell.cellType,
 			outputName: cell.outputName,
 			display: cell.display,
+			publishRole: cell.publishRole ?? 'visible',
 			language: cell.language,
 			markdown: cell.markdown,
 			isLive: cell.isLive,
@@ -140,6 +151,21 @@ export async function ensureSharedReportTables(): Promise<void> {
 		await query(
 			`CREATE INDEX IF NOT EXISTS shared_report_versions_token_idx ON shared_report_versions (token, version DESC)`
 		);
+		await query(
+			`ALTER TABLE shared_reports ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'system'`
+		);
+		await query(`ALTER TABLE shared_reports ADD COLUMN IF NOT EXISTS description TEXT`);
+		await query(`ALTER TABLE shared_reports ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+		await query(`
+			CREATE TABLE IF NOT EXISTS share_refresh_schedules (
+				id              SERIAL PRIMARY KEY,
+				notebook_id     TEXT NOT NULL UNIQUE REFERENCES shared_reports(notebook_id) ON DELETE CASCADE,
+				interval_ms     INTEGER NOT NULL,
+				last_run_at     TIMESTAMPTZ,
+				enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+				created_at      TIMESTAMPTZ DEFAULT NOW()
+			)
+		`);
 	} catch {
 		// Postgres not available — silently skip
 	}
@@ -157,6 +183,9 @@ interface SharedReportRow {
 	snapshot: ShareSnapshot;
 	poll_interval_ms: number | null;
 	require_auth: boolean;
+	theme: ShareTheme;
+	description: string | null;
+	expires_at: string | null;
 	current_version: number;
 	revoked: boolean;
 	created_at: string;
@@ -172,6 +201,9 @@ function rowToRecord(row: SharedReportRow): ShareRecord {
 		snapshot: row.snapshot,
 		pollIntervalMs: row.poll_interval_ms,
 		requireAuth: row.require_auth,
+		theme: row.theme ?? 'system',
+		description: row.description,
+		expiresAt: row.expires_at,
 		currentVersion: row.current_version,
 		revoked: row.revoked,
 		createdAt: row.created_at,
@@ -417,6 +449,10 @@ export async function regenerateShareToken(notebookId: string): Promise<ShareRec
 		newToken,
 		existing.token
 	]);
+	await query(`UPDATE site_pages SET share_token = $1 WHERE share_token = $2`, [
+		newToken,
+		existing.token
+	]);
 
 	for (const conn of connections) {
 		await query(
@@ -434,4 +470,105 @@ export async function regenerateShareToken(notebookId: string): Promise<ShareRec
 	const saved = await getShareByToken(newToken);
 	if (!saved) throw new Error('Failed to regenerate share');
 	return saved;
+}
+
+/** Updates share metadata without bumping version or rebuilding the snapshot. */
+export async function updateShareSettings(
+	notebookId: string,
+	input: {
+		pollIntervalMs?: number | null;
+		requireAuth?: boolean;
+		expiresAt?: string | null;
+		theme?: ShareTheme;
+		description?: string | null;
+	}
+): Promise<ShareRecord> {
+	await ensureSharedReportTables();
+	const existing = await getShareByNotebookId(notebookId);
+	if (!existing) throw new Error('No share exists for this notebook');
+
+	const pollIntervalMs =
+		input.pollIntervalMs !== undefined ? input.pollIntervalMs : existing.pollIntervalMs;
+	const requireAuth = input.requireAuth !== undefined ? input.requireAuth : existing.requireAuth;
+	const expiresAt = input.expiresAt !== undefined ? input.expiresAt : existing.expiresAt;
+	const theme = input.theme !== undefined ? input.theme : existing.theme;
+	const description = input.description !== undefined ? input.description : existing.description;
+
+	await query(
+		`UPDATE shared_reports
+		 SET poll_interval_ms = $1, require_auth = $2, expires_at = $3, theme = $4, description = $5, updated_at = NOW()
+		 WHERE notebook_id = $6`,
+		[pollIntervalMs, requireAuth, expiresAt, theme, description, notebookId]
+	);
+
+	const saved = await getShareByNotebookId(notebookId);
+	if (!saved) throw new Error('Failed to update share settings');
+	return saved;
+}
+
+export interface ShareRefreshSchedule {
+	id: number;
+	notebookId: string;
+	intervalMs: number;
+	lastRunAt: string | null;
+	enabled: boolean;
+}
+
+export async function upsertShareRefreshSchedule(
+	notebookId: string,
+	intervalMs: number,
+	enabled = true
+): Promise<ShareRefreshSchedule> {
+	await ensureSharedReportTables();
+	const rows = await query<{
+		id: number;
+		notebook_id: string;
+		interval_ms: number;
+		last_run_at: string | null;
+		enabled: boolean;
+	}>(
+		`INSERT INTO share_refresh_schedules (notebook_id, interval_ms, enabled)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (notebook_id) DO UPDATE SET interval_ms = EXCLUDED.interval_ms, enabled = EXCLUDED.enabled
+		 RETURNING *`,
+		[notebookId, intervalMs, enabled]
+	);
+	const row = rows[0];
+	return {
+		id: row.id,
+		notebookId: row.notebook_id,
+		intervalMs: row.interval_ms,
+		lastRunAt: row.last_run_at,
+		enabled: row.enabled
+	};
+}
+
+export async function listDueRefreshSchedules(): Promise<ShareRefreshSchedule[]> {
+	await ensureSharedReportTables();
+	const rows = await query<{
+		id: number;
+		notebook_id: string;
+		interval_ms: number;
+		last_run_at: string | null;
+		enabled: boolean;
+	}>(
+		`SELECT s.* FROM share_refresh_schedules s
+		 JOIN shared_reports r ON r.notebook_id = s.notebook_id
+		 WHERE s.enabled = TRUE AND r.revoked = FALSE
+		   AND (s.last_run_at IS NULL OR s.last_run_at + (s.interval_ms || ' milliseconds')::interval < NOW())`
+	).catch(() => []);
+	return rows.map((row) => ({
+		id: row.id,
+		notebookId: row.notebook_id,
+		intervalMs: row.interval_ms,
+		lastRunAt: row.last_run_at,
+		enabled: row.enabled
+	}));
+}
+
+export async function markRefreshScheduleRun(notebookId: string): Promise<void> {
+	await ensureSharedReportTables();
+	await query(`UPDATE share_refresh_schedules SET last_run_at = NOW() WHERE notebook_id = $1`, [
+		notebookId
+	]);
 }

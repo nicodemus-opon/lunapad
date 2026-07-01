@@ -1,21 +1,11 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import {
-		CheckCircle2,
-		Inbox,
-		MessageSquare,
-		MoreHorizontal,
-		X
-	} from '@lucide/svelte';
+	import { CheckCircle2, Inbox, MessageSquare, MoreHorizontal, X } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Button } from '$lib/components/ui/button';
 	import type { Comment, CommentThread } from '$lib/types/comments';
-	import {
-		commentInitials,
-		formatCommentTime,
-		reasonLabel
-	} from '$lib/services/comment-utils';
+	import { commentInitials, formatCommentTime, reasonLabel } from '$lib/services/comment-utils';
 	import {
 		closeCommentPanel,
 		createThread,
@@ -225,9 +215,7 @@
 		>
 			Inbox
 			{#if inboxUnread > 0}
-				<span
-					class="absolute top-1 right-2 h-1.5 w-1.5 rounded-full bg-primary"
-					aria-hidden="true"
+				<span class="absolute top-1 right-2 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true"
 				></span>
 			{/if}
 		</button>
@@ -333,7 +321,7 @@
 										{formatCommentTime(comment.createdAt)}
 									</span>
 								</div>
-								<p class="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+								<p class="text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
 									{comment.body}
 								</p>
 							</div>

@@ -62,6 +62,7 @@ export interface LunaQueryMeta {
 	chartConfig?: ChartConfig | null;
 	guiStages?: GUIPipelineStage[];
 	display?: CellDisplay;
+	hideResult?: boolean;
 	stageResultsCollapsed?: boolean[];
 	scheduleEnabled?: boolean;
 	scheduleIntervalMinutes?: number;
@@ -271,6 +272,7 @@ export interface SerializableCell {
 	resultChartConfig: ChartConfig | null;
 	guiStages: GUIPipelineStage[];
 	display: CellDisplay;
+	hideResult: boolean;
 	stageResultsCollapsed: boolean[];
 	scheduleEnabled: boolean;
 	scheduleIntervalMinutes: number;
@@ -286,6 +288,7 @@ function buildMeta(cell: SerializableCell): LunaQueryMeta {
 		chartConfig: cell.resultChartConfig,
 		guiStages: cell.guiStages,
 		display: cell.display,
+		hideResult: cell.hideResult,
 		stageResultsCollapsed: cell.stageResultsCollapsed,
 		scheduleEnabled: cell.scheduleEnabled,
 		scheduleIntervalMinutes: cell.scheduleIntervalMinutes,
@@ -300,6 +303,7 @@ function hasNonDefaultMeta(meta: LunaQueryMeta, lang: CellLanguage): boolean {
 		!!meta.chartConfig ||
 		(meta.guiStages?.length ?? 0) > 1 ||
 		meta.display !== 'full' ||
+		!!meta.hideResult ||
 		(meta.stageResultsCollapsed?.length ?? 0) > 0 ||
 		!!meta.scheduleEnabled
 	);

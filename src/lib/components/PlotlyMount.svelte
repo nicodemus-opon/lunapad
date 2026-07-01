@@ -6,9 +6,12 @@
 	interface Props {
 		figure: { data: Data[]; layout: Partial<Layout> } | null;
 		errorText?: string | null;
+		onPlotClick?: (event: {
+			points?: Array<{ x?: unknown; y?: unknown; label?: unknown; customdata?: unknown }>;
+		}) => void;
 	}
 
-	const { figure, errorText = null }: Props = $props();
+	const { figure, errorText = null, onPlotClick }: Props = $props();
 
 	let el: HTMLDivElement | undefined = $state();
 	let Plotly: typeof import('plotly.js-dist-min') | undefined;
@@ -16,6 +19,24 @@
 	async function render(): Promise<void> {
 		if (!el || !figure) return;
 		Plotly = await renderPlotly(el, figure.data, figure.layout);
+		if (onPlotClick) {
+			const plotEl = el as unknown as {
+				removeAllListeners?: (ev: string) => void;
+				on: (
+					ev: string,
+					fn: (ev: {
+						points?: Array<{
+							x?: unknown;
+							y?: unknown;
+							label?: unknown;
+							customdata?: unknown;
+						}>;
+					}) => void
+				) => void;
+			};
+			plotEl.removeAllListeners?.('plotly_click');
+			plotEl.on('plotly_click', (ev) => onPlotClick(ev));
+		}
 	}
 
 	$effect(() => {

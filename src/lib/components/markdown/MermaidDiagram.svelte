@@ -77,7 +77,7 @@
 	}
 	.mermaid-error {
 		padding: 0.5rem 0.75rem;
-		border-radius: 0.375rem;
+		border-radius: var(--radius);
 		border: 1px solid;
 		font-size: 0.82em;
 		font-family: var(--font-mono, ui-monospace, monospace);

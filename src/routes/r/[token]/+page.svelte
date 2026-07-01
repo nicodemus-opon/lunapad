@@ -7,6 +7,14 @@
 
 <svelte:head>
 	<title>{data.share.notebookName}</title>
+	{#if data.share.description}
+		<meta name="description" content={data.share.description} />
+	{/if}
 </svelte:head>
 
-<ReportPage data={data.share} />
+<ReportPage
+	data={data.share}
+	initialLiveResults={data.initialLiveResults}
+	isAuthenticated={data.isAuthenticated}
+	embed={data.embed}
+/>

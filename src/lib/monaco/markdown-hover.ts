@@ -4,10 +4,10 @@ import {
 	MARKDOC_REF_PSEUDO_FIELDS,
 	MARKDOC_TAG_CATALOG
 } from '$lib/services/markdoc-catalog';
-import { getMarkdownModelRefs } from './markdown-completions';
+import { MARKDOWN_LANG_IDS, getMarkdownModelRefs } from './markdown-completions';
 
 export function registerMarkdownHover(m: typeof Monaco): void {
-	m.languages.registerHoverProvider('markdown', {
+	const provider: Monaco.languages.HoverProvider = {
 		provideHover(model, position) {
 			const line = model.getLineContent(position.lineNumber);
 			const textBefore = line.slice(0, position.column - 1);
@@ -95,5 +95,9 @@ export function registerMarkdownHover(m: typeof Monaco): void {
 
 			return null;
 		}
-	});
+	};
+
+	for (const langId of MARKDOWN_LANG_IDS) {
+		m.languages.registerHoverProvider(langId, provider);
+	}
 }

@@ -8,6 +8,8 @@ import { defineConfig, devices } from '@playwright/test';
 //
 // Note: the dev server binds IPv6 only, so reach it via `localhost` (resolves to ::1),
 // not `127.0.0.1` (IPv4 — won't connect).
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+
 export default defineConfig({
 	testDir: './e2e',
 	fullyParallel: false,
@@ -16,7 +18,7 @@ export default defineConfig({
 	workers: 1,
 	reporter: 'list',
 	use: {
-		baseURL: 'http://localhost:5173',
+		baseURL,
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure'
@@ -37,13 +39,17 @@ export default defineConfig({
 			expect: { timeout: 120_000 }
 		}
 	],
-	webServer: {
-		command: 'pnpm dev',
-		url: 'http://localhost:5173',
-		reuseExistingServer: true,
-		timeout: 60_000,
-		// e2e specs have no login flow — bypass auth gating for the test server only.
-		// hooks.server.ts refuses to start with this combined with NODE_ENV=production.
-		env: { DISABLE_AUTH: '1' }
-	}
+	...(process.env.PLAYWRIGHT_BASE_URL
+		? {}
+		: {
+				webServer: {
+					command: 'pnpm dev',
+					url: baseURL,
+					reuseExistingServer: true,
+					timeout: 60_000,
+					// e2e specs have no login flow — bypass auth gating for the test server only.
+					// hooks.server.ts refuses to start with this combined with NODE_ENV=production.
+					env: { DISABLE_AUTH: '1' }
+				}
+			})
 });

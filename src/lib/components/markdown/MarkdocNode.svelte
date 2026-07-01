@@ -17,16 +17,32 @@
 	import CodeBlock from './CodeBlock.svelte';
 	import MermaidDiagram from './MermaidDiagram.svelte';
 	import * as Table from '$lib/components/ui/table';
+	import { resolveHeadingAnchorId, textFromMarkdocChildren } from '$lib/services/notebook-outline';
 
 	interface Props {
 		node: RenderableTreeNode;
 		notebookId?: string;
+		headingSlugPrefix?: string;
+		headingSlugTracker?: Set<string>;
 	}
 
-	const { node, notebookId = '' }: Props = $props();
+	const {
+		node,
+		notebookId = '',
+		headingSlugPrefix = '',
+		headingSlugTracker = new Set<string>()
+	}: Props = $props();
 
 	const isTag = $derived(TagImpl.isTag(node));
 	const tag = $derived(isTag ? (node as Tag) : null);
+	const isHeading = $derived(tag ? /^h[1-6]$/.test(tag.name) : false);
+	const headingId = $derived.by(() => {
+		if (!isHeading || !tag || !headingSlugPrefix) return undefined;
+		const label = textFromMarkdocChildren(tag.children as unknown[]);
+		if (!label.trim()) return undefined;
+		return resolveHeadingAnchorId(headingSlugPrefix, label, headingSlugTracker);
+	});
+	const nodeProps = $derived({ notebookId, headingSlugPrefix, headingSlugTracker });
 </script>
 
 {#if !isTag}
@@ -45,31 +61,31 @@
 	<ProgressWidget {...tag.attributes} />
 {:else if tag?.name === 'columns'}
 	<div class="md-columns">
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'column'}
 	<div
 		class="md-column"
 		style={tag.attributes.width ? `flex-basis:${tag.attributes.width}` : undefined}
 	>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'grid'}
 	<div class="md-grid" style="--md-grid-cols: {tag.attributes.cols ?? 3}">
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'callout'}
 	<div class="md-callout md-callout--{tag.attributes.type ?? 'info'}">
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'card'}
 	<div class="md-card">
 		{#if tag.attributes.title}<div class="md-card-title">{tag.attributes.title}</div>{/if}
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'details'}
 	<DetailsWidget summary={tag.attributes.summary} open={tag.attributes.open}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</DetailsWidget>
 {:else if tag?.name === 'tabs'}
 	<TabsWidget tabs={tag.children as Tag[]} {notebookId} />
@@ -79,31 +95,35 @@
 	<CodeBlock lang={tag.attributes?.['data-language'] ?? ''} children={tag.children} />
 {:else if tag?.name === 'table'}
 	<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Root>
 {:else if tag?.name === 'thead'}
 	<Table.Header {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Header>
 {:else if tag?.name === 'tbody'}
 	<Table.Body {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Body>
 {:else if tag?.name === 'tr'}
 	<Table.Row {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Row>
 {:else if tag?.name === 'th'}
 	<Table.Head class="bg-background p-2 align-middle text-xs font-semibold" {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Head>
 {:else if tag?.name === 'td'}
 	<Table.Cell class="p-2 align-middle font-mono text-xs" {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Cell>
+{:else if isHeading && tag}
+	<svelte:element this={tag.name} {...tag.attributes} id={headingId} class="scroll-mt-24">
+		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
+	</svelte:element>
 {:else}
 	<svelte:element this={tag?.name} {...tag?.attributes}>
-		{#each tag?.children ?? [] as child, i (i)}<MarkdocNode node={child} {notebookId} />{/each}
+		{#each tag?.children ?? [] as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</svelte:element>
 {/if}
 

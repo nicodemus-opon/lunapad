@@ -225,7 +225,10 @@ const chartTag: Schema = {
 		histogramBins: { type: Number },
 		title: { type: String },
 		code: { type: String },
-		height: { type: Number, default: 280 }
+		height: { type: Number, default: 280 },
+		filterParam: { type: String },
+		filterColumn: { type: String },
+		drillCell: { type: String }
 	},
 	transform(node, config) {
 		const attrs = node.transformAttributes(config) as Record<string, unknown> & {
@@ -267,6 +270,9 @@ const chartTag: Schema = {
 		if (attrs.histogramBins) merged.histogramBins = attrs.histogramBins;
 		if (attrs.title) merged.title = attrs.title;
 		if (attrs.code) merged.code = attrs.code;
+		if (attrs.filterParam) merged.filterParam = attrs.filterParam;
+		if (attrs.filterColumn) merged.filterColumn = attrs.filterColumn;
+		if (attrs.drillCell) merged.drillCell = attrs.drillCell;
 
 		return new Tag('chart', { ...merged, data, compact, height: attrs.height ?? 280 }, []);
 	}
@@ -298,7 +304,8 @@ const datatableTag: Schema = {
 	attributes: {
 		data: { type: Array, required: true },
 		cols: { type: Array },
-		limit: { type: Number, default: 10 }
+		limit: { type: Number, default: 10 },
+		linkedFilter: { type: String }
 	}
 };
 
@@ -804,14 +811,27 @@ const filterTag: Schema = {
 	attributes: {
 		kind: {
 			type: String,
-			matches: ['dropdown', 'text-input', 'date-range', 'button-group'],
+			matches: [
+				'dropdown',
+				'text-input',
+				'date-range',
+				'button-group',
+				'multi-select',
+				'relative-date',
+				'numeric-range',
+				'searchable-dropdown'
+			],
 			default: 'dropdown'
 		},
 		param: { type: String, required: true },
 		label: { type: String },
 		options: { type: Array },
 		optionsColumn: { type: String },
-		default: { type: String, render: 'defaultValue' }
+		default: { type: String, render: 'defaultValue' },
+		startParam: { type: String },
+		endParam: { type: String },
+		minParam: { type: String },
+		maxParam: { type: String }
 	}
 };
 

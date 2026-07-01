@@ -547,7 +547,9 @@ async function loadMissingModelsFromManifest(
 			needsRun: false,
 			staleReason: null,
 			staleSources: [],
-			lastRunAt: null
+			lastRunAt: null,
+			hideResult: false,
+			executionCount: 0
 		};
 
 		const notebook: Notebook = {
@@ -802,7 +804,9 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		hideResult: false,
+		executionCount: 0
 	};
 }
 
@@ -853,7 +857,9 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		hideResult: false,
+		executionCount: 0
 	};
 }
 
@@ -904,7 +910,9 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		hideResult: false,
+		executionCount: 0
 	};
 }
 
@@ -955,7 +963,9 @@ function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		hideResult: false,
+		executionCount: 0
 	};
 }
 
@@ -981,6 +991,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		resultViewMode: entry.meta.resultViewMode ?? 'table',
 		resultChartConfig: entry.meta.chartConfig ?? null,
 		display: entry.meta.display ?? 'full',
+		hideResult: entry.meta.hideResult ?? false,
 		stageResultsCollapsed: entry.meta.stageResultsCollapsed ?? [],
 		materializeMode: entry.materialized,
 		materializeTarget: entry.name,
@@ -1006,7 +1017,8 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		executionCount: 0
 	};
 }
 
@@ -1067,6 +1079,7 @@ async function readCellFile(
 		resultViewMode: parsed.meta.resultViewMode ?? 'table',
 		resultChartConfig: parsed.meta.chartConfig ?? null,
 		display: parsed.meta.display ?? (parsed.meta.collapsed ? 'collapsed' : 'full'),
+		hideResult: parsed.meta.hideResult ?? false,
 		stageResultsCollapsed: parsed.meta.stageResultsCollapsed ?? [],
 		materializeMode: ymlMaterialized,
 		materializeTarget: outputName,
@@ -1092,7 +1105,8 @@ async function readCellFile(
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		executionCount: 0
 	};
 
 	return { cell, notebookId: parsed.notebookId };

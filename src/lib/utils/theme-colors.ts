@@ -49,6 +49,28 @@ export function resolveCSSColor(varName: string): string {
 	return raw;
 }
 
+/** Resolves a CSS length custom property (e.g. `--radius`) to pixels. */
+export function resolveCSSLengthPx(varName: string): number {
+	const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+	if (!raw) return 6;
+	if (raw.endsWith('px')) return parseFloat(raw);
+	if (raw.endsWith('rem')) {
+		const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
+		return parseFloat(raw) * rootPx;
+	}
+	const probe = document.createElement('div');
+	probe.style.cssText = `position:absolute;visibility:hidden;width:${raw}`;
+	document.body.appendChild(probe);
+	const px = probe.getBoundingClientRect().width;
+	probe.remove();
+	return px;
+}
+
+/** Reads a CSS font-family stack from a custom property. */
+export function resolveCSSFontFamily(varName: string): string {
+	return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
 export const CHART_COLORWAY_VARS = [
 	'--chart-1',
 	'--chart-2',

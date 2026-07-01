@@ -301,7 +301,10 @@ export async function markThreadsRead(threadIds: string[]): Promise<void> {
 	void refreshInbox();
 }
 
-export async function sendPresence(notebookId: string | null, cellId: string | null): Promise<void> {
+export async function sendPresence(
+	notebookId: string | null,
+	cellId: string | null
+): Promise<void> {
 	try {
 		await fetch('/api/presence', {
 			method: 'POST',

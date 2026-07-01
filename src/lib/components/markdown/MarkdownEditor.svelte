@@ -84,11 +84,8 @@
 	import { getListContinuation } from '$lib/services/markdown-format';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import type { Cell } from '$lib/stores/notebook.svelte';
-	import {
-		registerMarkdownCompletions,
-		setMarkdownModelRefs,
-		clearMarkdownModelRefs
-	} from '$lib/monaco/markdown-completions';
+	import { LUNAPAD_MARKDOWN_LANG } from '$lib/monaco/lunapad-markdown';
+	import { setMarkdownModelRefs, clearMarkdownModelRefs } from '$lib/monaco/markdown-completions';
 	import {
 		setMarkdownValidationCells,
 		clearMarkdownValidationCells,
@@ -162,11 +159,9 @@
 		const m = mod.setupMonaco();
 		monacoRef = m;
 
-		registerMarkdownCompletions(m);
-
 		model = m.editor.createModel(
 			value,
-			'markdown',
+			LUNAPAD_MARKDOWN_LANG,
 			m.Uri.parse(`inmemory://markdown/${crypto.randomUUID()}.md`)
 		);
 		modelUri = model.uri.toString();
@@ -200,7 +195,7 @@
 			fontFamily: '"Inter", system-ui, -apple-system, sans-serif',
 			contextmenu: true,
 			fixedOverflowWidgets: true,
-			quickSuggestions: { other: true, comments: false, strings: false },
+			quickSuggestions: { other: true, comments: false, strings: true },
 			suggestOnTriggerCharacters: true,
 			tabSize: 2,
 			padding: { top: 4, bottom: 4 },

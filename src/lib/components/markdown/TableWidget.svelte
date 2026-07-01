@@ -1,14 +1,23 @@
 <script lang="ts">
-	import { Maximize2, X } from '@lucide/svelte';
+	import { getContext } from 'svelte';
+	import { Maximize2, X, Download } from '@lucide/svelte';
 	import * as Table from '$lib/components/ui/table';
+	import { downloadCsv } from '$lib/services/widget-export';
+	import { FILTER_CONTEXT_KEY, type FilterContextValue } from './filter-context';
 
 	interface Props {
 		data?: Record<string, unknown>[];
 		cols?: string[];
 		limit?: number;
+		linkedFilter?: string;
 	}
 
-	const { data = [], cols, limit = 10 }: Props = $props();
+	const { data = [], cols, limit = 10, linkedFilter }: Props = $props();
+
+	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
+	const isLinkedActive = $derived(
+		linkedFilter && filterCtx ? Boolean(filterCtx.getValue(linkedFilter)) : false
+	);
 
 	const columns = $derived(cols && cols.length ? cols : Object.keys(data[0] ?? {}));
 	const rows = $derived(data.slice(0, limit));
@@ -18,6 +27,10 @@
 		if (v === null || v === undefined) return '—';
 		if (typeof v === 'number') return v.toLocaleString();
 		return String(v);
+	}
+
+	function exportCsv() {
+		downloadCsv('table.csv', columns, data);
 	}
 </script>
 
@@ -40,18 +53,28 @@
 {/snippet}
 
 {#if rows.length}
-	<div class="md-datatable-wrap">
+	<div class="md-datatable-wrap" class:linked-active={isLinkedActive}>
 		{@render table(rows)}
-		{#if data.length > limit}
+		<div class="md-datatable-actions">
 			<button
 				class="md-datatable-expand"
-				onclick={() => (fullscreen = true)}
-				title="Show all rows"
-				aria-label="Show all rows"
+				onclick={exportCsv}
+				title="Download CSV"
+				aria-label="Download CSV"
 			>
-				<Maximize2 class="h-3 w-3" />
+				<Download class="h-3 w-3" />
 			</button>
-		{/if}
+			{#if data.length > limit}
+				<button
+					class="md-datatable-expand"
+					onclick={() => (fullscreen = true)}
+					title="Show all rows"
+					aria-label="Show all rows"
+				>
+					<Maximize2 class="h-3 w-3" />
+				</button>
+			{/if}
+		</div>
 	</div>
 	{#if data.length > limit}
 		<div class="md-datatable-truncated">showing {limit} of {data.length} rows</div>
@@ -90,18 +113,26 @@
 		opacity: 0.6;
 		margin: 0.2rem 0 0.5rem;
 	}
-	.md-datatable-expand {
+	.md-datatable-wrap.linked-active {
+		outline: 2px solid color-mix(in oklch, var(--chart-1, #3b82f6) 50%, transparent);
+		border-radius: 0.35rem;
+	}
+	.md-datatable-actions {
 		position: absolute;
 		top: 0.5rem;
 		right: 0.4rem;
+		display: flex;
+		gap: 0.25rem;
 		opacity: 0;
 		transition: opacity 0.15s;
+	}
+	.md-datatable-expand {
 		background: color-mix(in oklch, var(--background, white) 80%, transparent);
 		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 		border-radius: 0.3rem;
 		padding: 0.25rem;
 	}
-	.md-datatable-wrap:hover .md-datatable-expand {
+	.md-datatable-wrap:hover .md-datatable-actions {
 		opacity: 1;
 	}
 	.md-datatable-overlay {

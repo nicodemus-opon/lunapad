@@ -18,6 +18,7 @@ function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell 
 		resultChartConfig: null,
 		guiStages: [{ type: 'from', table: '' }],
 		display: 'full',
+		hideResult: false,
 		stageResultsCollapsed: [],
 		scheduleEnabled: false,
 		scheduleIntervalMinutes: 60,

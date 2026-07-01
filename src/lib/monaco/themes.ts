@@ -36,6 +36,12 @@ export function defineThemes(monaco: typeof Monaco): void {
 		inherit: true,
 		rules: [
 			{ token: 'keyword', foreground: '2f6f9f', fontStyle: 'bold' }, // calm steel blue
+			{ token: 'keyword.md', foreground: '2f6f9f', fontStyle: 'bold' },
+			{ token: 'markdoc.delimiter', foreground: '8a8276' },
+			{ token: 'markdoc.tag', foreground: '2f6f9f', fontStyle: 'bold' },
+			{ token: 'markdoc.attribute', foreground: '2e7d86' },
+			{ token: 'markdoc.ref', foreground: '6a5b9e' },
+			{ token: 'markdoc.operator', foreground: '6f6a5e' },
 			{ token: 'string', foreground: '58804f' }, // sage
 			{ token: 'string.escape', foreground: '58804f' },
 			// the vs base theme ships legacy high-saturation *.sql rules
@@ -77,6 +83,12 @@ export function defineThemes(monaco: typeof Monaco): void {
 		inherit: true,
 		rules: [
 			{ token: 'keyword', foreground: '7fb8dd', fontStyle: 'bold' }, // soft steel blue
+			{ token: 'keyword.md', foreground: '7fb8dd', fontStyle: 'bold' },
+			{ token: 'markdoc.delimiter', foreground: '8f8a7d' },
+			{ token: 'markdoc.tag', foreground: '7fb8dd', fontStyle: 'bold' },
+			{ token: 'markdoc.attribute', foreground: '92c4c4' },
+			{ token: 'markdoc.ref', foreground: 'b1a6d4' },
+			{ token: 'markdoc.operator', foreground: 'a8a294' },
 			{ token: 'string', foreground: 'a9c49a' }, // sage
 			{ token: 'string.escape', foreground: 'a9c49a' },
 			// the vs-dark base theme ships legacy high-saturation *.sql rules

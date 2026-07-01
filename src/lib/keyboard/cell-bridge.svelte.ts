@@ -69,9 +69,7 @@ export function focusAdjacentCell(currentEl: HTMLElement, dir: 'prev' | 'next'):
 }
 
 export function focusCellById(id: string): void {
-	document
-		.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)
-		?.focus();
+	document.querySelector<HTMLElement>(`.notebook-cell[data-cell-id="${CSS.escape(id)}"]`)?.focus();
 }
 
 export function focusCellAfterDelete(deletedEl: HTMLElement): void {

@@ -64,6 +64,181 @@ function pickConcreteFallbackReason(query: string, availableColumns: string[]): 
 	return `Aligns with \"${query}\"`;
 }
 
+import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
+
+const VALID_GUI_STAGE_TYPES = new Set([
+	'filter',
+	'select',
+	'derive',
+	'group',
+	'sort',
+	'take',
+	'join',
+	'append',
+	'window',
+	'loop'
+]);
+
+type GuiStage = Exclude<GUIPipelineStage, { type: 'raw' } | { type: 'from' }>;
+
+/** Cloud models sometimes emit `{op:"GROUP",col:"region"}` instead of `{type:"group",by:[...]}`. */
+function coerceLlmStages(stages: unknown[]): GuiStage[] {
+	const result: GuiStage[] = [];
+	let pendingGroup: {
+		by: string[];
+		aggs: Array<{ name: string; column: string; func: 'sum' | 'count' | 'average' }>;
+	} | null = null;
+
+	const flushGroup = () => {
+		if (!pendingGroup || pendingGroup.by.length === 0) return;
+		result.push({
+			type: 'group',
+			by: pendingGroup.by,
+			aggregations:
+				pendingGroup.aggs.length > 0
+					? pendingGroup.aggs.map((a) => ({ name: a.name, column: a.column, func: a.func }))
+					: [{ name: 'row_count', func: 'count', column: '' }]
+		});
+		pendingGroup = null;
+	};
+
+	for (const raw of stages) {
+		if (!raw || typeof raw !== 'object') continue;
+		const s = raw as Record<string, unknown>;
+
+		if (typeof s.type === 'string' && VALID_GUI_STAGE_TYPES.has(s.type)) {
+			flushGroup();
+			result.push(s as unknown as GuiStage);
+			continue;
+		}
+
+		const op = String(s.op ?? s.operation ?? '').toUpperCase();
+		const col = String(s.col ?? s.column ?? s.by ?? '').trim();
+		const col2 = String(s.col2 ?? s.column2 ?? '').trim();
+		const asName = String(s.as ?? s.alias ?? s.name ?? '').trim();
+
+		if (op === 'DERIVE' || (op === 'SUM' && col && col2)) {
+			flushGroup();
+			if (col && col2 && asName) {
+				result.push({
+					type: 'derive',
+					columns: [
+						{
+							name: asName,
+							expr: {
+								mode: 'binary',
+								op: '*',
+								left: { kind: 'column', value: col },
+								right: { kind: 'column', value: col2 }
+							}
+						}
+					]
+				});
+			}
+			continue;
+		}
+
+		if (op === 'GROUP' || op === 'GROUP_BY') {
+			flushGroup();
+			pendingGroup = { by: col ? [col] : [], aggs: [] };
+			continue;
+		}
+
+		if (op === 'SUM' || op === 'AGG' || op === 'AGGREGATE' || op === 'COUNT') {
+			const aggCol = col || col2;
+			const aggName = asName || (aggCol ? `total_${aggCol}` : 'row_count');
+			const aggFunc = op === 'COUNT' ? 'count' : 'sum';
+			if (pendingGroup) {
+				if (aggCol || op === 'COUNT') {
+					pendingGroup.aggs.push({
+						name: aggName,
+						column: aggCol,
+						func: aggFunc
+					});
+				}
+			} else if (aggCol) {
+				flushGroup();
+				result.push({
+					type: 'group',
+					by: [],
+					aggregations: [{ name: aggName, column: aggCol, func: aggFunc }]
+				});
+			}
+			continue;
+		}
+
+		if (op === 'SORT' || op === 'ORDER' || op === 'ORDER_BY') {
+			flushGroup();
+			const sortCol = col || asName;
+			if (sortCol) {
+				result.push({
+					type: 'sort',
+					keys: [
+						{
+							column: sortCol,
+							dir: s.desc === true || s.order === 'desc' ? 'desc' : 'asc'
+						}
+					]
+				});
+			}
+			continue;
+		}
+
+		if (op === 'TAKE' || op === 'LIMIT') {
+			flushGroup();
+			const n = Number(s.count ?? s.n ?? s.limit ?? 10);
+			if (Number.isFinite(n) && n > 0) {
+				result.push({ type: 'take', n: Math.round(n) });
+			}
+			continue;
+		}
+
+		if (op === 'FILTER' || op === 'WHERE') {
+			flushGroup();
+			if (col) {
+				result.push({
+					type: 'filter',
+					logic: 'and',
+					conditions: [{ column: col, op: '==', value: String(s.value ?? s.val ?? '') }]
+				});
+			}
+		}
+	}
+
+	flushGroup();
+	return result;
+}
+
+/** Models sometimes emit one object with both group fields (by, aggregations) and sort fields (keys). */
+function splitMergedGuiStages(stages: GuiStage[]): GuiStage[] {
+	const out: GuiStage[] = [];
+	for (const stage of stages) {
+		const raw = stage as unknown as Record<string, unknown>;
+		const by = Array.isArray(raw.by) ? (raw.by as string[]).filter(Boolean) : [];
+		const aggs = Array.isArray(raw.aggregations)
+			? (raw.aggregations as Extract<GuiStage, { type: 'group' }>['aggregations'])
+			: [];
+		const keys = Array.isArray(raw.keys)
+			? (raw.keys as Extract<GuiStage, { type: 'sort' }>['keys'])
+			: [];
+
+		if (by.length > 0 && (aggs.length > 0 || keys.length > 0)) {
+			out.push({
+				type: 'group',
+				by,
+				aggregations: aggs.length > 0 ? aggs : [{ name: 'row_count', func: 'count', column: '' }]
+			});
+			if (keys.length > 0) {
+				out.push({ type: 'sort', keys });
+			}
+			continue;
+		}
+
+		out.push(stage);
+	}
+	return out;
+}
+
 function sanitizeSuggestion(
 	value: unknown,
 	context: { query: string; availableColumns: string[] }
@@ -71,7 +246,10 @@ function sanitizeSuggestion(
 	if (!value || typeof value !== 'object') return null;
 	const candidate = value as Partial<ExternalPromptStageSuggestionInput>;
 	if (typeof candidate.label !== 'string' || candidate.label.trim().length === 0) return null;
-	if (!Array.isArray(candidate.stages) || candidate.stages.length === 0) return null;
+	const coercedStages = splitMergedGuiStages(
+		coerceLlmStages(Array.isArray(candidate.stages) ? candidate.stages : [])
+	);
+	if (coercedStages.length === 0) return null;
 
 	const filteredReasons = Array.isArray(candidate.reasons)
 		? candidate.reasons
@@ -100,7 +278,7 @@ function sanitizeSuggestion(
 				? candidate.prompt.trim()
 				: `${label} for ${context.query}`,
 		reasons,
-		stages: candidate.stages as ExternalPromptStageSuggestionInput['stages'],
+		stages: coercedStages as ExternalPromptStageSuggestionInput['stages'],
 		score:
 			typeof candidate.score === 'number' && Number.isFinite(candidate.score)
 				? candidate.score
@@ -202,6 +380,14 @@ function buildPrompt(input: {
 		'- If metric-like columns exist, avoid lazy count-only plans unless user explicitly asks for row counts.',
 		'- Prefer plans that reveal meaningful structure (time rollups, segment comparisons, ranking, anomaly surfacing).',
 		'- Output must pass validation with no unknown columns and no compile issues.',
+		'- Each stage MUST have a "type" field (filter|select|derive|group|sort|take|join|append|window|loop). Never use "op" keys.',
+		'',
+		'Example for "revenue by region" with columns region, quantity, unit_price:',
+		'{"label":"Revenue by region","prompt":"Sum revenue per region","reasons":["Uses region, quantity, unit_price"],"score":130,"confidence":0.75,"stages":[',
+		'  {"type":"derive","columns":[{"name":"revenue","expr":{"mode":"binary","op":"*","left":{"kind":"column","value":"quantity"},"right":{"kind":"column","value":"unit_price"}}}]},',
+		'  {"type":"group","by":["region"],"aggregations":[{"name":"total_revenue","column":"revenue","func":"sum"}]},',
+		'  {"type":"sort","keys":[{"column":"total_revenue","dir":"desc"}]}',
+		']}',
 		'',
 		'Few-shot intent translations:',
 		'- "who did i pay the most in january" => filter month/january + group by payee/vendor + sum outflow/paid metric + sort desc + take.',
@@ -221,31 +407,40 @@ function validateSuggestion(
 	availableColumns: string[],
 	suggestion: ExternalPromptStageSuggestionInput
 ): { valid: boolean; issues: string[] } {
-	const plan = generatePromptStagePlanFromSuggestion({
-		query,
-		availableColumns,
-		suggestion,
-		validateCompile: false
-	});
+	try {
+		const plan = generatePromptStagePlanFromSuggestion({
+			query,
+			availableColumns,
+			suggestion,
+			validateCompile: false
+		});
 
-	if (!plan) {
-		return { valid: false, issues: ['suggestion could not be converted into a prompt stage plan'] };
+		if (!plan) {
+			return {
+				valid: false,
+				issues: ['suggestion could not be converted into a prompt stage plan']
+			};
+		}
+
+		const hardUnknown = plan.validation.unknownColumns.filter(
+			(col) => !availableColumns.some((a) => a.toLowerCase() === col.toLowerCase())
+		);
+
+		const issues = [
+			...plan.validation.issues,
+			...(hardUnknown.length > 0 ? [`unknown columns: ${hardUnknown.join(', ')}`] : [])
+		].slice(0, 10);
+
+		return {
+			valid: hardUnknown.length === 0 && plan.stages.length > 0,
+			issues
+		};
+	} catch (err) {
+		return {
+			valid: false,
+			issues: [err instanceof Error ? err.message : 'stage plan validation failed']
+		};
 	}
-
-	const issues = [
-		...plan.validation.issues,
-		...(plan.validation.unknownColumns.length > 0
-			? [`unknown columns: ${plan.validation.unknownColumns.join(', ')}`]
-			: [])
-	].slice(0, 10);
-
-	return {
-		valid:
-			plan.validation.unknownColumns.length === 0 &&
-			plan.validation.issues.length === 0 &&
-			plan.stages.length > 0,
-		issues
-	};
 }
 
 async function requestSuggestionFromLLM(input: {
@@ -385,6 +580,21 @@ export const POST: RequestHandler = async ({ request }) => {
 			);
 			if (repairedValidation.valid) {
 				return json({ suggestion: repairedSuggestion });
+			}
+
+			const fallback =
+				repairedSuggestion.stages.length > 0
+					? repairedSuggestion
+					: firstSuggestion && firstSuggestion.stages.length > 0
+						? firstSuggestion
+						: null;
+			if (fallback) {
+				return json({
+					suggestion: fallback,
+					warning: `Plan validation was soft: ${[...firstIssues, ...repairedValidation.issues]
+						.slice(0, 5)
+						.join(' | ')}`
+				});
 			}
 
 			return json(

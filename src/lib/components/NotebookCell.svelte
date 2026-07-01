@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { tick, onMount } from 'svelte';
-	import {
-		registerCellMeta,
-		cellBridgeState
-	} from '$lib/keyboard';
+	import { registerCellMeta, cellBridgeState } from '$lib/keyboard';
 	import { findStageMenuInEditor } from '$lib/keyboard/stage-bridge';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
@@ -61,6 +58,7 @@
 		getProjectFolder,
 		getDbtModels,
 		getFocusedCellId,
+		getFocusedTarget,
 		clearFocusedCell,
 		getCells,
 		getAllCellsAcrossNotebooks,
@@ -271,10 +269,19 @@
 	let cellContainerEl: HTMLElement | undefined = $state();
 
 	$effect(() => {
-		if (getFocusedCellId() === cell.id && cellContainerEl) {
-			cellContainerEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const target = getFocusedTarget();
+		if (target?.cellId !== cell.id || !cellContainerEl) return;
+		void (async () => {
+			cellContainerEl!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			if (target.anchorId) {
+				await tick();
+				const anchor = cellContainerEl!.querySelector<HTMLElement>(
+					`#${CSS.escape(target.anchorId)}`
+				);
+				anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			}
 			clearFocusedCell();
-		}
+		})();
 	});
 
 	let confirmSwitchToGui = $state(false);
@@ -286,9 +293,19 @@
 	const revealed = $derived(
 		!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0)
 	);
+	const showCellIndex = $derived(
+		(isQueryCell || isPythonCell) &&
+			(revealed || running || cell.needsRun || cell.status === 'error')
+	);
 	const showResultControls = $derived(revealed);
 	const showResult = $derived(
-		!collapsed && Boolean(cell.result) && (cell.status === 'success' || cell.status === 'running')
+		!collapsed &&
+			!cell.hideResult &&
+			Boolean(cell.result) &&
+			(cell.status === 'success' || cell.status === 'running')
+	);
+	const showPythonOutput = $derived(
+		!collapsed && !cell.hideResult && isPythonCell && cell.pythonOutput
 	);
 	const markdocResult = $derived.by(() => {
 		if (!isMarkdownCell || !cell.markdown?.trim()) return null;
@@ -297,6 +314,13 @@
 	const isMarkdownPreviewMode = $derived(
 		isMarkdownCell && cell.markdownPreview && !!cell.markdown?.trim()
 	);
+	const isMarkdownRendered = $derived(
+		isMarkdownCell && !!cell.markdown?.trim() && (cell.markdownPreview || reportView)
+	);
+	const isMarkdownClickToEdit = $derived(isMarkdownRendered && !reportView);
+
+	const MARKDOWN_INTERACTIVE_SELECTOR =
+		'a, button, input, select, textarea, label, [role="tab"], [role="tablist"], .md-filter, .md-details';
 	const hasLiveRefs = $derived(
 		isMarkdownCell && extractMarkdocRefs(cell.markdown ?? '').length > 0
 	);
@@ -319,6 +343,11 @@
 
 	function insertMarkdownRef(cellName: string, column: string) {
 		insertMarkdownSnippet(`$${cellName}.${column}`);
+	}
+
+	function handleMarkdownPreviewClick(e: MouseEvent) {
+		if ((e.target as HTMLElement).closest(MARKDOWN_INTERACTIVE_SELECTOR)) return;
+		setCellMarkdownPreview(cell.id, false);
 	}
 
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
@@ -635,7 +664,7 @@
 			editorRef?.focus();
 		} else if (isQueryCell && cell.editMode === 'gui') {
 			cellContainerEl?.querySelector<HTMLElement>('.stage-card[tabindex]')?.focus();
-		} else {
+		} else if (!reportView) {
 			markdownHandle?.focus();
 		}
 	}
@@ -644,7 +673,7 @@
 	// Monaco's suggest/find widgets are fixedOverflowWidgets rendered outside the container —
 	// guard against those too so clicking a completion doesn't dismiss edit mode.
 	$effect(() => {
-		if (isMarkdownPreviewMode || !markdownEditContainerEl) return;
+		if (isMarkdownPreviewMode || reportView || !markdownEditContainerEl) return;
 		function handleMousedown(e: MouseEvent) {
 			if (markdownEditContainerEl?.contains(e.target as Node)) return;
 			if (
@@ -818,7 +847,40 @@
 	aria-label={`Cell ${index + 1}`}
 	aria-busy={running}
 >
-	<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)]">
+	<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)] overflow-visible">
+		{#if reportView}
+			<div></div>
+		{:else}
+			<div aria-hidden="true"></div>
+		{/if}
+
+		{#if !(reportView && !isQueryCell)}
+			<div class="min-w-0 overflow-visible pt-1 pr-2">
+				<CellHeader
+					{cell}
+					{isQueryCell}
+					{collapsed}
+					{codeHidden}
+					{revealed}
+					hidden={isMarkdownPreviewMode}
+					cellNumber={!reportView && (isQueryCell || isPythonCell) ? index + 1 : undefined}
+					showCellNumber={showCellIndex}
+					{prevCellNames}
+					downstreamCount={sameNotebookUsageCount}
+					{crossNotebookUsageCount}
+					{cellMode}
+					aiChatOpen={onShareWithAI !== undefined}
+					onModeChange={setCellMode}
+					onOverlayChange={handleOverlayChange}
+					{onShareWithAI}
+					onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+					onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
+				/>
+			</div>
+		{:else}
+			<div></div>
+		{/if}
+
 		{#if reportView}
 			<div></div>
 		{:else}
@@ -857,28 +919,7 @@
 			</CellGutter>
 		{/if}
 
-		<div class="flex min-w-0 flex-col gap-1 py-1 pr-2">
-			{#if !(reportView && !isQueryCell)}
-				<CellHeader
-					{cell}
-					{isQueryCell}
-					{collapsed}
-					{codeHidden}
-					{revealed}
-					hidden={isMarkdownPreviewMode}
-					{prevCellNames}
-					downstreamCount={sameNotebookUsageCount}
-					{crossNotebookUsageCount}
-					{cellMode}
-					aiChatOpen={onShareWithAI !== undefined}
-					onModeChange={setCellMode}
-					onOverlayChange={handleOverlayChange}
-					{onShareWithAI}
-					onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
-					onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
-				/>
-			{/if}
-
+		<div class="flex min-w-0 flex-col gap-1 pr-2 pb-1">
 			{#if !collapsed}
 				<div class="flex flex-col gap-1" transition:slide={{ duration: 220 }}>
 					<!-- Editor (GUI or PRQL mode) -->
@@ -896,6 +937,7 @@
 									sourceTable={inlinePromptSourceTable}
 									columns={inlinePromptColumns}
 									otherTables={inlinePromptTables}
+									{editorRef}
 									autoSubmitInstruction={inlinePromptPreset}
 									onAutoSubmitConsumed={() => (inlinePromptPreset = null)}
 									onApply={(code) =>
@@ -965,27 +1007,31 @@
 								</p>
 							{:else if !isQueryCell}
 								<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
-									{#if isMarkdownPreviewMode}
-										<!-- Preview mode: click to edit -->
+									{#if isMarkdownRendered}
+										<!-- Preview / report: rendered markdown; click-to-edit only outside report view -->
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<div
-											class="markdown-body prose cursor-text"
-											onclick={() => setCellMarkdownPreview(cell.id, false)}
+											class="markdown-body prose"
+											class:cursor-text={isMarkdownClickToEdit}
+											onclick={isMarkdownClickToEdit ? handleMarkdownPreviewClick : undefined}
 										>
 											{#if markdocResult}
 												<MarkdocRenderer
 													content={markdocResult.tree}
 													errors={markdocResult.errors}
 													{notebookId}
+													headingSlugPrefix={cell.id}
 												/>
 											{/if}
 										</div>
-										<button
-											class="absolute top-0 right-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
-											onclick={() => setCellMarkdownPreview(cell.id, false)}
-										>
-											Edit
-										</button>
+										{#if isMarkdownClickToEdit}
+											<button
+												class="absolute top-0 right-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+												onclick={() => setCellMarkdownPreview(cell.id, false)}
+											>
+												Edit
+											</button>
+										{/if}
 									{:else}
 										<!-- Edit mode: toolbar + textarea + slash palette -->
 										<MarkdownToolbar
@@ -1081,14 +1127,14 @@
 					<!-- Python cell output: stdout + captured Plotly figures + traceback.
 					     The resulting DataFrame (if any) renders below via the shared
 					     Results block, same InlineResultView every other cell type uses. -->
-					{#if isPythonCell && cell.pythonOutput}
+					{#if showPythonOutput}
 						<div in:fade={{ duration: 220 }}>
-							<PythonCellOutput output={cell.pythonOutput} />
+							<PythonCellOutput output={cell.pythonOutput!} />
 						</div>
 					{/if}
 
 					<!-- Results -->
-					{#if cell.result && (cell.status === 'success' || cell.status === 'running')}
+					{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
 						<div
 							in:fade={{ duration: 220 }}
 							class="relative transition-opacity duration-300 {running

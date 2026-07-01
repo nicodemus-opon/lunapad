@@ -355,8 +355,8 @@
 						<Button variant="ghost" size="sm" onclick={() => addNotebook()}>
 							<Plus /> New notebook
 						</Button>
-						<Button variant="ghost" size="sm" onclick={loadDemoNotebook}>
-							<FlaskConical /> Load demo
+						<Button variant="ghost" size="sm" onclick={() => loadDemoNotebook()}>
+							<FlaskConical /> Explore demo
 						</Button>
 					{/snippet}
 				</EmptyState>

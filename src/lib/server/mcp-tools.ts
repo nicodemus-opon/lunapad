@@ -10,7 +10,10 @@ import {
 	dbtRunAction,
 	dbtCompileAction,
 	getDbtJobStatusAction,
-	getDbtManifestAction
+	getDbtManifestAction,
+	listSharesAction,
+	publishNotebookAction,
+	createSitePageAction
 } from './lunapad-actions.js';
 
 function ok(result: unknown): CallToolResult {
@@ -170,6 +173,54 @@ export function createLunapadMcpServer(): McpServer {
 		async ({ folder }) => {
 			try {
 				return ok(await getDbtManifestAction({ folder }));
+			} catch (err) {
+				return fail(err);
+			}
+		}
+	);
+
+	server.registerTool(
+		'list_shares',
+		{ description: 'List all active published report shares.' },
+		async () => {
+			try {
+				return ok(await listSharesAction());
+			} catch (err) {
+				return fail(err);
+			}
+		}
+	);
+
+	server.registerTool(
+		'publish_notebook',
+		{
+			description:
+				'Publish a workspace notebook as a read-only share link (snapshot from server workspace state).',
+			inputSchema: { notebookId: z.string() }
+		},
+		async ({ notebookId }) => {
+			try {
+				return ok(await publishNotebookAction({ notebookId }));
+			} catch (err) {
+				return fail(err);
+			}
+		}
+	);
+
+	server.registerTool(
+		'create_site_page',
+		{
+			description: 'Add a published share as a page on a multi-page site.',
+			inputSchema: {
+				siteId: z.string(),
+				pageSlug: z.string(),
+				navLabel: z.string(),
+				shareToken: z.string()
+			}
+		},
+		async ({ siteId, pageSlug, navLabel, shareToken }) => {
+			try {
+				return ok(await createSitePageAction({ siteId, pageSlug, navLabel, shareToken }));
 			} catch (err) {
 				return fail(err);
 			}

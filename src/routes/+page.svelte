@@ -53,6 +53,7 @@
 		startWorkspacePolling,
 		stopWorkspacePolling,
 		updateCellCode,
+		updateCellMarkdown,
 		setEditMode,
 		updateGuiStages,
 		refreshTablesFromCatalog,
@@ -89,7 +90,12 @@
 		setNotebookReportView,
 		undo,
 		redo,
-		getFocusedCellId
+		getFocusedCellId,
+		getSidebarNotebookView,
+		setSidebarNotebookView,
+		toggleSidebarNotebookView,
+		runCellsAbove,
+		runCellsBelow
 	} from '$lib/stores/notebook.svelte';
 	import Sortable from 'sortablejs';
 	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
@@ -104,12 +110,17 @@
 	import FileImporter from '$lib/components/FileImporter.svelte';
 	import SettingsDialog from '$lib/components/settings/SettingsDialog.svelte';
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
+	import NotebookOutline from '$lib/components/notebook/NotebookOutline.svelte';
+	import NotebookStatusBar from '$lib/components/notebook/NotebookStatusBar.svelte';
+	import ReportViewShell from '$lib/components/markdown/ReportViewShell.svelte';
+	import MetricsPanel from '$lib/components/notebook/MetricsPanel.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
+	import SitesPanel from '$lib/components/sites/SitesPanel.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ReviewPanel from '$lib/components/comments/ReviewPanel.svelte';
 	import {
@@ -175,9 +186,14 @@
 		Bug,
 		Sparkles,
 		Share2,
+		Globe,
+		ListTree,
+		ArrowUp,
+		ArrowDown,
 		MessageSquare,
 		LogOut,
-		ShieldUser
+		ShieldUser,
+		BarChart3
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -195,8 +211,17 @@
 	import {
 		mountKeyboardDispatcher,
 		registerPageBridge,
+		requestInlinePrompt,
 		shortcutsByGroup
 	} from '$lib/keyboard';
+	import WelcomeDialog from '$lib/components/WelcomeDialog.svelte';
+	import {
+		bootstrapDemoNotebook,
+		hasStoredWorkspace,
+		isDefaultEmptyNotebook,
+		markWelcomeSeen,
+		shouldShowWelcome
+	} from '$lib/demo/bootstrap';
 	import type { PageProps } from './$types';
 
 	const SHORTCUT_GROUPS: { key: string; title: string }[] = [
@@ -251,6 +276,19 @@
 				window.matchMedia('(prefers-color-scheme: dark)').matches)
 	);
 	const reportView = $derived(Boolean(activeNotebook?.reportView));
+	const reportMarkdowns = $derived(
+		cells.filter((c) => c.cellType === 'markdown' && c.markdown?.trim()).map((c) => c.markdown!)
+	);
+
+	function handleDrillToCell(outputName: string) {
+		const cell = cells.find((c) => c.outputName === outputName && c.cellType === 'query');
+		if (cell) openResultTab(cell.id, activeTabId, outputName, 'table');
+	}
+	const sidebarNotebookView = $derived(getSidebarNotebookView());
+	let notebookScrollEl: HTMLElement | undefined = $state();
+	const showDemoCta = $derived(
+		!data.demoMode && isDefaultEmptyNotebook(activeNotebook?.name, cells)
+	);
 	const aiChatOpen = $derived(getAIChatOpen());
 	const aiPanelWidth = $derived(getAIChatPanelWidth());
 	const reviewPanelOpen = $derived(getReviewPanelOpen());
@@ -364,10 +402,12 @@
 		await goto('/login');
 	}
 	let shareDialogOpen = $state(false);
+	let sitesDialogOpen = $state(false);
 	let reviewPanelResizeStartX = 0;
 	let reviewPanelResizeStartWidth = 360;
 	let commandPaletteOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
+	let welcomeOpen = $state(false);
 	let uploadDialogOpen = $state(false);
 	let projectFolderInput = $state('');
 	let projectOpenLoading = $state(false);
@@ -377,7 +417,7 @@
 	const menuTriggerClass =
 		'h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 
-	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence';
+	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence' | 'metrics';
 	let activeSidebarPanel = $state<SidebarPanel>('notebooks');
 
 	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
@@ -453,6 +493,15 @@
 
 	function selectSidebarPanel(panel: SidebarPanel) {
 		activeSidebarPanel = panel;
+		if (sidebarCollapsed) {
+			sidebarCollapsed = false;
+			localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+		}
+	}
+
+	function showNotebookOutline() {
+		activeSidebarPanel = 'notebooks';
+		setSidebarNotebookView('outline');
 		if (sidebarCollapsed) {
 			sidebarCollapsed = false;
 			localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
@@ -548,6 +597,15 @@
 					getNotebooks().some((n) => n.id === tabId) &&
 					!getOpenExtraTabs().some((t) => t.id === tabId)
 				);
+			},
+			toggleNotebookOutline: () => {
+				if (!getNotebooks().some((n) => n.id === getActiveTabId())) return;
+				activeSidebarPanel = 'notebooks';
+				toggleSidebarNotebookView();
+				if (sidebarCollapsed) {
+					sidebarCollapsed = false;
+					localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+				}
 			}
 		});
 		return () => {
@@ -575,6 +633,8 @@
 		initAIChatWidth();
 		initWorkspaceStandards();
 		initWorkspaceMode(data.demoMode);
+		const hadStoredWorkspace = hasStoredWorkspace();
+		const forceDemo = new URLSearchParams(window.location.search).get('demo') === '1';
 		try {
 			await loadFromStorage(data.defaultProjectFolder);
 		} catch {
@@ -594,18 +654,17 @@
 				getCells,
 				tick,
 				addTable,
-				refreshTablesFromCatalog
+				refreshTablesFromCatalog,
+				requestInlinePrompt
 			};
 		}
 
 		await initializeRuntime();
 
-		if (new URLSearchParams(window.location.search).get('demo') === '1') {
-			loadDemoNotebook();
-			await tick();
-			for (const cell of getCells()) {
-				if (cell.cellType === 'query') await runCell(cell.id);
-			}
+		if (data.demoMode || forceDemo) {
+			await bootstrapDemoNotebook({ runCells: true, replaceIfExists: forceDemo });
+		} else if (shouldShowWelcome(data.demoMode, hadStoredWorkspace)) {
+			welcomeOpen = true;
 		}
 	});
 
@@ -805,7 +864,6 @@
 			}
 		});
 	});
-
 </script>
 
 <svelte:head>
@@ -859,7 +917,7 @@
 									<Plus class="h-3.5 w-3.5" /> New notebook
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => loadDemoNotebook()}>
-									<FlaskConical class="h-3.5 w-3.5" /> Load demo notebook
+									<FlaskConical class="h-3.5 w-3.5" /> Explore demo notebook
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
 									<Code2 class="h-3.5 w-3.5" /> New PRQL cell
@@ -888,22 +946,24 @@
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => (projectOpenDialogOpen = true)}>
-									<FolderOpen class="h-3.5 w-3.5" /> Open project…
-								</DropdownMenu.Item>
-								<DropdownMenu.Item disabled={!projectFolder} onclick={() => closeProject()}>
-									<X class="h-3.5 w-3.5" /> Close project
-								</DropdownMenu.Item>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item
-									onclick={() => {
-										activeSidebarPanel = 'tables';
-										sidebarCollapsed = false;
-									}}
-								>
-									<Upload class="h-3.5 w-3.5" /> Upload data file…
-								</DropdownMenu.Item>
-								<DropdownMenu.Separator />
+								{#if !data.demoMode}
+									<DropdownMenu.Item onclick={() => (projectOpenDialogOpen = true)}>
+										<FolderOpen class="h-3.5 w-3.5" /> Open project…
+									</DropdownMenu.Item>
+									<DropdownMenu.Item disabled={!projectFolder} onclick={() => closeProject()}>
+										<X class="h-3.5 w-3.5" /> Close project
+									</DropdownMenu.Item>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Item
+										onclick={() => {
+											activeSidebarPanel = 'tables';
+											sidebarCollapsed = false;
+										}}
+									>
+										<Upload class="h-3.5 w-3.5" /> Upload data file…
+									</DropdownMenu.Item>
+									<DropdownMenu.Separator />
+								{/if}
 								<DropdownMenu.Item onclick={handleImport}>
 									<FileDown class="h-3.5 w-3.5" /> Import notebook…
 								</DropdownMenu.Item>
@@ -977,6 +1037,27 @@
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									disabled={!isNotebookTab || !getFocusedCellId()}
+									onclick={() => {
+										const id = getFocusedCellId();
+										if (id) void runCellsAbove(id);
+									}}
+								>
+									<ArrowUp class="h-3.5 w-3.5" /> Run above
+									<DropdownMenu.Shortcut>⌥⇧↑</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									disabled={!isNotebookTab || !getFocusedCellId()}
+									onclick={() => {
+										const id = getFocusedCellId();
+										if (id) void runCellsBelow(id);
+									}}
+								>
+									<ArrowDown class="h-3.5 w-3.5" /> Run below
+									<DropdownMenu.Shortcut>⌥⇧↓</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
 								<DropdownMenu.CheckboxItem
 									checked={autoRun}
 									onCheckedChange={(checked) => setAutoRun(checked)}
@@ -996,6 +1077,10 @@
 								<DropdownMenu.Item onclick={() => setAIChatOpen(!getAIChatOpen())}>
 									<Sparkles class="h-3.5 w-3.5" /> Toggle AI chat
 									<DropdownMenu.Shortcut>⌘J</DropdownMenu.Shortcut>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item disabled={!isNotebookTab} onclick={showNotebookOutline}>
+									<ListTree class="h-3.5 w-3.5" /> Show outline
+									<DropdownMenu.Shortcut>⌘⇧O</DropdownMenu.Shortcut>
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item
@@ -1022,6 +1107,9 @@
 									onclick={() => (shareDialogOpen = true)}
 								>
 									<Share2 class="h-3.5 w-3.5" /> Share…
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => (sitesDialogOpen = true)}>
+									<Globe class="h-3.5 w-3.5" /> Sites…
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item
@@ -1196,6 +1284,24 @@
 			{/if}
 		</header>
 
+		{#if data.demoMode}
+			<div
+				class="border-b border-border/60 bg-muted/50 px-4 py-2 text-center text-sm text-muted-foreground"
+			>
+				<strong class="font-medium text-foreground">Demo mode</strong> — read-only, sample data
+				only.
+				<a
+					href="https://github.com/nicodemus-opon/lunapad/blob/main/docs/guide/11-self-hosting.md"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="ml-1 text-primary underline-offset-2 hover:underline"
+				>
+					Self-host
+				</a>
+				for connections, dbt, and team features.
+			</div>
+		{/if}
+
 		{#snippet railButton(panel: SidebarPanel, Icon: typeof BookOpen, tooltipLabel: string)}
 			<Tooltip.Root>
 				<Tooltip.Trigger
@@ -1245,6 +1351,9 @@
 					class="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-background px-1 pt-1 pb-1.5"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
+					{#if isNotebookTab}
+						{@render railButton('metrics', BarChart3, 'Metrics catalog')}
+					{/if}
 					{@render railButton('tables', Database, 'Databases & tables')}
 					{#if isDbtProject}
 						{@render railButton('dbt', FlaskConical, 'dbt models')}
@@ -1308,42 +1417,105 @@
 									</div>
 								</div>
 
-								{#if showNotebookSearch || sidebarSearch}
-									<div
-										class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
+								<div
+									class="mx-2 mb-1 flex h-7 shrink-0 items-center rounded-md border border-border/50 bg-muted/30 p-0.5"
+									role="tablist"
+									aria-label="Notebook sidebar view"
+								>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={sidebarNotebookView === 'browse'}
+										class="flex h-full flex-1 items-center justify-center rounded-sm text-2xs font-medium transition-colors {sidebarNotebookView ===
+										'browse'
+											? 'bg-background text-foreground shadow-sm'
+											: 'text-muted-foreground hover:text-foreground'}"
+										onclick={() => setSidebarNotebookView('browse')}
 									>
-										<Search class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-										<!-- svelte-ignore a11y_autofocus -->
-										<input
-											autofocus
-											class="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
-											placeholder="Filter notebooks…"
-											bind:value={sidebarSearch}
-											onkeydown={(e) => {
-												if (e.key === 'Escape') {
-													sidebarSearch = '';
-													showNotebookSearch = false;
-												}
-											}}
-										/>
-										{#if sidebarSearch}
-											<button
-												class="rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-												onclick={() => {
-													sidebarSearch = '';
-													showNotebookSearch = false;
+										Browse
+									</button>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={sidebarNotebookView === 'outline'}
+										class="flex h-full flex-1 items-center justify-center gap-1 rounded-sm text-2xs font-medium transition-colors {sidebarNotebookView ===
+										'outline'
+											? 'bg-background text-foreground shadow-sm'
+											: 'text-muted-foreground hover:text-foreground'}"
+										onclick={() => setSidebarNotebookView('outline')}
+									>
+										<ListTree class="h-3 w-3" />
+										Outline
+									</button>
+								</div>
+
+								{#if sidebarNotebookView === 'browse'}
+									{#if showNotebookSearch || sidebarSearch}
+										<div
+											class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
+										>
+											<Search class="h-3 w-3 shrink-0 text-muted-foreground/60" />
+											<!-- svelte-ignore a11y_autofocus -->
+											<input
+												autofocus
+												class="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+												placeholder="Filter notebooks…"
+												bind:value={sidebarSearch}
+												onkeydown={(e) => {
+													if (e.key === 'Escape') {
+														sidebarSearch = '';
+														showNotebookSearch = false;
+													}
 												}}
-												aria-label="Clear filter"
-											>
-												<X class="h-3 w-3" />
-											</button>
-										{/if}
+											/>
+											{#if sidebarSearch}
+												<button
+													class="rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+													onclick={() => {
+														sidebarSearch = '';
+														showNotebookSearch = false;
+													}}
+													aria-label="Clear filter"
+												>
+													<X class="h-3 w-3" />
+												</button>
+											{/if}
+										</div>
+									{/if}
+
+									<div class="flex-1 overflow-hidden">
+										<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+									</div>
+								{:else if isNotebookTab && activeNotebook}
+									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+										<NotebookOutline
+											notebookId={activeNotebook.id}
+											notebookName={activeNotebook.name}
+											cells={activeNotebook.cells}
+											scrollContainer={notebookScrollEl ?? null}
+										/>
+									</div>
+								{:else}
+									<div class="flex flex-1 items-center justify-center px-4 py-8 text-center">
+										<p class="text-xs text-muted-foreground">
+											Open a notebook tab to see its outline.
+										</p>
 									</div>
 								{/if}
-
-								<div class="flex-1 overflow-hidden">
-									<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+							{:else if activeSidebarPanel === 'metrics' && isNotebookTab}
+								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+									<span class="flex-1 text-2xs font-medium text-muted-foreground">Metrics</span>
 								</div>
+								<MetricsPanel
+									{cells}
+									onInsertRef={(ref) => {
+										const focused = getFocusedCellId();
+										const cell = cells.find((c) => c.id === focused);
+										if (cell?.cellType === 'markdown') {
+											updateCellMarkdown(cell.id, `${cell.markdown ?? ''}\n${ref}`);
+										}
+									}}
+								/>
 							{:else if activeSidebarPanel === 'tables'}
 								<!-- Databases & tables panel -->
 								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
@@ -1598,210 +1770,290 @@
 				</div>
 				{#if isNotebookTab}
 					<div class="flex min-h-0 flex-1 overflow-hidden">
-						<main class="notebook-scroll flex-1 overflow-y-auto bg-background">
-							<div class=" mx-auto px-10 pt-8 pb-32">
-								<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
-									<input
-										class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
-										placeholder="Untitled notebook"
-										value={activeNotebook?.name ?? ''}
-										onblur={(e) => {
-											const next = (e.target as HTMLInputElement).value.trim();
-											if (activeNotebook && next && next !== activeNotebook.name)
-												renameNotebook(activeNotebook.id, next);
-										}}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') {
-												e.preventDefault();
-												(e.target as HTMLInputElement).blur();
-											}
-										}}
-									/>
+						<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+							<main
+								bind:this={notebookScrollEl}
+								class="notebook-scroll flex-1 overflow-y-auto bg-background"
+							>
+								<div class=" mx-auto px-10 pt-8 pb-32">
+									<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
+										<input
+											class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+											placeholder="Untitled notebook"
+											value={activeNotebook?.name ?? ''}
+											onblur={(e) => {
+												const next = (e.target as HTMLInputElement).value.trim();
+												if (activeNotebook && next && next !== activeNotebook.name)
+													renameNotebook(activeNotebook.id, next);
+											}}
+											onkeydown={(e) => {
+												if (e.key === 'Enter') {
+													e.preventDefault();
+													(e.target as HTMLInputElement).blur();
+												}
+											}}
+										/>
 
-									<Select.Root
-										type="single"
-										disabled={connections.length === 0}
-										value={activeNotebookConnectionValue}
-										onValueChange={(value) => {
-											if (!activeNotebook || value === '__mixed__') return;
-											setNotebookConnection(
-												activeNotebook.id,
-												value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
-											);
-										}}
-									>
-										<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
-											{#if activeNotebookConnectionValue === '__mixed__'}
-												Mixed connections
-											{:else}
-												{connections.find(
-													(connection) => connection.id === activeNotebookConnectionValue
-												)?.name ?? 'DuckDB (built-in)'}
-											{/if}
-										</Select.Trigger>
-										<Select.Content>
-											{#if activeNotebookConnectionValue === '__mixed__'}
-												<Select.Item value="__mixed__" class="font-mono text-xs"
-													>Mixed connections</Select.Item
-												>
-											{/if}
-											{#each connections as connection (connection.id)}
-												<Select.Item value={connection.id} class="font-mono text-xs"
-													>{connection.name}</Select.Item
-												>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-
-									<Select.Root
-										type="single"
-										value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
-										onValueChange={(value) => {
-											if (!activeNotebook) return;
-											setNotebookAutoRefresh(activeNotebook.id, Number(value));
-										}}
-									>
-										<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
-											<RefreshCw class="h-3 w-3" />
-											{#if !activeNotebook?.autoRefreshIntervalMs}
-												Off
-											{:else if activeNotebook.autoRefreshIntervalMs === 30000}
-												30s
-											{:else if activeNotebook.autoRefreshIntervalMs === 60000}
-												1m
-											{:else if activeNotebook.autoRefreshIntervalMs === 300000}
-												5m
-											{:else if activeNotebook.autoRefreshIntervalMs === 900000}
-												15m
-											{:else if activeNotebook.autoRefreshIntervalMs === 1800000}
-												30m
-											{:else if activeNotebook.autoRefreshIntervalMs === 3600000}
-												1h
-											{:else}
-												{Math.round(activeNotebook.autoRefreshIntervalMs / 60_000)}m
-											{/if}
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
-											<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
-											<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
-											<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
-											<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
-											<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
-											<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
-										</Select.Content>
-									</Select.Root>
-								</div>
-
-								{#if cells.length === 0}
-									<div class="flex flex-col items-center gap-4 py-16 text-center">
-										<div class="flex flex-col items-center gap-2">
-											<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
-											<p class="max-w-xs text-xs text-muted-foreground">
-												Add a query cell to start exploring your data. Reference upstream cells by
-												name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
-													>from cell_name</code
-												>.
-											</p>
-										</div>
-										<div class="flex w-full max-w-xs flex-col gap-2">
-											<Button
-												variant="default"
-												size="sm"
-												class="h-8 w-full gap-2 text-xs"
-												onclick={() => addCellWithLanguage('prql')}
-											>
-												<Plus class="h-3.5 w-3.5" />
-												Add PRQL Cell
-												<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-8 w-full gap-2 text-xs"
-												onclick={() => addCellWithLanguage('sql')}
-											>
-												<Plus class="h-3.5 w-3.5" />
-												Add SQL Cell
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-8 w-full gap-2 text-xs"
-												onclick={addMarkdownCell}
-											>
-												<Info class="h-3.5 w-3.5" />
-												Add Markdown Cell
-												<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
-											</Button>
-										</div>
-										<div class="space-y-0.5 text-2xs text-muted-foreground">
-											<p>
-												Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
-											</p>
-										</div>
-									</div>
-								{:else}
-									<div bind:this={cellListEl}>
-										{#each cells as cell, idx (cell.id)}
-											<div data-cell-id={cell.id}>
-												{#if !reportView}
-													<div class="pl-(--cell-gutter)">
-														<AddCellDivider
-															onAdd={(kind) => insertBeforeCell(kind, idx)}
-															showUdf={canAddUdfCell()}
-															showPlot={canAddPlotCell()}
-															showPython={canAddPythonCell()}
-														/>
-													</div>
+										<Select.Root
+											type="single"
+											disabled={connections.length === 0}
+											value={activeNotebookConnectionValue}
+											onValueChange={(value) => {
+												if (!activeNotebook || value === '__mixed__') return;
+												setNotebookConnection(
+													activeNotebook.id,
+													value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
+												);
+											}}
+										>
+											<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
+												{#if activeNotebookConnectionValue === '__mixed__'}
+													Mixed connections
+												{:else}
+													{connections.find(
+														(connection) => connection.id === activeNotebookConnectionValue
+													)?.name ?? 'DuckDB (built-in)'}
 												{/if}
-												<NotebookCell
-													{cell}
-													index={idx}
-													isFirst={idx === 0}
-													isLast={idx === cells.length - 1}
-													dark={isDark}
-													prevCellSources={prevSourcesForCell(idx)}
-													notebookId={activeTabId}
-													{autoRun}
-													{reportView}
-													isGhost={ghostCellIds.has(cell.id)}
-													onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
-													onFixWithAI={aiChatOpen
-														? (errorMsg) => {
+											</Select.Trigger>
+											<Select.Content>
+												{#if activeNotebookConnectionValue === '__mixed__'}
+													<Select.Item value="__mixed__" class="font-mono text-xs"
+														>Mixed connections</Select.Item
+													>
+												{/if}
+												{#each connections as connection (connection.id)}
+													<Select.Item value={connection.id} class="font-mono text-xs"
+														>{connection.name}</Select.Item
+													>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+
+										<Select.Root
+											type="single"
+											value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
+											onValueChange={(value) => {
+												if (!activeNotebook) return;
+												setNotebookAutoRefresh(activeNotebook.id, Number(value));
+											}}
+										>
+											<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
+												<RefreshCw class="h-3 w-3" />
+												{#if !activeNotebook?.autoRefreshIntervalMs}
+													Off
+												{:else if activeNotebook.autoRefreshIntervalMs === 30000}
+													30s
+												{:else if activeNotebook.autoRefreshIntervalMs === 60000}
+													1m
+												{:else if activeNotebook.autoRefreshIntervalMs === 300000}
+													5m
+												{:else if activeNotebook.autoRefreshIntervalMs === 900000}
+													15m
+												{:else if activeNotebook.autoRefreshIntervalMs === 1800000}
+													30m
+												{:else if activeNotebook.autoRefreshIntervalMs === 3600000}
+													1h
+												{:else}
+													{Math.round(activeNotebook.autoRefreshIntervalMs / 60_000)}m
+												{/if}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
+												<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
+												<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
+												<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
+												<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
+												<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
+												<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									</div>
+
+									{#if cells.length === 0}
+										<div class="flex flex-col items-center gap-4 py-16 text-center">
+											<div class="flex flex-col items-center gap-2">
+												<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
+												<p class="max-w-xs text-xs text-muted-foreground">
+													Add a query cell to start exploring your data. Reference upstream cells by
+													name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
+														>from cell_name</code
+													>.
+												</p>
+											</div>
+											<div class="flex w-full max-w-xs flex-col gap-2">
+												<Button
+													variant="default"
+													size="sm"
+													class="h-8 w-full gap-2 text-xs"
+													onclick={() => addCellWithLanguage('prql')}
+												>
+													<Plus class="h-3.5 w-3.5" />
+													Add PRQL Cell
+													<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
+												</Button>
+												<Button
+													variant="outline"
+													size="sm"
+													class="h-8 w-full gap-2 text-xs"
+													onclick={() => addCellWithLanguage('sql')}
+												>
+													<Plus class="h-3.5 w-3.5" />
+													Add SQL Cell
+												</Button>
+												<Button
+													variant="outline"
+													size="sm"
+													class="h-8 w-full gap-2 text-xs"
+													onclick={addMarkdownCell}
+												>
+													<Info class="h-3.5 w-3.5" />
+													Add Markdown Cell
+													<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
+												</Button>
+											</div>
+											<div class="space-y-0.5 text-2xs text-muted-foreground">
+												<p>
+													Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
+												</p>
+											</div>
+										</div>
+									{:else}
+										{#if showDemoCta}
+											<div
+												class="mb-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+											>
+												<div>
+													<p class="text-sm font-medium text-foreground">New here?</p>
+													<p class="text-xs text-muted-foreground">
+														Load the interactive demo to see charts, PRQL, and dashboards in about
+														30 seconds.
+													</p>
+												</div>
+												<Button
+													size="sm"
+													class="shrink-0 gap-2"
+													onclick={() => void bootstrapDemoNotebook({ runCells: true })}
+												>
+													<FlaskConical class="h-3.5 w-3.5" />
+													Explore demo
+												</Button>
+											</div>
+										{/if}
+										{#if reportView}
+											<ReportViewShell
+												notebookId={activeTabId}
+												markdowns={reportMarkdowns}
+												onDrill={handleDrillToCell}
+											>
+												{#snippet children()}
+													<div bind:this={cellListEl}>
+														{#each cells as cell, idx (cell.id)}
+															<div data-cell-id={cell.id}>
+																<NotebookCell
+																	{cell}
+																	index={idx}
+																	isFirst={idx === 0}
+																	isLast={idx === cells.length - 1}
+																	dark={isDark}
+																	prevCellSources={prevSourcesForCell(idx)}
+																	notebookId={activeTabId}
+																	{autoRun}
+																	reportView={true}
+																	isGhost={ghostCellIds.has(cell.id)}
+																	onShareWithAI={aiChatOpen
+																		? () => addContextCell(cell.id)
+																		: undefined}
+																	onFixWithAI={aiChatOpen
+																		? (errorMsg) => {
+																				addContextCell(cell.id);
+																				setAIChatOpen(true);
+																				void submitAIMessage(
+																					`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
+																				);
+																			}
+																		: undefined}
+																	onContinueWithAI={(instruction) => {
+																		addContextCell(cell.id);
+																		setAIChatOpen(true);
+																		setPendingSuggestion(instruction);
+																	}}
+																	onOpenResultTab={handleOpenResultTab}
+																	{collabEnabled}
+																/>
+															</div>
+														{/each}
+													</div>
+												{/snippet}
+											</ReportViewShell>
+										{:else}
+											<div bind:this={cellListEl}>
+												{#each cells as cell, idx (cell.id)}
+													<div data-cell-id={cell.id}>
+														{#if !reportView}
+															<div class="pl-(--cell-gutter)">
+																<AddCellDivider
+																	onAdd={(kind) => insertBeforeCell(kind, idx)}
+																	showUdf={canAddUdfCell()}
+																	showPlot={canAddPlotCell()}
+																	showPython={canAddPythonCell()}
+																/>
+															</div>
+														{/if}
+														<NotebookCell
+															{cell}
+															index={idx}
+															isFirst={idx === 0}
+															isLast={idx === cells.length - 1}
+															dark={isDark}
+															prevCellSources={prevSourcesForCell(idx)}
+															notebookId={activeTabId}
+															{autoRun}
+															{reportView}
+															isGhost={ghostCellIds.has(cell.id)}
+															onShareWithAI={aiChatOpen ? () => addContextCell(cell.id) : undefined}
+															onFixWithAI={aiChatOpen
+																? (errorMsg) => {
+																		addContextCell(cell.id);
+																		setAIChatOpen(true);
+																		void submitAIMessage(
+																			`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
+																		);
+																	}
+																: undefined}
+															onContinueWithAI={(instruction) => {
 																addContextCell(cell.id);
 																setAIChatOpen(true);
-																void submitAIMessage(
-																	`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
-																);
-															}
-														: undefined}
-													onContinueWithAI={(instruction) => {
-														addContextCell(cell.id);
-														setAIChatOpen(true);
-														setPendingSuggestion(instruction);
-													}}
-													onOpenResultTab={handleOpenResultTab}
-													collabEnabled={collabEnabled}
+																setPendingSuggestion(instruction);
+															}}
+															onOpenResultTab={handleOpenResultTab}
+															{collabEnabled}
+														/>
+													</div>
+												{/each}
+											</div>
+										{/if}
+
+										{#if !reportView}
+											<div class="mt-2 pl-(--cell-gutter)">
+												<AddCellDivider
+													persistent
+													onAdd={appendCell}
+													showUdf={canAddUdfCell()}
+													showPlot={canAddPlotCell()}
+													showPython={canAddPythonCell()}
 												/>
 											</div>
-										{/each}
-									</div>
-
-									{#if !reportView}
-										<div class="mt-2 pl-(--cell-gutter)">
-											<AddCellDivider
-												persistent
-												onAdd={appendCell}
-												showUdf={canAddUdfCell()}
-												showPlot={canAddPlotCell()}
-												showPython={canAddPythonCell()}
-											/>
-										</div>
+										{/if}
 									{/if}
-								{/if}
-							</div>
-						</main>
+								</div>
+							</main>
+							<NotebookStatusBar
+								{connections}
+								defaultConnectionId={activeNotebook?.cells.find((c) => c.cellType === 'query')
+									?.connectionId ?? null}
+								{reportView}
+							/>
+						</div>
 						{#if aiChatOpen}
 							<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
 						{/if}
@@ -1916,8 +2168,8 @@
 						{/if}
 						{#if group.key === 'gui-stages'}
 							<p class="mb-2 text-2xs text-muted-foreground italic">
-								Activate: click a stage or press <code class="rounded bg-muted px-1 font-mono text-2xs"
-									>Enter</code
+								Activate: click a stage or press <code
+									class="rounded bg-muted px-1 font-mono text-2xs">Enter</code
 								> in command mode
 							</p>
 						{/if}
@@ -1925,7 +2177,9 @@
 							<tbody class="divide-y divide-border/40">
 								{#each rows as row}
 									<tr>
-										<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground">{row.chord}</td>
+										<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground"
+											>{row.chord}</td
+										>
 										<td class="py-1 text-muted-foreground">{row.label}</td>
 									</tr>
 								{/each}
@@ -2009,7 +2263,25 @@
 {/if}
 
 <UploadDialog bind:open={uploadDialogOpen} />
-<ShareDialog bind:open={shareDialogOpen} notebook={activeNotebook} />
+<ShareDialog
+	bind:open={shareDialogOpen}
+	notebook={activeNotebook}
+	onOpenSites={() => {
+		shareDialogOpen = false;
+		sitesDialogOpen = true;
+	}}
+/>
+<SitesPanel bind:open={sitesDialogOpen} />
+<WelcomeDialog
+	bind:open={welcomeOpen}
+	onTryDemo={async () => {
+		markWelcomeSeen();
+		await bootstrapDemoNotebook({ runCells: true });
+	}}
+	onStartBlank={() => {
+		markWelcomeSeen();
+	}}
+/>
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>

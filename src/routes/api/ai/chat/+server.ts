@@ -15,8 +15,42 @@ import {
 	DEFAULT_SCHEMA_TOKEN_BUDGET,
 	SMALL_MODEL_SCHEMA_TOKEN_BUDGET
 } from '$lib/services/token-budget.js';
+import { NATIVE_TOOLS } from '$lib/agent/server/tools/native-schemas.js';
+import { schemasForChat } from '$lib/agent/tools/registry.js';
+import {
+	send,
+	flushDoneBlocks,
+	flushBareSuggestionsJson,
+	flushPlanProposalBlocks,
+	flushSprintBlocks,
+	flushSprintUpdateBlocks,
+	flushPlanBlocks,
+	flushToolCalls,
+	extractRawJsonToolCalls,
+	stripBarePlanJson,
+	stripThinkBlocks,
+	stripOpenTag,
+	normalizeToolCallArgs,
+	type SSEController
+} from '$lib/agent/server/stream/sse-helpers.js';
+import { STOP_AFTER_TOOLS } from '$lib/agent/server/stream/stop-after.js';
+import {
+	isChatToolCallAllowed,
+	blockedToolFallbackText,
+	type ChatToolPolicyContext
+} from '$lib/agent/server/chat-tool-policy.js';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
+
+function isMeaningfulTextDelta(delta: string): boolean {
+	return delta.replace(/[\s;.,:`'"_\-]+/g, '').length >= 2;
+}
+
+function sendTextDelta(ctrl: SSEController, delta: string, onMeaningful?: () => void): void {
+	if (!isMeaningfulTextDelta(delta)) return;
+	send(ctrl, { type: 'text_delta', delta });
+	onMeaningful?.();
+}
 
 function formatCellGraph(c: AIChatCell): string {
 	const lang = c.cellType === 'python' ? 'python' : c.language;
@@ -443,6 +477,7 @@ ${buildMarkdocSyntaxBlock()}
 - run_cells: {cellIds:string[]} — always run all created query cells
 - update_cell: {cellId:string, code?:string, outputName?:string}
 - delete_cell: {cellId:string}
+  - Only when the user names ONE specific cell outputName to remove — never bulk-delete, never cellId "all"
 - move_cell: {cellId:string, direction?:"up"|"down", toIndex?:number} — reorder a cell in the notebook
 
 ## Tools (data investigation — call BEFORE writing SQL)
@@ -451,6 +486,8 @@ ${buildMarkdocSyntaxBlock()}
 - profile_column: {table:string, column:string} — null rate, distinct count, min/max, top 5 values; use before GROUP BY or JOIN on unknown columns
 
 **DATA RULE: The schema shows column names only — not values. If you don't know what's in a column (status codes, category names, date format, nullable), call sample_data or query_data FIRST. Never invent values.**
+
+**SCHEMA LISTING: If the user asks what columns a table has, or what fields exist in the schema, answer directly from the Schema section below — do NOT call sample_data, profile_column, or query_data for that.**
 
 **SELF-CORRECT: After run_cells you will receive each cell's result (row count or error). If ANY cell failed, you MUST fix it: call update_cell with corrected SQL, then run_cells again. Keep trying with a different approach if the same fix fails. Do NOT output \`<done>\` until ALL cells succeed.**
 
@@ -815,7 +852,20 @@ Workflow:
 2. For each selected cell, call get_cell_result to understand its shape (columns, row count).
 3. Write ONE markdown cell (cellType: "markdown") using {% grid cols=N %} of {% metric %} widgets for top-line KPIs and {% chart %} tags for trends — reference cells via $outputName, never hardcoded values (numbers, dates, or text).
 4. Use {% columns %}/{% column %} to lay out multiple charts side by side when there are several cells to cover.
-5. Call <done>.
+5. For executive dashboards, prefer rich layout widgets:
+   - {% tabs %}{% tab label="..." %}...{% /tab %}{% /tabs %} for multi-section reports
+   - {% filter kind="dropdown" param="region" label="Region" options=[...] /%} to wire interactive filters (pairs with cells using \${region} in SQL)
+   - {% progress value=$quota_attainment.attainment_pct max=100 label="Quota %" color="success" /%} for goal/quota tracking
+   - {% datatable data=$top_products.rows cols=["product","total_revenue"] limit=10 /%} for drill-down tables
+   - {% callout type="warning" %}...{% /callout %} for data-quality flags
+   - {% if gt($monthly_revenue.count, 0) %}...{% else /%}...{% /if %} for empty-result states
+   NEVER use placeholder names like $cell — always use real outputName refs from list_cells (e.g. $region_performance.total_revenue).
+6. Example skeleton (adapt cell names to the notebook):
+   ## Summary
+   {% badge value="Live" color="success" /%}
+   {% grid cols=3 %}{% metric value=$region_performance.total_revenue label="Revenue" format="currency" /%}{% /grid %}
+   {% tabs %}{% tab label="Trend" %}{% chart type="bar" data=$region_performance.rows x="region" y="total_revenue" /%}{% /tab %}{% /tabs %}
+7. Call <done>.
 
 Do NOT write SQL or create query cells — only compose the summary cell from existing ones.
 
@@ -840,7 +890,7 @@ ${buildMarkdocSyntaxBlock()}
 Workflow:
 1. Call list_cells, then get_cell_result on the cells relevant to this task to see actual values, row counts, and column names.
 2. Write one markdown cell (cellType: "markdown") leading with the finding, not just a description of what was built.
-3. Use {% grid %} of {% metric %} widgets for top-line KPIs, {% chart %} for trends, {% callout type="warning" %} to flag data-quality issues (nulls, duplicates, unexpected values), and {% if gt($cell.count, 0) %}...{% else /%}...{% /if %} to handle empty-result states gracefully.
+3. Use {% grid %} of {% metric %} widgets for top-line KPIs, {% chart %} for trends, {% callout type="warning" %} to flag data-quality issues (nulls, duplicates, unexpected values), and {% if gt($monthly_revenue.count, 0) %}...{% else /%}...{% /if %} to handle empty-result states gracefully. Use real outputName refs from list_cells — never $cell placeholders.
 4. Never hard-code a value — number, date, or text — that comes from a query result; every such value must be a live ref.
 5. Call <done>.
 
@@ -917,282 +967,6 @@ ${schemaList}`;
 	}
 }
 
-// Native OpenAI-format tool definitions (kept minimal to reduce token count)
-// Lookup tools run client-side; they inject results as text into the message thread.
-const NATIVE_TOOLS = [
-	{
-		type: 'function',
-		function: {
-			name: 'create_cell',
-			description:
-				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). For statistics/ML/text-processing/custom viz (only when Python is available — see Tool selection): cellType="python", Python source in "code", omit "language". Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL/Python outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
-			parameters: {
-				type: 'object',
-				properties: {
-					outputName: {
-						type: 'string',
-						description:
-							'For markdown: short word (intro, summary, findings). For SQL/Python: snake_case description (revenue_by_month, top_customers).'
-					},
-					cellType: {
-						type: 'string',
-						enum: ['query', 'markdown', 'python'],
-						description:
-							'query for SQL, markdown for explanatory prose, python for stats/ML/text-processing (only if Python is available in this environment — see Tool selection section)'
-					},
-					code: {
-						type: 'string',
-						description:
-							'Complete SQL or Python source for query/python cells. Omit for markdown cells.'
-					},
-					markdown: {
-						type: 'string',
-						description:
-							'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with $outputName.field (e.g. $orders.count, $top_month.revenue) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %}. Values update automatically when cells re-run.'
-					},
-					language: { type: 'string', enum: ['sql'], description: 'Always "sql" for query cells.' },
-					materializeMode: {
-						type: 'string',
-						enum: ['ephemeral', 'view', 'table', 'incremental'],
-						description:
-							'How to materialize this model. Set per workspace naming conventions: dim_→table, fct_→incremental, stg_→view, metric_→incremental. Omit for ephemeral ad-hoc queries.'
-					}
-				},
-				required: ['outputName', 'cellType']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'pick_chart',
-			description:
-				'PREFERRED chart tool. Call after run_cells — reads actual result rows/columns and selects the best chart type, or falls back to table view when no numeric data is present. Always call pick_chart after run_cells; only fall back to set_chart when you need a specific type (e.g. area for cumulative, pie for proportions, scatter).',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: {
-						type: 'string',
-						description:
-							'The cell to chart. Use the same callId or outputName you used in run_cells.'
-					}
-				},
-				required: ['cellId']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'set_chart',
-			description:
-				'Explicitly configure a chart when you need a specific type that pick_chart would not choose (e.g. area for cumulative revenue, pie for proportions, scatter with colorColumn). For all other cases, prefer pick_chart after run_cells. Use chartType "custom" with a `code` snippet for chart shapes none of the other types can express — code receives `rows`, `columns` and should return a Plotly figure object: `{ data: [...], layout: {...} }`; xColumn/yColumns can be left empty for "custom".',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: { type: 'string' },
-					chartConfig: {
-						type: 'object',
-						properties: {
-							chartType: {
-								type: 'string',
-								enum: [
-									'bar',
-									'bar-horizontal',
-									'line',
-									'area',
-									'scatter',
-									'bubble',
-									'pie',
-									'histogram',
-									'heatmap',
-									'big-value',
-									'value',
-									'delta',
-									'funnel',
-									'box-plot',
-									'calendar-heatmap',
-									'sankey',
-									'custom'
-								]
-							},
-							xColumn: {
-								type: 'string',
-								description: 'Dimension / date / category / value column'
-							},
-							yColumns: {
-								type: 'array',
-								items: { type: 'string' },
-								description:
-									'One or more measure columns. List all numeric measures for grouped/stacked charts.'
-							},
-							colorColumn: {
-								type: 'string',
-								description: 'Optional: split series by this column (grouped bars, scatter color)'
-							},
-							seriesMode: {
-								type: 'string',
-								enum: ['auto', 'grouped', 'stacked'],
-								description: 'Use grouped or stacked when yColumns has multiple entries'
-							},
-							sortOrder: { type: 'string', enum: ['none', 'asc', 'desc'] },
-							title: { type: 'string' },
-							code: {
-								type: 'string',
-								description:
-									'Required when chartType is "custom": a JS Plotly figure spec, see description above.'
-							}
-						},
-						required: ['chartType', 'xColumn', 'yColumns']
-					}
-				},
-				required: ['cellId', 'chartConfig']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'run_cells',
-			description: 'Execute cells. Call after creating/updating query cells.',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellIds: { type: 'array', items: { type: 'string' } }
-				},
-				required: ['cellIds']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'update_cell',
-			description: 'Edit SQL code of an existing cell.',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: { type: 'string' },
-					code: { type: 'string' }
-				},
-				required: ['cellId']
-			}
-		}
-	},
-	...READONLY_INVESTIGATION_TOOLS,
-	{
-		type: 'function',
-		function: {
-			name: 'list_cells',
-			description:
-				'Lists all query cells with status and row counts. Use when you need a full inventory of existing cells.',
-			parameters: { type: 'object', properties: {} }
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'query_data',
-			description:
-				'Run a read-only SELECT against the active database. Use BEFORE writing SQL to verify column values, date formats, join keys, and value ranges. Never invent values — inspect them first.',
-			parameters: {
-				type: 'object',
-				properties: {
-					sql: {
-						type: 'string',
-						description: 'A read-only SELECT statement. No WITH clauses needed.'
-					},
-					limit: { type: 'number', description: 'Max rows to return (default 20, max 50).' }
-				},
-				required: ['sql']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'move_cell',
-			description: 'Reorder a cell within the notebook.',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: { type: 'string', description: 'Cell id or outputName to move.' },
-					direction: {
-						type: 'string',
-						enum: ['up', 'down'],
-						description: 'Move one step up or down.'
-					},
-					toIndex: { type: 'number', description: 'Move to exact 0-based index position.' }
-				},
-				required: ['cellId']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'record_decision',
-			description:
-				'Record a modeling decision OR a notable data discovery that should persist across turns and across future sessions (written to disk, not just this conversation). Call when you resolve something non-obvious: confirmed primary key, join key, grain choice, data quality issue fixed, business rule applied (type: "decision") — or when you notice an unexpected fact about the data: a surprising null rate, an unusual cardinality, a gotcha future queries should account for (type: "discovery"). Persisted entries are also retrievable later via search_workspace, so this is worth calling even for things that won\'t matter again this turn.',
-			parameters: {
-				type: 'object',
-				properties: {
-					decision: {
-						type: 'string',
-						description:
-							'Concise statement of what was decided/discovered and why (e.g. "treating email as FK to customers — id not present in source").'
-					},
-					type: {
-						type: 'string',
-						enum: ['decision', 'discovery'],
-						description: 'Defaults to "decision" when omitted.'
-					}
-				},
-				required: ['decision']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'validate_result',
-			description:
-				"Assert that a cell's result meets expectations. Use after run_cells to verify correctness. Returns PASS or a list of FAIL messages.",
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId: { type: 'string', description: 'Cell outputName or id to validate.' },
-					assertNotEmpty: { type: 'boolean', description: 'Fail if result has 0 rows.' },
-					expectedRowCount: { type: 'number', description: 'Exact expected row count.' },
-					minRowCount: { type: 'number', description: 'Minimum acceptable row count.' },
-					expectedColumns: {
-						type: 'array',
-						items: { type: 'string' },
-						description: 'Column names that must be present in the result.'
-					}
-				},
-				required: ['cellId']
-			}
-		}
-	},
-	{
-		type: 'function',
-		function: {
-			name: 'compare_cells',
-			description:
-				'Compare the row counts and column schemas of two cells. Useful for verifying a refactored cell produces the same output as the original.',
-			parameters: {
-				type: 'object',
-				properties: {
-					cellId1: { type: 'string', description: 'First cell outputName or id.' },
-					cellId2: { type: 'string', description: 'Second cell outputName or id.' }
-				},
-				required: ['cellId1', 'cellId2']
-			}
-		}
-	}
-];
-
 function buildUserContent(
 	cells: AIChatCell[],
 	messages: Array<{ role: string; content: string }>
@@ -1216,467 +990,6 @@ function buildUserContent(
 		.join('\n\n');
 
 	return codeBlocks ? `${lastUserMsg}\n\n${codeBlocks}` : lastUserMsg;
-}
-
-interface SSEController {
-	enqueue: (data: string) => void;
-	close: () => void;
-}
-
-function send(sc: SSEController, event: Record<string, unknown>): void {
-	try {
-		sc.enqueue(`data: ${JSON.stringify(event)}\n\n`);
-	} catch {
-		// stream closed
-	}
-}
-
-/**
- * Parse a raw tool-call payload (either the inside of a <tool_call> tag or a bare
- * {"tool":...} JSON object) and emit a tool_call SSE event. Centralises the parse +
- * normalise + allowedTools-gate logic that was duplicated across every streaming and
- * final-flush site, so the lenient parser applies uniformly. Returns true if a tool
- * call was emitted.
- */
-function emitToolCall(
-	ctrl: SSEController,
-	raw: string,
-	allowedTools: AIChatToolName[] | undefined,
-	nextCallId: () => string
-): boolean {
-	const call = parseToolCallObject(raw);
-	if (!call || typeof call.tool !== 'string') return false;
-	const toolCall: AIChatToolCall = {
-		callId: typeof call.callId === 'string' ? call.callId : nextCallId(),
-		tool: call.tool as AIChatToolName,
-		args: normalizeToolCallArgs(call) as unknown as AIChatToolCall['args']
-	};
-	if (allowedTools && !allowedTools.includes(toolCall.tool)) return false;
-	send(ctrl, { type: 'tool_call', call: toolCall });
-	return true;
-}
-
-/** Extract complete <done>...</done> blocks from buffer, emit suggestions events. */
-function flushDoneBlocks(buffer: string, onDone: (suggestions: string[]) => void): string {
-	const OPEN = '<done>';
-	const CLOSE = '</done>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(CLOSE, start + OPEN.length);
-		if (end === -1) break;
-		const raw = remaining.slice(start + OPEN.length, end).trim();
-		try {
-			const payload = JSON.parse(raw) as { suggestions?: string[] };
-			if (Array.isArray(payload.suggestions)) onDone(payload.suggestions);
-		} catch {
-			/* skip malformed */
-		}
-		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
-		searchFrom = start;
-	}
-	return remaining;
-}
-
-/**
- * Extract complete bare {"suggestions":[...]} JSON objects from buffer.
- * Fallback for models (typically cloud/native-tool) that output suggestions JSON
- * without <done> tags. Applied after flushDoneBlocks so proper <done> blocks win.
- */
-function flushBareSuggestionsJson(
-	buffer: string,
-	onSuggestions: (suggestions: string[]) => void
-): string {
-	const re = /\{"suggestions"\s*:/g;
-	let match: RegExpExecArray | null;
-	const ranges: [number, number][] = [];
-
-	while ((match = re.exec(buffer)) !== null) {
-		const start = match.index;
-		let depth = 0;
-		let end = -1;
-		for (let i = start; i < buffer.length; i++) {
-			if (buffer[i] === '{') depth++;
-			else if (buffer[i] === '}') {
-				depth--;
-				if (depth === 0) {
-					end = i + 1;
-					break;
-				}
-			}
-		}
-		if (end === -1) continue; // incomplete — skip, stripOpenTag holds it back
-		const raw = buffer.slice(start, end);
-		try {
-			const payload = JSON.parse(raw) as { suggestions?: string[] };
-			if (Array.isArray(payload.suggestions)) {
-				onSuggestions(payload.suggestions);
-				ranges.push([start, end]);
-			}
-		} catch {
-			/* skip malformed */
-		}
-	}
-
-	// Remove matched ranges in reverse so slice indices stay valid
-	let result = buffer;
-	for (let i = ranges.length - 1; i >= 0; i--) {
-		const [start, end] = ranges[i];
-		result = result.slice(0, start) + result.slice(end);
-	}
-	return result;
-}
-
-/**
- * Extract complete <plan_proposal>...</plan_proposal> blocks from buffer.
- * The modeling subagent emits one of these at the end of Phase 2 so the client
- * can surface a "here's what I'll build — approve?" card before sql-gen starts.
- */
-function flushPlanProposalBlocks(buffer: string, onProposal: (raw: string) => void): string {
-	const OPEN = '<plan_proposal>';
-	const CLOSE = '</plan_proposal>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(CLOSE, start + OPEN.length);
-		if (end === -1) break;
-		const raw = remaining.slice(start + OPEN.length, end).trim();
-		onProposal(raw);
-		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
-		searchFrom = start;
-	}
-	return remaining;
-}
-
-/** Extract complete <sprint>[...]</sprint> blocks from buffer, emit sprint_tasks events. */
-function flushSprintBlocks(buffer: string, onSprint: (raw: string) => void): string {
-	const OPEN = '<sprint>';
-	const CLOSE = '</sprint>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(CLOSE, start + OPEN.length);
-		if (end === -1) break;
-		const raw = remaining.slice(start + OPEN.length, end).trim();
-		onSprint(raw);
-		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
-		searchFrom = start;
-	}
-	return remaining;
-}
-
-/** Extract complete <sprint_update>[...]</sprint_update> blocks from buffer. */
-function flushSprintUpdateBlocks(buffer: string, onUpdate: (raw: string) => void): string {
-	const OPEN = '<sprint_update>';
-	const CLOSE = '</sprint_update>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(CLOSE, start + OPEN.length);
-		if (end === -1) break;
-		const raw = remaining.slice(start + OPEN.length, end).trim();
-		onUpdate(raw);
-		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
-		searchFrom = start;
-	}
-	return remaining;
-}
-
-/** Extract complete <plan>...</plan> blocks from buffer, emit plan_delta events. */
-function flushPlanBlocks(buffer: string, onPlan: (raw: string) => void): string {
-	const OPEN = '<plan>';
-	const CLOSE = '</plan>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(CLOSE, start + OPEN.length);
-		if (end === -1) break;
-		const raw = remaining.slice(start + OPEN.length, end).trim();
-		onPlan(raw);
-		remaining = remaining.slice(0, start) + remaining.slice(end + CLOSE.length);
-		searchFrom = start;
-	}
-	return remaining;
-}
-
-/** Extract complete <tool_call>...</tool_call> blocks from buffer, emit events for each. */
-function flushToolCalls(buffer: string, onToolCall: (raw: string) => void): string {
-	const TAG_OPEN = '<tool_call>';
-	const TAG_CLOSE = '</tool_call>';
-	let remaining = buffer;
-	let searchFrom = 0;
-
-	while (true) {
-		const start = remaining.indexOf(TAG_OPEN, searchFrom);
-		if (start === -1) break;
-		const end = remaining.indexOf(TAG_CLOSE, start + TAG_OPEN.length);
-		if (end === -1) break; // incomplete — keep in buffer
-
-		const raw = remaining.slice(start + TAG_OPEN.length, end).trim();
-		onToolCall(raw);
-		remaining = remaining.slice(0, start) + remaining.slice(end + TAG_CLOSE.length);
-		searchFrom = start;
-	}
-
-	return remaining;
-}
-
-/**
- * Normalize a parsed tool call object so args are always under `args`.
- * Models differ in how they format tool calls:
- *   {"tool":"create_cell","args":{"outputName":...}}   ← correct
- *   {"tool":"create_cell","arguments":{"outputName":...}}  ← some models
- *   {"tool":"create_cell","outputName":"...","code":"..."}  ← flat (no wrapper)
- */
-function normalizeToolCallArgs(obj: Record<string, unknown>): Record<string, unknown> {
-	// Already has a non-empty args object
-	if (obj.args && typeof obj.args === 'object' && Object.keys(obj.args as object).length > 0) {
-		return obj.args as Record<string, unknown>;
-	}
-	// "arguments" key (OpenAI native format leaked into text)
-	if (obj.arguments && typeof obj.arguments === 'object') {
-		return obj.arguments as Record<string, unknown>;
-	}
-	// Flat format: every key except tool/callId/args/arguments is an arg
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	const { tool: _t, callId: _c, args: _a, arguments: _ar, ...rest } = obj;
-	return rest;
-}
-
-/**
- * Some small Ollama models output raw JSON tool call objects as text content
- * instead of using the native tool_calls delta or <tool_call> XML tags.
- * This function detects and extracts those, normalising args format.
- *
- * Handles flat, nested (args/arguments), and mixed formats.
- * Prose before/after the JSON is preserved.
- */
-function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) => void): string {
-	let result = text;
-
-	while (true) {
-		// Find the next {"tool": pattern anywhere in remaining text
-		const matchIdx = result.search(/\{"tool"\s*:/);
-		if (matchIdx === -1) break;
-
-		// Find balanced braces starting from matchIdx
-		let depth = 0,
-			end = -1;
-		for (let i = matchIdx; i < result.length; i++) {
-			if (result[i] === '{') depth++;
-			else if (result[i] === '}') {
-				depth--;
-				if (depth === 0) {
-					end = i;
-					break;
-				}
-			}
-		}
-		if (end === -1) break; // incomplete JSON — leave in buffer
-
-		const candidate = result.slice(matchIdx, end + 1);
-		const obj = parseToolCallObject(candidate);
-		if (obj && typeof obj.tool === 'string') {
-			obj.args = normalizeToolCallArgs(obj);
-			onToolCall(JSON.stringify(obj));
-			result = result.slice(0, matchIdx) + result.slice(end + 1);
-			continue;
-		}
-		break;
-	}
-
-	return result;
-}
-
-/**
- * Strip bare plan JSON objects (models that skip <plan> tags).
- * Handles any key order and finds objects via balanced-brace scanning.
- * Emits a plan_delta event for each stripped object.
- */
-function stripBarePlanJson(
-	text: string,
-	onPlan: (plan: { tables?: string[]; cells?: string[]; approach?: string }) => void
-): string {
-	let result = text;
-	while (true) {
-		// Find the start of any bare plan JSON — either {"tables": or {"cells": (any order)
-		const matchTables = result.search(/\{"tables"\s*:/);
-		const matchCells = result.search(/\{"cells"\s*:/);
-		const idx =
-			matchTables === -1
-				? matchCells
-				: matchCells === -1
-					? matchTables
-					: Math.min(matchTables, matchCells);
-		if (idx === -1) break;
-
-		// Find the balanced closing brace
-		let depth = 0,
-			end = -1;
-		for (let i = idx; i < result.length; i++) {
-			if (result[i] === '{') depth++;
-			else if (result[i] === '}') {
-				depth--;
-				if (depth === 0) {
-					end = i;
-					break;
-				}
-			}
-		}
-		if (end === -1) break; // incomplete — leave in buffer
-
-		const candidate = result.slice(idx, end + 1);
-		try {
-			const obj = JSON.parse(candidate) as Record<string, unknown>;
-			if (Array.isArray(obj.tables) || Array.isArray(obj.cells)) {
-				onPlan(obj as { tables?: string[]; cells?: string[]; approach?: string });
-				result = result.slice(0, idx) + result.slice(end + 1);
-				continue;
-			}
-		} catch {
-			/* not valid JSON — skip past this start */
-		}
-		break;
-	}
-	return result;
-}
-
-/**
- * Strip complete and partial <think>...</think> blocks from buffered text.
- * Thinking models (e.g. qwen3) emit these before their actual response.
- * Complete blocks are removed; if a block is open but not yet closed, strip
- * from the opening tag onward (it may still be streaming).
- */
-function stripThinkBlocks(text: string): string {
-	// Remove complete <think>...</think> blocks
-	let result = text.replace(/<think>[\s\S]*?<\/think>/g, '');
-	// Remove incomplete open block (no closing tag yet)
-	const openIdx = result.lastIndexOf('<think>');
-	if (openIdx !== -1 && result.indexOf('</think>', openIdx) === -1) {
-		result = result.slice(0, openIdx);
-	}
-	return result;
-}
-
-/**
- * Return the safe-to-emit prefix of `text` by stripping any incomplete
- * tag or raw JSON tool call at the tail. Handles:
- *   - a complete open tag with no close: "<tool_call>{"  → strips from "<"
- *   - a partial open tag at end: "<tool_ca" or just "<" → strips the partial
- *   - an incomplete {"tool":...} JSON at end (in-progress raw JSON tool call)
- */
-function stripOpenTag(text: string): string {
-	const TAG = '<tool_call>';
-
-	// Remove complete open tag that has no matching close
-	const idx = text.lastIndexOf('<tool_call>');
-	if (idx !== -1 && text.indexOf('</tool_call>', idx) === -1) {
-		return text.slice(0, idx);
-	}
-
-	// Hold back incomplete <done> blocks (streaming in)
-	const doneIdx = text.lastIndexOf('<done>');
-	if (doneIdx !== -1 && text.indexOf('</done>', doneIdx) === -1) {
-		return text.slice(0, doneIdx);
-	}
-
-	// Hold back incomplete <plan> blocks (multi-line model plans stream slowly)
-	const planIdx = text.lastIndexOf('<plan>');
-	if (planIdx !== -1 && text.indexOf('</plan>', planIdx) === -1) {
-		return text.slice(0, planIdx);
-	}
-
-	// Hold back incomplete <plan_proposal> blocks
-	const planPropIdx = text.lastIndexOf('<plan_proposal>');
-	if (planPropIdx !== -1 && text.indexOf('</plan_proposal>', planPropIdx) === -1) {
-		return text.slice(0, planPropIdx);
-	}
-
-	// Hold back incomplete <sprint> and <sprint_update> blocks
-	const sprintIdx = text.lastIndexOf('<sprint>');
-	if (sprintIdx !== -1 && text.indexOf('</sprint>', sprintIdx) === -1) {
-		return text.slice(0, sprintIdx);
-	}
-	const sprintUpdateIdx = text.lastIndexOf('<sprint_update>');
-	if (sprintUpdateIdx !== -1 && text.indexOf('</sprint_update>', sprintUpdateIdx) === -1) {
-		return text.slice(0, sprintUpdateIdx);
-	}
-
-	// Remove partial tag at end (e.g. "<tool_ca", "<t", "<", "<sprint", "<sp")
-	const PARTIAL_WATCH = [TAG, '<done>', '<sprint>', '<sprint_update>', '<plan>', '<plan_proposal>'];
-	const maxPartial = Math.max(...PARTIAL_WATCH.map((t) => t.length)) - 1;
-	const start = Math.max(0, text.length - maxPartial);
-	for (let i = start; i < text.length; i++) {
-		const tail = text.slice(i);
-		if (PARTIAL_WATCH.some((t) => t.startsWith(tail))) {
-			return text.slice(0, i);
-		}
-	}
-
-	// Hold back incomplete raw JSON tool call at end of buffer.
-	// (When a model outputs {"tool":...} as plain text, we need to wait
-	// for the complete object before extractRawJsonToolCalls can extract it.)
-	const jsonIdx = text.search(/\{"tool"\s*:/);
-	if (jsonIdx !== -1) {
-		let depth = 0;
-		for (let i = jsonIdx; i < text.length; i++) {
-			if (text[i] === '{') depth++;
-			else if (text[i] === '}') {
-				depth--;
-				if (depth === 0) break;
-			}
-		}
-		if (depth > 0) return text.slice(0, jsonIdx); // incomplete — hold back
-	}
-
-	// Hold back incomplete bare plan JSON {"tables":...} — same pattern as above.
-	// Models sometimes emit plan JSON without <plan> tags; we need the complete
-	// object before the bare-plan regex can match and strip it.
-	const planJsonIdx = text.search(/\{"tables"\s*:/);
-	if (planJsonIdx !== -1) {
-		let depth = 0;
-		for (let i = planJsonIdx; i < text.length; i++) {
-			if (text[i] === '{') depth++;
-			else if (text[i] === '}') {
-				depth--;
-				if (depth === 0) break;
-			}
-		}
-		if (depth > 0) return text.slice(0, planJsonIdx); // incomplete — hold back
-	}
-
-	// Hold back incomplete bare suggestions JSON {"suggestions":...}.
-	// Cloud models often output suggestions without <done> tags; flushBareSuggestionsJson
-	// extracts them but needs the complete object first.
-	const suggestionsJsonIdx = text.search(/\{"suggestions"\s*:/);
-	if (suggestionsJsonIdx !== -1) {
-		let depth = 0;
-		for (let i = suggestionsJsonIdx; i < text.length; i++) {
-			if (text[i] === '{') depth++;
-			else if (text[i] === '}') {
-				depth--;
-				if (depth === 0) break;
-			}
-		}
-		if (depth > 0) return text.slice(0, suggestionsJsonIdx); // incomplete — hold back
-	}
-
-	return text;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -1707,7 +1020,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const req = body as AIChatRequest;
 	const {
 		cells,
-		connectionSchema,
+		connectionSchema: rawConnectionSchema,
 		externalConnectionIds = [],
 		externalSchemaFallback = [],
 		connectionDialect = 'duckdb',
@@ -1720,6 +1033,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		connectionDialect: 'duckdb' as const,
 		pythonAvailable: false
 	};
+	const connectionSchema = Array.isArray(rawConnectionSchema) ? rawConnectionSchema : [];
 	const workspaceMemory = req.workspaceMemory;
 	const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
 
@@ -1873,15 +1187,56 @@ export const POST: RequestHandler = async ({ request }) => {
 			let buffer = '';
 			let nativeTextBuf = '';
 			let callCounter = 0;
+			let pendingPolicyFallback: string | null = null;
+			const emittedToolSigs = new Set<string>();
+			let meaningfulTextEmitted = false;
+			const isSchemaListingQuestion =
+				/what columns|which columns|column names?|list (?:every |all )?columns?|fields (?:does|do)|schema of|types? on\b/i.test(
+					latestUserMessage
+				);
+			const toolPolicyCtx: ChatToolPolicyContext = {
+				schemaTableNames: new Set(schema.map((t) => t.name.toLowerCase())),
+				cellOutputNames: new Set(cells.map((c) => c.outputName.toLowerCase())),
+				latestUserMessage
+			};
+
+			const emitPolicyToolCall = (
+				tool: string,
+				args: Record<string, unknown>,
+				callId?: string
+			): boolean => {
+				if (isSchemaListingQuestion) return false;
+				if (!isChatToolCallAllowed(tool, args, toolPolicyCtx)) {
+					pendingPolicyFallback ??= blockedToolFallbackText(tool, args, toolPolicyCtx, schema);
+					return false;
+				}
+				const sig = `${tool}:${JSON.stringify(args)}`;
+				if (emittedToolSigs.has(sig)) return false;
+				emittedToolSigs.add(sig);
+				if (req.allowedTools && !req.allowedTools.includes(tool as AIChatToolName)) return false;
+				callCounter++;
+				const toolCall: AIChatToolCall = {
+					callId: callId || `auto_${callCounter}`,
+					tool: tool as AIChatToolName,
+					args: args as unknown as AIChatToolCall['args']
+				};
+				send(ctrl, { type: 'tool_call', call: toolCall });
+				return true;
+			};
+
+			const emitToolCallGuarded = (raw: string): boolean => {
+				const call = parseToolCallObject(raw);
+				if (!call || typeof call.tool !== 'string') return false;
+				const args = normalizeToolCallArgs(call as Record<string, unknown>);
+				return emitPolicyToolCall(
+					call.tool,
+					args,
+					typeof call.callId === 'string' ? call.callId : undefined
+				);
+			};
+
 			// Stop the LLM stream after the first result-critical tool call so the model sees
 			// real results before deciding its next action (proper one-result-at-a-time agent loop).
-			const STOP_AFTER_TOOLS = new Set([
-				'run_cells',
-				'sample_data',
-				'query_data',
-				'profile_column',
-				'get_cell_result'
-			]);
 			let stoppedForResultTool = false;
 
 			try {
@@ -1901,11 +1256,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				// model will call list_cells via function-calling (finish_reason: tool_calls),
 				// ending the turn before the sprint block is ever output.
 				if (useNativeTools && req.subagentType !== 'sprint_planning') {
-					const activeTools = req.allowedTools
-						? NATIVE_TOOLS.filter((t) =>
-								req.allowedTools!.includes(t.function.name as AIChatToolName)
-							)
-						: NATIVE_TOOLS;
+					const activeTools = req.allowedTools ? schemasForChat(req.allowedTools) : NATIVE_TOOLS;
 					llmBody['tools'] = activeTools;
 					llmBody['tool_choice'] = activeTools.length > 0 ? 'auto' : 'none';
 				}
@@ -2060,12 +1411,14 @@ export const POST: RequestHandler = async ({ request }) => {
 								// Extract any complete raw JSON tool calls mid-stream (models that
 								// output {"tool":"...", "arguments":{...}} as text content)
 								nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf, (rawJson) => {
-									emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+									emitToolCallGuarded(rawJson);
 								});
 								// stripOpenTag also holds back incomplete {"tool":...} at the tail
 								const safeNative = stripOpenTag(nativeTextBuf);
 								if (safeNative.length > 0) {
-									send(ctrl, { type: 'text_delta', delta: safeNative });
+									sendTextDelta(ctrl, safeNative, () => {
+										meaningfulTextEmitted = true;
+									});
 									nativeTextBuf = nativeTextBuf.slice(safeNative.length);
 								}
 							} else {
@@ -2117,14 +1470,14 @@ export const POST: RequestHandler = async ({ request }) => {
 								// before the done-block is ever processed — preventing signalledDone=true
 								// in the same turn as a result-critical tool.
 								buffer = flushToolCalls(buffer, (rawJson) => {
-									emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+									emitToolCallGuarded(rawJson);
 									const parsedCall = parseToolCallObject(rawJson);
 									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool)))
 										stoppedForResultTool = true;
 								});
 								// Also extract bare JSON tool calls (models that skip <tool_call> tags)
 								buffer = extractRawJsonToolCalls(buffer, (rawJson) => {
-									emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+									emitToolCallGuarded(rawJson);
 									const parsedCall = parseToolCallObject(rawJson);
 									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool)))
 										stoppedForResultTool = true;
@@ -2140,7 +1493,9 @@ export const POST: RequestHandler = async ({ request }) => {
 								// Flush text not part of a partial tool_call tag or plan tag
 								const safeText = stripOpenTag(buffer);
 								if (safeText.length > 0) {
-									send(ctrl, { type: 'text_delta', delta: safeText });
+									sendTextDelta(ctrl, safeText, () => {
+										meaningfulTextEmitted = true;
+									});
 									buffer = buffer.slice(safeText.length);
 								}
 							}
@@ -2203,28 +1558,80 @@ export const POST: RequestHandler = async ({ request }) => {
 					// Fallback: some models emit raw JSON tool calls as text content
 					// rather than using the native tool_calls delta format.
 					nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf.trim(), (rawJson) => {
-						emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+						emitToolCallGuarded(rawJson);
 					});
-					if (nativeTextBuf.trim()) send(ctrl, { type: 'text_delta', delta: nativeTextBuf.trim() });
+					if (nativeTextBuf.trim()) {
+						sendTextDelta(ctrl, nativeTextBuf.trim(), () => {
+							meaningfulTextEmitted = true;
+						});
+					}
 				}
 
-				// Emit any accumulated native tool calls (gated by allowedTools)
+				// Emit any accumulated native tool calls (gated by allowedTools + policy)
+				let emittedNativeToolCalls = 0;
 				for (const tc of Object.values(nativeToolCallBuf)) {
 					if (!tc.name) continue;
-					if (req.allowedTools && !req.allowedTools.includes(tc.name as AIChatToolName)) continue;
-					callCounter++;
-					let args: unknown = {};
+					let args: Record<string, unknown> = {};
 					try {
-						args = JSON.parse(tc.argsBuf || '{}');
+						args = JSON.parse(tc.argsBuf || '{}') as Record<string, unknown>;
 					} catch {
 						/* skip */
 					}
-					const toolCall: AIChatToolCall = {
-						callId: tc.id || `auto_${callCounter}`,
-						tool: tc.name as AIChatToolName,
-						args: args as AIChatToolCall['args']
-					};
-					send(ctrl, { type: 'tool_call', call: toolCall });
+					if (emitPolicyToolCall(tc.name, args, tc.id || undefined)) {
+						emittedNativeToolCalls++;
+					}
+				}
+
+				if (pendingPolicyFallback && emittedNativeToolCalls === 0 && !meaningfulTextEmitted) {
+					sendTextDelta(ctrl, pendingPolicyFallback, () => {
+						meaningfulTextEmitted = true;
+					});
+				}
+
+				// Hollow tool calls with no prose — answer schema-metadata questions from context.
+				if (
+					useNativeTools &&
+					isSchemaListingQuestion &&
+					!nativeTextBuf.trim() &&
+					emittedNativeToolCalls === 0
+				) {
+					const mentioned = schema.filter((t) =>
+						new RegExp(`\\b${t.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(
+							latestUserMessage
+						)
+					);
+					const tablesToList = mentioned.length > 0 ? mentioned : schema.slice(0, 6);
+					if (tablesToList.length > 0) {
+						const lines = tablesToList.map((table) => {
+							const typed = table.columns.map((c, i) => {
+								const ty = table.columnTypes?.[i];
+								return ty ? `\`${c}\` (${ty})` : `\`${c}\``;
+							});
+							return `**${table.name}**: ${typed.join(', ')}`;
+						});
+						sendTextDelta(ctrl, lines.join('\n'), () => {
+							meaningfulTextEmitted = true;
+						});
+					}
+				}
+
+				// Debug subagent: surface cell error when model emits no prose.
+				if (
+					req.subagentType === 'debug' &&
+					useNativeTools &&
+					!nativeTextBuf.trim() &&
+					!meaningfulTextEmitted
+				) {
+					const errCell = cells.find((c) => c.status === 'error' && c.errorMessage?.trim());
+					if (errCell) {
+						sendTextDelta(
+							ctrl,
+							`**${errCell.outputName}** fails: ${errCell.errorMessage} — check column names against the schema and patch only the broken references.`,
+							() => {
+								meaningfulTextEmitted = true;
+							}
+						);
+					}
 				}
 
 				// Flush remaining XML buffer (skip if we stopped early for a result-critical tool call)
@@ -2257,14 +1664,26 @@ export const POST: RequestHandler = async ({ request }) => {
 					});
 					buffer = stripBarePlanJson(buffer, (plan) => send(ctrl, { type: 'plan_delta', plan }));
 					buffer = flushToolCalls(buffer, (rawJson) => {
-						emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+						emitToolCallGuarded(rawJson);
 					});
 					// Also extract bare JSON tool calls left in the buffer
 					buffer = extractRawJsonToolCalls(buffer, (rawJson) => {
-						emitToolCall(ctrl, rawJson, req.allowedTools, () => `auto_${++callCounter}`);
+						emitToolCallGuarded(rawJson);
 					});
 					const finalText = stripOpenTag(buffer).trim();
-					if (finalText) send(ctrl, { type: 'text_delta', delta: finalText });
+					if (finalText) {
+						sendTextDelta(ctrl, finalText, () => {
+							meaningfulTextEmitted = true;
+						});
+					}
+				}
+
+				if (useNativeTools && emittedNativeToolCalls === 0 && !meaningfulTextEmitted) {
+					send(ctrl, {
+						type: 'error',
+						error:
+							'Model returned an empty response. Try a shorter prompt or break the task into smaller steps.'
+					});
 				}
 
 				if (wasTruncated && !stoppedForResultTool) send(ctrl, { type: 'truncated' });

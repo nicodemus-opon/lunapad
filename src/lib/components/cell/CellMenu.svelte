@@ -18,13 +18,20 @@
 		CopyPlus,
 		Trash2,
 		FileSpreadsheet,
-		Sparkles
+		Sparkles,
+		ArrowUp,
+		ArrowDown,
+		Eraser
 	} from '@lucide/svelte';
 	import {
 		moveCell,
 		removeCell,
 		setCellConnection,
 		setCellDisplay,
+		setCellHideResult,
+		clearCellResult,
+		runCellsAbove,
+		runCellsBelow,
 		isCellPromotable,
 		duplicateCell,
 		copyCellToClipboard,
@@ -71,6 +78,7 @@
 	} = $props();
 
 	const codeHidden = $derived(cell.display === 'output');
+	const hasOutput = $derived(Boolean(cell.result || cell.pythonOutput));
 	const promotable = $derived(onOpenPromote !== undefined && isCellPromotable(cell.id));
 </script>
 
@@ -135,6 +143,29 @@
 						</DropdownMenu.RadioGroup>
 					</DropdownMenu.SubContent>
 				</DropdownMenu.Sub>
+			{/if}
+		{/if}
+		{#if isQueryCell || isPythonCell}
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item onclick={() => void runCellsAbove(cell.id)}>
+				<ArrowUp class="h-3.5 w-3.5" /> Run above
+				<DropdownMenu.Shortcut>⌥⇧↑</DropdownMenu.Shortcut>
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => void runCellsBelow(cell.id)}>
+				<ArrowDown class="h-3.5 w-3.5" /> Run below
+				<DropdownMenu.Shortcut>⌥⇧↓</DropdownMenu.Shortcut>
+			</DropdownMenu.Item>
+			{#if hasOutput}
+				<DropdownMenu.Item onclick={() => clearCellResult(cell.id)}>
+					<Eraser class="h-3.5 w-3.5" /> Clear output
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => setCellHideResult(cell.id, !cell.hideResult)}>
+					{#if cell.hideResult}
+						<Eye class="h-3.5 w-3.5" /> Show output
+					{:else}
+						<EyeOff class="h-3.5 w-3.5" /> Hide output
+					{/if}
+				</DropdownMenu.Item>
 			{/if}
 		{/if}
 		{#if isQueryCell || isPythonCell}

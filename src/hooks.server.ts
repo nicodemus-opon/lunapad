@@ -11,6 +11,9 @@ import {
 } from '$lib/server/auth';
 import { ensureApiKeyTableOnce, verifyApiKey, getUserById } from '$lib/server/api-keys';
 import { isUserBanned } from '$lib/server/permissions';
+import { startShareRefreshWorker } from '$lib/server/share-refresh-worker';
+
+startShareRefreshWorker();
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.

@@ -57,6 +57,7 @@ export function normalizeBaseUrl(baseUrl: string): string {
 /** Backtick-quote identifiers with non-identifier characters. Purely informational in the
  *  schema block sent to the model — not the quoting convention of any generated code. */
 export function quoteIdent(name: string): string {
+	if (!name) return '';
 	if (/[^A-Za-z0-9_.]/.test(name)) return `\`${name}\``;
 	return name;
 }

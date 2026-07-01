@@ -182,7 +182,10 @@ export const WIDGET_SNIPPETS = {
 	card: '{% card title="Title" %}\nContent.\n{% /card %}',
 	details: '{% details summary="Click to expand" %}\nHidden content.\n{% /details %}',
 	filter: '{% filter kind="dropdown" param="param" label="Label" options=[] /%}',
-	mermaid: '{% mermaid %}\ngraph TD\n    A --> B\n{% /mermaid %}'
+	mermaid: '{% mermaid %}\ngraph TD\n    A --> B\n{% /mermaid %}',
+	badge: '{% badge value=$cell.status color="info" /%}',
+	progress: '{% progress value=$cell.completed max=$cell.total label="Label" /%}',
+	grid: '{% grid cols=3 %}\nContent.\n{% /grid %}'
 } as const;
 
 export interface SlashCommand {
@@ -291,6 +294,27 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Filter',
 		description: 'Interactive filter widget',
 		snippet: WIDGET_SNIPPETS.filter,
+		group: 'widget'
+	},
+	{
+		id: 'badge',
+		label: 'Badge',
+		description: 'Colored status badge',
+		snippet: WIDGET_SNIPPETS.badge,
+		group: 'widget'
+	},
+	{
+		id: 'progress',
+		label: 'Progress',
+		description: 'Progress bar',
+		snippet: WIDGET_SNIPPETS.progress,
+		group: 'widget'
+	},
+	{
+		id: 'grid',
+		label: 'Grid',
+		description: 'Responsive grid layout',
+		snippet: WIDGET_SNIPPETS.grid,
 		group: 'widget'
 	},
 	{

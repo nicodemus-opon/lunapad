@@ -16,7 +16,7 @@ This starts four services:
 | Postgres | shared workspace, accounts, connection secrets | localhost:5432        |
 | Inngest  | scheduler for cron model runs                  | http://localhost:8267 |
 
-Trino takes about a minute to finish starting. The app won't serve requests until Trino reports healthy, so the first `docker compose up` will sit for a bit before Lunapad responds. Run `docker compose ps` to check status, everything should say `healthy`.
+Trino takes about a minute to finish starting. The app waits for Trino to report healthy before it serves requests, so the first `docker compose up` sits for a bit before anything loads in the browser. Run `docker compose ps` and wait until every service says `healthy`. Until then you may see a connection error or a blank page; that's normal on first boot.
 
 ## First login
 
@@ -25,6 +25,8 @@ Open `http://localhost:3967`. You'll land on a setup screen asking you to create
 After that, every visit goes through a normal login.
 
 ![A Lunapad notebook open in the browser, with the sidebar listing notebooks grouped into folders and a query cell showing results below it](images/01-notebook-view.png)
+
+Once you're in, the notebook header has toggles for the **Review** panel (team comments) and the **AI** assistant (⌘J). You don't need either to run your first query, but they're there when you want them.
 
 ## Try a query without setting anything up
 
@@ -35,9 +37,9 @@ SELECT * FROM tpch.tiny.nation
 SELECT * FROM tpch.tiny.orders LIMIT 100
 ```
 
-`tpch` is a built-in Trino catalog, no connection setup needed. A second catalog, `docker_postgres`, points at the bundled Postgres instance and has the same `tpch.tiny.*` tables, useful for trying out cross-source joins immediately (see [Connecting data](04-connecting-data.md)).
+`tpch` is a built-in Trino catalog; you don't configure it. A second catalog, `docker_postgres`, points at the bundled Postgres instance with the same `tpch.tiny.*` tables. Try joining across them if you want to see cross-source queries without standing up another database (see [Connecting data](04-connecting-data.md)).
 
-You can also just write to the built-in DuckDB engine with no catalog prefix at all, that's the default connection for any new cell.
+You can also write to the built-in DuckDB engine with no catalog prefix at all. That's the default connection for any new cell.
 
 ## Other ways to run it
 

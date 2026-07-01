@@ -11,15 +11,21 @@ import {
 import {
 	isBuiltinDuckDBConnection,
 	getPRQLTargetForConnection,
+	BUILTIN_DUCKDB_CONNECTION,
 	type Connection
 } from '$lib/types/connection';
 import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
+
+import { extractBareMarkdocRefRoots, extractMarkdocRefs } from './markdoc-interp';
+
+export type SharePublishRole = 'visible' | 'data';
 
 export interface ShareCellSnapshot {
 	id: string;
 	cellType: CellType;
 	outputName: string;
 	display: CellDisplay;
+	publishRole: SharePublishRole;
 	language: CellLanguage;
 	markdown: string;
 	isLive: boolean;
@@ -41,6 +47,11 @@ export interface ShareSnapshotResult {
 	connections: ShareConnectionInput[];
 }
 
+function connectionForCell(cell: Cell, connections: Connection[]): Connection {
+	const id = cell.connectionId ?? BUILTIN_DUCKDB_CONNECTION.id;
+	return connections.find((c) => c.id === id) ?? BUILTIN_DUCKDB_CONNECTION;
+}
+
 /**
  * Snapshots a notebook for publishing as a public report. Query cells on external
  * connections become "live" — their template SQL (CTEs inlined, ${param} filter tokens
@@ -48,16 +59,46 @@ export interface ShareSnapshotResult {
  * choices. Query cells on the builtin DuckDB connection have no server-side data to re-run
  * against, so they're captured as a frozen snapshot of their last result instead.
  */
-export function buildShareSnapshot(notebook: Notebook): ShareSnapshotResult {
+export function buildShareSnapshot(
+	notebook: Notebook,
+	connections: Connection[] = []
+): ShareSnapshotResult {
+	const resolvedConnections =
+		connections.length > 0 ? connections : notebook.cells.map((c) => getCellConnection(c));
+	const uniqueConnections = [...new Map(resolvedConnections.map((c) => [c.id, c])).values()];
+
+	return buildShareSnapshotInternal(notebook, uniqueConnections);
+}
+
+function buildShareSnapshotInternal(
+	notebook: Notebook,
+	connections: Connection[]
+): ShareSnapshotResult {
 	const cells = notebook.cells;
 	const connectionsById = new Map<string, ShareConnectionInput>();
 
+	const markdocRefs = new Set<string>();
+	for (const cell of cells) {
+		if (cell.cellType !== 'markdown' || !cell.markdown?.trim()) continue;
+		for (const ref of extractMarkdocRefs(cell.markdown)) markdocRefs.add(ref);
+		for (const ref of extractBareMarkdocRefRoots(cell.markdown)) markdocRefs.add(ref);
+	}
+
 	const cellSnapshots: ShareCellSnapshot[] = cells.map((cell, idx) => {
+		const publishRole: SharePublishRole =
+			cell.cellType === 'query' &&
+			cell.display !== 'collapsed' &&
+			cell.outputName &&
+			markdocRefs.has(cell.outputName)
+				? 'data'
+				: 'visible';
+
 		const base = {
 			id: cell.id,
 			cellType: cell.cellType,
 			outputName: cell.outputName,
 			display: cell.display,
+			publishRole,
 			language: cell.language,
 			markdown: cell.markdown,
 			resultChartConfig: cell.resultChartConfig,
@@ -68,7 +109,7 @@ export function buildShareSnapshot(notebook: Notebook): ShareSnapshotResult {
 			return { ...base, isLive: false, connectionId: null, frozenResult: null, sqlTemplate: null };
 		}
 
-		const connection = getCellConnection(cell);
+		const connection = connectionForCell(cell, connections);
 		const isLive = !isBuiltinDuckDBConnection(connection);
 
 		if (!isLive) {

@@ -1,11 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	deleteComment,
-	editComment,
-	listComments,
-	toggleReaction
-} from '$lib/server/comments';
+import { deleteComment, editComment, listComments, toggleReaction } from '$lib/server/comments';
 import { can, canEditComment, userFromLocals } from '$lib/server/permissions';
 
 async function getCommentAuthor(commentId: string): Promise<{

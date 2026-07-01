@@ -53,7 +53,9 @@
 		</p>
 
 		<div>
-			<label for="invite-name" class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
+			<label
+				for="invite-name"
+				class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
 				>Display name</label
 			>
 			<Input id="invite-name" class="h-8 text-xs" bind:value={name} placeholder="Your name" />

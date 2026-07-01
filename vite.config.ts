@@ -142,7 +142,7 @@ export default defineConfig({
 	},
 	test: {
 		include: ['src/**/*.test.ts'],
-		exclude: ['e2e/**']
+		exclude: ['e2e/**', 'src/**/*.integration.test.ts']
 	},
 	optimizeDeps: {
 		// svelte-sonner contains .svelte.js files that use Svelte 5 runes ($state, $derived).

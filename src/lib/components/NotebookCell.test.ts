@@ -11,8 +11,9 @@ describe('NotebookCell anatomy', () => {
 	const source = read('./NotebookCell.svelte');
 
 	it('keeps the load-bearing focus/keyboard selectors', () => {
-		// focusAdjacentCell and the page auto-focus query for this exact selector
-		expect(source).toContain("querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')");
+		// focusAdjacentCell and the page auto-focus query for this exact selector (cell-bridge)
+		const bridge = read('../keyboard/cell-bridge.svelte.ts');
+		expect(bridge).toContain("querySelectorAll<HTMLElement>('.notebook-cell[tabindex]')");
 		expect(source).toContain('class="notebook-cell group');
 		expect(source).toContain('tabindex="0"');
 	});
@@ -42,10 +43,24 @@ describe('NotebookCell anatomy', () => {
 	it('uses the three-state display model', () => {
 		expect(source).toContain("effectiveDisplay === 'collapsed'");
 		expect(source).toContain("effectiveDisplay !== 'full'");
-		// report view forces output without mutating per-cell state
-		expect(source).toContain("reportView && isQueryCell ? 'output' : cell.display");
+		// report view forces output without mutating per-cell state (unless collapsed)
+		expect(source).toContain(
+			"reportView && isQueryCell && cell.display !== 'collapsed' ? 'output' : cell.display"
+		);
 		// collapsed cells do not render results
-		expect(source).toContain('!collapsed && Boolean(cell.result)');
+		expect(source).toContain('!cell.hideResult && cell.result');
+	});
+
+	it('renders markdown read-only in report view and guards interactive widget clicks', () => {
+		expect(source).toContain('isMarkdownRendered');
+		expect(source).toContain('isMarkdownClickToEdit');
+		expect(source).toContain('handleMarkdownPreviewClick');
+		expect(source).toContain('MARKDOWN_INTERACTIVE_SELECTOR');
+		expect(source).toContain(
+			'onclick={isMarkdownClickToEdit ? handleMarkdownPreviewClick : undefined}'
+		);
+		expect(source).toContain('{#if isMarkdownClickToEdit}');
+		expect(source).not.toContain('class="markdown-body prose cursor-text"');
 	});
 
 	it('shows execution time only on the status line, not inside the result toolbar', () => {

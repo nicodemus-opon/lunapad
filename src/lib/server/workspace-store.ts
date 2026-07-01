@@ -31,6 +31,18 @@ export interface WorkspaceStateRow {
 	updatedBy: string | null;
 }
 
+/** Resolve a stored user id to a human-readable label for workspace conflict UI. */
+export async function resolveWorkspaceUpdatedBy(userId: string | null): Promise<string | null> {
+	if (!userId) return null;
+	const rows = await query<{ name: string; email: string }>(
+		`SELECT name, email FROM "user" WHERE id = $1`,
+		[userId]
+	);
+	const row = rows[0];
+	if (!row) return null;
+	return row.name || row.email || null;
+}
+
 export class WorkspaceConflictError extends Error {
 	readonly updatedAt: string;
 	readonly updatedBy: string | null;

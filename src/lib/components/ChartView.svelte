@@ -12,9 +12,12 @@
 		columns: string[];
 		config: ChartConfig;
 		height?: number; // px; defaults to 384 (h-96)
+		onPlotClick?: (event: {
+			points?: Array<{ x?: unknown; y?: unknown; label?: unknown; customdata?: unknown }>;
+		}) => void;
 	}
 
-	const { rows, columns, config, height = 384 }: Props = $props();
+	const { rows, columns, config, height = 384, onPlotClick }: Props = $props();
 
 	type Figure = PlotCellFigure;
 
@@ -1282,7 +1285,7 @@
 				{/if}
 			</div>
 		{:else if figure}
-			<PlotlyMount bind:this={plotlyMountRef} {figure} />
+			<PlotlyMount bind:this={plotlyMountRef} {figure} {onPlotClick} />
 		{:else if config.chartType === 'custom' && customResult.error}
 			<div
 				class="flex h-full items-center justify-center p-4 text-center text-sm whitespace-pre-wrap text-destructive"

@@ -48,6 +48,11 @@
 	const theme = $derived(getTheme());
 	const llmConfig = $derived(getLLMConfig());
 	const ghostTextEnabled = $derived(getGhostTextEnabled());
+	const ghostReasoningModelWarning = $derived(
+		ghostTextEnabled &&
+			!llmConfig.completionModel?.trim() &&
+			/qwen3|deepseek-r1|o1|reasoning/i.test(llmConfig.model)
+	);
 
 	let accountName = $state('');
 	let savingProfile = $state(false);
@@ -351,6 +356,12 @@
 									here — e.g. <span class="font-mono">qwen2.5-coder:1.5b</span>. Leave blank to
 									reuse the model above.
 								</p>
+								{#if ghostReasoningModelWarning}
+									<p class="text-xs text-amber-600 dark:text-amber-500">
+										Your chat model looks like a reasoning model — ghost text will likely stay empty
+										until you set a small coder model above.
+									</p>
+								{/if}
 							</div>
 						</div>
 					</div>

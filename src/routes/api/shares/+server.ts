@@ -5,12 +5,14 @@ import {
 	listActiveShares,
 	revokeShareByNotebookId,
 	setShareSlug,
-	upsertShare
+	updateShareSettings,
+	upsertShare,
+	type ShareTheme
 } from '$lib/server/shared-reports';
 import type { ShareSnapshot } from '$lib/server/shared-reports';
 import type { Connection } from '$lib/types/connection';
 import { getSecret } from '$lib/server/connection-secrets';
-import { can, userFromLocals } from '$lib/server/permissions';
+import { requireSharesPublish, requireSharesRead } from '$lib/server/share-guards';
 import { logAuditEvent } from '$lib/server/audit';
 
 interface UpsertShareRequest {
@@ -23,18 +25,20 @@ interface UpsertShareRequest {
 	connections: { connectionId: string; connection: Connection }[];
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const denied = requireSharesRead(locals);
+	if (denied) return json({ error: denied.error }, { status: denied.status });
+
 	const notebookId = url.searchParams.get('notebookId');
 	if (!notebookId) {
-		// No notebookId — list every active share, for pickers like the site-builder's
-		// "add an existing report as a page".
 		const shares = await listActiveShares();
 		return json({
 			shares: shares.map((s) => ({
 				notebookId: s.notebookId,
 				notebookName: s.notebookName,
 				token: s.token,
-				slug: s.slug
+				slug: s.slug,
+				updatedAt: s.updatedAt
 			}))
 		});
 	}
@@ -46,16 +50,18 @@ export const GET: RequestHandler = async ({ url }) => {
 			slug: share.slug,
 			pollIntervalMs: share.pollIntervalMs,
 			requireAuth: share.requireAuth,
+			theme: share.theme,
+			description: share.description,
+			expiresAt: share.expiresAt,
 			updatedAt: share.updatedAt
 		}
 	});
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
-	if (!can(userFromLocals(locals.user), 'shares:publish')) {
-		return json({ error: 'Forbidden' }, { status: 403 });
-	}
+	const denied = requireSharesPublish(locals);
+	if (denied) return json({ error: denied.error }, { status: denied.status });
+
 	const body = (await request.json()) as Partial<UpsertShareRequest>;
 	if (
 		!body?.notebookId ||
@@ -86,7 +92,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			connections
 		});
 		await logAuditEvent({
-			actorId: locals.user.id,
+			actorId: locals.user!.id,
 			action: 'share.published',
 			resourceType: 'share',
 			resourceId: share.token,
@@ -99,22 +105,69 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 };
 
-/** Slug-only rename — doesn't touch the snapshot/connections, so it doesn't require republishing. */
-export const PATCH: RequestHandler = async ({ request }) => {
-	const body = (await request.json()) as Partial<{ notebookId: string; slug: string | null }>;
+/** Slug-only rename or metadata-only settings update — no snapshot rebuild. */
+export const PATCH: RequestHandler = async ({ request, locals }) => {
+	const denied = requireSharesPublish(locals);
+	if (denied) return json({ error: denied.error }, { status: denied.status });
+
+	const body = (await request.json()) as Partial<{
+		notebookId: string;
+		slug: string | null;
+		pollIntervalMs: number | null;
+		requireAuth: boolean;
+		expiresAt: string | null;
+		theme: ShareTheme;
+		description: string | null;
+	}>;
 	if (!body?.notebookId) return json({ error: 'notebookId is required.' }, { status: 400 });
+
 	try {
-		const share = await setShareSlug(body.notebookId, body.slug ?? null);
-		return json({ token: share.token, slug: share.slug });
+		if (body.slug !== undefined) {
+			const share = await setShareSlug(body.notebookId, body.slug ?? null);
+			if (
+				body.pollIntervalMs === undefined &&
+				body.requireAuth === undefined &&
+				body.expiresAt === undefined &&
+				body.theme === undefined &&
+				body.description === undefined
+			) {
+				return json({ token: share.token, slug: share.slug });
+			}
+		}
+		const share = await updateShareSettings(body.notebookId, {
+			pollIntervalMs: body.pollIntervalMs,
+			requireAuth: body.requireAuth,
+			expiresAt: body.expiresAt,
+			theme: body.theme,
+			description: body.description
+		});
+		return json({
+			token: share.token,
+			slug: share.slug,
+			pollIntervalMs: share.pollIntervalMs,
+			requireAuth: share.requireAuth,
+			expiresAt: share.expiresAt,
+			theme: share.theme,
+			description: share.description
+		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Failed to update slug.';
+		const message = err instanceof Error ? err.message : 'Failed to update share.';
 		return json({ error: message }, { status: 400 });
 	}
 };
 
-export const DELETE: RequestHandler = async ({ request }) => {
+export const DELETE: RequestHandler = async ({ request, locals }) => {
+	const denied = requireSharesPublish(locals);
+	if (denied) return json({ error: denied.error }, { status: denied.status });
+
 	const body = (await request.json()) as Partial<{ notebookId: string }>;
 	if (!body?.notebookId) return json({ error: 'notebookId is required.' }, { status: 400 });
 	await revokeShareByNotebookId(body.notebookId);
+	await logAuditEvent({
+		actorId: locals.user!.id,
+		action: 'share.revoked',
+		resourceType: 'share',
+		resourceId: body.notebookId
+	});
 	return json({ ok: true });
 };

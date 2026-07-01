@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { Search, FileText, Table2, Zap } from '@lucide/svelte';
+	import { Search, FileText, Table2, Zap, ListTree } from '@lucide/svelte';
 	import {
 		getNotebooks,
+		getActiveTabId,
 		setActiveTab,
 		addCellAfter,
 		getLastCellId,
 		openNotebookTabAtCell,
+		navigateToOutlineEntry,
 		runAll
 	} from '$lib/stores/notebook.svelte';
+	import { buildNotebookOutline } from '$lib/services/notebook-outline';
 
 	interface Props {
 		open: boolean;
@@ -25,9 +28,11 @@
 	type PaletteItem =
 		| { kind: 'notebook'; id: string; label: string }
 		| { kind: 'cell'; id: string; notebookId: string; label: string; sub: string }
+		| { kind: 'outline'; entryId: string; notebookId: string; label: string; sub: string }
 		| { kind: 'action'; label: string; sub: string; run: () => void };
 
 	const notebooks = $derived(getNotebooks());
+	const activeNotebookId = $derived(getActiveTabId());
 
 	const allItems = $derived<PaletteItem[]>([
 		...notebooks.map((nb) => ({
@@ -46,6 +51,17 @@
 					sub: nb.name || 'Untitled'
 				}))
 		),
+		...(notebooks.find((nb) => nb.id === activeNotebookId)?.cells
+			? buildNotebookOutline(notebooks.find((nb) => nb.id === activeNotebookId)!.cells).map(
+					(entry) => ({
+						kind: 'outline' as const,
+						entryId: entry.id,
+						notebookId: activeNotebookId,
+						label: entry.label,
+						sub: entry.kind === 'heading' ? 'Heading' : 'Cell'
+					})
+				)
+			: []),
 		{
 			kind: 'action',
 			label: 'Run all cells',
@@ -106,6 +122,10 @@
 			setActiveTab(item.id);
 		} else if (item.kind === 'cell') {
 			openNotebookTabAtCell(item.notebookId, item.id);
+		} else if (item.kind === 'outline') {
+			const nb = notebooks.find((n) => n.id === item.notebookId);
+			const entry = nb ? buildNotebookOutline(nb.cells).find((e) => e.id === item.entryId) : null;
+			if (entry) navigateToOutlineEntry(item.notebookId, entry);
 		} else {
 			item.run();
 			return;
@@ -184,6 +204,10 @@
 						{:else if item.kind === 'cell'}
 							<Table2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 							<span class="flex-1 truncate font-mono text-xs">{item.label}</span>
+							<span class="max-w-24 truncate text-2xs text-muted-foreground/50">{item.sub}</span>
+						{:else if item.kind === 'outline'}
+							<ListTree class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							<span class="flex-1 truncate text-xs">{item.label}</span>
 							<span class="max-w-24 truncate text-2xs text-muted-foreground/50">{item.sub}</span>
 						{:else}
 							<Zap class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

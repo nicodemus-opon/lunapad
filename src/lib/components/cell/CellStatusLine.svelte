@@ -96,7 +96,7 @@
 					? ' · updating…'
 					: cell.executionMs != null
 						? ` · ${fmtMs(cell.executionMs)}`
-						: ''}
+						: ''}{cell.executionCount > 1 ? ` · ×${cell.executionCount}` : ''}
 			</Popover.Trigger>
 			<Popover.Content class="w-72 space-y-2 p-3 text-xs">
 				<div class="space-y-1">

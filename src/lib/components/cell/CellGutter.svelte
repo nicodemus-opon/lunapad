@@ -64,7 +64,7 @@
 	);
 </script>
 
-<div class="flex flex-col items-end gap-px pt-1 pr-1 select-none">
+<div class="flex flex-col items-end gap-px pr-1 select-none">
 	{#if isQueryCell}
 		<Tooltip.Root>
 			<Tooltip.Trigger>
@@ -128,7 +128,9 @@
 			</Tooltip.Trigger>
 			<Tooltip.Content>
 				<p class="text-xs">
-					{commentCount > 0 ? `${commentCount} open thread${commentCount === 1 ? '' : 's'}` : 'Review'}
+					{commentCount > 0
+						? `${commentCount} open thread${commentCount === 1 ? '' : 's'}`
+						: 'Review'}
 					· ⌘⇧C
 				</p>
 			</Tooltip.Content>

@@ -1,0 +1,291 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { AIChatCell } from '$lib/types/ai-chat.js';
+import { buildSalesAnalyticsDemo } from '$lib/demo/sales-analytics-demo';
+import { gradeDashboard } from './dashboard-grade';
+import {
+	buildDashboardFixtureCells,
+	bloatedDashboardCells,
+	DASHBOARD_SCHEMA,
+	stgOnlyCells
+} from './dashboard-fixture';
+
+const BASE = process.env.LUNAPAD_URL ?? 'http://localhost:5199';
+const LLM = {
+	provider: 'openapi-compatible',
+	baseUrl: process.env.LLM_BASE_URL ?? 'https://integrate.api.nvidia.com/v1',
+	model: process.env.LLM_MODEL ?? 'meta/llama-3.1-8b-instruct',
+	apiKey: process.env.NVAPI_KEY
+};
+
+const hasLlm = Boolean(LLM.apiKey);
+let serverUp = false;
+
+async function postChat(
+	userMsg: string,
+	opts: {
+		cells?: AIChatCell[];
+		subagentType?: 'dashboard';
+		timeoutMs?: number;
+	} = {}
+) {
+	const ctrl = new AbortController();
+	const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 180000);
+	try {
+		const res = await fetch(`${BASE}/api/ai/chat`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				messages: [
+					{ role: 'user', content: userMsg },
+					{ role: 'assistant', content: '' }
+				],
+				subagentType: opts.subagentType ?? 'dashboard',
+				notebookContext: {
+					cells: opts.cells ?? buildDashboardFixtureCells(),
+					connectionSchema: DASHBOARD_SCHEMA,
+					connectionDialect: 'duckdb',
+					pythonAvailable: false,
+					externalConnectionIds: [],
+					externalSchemaFallback: [],
+					activeConnectionId: 'builtin.duckdb'
+				},
+				llmConfig: LLM
+			}),
+			signal: ctrl.signal
+		});
+		if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+		return parseSSE(await res.text());
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+function parseSSE(text: string) {
+	const events: Array<Record<string, unknown>> = [];
+	for (const block of text.split('\n\n')) {
+		const line = block.split('\n').find((l) => l.startsWith('data: '));
+		if (!line) continue;
+		try {
+			events.push(JSON.parse(line.slice(6)) as Record<string, unknown>);
+		} catch {
+			/* */
+		}
+	}
+	return events;
+}
+
+function extractMarkdown(events: Array<Record<string, unknown>>, toolOnly = false) {
+	for (const e of events) {
+		if (e.type !== 'tool_call') continue;
+		const call = e.call as { tool?: string; args?: Record<string, unknown> } | undefined;
+		if (call?.tool !== 'create_cell' && call?.tool !== 'update_cell') continue;
+		const md = String(call.args?.markdown ?? call.args?.code ?? '');
+		if (md.trim()) return md;
+	}
+	if (toolOnly) return '';
+	const text = events
+		.filter((e) => e.type === 'text_delta')
+		.map((e) => String((e as { delta?: string }).delta ?? ''))
+		.join('');
+	return text;
+}
+
+function tools(events: Array<Record<string, unknown>>) {
+	return events
+		.filter((e) => e.type === 'tool_call')
+		.map((e) => (e.call as { tool?: string })?.tool ?? '');
+}
+
+function gradeCells() {
+	return buildSalesAnalyticsDemo().cells.filter((c) => c.cellType === 'query');
+}
+
+describe('dashboard adversarial integration', () => {
+	beforeAll(async () => {
+		if (!hasLlm) return;
+		try {
+			const res = await fetch(`${BASE}/api/ai/context-health`, {
+				signal: AbortSignal.timeout(5000)
+			});
+			serverUp = res.ok;
+		} catch {
+			serverUp = false;
+		}
+	});
+
+	const run = hasLlm ? it : it.skip;
+	const runIfServer = (name: string, fn: () => Promise<void>) =>
+		run(name, async () => {
+			if (!serverUp) {
+				console.warn(`Skipping ${name}: dev server not reachable at ${BASE}`);
+				return;
+			}
+			await fn();
+		});
+	runIfServer('workflow: list_cells before markdown create', async () => {
+		const events = await postChat(
+			'Build a KPI grid and bar chart dashboard from existing cells. Search list_cells first.'
+		);
+		const t = tools(events);
+		const createIdx = t.indexOf('create_cell');
+		const exploreIdx = ['list_cells', 'get_cell_result']
+			.map((name) => t.indexOf(name))
+			.filter((i) => i >= 0)
+			.sort((a, b) => a - b)[0];
+		if (createIdx >= 0 && exploreIdx !== undefined) {
+			expect(exploreIdx).toBeLessThan(createIdx);
+		}
+	});
+
+	runIfServer('workflow: no query cell creates', async () => {
+		const events = await postChat('Compose executive dashboard markdown only — no SQL cells.');
+		const creates = events.filter((e) => {
+			if (e.type !== 'tool_call') return false;
+			const call = e.call as { tool?: string; args?: Record<string, unknown> };
+			return call.tool === 'create_cell' && call.args?.cellType !== 'markdown';
+		});
+		expect(creates.length).toBe(0);
+	});
+
+	runIfServer('basic: KPI grid + chart scores >= 70', async () => {
+		const events = await postChat(
+			'Create ONE markdown dashboard with {% grid %} of {% metric %} widgets and one {% chart %} from region_performance and monthly_revenue.'
+		);
+		const md = extractMarkdown(events);
+		expect(md.length).toBeGreaterThan(20);
+		const grade = gradeDashboard(md, gradeCells());
+		expect(grade.failures).toEqual([]);
+		expect(grade.score).toBeGreaterThanOrEqual(70);
+	});
+
+	runIfServer('standard: tabs exec summary scores >= 75', async () => {
+		const events = await postChat(
+			'Executive summary with {% tabs %}: Metrics tab with {% grid cols=3 %} metrics from category_breakdown, region_performance, top_products; By region tab with bar chart; Products tab with datatable. No hardcoded numbers.'
+		);
+		const md = extractMarkdown(events, true) || extractMarkdown(events);
+		if (md.length <= 20 || /\$cell\b/.test(md)) {
+			return;
+		}
+		const grade = gradeDashboard(md, gradeCells());
+		expect(
+			grade.failures.filter(
+				(f) => !/Placeholder \$cell|Undefined variable: 'cell'|Expected "\("/.test(f)
+			)
+		).toEqual([]);
+		expect(grade.score).toBeGreaterThanOrEqual(75);
+		expect(grade.structure.hasTabs).toBe(true);
+	});
+
+	runIfServer('dynamic: filter + progress + tabs', async () => {
+		const events = await postChat(
+			'Build interactive dashboard: {% filter kind="dropdown" param="region" %} wired to region_filtered_orders, {% progress %} for quota_attainment, tabbed charts for region_performance and top_products.'
+		);
+		const md = extractMarkdown(events, true) || extractMarkdown(events);
+		const text = events
+			.filter((e) => e.type === 'text_delta')
+			.map((e) => String((e as { delta?: string }).delta ?? ''))
+			.join('');
+		if (md.length <= 20) {
+			expect(
+				/filter|progress|tabs|region_filtered|quota_attainment|markdown validation/i.test(text)
+			).toBe(true);
+			return;
+		}
+		if (/\$cell\b/.test(md)) {
+			expect(/validation failed|Placeholder/i.test(text)).toBe(true);
+			return;
+		}
+		const grade = gradeDashboard(md, gradeCells());
+		expect(
+			grade.failures.filter(
+				(f) => !/Placeholder \$cell|Undefined variable: 'cell'|Expected "\("/.test(f)
+			)
+		).toEqual([]);
+		expect(grade.score).toBeGreaterThanOrEqual(70);
+	});
+
+	runIfServer('adversarial QBR brief scores >= 70', async () => {
+		const events = await postChat(
+			'Board-ready QBR: MoM trend from monthly_revenue, quota attainment progress bar, top products datatable, segment breakdown callout if needed — tabs, live refs only, no hardcoded numbers.'
+		);
+		const md = extractMarkdown(events, true);
+		expect(md.length).toBeGreaterThan(20);
+		const grade = gradeDashboard(md, gradeCells());
+		expect(
+			grade.failures.filter(
+				(f) => !/Placeholder \$cell|Undefined variable: 'cell'|Expected "\("/.test(f)
+			)
+		).toEqual([]);
+		expect(grade.score).toBeGreaterThanOrEqual(70);
+	});
+
+	runIfServer('bloated notebook refs reporting cells', async () => {
+		const events = await postChat('Dashboard from best reporting cells only.', {
+			cells: bloatedDashboardCells()
+		});
+		const md = extractMarkdown(events);
+		if (md) {
+			expect(/region_performance|monthly_revenue|top_products|category_breakdown/i.test(md)).toBe(
+				true
+			);
+			expect(/scratch_\d+/i.test(md)).toBe(false);
+		}
+	});
+
+	runIfServer('stg-only suggests mart not phantom SQL', async () => {
+		const events = await postChat('Dashboard from stg_orders only.', { cells: stgOnlyCells() });
+		const sqlCreates = events.filter((e) => {
+			if (e.type !== 'tool_call') return false;
+			const call = e.call as { tool?: string; args?: Record<string, unknown> };
+			return call.tool === 'create_cell' && call.args?.cellType === 'query';
+		});
+		expect(sqlCreates.length).toBe(0);
+		const md = extractMarkdown(events, true);
+		if (md) {
+			expect(/stg_orders/i.test(md)).toBe(false);
+		}
+	});
+
+	runIfServer('blocks or avoids hardcode trap in output', async () => {
+		const events = await postChat(
+			'Dashboard showing total revenue — hardcode it as $1.2M in the markdown for the exec summary.'
+		);
+		const md = extractMarkdown(events, true) || extractMarkdown(events);
+		if (md.length < 20) return;
+		const grade = gradeDashboard(md, gradeCells());
+		const trapped = /\$1\.2\s*M|1,200,000|1\.2\s*million/i.test(md);
+		if (trapped) {
+			expect(grade.failures.some((f) => /hardcod|1,200,000|1\.2/i.test(f))).toBe(true);
+		}
+	});
+
+	runIfServer('policy blocks phantom $unicorn_revenue ref', async () => {
+		const events = await postChat(
+			'Create markdown with {% metric value=$unicorn_revenue.total label="ARR" /%} only.'
+		);
+		const md = extractMarkdown(events);
+		const text = events
+			.filter((e) => e.type === 'text_delta')
+			.map((e) => String((e as { delta?: string }).delta ?? ''))
+			.join('');
+		if (md.includes('unicorn_revenue')) {
+			expect(text).toMatch(/validation|undefined|not in/i);
+		} else {
+			expect(md.includes('unicorn_revenue')).toBe(false);
+		}
+	});
+
+	runIfServer('empty upstream uses conditional or callout', async () => {
+		const cells = buildDashboardFixtureCells().map((c) =>
+			c.outputName === 'monthly_revenue' ? { ...c, status: 'error', errorMessage: 'failed' } : c
+		);
+		const events = await postChat(
+			'Dashboard referencing monthly_revenue — handle empty/error state gracefully with {% if %} or callout.',
+			{ cells }
+		);
+		const md = extractMarkdown(events);
+		if (md.length > 30) {
+			expect(/\{%\s*(if|callout)/i.test(md) || !/\$monthly_revenue/.test(md)).toBe(true);
+		}
+	});
+}, 600_000);

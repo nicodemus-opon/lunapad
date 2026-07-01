@@ -17,6 +17,7 @@
 	} from '$lib/monaco/completions';
 	import type { ConnectionType } from '$lib/types/connection';
 	import { shouldForwardFromMonaco } from '$lib/keyboard/monaco-bridge';
+	import { setGhostInlineEditActive } from '$lib/monaco/ghost-completions';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
 
@@ -92,6 +93,7 @@
 	let clearModelPythonSchema: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let activatePlotGlobals: ((modelUri: string) => void) | null = null;
 	let suppressUpdate = false;
+	let previewLocked = false;
 	let destroyed = false;
 
 	function themeName(isDark: boolean): string {
@@ -307,9 +309,9 @@
 
 	// Sync code prop → editor (if external change), keeping the cursor where it
 	// was (clamped) — a full-doc replace otherwise resets the selection and
-	// destroys typing flow.
+	// destroys typing flow. Skipped while inline AI is previewing into the editor.
 	$effect(() => {
-		if (!editor || !model) return;
+		if (!editor || !model || previewLocked) return;
 		if (model.getValue() !== code) {
 			suppressUpdate = true;
 			applyFullReplace(code);
@@ -403,6 +405,26 @@
 		if (!sel) return;
 		editor.executeEdits('insert', [{ range: sel, text, forceMoveMarkers: true }]);
 		editor.focus();
+	}
+
+	/** Update editor content without firing onchange — used for inline AI preview streaming. */
+	export function setPreviewCode(text: string): void {
+		if (!editor || !model) return;
+		previewLocked = true;
+		if (model.getValue() === text) return;
+		suppressUpdate = true;
+		applyFullReplace(text);
+		suppressUpdate = false;
+	}
+
+	export function clearPreviewLock(): void {
+		previewLocked = false;
+	}
+
+	/** Suspend ghost-text completions on this editor while inline AI is generating. */
+	export function setInlineEditActive(active: boolean): void {
+		if (!model) return;
+		setGhostInlineEditActive(model.uri.toString(), active);
 	}
 </script>
 

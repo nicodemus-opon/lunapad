@@ -8,13 +8,28 @@ export const load: LayoutServerLoad = async ({ params, locals, url }) => {
 	if (site.requireAuth && !locals.user) {
 		redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname + url.search)}`);
 	}
+
+	const activePages = site.pages.filter((p) => !p.revoked);
+	const homeFromId = site.homePageId
+		? activePages.find((p) => p.id === site.homePageId)
+		: undefined;
+	const homePage = homeFromId ?? activePages.at(0) ?? null;
+
 	return {
 		site: {
 			slug: site.slug,
 			name: site.name,
-			pages: site.pages
-				.filter((p) => !p.revoked)
-				.map((p) => ({ pageSlug: p.pageSlug, navLabel: p.navLabel }))
-		}
+			logoUrl: site.logoUrl,
+			accentColor: site.accentColor,
+			showFooter: site.showFooter,
+			homePageSlug: homePage?.pageSlug ?? null,
+			pages: activePages.map((p) => ({
+				pageSlug: p.pageSlug,
+				navLabel: p.navLabel,
+				revoked: p.revoked,
+				notebookName: p.notebookName
+			}))
+		},
+		currentPageSlug: url.pathname.split('/').pop() ?? null
 	};
 };

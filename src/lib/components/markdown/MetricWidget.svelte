@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { copyToClipboard } from '$lib/services/widget-export';
+	import { Clipboard } from '@lucide/svelte';
+
 	interface Props {
 		value?: unknown;
 		label?: string;
 		format?: 'number' | 'currency' | 'compact' | 'percent';
 		deltaPct?: number | null;
 		trend?: 'up' | 'down' | 'flat' | null;
+		vs?: unknown;
 	}
 
 	const { value, label, format = 'number', deltaPct, trend }: Props = $props();
@@ -33,10 +37,25 @@
 				return n.toLocaleString();
 		}
 	});
+
+	async function copyValue() {
+		await copyToClipboard(displayValue);
+	}
 </script>
 
 <span class="md-metric rounded p-4" data-trend={trend ?? undefined}>
-	<span class="md-metric-value">{displayValue}</span>
+	<span class="md-metric-row">
+		<span class="md-metric-value">{displayValue}</span>
+		<button
+			type="button"
+			class="md-metric-copy"
+			onclick={copyValue}
+			title="Copy value"
+			aria-label="Copy value"
+		>
+			<Clipboard class="h-3 w-3" />
+		</button>
+	</span>
 	{#if label}<span class="md-metric-label">{label}</span>{/if}
 	{#if trend && deltaPct != null}
 		<span class="md-metric-delta md-metric-delta--{trend}">
@@ -58,6 +77,18 @@
 		margin: 0.15rem 0.2rem 0.15rem 0;
 		vertical-align: top;
 	}
+	.md-metric-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.md-metric-copy {
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+	.md-metric:hover .md-metric-copy {
+		opacity: 0.65;
+	}
 	.md-metric-value {
 		font-size: 1.15rem;
 		font-weight: 700;
@@ -78,8 +109,5 @@
 	}
 	.md-metric-delta--down {
 		color: var(--destructive, #dc2626);
-	}
-	.md-metric-delta--flat {
-		opacity: 0.6;
 	}
 </style>

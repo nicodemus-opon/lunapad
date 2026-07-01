@@ -1,60 +1,53 @@
 # Markdoc widget reference
 
-Complete syntax for every widget you can embed in a markdown cell. For the concept and why you'd use these, see [Results, charts, and dashboards](05-results-charts-dashboards.md).
+Every markdown cell renders through [Markdoc](https://markdoc.dev/). When a query cell runs, its `outputName` becomes a live variable (`$orders`, `$monthly`, etc.) that markdown cells can read. Shared reports use the same pipeline.
 
-There are two separate syntaxes, and they don't mix:
+For the notebook workflow (preview, toolbar, chart inheritance), see [Results, charts, and dashboards](05-results-charts-dashboards.md). This page is the syntax reference.
 
-- **Legacy inline refs**, `{{ }}`, available in any markdown cell. Good for dropping a single live number into a sentence.
-- **Markdoc tags**, `{% %}`, available once a markdown cell contains at least one `{%`. Good for charts, tables, and layout.
+## Variables from query cells
 
-A markdown cell that contains `{%` switches entirely to the Markdoc renderer; one that doesn't, keeps using the legacy `{{ }}` renderer. Don't mix the two in the same cell.
+Only **query cells with results** publish variables. Markdown cells, Python cells, and cells that haven't run yet do not.
 
-## Legacy inline refs: `{{ }}`
+Given a query cell whose output name is `orders`:
 
-```
-{{outputName.count}}              row count
-{{outputName.rowCount}}           row count (alias)
-{{outputName.columns}}            comma-separated column names
-{{outputName.columnName}}         first row, named column
-{{outputName[N].columnName}}      Nth row (negative indexes count from the end), named column
-{{outputName.columnName[N]}}      same, column-first order
-{{expr | round(N)}}               arithmetic expression, rounded to N decimals
-{{currency(outputName.field)}}    any format function (see below), called directly
-```
+| Expression         | Value                                      |
+| ------------------ | ------------------------------------------ |
+| `$orders.revenue`  | First row, `revenue` column                |
+| `$orders.status`   | First row, any column name from the result |
+| `$orders.rows`     | Full result set (array of row objects)     |
+| `$orders.count`    | Row count                                  |
+| `$orders.rowCount` | Same as `count`                            |
+| `$orders.columns`  | Comma-separated column names               |
 
-Examples:
+Column names from the first row are also available as `$orders.column_name` fields.
 
-```
-Total orders: {{orders.count}}
-Second row's revenue: {{orders[1].revenue}}
-Last row: {{orders[-1].month}}
-Share of total: {{(subset.value * 100 / total.value) | round(1)}}%
-Formatted: {{currency(sales.total)}}
-```
+If you reference a cell that doesn't exist or hasn't been run, the editor shows a diagnostic and preview renders an error banner. Run upstream cells first.
 
-Arithmetic (`+ - * /`) and the `| round(N)` filter only work here, in `{{ }}`, not inside `{% %}` tags.
+## Live numbers in prose
 
-**Errors render inline instead of failing the whole cell:**
-
-| Situation                                         | Renders as          |
-| ------------------------------------------------- | ------------------- |
-| Referenced cell hasn't been run, or doesn't exist | `[⚡ name not run]` |
-| Row index out of range                            | `[row N missing]`   |
-| Column doesn't exist on that row                  | `[key not found]`   |
-
-## Markdoc tags: `{% %}`
-
-Inside `{% %}`, a cell's data is available as a variable, `$outputName`, not as `{{ }}`. There is no arithmetic and no pipe operator here, only variables, attribute values, and function calls:
+Wrap values in `{% ... %}` so Markdoc evaluates them:
 
 ```
-$outputName.count        row count
-$outputName.rowCount     row count (alias)
-$outputName.columns      comma-separated column names
-$outputName.rows         full result set, as an array of row objects
-$outputName.fieldName    first row's value for that column
+We processed {% $orders.count %} orders.
+Revenue hit {% currency($orders.revenue) %} last month.
+Peak month: {% formatDate($top.month, "MMM YYYY") %}.
 ```
 
-Conditionals use the comparison functions below:
+`$orders.revenue` on its own in plain text is **not** evaluated. It is only live inside `{% %}` tags (prose) or tag attributes (`value=$orders.revenue` on a widget). The toolbar ref picker inserts `$cell.column` for attribute positions; wrap it yourself when writing sentences.
+
+Format functions (`currency`, `compact`, `percent`, `sign`, `formatDate`) work inside those tags. Comparison functions (`gt`, `gte`, `lt`, `lte`) work inside `{% if %}` blocks.
+
+Markdoc in Lunapad has **no arithmetic operators** and no `| round` pipe. If you need a ratio, percent of total, or rounded share, compute it in a query cell and reference the column:
+
+```prql
+# share
+from totals
+derive { pct_of_total = this_value * 100.0 / grand_total }
+```
+
+Then in markdown: `{% percent($share.pct_of_total, 1) %}`. The `percent()` function expects a 0–100 scale; it formats decimals and appends `%`, it does not multiply by 100.
+
+## Conditionals
 
 ```
 {% if gt($orders.count, 0) %}
@@ -64,11 +57,26 @@ Conditionals use the comparison functions below:
 {% /if %}
 ```
 
-`{% else %}` must always be self-closing (`{% else /%}`), even when it isn't the last branch, chain additional conditions as `{% else <condition> /%}`.
+`{% else %}` must always be self-closing (`{% else /%}`). Chain extra branches as `{% else gt($x, 0) /%}`.
+
+## Editor shortcuts
+
+| Action               | How                                                                               |
+| -------------------- | --------------------------------------------------------------------------------- |
+| Insert `$cell.col`   | Toolbar ref picker, or type `$` and pick from completions (for widget attributes) |
+| Inline in a sentence | Type `{% $cell.col %}` or `{% currency($cell.col) %}` manually                    |
+| Insert a widget      | Type `/` at line start → metric, chart, callout, mermaid, …                       |
+| Formatting           | Toolbar: bold, italic, link, heading levels                                       |
+| Validate             | Errors underline in Monaco when `$` or `{%` is present                            |
+| Preview              | Toggle preview on the cell                                                        |
+
+## Widget tags
+
+Widgets use `{% tagName ... /%}` for self-closing tags or `{% tagName %}...{% /tagName %}` for blocks. Inside tag attributes, pass data with `$cell.field` or `$cell.rows`.
 
 ### Format functions
 
-Usable both inside `{% %}` tags and inside legacy `{{ }}` refs.
+Callable inside `{% ... %}` prose tags and as attribute values on widgets.
 
 | Function                    | Signature                    | Example                   | Output                  |
 | --------------------------- | ---------------------------- | ------------------------- | ----------------------- |
@@ -253,9 +261,11 @@ This can't be undone.
 
 ### `mermaid`: diagrams (all Mermaid types)
 
-Use `{% mermaid %}...{% /mermaid %}` for any [Mermaid](https://mermaid.js.org/) diagram — flowchart, sequenceDiagram, stateDiagram-v2, erDiagram, gantt, pie, gitGraph, classDiagram, kanban, mindmap, timeline, and more. Fenced ` ```mermaid ` blocks also render, but only `{% mermaid %}` supports data-driven generation with loop tags.
+Use `{% mermaid %}...{% /mermaid %}` for any [Mermaid](https://mermaid.js.org/) diagram type: flowchart, sequenceDiagram, stateDiagram-v2, erDiagram, gantt, pie, gitGraph, classDiagram, kanban, mindmap, timeline, and others.
 
-**Static** — source is preserved literally (newlines, YAML `---` frontmatter, `[*]` state nodes, etc.):
+Fenced ` ```mermaid ` blocks also render. They are the most reliable option for static diagrams. Only `{% mermaid %}` supports data-driven generation with `{% group %}` and `{% each %}` loop tags.
+
+**Static:** source is preserved literally (newlines, YAML `---` frontmatter, `[*]` state nodes, etc.):
 
 ```
 {% mermaid %}
@@ -268,7 +278,7 @@ stateDiagram-v2
 {% /mermaid %}
 ```
 
-**Dynamic** — embed `{% group %}` / `{% each %}` inside the mermaid body. The expander slices your template from the original source and interpolates bare `$column` tokens, **preserving whitespace and indentation exactly as written** — critical for mindmap, flowchart subgraphs, sequence diagrams, etc. Use `$keyId` for Mermaid ids when the grouped value contains spaces (`$keyId` is slugified; `$key` is the display value).
+**Dynamic:** embed `{% group %}` and `{% each %}` inside the mermaid body. The expander slices your template from the original source and interpolates bare `$column` tokens, preserving whitespace and indentation exactly as written. That matters for mindmap, flowchart subgraphs, and sequence diagrams. Use `$keyId` for Mermaid ids when the grouped value contains spaces (`$keyId` is slugified; `$key` is the display value).
 
 **Loop tag rules:** do not put blank lines _inside_ a `{% each %}` body (Markdoc treats them as block boundaries and breaks tag nesting). Put `{% /each %}` on the line immediately after the template row.
 
@@ -290,9 +300,64 @@ Optional attribute: `code=$cell.field` to pass pre-built diagram text from a cel
 
 Primarily used inside `{% mermaid %}`, but usable elsewhere.
 
-**`{% group data=$rows by="column" order=[...] %}`** — groups rows; exposes `$key`, `$keyId`, and `$items` in the body per group.
+**`{% group data=$rows by="column" order=[...] %}`** groups rows and exposes `$key`, `$keyId`, and `$items` in the body per group.
 
-**`{% each data=$rows %}`** or **`{% each data=$items %}`** — iterates rows; exposes all columns as `$col` in the body.
+**`{% each data=$rows %}`** or **`{% each data=$items %}`** iterates rows and exposes all columns as `$col` in the body.
+
+## Common mistakes
+
+| Mistake                                           | What happens                  | Fix                                         |
+| ------------------------------------------------- | ----------------------------- | ------------------------------------------- |
+| `$orders.revenue` in plain prose                  | Shows literally as text       | Use `{% $orders.revenue %}` or a widget tag |
+| `{{orders.revenue}}` double-curly (old notebooks) | Shows literally as text       | Rewrite to `{% $orders.revenue %}`          |
+| Hard-coded numbers in prose                       | Report goes stale             | Reference a query cell; lint may warn       |
+| `{% else %}` without self-close                   | Parse error                   | Use `{% else /%}` always                    |
+| `percent($x, 1)` on a 0–1 fraction                | Shows `0.5%` instead of `50%` | Multiply to 0–100 in SQL/PRQL first         |
+| Arithmetic inside `{% metric %}`                  | Not supported                 | Compute in a query cell                     |
+| Blank lines inside `{% each %}` in mermaid        | Broken tag nesting            | Keep the loop body contiguous               |
+| Referenced cell not run                           | Error banner in preview       | Run upstream query cells                    |
+| Complex static mermaid in `{% mermaid %}`         | Garbled diagram text          | Use a fenced ` ```mermaid ` block           |
+
+## Full dashboard example
+
+Query cells (run these first):
+
+```prql
+# orders — seed table
+from orders
+```
+
+```prql
+# monthly_revenue
+from orders
+derive { month = date_trunc("month", order_date) }
+group month ( aggregate { total_revenue = sum amount } )
+```
+
+```prql
+# region_performance
+from orders
+group region ( aggregate { total_revenue = sum amount, order_count = count this } )
+```
+
+Markdown cell:
+
+```
+## Revenue dashboard
+
+{% badge value="Live" color="success" /%}
+
+Month to date: **{% currency($monthly_revenue.total_revenue) %}** across {% $orders.count %} orders.
+
+{% grid cols=2 %}
+{% metric value=$monthly_revenue.total_revenue label="Revenue" format="currency" /%}
+{% metric value=$region_performance.order_count label="Orders" /%}
+{% /grid %}
+
+{% chart type="bar" data=$region_performance.rows x="region" y="total_revenue" title="By region" /%}
+```
+
+Publish via **Share** or add the notebook to a [Site](09-sharing-and-reports.md).
 
 ## Next
 

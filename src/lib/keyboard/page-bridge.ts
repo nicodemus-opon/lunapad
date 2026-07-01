@@ -12,6 +12,7 @@ export interface PageBridge {
 	addMarkdownCell: () => void;
 	runAll: () => void;
 	isNotebookTab: () => boolean;
+	toggleNotebookOutline: () => void;
 }
 
 let pageBridge: PageBridge | null = null;

@@ -9,6 +9,8 @@ import {
 	pasteCellAfter,
 	removeCell,
 	runCell,
+	runCellsAbove,
+	runCellsBelow,
 	setCellDisplay,
 	testCell,
 	undo,
@@ -26,11 +28,7 @@ import {
 } from './cell-bridge.svelte';
 import { getCellMetaFromContext } from './context';
 import { getPageBridge } from './page-bridge';
-import {
-	dispatchStageEditorKey,
-	findOpenStageMenu,
-	findStageMenuInEditor
-} from './stage-bridge';
+import { dispatchStageEditorKey, findOpenStageMenu, findStageMenuInEditor } from './stage-bridge';
 import { formatChord } from './format';
 import type { ShortcutContext, ShortcutDef } from './types';
 
@@ -68,7 +66,14 @@ export const SHORTCUTS: ShortcutDef[] = [
 	{
 		id: 'global.save',
 		chord: { key: 's', mod: true },
-		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		contexts: [
+			'global',
+			'command-mode',
+			'monaco-code',
+			'monaco-markdown',
+			'stage-editor',
+			'stage-menu'
+		],
 		group: 'global',
 		label: 'Save notebook to disk',
 		priority: 100,
@@ -87,7 +92,14 @@ export const SHORTCUTS: ShortcutDef[] = [
 	{
 		id: 'palette.toggle',
 		chord: { key: 'k', mod: true },
-		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		contexts: [
+			'global',
+			'command-mode',
+			'monaco-code',
+			'monaco-markdown',
+			'stage-editor',
+			'stage-menu'
+		],
 		group: 'global',
 		label: 'Command palette',
 		priority: 100,
@@ -97,7 +109,14 @@ export const SHORTCUTS: ShortcutDef[] = [
 	{
 		id: 'global.ai-chat',
 		chord: { key: 'j', mod: true },
-		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		contexts: [
+			'global',
+			'command-mode',
+			'monaco-code',
+			'monaco-markdown',
+			'stage-editor',
+			'stage-menu'
+		],
 		group: 'global',
 		label: 'Toggle AI chat panel',
 		priority: 100,
@@ -163,6 +182,15 @@ export const SHORTCUTS: ShortcutDef[] = [
 		label: 'Run all cells',
 		when: (ctx) => !ctx.isTypingTarget && (page()?.isNotebookTab() ?? false),
 		handler: () => page()?.runAll()
+	},
+	{
+		id: 'notebook.toggle-outline',
+		chord: { key: 'o', mod: true, shift: true },
+		contexts: ['global', 'command-mode'],
+		group: 'global',
+		label: 'Toggle notebook outline',
+		when: (ctx) => !ctx.isTypingTarget && (page()?.isNotebookTab() ?? false),
+		handler: () => page()?.toggleNotebookOutline()
 	},
 	{
 		id: 'notebook.undo',
@@ -403,6 +431,28 @@ export const SHORTCUTS: ShortcutDef[] = [
 		handler: (ctx) => {
 			const id = cellId(ctx);
 			if (id) moveCell(id, 'down');
+		}
+	},
+	{
+		id: 'command.run-above',
+		chord: { key: 'ArrowUp', alt: true, shift: true },
+		contexts: ['command-mode'],
+		group: 'command-mode',
+		label: 'Run cells above',
+		handler: (ctx) => {
+			const id = cellId(ctx);
+			if (id) void runCellsAbove(id);
+		}
+	},
+	{
+		id: 'command.run-below',
+		chord: { key: 'ArrowDown', alt: true, shift: true },
+		contexts: ['command-mode'],
+		group: 'command-mode',
+		label: 'Run cells below',
+		handler: (ctx) => {
+			const id = cellId(ctx);
+			if (id) void runCellsBelow(id);
 		}
 	},
 	{

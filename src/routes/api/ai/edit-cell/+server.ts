@@ -258,9 +258,16 @@ export const POST: RequestHandler = async ({ request }) => {
 					req.cellType
 				);
 
+				let code = extracted.code.trim();
+				if (req.language === 'prql') {
+					code = code.replace(/`([^`]+)`/g, '"$1"').replace(/;\s*$/, '');
+				} else if (req.language === 'sql') {
+					code = code.replace(/;\s*$/, '');
+				}
+
 				send({
 					type: 'result',
-					code: extracted.code.trim(),
+					code,
 					cellType: req.cellType,
 					language: req.language,
 					reasoning: extracted.reasoning,

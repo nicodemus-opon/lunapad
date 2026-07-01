@@ -23,6 +23,7 @@ import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
 import { deconflictName } from '$lib/utils/deconflict';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
+import type { OutlineEntry } from '$lib/services/notebook-outline';
 import {
 	openProject as openProjectAPI,
 	listProjectNotebooks,
@@ -111,6 +112,8 @@ import {
 	setWorkspaceStandards,
 	type WorkspaceStandards
 } from './ai-chat.svelte';
+import { buildSalesAnalyticsDemo } from '$lib/demo/sales-analytics-demo';
+import { getDashboardTemplate } from '$lib/demo/dashboard-templates';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
@@ -196,7 +199,15 @@ export interface Cell {
 	staleReason: 'code-changed' | 'upstream-changed' | null;
 	staleSources: string[]; // outputNames of upstream cells whose runs caused this cell to be stale
 	lastRunAt: number | null;
+	/** Hide result output while keeping code visible (Jupyter-style hide output). */
+	hideResult: boolean;
+	/** Number of successful executions (persisted for context, not In[]/Out[]). */
+	executionCount: number;
 }
+
+export type FocusTarget = { cellId: string; anchorId?: string };
+
+export type SidebarNotebookView = 'browse' | 'outline';
 
 export interface NotebookEvent {
 	id: string;
@@ -254,6 +265,15 @@ export interface Notebook {
 	lastActiveCellId?: string;
 	// Current values for {% filter param="..." /%} controls declared in markdown cells, keyed by paramName.
 	filters?: Record<string, string>;
+	/** Named filter combinations for report deep-links. */
+	filterPresets?: FilterPreset[];
+	/** Threshold alert rules evaluated on scheduled snapshot refresh. */
+	shareAlertRules?: Array<{
+		metricPath: string;
+		operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq';
+		threshold: number;
+		webhookUrl?: string;
+	}>;
 	// When set (ms), all query cells in this notebook re-run on this interval. 0/undefined = off.
 	autoRefreshIntervalMs?: number;
 }
@@ -262,6 +282,12 @@ export interface NotebookFolder {
 	id: string;
 	name: string;
 	parentId: string | null;
+}
+
+export interface FilterPreset {
+	id: string;
+	name: string;
+	values: Record<string, string>;
 }
 
 export type SidebarSection = 'notebooks' | 'tables';
@@ -315,6 +341,8 @@ interface NotebookState {
 	sidebarSectionsExpanded: SidebarSectionsExpanded;
 	activeTabId: string;
 	focusedCellId: string | null;
+	focusedTarget: FocusTarget | null;
+	sidebarNotebookView: SidebarNotebookView;
 	openResultTabs: ResultTabInfo[];
 	openExtraTabs: ExtraTab[];
 	tables: UploadedTable[];
@@ -532,7 +560,9 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		needsRun: false,
 		staleReason: null,
 		staleSources: [],
-		lastRunAt: null
+		lastRunAt: null,
+		hideResult: false,
+		executionCount: 0
 	};
 }
 
@@ -605,238 +635,8 @@ function makeNotebook(name: string, cells?: Cell[]): Notebook {
 	};
 }
 
-function makeDemoNotebook(): Notebook {
-	// Pure SELECT so the execution engine can wrap it as a view.
-	// PRQL downstream cells inline this via: let orders = (s"SELECT ...")
-	const seedSQL = `SELECT
-  range + 1 AS order_id,
-  DATE '2023-01-01' + CAST((range * 13 % 730) AS INTEGER) * INTERVAL '1 day' AS order_date,
-  (['Laptop','Phone','Tablet','Monitor','Keyboard','Mouse','Headset','Webcam'])[(range % 8) + 1] AS product,
-  (['Electronics','Electronics','Electronics','Peripherals','Peripherals','Peripherals','Peripherals','Peripherals'])[(range % 8) + 1] AS category,
-  1 + (range * 7 % 4) AS quantity,
-  ([1200.0, 799.0, 449.0, 349.0, 79.0, 39.0, 149.0, 89.0])[(range % 8) + 1] AS unit_price,
-  (['North','South','East','West','Central'])[(range % 5) + 1] AS region
-FROM range(2000)`;
-
-	// target_region (not "region") so the post-join schema has only one
-	// unqualified `region` column — joining on same-named columns leaves both
-	// table's copies in scope and makes `group region (...)` ambiguous.
-	const regionTargetsSQL = `SELECT * FROM (VALUES
-  ('North', 150000.0),
-  ('South', 120000.0),
-  ('East', 130000.0),
-  ('West', 140000.0),
-  ('Central', 100000.0)
-) AS t(target_region, quota)`;
-
-	const monthlyRevenuePRQL = `from orders
-derive {
-  month = s"date_trunc('month', order_date)",
-  revenue = quantity * unit_price
-}
-group month (
-  aggregate {
-    total_revenue = sum revenue,
-    order_count = count this
-  }
-)
-sort month`;
-
-	const regionPerformancePRQL = `from o=orders
-derive { revenue = quantity * unit_price }
-join rt=region_targets (this.region==rt.target_region)
-group o.region (
-  aggregate { total_revenue = sum revenue, quota = max rt.quota }
-)
-sort {-total_revenue}`;
-
-	const categoryPRQL = `from orders
-derive revenue = quantity * unit_price
-group category (
-  aggregate {
-    total_revenue = sum revenue,
-    order_count = count this
-  }
-)
-sort {-total_revenue}`;
-
-	const orderValueDistributionPRQL = `from orders
-derive revenue = quantity * unit_price
-select { revenue }`;
-
-	const topProductsPRQL = `from orders
-derive revenue = quantity * unit_price
-group product (
-  aggregate {
-    total_revenue = sum revenue,
-    units_sold = sum quantity
-  }
-)
-sort {-total_revenue}
-take 10`;
-
-	const growthSQL = `SELECT
-  month,
-  total_revenue,
-  total_revenue - LAG(total_revenue) OVER (ORDER BY month) AS mom_delta,
-  ROUND(100.0 * (total_revenue - LAG(total_revenue) OVER (ORDER BY month))
-        / NULLIF(LAG(total_revenue) OVER (ORDER BY month), 0), 1) AS mom_pct
-FROM monthly_revenue
-ORDER BY month`;
-
-	const regionFilteredOrdersSQL = `SELECT region, product, category, quantity, unit_price, order_date
-FROM orders
-WHERE region = '\${region}'
-ORDER BY order_date DESC
-LIMIT 20`;
-
-	const cells: Cell[] = [
-		{
-			...makeMarkdownCell(
-				`# Sales Analytics Demo\nThis notebook shows the core features of Lunapad. Run cells from top to bottom — start with the **orders** cell, then explore the analysis cells below.\n\n{% callout type="info" %}\nCells reference each other by name — no boilerplate \`WITH\` needed. Charts, the GUI pipeline builder, Markdoc dashboards, and interactive filters are all live below.\n{% /callout %}`
-			),
-			markdownPreview: true
-		},
-		{
-			...makeCell(seedSQL, 'orders', 'sql'),
-			editMode: 'prql',
-			resultViewMode: 'stats'
-		},
-		{
-			...makeCell(regionTargetsSQL, 'region_targets', 'sql'),
-			editMode: 'prql'
-		},
-		{
-			...makeCell(monthlyRevenuePRQL, 'monthly_revenue', 'prql'),
-			editMode: 'prql',
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'area',
-				xColumn: 'month',
-				yColumns: ['total_revenue'],
-				colorColumn: null,
-				title: 'Monthly Revenue'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(regionPerformancePRQL, 'region_performance', 'prql'),
-			editMode: 'gui',
-			guiStages: [
-				{ type: 'from', table: 'orders', alias: 'o' },
-				{
-					type: 'derive',
-					columns: [
-						{
-							name: 'revenue',
-							expr: {
-								mode: 'binary',
-								left: { kind: 'column', value: 'quantity' },
-								op: '*',
-								right: { kind: 'column', value: 'unit_price' }
-							}
-						}
-					]
-				},
-				{
-					type: 'join',
-					joinType: 'left',
-					table: 'region_targets',
-					alias: 'rt',
-					conditions: [{ left: 'this.region', right: 'target_region' }]
-				},
-				{
-					type: 'group',
-					by: ['o.region'],
-					aggregations: [
-						{ name: 'total_revenue', func: 'sum', column: 'revenue' },
-						{ name: 'quota', func: 'max', column: 'rt.quota' }
-					]
-				},
-				{ type: 'sort', keys: [{ column: 'total_revenue', dir: 'desc' }] }
-			] as GUIPipelineStage[],
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'bar',
-				xColumn: 'region',
-				yColumns: ['total_revenue', 'quota'],
-				colorColumn: null,
-				seriesMode: 'grouped',
-				title: 'Revenue vs Quota by Region'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(categoryPRQL, 'category_breakdown', 'prql'),
-			editMode: 'prql',
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'bar',
-				xColumn: 'category',
-				yColumns: ['total_revenue', 'order_count'],
-				colorColumn: null,
-				title: 'Revenue by Category'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(orderValueDistributionPRQL, 'order_value_distribution', 'prql'),
-			editMode: 'prql',
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'histogram',
-				xColumn: '',
-				yColumns: ['revenue'],
-				histogramBins: 24,
-				colorColumn: null,
-				title: 'Order Value Distribution'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(topProductsPRQL, 'top_products', 'prql'),
-			editMode: 'prql',
-			resultViewMode: 'chart',
-			resultChartConfig: {
-				chartType: 'bar-horizontal',
-				xColumn: 'product',
-				yColumns: ['total_revenue'],
-				colorColumn: null,
-				title: 'Top Products by Revenue'
-			} satisfies ChartConfig
-		},
-		{
-			...makeCell(growthSQL, 'growth_analysis', 'sql'),
-			editMode: 'prql',
-			resultViewMode: 'table'
-		},
-		{
-			...makeMarkdownCell(
-				`## Explore by region\n{% filter kind="dropdown" param="region" label="Region" options=["North","South","East","West","Central"] default="North" /%}\n\n{% grid cols=3 %}\n{% metric value=$category_breakdown.total_revenue label="Top Category Revenue" format="currency" /%}\n{% metric value=$region_performance.total_revenue vs=$region_performance.quota label="Top Region vs Quota" format="currency" /%}\n{% metric value=$top_products.total_revenue label="Best-Selling Product Revenue" format="currency" /%}\n{% /grid %}\n\n{% datatable data=$top_products.rows cols=["product","total_revenue","units_sold"] limit=10 /%}`
-			),
-			markdownPreview: true
-		},
-		{
-			...makeCell(regionFilteredOrdersSQL, 'region_filtered_orders', 'sql'),
-			editMode: 'prql',
-			resultViewMode: 'table'
-		},
-		{
-			...makeMarkdownCell(
-				`## What you just ran\n- **PRQL & SQL cells** referencing each other as CTEs — no boilerplate \`WITH\` needed\n- **GUI pipeline editor** (\`region_performance\`) — includes a join, not just filter/derive/group\n- **Stats view** (\`orders\`) — per-column min/max/null/distinct counts, switch back to table anytime\n- **Chart variety** — area, grouped bar, horizontal bar, and histogram via each cell's view toolbar\n- **Markdoc dashboards** — the section above mixes a live filter, metric cards, and a data table in one markdown cell\n- **Interactive filters** — the region dropdown re-runs \`region_filtered_orders\` automatically\n- **UDF cells** also exist (Python, type-hinted) but need a Trino-backed connection (Postgres/ClickHouse/MySQL) — not shown here since this demo runs entirely on the builtin DuckDB engine`
-			),
-			markdownPreview: true
-		}
-	];
-
-	return {
-		id: makeId(),
-		name: 'Sales Analytics Demo',
-		folderId: null,
-		cells,
-		defaultCellLanguage: 'prql',
-		filters: { region: 'North' }
-	};
-}
-
 export function loadDemoNotebook(): void {
-	const n = makeDemoNotebook();
+	const n = buildSalesAnalyticsDemo();
 	n.folderId = ensureDefaultFolder();
 	state.notebooks = [...state.notebooks, n];
 	if (!state.openNotebookTabIds.includes(n.id)) {
@@ -844,6 +644,20 @@ export function loadDemoNotebook(): void {
 	}
 	state.activeTabId = n.id;
 	scheduleSave();
+}
+
+export function loadDashboardTemplate(templateId: string): boolean {
+	const template = getDashboardTemplate(templateId);
+	if (!template) return false;
+	const n = template.build();
+	n.folderId = ensureDefaultFolder();
+	state.notebooks = [...state.notebooks, n];
+	if (!state.openNotebookTabIds.includes(n.id)) {
+		state.openNotebookTabIds = [...state.openNotebookTabIds, n.id];
+	}
+	state.activeTabId = n.id;
+	scheduleSave();
+	return true;
 }
 
 // ── Active-cell insert bridge ───────────────────────────────────────────────
@@ -875,6 +689,8 @@ let state = $state<NotebookState>({
 	},
 	activeTabId: _initialNotebook.id,
 	focusedCellId: null,
+	focusedTarget: null,
+	sidebarNotebookView: 'browse',
 	openResultTabs: [],
 	openExtraTabs: [],
 	tables: [],
@@ -970,6 +786,7 @@ function serialize(persistResults = true): string {
 		expandedNotebookIds: state.expandedNotebookIds,
 		sidebarSectionsExpanded: state.sidebarSectionsExpanded,
 		activeTabId: state.activeTabId,
+		sidebarNotebookView: state.sidebarNotebookView,
 		openResultTabs: state.openResultTabs,
 		tables: state.tables,
 		theme: state.theme,
@@ -1448,7 +1265,12 @@ function deserializeCell(c: Cell, i: number): Cell {
 			typeof (c as Partial<Cell>).scheduleLastError === 'string'
 				? ((c as Partial<Cell>).scheduleLastError as string)
 				: null,
-		intelligence: (c as Partial<Cell>).intelligence ?? null
+		intelligence: (c as Partial<Cell>).intelligence ?? null,
+		hideResult: Boolean((c as Partial<Cell>).hideResult),
+		executionCount:
+			typeof (c as Partial<Cell>).executionCount === 'number'
+				? ((c as Partial<Cell>).executionCount as number)
+				: 0
 	};
 }
 
@@ -1892,6 +1714,9 @@ function deserialize(raw: string): void {
 		}
 		if (typeof data.autoRun === 'boolean') state.autoRun = data.autoRun;
 		if (typeof data.ghostTextEnabled === 'boolean') state.ghostTextEnabled = data.ghostTextEnabled;
+		if (data.sidebarNotebookView === 'outline' || data.sidebarNotebookView === 'browse') {
+			state.sidebarNotebookView = data.sidebarNotebookView;
+		}
 		if (data.llmConfig && typeof data.llmConfig === 'object') {
 			const llmConfig = data.llmConfig as Partial<LLMConfig>;
 			state.llmConfig = {
@@ -2881,16 +2706,46 @@ export function getNotebookFilterValue(notebookId: string, paramName: string): s
 }
 
 export function setNotebookFilterValue(notebookId: string, paramName: string, value: string): void {
+	setNotebookFilterValues(notebookId, { [paramName]: value });
+}
+
+export function setNotebookFilterValues(notebookId: string, updates: Record<string, string>): void {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
-	if (!nb) return;
-	nb.filters = { ...(nb.filters ?? {}), [paramName]: value };
+	if (!nb || Object.keys(updates).length === 0) return;
+	nb.filters = { ...(nb.filters ?? {}), ...updates };
 	scheduleSave();
 
-	const token = `\${${paramName}}`;
-	const affected = nb.cells.filter((c) => c.cellType === 'query' && c.code.includes(token));
+	const tokenList = Object.keys(updates).map((p) => `\${${p}}`);
+	const affected = nb.cells.filter(
+		(c) => c.cellType === 'query' && tokenList.some((t) => c.code.includes(t))
+	);
 	for (const cell of affected) {
 		void runCellAndDownstream(cell.id);
 	}
+}
+
+export function saveNotebookFilterPreset(
+	notebookId: string,
+	name: string,
+	values: Record<string, string>
+): FilterPreset | null {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return null;
+	const preset: FilterPreset = { id: makeId(), name, values: { ...values } };
+	nb.filterPresets = [...(nb.filterPresets ?? []), preset];
+	scheduleSave();
+	return preset;
+}
+
+export function applyNotebookFilterPreset(notebookId: string, presetId: string): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	const preset = nb?.filterPresets?.find((p) => p.id === presetId);
+	if (!nb || !preset) return;
+	setNotebookFilterValues(notebookId, preset.values);
+}
+
+export function getNotebookFilterPresets(notebookId: string): FilterPreset[] {
+	return state.notebooks.find((n) => n.id === notebookId)?.filterPresets ?? [];
 }
 
 /** Substitutes ${paramName} tokens in query cell code with the notebook's current filter values. */
@@ -3278,6 +3133,7 @@ export function openNotebookTab(id: string): void {
 		state.openNotebookTabIds = [...state.openNotebookTabIds, id];
 		if (nb.lastActiveCellId && nb.cells.some((c) => c.id === nb.lastActiveCellId)) {
 			state.focusedCellId = nb.lastActiveCellId;
+			state.focusedTarget = { cellId: nb.lastActiveCellId };
 		}
 	}
 	state.activeTabId = id;
@@ -3313,7 +3169,7 @@ export function closeAllNotebookTabs(): void {
 	scheduleSave();
 }
 
-export function openNotebookTabAtCell(notebookId: string, cellId: string): void {
+export function openNotebookTabAtCell(notebookId: string, cellId: string, anchorId?: string): void {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
 	if (!nb) return;
 	if (!state.openNotebookTabIds.includes(notebookId)) {
@@ -3321,18 +3177,52 @@ export function openNotebookTabAtCell(notebookId: string, cellId: string): void 
 	}
 	state.activeTabId = notebookId;
 	state.focusedCellId = cellId;
+	state.focusedTarget = { cellId, anchorId };
 	state.notebooks = state.notebooks.map((n) =>
 		n.id === notebookId ? { ...n, lastActiveCellId: cellId } : n
 	);
 	scheduleSave();
 }
 
+export function navigateToOutlineEntry(notebookId: string, entry: OutlineEntry): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	const cell = nb.cells.find((c) => c.id === entry.cellId);
+	if (!cell) return;
+	if (cell.display === 'collapsed') {
+		setCellDisplay(cell.id, 'full');
+	}
+	const anchorId = entry.anchorId ?? (entry.kind === 'heading' ? entry.id : undefined);
+	openNotebookTabAtCell(notebookId, entry.cellId, anchorId);
+}
+
 export function clearFocusedCell(): void {
 	state.focusedCellId = null;
+	state.focusedTarget = null;
 }
 
 export function getFocusedCellId(): string | null {
-	return state.focusedCellId;
+	return state.focusedTarget?.cellId ?? state.focusedCellId;
+}
+
+export function getFocusedTarget(): FocusTarget | null {
+	return state.focusedTarget;
+}
+
+export function getSidebarNotebookView(): SidebarNotebookView {
+	return state.sidebarNotebookView;
+}
+
+export function setSidebarNotebookView(view: SidebarNotebookView): void {
+	state.sidebarNotebookView = view;
+	scheduleSave();
+}
+
+export function toggleSidebarNotebookView(): SidebarNotebookView {
+	const next = state.sidebarNotebookView === 'browse' ? 'outline' : 'browse';
+	state.sidebarNotebookView = next;
+	scheduleSave();
+	return next;
 }
 
 export function toggleNotebookExpanded(notebookId: string): void {
@@ -4010,6 +3900,7 @@ export function addMarkdownCell(): string {
 		n.id === notebookId ? { ...n, cells: [...n.cells, newCell] } : n
 	);
 	state.focusedCellId = newCell.id;
+	state.focusedTarget = { cellId: newCell.id };
 	scheduleSave();
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		scheduleFileSave(notebookId, newCell.id);
@@ -4232,6 +4123,7 @@ export function insertMarkdownCellAfter(id: string): string {
 	cells.splice(idx + 1, 0, newCell);
 	state.notebooks = state.notebooks.map((n) => (n.id === notebookId ? { ...n, cells } : n));
 	state.focusedCellId = newCell.id;
+	state.focusedTarget = { cellId: newCell.id };
 	scheduleSave();
 	return newCell.id;
 }
@@ -4249,6 +4141,7 @@ export function insertMarkdownCellBefore(id: string): string {
 	cells.splice(idx, 0, newCell);
 	state.notebooks = state.notebooks.map((n) => (n.id === notebookId ? { ...n, cells } : n));
 	state.focusedCellId = newCell.id;
+	state.focusedTarget = { cellId: newCell.id };
 	scheduleSave();
 	return newCell.id;
 }
@@ -4413,6 +4306,7 @@ export interface CellSnapshot {
 	language: CellLanguage;
 	cellType: CellType;
 	display: CellDisplay;
+	hideResult?: boolean;
 	guiStages: GUIPipelineStage[];
 	editMode: CellEditMode;
 	connectionId: string | null;
@@ -4444,6 +4338,7 @@ function cellToSnapshot(cell: Cell): CellSnapshot {
 		language: cell.language,
 		cellType: cell.cellType,
 		display: cell.display,
+		hideResult: cell.hideResult,
 		guiStages: cell.guiStages,
 		editMode: cell.editMode,
 		connectionId: cell.connectionId,
@@ -4484,6 +4379,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 				language: snap.language,
 				cellType: snap.cellType,
 				display: snap.display,
+				hideResult: snap.hideResult ?? live.hideResult,
 				guiStages: snap.guiStages,
 				editMode: snap.editMode,
 				connectionId: snap.connectionId,
@@ -4505,6 +4401,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			markdown: snap.markdown,
 			udfBody: snap.udfBody,
 			display: snap.display,
+			hideResult: snap.hideResult ?? false,
 			guiStages: snap.guiStages,
 			editMode: snap.editMode,
 			connectionId: snap.connectionId,
@@ -4729,6 +4626,7 @@ export async function pasteCellAfter(afterId: string | null): Promise<string> {
 		cellType: snap.cellType,
 		markdown: snap.markdown,
 		display: snap.display,
+		hideResult: snap.hideResult ?? false,
 		guiStages: snap.guiStages,
 		editMode: snap.editMode,
 		connectionId: snap.connectionId,
@@ -5270,8 +5168,28 @@ export function clearAllResults(): void {
 		for (const cell of nb.cells) {
 			cell.result = null;
 			cell.executionMs = null;
+			cell.pythonOutput = null;
+			if (cell.status !== 'running') cell.status = 'idle';
 		}
 	}
+	scheduleSave();
+}
+
+export function clearCellResult(cellId: string): void {
+	const ctx = findCellContext(cellId);
+	if (!ctx) return;
+	const { cell } = ctx;
+	cell.result = null;
+	cell.executionMs = null;
+	cell.pythonOutput = null;
+	if (cell.status !== 'running') cell.status = 'idle';
+	scheduleSave();
+}
+
+export function setCellHideResult(cellId: string, hide: boolean): void {
+	const cell = findCellContext(cellId)?.cell;
+	if (!cell) return;
+	cell.hideResult = hide;
 	scheduleSave();
 }
 
@@ -5524,6 +5442,7 @@ async function _runCell(
 		cell.staleReason = null;
 		cell.staleSources = [];
 		cell.lastRunAt = Date.now();
+		cell.executionCount = (cell.executionCount ?? 0) + 1;
 		if (isBuiltin) {
 			const viewName = getCellOutputReference(cell);
 			await createView(viewName, sql);
@@ -5987,6 +5906,7 @@ export async function runPythonCell(id: string): Promise<void> {
 					} else {
 						cell.status = 'success';
 						cell.pythonOutput = { stdout, figures: result?.figures ?? [], error: null };
+						cell.executionCount = (cell.executionCount ?? 0) + 1;
 						if (result?.dataframe) {
 							cell.result = result.dataframe;
 							// Phase 3: register the result as a real DuckDB table so
@@ -6168,6 +6088,44 @@ export async function runAll(): Promise<void> {
 		const prevName = prevViewNameForIndex(nb.cells, i);
 		await _runCell(cell, fullCode, prevName);
 	}
+}
+
+function isExecutableCell(cell: Cell): boolean {
+	return cell.cellType === 'query' || cell.cellType === 'python';
+}
+
+export async function runCellsAbove(cellId: string): Promise<void> {
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === cellId);
+	if (idx <= 0) return;
+	for (let i = 0; i < idx; i++) {
+		const cell = nb.cells[i];
+		if (!isExecutableCell(cell)) continue;
+		if (cell.cellType === 'query') await runCell(cell.id);
+		else await runPythonCell(cell.id);
+	}
+}
+
+export async function runCellsBelow(cellId: string): Promise<void> {
+	const nb = getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === cellId);
+	if (idx < 0) return;
+	for (let i = idx + 1; i < nb.cells.length; i++) {
+		const cell = nb.cells[i];
+		if (!isExecutableCell(cell)) continue;
+		if (cell.cellType === 'query') await runCell(cell.id);
+		else await runPythonCell(cell.id);
+	}
+}
+
+export function getActiveNotebookRunningCount(): number {
+	const nb = getActiveNotebook();
+	return nb.cells.filter((c) => c.status === 'running').length;
+}
+
+export function getActiveNotebookStaleCount(): number {
+	const nb = getActiveNotebook();
+	return nb.cells.filter((c) => c.cellType === 'query' && c.needsRun).length;
 }
 
 export function getNotebookStaleCellCount(): number {
@@ -6403,6 +6361,8 @@ export function __resetStateForTests(): void {
 		},
 		activeTabId: initial.id,
 		focusedCellId: null,
+		focusedTarget: null,
+		sidebarNotebookView: 'browse',
 		openResultTabs: [],
 		openExtraTabs: [],
 		tables: [],

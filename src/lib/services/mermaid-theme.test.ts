@@ -24,6 +24,8 @@ describe('themeMermaidSvg', () => {
 		expect(themed).toContain('id="lunapad-mermaid-theme"');
 		expect(themed).toContain('var(--popover)');
 		expect(themed).toContain('var(--foreground)');
+		expect(themed).toContain('var(--radius)');
+		expect(themed).toContain('var(--font-sans)');
 		expect(themed.indexOf('lunapad-mermaid-theme')).toBeLessThan(themed.indexOf('</svg>'));
 	});
 });

@@ -27,19 +27,21 @@ For any cell backed by a real model file (promoted or not), Lunapad can:
 
 - **Compile** it through the dbt CLI and show you the resulting SQL.
 - **Run** it (`dbt run --select model`).
-- **Test** it against whatever's defined in `schema.yml`.
+- **Test** it against whatever's defined in `schema.yml` for that model.
 
 Logs stream live as these run. Cells still living inside an unpromoted `.luna` notebook run interactively in Lunapad the normal way (compiled and executed directly, the same as any notebook cell) but won't show up in a `dbt run` or have dbt tests until promoted.
 
+Add tests in `schema.yml` (unique, not_null, relationships, accepted_values, etc.). Lunapad surfaces pass/fail on the cell and in lineage after you run tests.
+
 ## Lineage
 
-The lineage view shows your model graph, dependencies between models, pass/fail status from the last test run, pulled straight from dbt's own manifest. Only promoted/file-backed models appear here, for the same reason they're the only ones dbt's build sees.
+The lineage view shows your model graph: dependencies between models, pass/fail status from the last test run, pulled straight from dbt's manifest. Only promoted/file-backed models appear here. Unpromoted `.luna` cells don't, because dbt's build never sees them.
 
 ![The lineage view showing two models as cards with their status badges](images/08-dbt-lineage.png)
 
 ## Scheduling
 
-Any model can be set to re-run on a cron schedule: a label, a cron expression, and an optional `dbt select` expression to scope which models actually run (defaults to just that model). Scheduling is powered by Inngest, running as a sidecar service. Watch job status from there or from the model's own history.
+Open the schedule modal on a promoted model. Set a label, a cron expression, and an optional `dbt select` expression to scope which models actually run (defaults to just that model). Scheduling is powered by Inngest as a sidecar service. Watch job status in Inngest's UI (`http://localhost:8267` in Docker Compose) or from the model's run history in Lunapad.
 
 ## Next
 

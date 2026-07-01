@@ -7,11 +7,14 @@ export type PermissionAction =
 	| 'connections:manage'
 	| 'shares:publish'
 	| 'shares:read'
+	| 'sites:manage'
 	| 'comments:read'
 	| 'comments:write'
 	| 'comments:resolve'
 	| 'dbt:run'
 	| 'dbt:read'
+	| 'ai:read'
+	| 'ai:mutate'
 	| 'admin:manage';
 
 export type CommentAnchorType =
@@ -38,11 +41,14 @@ const ROLE_ACTIONS: Record<UserRole, Set<PermissionAction>> = {
 		'connections:manage',
 		'shares:publish',
 		'shares:read',
+		'sites:manage',
 		'comments:read',
 		'comments:write',
 		'comments:resolve',
 		'dbt:run',
 		'dbt:read',
+		'ai:read',
+		'ai:mutate',
 		'admin:manage'
 	]),
 	editor: new Set([
@@ -51,11 +57,14 @@ const ROLE_ACTIONS: Record<UserRole, Set<PermissionAction>> = {
 		'connections:query',
 		'shares:publish',
 		'shares:read',
+		'sites:manage',
 		'comments:read',
 		'comments:write',
 		'comments:resolve',
 		'dbt:run',
-		'dbt:read'
+		'dbt:read',
+		'ai:read',
+		'ai:mutate'
 	]),
 	viewer: new Set([
 		'workspace:read',
@@ -63,7 +72,8 @@ const ROLE_ACTIONS: Record<UserRole, Set<PermissionAction>> = {
 		'shares:read',
 		'comments:read',
 		'comments:write',
-		'dbt:read'
+		'dbt:read',
+		'ai:read'
 	])
 };
 
@@ -74,12 +84,33 @@ export const ALL_API_SCOPES: PermissionAction[] = [
 	'connections:manage',
 	'shares:publish',
 	'shares:read',
+	'sites:manage',
 	'comments:read',
 	'comments:write',
 	'comments:resolve',
 	'dbt:run',
-	'dbt:read'
+	'dbt:read',
+	'ai:read',
+	'ai:mutate'
 ];
+
+/** Tools that mutate notebook state — require ai:mutate permission. */
+export const AI_MUTATING_TOOLS = new Set([
+	'create_cell',
+	'update_cell',
+	'delete_cell',
+	'run_cells',
+	'move_cell',
+	'set_chart',
+	'pick_chart',
+	'set_view_mode'
+]);
+
+export function canUseAITool(user: PermissionUser | null, tool: string): boolean {
+	if (!user) return false;
+	if (AI_MUTATING_TOOLS.has(tool)) return can(user, 'ai:mutate');
+	return can(user, 'ai:read');
+}
 
 export function normalizeRole(role: string | null | undefined): UserRole {
 	if (role === 'admin') return 'admin';

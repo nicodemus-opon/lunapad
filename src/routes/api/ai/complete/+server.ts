@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { normalizeBaseUrl } from '$lib/server/ai-schema-context';
 import { callLLMText, normalizeCompletionTimeoutMs } from '$lib/server/ai-tools';
 import { PRQL_KEYWORDS, PRQL_BUILTINS } from '$lib/monaco/prql';
+import { sanitizeCompletion } from './sanitize';
 
 // Ghost-text inline completion (ghost-completions.ts on the client) — a single-shot,
 // no-tool, no-streaming endpoint distinct from /api/ai/edit-cell and /api/ai/chat.
@@ -51,6 +52,9 @@ ${SHARED_INSTRUCTION}`;
 Example:
 Code: "select id, name from customers where "
 Completion: "status = 'active'"
+Example:
+Code: "select region, sum(amount) as revenue from orders group by region order by "
+Completion: "revenue desc"
 ${SHARED_INSTRUCTION}`;
 	}
 	if (req.pythonKind === 'udf') {
@@ -83,34 +87,17 @@ function buildUserPrompt(req: CompleteRequest): string {
 	return parts.join('\n\n');
 }
 
-/** Strip artifacts small models add despite instructions: fenced code blocks, a leading
- *  explanatory line, and any overlap with the tail of the prefix (models often restate
- *  the last few characters before continuing). Also caps runaway-length completions. */
-function sanitizeCompletion(raw: string, prefix: string): string {
-	// Some reasoning models emit their chain-of-thought inline as literal <think> tags in
-	// `content` rather than a separate `reasoning` field — strip it before anything else.
-	let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-	const fenced = text.match(/```[a-zA-Z]*\n?([\s\S]*?)```/);
-	if (fenced) text = fenced[1].trim();
-
-	// Drop a leading prose line like "Here's the completion:" before the actual code.
-	const lines = text.split('\n');
-	if (lines.length > 1 && /^(here|sure|completion|continuing)\b.*:$/i.test(lines[0].trim())) {
-		text = lines.slice(1).join('\n').trim();
-	}
-
-	// Remove overlap if the model restated the tail of the prefix before continuing.
-	const prefixTail = prefix.slice(-40);
-	for (let overlap = Math.min(prefixTail.length, text.length); overlap > 3; overlap--) {
-		if (prefixTail.endsWith(text.slice(0, overlap))) {
-			text = text.slice(overlap);
-			break;
+function isLowQualityCompletion(completion: string, req: CompleteRequest): boolean {
+	const s = completion.trim();
+	if (!s) return true;
+	if (req.language === 'sql') {
+		const tail = req.prefix.trim().slice(-60).toLowerCase();
+		if ((tail.endsWith(',') || tail.includes('as mom_delta,')) && /^from\s+\w+$/i.test(s)) {
+			return true;
 		}
+		if (tail.includes('select ') && /^from\s+/i.test(s) && s.length < 24) return true;
 	}
-
-	const cappedLines = text.split('\n').slice(0, 8).join('\n');
-	return cappedLines.slice(0, 500);
+	return false;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -136,17 +123,36 @@ export const POST: RequestHandler = async ({ request }) => {
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
+		const prefixTokenBudget = Math.min(220, Math.max(96, 48 + Math.floor(req.prefix.length / 4)));
 		const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
-		const completion = await callLLMText({
+		let completion = await callLLMText({
 			completionUrl,
 			model: req.llmConfig.model,
 			systemPrompt: buildSystemPrompt(req),
 			userPrompt: buildUserPrompt(req),
+			maxTokens: prefixTokenBudget,
 			signal: controller.signal,
 			apiKey: req.llmConfig.apiKey,
 			provider: req.llmConfig.provider
 		});
-		return json({ completion: sanitizeCompletion(completion, req.prefix) });
+		let sanitized = sanitizeCompletion(completion, req.prefix, req.suffix ?? '');
+		if (
+			(!sanitized.trim() || isLowQualityCompletion(sanitized, req)) &&
+			!controller.signal.aborted
+		) {
+			completion = await callLLMText({
+				completionUrl,
+				model: req.llmConfig.model,
+				systemPrompt: buildSystemPrompt(req),
+				userPrompt: `${buildUserPrompt(req)}\n\nContinue at the cursor only. Output the next tokens of the current statement — not a new FROM clause.`,
+				maxTokens: Math.min(280, prefixTokenBudget + 64),
+				signal: controller.signal,
+				apiKey: req.llmConfig.apiKey,
+				provider: req.llmConfig.provider
+			});
+			sanitized = sanitizeCompletion(completion, req.prefix, req.suffix ?? '');
+		}
+		return json({ completion: sanitized });
 	} catch {
 		// Timeout, network error, or malformed upstream response — ghost text is best-effort,
 		// never surface this as an error the client needs to handle.

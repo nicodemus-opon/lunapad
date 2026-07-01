@@ -1,10 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	createThread,
-	listThreads,
-	ensureCommentsTablesOnce
-} from '$lib/server/comments';
+import { createThread, listThreads, ensureCommentsTablesOnce } from '$lib/server/comments';
 import { logAuditEvent } from '$lib/server/audit';
 import { can, userFromLocals } from '$lib/server/permissions';
 import type { CommentAnchorType } from '$lib/server/permissions';

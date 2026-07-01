@@ -1,7 +1,6 @@
 import type { KeyChord } from './types';
 
-const isMac =
-	typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 export function formatChord(chord: KeyChord): string {
 	const parts: string[] = [];

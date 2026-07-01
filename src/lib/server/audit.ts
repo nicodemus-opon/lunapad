@@ -17,9 +17,7 @@ async function ensureAuditTable(): Promise<void> {
 	await query(
 		`CREATE INDEX IF NOT EXISTS audit_events_created_at_idx ON audit_events (created_at DESC)`
 	);
-	await query(
-		`CREATE INDEX IF NOT EXISTS audit_events_actor_id_idx ON audit_events (actor_id)`
-	);
+	await query(`CREATE INDEX IF NOT EXISTS audit_events_actor_id_idx ON audit_events (actor_id)`);
 }
 
 export function ensureAuditTableOnce(): Promise<void> {

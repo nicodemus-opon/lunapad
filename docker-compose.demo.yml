@@ -1,0 +1,19 @@
+# Public read-only demo override.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# Demo mode uses DuckDB WASM only — no login, no workspace persistence, no external
+# connections, dbt, or automation API. See docs/guide/11-self-hosting.md.
+
+services:
+  app:
+    environment:
+      DEMO_MODE: '1'
+      PROJECT_FOLDER: ''
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Trino is not required for demo mode (DuckDB WASM only), but the base compose
+    # healthcheck chain still expects it — leave trino running unless you maintain
+    # a slimmed-down demo stack separately.

@@ -109,7 +109,9 @@ async function ensureCommentsTables(): Promise<void> {
 	await query(
 		`CREATE INDEX IF NOT EXISTS comment_threads_notebook_cell_idx ON comment_threads (notebook_id, cell_id)`
 	);
-	await query(`CREATE INDEX IF NOT EXISTS comment_threads_share_idx ON comment_threads (share_token)`);
+	await query(
+		`CREATE INDEX IF NOT EXISTS comment_threads_share_idx ON comment_threads (share_token)`
+	);
 	await query(`CREATE INDEX IF NOT EXISTS comments_thread_id_idx ON comments (thread_id)`);
 }
 
@@ -238,7 +240,10 @@ async function isThreadUnread(userId: string, threadId: string): Promise<boolean
 	return new Date(latest) > new Date(rows[0].last_read);
 }
 
-export async function getThread(threadId: string, userId?: string | null): Promise<CommentThread | null> {
+export async function getThread(
+	threadId: string,
+	userId?: string | null
+): Promise<CommentThread | null> {
 	await ensureCommentsTablesOnce();
 	const rows = await query<{
 		id: string;
@@ -333,9 +338,7 @@ export async function createThread(input: {
 	const threadId = crypto.randomUUID();
 	const commentId = crypto.randomUUID();
 	const title =
-		input.title?.trim() ||
-		input.body.trim().split('\n')[0]?.slice(0, 80) ||
-		'New thread';
+		input.title?.trim() || input.body.trim().split('\n')[0]?.slice(0, 80) || 'New thread';
 
 	await query(
 		`INSERT INTO comment_threads
@@ -353,10 +356,12 @@ export async function createThread(input: {
 			input.authorId
 		]
 	);
-	await query(
-		`INSERT INTO comments (id, thread_id, author_id, body) VALUES ($1, $2, $3, $4)`,
-		[commentId, threadId, input.authorId, input.body]
-	);
+	await query(`INSERT INTO comments (id, thread_id, author_id, body) VALUES ($1, $2, $3, $4)`, [
+		commentId,
+		threadId,
+		input.authorId,
+		input.body
+	]);
 	await markThreadsRead(input.authorId, [threadId]);
 	const thread = (await getThread(threadId, input.authorId))!;
 	const comments = await listComments(threadId);
@@ -444,10 +449,11 @@ export async function toggleReaction(
 			[commentId, userId, emoji]
 		);
 	} else {
-		await query(
-			`INSERT INTO comment_reactions (comment_id, user_id, emoji) VALUES ($1, $2, $3)`,
-			[commentId, userId, emoji]
-		);
+		await query(`INSERT INTO comment_reactions (comment_id, user_id, emoji) VALUES ($1, $2, $3)`, [
+			commentId,
+			userId,
+			emoji
+		]);
 	}
 }
 

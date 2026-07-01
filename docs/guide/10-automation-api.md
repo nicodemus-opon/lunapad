@@ -4,9 +4,11 @@ Lunapad exposes a REST API and an MCP server, both protected by the same persona
 
 This is built for a trusted, self-hosted team, not as a public multi-tenant integration surface. Anyone with a valid key can act on the shared workspace exactly as if they were logged in.
 
+`DEMO_MODE=1` blocks the automation API entirely.
+
 ## Creating a key
 
-Open Settings → API Keys. Give it a name (so you can tell keys apart later), an optional expiry (30/90/365 days, or never), and create it. The full key is shown exactly once, copy it immediately, Lunapad only stores a hash afterward and can't show it to you again. Revoke a key any time from the same screen.
+Open Settings → API Keys. Give it a name (so you can tell keys apart later), an optional expiry (30/90/365 days, or never), and create it. The full key is shown exactly once; copy it immediately. Lunapad only stores a hash afterward and can't show it to you again. Revoke a key any time from the same screen.
 
 ![The API Keys settings panel showing a created key, masked, with its creation date and revoke action](images/10-api-keys.png)
 
@@ -19,7 +21,7 @@ curl http://localhost:3967/api/v1/connections \
 
 ## REST API (`/api/v1`)
 
-A deliberately curated subset, not full parity with every UI-supporting route:
+A deliberately curated subset, not full parity with every UI route:
 
 | Endpoint                       | What it does                                 |
 | ------------------------------ | -------------------------------------------- |
@@ -33,11 +35,48 @@ A deliberately curated subset, not full parity with every UI-supporting route:
 | `GET /api/v1/dbt/jobs/[jobId]` | Check a dbt job's status                     |
 | `GET /api/v1/dbt/manifest`     | Get the compiled model graph                 |
 
-Notebook listing only works when a project folder is open in filesystem mode (see [dbt projects](08-dbt-projects.md)); ad hoc browser-only notebooks aren't reachable this way. The built-in DuckDB engine is also out of scope here, there's no server-side DuckDB to run a query against headlessly, so `query`/`prql` calls need a real connection id.
+Notebook listing only works when a project folder is open in filesystem mode (see [dbt projects](08-dbt-projects.md)). Ad hoc browser-only notebooks aren't reachable this way. The built-in DuckDB engine is also out of scope: there's no server-side DuckDB for headless runs, so `query` and `prql` need a real `connectionId`.
+
+### Example: run SQL
+
+```bash
+curl -s http://localhost:3967/api/v1/query \
+  -H "Authorization: Bearer lp_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connectionId": "my_postgres",
+    "sql": "SELECT id, email FROM public.users LIMIT 5"
+  }'
+```
+
+Response shape (simplified):
+
+```json
+{
+	"columns": ["id", "email"],
+	"rows": [{ "id": 1, "email": "a@example.com" }]
+}
+```
+
+Errors return HTTP 400 with `{ "error": "..." }`. Rate limit: 120 requests per minute per key (HTTP 429).
+
+### Example: run PRQL
+
+```bash
+curl -s http://localhost:3967/api/v1/prql \
+  -H "Authorization: Bearer lp_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connectionId": "my_postgres",
+    "prql": "from users\nfilter active == true\ntake 10"
+  }'
+```
+
+Lunapad compiles PRQL server-side, runs the resulting SQL, and returns the same result envelope as `/query`.
 
 ## MCP server (`/api/mcp`)
 
-The same API keys work as bearer auth for an MCP client. Point any MCP client that supports streamable HTTP at `http://your-host:3967/api/mcp` with an `Authorization: Bearer <key>` header, and these tools become available:
+The same API keys work as bearer auth for an MCP client. Point any MCP client that supports streamable HTTP at `http://your-host:3967/api/mcp` with an `Authorization: Bearer <key>` header:
 
 | Tool                 | What it does                              |
 | -------------------- | ----------------------------------------- |
@@ -51,7 +90,7 @@ The same API keys work as bearer auth for an MCP client. Point any MCP client th
 | `get_dbt_job_status` | Check a dbt job's status                  |
 | `get_dbt_manifest`   | Get the model graph                       |
 
-This is meant for local or team use, talking to your own Lunapad instance from your own tools, not for exposing your data to unknown third parties. There's no per-tool permission scoping beyond the key itself: a key can do anything its owner could do from the UI.
+There's no per-tool permission scoping beyond the key itself: a key can do anything its owner could do from the UI.
 
 ## Next
 

@@ -24,10 +24,12 @@ import {
 } from 'monaco-sql-languages/esm/languages/generic/generic.js';
 
 import { registerPRQL } from './prql';
+import { registerLunapadMarkdown } from './lunapad-markdown';
 import { defineThemes } from './themes';
 import { registerCompletions, registerSqlSignatureHelp } from './completions';
-import { registerGhostCompletions } from './ghost-completions';
+import { registerGhostCompletions, setGhostInlineEditActive } from './ghost-completions';
 import { registerHoverProviders } from './hover';
+import { registerMarkdownCompletions } from './markdown-completions';
 import { registerMarkdownHover } from './markdown-hover';
 import { registerPrqlCodeActions } from './prql-actions';
 import { registerPlotlyIntellisense } from './plotly-intellisense';
@@ -46,6 +48,7 @@ export {
 	setModelPythonSchema,
 	clearModelPythonSchema
 } from './completions';
+export { setGhostInlineEditActive } from './ghost-completions';
 export type { CompletionEntry, PythonCellContext, PythonUpstreamSchema } from './completions';
 export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from './plot-globals';
 
@@ -99,11 +102,13 @@ export function setupMonaco(): typeof monaco {
 
 	registerSqlDialects();
 	registerPRQL(monaco);
+	registerLunapadMarkdown(monaco);
 	defineThemes(monaco);
 	registerCompletions(monaco);
 	registerSqlSignatureHelp(monaco);
 	registerGhostCompletions(monaco);
 	registerHoverProviders(monaco);
+	registerMarkdownCompletions(monaco);
 	registerMarkdownHover(monaco);
 	registerPrqlCodeActions(monaco);
 	registerPlotlyIntellisense();

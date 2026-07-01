@@ -1,17 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	getThread,
-	listComments,
-	updateThread,
-	addComment
-} from '$lib/server/comments';
+import { getThread, listComments, updateThread, addComment } from '$lib/server/comments';
 import { logAuditEvent } from '$lib/server/audit';
-import {
-	can,
-	canResolveThread,
-	userFromLocals
-} from '$lib/server/permissions';
+import { can, canResolveThread, userFromLocals } from '$lib/server/permissions';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });

@@ -21,6 +21,8 @@
 		codeHidden,
 		revealed,
 		hidden = false,
+		cellNumber,
+		showCellNumber = false,
 		prevCellNames,
 		downstreamCount,
 		crossNotebookUsageCount,
@@ -39,6 +41,9 @@
 		revealed: boolean;
 		/** Markdown preview mode hides the header until the cell is hovered/focused. */
 		hidden?: boolean;
+		/** Query/python cell index, rendered in the gutter via negative margin. */
+		cellNumber?: number;
+		showCellNumber?: boolean;
 		prevCellNames: string[];
 		downstreamCount: number;
 		crossNotebookUsageCount: number;
@@ -87,6 +92,16 @@
 		: ''} {collapsed ? 'cursor-pointer' : ''}"
 	onclick={onRowClick}
 >
+	{#if cellNumber != null}
+		<span
+			class="pointer-events-none -ml-(--cell-gutter) w-(--cell-gutter) shrink-0 pr-1 text-right font-mono text-[13px] leading-none font-medium text-muted-foreground/50 tabular-nums transition-opacity duration-150 {showCellNumber
+				? 'opacity-100'
+				: 'opacity-0'}"
+			aria-hidden="true"
+		>
+			{cellNumber}
+		</span>
+	{/if}
 	<div class="flex min-w-0 flex-1 items-center gap-1.5">
 		{#if !codeHidden}
 			<Tooltip.Root>

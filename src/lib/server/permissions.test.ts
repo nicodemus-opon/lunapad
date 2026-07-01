@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	can,
-	canResolveThread,
-	normalizeRole,
-	hasApiScope
-} from './permissions';
+import { can, canResolveThread, normalizeRole, hasApiScope } from './permissions';
 
 describe('permissions', () => {
 	it('normalizes legacy user role to editor', () => {
@@ -19,7 +14,18 @@ describe('permissions', () => {
 
 	it('blocks viewer from publishing shares', () => {
 		expect(can({ id: '1', role: 'viewer' }, 'shares:publish')).toBe(false);
+		expect(can({ id: '1', role: 'viewer' }, 'sites:manage')).toBe(false);
 		expect(can({ id: '1', role: 'viewer' }, 'comments:write')).toBe(true);
+	});
+
+	it('grants editor sites manage', () => {
+		expect(can({ id: '1', role: 'editor' }, 'sites:manage')).toBe(true);
+	});
+
+	it('blocks viewer from ai mutations', () => {
+		expect(can({ id: '1', role: 'viewer' }, 'ai:mutate')).toBe(false);
+		expect(can({ id: '1', role: 'viewer' }, 'ai:read')).toBe(true);
+		expect(can({ id: '1', role: 'editor' }, 'ai:mutate')).toBe(true);
 	});
 
 	it('allows thread creator to resolve', () => {

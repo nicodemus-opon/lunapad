@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
+	resolveWorkspaceUpdatedBy,
 	saveWorkspaceState,
 	WorkspaceConflictError
 } from '$lib/server/workspace-store';
@@ -35,7 +36,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				resourceId: 'singleton'
 			});
 		}
-		return json({ ok: true, updatedAt: row.updatedAt, updatedBy: row.updatedBy });
+		return json({
+			ok: true,
+			updatedAt: row.updatedAt,
+			updatedBy: await resolveWorkspaceUpdatedBy(row.updatedBy)
+		});
 	} catch (err) {
 		if (err instanceof WorkspaceConflictError) {
 			return json(
@@ -43,7 +48,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					error: err.message,
 					conflict: true,
 					updatedAt: err.updatedAt,
-					updatedBy: err.updatedBy
+					updatedBy: await resolveWorkspaceUpdatedBy(err.updatedBy)
 				},
 				{ status: 409 }
 			);

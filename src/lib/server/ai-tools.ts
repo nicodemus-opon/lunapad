@@ -312,8 +312,8 @@ export async function callLLMWithTools(input: {
 // (the /complete route) applies its own short, fixed timeout via its AbortSignal.
 
 const COMPLETION_MIN_TIMEOUT_MS = 500;
-const COMPLETION_MAX_TIMEOUT_MS = 4_000;
-const COMPLETION_DEFAULT_TIMEOUT_MS = 1_800;
+const COMPLETION_MAX_TIMEOUT_MS = 8_000;
+const COMPLETION_DEFAULT_TIMEOUT_MS = 4_000;
 
 export function normalizeCompletionTimeoutMs(value: unknown): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return COMPLETION_DEFAULT_TIMEOUT_MS;

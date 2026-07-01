@@ -20,13 +20,38 @@ const DEBOUNCE_MS = 500;
 const MAX_PREFIX_CHARS = 2000;
 const PREFIX_LINES = 50;
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-// Session-scoped cache — avoids re-fetching when the cursor moves without the prefix
-// changing (e.g. arrow keys, clicking around).
+interface PendingFetch {
+	timer: ReturnType<typeof setTimeout>;
+	controller: AbortController;
+}
+
+// Per-model debounce — avoids cross-cell timer interference.
+const pendingByModel = new Map<string, PendingFetch>();
+// Session-scoped cache — only successful non-empty completions.
 const completionCache = new Map<string, string>();
+// Suppress ghost text while inline AI is streaming into a cell editor.
+const inlineEditActiveModels = new Set<string>();
+
+export function setGhostInlineEditActive(modelUri: string, active: boolean): void {
+	if (active) inlineEditActiveModels.add(modelUri);
+	else inlineEditActiveModels.delete(modelUri);
+}
 
 function cacheKey(modelUri: string, prefix: string): string {
 	return `${modelUri}::${prefix}`;
+}
+
+function hasLLMConfig(): boolean {
+	const llmConfig = getLLMConfig();
+	return Boolean(llmConfig?.baseUrl?.trim() && llmConfig?.model?.trim());
+}
+
+function clearPending(modelUri: string): void {
+	const pending = pendingByModel.get(modelUri);
+	if (!pending) return;
+	clearTimeout(pending.timer);
+	pending.controller.abort();
+	pendingByModel.delete(modelUri);
 }
 
 function buildPrefix(model: Monaco.editor.ITextModel, position: Monaco.Position): string {
@@ -87,17 +112,12 @@ async function buildContextHints(
 		const pyContext = getModelPythonContext(model);
 		if (!pyContext || pyContext.kind === 'udf') return { schema: '', pythonKind: 'udf' };
 
-		// Upstream DataFrame schemas from cell results — the primary, most useful context.
-		// Produces "orders: order_id, customer_id, status, amount" per DataFrame.
 		const upstreamSchemas = getModelPythonSchema(model);
 		const schemaNames = new Set(upstreamSchemas.map((s) => s.name));
 		const lines: string[] = upstreamSchemas.map((s) =>
 			s.columns.length > 0 ? `${s.name}: ${s.columns.join(', ')}` : s.name
 		);
 
-		// Jedi as a supplement: picks up imports, functions, and runtime names
-		// the schema registry doesn't know about. Filter out DataFrame names already
-		// listed above and private/dunder names to keep the prompt tight.
 		try {
 			const items = await completePython(
 				pyContext.notebookId,
@@ -162,33 +182,52 @@ async function fetchCompletion(
 	}
 }
 
+function makeInlineItem(
+	monaco: typeof Monaco,
+	position: Monaco.Position,
+	insertText: string
+): Monaco.languages.InlineCompletion {
+	return {
+		insertText,
+		range: new monaco.Range(
+			position.lineNumber,
+			position.column,
+			position.lineNumber,
+			position.column
+		)
+	};
+}
+
 export function registerGhostCompletions(monaco: typeof Monaco): void {
 	for (const languageId of ['prql', 'sql', 'python'] as const) {
 		monaco.languages.registerInlineCompletionsProvider(languageId, {
 			async provideInlineCompletions(model, position, _context, token) {
 				if (!getGhostTextEnabled()) return { items: [] };
 
+				const modelUri = model.uri.toString();
+				if (inlineEditActiveModels.has(modelUri)) return { items: [] };
+
 				const prefix = buildPrefix(model, position);
 				if (!prefix.trim()) return { items: [] };
-				const suffix = buildSuffix(model, position);
+				if (!hasLLMConfig()) return { items: [] };
 
-				const modelUri = model.uri.toString();
-				// Include suffix in cache key: same prefix with different trailing context
-				// should yield a different completion.
+				const suffix = buildSuffix(model, position);
 				const key = cacheKey(modelUri, prefix + '||' + suffix);
 				const cached = completionCache.get(key);
 				if (cached !== undefined) {
-					return cached ? { items: [{ insertText: cached }] } : { items: [] };
+					return { items: [makeInlineItem(monaco, position, cached)] };
 				}
 
 				const result = await new Promise<string>((resolve) => {
-					if (debounceTimer) clearTimeout(debounceTimer);
+					clearPending(modelUri);
 					const controller = new AbortController();
 					token.onCancellationRequested(() => {
 						controller.abort();
+						clearPending(modelUri);
 						resolve('');
 					});
-					debounceTimer = setTimeout(() => {
+					const timer = setTimeout(() => {
+						pendingByModel.delete(modelUri);
 						buildContextHints(languageId, model, position, controller.signal)
 							.then(({ schema, dialect, pythonKind }) =>
 								fetchCompletion(
@@ -203,17 +242,24 @@ export function registerGhostCompletions(monaco: typeof Monaco): void {
 							)
 							.then(resolve, () => resolve(''));
 					}, DEBOUNCE_MS);
+					pendingByModel.set(modelUri, { timer, controller });
 				});
 
 				if (token.isCancellationRequested || !result) {
-					completionCache.set(key, result);
+					completionCache.delete(key);
+					if (!result && !token.isCancellationRequested) {
+						console.debug(
+							`[ghost] empty completion (${languageId}, prefix ${prefix.length} chars)`
+						);
+					}
 					return { items: [] };
 				}
+
 				completionCache.set(key, result);
 				if (completionCache.size > 200) {
 					completionCache.delete(completionCache.keys().next().value as string);
 				}
-				return { items: [{ insertText: result }] };
+				return { items: [makeInlineItem(monaco, position, result)] };
 			},
 			disposeInlineCompletions() {
 				// Nothing to dispose — items carry no external resources.

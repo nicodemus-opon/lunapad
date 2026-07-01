@@ -7,6 +7,10 @@ export interface SiteRecord {
 	slug: string;
 	name: string;
 	requireAuth: boolean;
+	logoUrl: string | null;
+	accentColor: string | null;
+	showFooter: boolean;
+	homePageId: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -17,6 +21,7 @@ export interface SitePageRecord {
 	pageSlug: string;
 	navLabel: string;
 	shareToken: string;
+	notebookId: string | null;
 	sortOrder: number;
 }
 
@@ -54,10 +59,18 @@ export async function ensureSiteTables(): Promise<void> {
 				page_slug   TEXT NOT NULL,
 				nav_label   TEXT NOT NULL,
 				share_token TEXT NOT NULL REFERENCES shared_reports(token) ON DELETE CASCADE,
+				notebook_id TEXT,
 				sort_order  INTEGER NOT NULL DEFAULT 0,
 				UNIQUE(site_id, page_slug)
 			)
 		`);
+		await query(`ALTER TABLE site_pages ADD COLUMN IF NOT EXISTS notebook_id TEXT`);
+		await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS logo_url TEXT`);
+		await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS accent_color TEXT`);
+		await query(
+			`ALTER TABLE sites ADD COLUMN IF NOT EXISTS show_footer BOOLEAN NOT NULL DEFAULT TRUE`
+		);
+		await query(`ALTER TABLE sites ADD COLUMN IF NOT EXISTS home_page_id INTEGER`);
 		await query(
 			`CREATE INDEX IF NOT EXISTS site_pages_site_id_idx ON site_pages (site_id, sort_order)`
 		);
@@ -71,6 +84,10 @@ interface SiteRow {
 	slug: string;
 	name: string;
 	require_auth: boolean;
+	logo_url: string | null;
+	accent_color: string | null;
+	show_footer: boolean;
+	home_page_id: number | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -81,6 +98,10 @@ function rowToSite(row: SiteRow): SiteRecord {
 		slug: row.slug,
 		name: row.name,
 		requireAuth: row.require_auth,
+		logoUrl: row.logo_url,
+		accentColor: row.accent_color,
+		showFooter: row.show_footer ?? true,
+		homePageId: row.home_page_id,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at
 	};
@@ -92,6 +113,7 @@ interface SitePageRow {
 	page_slug: string;
 	nav_label: string;
 	share_token: string;
+	notebook_id: string | null;
 	sort_order: number;
 }
 
@@ -102,6 +124,7 @@ function rowToPage(row: SitePageRow): SitePageRecord {
 		pageSlug: row.page_slug,
 		navLabel: row.nav_label,
 		shareToken: row.share_token,
+		notebookId: row.notebook_id,
 		sortOrder: row.sort_order
 	};
 }
@@ -152,7 +175,15 @@ export async function createSite(input: {
 
 export async function updateSite(
 	id: string,
-	input: { slug?: string; name?: string; requireAuth?: boolean }
+	input: {
+		slug?: string;
+		name?: string;
+		requireAuth?: boolean;
+		logoUrl?: string | null;
+		accentColor?: string | null;
+		showFooter?: boolean;
+		homePageId?: number | null;
+	}
 ): Promise<SiteRecord> {
 	await ensureSiteTables();
 	const existing = await getSiteById(id);
@@ -163,8 +194,18 @@ export async function updateSite(
 	}
 	try {
 		await query(
-			`UPDATE sites SET slug = $1, name = $2, require_auth = $3, updated_at = NOW() WHERE id = $4`,
-			[slug, input.name ?? existing.name, input.requireAuth ?? existing.requireAuth, id]
+			`UPDATE sites SET slug = $1, name = $2, require_auth = $3, logo_url = $4, accent_color = $5,
+			 show_footer = $6, home_page_id = $7, updated_at = NOW() WHERE id = $8`,
+			[
+				slug,
+				input.name ?? existing.name,
+				input.requireAuth ?? existing.requireAuth,
+				input.logoUrl !== undefined ? input.logoUrl : existing.logoUrl,
+				input.accentColor !== undefined ? input.accentColor : existing.accentColor,
+				input.showFooter ?? existing.showFooter,
+				input.homePageId !== undefined ? input.homePageId : existing.homePageId,
+				id
+			]
 		);
 	} catch (err) {
 		if (isUniqueViolation(err)) throw new Error('That slug is already taken.');
@@ -194,6 +235,7 @@ export async function addPageToSite(input: {
 	pageSlug: string;
 	navLabel: string;
 	shareToken: string;
+	notebookId?: string | null;
 }): Promise<SitePageRecord> {
 	await ensureSiteTables();
 	if (!isValidSlug(input.pageSlug)) {
@@ -206,9 +248,16 @@ export async function addPageToSite(input: {
 	let rows: SitePageRow[];
 	try {
 		rows = await query<SitePageRow>(
-			`INSERT INTO site_pages (site_id, page_slug, nav_label, share_token, sort_order)
-			 VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-			[input.siteId, input.pageSlug, input.navLabel, input.shareToken, nextOrder]
+			`INSERT INTO site_pages (site_id, page_slug, nav_label, share_token, notebook_id, sort_order)
+			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+			[
+				input.siteId,
+				input.pageSlug,
+				input.navLabel,
+				input.shareToken,
+				input.notebookId ?? null,
+				nextOrder
+			]
 		);
 	} catch (err) {
 		if (isUniqueViolation(err)) throw new Error('That page slug is already used in this site.');
@@ -260,6 +309,33 @@ export async function updatePage(
 	}
 }
 
+export async function resolveShareTokenForPage(page: SitePageRecord): Promise<string> {
+	if (page.notebookId) {
+		const { getShareByNotebookId } = await import('./shared-reports.js');
+		const share = await getShareByNotebookId(page.notebookId);
+		if (share && !share.revoked) return share.token;
+	}
+	return page.shareToken;
+}
+
+export async function getSitePageBySlugs(
+	siteSlug: string,
+	pageSlug: string
+): Promise<{ site: SiteRecord; page: SitePageRecord } | null> {
+	await ensureSiteTables();
+	const site = await getSiteBySlug(siteSlug);
+	if (!site) return null;
+	const rows = await query<SitePageRow>(
+		`SELECT * FROM site_pages WHERE site_id = $1 AND page_slug = $2`,
+		[site.id, pageSlug]
+	).catch(() => []);
+	const pageRow = rows[0];
+	if (!pageRow) return null;
+	const page = rowToPage(pageRow);
+	const resolvedToken = await resolveShareTokenForPage(page);
+	return { site, page: { ...page, shareToken: resolvedToken } };
+}
+
 interface SiteWithPagesRow extends SitePageRow {
 	notebook_name: string;
 	revoked: boolean;
@@ -270,9 +346,11 @@ export async function getSiteWithPages(slug: string): Promise<SiteWithPages | nu
 	const site = await getSiteBySlug(slug);
 	if (!site) return null;
 	const rows = await query<SiteWithPagesRow>(
-		`SELECT sp.*, sr.notebook_name, sr.revoked
+		`SELECT sp.*, COALESCE(sr_by_nb.notebook_name, sr.notebook_name) AS notebook_name,
+		        COALESCE(sr_by_nb.revoked, sr.revoked) AS revoked
 		 FROM site_pages sp
-		 JOIN shared_reports sr ON sr.token = sp.share_token
+		 LEFT JOIN shared_reports sr ON sr.token = sp.share_token
+		 LEFT JOIN shared_reports sr_by_nb ON sr_by_nb.notebook_id = sp.notebook_id AND NOT sr_by_nb.revoked
 		 WHERE sp.site_id = $1
 		 ORDER BY sp.sort_order`,
 		[site.id]

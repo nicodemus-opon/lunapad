@@ -3,13 +3,28 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
-	import { Loader2, Copy, RefreshCw, Ban, UploadCloud, History, Undo2 } from '@lucide/svelte';
+	import {
+		Loader2,
+		Copy,
+		RefreshCw,
+		Ban,
+		UploadCloud,
+		History,
+		Undo2,
+		ExternalLink,
+		LayoutGrid,
+		Save
+	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { buildShareSnapshot } from '$lib/services/share-snapshot';
 	import {
 		findOrphanedFilterWidgets,
-		findUnboundFilterTokens
+		findUnboundFilterTokens,
+		findUncollapsedDataCells,
+		findEmptyQueryResults,
+		findDuckDBFilterWarnings
 	} from '$lib/services/filter-diagnostics';
+	import { getCellConnection } from '$lib/stores/notebook.svelte';
 	import type { Notebook } from '$lib/stores/notebook.svelte';
 
 	interface ShareVersion {
@@ -18,25 +33,17 @@
 		createdAt: string;
 	}
 
-	function formatRelativeTime(iso: string): string {
-		const diffMs = Date.now() - new Date(iso).getTime();
-		const mins = Math.round(diffMs / 60_000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		const hours = Math.round(mins / 60);
-		if (hours < 24) return `${hours}h ago`;
-		return `${Math.round(hours / 24)}d ago`;
-	}
-
 	interface Props {
 		open: boolean;
 		notebook: Notebook | null;
+		onOpenSites?: () => void;
 	}
 
-	let { open = $bindable(), notebook }: Props = $props();
+	let { open = $bindable(), notebook, onOpenSites }: Props = $props();
 
 	let loading = $state(false);
 	let publishing = $state(false);
+	let savingSettings = $state(false);
 	let token = $state<string | null>(null);
 	let pollIntervalSeconds = $state(300);
 	let requireAuth = $state(false);
@@ -48,6 +55,9 @@
 	let versions = $state<ShareVersion[]>([]);
 	let showVersions = $state(false);
 	let rollingBackVersion = $state<number | null>(null);
+	let lastUpdatedAt = $state<string | null>(null);
+	let expiresAt = $state<string | null>(null);
+	let refreshScheduleHours = $state<string>('0');
 
 	const shareUrl = $derived(
 		token && typeof window !== 'undefined'
@@ -56,6 +66,24 @@
 	);
 	const unboundTokens = $derived(notebook ? findUnboundFilterTokens(notebook) : []);
 	const orphanedWidgets = $derived(notebook ? findOrphanedFilterWidgets(notebook) : []);
+	const uncollapsedData = $derived(notebook ? findUncollapsedDataCells(notebook) : []);
+	const emptyResults = $derived(notebook ? findEmptyQueryResults(notebook) : []);
+	const duckdbFilterWarn = $derived(notebook ? findDuckDBFilterWarnings(notebook) : false);
+
+	const publishSummary = $derived.by(() => {
+		if (!notebook) return null;
+		const snapshot = buildShareSnapshot(notebook);
+		const live = snapshot.cells.filter((c) => c.isLive).length;
+		const frozen = snapshot.cells.filter((c) => c.cellType === 'query' && !c.isLive).length;
+		const connections = [
+			...new Set(
+				notebook.cells
+					.filter((c) => c.cellType === 'query')
+					.map((c) => getCellConnection(c).name ?? getCellConnection(c).id)
+			)
+		];
+		return { live, frozen, connections, cellCount: snapshot.cells.length };
+	});
 
 	$effect(() => {
 		if (open && notebook) void loadShareState(notebook.id);
@@ -71,8 +99,10 @@
 				token = body.share.token;
 				pollIntervalSeconds = Math.round((body.share.pollIntervalMs ?? 300_000) / 1000);
 				requireAuth = body.share.requireAuth ?? false;
+				expiresAt = body.share.expiresAt ?? null;
 				savedSlug = body.share.slug ?? null;
 				slugInput = savedSlug ?? '';
+				lastUpdatedAt = body.share.updatedAt ?? null;
 				slugStatus = 'idle';
 				void loadVersions(body.share.token);
 			}
@@ -85,6 +115,41 @@
 		const res = await fetch(`/api/shares/${shareToken}/versions`);
 		const body = await res.json();
 		versions = body.versions ?? [];
+	}
+
+	async function saveSettings(): Promise<void> {
+		if (!notebook) return;
+		savingSettings = true;
+		try {
+			const res = await fetch('/api/shares', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					notebookId: notebook.id,
+					pollIntervalMs: pollIntervalSeconds * 1000,
+					requireAuth,
+					expiresAt: expiresAt || null
+				})
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				toast.error(body.error ?? 'Failed to save settings.');
+				return;
+			}
+			if (refreshScheduleHours !== '0') {
+				await fetch('/api/shares/refresh-schedule', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						notebookId: notebook.id,
+						intervalMs: Number(refreshScheduleHours) * 3_600_000
+					})
+				});
+			}
+			toast.success('Settings saved.');
+		} finally {
+			savingSettings = false;
+		}
 	}
 
 	async function rollback(version: number): Promise<void> {
@@ -176,10 +241,16 @@
 			savedSlug = body.slug ?? null;
 			slugInput = savedSlug ?? '';
 			void loadVersions(body.token);
+			await saveSettings();
 			toast.success(wasAlreadyPublished ? 'Report updated.' : 'Report published.');
 		} finally {
 			publishing = false;
 		}
+	}
+
+	function previewPublish(): void {
+		if (!shareUrl) return;
+		window.open(shareUrl, '_blank');
 	}
 
 	async function revoke(): Promise<void> {
@@ -219,31 +290,65 @@
 		void navigator.clipboard.writeText(shareUrl);
 		toast.success('Link copied.');
 	}
+
+	function copyEmbed(): void {
+		if (!shareUrl) return;
+		const embedUrl = shareUrl.includes('?') ? `${shareUrl}&embed=1` : `${shareUrl}?embed=1`;
+		const snippet = `<iframe src="${embedUrl}" width="100%" height="600" frameborder="0" title="Lunapad report"></iframe>`;
+		void navigator.clipboard.writeText(snippet);
+		toast.success('Embed snippet copied.');
+	}
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
+	<Dialog.Content class="max-w-md gap-0 overflow-hidden p-0">
 		<div class="flex items-center justify-between border-b px-4 py-3">
 			<p class="text-xs font-semibold">Share report</p>
 		</div>
 
-		<div class="space-y-3 px-4 py-3">
-			{#if !loading && (unboundTokens.length > 0 || orphanedWidgets.length > 0)}
+		<div class="max-h-[75vh] space-y-3 overflow-y-auto px-4 py-3">
+			{#if publishSummary}
+				<div class="rounded border bg-muted/30 p-2 text-[11px] text-muted-foreground">
+					<p>
+						{publishSummary.cellCount} cells · {publishSummary.live} live · {publishSummary.frozen}
+						frozen
+					</p>
+					{#if publishSummary.connections.length}
+						<p>Connections: {publishSummary.connections.join(', ')}</p>
+					{/if}
+					{#if lastUpdatedAt}
+						<p>Last published: {new Date(lastUpdatedAt).toLocaleString()}</p>
+					{/if}
+				</div>
+			{/if}
+
+			{#if !loading && (unboundTokens.length > 0 || orphanedWidgets.length > 0 || uncollapsedData.length > 0 || emptyResults.length > 0 || duckdbFilterWarn)}
 				<div
 					class="space-y-0.5 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-400"
 				>
+					<p class="font-medium">Pre-publish checklist</p>
 					{#if unboundTokens.length > 0}
 						<p>No filter widget for: {unboundTokens.join(', ')}</p>
 					{/if}
 					{#if orphanedWidgets.length > 0}
+						<p>Unused filter widgets: {orphanedWidgets.join(', ')}</p>
+					{/if}
+					{#if uncollapsedData.length > 0}
 						<p>
-							Unused filter widget{orphanedWidgets.length > 1 ? 's' : ''}: {orphanedWidgets.join(
+							Data cells shown twice (collapse or auto-hide on publish): {uncollapsedData.join(
 								', '
 							)}
 						</p>
 					{/if}
+					{#if emptyResults.length > 0}
+						<p>Empty query results: {emptyResults.join(', ')}</p>
+					{/if}
+					{#if duckdbFilterWarn}
+						<p>DuckDB + filters: viewers cannot refresh filtered DuckDB cells after publish.</p>
+					{/if}
 				</div>
 			{/if}
+
 			{#if loading}
 				<div class="flex items-center justify-center py-6 text-muted-foreground">
 					<Loader2 class="h-4 w-4 animate-spin" />
@@ -262,6 +367,15 @@
 					/>
 					<span class="text-[11px] text-muted-foreground">Require login to view</span>
 				</label>
+				<Button
+					variant="outline"
+					size="sm"
+					class="w-full"
+					disabled={!shareUrl}
+					onclick={previewPublish}
+				>
+					<ExternalLink class="h-3.5 w-3.5" /> Preview (after publish)
+				</Button>
 				<Button size="sm" class="w-full" disabled={publishing} onclick={publish}>
 					{#if publishing}
 						<Loader2 class="h-3.5 w-3.5 animate-spin" />
@@ -273,14 +387,22 @@
 			{:else}
 				<div class="flex items-center gap-1.5">
 					<Input class="h-7 flex-1 font-mono text-[11px]" readonly value={shareUrl} />
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 w-7 shrink-0 p-0"
-						onclick={copyLink}
-						title="Copy link"
-					>
+					<Button variant="outline" size="sm" class="h-7 w-7 shrink-0 p-0" onclick={copyLink}>
 						<Copy class="h-3.5 w-3.5" />
+					</Button>
+				</div>
+
+				<div class="flex gap-1.5">
+					<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={previewPublish}>
+						<ExternalLink class="h-3 w-3" /> Preview
+					</Button>
+					{#if onOpenSites}
+						<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={onOpenSites}>
+							<LayoutGrid class="h-3 w-3" /> Add to site…
+						</Button>
+					{/if}
+					<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={copyEmbed}>
+						Embed
 					</Button>
 				</div>
 
@@ -306,44 +428,70 @@
 							{#if savingSlug}<Loader2 class="h-3 w-3 animate-spin" />{:else}Save{/if}
 						</Button>
 					</div>
-					{#if slugStatus === 'checking'}
-						<p class="text-[11px] text-muted-foreground">Checking availability…</p>
-					{:else if slugStatus === 'taken'}
-						<p class="text-[11px] text-destructive">That slug is already taken.</p>
-					{:else if slugStatus === 'invalid'}
-						<p class="text-[11px] text-destructive">
-							Lowercase letters, numbers, hyphens — 3+ characters.
-						</p>
-					{:else if slugStatus === 'available'}
-						<p class="text-[11px] text-muted-foreground">Available.</p>
-					{/if}
 				</div>
 
-				<div class="flex items-center gap-2">
-					<span class="shrink-0 text-[11px] text-muted-foreground">Refresh every</span>
+				<div class="grid grid-cols-2 gap-2">
+					<div>
+						<span class="text-[11px] text-muted-foreground">Refresh every</span>
+						<Select.Root
+							type="single"
+							value={String(pollIntervalSeconds)}
+							onValueChange={(v) => (pollIntervalSeconds = Number(v))}
+						>
+							<Select.Trigger class="mt-0.5 h-7 text-xs">Poll {pollIntervalSeconds}s</Select.Trigger
+							>
+							<Select.Content>
+								<Select.Item value="60" class="text-xs">1 min</Select.Item>
+								<Select.Item value="300" class="text-xs">5 min</Select.Item>
+								<Select.Item value="900" class="text-xs">15 min</Select.Item>
+								<Select.Item value="3600" class="text-xs">1 hr</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div>
+						<span class="text-[11px] text-muted-foreground">Link expires</span>
+						<Select.Root
+							type="single"
+							value={expiresAt ? 'custom' : 'never'}
+							onValueChange={(v) => {
+								if (v === 'never') expiresAt = null;
+								else if (v === '7d') expiresAt = new Date(Date.now() + 7 * 864e5).toISOString();
+								else if (v === '30d') expiresAt = new Date(Date.now() + 30 * 864e5).toISOString();
+							}}
+						>
+							<Select.Trigger class="mt-0.5 h-7 text-xs">
+								{expiresAt ? 'Custom' : 'Never'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="never" class="text-xs">Never</Select.Item>
+								<Select.Item value="7d" class="text-xs">7 days</Select.Item>
+								<Select.Item value="30d" class="text-xs">30 days</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+
+				<div>
+					<span class="text-[11px] text-muted-foreground">Auto-refresh DuckDB snapshot</span>
 					<Select.Root
 						type="single"
-						value={String(pollIntervalSeconds)}
-						onValueChange={(v) => (pollIntervalSeconds = Number(v))}
+						value={refreshScheduleHours}
+						onValueChange={(v) => (refreshScheduleHours = v)}
 					>
-						<Select.Trigger class="h-7 text-xs">
-							{#if pollIntervalSeconds === 60}1 min
-							{:else if pollIntervalSeconds === 300}5 min
-							{:else if pollIntervalSeconds === 900}15 min
-							{:else if pollIntervalSeconds === 1800}30 min
-							{:else if pollIntervalSeconds === 3600}1 hr
-							{:else if pollIntervalSeconds === 21600}6 hr
-							{:else if pollIntervalSeconds === 86400}24 hr
-							{:else}{pollIntervalSeconds}s{/if}
+						<Select.Trigger class="mt-0.5 h-7 text-xs">
+							{refreshScheduleHours === '0'
+								? 'Off'
+								: refreshScheduleHours === '1'
+									? 'Hourly'
+									: refreshScheduleHours === '24'
+										? 'Daily'
+										: 'Weekly'}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="60" class="text-xs">Every 1 min</Select.Item>
-							<Select.Item value="300" class="text-xs">Every 5 min</Select.Item>
-							<Select.Item value="900" class="text-xs">Every 15 min</Select.Item>
-							<Select.Item value="1800" class="text-xs">Every 30 min</Select.Item>
-							<Select.Item value="3600" class="text-xs">Every 1 hr</Select.Item>
-							<Select.Item value="21600" class="text-xs">Every 6 hr</Select.Item>
-							<Select.Item value="86400" class="text-xs">Every 24 hr</Select.Item>
+							<Select.Item value="0" class="text-xs">Off</Select.Item>
+							<Select.Item value="1" class="text-xs">Hourly</Select.Item>
+							<Select.Item value="24" class="text-xs">Daily</Select.Item>
+							<Select.Item value="168" class="text-xs">Weekly</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
@@ -358,14 +506,32 @@
 					<span class="text-[11px] text-muted-foreground">Require login to view</span>
 				</label>
 
-				<Button variant="outline" size="sm" class="w-full" disabled={publishing} onclick={publish}>
-					{#if publishing}
-						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-					{:else}
-						<UploadCloud class="h-3.5 w-3.5" />
-					{/if}
-					Update snapshot
-				</Button>
+				<div class="flex gap-1.5">
+					<Button
+						variant="outline"
+						size="sm"
+						class="flex-1"
+						disabled={savingSettings}
+						onclick={saveSettings}
+					>
+						{#if savingSettings}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<Save
+								class="h-3.5 w-3.5"
+							/>{/if}
+						Save settings
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						class="flex-1"
+						disabled={publishing}
+						onclick={publish}
+					>
+						{#if publishing}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<UploadCloud
+								class="h-3.5 w-3.5"
+							/>{/if}
+						Update snapshot
+					</Button>
+				</div>
 
 				<div class="flex gap-1.5">
 					<Button variant="outline" size="sm" class="flex-1" onclick={regenerate}>
@@ -390,7 +556,7 @@
 							{#each versions as v (v.version)}
 								<div class="flex items-center justify-between gap-2 text-[11px]">
 									<span class="text-muted-foreground"
-										>v{v.version} · {formatRelativeTime(v.createdAt)}</span
+										>v{v.version} · {new Date(v.createdAt).toLocaleString()}</span
 									>
 									{#if v.version !== versions[0].version}
 										<Button
