@@ -92,6 +92,7 @@ export function stubCellsForRefs(outputNames: Iterable<string>): Cell[] {
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	}));
 }

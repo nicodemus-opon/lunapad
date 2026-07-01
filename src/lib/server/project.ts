@@ -549,6 +549,7 @@ async function loadMissingModelsFromManifest(
 			staleSources: [],
 			lastRunAt: null,
 			hideResult: false,
+			hideInReport: false,
 			executionCount: 0
 		};
 
@@ -806,6 +807,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	};
 }
@@ -859,6 +861,7 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	};
 }
@@ -912,6 +915,7 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	};
 }
@@ -965,6 +969,7 @@ function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	};
 }
@@ -992,6 +997,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		resultChartConfig: entry.meta.chartConfig ?? null,
 		display: entry.meta.display ?? 'full',
 		hideResult: entry.meta.hideResult ?? false,
+		hideInReport: entry.meta.hideInReport ?? false,
 		stageResultsCollapsed: entry.meta.stageResultsCollapsed ?? [],
 		materializeMode: entry.materialized,
 		materializeTarget: entry.name,
@@ -1080,6 +1086,7 @@ async function readCellFile(
 		resultChartConfig: parsed.meta.chartConfig ?? null,
 		display: parsed.meta.display ?? (parsed.meta.collapsed ? 'collapsed' : 'full'),
 		hideResult: parsed.meta.hideResult ?? false,
+		hideInReport: parsed.meta.hideInReport ?? false,
 		stageResultsCollapsed: parsed.meta.stageResultsCollapsed ?? [],
 		materializeMode: ymlMaterialized,
 		materializeTarget: outputName,

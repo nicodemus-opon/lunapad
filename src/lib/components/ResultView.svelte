@@ -153,7 +153,7 @@
 					{viewMode === 'stats'
 					? 'bg-card font-medium text-foreground'
 					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-				onclick={() => switchView('stats')}><Sigma class="h-3 w-3" />Statistics</button
+				onclick={() => switchView('stats')}><Sigma class="h-3 w-3" />Stats</button
 			>
 		</div>
 
@@ -238,8 +238,8 @@
 			</div>
 		</div>
 	{:else if viewMode === 'stats'}
-		<div class="min-h-0 flex-1">
-			<StatsView {rows} {columns} {name} />
+		<div class="min-h-0 flex-1 overflow-auto">
+			<StatsView {rows} {columns} {name} {truncated} fillHeight />
 		</div>
 	{/if}
 </div>

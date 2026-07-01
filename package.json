@@ -82,6 +82,7 @@
 		"monaco-editor": "^0.55.1",
 		"monaco-languageclient": "^10.7.0",
 		"monaco-sql-languages": "^1.1.0",
+		"node-sql-parser": "^5.4.0",
 		"pg": "^8.21.0",
 		"plotly.js-dist-min": "^3.6.0",
 		"prqlc": "^0.13.12",

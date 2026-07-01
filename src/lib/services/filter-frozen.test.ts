@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { filterFrozenRows, shouldHideQueryCell } from './filter-frozen';
+import {
+	filterFrozenRows,
+	shouldHideCellInReportView,
+	shouldHideQueryCell
+} from './filter-frozen';
 import type { PublicShareCell } from '$lib/server/shared-reports';
 
 describe('filter-frozen', () => {
@@ -36,5 +40,37 @@ describe('filter-frozen', () => {
 		} as PublicShareCell;
 		expect(shouldHideQueryCell(collapsed)).toBe(true);
 		expect(shouldHideQueryCell(data)).toBe(true);
+	});
+
+	it('hides report-view cells that are collapsed, flagged, or referenced in markdown', () => {
+		const cells = [
+			{ cellType: 'markdown', markdown: 'Chart: $legal_jobs.count' },
+			{ cellType: 'query', outputName: 'legal_jobs', display: 'full' as const },
+			{ cellType: 'query', outputName: 'summary', display: 'full' as const, hideInReport: true }
+		];
+		expect(
+			shouldHideCellInReportView(
+				{ cellType: 'query', outputName: 'legal_jobs', display: 'full' },
+				cells
+			)
+		).toBe(true);
+		expect(
+			shouldHideCellInReportView(
+				{ cellType: 'query', outputName: 'summary', display: 'full', hideInReport: true },
+				cells
+			)
+		).toBe(true);
+		expect(
+			shouldHideCellInReportView(
+				{ cellType: 'query', outputName: 'other', display: 'collapsed' },
+				cells
+			)
+		).toBe(true);
+		expect(
+			shouldHideCellInReportView(
+				{ cellType: 'query', outputName: 'other', display: 'full' },
+				cells
+			)
+		).toBe(false);
 	});
 });

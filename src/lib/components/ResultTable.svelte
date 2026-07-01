@@ -36,6 +36,7 @@
 		type ColumnFormat,
 		type ColumnFormatKind
 	} from '$lib/services/column-format';
+	import { computeTableHeaderStats } from '$lib/services/column-profile';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -102,31 +103,7 @@
 	}
 
 	function computeColStats(allRows: Record<string, unknown>[], col: string): ColStats {
-		const values = allRows.map((r) => r[col]);
-		const missing = values.filter((v) => v === null || v === undefined).length;
-		const nonNull = values.filter((v) => v !== null && v !== undefined);
-		const distinct = new Set(nonNull.map(String)).size;
-		const isNumeric = nonNull.length > 0 && nonNull.every((v) => typeof v === 'number');
-		let min: number | null = null;
-		let max: number | null = null;
-		let histBuckets: number[] | null = null;
-		if (isNumeric) {
-			const nums = nonNull as number[];
-			min = Math.min(...nums);
-			max = Math.max(...nums);
-			const BUCKETS = 20;
-			const range = max - min;
-			histBuckets = new Array(BUCKETS).fill(0) as number[];
-			if (range > 0) {
-				nums.forEach((n) => {
-					const bucket = Math.min(Math.floor(((n - min!) / range) * BUCKETS), BUCKETS - 1);
-					histBuckets![bucket]++;
-				});
-			} else {
-				histBuckets[10] = nums.length;
-			}
-		}
-		return { col, missing, distinct, total: values.length, isNumeric, min, max, histBuckets };
+		return computeTableHeaderStats(allRows, col);
 	}
 
 	let statsMap = $state<Record<string, ColStats>>({});
@@ -281,11 +258,13 @@
 	}
 </script>
 
-<div class="flex min-h-0 flex-col gap-2 {fillHeight ? 'h-full' : ''}">
-	<div class="flex min-h-0 gap-2 {fillHeight ? 'flex-1' : ''}">
-		<div class="min-w-0 flex-1 {fillHeight ? 'min-h-0' : ''}">
+<div class="flex min-h-0 flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
+	<div class="flex min-h-0 min-w-0 gap-2 {fillHeight ? 'flex-1' : ''}">
+		<div class="min-h-0 min-w-0 flex-1">
 			<Table.Root
-				containerClass="overflow-auto rounded-md border {fillHeight ? 'h-full' : 'max-h-125'}"
+				containerClass="overflow-auto rounded-md border {fillHeight
+					? 'h-full max-h-full'
+					: 'max-h-125'}"
 			>
 				<Table.Header>
 					{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
@@ -561,7 +540,7 @@
 	</div>
 
 	<!-- Footer: one quiet line — range, optional truncation note, pager, export -->
-	<div class="flex items-center justify-between px-1 text-2xs text-muted-foreground">
+	<div class="flex shrink-0 items-center justify-between px-1 text-2xs text-muted-foreground">
 		<span>
 			{#if totalRows > pagination.pageSize}
 				{startRow.toLocaleString()}–{endRow.toLocaleString()} of {totalRows.toLocaleString()}

@@ -71,6 +71,7 @@ interface CellJsonMeta {
 	guiStages?: GUIPipelineStage[];
 	display?: CellDisplay;
 	hideResult?: boolean;
+	hideInReport?: boolean;
 	/** Legacy pre-display field; still read from old files, never written. */
 	collapsed?: boolean;
 	stageResultsCollapsed?: boolean[];
@@ -88,6 +89,7 @@ function buildJsonMeta(cell: Cell): CellJsonMeta {
 		guiStages: cell.guiStages,
 		display: cell.display,
 		hideResult: cell.hideResult,
+		hideInReport: cell.hideInReport,
 		stageResultsCollapsed: cell.stageResultsCollapsed,
 		scheduleEnabled: cell.scheduleEnabled,
 		scheduleIntervalMinutes: cell.scheduleIntervalMinutes,
@@ -152,6 +154,7 @@ export function serializeCell(cell: Cell, knownModels: string[] = [], notebookId
 			(meta.guiStages && meta.guiStages.length > 0) ||
 			meta.display !== 'full' ||
 			!!meta.hideResult ||
+			!!meta.hideInReport ||
 			(meta.stageResultsCollapsed && meta.stageResultsCollapsed.length > 0) ||
 			meta.scheduleEnabled;
 

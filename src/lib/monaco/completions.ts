@@ -1,11 +1,19 @@
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import { language as sqlMonarch } from 'monaco-editor/esm/vs/basic-languages/sql/sql.js';
 import { PRQL_KEYWORDS, PRQL_BUILTINS, PRQL_DOCS } from './prql';
 import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
-import { getSqlFunctionDocs, getSqlFunctionDoc } from './sql-dialects';
+import { getSqlFunctionDoc } from './sql-dialects';
+import { clearSqlScopeCache } from './sql-scope';
 import type { ConnectionType } from '$lib/types/connection';
+import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
 import { completePython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
+import {
+	buildSqlCompletions,
+	parseRegistryWithMeta,
+	type CompletionCandidate,
+	type CompletionKind
+} from './sql-completion-engine';
+import { recordCompletionAcceptance } from '$lib/stores/sql-completion-recency';
 
 // Both UDF cells and Python data cells use Monaco language id 'python', but
 // want very different completions (UDF: fixed type-hint skeleton; data cell:
@@ -56,10 +64,11 @@ export function getModelPythonSchema(model: Monaco.editor.ITextModel): PythonUps
 }
 
 // A completion candidate from the per-cell registry: "table.column" pairs or
-// bare table/cell names, optionally carrying a type to show as completion detail.
+// bare table/cell names, optionally carrying a type (detail) and description.
 export interface CompletionEntry {
 	text: string;
 	detail?: string;
+	description?: string;
 }
 
 // Completion providers are registered once per language, but completions are
@@ -75,6 +84,7 @@ export function setModelCompletions(
 
 export function clearModelCompletions(model: Monaco.editor.ITextModel): void {
 	completionsByModel.delete(model.uri.toString());
+	clearSqlScopeCache(model.uri.toString());
 }
 
 export function getModelCompletions(model: Monaco.editor.ITextModel): CompletionEntry[] {
@@ -97,205 +107,246 @@ export function getModelDialect(model: Monaco.editor.ITextModel): ConnectionType
 	return dialectByModel.get(model.uri.toString());
 }
 
-const SQL_KEYWORDS: string[] = (sqlMonarch as { keywords?: string[] }).keywords ?? [];
+export interface SqlModelContext {
+	connectionId?: string;
+	externalSchema?: ExternalSchemaTable[];
+}
+
+const sqlContextByModel = new Map<string, SqlModelContext>();
+
+export function setModelSqlContext(
+	model: Monaco.editor.ITextModel,
+	context: SqlModelContext
+): void {
+	sqlContextByModel.set(model.uri.toString(), context);
+}
+
+export function clearModelSqlContext(model: Monaco.editor.ITextModel): void {
+	sqlContextByModel.delete(model.uri.toString());
+}
+
+export function getModelSqlContext(model: Monaco.editor.ITextModel): SqlModelContext {
+	return sqlContextByModel.get(model.uri.toString()) ?? {};
+}
 
 interface ColumnEntry {
 	name: string;
 	detail?: string;
+	description?: string;
 }
 
 export function parseRegistry(items: CompletionEntry[]): {
 	tables: Map<string, ColumnEntry[]>;
 	bare: CompletionEntry[];
 } {
-	const tables = new Map<string, ColumnEntry[]>();
-	const bare: CompletionEntry[] = [];
-	for (const item of items) {
-		if (!item.text) continue;
-		const dot = item.text.indexOf('.');
-		if (dot > 0 && dot < item.text.length - 1) {
-			const table = item.text.slice(0, dot);
-			const column = item.text.slice(dot + 1);
-			let cols = tables.get(table);
-			if (!cols) {
-				cols = [];
-				tables.set(table, cols);
-			}
-			if (!cols.some((c) => c.name === column)) cols.push({ name: column, detail: item.detail });
-		} else {
-			bare.push(item);
-		}
+	const parsed = parseRegistryWithMeta(items);
+	return { tables: parsed.tables, bare: parsed.bare };
+}
+
+const MAX_SCHEMA_SUGGESTIONS = 100;
+const MAX_FUNCTION_SUGGESTIONS = 40;
+
+function kindToMonaco(
+	kind: CompletionKind,
+	kinds: typeof Monaco.languages.CompletionItemKind
+): Monaco.languages.CompletionItemKind {
+	switch (kind) {
+		case 'table':
+		case 'cte':
+			return kinds.Struct;
+		case 'column':
+			return kinds.Field;
+		case 'bare':
+			return kinds.Variable;
+		case 'function':
+			return kinds.Function;
+		case 'keyword':
+			return kinds.Keyword;
+		case 'snippet':
+		case 'join':
+		case 'cast':
+			return kinds.Snippet;
+		default:
+			return kinds.Text;
 	}
-	return { tables, bare };
+}
+
+function candidateToMonaco(
+	c: CompletionCandidate,
+	range: Monaco.IRange,
+	kinds: typeof Monaco.languages.CompletionItemKind,
+	monaco: typeof Monaco,
+	connectionId?: string
+): Monaco.languages.CompletionItem {
+	const sortKey = String(9999 - Math.min(c.score, 9999)).padStart(4, '0');
+	return {
+		label: c.label,
+		kind: kindToMonaco(c.kind, kinds),
+		insertText: c.insertText,
+		insertTextRules: c.isSnippet
+			? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+			: undefined,
+		detail: c.detail,
+		documentation: c.documentation ? { value: c.documentation } : undefined,
+		range,
+		sortText: sortKey + c.label,
+		filterText: c.filterText ?? c.label.split('.').pop() ?? c.label,
+		command: {
+			id: 'lunapad.recordCompletion',
+			title: 'Record completion',
+			arguments: [c.label, connectionId]
+		}
+	};
+}
+
+function capSuggestions<T>(items: T[], max: number): T[] {
+	return items.length <= max ? items : items.slice(0, max);
 }
 
 export function registerCompletions(monaco: typeof Monaco): void {
+	monaco.editor.registerCommand('lunapad.recordCompletion', (_accessor, label: string, connectionId?: string) => {
+		if (typeof label === 'string') recordCompletionAcceptance(connectionId, label);
+	});
+
 	for (const languageId of ['prql', 'sql', 'trinosql', 'genericsql'] as const) {
 		const isSql = languageId === 'sql' || languageId === 'trinosql' || languageId === 'genericsql';
 		monaco.languages.registerCompletionItemProvider(languageId, {
-			// SQL: also trigger on ( and , so completions stay open inside function calls.
-			// PRQL keeps dot-only to avoid noise inside transform expressions.
-			triggerCharacters: isSql ? ['.', '(', ','] : ['.'],
+			triggerCharacters: isSql ? ['.', '(', ',', ' '] : ['.'],
 			provideCompletionItems(model, position) {
-				const items = completionsByModel.get(model.uri.toString()) ?? [];
-				const { tables, bare } = parseRegistry(items);
-
-				const word = model.getWordUntilPosition(position);
-				const range: Monaco.IRange = {
-					startLineNumber: position.lineNumber,
-					endLineNumber: position.lineNumber,
-					startColumn: word.startColumn,
-					endColumn: word.endColumn
-				};
-				const kinds = monaco.languages.CompletionItemKind;
-
-				// Dot context: `table.|` → only that table's columns with type docs
-				const lineBefore = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
-				const dotMatch = lineBefore.match(/([A-Za-z_][\w]*|`[^`]+`)\.$/);
-				if (dotMatch) {
-					const cols = tables.get(dotMatch[1].replace(/`/g, ''));
-					if (cols) {
-						return {
-							suggestions: cols.map((c) => ({
-								label: c.name,
-								kind: kinds.Field,
-								insertText: c.name,
-								detail: c.detail,
-								documentation: c.detail ? { value: `\`${c.detail}\`` } : undefined,
-								range,
-								sortText: '0' + c.name
-							}))
-						};
-					}
+				try {
+					return provideSqlLikeCompletions(monaco, languageId, isSql, model, position);
+				} catch (err) {
+					console.warn('[sql-completion] provider error', err);
 					return { suggestions: [] };
 				}
-
-				// PRQL relation context: `from|join|append|intersect|remove <here>` →
-				// only relations make sense, not transform keywords/builtins.
-				if (languageId === 'prql') {
-					const relationMatch = lineBefore.match(
-						/\b(from|join|append|intersect|remove)\s+[\w.`]*$/i
-					);
-					if (relationMatch) {
-						const relSuggestions: Monaco.languages.CompletionItem[] = [];
-						for (const table of tables.keys()) {
-							relSuggestions.push({
-								label: table,
-								kind: kinds.Struct,
-								insertText: table,
-								range,
-								sortText: '0' + table
-							});
-						}
-						for (const b of bare) {
-							relSuggestions.push({
-								label: b.text,
-								kind: kinds.Variable,
-								insertText: b.text,
-								detail: b.detail,
-								range,
-								sortText: '1' + b.text
-							});
-						}
-						return { suggestions: relSuggestions };
-					}
-				}
-
-				const suggestions: Monaco.languages.CompletionItem[] = [];
-				const seen = new Set<string>();
-				const push = (
-					label: string,
-					kind: Monaco.languages.CompletionItemKind,
-					sortPrefix: string,
-					detail?: string,
-					documentation?: string
-				) => {
-					if (seen.has(label)) return;
-					seen.add(label);
-					suggestions.push({
-						label,
-						kind,
-						insertText: label,
-						detail,
-						documentation: documentation ? { value: documentation } : undefined,
-						range,
-						sortText: sortPrefix + label
-					});
-				};
-
-				if (isSql) {
-					const dialect = getModelDialect(model);
-
-					// SQL clause context: rank schema vs functions/keywords based on position.
-					// FROM/JOIN → tables only. SELECT/WHERE/etc → schema first, functions after.
-					const fromOrJoin = /\b(FROM|JOIN)\s+[\w`"]*$/i.test(lineBefore);
-					const columnCtx =
-						/\b(SELECT|WHERE|HAVING|ON|GROUP\s+BY|ORDER\s+BY|AND|OR|NOT|SET)\s+[\w`".,\s*]*$/i.test(
-							lineBefore
-						);
-
-					if (fromOrJoin) {
-						for (const [table, cols] of tables) {
-							const colList = cols
-								.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
-								.join('\n');
-							push(table, kinds.Struct, '0', undefined, colList || undefined);
-						}
-						for (const b of bare) push(b.text, kinds.Variable, '1', b.detail);
-						return { suggestions };
-					}
-
-					// Sort prefix: schema items first when in a column-expression context
-					const schemaSort = columnCtx ? '1' : '1';
-					const fnSort = columnCtx ? '4' : '4';
-					const kwSort = columnCtx ? '5' : '5';
-
-					for (const [table, cols] of tables) {
-						const colList = cols
-							.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
-							.join('\n');
-						push(table, kinds.Struct, schemaSort, undefined, colList || undefined);
-						for (const c of cols)
-							push(
-								`${table}.${c.name}`,
-								kinds.Field,
-								schemaSort + '5',
-								c.detail,
-								c.detail ? `\`${c.detail}\`` : undefined
-							);
-					}
-					for (const b of bare) push(b.text, kinds.Variable, schemaSort + '9', b.detail);
-					for (const fn of getSqlFunctionDocs(dialect)) {
-						push(fn.name, kinds.Function, fnSort, fn.signature, fn.doc);
-					}
-					for (const kw of SQL_KEYWORDS) push(kw, kinds.Keyword, kwSort);
-				} else {
-					for (const [table, cols] of tables) {
-						push(table, kinds.Struct, '1');
-						for (const c of cols) push(`${table}.${c.name}`, kinds.Field, '3', c.detail);
-					}
-					for (const b of bare) push(b.text, kinds.Variable, '2', b.detail);
-					for (const kw of PRQL_KEYWORDS) push(kw, kinds.Keyword, '4', PRQL_DOCS[kw]);
-					for (const fn of PRQL_BUILTINS) push(fn, kinds.Function, '5', PRQL_DOCS[fn]);
-					for (const snippet of PRQL_SNIPPETS) {
-						suggestions.push({
-							label: snippet.label,
-							kind: kinds.Snippet,
-							insertText: snippet.insertText,
-							insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-							detail: snippet.detail,
-							range,
-							sortText: '6' + snippet.label
-						});
-					}
-				}
-
-				return { suggestions };
 			}
 		});
 	}
 
 	registerPythonCompletions(monaco);
+}
+
+function provideSqlLikeCompletions(
+	monaco: typeof Monaco,
+	languageId: 'prql' | 'sql' | 'trinosql' | 'genericsql',
+	isSql: boolean,
+	model: Monaco.editor.ITextModel,
+	position: Monaco.Position
+): Monaco.languages.ProviderResult<Monaco.languages.CompletionList> {
+	const items = completionsByModel.get(model.uri.toString()) ?? [];
+	const { tables, bare } = parseRegistry(items);
+
+	const word = model.getWordUntilPosition(position);
+	const range: Monaco.IRange = {
+		startLineNumber: position.lineNumber,
+		endLineNumber: position.lineNumber,
+		startColumn: word.startColumn,
+		endColumn: word.endColumn
+	};
+	const kinds = monaco.languages.CompletionItemKind;
+
+	const lineContent = model.getLineContent(position.lineNumber);
+	const lineBefore = lineContent.slice(0, word.startColumn - 1);
+
+	if (isSql) {
+		const dialect = getModelDialect(model);
+		const sqlCtx = getModelSqlContext(model);
+		const candidates = buildSqlCompletions({
+			modelUri: model.uri.toString(),
+			registry: items,
+			sql: model.getValue(),
+			lineNumber: position.lineNumber,
+			column: position.column,
+			lineContent,
+			word: word.word,
+			wordStartColumn: word.startColumn,
+			dialect,
+			connectionId: sqlCtx.connectionId,
+			externalSchema: sqlCtx.externalSchema
+		});
+		return {
+			suggestions: candidates.map((c) =>
+				candidateToMonaco(c, range, kinds, monaco, sqlCtx.connectionId)
+			),
+			incomplete: false
+		};
+	}
+
+	// PRQL relation context: `from|join|append|intersect|remove <here>` →
+	// only relations make sense, not transform keywords/builtins.
+	if (languageId === 'prql') {
+		const relationMatch = lineBefore.match(
+			/\b(from|join|append|intersect|remove)\s+[\w.`]*$/i
+		);
+		if (relationMatch) {
+			const relSuggestions: Monaco.languages.CompletionItem[] = [];
+			for (const table of tables.keys()) {
+				relSuggestions.push({
+					label: table,
+					kind: kinds.Struct,
+					insertText: table,
+					range,
+					sortText: '0' + table
+				});
+			}
+			for (const b of bare) {
+				relSuggestions.push({
+					label: b.text,
+					kind: kinds.Variable,
+					insertText: b.text,
+					detail: b.detail,
+					range,
+					sortText: '1' + b.text
+				});
+			}
+			return { suggestions: relSuggestions };
+		}
+	}
+
+	const suggestions: Monaco.languages.CompletionItem[] = [];
+	const seen = new Set<string>();
+	const push = (
+		label: string,
+		kind: Monaco.languages.CompletionItemKind,
+		sortPrefix: string,
+		detail?: string,
+		documentation?: string
+	) => {
+		if (seen.has(label)) return;
+		seen.add(label);
+		suggestions.push({
+			label,
+			kind,
+			insertText: label,
+			detail,
+			documentation: documentation ? { value: documentation } : undefined,
+			range,
+			sortText: sortPrefix + label
+		});
+	};
+
+	for (const [table, cols] of tables) {
+		push(table, kinds.Struct, '1');
+		for (const c of cols) push(`${table}.${c.name}`, kinds.Field, '3', c.detail);
+	}
+	for (const b of bare) push(b.text, kinds.Variable, '2', b.detail);
+	for (const kw of PRQL_KEYWORDS) push(kw, kinds.Keyword, '4', PRQL_DOCS[kw]);
+	for (const fn of PRQL_BUILTINS) push(fn, kinds.Function, '5', PRQL_DOCS[fn]);
+	for (const snippet of PRQL_SNIPPETS) {
+		suggestions.push({
+			label: snippet.label,
+			kind: kinds.Snippet,
+			insertText: snippet.insertText,
+			insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+			detail: snippet.detail,
+			range,
+			sortText: '6' + snippet.label
+		});
+	}
+
+	return {
+		suggestions: capSuggestions(suggestions, MAX_SCHEMA_SUGGESTIONS + MAX_FUNCTION_SUGGESTIONS)
+	};
 }
 
 // Multi-token PRQL transforms are easier to reach for as fill-in-the-blank

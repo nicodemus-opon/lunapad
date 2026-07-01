@@ -13,8 +13,11 @@ import {
 	runCellsBelow,
 	setCellDisplay,
 	testCell,
+	toggleWorksheetView,
 	undo,
-	redo
+	redo,
+	getActiveTabId,
+	getNotebooks
 } from '$lib/stores/notebook.svelte';
 import {
 	focusAdjacentCell,
@@ -61,6 +64,10 @@ function isGui(ctx: ShortcutContext): boolean {
 	return getCellMetaFromContext(ctx)?.isGuiCell ?? false;
 }
 
+function worksheetEligible(ctx: ShortcutContext): boolean {
+	return getCellMetaFromContext(ctx)?.worksheetEligible ?? false;
+}
+
 export const SHORTCUTS: ShortcutDef[] = [
 	// ── Global ────────────────────────────────────────────────────────────────
 	{
@@ -88,6 +95,24 @@ export const SHORTCUTS: ShortcutDef[] = [
 		priority: 90,
 		when: (ctx) => !ctx.isTypingTarget,
 		handler: () => page()?.openShortcuts()
+	},
+	{
+		id: 'global.worksheet-escape',
+		chord: { key: 'Escape', plain: true },
+		contexts: [
+			'global',
+			'command-mode',
+			'monaco-code',
+			'monaco-markdown',
+			'stage-editor',
+			'stage-menu'
+		],
+		group: 'global',
+		label: 'Exit worksheet view',
+		priority: 120,
+		when: () => page()?.isWorksheetView() ?? false,
+		handler: () => page()?.closeWorksheetView(),
+		showInHelp: false
 	},
 	{
 		id: 'palette.toggle',
@@ -466,6 +491,20 @@ export const SHORTCUTS: ShortcutDef[] = [
 			const meta = id ? getCellMeta(id) : null;
 			if (!id || !meta) return;
 			setCellDisplay(id, meta.collapsed ? 'full' : 'collapsed');
+		}
+	},
+	{
+		id: 'command.worksheet',
+		chord: { key: 'e', mod: true },
+		contexts: ['command-mode'],
+		group: 'command-mode',
+		label: 'Toggle worksheet view',
+		when: worksheetEligible,
+		handler: (ctx) => {
+			const id = cellId(ctx);
+			const notebookId = getActiveTabId();
+			if (!id || !notebookId) return;
+			toggleWorksheetView(notebookId, id);
 		}
 	},
 	{

@@ -65,7 +65,8 @@
 		type CellLanguage,
 		type Cell,
 		getCrossNotebookUsageCount,
-		getSameNotebookUsageCount
+		getSameNotebookUsageCount,
+		openWorksheetView
 	} from '$lib/stores/notebook.svelte';
 	import InlinePromptBar from './cell/InlinePromptBar.svelte';
 	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
@@ -98,6 +99,7 @@
 		resolveConnection
 	} from '$lib/types/connection';
 	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
+	import { shouldHideCellInReportView } from '$lib/services/filter-frozen';
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
 
@@ -127,6 +129,8 @@
 			preferredViewMode?: ResultViewMode
 		) => void;
 		collabEnabled?: boolean;
+		/** Worksheet (maximized) view — fills parent with resizable editor/result split */
+		worksheet?: boolean;
 	}
 
 	let {
@@ -144,7 +148,8 @@
 		onFixWithAI,
 		onContinueWithAI,
 		onOpenResultTab,
-		collabEnabled = false
+		collabEnabled = false,
+		worksheet = false
 	}: Props = $props();
 
 	const reviewMode = $derived(getReviewMode());
@@ -259,10 +264,61 @@
 	// Report view renders query cells as output-only, unless they are explicitly
 	// collapsed — collapsed cells are hidden entirely in report mode.
 	const effectiveDisplay = $derived(
-		reportView && isQueryCell && cell.display !== 'collapsed' ? 'output' : cell.display
+		worksheet
+			? 'full'
+			: reportView && isQueryCell && cell.display !== 'collapsed'
+				? 'output'
+				: cell.display
 	);
-	const collapsed = $derived(effectiveDisplay === 'collapsed');
-	const codeHidden = $derived(isQueryCell && effectiveDisplay !== 'full');
+	const collapsed = $derived(!worksheet && effectiveDisplay === 'collapsed');
+	const hiddenInReportView = $derived(
+		!worksheet && reportView && shouldHideCellInReportView(cell, getCells())
+	);
+	const codeHidden = $derived(!worksheet && isQueryCell && effectiveDisplay !== 'full');
+	const supportsWorksheet = $derived(isQueryCell || isPythonCell || isPlotCell);
+	const editorLayout = $derived(worksheet ? ('fill' as const) : ('auto' as const));
+
+	function handleOpenWorksheet() {
+		if (notebookId) openWorksheetView(notebookId, cell.id);
+	}
+
+	const MIN_WORKSHEET_EDITOR_HEIGHT = 160;
+	let worksheetBodyEl: HTMLElement | undefined = $state();
+	let editorHeight = $state(320);
+	let splitResizing = $state(false);
+	let splitResizeStartY = 0;
+	let splitResizeStartHeight = 0;
+
+	function onSplitResizeStart(e: PointerEvent) {
+		splitResizing = true;
+		splitResizeStartY = e.clientY;
+		splitResizeStartHeight = editorHeight;
+		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+	}
+	function onSplitResizeMove(e: PointerEvent) {
+		if (!splitResizing) return;
+		editorHeight = Math.max(
+			MIN_WORKSHEET_EDITOR_HEIGHT,
+			splitResizeStartHeight + (e.clientY - splitResizeStartY)
+		);
+	}
+	function onSplitResizeEnd() {
+		splitResizing = false;
+	}
+
+	$effect(() => {
+		if (!worksheet || !worksheetBodyEl) return;
+		const ro = new ResizeObserver(() => {
+			if (editorHeight === 320 && worksheetBodyEl) {
+				editorHeight = Math.max(
+					MIN_WORKSHEET_EDITOR_HEIGHT,
+					Math.round(worksheetBodyEl.clientHeight * 0.45)
+				);
+			}
+		});
+		ro.observe(worksheetBodyEl);
+		return () => ro.disconnect();
+	});
 	let running = $derived(cell.status === 'running');
 	let cellFocused = $state(false);
 	let cellHovered = $state(false);
@@ -291,13 +347,14 @@
 	let markdownEditContainerEl: HTMLDivElement | null = $state(null);
 	let markdownHandle: MarkdownEditorHandle | null = $state(null);
 	const revealed = $derived(
-		!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0)
+		worksheet || (!reportView && (cellFocused || cellHovered || menuOpen || overlayCount > 0))
 	);
 	const showCellIndex = $derived(
-		(isQueryCell || isPythonCell) &&
+		!worksheet &&
+			(isQueryCell || isPythonCell) &&
 			(revealed || running || cell.needsRun || cell.status === 'error')
 	);
-	const showResultControls = $derived(revealed);
+	const showResultControls = $derived(worksheet || revealed);
 	const showResult = $derived(
 		!collapsed &&
 			!cell.hideResult &&
@@ -406,6 +463,10 @@
 		return connection?.type ?? 'duckdb-wasm';
 	});
 
+	const cellExternalSchema = $derived(
+		externalSchemaTables.filter((t) => t.connectionId === connectionValue)
+	);
+
 	// For Trino-backed sources, produce 3-part names (catalogName.schema.table) in completions
 	const cellCatalogName = $derived.by(() => {
 		if (connectionType === 'duckdb-wasm') return undefined;
@@ -471,39 +532,96 @@
 		}
 	}
 
-	const editorCompletions = $derived.by((): CompletionEntry[] => {
-		if (!isQueryCell || cell.editMode !== 'prql' || collapsed || codeHidden) return [];
+	const schemaMetaByTable = $derived.by(() => {
+		const map = new Map<string, { description?: string; columnDescriptions?: string[] }>();
+		for (const table of externalSchemaTables) {
+			if (table.connectionId !== connectionValue) continue;
+			const qualifiedName =
+				cellCatalogName && table.schema
+					? `${cellCatalogName}.${table.schema}.${table.name}`
+					: table.schema
+						? `${table.schema}.${table.name}`
+						: table.name;
+			map.set(qualifiedName, {
+				description: table.description,
+				columnDescriptions: table.columnDescriptions
+			});
+		}
+		return map;
+	});
 
-		// text → detail (e.g. column type), in insertion order; Map dedupes by text.
-		const entries = new Map<string, string | undefined>();
-		for (const kw of PRQL_KEYWORDS) entries.set(kw, undefined);
+	const editorCompletions = $derived.by((): CompletionEntry[] => {
+		if (!isQueryCell || collapsed || codeHidden) return [];
+		if (cell.language !== 'sql' && cell.editMode !== 'prql') return [];
+
+		type EntryMeta = { detail?: string; description?: string };
+		const entries = new Map<string, EntryMeta>();
+		const setEntry = (text: string, detail?: string, description?: string) => {
+			if (!text) return;
+			const prev = entries.get(text);
+			entries.set(text, {
+				detail: detail ?? prev?.detail,
+				description: description ?? prev?.description
+			});
+		};
+
+		if (cell.language !== 'sql') {
+			for (const kw of PRQL_KEYWORDS) setEntry(kw);
+		}
 
 		for (const table of guiTables) {
 			if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
-			entries.set(table.name, undefined);
+			const meta = schemaMetaByTable.get(table.name);
+			const parts = table.name.split('.');
+			setEntry(table.name, undefined, meta?.description);
+			// Also register without catalog prefix so `schema.table` in SQL matches registry.
+			if (parts.length === 3) {
+				const shortName = `${parts[1]}.${parts[2]}`;
+				setEntry(shortName, undefined, meta?.description);
+			}
 			for (let i = 0; i < table.columns.length; i++) {
 				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
-				entries.set(`${table.name}.${table.columns[i]}`, table.columnTypes?.[i]);
+				const col = table.columns[i];
+				setEntry(
+					`${table.name}.${col}`,
+					table.columnTypes?.[i],
+					meta?.columnDescriptions?.[i]
+				);
+				if (parts.length === 3) {
+					setEntry(
+						`${parts[1]}.${parts[2]}.${col}`,
+						table.columnTypes?.[i],
+						meta?.columnDescriptions?.[i]
+					);
+				}
 			}
 		}
 
 		for (const source of prevCellSources) {
 			if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
-			entries.set(source.name, undefined);
+			setEntry(source.name);
 			for (const column of source.columns) {
 				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
-				entries.set(column, undefined);
+				if (cell.language === 'sql') {
+					setEntry(`${source.name}.${column}`);
+				} else {
+					setEntry(column);
+				}
 			}
 		}
 
 		if (cell.language === 'sql') {
 			for (const c of getAllCellsAcrossNotebooks()) {
 				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
-				if (c.cellType === 'udf' && c.outputName) entries.set(c.outputName, undefined);
+				if (c.cellType === 'udf' && c.outputName) setEntry(c.outputName);
 			}
 		}
 
-		return Array.from(entries, ([text, detail]) => ({ text, detail }));
+		return Array.from(entries, ([text, meta]) => ({
+			text,
+			detail: meta.detail,
+			description: meta.description
+		}));
 	});
 
 	// Names of UDF cells visible to this cell, told to the SQL formatter so it
@@ -695,6 +813,7 @@
 			isQueryCell,
 			isGuiCell: isQueryCell && cell.editMode === 'gui',
 			isDbtProject: getIsDbtProject(),
+			worksheetEligible: supportsWorksheet,
 			collapsed,
 			display: effectiveDisplay,
 			outputName: cell.outputName ?? ''
@@ -807,7 +926,8 @@
 	);
 
 	const hasStatusLine = $derived(
-		(isQueryCell || isPythonCell) &&
+		!worksheet &&
+			(isQueryCell || isPythonCell) &&
 			!collapsed &&
 			!reportView &&
 			(showResult ||
@@ -822,9 +942,15 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
-	class="notebook-cell group relative border-l-4 p-4 text-foreground outline-none {entering
+	class="notebook-cell group relative text-foreground outline-none {worksheet
+		? 'flex min-h-0 flex-1 flex-col border-l-0 p-0'
+		: 'border-l-4 p-4'} {entering
 		? 'is-entering'
-		: ''} {cellFocused ? 'border-primary/20' : 'border-transparent'} {reportView
+		: ''} {worksheet
+		? ''
+		: cellFocused
+			? 'border-primary/20'
+			: 'border-transparent'} {worksheet || reportView
 		? ''
 		: running
 			? 'bg-muted/30'
@@ -835,9 +961,10 @@
 		: ''} {reviewMode && hasOpenComments && !cellFocused
 		? 'border-l-primary/35 bg-primary/[0.03]'
 		: ''}"
-	hidden={reportView && collapsed}
+	hidden={hiddenInReportView}
 	data-focused={cellFocused}
 	data-cell-id={cell.id}
+	data-worksheet={worksheet ? true : undefined}
 	tabindex="0"
 	onfocusin={onCellFocusIn}
 	onfocusout={onCellFocusOut}
@@ -847,84 +974,7 @@
 	aria-label={`Cell ${index + 1}`}
 	aria-busy={running}
 >
-	<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)] overflow-visible">
-		{#if reportView}
-			<div></div>
-		{:else}
-			<div aria-hidden="true"></div>
-		{/if}
-
-		{#if !(reportView && !isQueryCell)}
-			<div class="min-w-0 overflow-visible pt-1 pr-2">
-				<CellHeader
-					{cell}
-					{isQueryCell}
-					{collapsed}
-					{codeHidden}
-					{revealed}
-					hidden={isMarkdownPreviewMode}
-					cellNumber={!reportView && (isQueryCell || isPythonCell) ? index + 1 : undefined}
-					showCellNumber={showCellIndex}
-					{prevCellNames}
-					downstreamCount={sameNotebookUsageCount}
-					{crossNotebookUsageCount}
-					{cellMode}
-					aiChatOpen={onShareWithAI !== undefined}
-					onModeChange={setCellMode}
-					onOverlayChange={handleOverlayChange}
-					{onShareWithAI}
-					onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
-					onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
-				/>
-			</div>
-		{:else}
-			<div></div>
-		{/if}
-
-		{#if reportView}
-			<div></div>
-		{:else}
-			<CellGutter
-				isQueryCell={isQueryCell || isPythonCell}
-				{revealed}
-				status={cell.status}
-				needsRun={cell.needsRun}
-				{running}
-				runTooltip={runTooltipText}
-				onRun={() => (isPythonCell ? runPythonCell(cell.id) : runCell(cell.id))}
-				onCancel={() => cancelCell(cell.id)}
-				commentCount={collabEnabled ? commentCount : 0}
-				onComments={collabEnabled && !reportView ? openCellComments : undefined}
-			>
-				{#snippet menu()}
-					<CellMenu
-						{cell}
-						{notebookId}
-						{isQueryCell}
-						{isPythonCell}
-						{isFirst}
-						{isLast}
-						{isDbtProject}
-						{connections}
-						{connectionValue}
-						bind:sqlExpanded
-						bind:open={menuOpen}
-						onOpenMaterialize={() => (materializeDialogOpen = true)}
-						onOpenPromote={() => (promoteDialogOpen = true)}
-						onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
-						onRunTests={() => void testCell(cell.id)}
-						onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
-					/>
-				{/snippet}
-			</CellGutter>
-		{/if}
-
-		<div class="flex min-w-0 flex-col gap-1 pr-2 pb-1">
-			{#if !collapsed}
-				<div class="flex flex-col gap-1" transition:slide={{ duration: 220 }}>
-					<!-- Editor (GUI or PRQL mode) -->
-					{#if !codeHidden}
-						<div onfocusin={onEditorFocus}>
+	{#snippet editorInner()}
 							{#if canInlinePrompt}
 								<InlinePromptBar
 									bind:open={inlinePromptOpen}
@@ -956,6 +1006,7 @@
 									language="python"
 									pythonContext={{ kind: 'udf' }}
 									{dark}
+									layout={editorLayout}
 									onchange={(c) => updateCellUdfBody(cell.id, c)}
 								/>
 							{:else if isPlotCell}
@@ -983,12 +1034,15 @@
 									language="javascript"
 									plotGlobalsDts={plotCellGlobalsDts}
 									{dark}
+									layout={editorLayout}
 									onchange={(c) => updatePlotCellCode(cell.id, c)}
 								/>
+								{#if !worksheet}
 								<p class="mt-1 text-2xs text-muted-foreground">
 									Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
 									<code>return {'{ data: [...], layout: {...} }'}</code>.
 								</p>
+								{/if}
 							{:else if isPythonCell}
 								<Editor
 									bind:this={editorRef}
@@ -998,13 +1052,16 @@
 									pythonContext={{ kind: 'data', notebookId }}
 									pythonSchemas={prevCellSources}
 									{dark}
+									layout={editorLayout}
 									onchange={(c) => updatePythonCellCode(cell.id, c)}
 								/>
+								{#if !worksheet}
 								<p class="mt-1 text-2xs text-muted-foreground">
 									Reference upstream cells by name — they're already DataFrames. End the cell with a
 									bare expression (like Jupyter), or assign to <code>result</code> or
 									<code>fig</code>, to surface a table or Plotly chart.
 								</p>
+								{/if}
 							{:else if !isQueryCell}
 								<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
 									{#if isMarkdownRendered}
@@ -1056,6 +1113,7 @@
 									{/if}
 								</div>
 							{:else if cell.editMode === 'gui'}
+								<div class={worksheet ? 'min-h-0 flex-1 overflow-y-auto' : ''}>
 								<GUIEditor
 									stages={cell.guiStages}
 									tables={guiTables}
@@ -1071,6 +1129,7 @@
 										setStageResultCollapsed(cell.id, stageIdx, c)}
 									onEscapeEditor={() => cellContainerEl?.focus()}
 								/>
+								</div>
 							{:else}
 								<Editor
 									bind:this={editorRef}
@@ -1080,14 +1139,17 @@
 									language={cell.language}
 									sqlDialect={cellSqlDialect}
 									{connectionType}
+									connectionId={connectionValue}
+									externalSchema={cellExternalSchema}
 									{udfFunctionNames}
 									{dark}
+									layout={editorLayout}
 									onchange={(c) => updateCellCode(cell.id, c)}
 								/>
 							{/if}
-						</div>
-					{/if}
+	{/snippet}
 
+	{#snippet outputInner()}
 					<!-- Compiled SQL preview -->
 					{#if sqlExpanded && cell.compiledSQL}
 						<CellSqlPreview sql={cell.compiledSQL} />
@@ -1096,7 +1158,10 @@
 					<!-- Errors — quiet inline annotation bar (plot cells show errors inline
 					     in their own output area instead, via PlotCellOutput below) -->
 					{#if !isPlotCell && cell.errors.length > 0}
-						<div class="space-y-0.5 pl-0.5" in:fly={{ y: -4, duration: 130 }}>
+						<div
+							class="space-y-0.5 pl-0.5 {worksheet ? 'shrink-0' : ''}"
+							in:fly={{ y: -4, duration: 130 }}
+						>
 							{#each cell.errors as error, errorIdx (errorIdx)}
 								<div class="rounded-r-sm border-destructive/80 py-2">
 									<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
@@ -1119,7 +1184,10 @@
 					     resolved upstream cells' .result, same as ChartView's plotRender
 					     derived — not stored state, so it stays live as you type. -->
 					{#if isPlotCell}
-						<div in:fade={{ duration: 220 }} class="min-h-64">
+						<div
+							in:fade={{ duration: 220 }}
+							class={worksheet ? 'min-h-0 flex-1' : 'min-h-64'}
+						>
 							<PlotCellOutput {cell} deps={plotDeps} />
 						</div>
 					{/if}
@@ -1128,7 +1196,7 @@
 					     The resulting DataFrame (if any) renders below via the shared
 					     Results block, same InlineResultView every other cell type uses. -->
 					{#if showPythonOutput}
-						<div in:fade={{ duration: 220 }}>
+						<div in:fade={{ duration: 220 }} class={worksheet ? 'shrink-0' : ''}>
 							<PythonCellOutput output={cell.pythonOutput!} />
 						</div>
 					{/if}
@@ -1137,9 +1205,9 @@
 					{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
 						<div
 							in:fade={{ duration: 220 }}
-							class="relative transition-opacity duration-300 {running
-								? 'opacity-70'
-								: 'opacity-100'}"
+							class="relative transition-opacity duration-300 {worksheet
+								? 'flex min-h-0 flex-1 flex-col'
+								: ''} {running ? 'opacity-70' : 'opacity-100'}"
 						>
 							{#if running}
 								<div
@@ -1161,6 +1229,7 @@
 									initialChartConfig={cell.resultChartConfig}
 									controlsVisible={showResultControls}
 									toolbarReserveSpace={!codeHidden}
+									fillHeight={worksheet}
 									onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
 									onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
 									onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
@@ -1226,10 +1295,152 @@
 								: undefined}
 						/>
 					{/if}
+	{/snippet}
+
+	{#snippet cellMain()}
+		{#if !collapsed}
+			{#if worksheet}
+				<div class="flex min-h-0 flex-1 flex-col">
+					<div
+						style="height: {editorHeight}px"
+						class="flex min-h-40 shrink-0 flex-col overflow-hidden"
+					>
+						{#if !codeHidden}
+							<div
+								onfocusin={onEditorFocus}
+								class="flex min-h-0 flex-1 flex-col overflow-hidden"
+							>
+								{@render editorInner()}
+							</div>
+						{/if}
+					</div>
+					<div
+						class="group flex h-2 w-full shrink-0 cursor-ns-resize touch-none items-center justify-center select-none"
+						role="separator"
+						aria-label="Resize editor"
+						onpointerdown={onSplitResizeStart}
+						onpointermove={onSplitResizeMove}
+						onpointerup={onSplitResizeEnd}
+						onpointercancel={onSplitResizeEnd}
+					>
+						<div
+							class="h-0.5 w-10 rounded-full bg-border/40 transition-colors group-hover:bg-border {splitResizing
+								? 'bg-primary/50'
+								: ''}"
+						></div>
+					</div>
+					<div class="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
+						{@render outputInner()}
+					</div>
+				</div>
+			{:else}
+				<div class="flex flex-col gap-1" transition:slide={{ duration: 220 }}>
+					{#if !codeHidden}
+						<div onfocusin={onEditorFocus}>
+							{@render editorInner()}
+						</div>
+					{/if}
+					{@render outputInner()}
 				</div>
 			{/if}
+		{/if}
+	{/snippet}
+
+	{#if worksheet}
+		<div
+			bind:this={worksheetBodyEl}
+			data-worksheet="true"
+			class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3"
+		>
+			{@render cellMain()}
 		</div>
-	</div>
+	{:else}
+		<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)] overflow-visible">
+			{#if reportView}
+				<div></div>
+			{:else}
+				<div aria-hidden="true"></div>
+			{/if}
+
+			{#if !(reportView && !isQueryCell)}
+				<div class="min-w-0 overflow-visible pt-1 pr-2">
+					<CellHeader
+						{cell}
+						{isQueryCell}
+						{collapsed}
+						{codeHidden}
+						{revealed}
+						{reportView}
+						hidden={isMarkdownPreviewMode}
+						cellNumber={!reportView && (isQueryCell || isPythonCell) ? index + 1 : undefined}
+						showCellNumber={showCellIndex}
+						{prevCellNames}
+						downstreamCount={sameNotebookUsageCount}
+						{crossNotebookUsageCount}
+						{cellMode}
+						aiChatOpen={onShareWithAI !== undefined}
+						onModeChange={setCellMode}
+						onOverlayChange={handleOverlayChange}
+						{onShareWithAI}
+						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+						onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
+						onOpenWorksheet={supportsWorksheet && !reportView ? handleOpenWorksheet : undefined}
+					/>
+				</div>
+			{:else}
+				<div></div>
+			{/if}
+
+			{#if reportView}
+				<div></div>
+			{:else}
+				<CellGutter
+					isQueryCell={isQueryCell || isPythonCell || isPlotCell}
+					{revealed}
+					status={cell.status}
+					needsRun={cell.needsRun}
+					{running}
+					runTooltip={runTooltipText}
+					onRun={() =>
+						isPythonCell
+							? runPythonCell(cell.id)
+							: isPlotCell
+								? runPlotCell(cell.id)
+								: runCell(cell.id)}
+					onCancel={() => cancelCell(cell.id)}
+					commentCount={collabEnabled ? commentCount : 0}
+					onComments={collabEnabled && !reportView ? openCellComments : undefined}
+				>
+					{#snippet menu()}
+						<CellMenu
+							{cell}
+							{notebookId}
+							{isQueryCell}
+							{isPythonCell}
+							{isFirst}
+							{isLast}
+							{isDbtProject}
+							{connections}
+							{connectionValue}
+							bind:sqlExpanded
+							bind:open={menuOpen}
+							onOpenMaterialize={() => (materializeDialogOpen = true)}
+							onOpenPromote={() => (promoteDialogOpen = true)}
+							onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
+							onRunTests={() => void testCell(cell.id)}
+							onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
+							onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
+							isPlotCell={isPlotCell}
+						/>
+					{/snippet}
+				</CellGutter>
+			{/if}
+
+			<div class="flex min-w-0 flex-col gap-1 pr-2 pb-1">
+				{@render cellMain()}
+			</div>
+		</div>
+	{/if}
 
 	{#if isQueryCell}
 		<MaterializeDialog bind:open={materializeDialogOpen} {cell} {isDbtProject} />

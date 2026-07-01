@@ -59,6 +59,7 @@ export function makeDemoCell(
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0,
 		...overrides
 	};

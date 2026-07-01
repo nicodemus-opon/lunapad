@@ -86,10 +86,11 @@ function buildShareSnapshotInternal(
 
 	const cellSnapshots: ShareCellSnapshot[] = cells.map((cell, idx) => {
 		const publishRole: SharePublishRole =
-			cell.cellType === 'query' &&
-			cell.display !== 'collapsed' &&
-			cell.outputName &&
-			markdocRefs.has(cell.outputName)
+			cell.hideInReport ||
+			(cell.cellType === 'query' &&
+				cell.display !== 'collapsed' &&
+				cell.outputName &&
+				markdocRefs.has(cell.outputName))
 				? 'data'
 				: 'visible';
 

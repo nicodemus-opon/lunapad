@@ -1,4 +1,37 @@
+import type { CellDisplay } from '$lib/stores/notebook.svelte';
 import type { PublicShareCell } from '$lib/server/shared-reports';
+import { extractBareMarkdocRefRoots, extractMarkdocRefs } from './markdoc-interp';
+
+/** Output names referenced from markdown cells (`$name` widgets or bare roots). */
+export function getMarkdocReferencedOutputNames(
+	cells: { cellType: string; markdown?: string }[]
+): Set<string> {
+	const refs = new Set<string>();
+	for (const cell of cells) {
+		if (cell.cellType !== 'markdown' || !cell.markdown?.trim()) continue;
+		for (const ref of extractMarkdocRefs(cell.markdown)) refs.add(ref);
+		for (const ref of extractBareMarkdocRefRoots(cell.markdown)) refs.add(ref);
+	}
+	return refs;
+}
+
+type ReportVisibilityCell = {
+	cellType: string;
+	display?: CellDisplay;
+	outputName: string;
+	hideInReport?: boolean;
+};
+
+/** Whether a cell should be omitted from in-app report view and published reports. */
+export function shouldHideCellInReportView(
+	cell: ReportVisibilityCell,
+	cells: { cellType: string; markdown?: string }[]
+): boolean {
+	if (cell.display === 'collapsed') return true;
+	if (cell.hideInReport) return true;
+	if (cell.cellType !== 'query' || !cell.outputName) return false;
+	return getMarkdocReferencedOutputNames(cells).has(cell.outputName);
+}
 
 /** Client-side row filter for frozen DuckDB results when filter param matches a column name. */
 export function filterFrozenRows(

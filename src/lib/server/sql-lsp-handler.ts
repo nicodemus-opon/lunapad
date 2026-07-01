@@ -3,9 +3,9 @@
  * One instance is created per WebSocket connection; all share the function catalog.
  *
  * Capabilities provided:
- *  - textDocument/completion  (functions + keywords from catalog, schema from client)
- *  - textDocument/hover       (function signature + doc from catalog)
  *  - textDocument/signatureHelp (parameter hints while inside a function call)
+ *
+ * Completions and hover are handled by client-side Monaco providers with live schema.
  */
 import {
 	createConnection,
@@ -188,14 +188,16 @@ export function startLspForConnection(reader: MessageReader, writer: MessageWrit
 		(): InitializeResult => ({
 			capabilities: {
 				textDocumentSync: TextDocumentSyncKind.Incremental,
-				completionProvider: { triggerCharacters: ['.', '(', ' '] },
-				hoverProvider: true,
+				// Schema-aware completions/hover come from the client-side Monaco providers;
+				// LSP only supplies signature help to avoid duplicate suggestions in dev.
 				signatureHelpProvider: { triggerCharacters: ['(', ','] }
 			},
 			serverInfo: { name: 'lunapad-sql-lsp', version: '1.0.0' }
 		})
 	);
 
+	// Legacy handlers — not advertised in capabilities and unreachable from the
+	// browser (sql-lsp-client.ts is disabled). Kept for dev tooling experiments only.
 	connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] => {
 		const doc = documents.get(params.textDocument.uri);
 		if (!doc) return [];

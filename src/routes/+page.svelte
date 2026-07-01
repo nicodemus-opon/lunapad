@@ -95,7 +95,9 @@
 		setSidebarNotebookView,
 		toggleSidebarNotebookView,
 		runCellsAbove,
-		runCellsBelow
+		runCellsBelow,
+		closeWorksheetView,
+		openNotebookTabAtCell
 	} from '$lib/stores/notebook.svelte';
 	import Sortable from 'sortablejs';
 	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
@@ -112,6 +114,7 @@
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
 	import NotebookOutline from '$lib/components/notebook/NotebookOutline.svelte';
 	import NotebookStatusBar from '$lib/components/notebook/NotebookStatusBar.svelte';
+	import CellWorksheetView from '$lib/components/notebook/CellWorksheetView.svelte';
 	import ReportViewShell from '$lib/components/markdown/ReportViewShell.svelte';
 	import MetricsPanel from '$lib/components/notebook/MetricsPanel.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
@@ -260,6 +263,14 @@
 	const activeNotebook = $derived(allNotebooks.find((n) => n.id === activeTabId) ?? null);
 	// Bind directly to the active notebook's cells array so new cells render without refresh.
 	const cells = $derived(activeNotebook?.cells ?? []);
+	const worksheetCell = $derived.by(() => {
+		const id = activeNotebook?.worksheetCellId;
+		if (!id) return null;
+		return cells.find((c) => c.id === id) ?? null;
+	});
+	const worksheetCellIndex = $derived(
+		worksheetCell ? cells.findIndex((c) => c.id === worksheetCell.id) : -1
+	);
 	const activeNotebookConnectionValue = $derived.by(() => {
 		if (!activeNotebook) return BUILTIN_DUCKDB_CONNECTION_ID;
 		const queryCells = activeNotebook.cells.filter((cell) => cell.cellType === 'query');
@@ -606,7 +617,9 @@
 					sidebarCollapsed = false;
 					localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
 				}
-			}
+			},
+			isWorksheetView: () => Boolean(activeNotebook?.worksheetCellId),
+			closeWorksheetView: handleExitWorksheet
 		});
 		return () => {
 			unmountKeyboard();
@@ -840,6 +853,12 @@
 	}
 
 	// ── Open result tab handler ───────────────────────────────────────────────
+	function handleExitWorksheet() {
+		if (!activeNotebook) return;
+		const cellId = closeWorksheetView(activeNotebook.id);
+		if (cellId) openNotebookTabAtCell(activeNotebook.id, cellId);
+	}
+
 	function handleOpenResultTab(
 		cellId: string,
 		notebookId: string,
@@ -1773,6 +1792,38 @@
 				{#if isNotebookTab}
 					<div class="flex min-h-0 flex-1 overflow-hidden">
 						<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+							{#if worksheetCell && activeNotebook}
+								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+								<CellWorksheetView
+									cell={worksheetCell}
+									index={worksheetCellIndex}
+									notebookId={activeTabId}
+									dark={isDark}
+									prevCellSources={prevSourcesForCell(worksheetCellIndex)}
+									{autoRun}
+									{collabEnabled}
+									onShareWithAI={() => {
+										setAIChatOpen(true);
+										addContextCell(worksheetCell.id);
+									}}
+									onFixWithAI={aiChatOpen
+										? (errorMsg) => {
+												addContextCell(worksheetCell.id);
+												setAIChatOpen(true);
+												void submitAIMessage(
+													`Fix this SQL error in \`${worksheetCell.outputName}\`: ${errorMsg}`
+												);
+											}
+										: undefined}
+									onContinueWithAI={(instruction) => {
+										addContextCell(worksheetCell.id);
+										setAIChatOpen(true);
+										setPendingSuggestion(instruction);
+									}}
+									onOpenResultTab={handleOpenResultTab}
+								/>
+								</div>
+							{:else}
 							<main
 								bind:this={notebookScrollEl}
 								class="notebook-scroll flex-1 overflow-y-auto bg-background"
@@ -2053,6 +2104,7 @@
 									{/if}
 								</div>
 							</main>
+							{/if}
 							<NotebookStatusBar
 								{connections}
 								defaultConnectionId={activeNotebook?.cells.find((c) => c.cellType === 'query')

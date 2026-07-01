@@ -36,6 +36,7 @@ import { registerMarkdownHover } from './markdown-hover';
 import { registerPrqlCodeActions } from './prql-actions';
 import { registerPlotlyIntellisense } from './plotly-intellisense';
 import { startSqlLspClient } from './sql-lsp-client';
+import { initSqlParsers } from './sql-parser-dialect';
 import { setModelDialect } from './completions';
 import type { ConnectionType } from '$lib/types/connection';
 
@@ -45,16 +46,19 @@ export {
 	clearModelCompletions,
 	setModelDialect,
 	clearModelDialect,
+	setModelSqlContext,
+	clearModelSqlContext,
 	setModelPythonContext,
 	clearModelPythonContext,
 	setModelPythonSchema,
 	clearModelPythonSchema
 } from './completions';
 export { setGhostInlineEditActive } from './ghost-completions';
-export type { CompletionEntry, PythonCellContext, PythonUpstreamSchema } from './completions';
+export type { CompletionEntry, PythonCellContext, PythonUpstreamSchema, SqlModelContext } from './completions';
 export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from './plot-globals';
 
 let initialized = false;
+const SETUP_KEY = '__lunapad_monaco_setup__';
 
 const workerBlobUrls = new Map<string, string>();
 
@@ -108,8 +112,9 @@ function registerSqlDialects(): void {
 }
 
 export function setupMonaco(): typeof monaco {
-	if (initialized) return monaco;
+	if (initialized || (globalThis as Record<string, boolean>)[SETUP_KEY]) return monaco;
 	initialized = true;
+	(globalThis as Record<string, boolean>)[SETUP_KEY] = true;
 
 	const useBlobWorkers = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
 	self.MonacoEnvironment = {
@@ -135,6 +140,7 @@ export function setupMonaco(): typeof monaco {
 	registerPrqlCodeActions(monaco);
 	registerPlotlyIntellisense();
 	startSqlLspClient(monaco);
+	void initSqlParsers();
 
 	return monaco;
 }

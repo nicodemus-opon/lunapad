@@ -150,7 +150,7 @@ export default defineConfig({
 		// causing toast() calls to never trigger re-renders in the Toaster component.
 		// Excluding it forces vite-plugin-svelte to handle it with the Svelte compiler.
 		exclude: ['@duckdb/duckdb-wasm', 'layerchart', 'svelte-sonner'],
-		include: ['prqlc > prqlc/dist/web/prqlc_js']
+		include: ['prqlc > prqlc/dist/web/prqlc_js', 'node-sql-parser/build/trino.js', 'node-sql-parser/build/postgresql.js']
 	},
 	assetsInclude: ['**/*.wasm'],
 	server: {

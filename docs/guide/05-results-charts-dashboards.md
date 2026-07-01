@@ -8,9 +8,9 @@ Query results render as a sortable, paginated table right below the cell. Switch
 | ----- | -------------------------------------------------------------------------- |
 | Table | Raw rows, column sort, pagination                                          |
 | Chart | Configured visualization (see below)                                       |
-| Stats | Per-column null %, distinct count, min/max, histograms for numeric columns |
+| Stats | Per-column cards with completeness, distinct counts, top values, histograms, and data-quality hints |
 
-Stats is the fast sanity check when you inherit a table you haven't profiled before.
+Stats is the fast sanity check when you inherit a table you haven't profiled before. It profiles the rows currently loaded in the result (up to 1,000 when auto-limited). Wide tables use a column picker; flagged columns (high nulls, constants, likely IDs) surface first.
 
 Click a column header in the table view to add a **column description**. Descriptions stick on the cell and show in a popover when you hover the header. Fill these in when someone else will read the report and won't know your naming conventions.
 

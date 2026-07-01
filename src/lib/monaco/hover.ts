@@ -8,8 +8,29 @@ import {
 	getModelCompletions,
 	parseRegistry
 } from './completions';
+import {
+	formatTableHover,
+	lookupTable,
+	sqlIdentBeforeCursor
+} from './sql-schema-context';
+import {
+	findColumnInScope,
+	getCachedSqlScope,
+	resolveTableRef
+} from './sql-scope';
 import { hoverPython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
+
+function columnHoverMarkdown(
+	tableRef: string,
+	columnName: string,
+	col: { detail?: string; description?: string }
+): string {
+	const parts: string[] = [`**${tableRef}.${columnName}**`];
+	if (col.detail) parts.push(`\`${col.detail}\``);
+	if (col.description) parts.push(col.description);
+	return parts.join('\n\n');
+}
 
 export function registerHoverProviders(monaco: typeof Monaco): void {
 	monaco.languages.registerHoverProvider('prql', {
@@ -82,46 +103,75 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 	for (const langId of ['sql', 'trinosql', 'genericsql'] as const)
 		monaco.languages.registerHoverProvider(langId, {
 			provideHover(model, position) {
-				const word = model.getWordAtPosition(position);
-				if (!word) return null;
-				const range = new monaco.Range(
-					position.lineNumber,
-					word.startColumn,
-					position.lineNumber,
-					word.endColumn
-				);
-
-				// Schema hover: table name → column list card; column name → type annotation.
-				const { tables } = parseRegistry(getModelCompletions(model));
-				const tableCols = tables.get(word.word);
-				if (tableCols && tableCols.length > 0) {
-					const body = tableCols
-						.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
-						.join('\n');
-					return { range, contents: [{ value: `**${word.word}**\n\n${body}` }] };
+				try {
+					return provideSqlHover(model, position, monaco);
+				} catch (err) {
+					console.warn('[sql-hover] provider error', err);
+					return null;
 				}
-				const lineText = model.getLineContent(position.lineNumber);
-				const colPattern = new RegExp(`([A-Za-z_]\\w*)\\.(${word.word})\\b`);
-				const colMatch = lineText.match(colPattern);
-				if (colMatch) {
-					const cols = tables.get(colMatch[1]);
-					const col = cols?.find((c) => c.name === word.word);
-					if (col?.detail) {
-						return {
-							range,
-							contents: [{ value: `**${colMatch[1]}.${word.word}** — \`${col.detail}\`` }]
-						};
-					}
-				}
-
-				// Function hover from catalog.
-				const dialect = getModelDialect(model);
-				const fn = getSqlFunctionDoc(word.word.toLowerCase(), dialect);
-				if (!fn) return null;
-				return {
-					range,
-					contents: [{ value: `**${fn.signature}**\n\n${fn.doc}` }]
-				};
 			}
 		});
+}
+
+function provideSqlHover(
+	model: Monaco.editor.ITextModel,
+	position: Monaco.Position,
+	monaco: typeof Monaco
+): Monaco.languages.ProviderResult<Monaco.languages.Hover> {
+	const lineText = model.getLineContent(position.lineNumber);
+	const ident = sqlIdentBeforeCursor(lineText, position.column);
+	const monacoWord = ident ? null : model.getWordAtPosition(position);
+	if (!ident && !monacoWord) return null;
+	const range = new monaco.Range(
+		position.lineNumber,
+		ident?.startColumn ?? monacoWord!.startColumn,
+		position.lineNumber,
+		ident ? position.column : monacoWord!.endColumn
+	);
+	const identText = ident?.text ?? monacoWord!.word;
+
+	const dialect = getModelDialect(model);
+	const scope = getCachedSqlScope(model.uri.toString(), model.getValue(), dialect);
+	const { tables } = parseRegistry(getModelCompletions(model));
+
+	// Qualified names may be `schema.table` (registry key) or `alias.column`.
+	if (ident?.parts && ident.parts.length >= 2) {
+		const asTable = lookupTable(tables, identText);
+		if (asTable && asTable.length > 0) {
+			return {
+				range,
+				contents: [{ value: formatTableHover(identText, asTable) }]
+			};
+		}
+
+		const columnName = ident.parts[ident.parts.length - 1]!;
+		const tableRef = ident.parts.slice(0, -1).join('.');
+		const resolvedRef = resolveTableRef(scope, tableRef) ?? tableRef;
+		const col =
+			findColumnInScope(scope, tables, tableRef, columnName) ??
+			findColumnInScope(scope, tables, resolvedRef, columnName);
+		if (col) {
+			return {
+				range,
+				contents: [{ value: columnHoverMarkdown(resolvedRef, columnName, col) }]
+			};
+		}
+	}
+
+	const resolvedTable = resolveTableRef(scope, identText) ?? identText;
+	const tableCols = lookupTable(tables, resolvedTable);
+	if (tableCols && tableCols.length > 0) {
+		return {
+			range,
+			contents: [{ value: formatTableHover(resolvedTable, tableCols) }]
+		};
+	}
+
+	const fnName = identText.split('.').pop() ?? identText;
+	const fn = getSqlFunctionDoc(fnName.toLowerCase(), dialect);
+	if (!fn) return null;
+	return {
+		range,
+		contents: [{ value: `**${fn.signature}**\n\n${fn.doc}` }]
+	};
 }

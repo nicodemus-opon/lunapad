@@ -58,6 +58,12 @@ interface SchemaTable {
 	description?: string;
 	/** Parallel to `columns` — column-level comments, when available. */
 	columnDescriptions?: string[];
+	foreignKeys?: Array<{
+		column: string;
+		referencedTable: string;
+		referencedColumn: string;
+		source: 'catalog' | 'heuristic';
+	}>;
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -864,7 +870,83 @@ export async function fetchExternalConnectionSchema(
 		}
 	}
 
+	const foreignKeys = await fetchCatalogForeignKeys(
+		connection as Exclude<Connection, DuckDBWASMConnection>,
+		catalogName,
+		connSchema
+	);
+	for (const fk of foreignKeys) {
+		const key = `${fk.schema}.${fk.table}`;
+		const t = tables.get(key);
+		if (!t) continue;
+		if (!t.foreignKeys) t.foreignKeys = [];
+		t.foreignKeys.push({
+			column: fk.column,
+			referencedTable: fk.referencedSchema
+				? `${fk.referencedSchema}.${fk.referencedTable}`
+				: fk.referencedTable,
+			referencedColumn: fk.referencedColumn,
+			source: 'catalog'
+		});
+	}
+
 	return { tables: [...tables.values()] };
+}
+
+interface CatalogForeignKey {
+	schema: string;
+	table: string;
+	column: string;
+	referencedSchema: string;
+	referencedTable: string;
+	referencedColumn: string;
+}
+
+function buildForeignKeyPassthroughQuery(connectionType: 'postgres'): string {
+	return `SELECT
+		tc.table_schema AS source_schema,
+		tc.table_name AS source_table,
+		kcu.column_name AS source_column,
+		ccu.table_schema AS referenced_schema,
+		ccu.table_name AS referenced_table,
+		ccu.column_name AS referenced_column
+	FROM information_schema.table_constraints tc
+	JOIN information_schema.key_column_usage kcu
+		ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+	JOIN information_schema.constraint_column_usage ccu
+		ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+	WHERE tc.constraint_type = 'FOREIGN KEY'`;
+}
+
+async function fetchCatalogForeignKeys(
+	connection: Exclude<Connection, DuckDBWASMConnection>,
+	catalogName: string,
+	connSchema: string
+): Promise<CatalogForeignKey[]> {
+	// Real FK metadata only where passthrough to native information_schema works.
+	if (connection.type !== 'postgres') return [];
+	try {
+		const passthroughSql = buildForeignKeyPassthroughQuery('postgres');
+		const wrapped = `SELECT * FROM TABLE(${quoteTrinoIdent(catalogName)}.system.query(query => ${quoteLiteral(passthroughSql)}))`;
+		const result = await trinoRequest(
+			wrapped,
+			catalogName,
+			connSchema,
+			trinoOptsForConnection(connection)
+		);
+		return result.rows
+			.map((row) => ({
+				schema: String(row.source_schema ?? ''),
+				table: String(row.source_table ?? ''),
+				column: String(row.source_column ?? ''),
+				referencedSchema: String(row.referenced_schema ?? ''),
+				referencedTable: String(row.referenced_table ?? ''),
+				referencedColumn: String(row.referenced_column ?? '')
+			}))
+			.filter((fk) => fk.table && fk.column && fk.referencedTable && fk.referencedColumn);
+	} catch {
+		return [];
+	}
 }
 
 // ── File upload via Trino ─────────────────────────────────────────────────────

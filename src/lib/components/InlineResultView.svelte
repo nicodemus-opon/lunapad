@@ -35,6 +35,8 @@
 		executionMs?: number | null;
 		/** True when rows were capped at the auto-limit */
 		truncated?: boolean;
+		/** Fill parent height — used in worksheet view */
+		fillHeight?: boolean;
 	}
 
 	let {
@@ -54,8 +56,11 @@
 		controlsVisible = true,
 		toolbarReserveSpace = true,
 		toolbarActions,
-		executionMs = null
+		executionMs = null,
+		fillHeight = false
 	}: Props = $props();
+
+	const showControls = $derived(controlsVisible || fillHeight);
 
 	function fmtMs(ms: number): string {
 		return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
@@ -112,15 +117,15 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
 	<!-- Toolbar -->
 	<div
-		class="flex items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-150 ease-(--motion-ease-out) {controlsVisible
+		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-150 ease-(--motion-ease-out) {showControls
 			? 'h-7 opacity-100'
 			: toolbarReserveSpace
 				? 'pointer-events-none h-7 opacity-0'
 				: 'pointer-events-none h-0 opacity-0'}"
-		aria-hidden={!controlsVisible}
+		aria-hidden={!showControls}
 	>
 		<div
 			class="inline-flex flex-nowrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-0.5"
@@ -186,6 +191,19 @@
 			<div class="max-h-52 min-h-40 overflow-hidden">
 				<ChartView {rows} {columns} config={activeConfig} />
 			</div>
+		{:else if fillHeight}
+			<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
+				{#if showConfigPanel}
+					<div
+						class="w-52 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/10 px-3 py-3"
+					>
+						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
+					</div>
+				{/if}
+				<div class="min-h-0 min-w-0 flex-1">
+					<ChartView {rows} {columns} config={activeConfig} />
+				</div>
+			</div>
 		{:else}
 			<!-- Full cell view: left config panel + chart (matches ResultView layout) -->
 			<div class="flex overflow-hidden rounded-md">
@@ -202,11 +220,19 @@
 			</div>
 		{/if}
 	{:else if viewMode === 'stats'}
-		<div class={compact ? 'max-h-52 overflow-auto' : ''}>
-			<StatsView {rows} {columns} {name} />
+		<div
+			class="{fillHeight ? 'flex min-h-0 flex-1 flex-col' : ''} {compact
+				? 'max-h-64 overflow-auto'
+				: ''}"
+		>
+			<StatsView {rows} {columns} {name} compact={compact} {truncated} {fillHeight} />
 		</div>
 	{:else}
-		<div class={compact ? 'max-h-52 overflow-auto' : ''}>
+		<div
+			class="{fillHeight ? 'flex min-h-0 flex-1 flex-col' : ''} {compact
+				? 'max-h-52 overflow-auto'
+				: ''}"
+		>
 			<ResultTable
 				{rows}
 				{columns}
@@ -214,6 +240,7 @@
 				{truncated}
 				pageSize={compact ? 10 : 25}
 				headerInsights={compact ? 'compact' : 'full'}
+				{fillHeight}
 				{onAddSort}
 				{onAddFilter}
 				{columnDescriptions}

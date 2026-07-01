@@ -21,7 +21,8 @@
 		Sparkles,
 		ArrowUp,
 		ArrowDown,
-		Eraser
+		Eraser,
+		Maximize2
 	} from '@lucide/svelte';
 	import {
 		moveCell,
@@ -29,6 +30,7 @@
 		setCellConnection,
 		setCellDisplay,
 		setCellHideResult,
+		setCellHideInReport,
 		clearCellResult,
 		runCellsAbove,
 		runCellsBelow,
@@ -57,7 +59,9 @@
 		onOpenPromote,
 		onOpenPromoteSeed,
 		onRunTests,
-		onOpenInlinePrompt
+		onOpenInlinePrompt,
+		onOpenWorksheet,
+		isPlotCell = false
 	}: {
 		cell: Cell;
 		notebookId?: string;
@@ -75,6 +79,8 @@
 		onOpenPromoteSeed?: () => void;
 		onRunTests: () => void;
 		onOpenInlinePrompt?: () => void;
+		onOpenWorksheet?: () => void;
+		isPlotCell?: boolean;
 	} = $props();
 
 	const codeHidden = $derived(cell.display === 'output');
@@ -96,6 +102,13 @@
 			<DropdownMenu.Item onclick={onOpenInlinePrompt}>
 				<Sparkles class="h-3.5 w-3.5" /> Tell AI what to do
 				<DropdownMenu.Shortcut>⌘⇧K</DropdownMenu.Shortcut>
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+		{/if}
+		{#if onOpenWorksheet && (isQueryCell || isPythonCell || isPlotCell)}
+			<DropdownMenu.Item onclick={onOpenWorksheet}>
+				<Maximize2 class="h-3.5 w-3.5" /> Worksheet view
+				<DropdownMenu.Shortcut>⌘E</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 		{/if}
@@ -185,6 +198,14 @@
 			{/if}
 			<DropdownMenu.Separator />
 		{/if}
+		<DropdownMenu.Item onclick={() => setCellHideInReport(cell.id, !cell.hideInReport)}>
+			{#if cell.hideInReport}
+				<Eye class="h-3.5 w-3.5" /> Show in report view
+			{:else}
+				<EyeOff class="h-3.5 w-3.5" /> Hide from report view
+			{/if}
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
 		<DropdownMenu.Item disabled={isFirst} onclick={() => moveCell(cell.id, 'up')}>
 			<ChevronUp class="h-3.5 w-3.5" /> Move up
 			<DropdownMenu.Shortcut>⇧K</DropdownMenu.Shortcut>

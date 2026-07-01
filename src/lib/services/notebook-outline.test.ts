@@ -56,6 +56,7 @@ function makeCell(partial: Partial<Cell> & Pick<Cell, 'id' | 'cellType'>): Cell 
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: partial.hideResult ?? false,
+		hideInReport: partial.hideInReport ?? false,
 		executionCount: partial.executionCount ?? 0
 	};
 }

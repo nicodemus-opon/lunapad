@@ -10,9 +10,10 @@
 		Eye,
 		EyeOff,
 		BrainCircuit,
-		Sparkles
+		Sparkles,
+		Maximize2
 	} from '@lucide/svelte';
-	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
+	import { updateCellName, setCellDisplay, setCellHideInReport, type Cell } from '$lib/stores/notebook.svelte';
 
 	let {
 		cell,
@@ -21,6 +22,7 @@
 		codeHidden,
 		revealed,
 		hidden = false,
+		reportView = false,
 		cellNumber,
 		showCellNumber = false,
 		prevCellNames,
@@ -32,7 +34,8 @@
 		onOverlayChange,
 		onShareWithAI,
 		onFixWithAI,
-		onOpenInlinePrompt
+		onOpenInlinePrompt,
+		onOpenWorksheet
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -41,6 +44,7 @@
 		revealed: boolean;
 		/** Markdown preview mode hides the header until the cell is hovered/focused. */
 		hidden?: boolean;
+		reportView?: boolean;
 		/** Query/python cell index, rendered in the gutter via negative margin. */
 		cellNumber?: number;
 		showCellNumber?: boolean;
@@ -56,6 +60,7 @@
 		/** Opens the inline "Tell AI what to do" prompt for this cell — independent of the
 		 *  sidebar chat, so it's offered whenever the cell type supports it. */
 		onOpenInlinePrompt?: () => void;
+		onOpenWorksheet?: () => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -336,6 +341,21 @@
 			</Tooltip.Root>
 		{/if}
 
+		{#if onOpenWorksheet && !collapsed}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+						onclick={onOpenWorksheet}
+						aria-label="Switch to worksheet view"
+					>
+						<Maximize2 class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Switch to worksheet view (⌘E)</p></Tooltip.Content>
+			</Tooltip.Root>
+		{/if}
+
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
@@ -352,6 +372,35 @@
 				</p></Tooltip.Content
 			>
 		</Tooltip.Root>
+
+		{#if reportView && (isQueryCell || cell.cellType === 'python')}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+						onclick={() => setCellHideInReport(cell.id, true)}
+						aria-label="Hide from report view"
+					>
+						<EyeOff class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Hide from report view</p></Tooltip.Content>
+			</Tooltip.Root>
+		{:else if !reportView && cell.hideInReport}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+						onclick={() => setCellHideInReport(cell.id, false)}
+						aria-label="Show in report view"
+					>
+						<EyeOff class="h-3 w-3" />
+						<span>Hidden in report</span>
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Click to show in report view</p></Tooltip.Content>
+			</Tooltip.Root>
+		{/if}
 	</div>
 </div>
 

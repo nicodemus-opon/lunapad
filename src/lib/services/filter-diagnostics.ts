@@ -52,6 +52,7 @@ export function findUncollapsedDataCells(notebook: Notebook): string[] {
 			(c) =>
 				c.cellType === 'query' &&
 				c.display !== 'collapsed' &&
+				!c.hideInReport &&
 				c.outputName &&
 				refs.has(c.outputName)
 		)

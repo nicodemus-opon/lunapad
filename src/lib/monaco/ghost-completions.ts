@@ -198,8 +198,15 @@ function makeInlineItem(
 	};
 }
 
+function ghostApiLanguage(languageId: string): 'prql' | 'sql' | 'python' {
+	if (languageId === 'trinosql' || languageId === 'genericsql' || languageId === 'sql') return 'sql';
+	if (languageId === 'python') return 'python';
+	return 'prql';
+}
+
 export function registerGhostCompletions(monaco: typeof Monaco): void {
-	for (const languageId of ['prql', 'sql', 'python'] as const) {
+	for (const languageId of ['prql', 'sql', 'trinosql', 'genericsql', 'python'] as const) {
+		const apiLanguage = ghostApiLanguage(languageId);
 		monaco.languages.registerInlineCompletionsProvider(languageId, {
 			async provideInlineCompletions(model, position, _context, token) {
 				if (!getGhostTextEnabled()) return { items: [] };
@@ -228,10 +235,10 @@ export function registerGhostCompletions(monaco: typeof Monaco): void {
 					});
 					const timer = setTimeout(() => {
 						pendingByModel.delete(modelUri);
-						buildContextHints(languageId, model, position, controller.signal)
+						buildContextHints(apiLanguage, model, position, controller.signal)
 							.then(({ schema, dialect, pythonKind }) =>
 								fetchCompletion(
-									languageId,
+									apiLanguage,
 									prefix,
 									suffix,
 									schema,

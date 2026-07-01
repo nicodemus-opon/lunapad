@@ -50,7 +50,14 @@ import {
 	getNotebookFilterValue,
 	setNotebookFilterValue,
 	getNotebookAutoRefresh,
-	setNotebookAutoRefresh
+	setNotebookAutoRefresh,
+	openWorksheetView,
+	closeWorksheetView,
+	toggleWorksheetView,
+	getWorksheetCellId,
+	removeCell,
+	addPlotCell,
+	addPythonCell
 } from '$lib/stores/notebook.svelte';
 
 describe('notebook store', () => {
@@ -675,5 +682,58 @@ describe('notebook store', () => {
 
 		expect(getRunImpact(first.id)).toEqual({ segmentCount: 2, downstreamCount: 1 });
 		expect(getRunImpact(third.id)).toEqual({ segmentCount: 1, downstreamCount: 0 });
+	});
+
+	it('opens and closes worksheet view for eligible cells', () => {
+		const notebook = getNotebooks()[0];
+		const queryCell = getCells()[0];
+		expect(getWorksheetCellId(notebook.id)).toBeNull();
+
+		openWorksheetView(notebook.id, queryCell.id);
+		expect(getWorksheetCellId(notebook.id)).toBe(queryCell.id);
+
+		const closedId = closeWorksheetView(notebook.id);
+		expect(closedId).toBe(queryCell.id);
+		expect(getWorksheetCellId(notebook.id)).toBeNull();
+	});
+
+	it('toggles worksheet view on and off', () => {
+		const notebook = getNotebooks()[0];
+		const cellId = getCells()[0].id;
+
+		expect(toggleWorksheetView(notebook.id, cellId)).toBe(true);
+		expect(getWorksheetCellId(notebook.id)).toBe(cellId);
+
+		expect(toggleWorksheetView(notebook.id, cellId)).toBe(false);
+		expect(getWorksheetCellId(notebook.id)).toBeNull();
+	});
+
+	it('rejects worksheet view for markdown cells', () => {
+		const notebook = getNotebooks()[0];
+		addMarkdownCell();
+		const markdownCell = getCells().find((c) => c.cellType === 'markdown');
+		expect(markdownCell).toBeTruthy();
+
+		openWorksheetView(notebook.id, markdownCell!.id);
+		expect(getWorksheetCellId(notebook.id)).toBeNull();
+	});
+
+	it('clears worksheet view when the worksheet cell is deleted', () => {
+		const notebook = getNotebooks()[0];
+		const cellId = getCells()[0].id;
+
+		openWorksheetView(notebook.id, cellId);
+		removeCell(cellId);
+		expect(getWorksheetCellId(notebook.id)).toBeNull();
+	});
+
+	it('allows worksheet view for plot cells', () => {
+		const notebook = getNotebooks()[0];
+		addPlotCell();
+		const plotCell = getCells().find((c) => c.cellType === 'plot');
+		expect(plotCell).toBeTruthy();
+
+		openWorksheetView(notebook.id, plotCell!.id);
+		expect(getWorksheetCellId(notebook.id)).toBe(plotCell!.id);
 	});
 });

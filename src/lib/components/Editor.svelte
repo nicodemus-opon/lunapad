@@ -13,9 +13,11 @@
 	import type {
 		CompletionEntry,
 		PythonCellContext,
-		PythonUpstreamSchema
+		PythonUpstreamSchema,
+		SqlModelContext
 	} from '$lib/monaco/completions';
 	import type { ConnectionType } from '$lib/types/connection';
+	import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
 	import { shouldForwardFromMonaco } from '$lib/keyboard/monaco-bridge';
 	import { setGhostInlineEditActive } from '$lib/monaco/ghost-completions';
 
@@ -42,6 +44,10 @@
 		sqlDialect?: string;
 		/** Drives dialect-specific SQL function completions/hover */
 		connectionType?: ConnectionType;
+		/** Connection id for recency ranking and FK-aware JOIN completion. */
+		connectionId?: string;
+		/** External schema tables for this connection (FK metadata for JOIN completion). */
+		externalSchema?: ExternalSchemaTable[];
 		/** Names of UDFs defined elsewhere in the notebook — told to the SQL
 		 * formatter as known function names so it doesn't add a space before
 		 * their call parens (it otherwise treats unrecognized identifiers as
@@ -52,6 +58,8 @@
 		 * registry so completions can show "orders: id, status, amount" rather than
 		 * guessing from jedi names. */
 		pythonSchemas?: PythonUpstreamSchema[];
+		/** `auto` grows to content height; `fill` fills the parent with internal scroll */
+		layout?: 'auto' | 'fill';
 	}
 
 	let {
@@ -64,10 +72,13 @@
 		language = 'prql',
 		sqlDialect = 'sql',
 		connectionType = 'duckdb-wasm',
+		connectionId,
+		externalSchema = [],
 		udfFunctionNames = [],
 		plotGlobalsDts,
 		pythonContext,
-		pythonSchemas = []
+		pythonSchemas = [],
+		layout = 'auto'
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -80,6 +91,12 @@
 	let clearModelCompletions: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelDialect: ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void) | null =
 		null;
+	let setSqlModelLanguage:
+		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
+		| null = null;
+	let setModelSqlContext:
+		| ((m: Monaco.editor.ITextModel, context: SqlModelContext) => void)
+		| null = null;
 	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelPythonContext:
 		| ((m: Monaco.editor.ITextModel, context: PythonCellContext) => void)
@@ -189,6 +206,8 @@
 		setModelCompletions = mod.setModelCompletions;
 		clearModelCompletions = mod.clearModelCompletions;
 		setModelDialect = mod.setModelDialect;
+		setModelSqlContext = mod.setModelSqlContext;
+		setSqlModelLanguage = mod.setSqlModelLanguage;
 		clearModelDialect = mod.clearModelDialect;
 		setModelPythonContext = mod.setModelPythonContext;
 		clearModelPythonContext = mod.clearModelPythonContext;
@@ -204,7 +223,12 @@
 			m.Uri.parse(`inmemory://cell/${crypto.randomUUID()}.${language}`)
 		);
 		setModelCompletions(model, completions);
-		setModelDialect(model, connectionType);
+		if (language === 'sql') {
+			setSqlModelLanguage?.(model, connectionType);
+			setModelSqlContext?.(model, { connectionId, externalSchema });
+		} else {
+			setModelDialect(model, connectionType);
+		}
 		if (pythonContext) setModelPythonContext(model, pythonContext);
 		if (pythonSchemas.length > 0) setModelPythonSchema(model, pythonSchemas);
 		if (plotGlobalsDts != null) {
@@ -231,7 +255,7 @@
 			glyphMargin: false,
 			renderLineHighlight: 'all',
 			scrollbar: {
-				vertical: 'hidden',
+				vertical: layout === 'fill' ? 'auto' : 'hidden',
 				horizontal: 'auto',
 				// critical: without this, page scrolling dies over every cell
 				alwaysConsumeMouseWheel: false
@@ -245,8 +269,12 @@
 			contextmenu: false,
 			// suggest widget must escape the cell card's overflow clipping
 			fixedOverflowWidgets: true,
-			quickSuggestions: true,
+			quickSuggestions: { other: true, comments: false, strings: false },
 			suggestOnTriggerCharacters: true,
+			// Word-based suggestions query the editor worker async and can leave the
+			// suggest widget stuck on "Loading…" while our sync schema provider runs.
+			wordBasedSuggestions: language === 'sql' ? 'off' : 'currentDocument',
+			hover: { enabled: true, delay: 300 },
 			inlineSuggest: { enabled: true },
 			tabSize: 2,
 			padding: { top: 6, bottom: 6 }
@@ -257,10 +285,14 @@
 			if (!suppressUpdate && model) onchange(model.getValue());
 		});
 
-		ed.onDidContentSizeChange(() => {
+		if (layout === 'auto') {
+			ed.onDidContentSizeChange(() => {
+				container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
+			});
 			container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
-		});
-		container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
+		} else {
+			container.style.height = '100%';
+		}
 
 		ed.onDidBlurEditorWidget(() => {
 			formatCurrentSQL();
@@ -330,22 +362,45 @@
 		editor?.updateOptions({ readOnly: readonly });
 	});
 
-	// Sync language (cells convert PRQL ↔ SQL)
+	// Sync layout mode (auto-grow vs fill parent)
+	$effect(() => {
+		if (!editor || !container) return;
+		const fill = layout === 'fill';
+		editor.updateOptions({
+			scrollbar: {
+				vertical: fill ? 'auto' : 'hidden',
+				horizontal: 'auto',
+				alwaysConsumeMouseWheel: false
+			}
+		});
+		if (fill) {
+			container.style.height = '100%';
+		} else {
+			container.style.height = `${Math.max(80, editor.getContentHeight())}px`;
+		}
+	});
+
+	// Sync language + SQL dialect (cells convert PRQL ↔ SQL)
 	$effect(() => {
 		if (!monaco || !model) return;
-		monaco.editor.setModelLanguage(model, language);
+		if (language === 'sql') {
+			setSqlModelLanguage?.(model, connectionType);
+		} else {
+			monaco.editor.setModelLanguage(model, language);
+			setModelDialect?.(model, connectionType);
+		}
+	});
+
+	// Sync SQL context (connection id + FK metadata for JOIN completion)
+	$effect(() => {
+		if (!model || !setModelSqlContext || language !== 'sql') return;
+		setModelSqlContext(model, { connectionId, externalSchema });
 	});
 
 	// Sync completions → per-model registry
 	$effect(() => {
 		if (!model || !setModelCompletions) return;
 		setModelCompletions(model, completions);
-	});
-
-	// Sync connection type → per-model SQL dialect registry
-	$effect(() => {
-		if (!model || !setModelDialect) return;
-		setModelDialect(model, connectionType);
 	});
 
 	// Sync python cell kind (udf vs data) → per-model registry
@@ -388,7 +443,11 @@
 				endColumn: end.column
 			});
 		}
-		monaco.editor.setModelMarkers(model, language === 'sql' ? 'sql' : 'prql', markers);
+		monaco.editor.setModelMarkers(
+			model,
+			['sql', 'trinosql', 'genericsql'].includes(model.getLanguageId()) ? 'sql' : 'prql',
+			markers
+		);
 	});
 
 	export function focus(): void {
@@ -432,6 +491,7 @@
 	bind:this={container}
 	class="editor-container code-editor relative rounded-md border text-sm"
 	class:dark-editor={dark}
+	class:editor-fill={layout === 'fill'}
 ></div>
 
 {#if errors.length > 0 && !errors[0].span}
@@ -443,6 +503,10 @@
 		min-height: 80px;
 
 		overflow: hidden;
+	}
+	.editor-container.editor-fill {
+		min-height: 0;
+		height: 100%;
 	}
 	.editor-container :global(.monaco-editor),
 	.editor-container :global(.monaco-editor .overflow-guard) {

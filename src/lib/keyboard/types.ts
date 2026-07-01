@@ -56,6 +56,7 @@ export interface CellMeta {
 	isQueryCell: boolean;
 	isGuiCell: boolean;
 	isDbtProject: boolean;
+	worksheetEligible: boolean;
 	collapsed: boolean;
 	display: CellDisplay;
 	outputName: string;

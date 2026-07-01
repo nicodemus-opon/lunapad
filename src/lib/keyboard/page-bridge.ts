@@ -13,6 +13,8 @@ export interface PageBridge {
 	runAll: () => void;
 	isNotebookTab: () => boolean;
 	toggleNotebookOutline: () => void;
+	isWorksheetView: () => boolean;
+	closeWorksheetView: () => void;
 }
 
 let pageBridge: PageBridge | null = null;

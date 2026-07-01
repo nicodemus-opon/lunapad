@@ -44,9 +44,7 @@ describe('NotebookCell anatomy', () => {
 		expect(source).toContain("effectiveDisplay === 'collapsed'");
 		expect(source).toContain("effectiveDisplay !== 'full'");
 		// report view forces output without mutating per-cell state (unless collapsed)
-		expect(source).toContain(
-			"reportView && isQueryCell && cell.display !== 'collapsed' ? 'output' : cell.display"
-		);
+		expect(source).toContain('reportView && isQueryCell && cell.display');
 		// collapsed cells do not render results
 		expect(source).toContain('!cell.hideResult && cell.result');
 	});
@@ -71,6 +69,14 @@ describe('NotebookCell anatomy', () => {
 		expect(source).not.toContain('Showing preview');
 		// the open-full affordance lives on the status line instead
 		expect(source).toContain('onOpenFull=');
+	});
+
+	it('supports worksheet view layout', () => {
+		expect(source).toContain('worksheet?: boolean');
+		expect(source).toContain('data-worksheet={worksheet ? true : undefined}');
+		expect(source).toContain('fillHeight={worksheet}');
+		expect(source).toContain('layout={editorLayout}');
+		expect(source).toContain('onOpenWorksheet');
 	});
 });
 
@@ -97,5 +103,10 @@ describe('CellHeader', () => {
 	it('expands a collapsed cell from the whole summary row', () => {
 		expect(source).toContain("setCellDisplay(cell.id, 'full')");
 		expect(source).toContain('onRowClick');
+	});
+
+	it('exposes worksheet view entry point', () => {
+		expect(source).toContain('Maximize2');
+		expect(source).toContain('onOpenWorksheet');
 	});
 });

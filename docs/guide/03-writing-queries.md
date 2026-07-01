@@ -61,7 +61,17 @@ Use Python when you need a library SQL doesn't have, or when you're prototyping 
 
 ## Autocomplete and errors
 
-Typing a table or column name brings up schema-aware completions from whatever connection the cell is targeting, including three-part names (`catalog.schema.table`) for external sources. PRQL compile errors show as wavy underlines on the offending code, not just in a separate error panel.
+Typing a table or column name brings up schema-aware completions from whatever connection the cell is targeting, including three-part names (`catalog.schema.table`) for external sources. SQL autocomplete is context-aware:
+
+- **Scoped columns** — in `SELECT`, `WHERE`, `GROUP BY`, etc., columns from tables already in `FROM`/`JOIN` rank first.
+- **JOIN completion** — after `JOIN`, suggestions can include the target table plus an `ON` clause inferred from foreign keys (when the catalog exposes them) or column naming patterns like `customer_id`.
+- **INSERT/UPDATE** — `INSERT INTO table` offers a column list snippet; `UPDATE … SET` suggests columns from that table.
+- **Table aliases** — completing a table in `FROM`/`JOIN` may offer a variant with a short alias (`orders o`).
+- **Fuzzy matching** — camelCase initials (`oId` → `orderId`) and underscore tokens (`ord_am` → `order_amount`) work alongside prefix match.
+
+External connections execute through Trino, so function and keyword suggestions reflect Trino SQL. The built-in DuckDB connection uses DuckDB-native builtins.
+
+PRQL compile errors show as wavy underlines on the offending code, not just in a separate error panel.
 
 ## User-defined functions
 

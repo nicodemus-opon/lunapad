@@ -201,6 +201,8 @@ export interface Cell {
 	lastRunAt: number | null;
 	/** Hide result output while keeping code visible (Jupyter-style hide output). */
 	hideResult: boolean;
+	/** Omit this cell from report view and published shares while keeping it in the notebook. */
+	hideInReport: boolean;
 	/** Number of successful executions (persisted for context, not In[]/Out[]). */
 	executionCount: number;
 }
@@ -243,6 +245,13 @@ export interface ExternalSchemaTable {
 	description?: string;
 	/** Parallel to `columns` — column-level comments, when available. */
 	columnDescriptions?: string[];
+	/** Foreign key relationships when catalog introspection provides them. */
+	foreignKeys?: Array<{
+		column: string;
+		referencedTable: string;
+		referencedColumn: string;
+		source: 'catalog' | 'heuristic';
+	}>;
 }
 
 export interface Notebook {
@@ -276,6 +285,8 @@ export interface Notebook {
 	}>;
 	// When set (ms), all query cells in this notebook re-run on this interval. 0/undefined = off.
 	autoRefreshIntervalMs?: number;
+	/** Session-only: cell maximized in worksheet view (not persisted). */
+	worksheetCellId?: string | null;
 }
 
 export interface NotebookFolder {
@@ -562,6 +573,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		staleSources: [],
 		lastRunAt: null,
 		hideResult: false,
+		hideInReport: false,
 		executionCount: 0
 	};
 }
@@ -772,8 +784,58 @@ function serializeCell(c: Cell, persistResults = true): SerializedCell {
 	};
 }
 
+/** Per-user LLM settings live in Postgres `user_settings` when server workspace mode is on.
+ *  Local/demo mode still persists non-secret fields in the workspace blob. */
+function llmConfigForWorkspaceBlob(): Partial<LLMConfig> | undefined {
+	if (useServerWorkspace) return undefined;
+	return {
+		provider: state.llmConfig.provider,
+		baseUrl: state.llmConfig.baseUrl,
+		model: state.llmConfig.model,
+		...(state.llmConfig.completionModel ? { completionModel: state.llmConfig.completionModel } : {})
+	};
+}
+
+function normalizeLlmConfig(llmConfig: Partial<LLMConfig>): LLMConfig {
+	return {
+		provider: llmConfig.provider === 'ollama' ? 'ollama' : 'openapi-compatible',
+		baseUrl:
+			typeof llmConfig.baseUrl === 'string' && llmConfig.baseUrl.trim().length > 0
+				? llmConfig.baseUrl.trim()
+				: 'http://127.0.0.1:11434/v1',
+		model:
+			typeof llmConfig.model === 'string' && llmConfig.model.trim().length > 0
+				? llmConfig.model.trim()
+				: 'qwen3:8b',
+		...(typeof llmConfig.apiKey === 'string' && llmConfig.apiKey.trim().length > 0
+			? { apiKey: llmConfig.apiKey.trim() }
+			: {}),
+		...(typeof llmConfig.completionModel === 'string' && llmConfig.completionModel.trim().length > 0
+			? { completionModel: llmConfig.completionModel.trim() }
+			: {})
+	};
+}
+
+function parseLegacyLlmConfig(data: unknown): Partial<LLMConfig> | null {
+	if (!data || typeof data !== 'object') return null;
+	const llmConfig = (data as Record<string, unknown>).llmConfig;
+	if (!llmConfig || typeof llmConfig !== 'object') return null;
+	return llmConfig as Partial<LLMConfig>;
+}
+
+function hasMeaningfulLlmConfig(llmConfig: Partial<LLMConfig> | null | undefined): boolean {
+	if (!llmConfig || typeof llmConfig !== 'object') return false;
+	return (
+		llmConfig.provider != null ||
+		(typeof llmConfig.baseUrl === 'string' && llmConfig.baseUrl.trim().length > 0) ||
+		(typeof llmConfig.model === 'string' && llmConfig.model.trim().length > 0) ||
+		(typeof llmConfig.apiKey === 'string' && llmConfig.apiKey.trim().length > 0) ||
+		(typeof llmConfig.completionModel === 'string' && llmConfig.completionModel.trim().length > 0)
+	);
+}
+
 function serialize(persistResults = true): string {
-	return JSON.stringify({
+	const payload: Record<string, unknown> = {
 		notebooks: state.notebooks.map((n) => ({
 			...n,
 			cells: n.cells.map((c) => serializeCell(c, persistResults))
@@ -792,17 +854,12 @@ function serialize(persistResults = true): string {
 		theme: state.theme,
 		autoRun: state.autoRun,
 		ghostTextEnabled: state.ghostTextEnabled,
-		llmConfig: {
-			provider: state.llmConfig.provider,
-			baseUrl: state.llmConfig.baseUrl,
-			model: state.llmConfig.model,
-			...(state.llmConfig.completionModel
-				? { completionModel: state.llmConfig.completionModel }
-				: {})
-		},
 		notebookEvents: state.notebookEvents,
 		workspaceStandards: getWorkspaceStandards()
-	});
+	};
+	const llmConfig = llmConfigForWorkspaceBlob();
+	if (llmConfig) payload.llmConfig = llmConfig;
+	return JSON.stringify(payload);
 }
 
 function sanitizeConnections(raw: unknown): Connection[] {
@@ -1267,6 +1324,7 @@ function deserializeCell(c: Cell, i: number): Cell {
 				: null,
 		intelligence: (c as Partial<Cell>).intelligence ?? null,
 		hideResult: Boolean((c as Partial<Cell>).hideResult),
+		hideInReport: Boolean((c as Partial<Cell>).hideInReport),
 		executionCount:
 			typeof (c as Partial<Cell>).executionCount === 'number'
 				? ((c as Partial<Cell>).executionCount as number)
@@ -1717,22 +1775,9 @@ function deserialize(raw: string): void {
 		if (data.sidebarNotebookView === 'outline' || data.sidebarNotebookView === 'browse') {
 			state.sidebarNotebookView = data.sidebarNotebookView;
 		}
-		if (data.llmConfig && typeof data.llmConfig === 'object') {
-			const llmConfig = data.llmConfig as Partial<LLMConfig>;
-			state.llmConfig = {
-				provider: llmConfig.provider === 'ollama' ? 'ollama' : 'openapi-compatible',
-				baseUrl:
-					typeof llmConfig.baseUrl === 'string' && llmConfig.baseUrl.trim().length > 0
-						? llmConfig.baseUrl.trim()
-						: 'http://127.0.0.1:11434/v1',
-				model:
-					typeof llmConfig.model === 'string' && llmConfig.model.trim().length > 0
-						? llmConfig.model.trim()
-						: 'qwen3:8b',
-				...(typeof llmConfig.apiKey === 'string' && llmConfig.apiKey.trim().length > 0
-					? { apiKey: llmConfig.apiKey.trim() }
-					: {})
-			};
+		const legacyLlmConfig = parseLegacyLlmConfig(data);
+		if (!useServerWorkspace && legacyLlmConfig) {
+			state.llmConfig = normalizeLlmConfig({ ...state.llmConfig, ...legacyLlmConfig });
 		}
 		state.notebookEvents = Array.isArray(data.notebookEvents)
 			? (data.notebookEvents as NotebookEvent[]).filter(
@@ -1773,8 +1818,12 @@ export function loadFromStorage(defaultProjectFolder?: string | null): Promise<v
 // On failure, the cached copy stays and workspaceSyncStatus flips to 'offline' so the
 // UI can show a "showing offline copy" notice instead of silently looking normal.
 async function loadFromServer(defaultProjectFolder?: string | null): Promise<void> {
+	let legacyLlmConfig: Partial<LLMConfig> | null = null;
 	const cached = localStorage.getItem(STORAGE_KEY);
-	if (cached) deserialize(cached);
+	if (cached) {
+		legacyLlmConfig = parseLegacyLlmConfig(JSON.parse(cached));
+		deserialize(cached);
+	}
 	try {
 		const res = await fetch('/api/workspace/load');
 		if (!res.ok) throw new Error(`Workspace load failed: ${res.status}`);
@@ -1784,6 +1833,7 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 			updatedBy: string | null;
 		};
 		if (body.data) {
+			legacyLlmConfig = parseLegacyLlmConfig(body.data) ?? legacyLlmConfig;
 			deserialize(JSON.stringify(body.data));
 			localStorage.setItem(STORAGE_KEY, serialize());
 		}
@@ -1793,8 +1843,9 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 	} catch {
 		state.workspaceSyncStatus = 'offline';
 	}
+	await loadUserLlmSettings(legacyLlmConfig);
+	await loadConnectionsFromServer();
 	finishLoad(defaultProjectFolder);
-	void loadUserLlmSettings();
 }
 
 // Post-processing shared by both the local-only and server-backed load paths — runs
@@ -1850,6 +1901,16 @@ function ensureSchedulePoller(): void {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let llmSettingsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSaveUserLlmSettings(): void {
+	if (!useServerWorkspace) return;
+	if (llmSettingsSaveTimer) clearTimeout(llmSettingsSaveTimer);
+	llmSettingsSaveTimer = setTimeout(() => {
+		void saveUserLlmSettings();
+	}, 500);
+}
+
 export function scheduleSave(): void {
 	if (typeof localStorage === 'undefined') return;
 	if (saveTimer) clearTimeout(saveTimer);
@@ -1891,15 +1952,49 @@ function workspaceTimestampsEqual(
 	return ta === tb;
 }
 
-async function loadUserLlmSettings(): Promise<void> {
+export async function loadUserLlmSettings(
+	legacyLlmConfig: Partial<LLMConfig> | null = null
+): Promise<void> {
+	if (!useServerWorkspace) return;
 	try {
 		const res = await fetch('/api/account/settings');
 		if (!res.ok) return;
 		const body = await res.json();
 		const llm = body.settings?.llmConfig;
-		if (llm && typeof llm === 'object') {
-			state.llmConfig = { ...state.llmConfig, ...llm };
+		if (hasMeaningfulLlmConfig(llm)) {
+			state.llmConfig = normalizeLlmConfig({ ...state.llmConfig, ...llm });
+			return;
 		}
+		if (hasMeaningfulLlmConfig(legacyLlmConfig)) {
+			state.llmConfig = normalizeLlmConfig({ ...state.llmConfig, ...legacyLlmConfig! });
+			await saveUserLlmSettings();
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+async function loadConnectionsFromServer(): Promise<void> {
+	if (!useServerWorkspace) return;
+	try {
+		const res = await fetch('/api/connections');
+		if (!res.ok) return;
+		const body = (await res.json()) as { connections?: Connection[] };
+		if (!Array.isArray(body.connections) || body.connections.length === 0) return;
+
+		const byId = new Map(
+			state.connections
+				.filter((connection) => connection.type !== 'duckdb-wasm')
+				.map((connection) => [connection.id, connection] as const)
+		);
+		for (const connection of body.connections) {
+			if (!connection || connection.type === 'duckdb-wasm') continue;
+			byId.set(connection.id, connection);
+		}
+		state.connections = [
+			BUILTIN_DUCKDB_CONNECTION,
+			...Array.from(byId.values()).filter((connection) => connection.type !== 'duckdb-wasm')
+		];
 	} catch {
 		/* ignore */
 	}
@@ -3039,6 +3134,7 @@ export function setLLMConfig(next: Partial<LLMConfig>): void {
 		...next
 	};
 	scheduleSave();
+	scheduleSaveUserLlmSettings();
 }
 
 export function getCellForResultTab(tabId: string): Cell | null {
@@ -4314,6 +4410,7 @@ export function removeCell(id: string): void {
 			}
 		}
 	}
+	if (nb.worksheetCellId === id) nb.worksheetCellId = null;
 	nb.cells = nb.cells.filter((c) => c.id !== id);
 	scheduleSave();
 	if (state.storageMode === 'filesystem' && nb.format === 'luna') {
@@ -4331,6 +4428,7 @@ export interface CellSnapshot {
 	cellType: CellType;
 	display: CellDisplay;
 	hideResult?: boolean;
+	hideInReport?: boolean;
 	guiStages: GUIPipelineStage[];
 	editMode: CellEditMode;
 	connectionId: string | null;
@@ -4363,6 +4461,7 @@ function cellToSnapshot(cell: Cell): CellSnapshot {
 		cellType: cell.cellType,
 		display: cell.display,
 		hideResult: cell.hideResult,
+		hideInReport: cell.hideInReport,
 		guiStages: cell.guiStages,
 		editMode: cell.editMode,
 		connectionId: cell.connectionId,
@@ -4404,6 +4503,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 				cellType: snap.cellType,
 				display: snap.display,
 				hideResult: snap.hideResult ?? live.hideResult,
+				hideInReport: snap.hideInReport ?? live.hideInReport,
 				guiStages: snap.guiStages,
 				editMode: snap.editMode,
 				connectionId: snap.connectionId,
@@ -4426,6 +4526,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			udfBody: snap.udfBody,
 			display: snap.display,
 			hideResult: snap.hideResult ?? false,
+		hideInReport: snap.hideInReport ?? false,
 			guiStages: snap.guiStages,
 			editMode: snap.editMode,
 			connectionId: snap.connectionId,
@@ -4651,6 +4752,7 @@ export async function pasteCellAfter(afterId: string | null): Promise<string> {
 		markdown: snap.markdown,
 		display: snap.display,
 		hideResult: snap.hideResult ?? false,
+		hideInReport: snap.hideInReport ?? false,
 		guiStages: snap.guiStages,
 		editMode: snap.editMode,
 		connectionId: snap.connectionId,
@@ -4976,6 +5078,43 @@ export function setCellDisplay(id: string, display: CellDisplay): void {
 	scheduleSave();
 }
 
+function supportsWorksheetView(cell: Cell): boolean {
+	return cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot';
+}
+
+export function getWorksheetCellId(notebookId: string): string | null {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	return nb?.worksheetCellId ?? null;
+}
+
+export function openWorksheetView(notebookId: string, cellId: string): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+	const cell = nb.cells.find((c) => c.id === cellId);
+	if (!cell || !supportsWorksheetView(cell)) return;
+	nb.worksheetCellId = cellId;
+}
+
+export function closeWorksheetView(notebookId: string): string | null {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb?.worksheetCellId) return null;
+	const prev = nb.worksheetCellId;
+	nb.worksheetCellId = null;
+	return prev;
+}
+
+/** Returns true when worksheet view is open after the toggle. */
+export function toggleWorksheetView(notebookId: string, cellId: string): boolean {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return false;
+	if (nb.worksheetCellId === cellId) {
+		closeWorksheetView(notebookId);
+		return false;
+	}
+	openWorksheetView(notebookId, cellId);
+	return true;
+}
+
 // Collapse all / Expand all. Markdown cells keep their own display state.
 export function setAllCellsDisplay(display: CellDisplay): void {
 	const nb = getActiveNotebook();
@@ -5139,6 +5278,7 @@ export function setExternalConnectionSchema(
 		columnTypes: string[];
 		description?: string;
 		columnDescriptions?: string[];
+		foreignKeys?: ExternalSchemaTable['foreignKeys'];
 	}>
 ): void {
 	if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) return;
@@ -5150,7 +5290,8 @@ export function setExternalConnectionSchema(
 		columns: table.columns,
 		columnTypes: table.columnTypes,
 		description: table.description,
-		columnDescriptions: table.columnDescriptions
+		columnDescriptions: table.columnDescriptions,
+		foreignKeys: table.foreignKeys
 	}));
 	state.externalSchemaTables = [
 		...state.externalSchemaTables.filter((table) => table.connectionId !== connectionId),
@@ -5214,6 +5355,13 @@ export function setCellHideResult(cellId: string, hide: boolean): void {
 	const cell = findCellContext(cellId)?.cell;
 	if (!cell) return;
 	cell.hideResult = hide;
+	scheduleSave();
+}
+
+export function setCellHideInReport(cellId: string, hide: boolean): void {
+	const cell = findCellContext(cellId)?.cell;
+	if (!cell) return;
+	cell.hideInReport = hide;
 	scheduleSave();
 }
 
@@ -6364,6 +6512,15 @@ export function __resetStateForTests(): void {
 		clearInterval(schedulePollTimer);
 		schedulePollTimer = null;
 	}
+	if (saveTimer) {
+		clearTimeout(saveTimer);
+		saveTimer = null;
+	}
+	if (llmSettingsSaveTimer) {
+		clearTimeout(llmSettingsSaveTimer);
+		llmSettingsSaveTimer = null;
+	}
+	useServerWorkspace = false;
 	scheduleRunInFlight = false;
 	compileCache.clear();
 	historyStacks.clear();
