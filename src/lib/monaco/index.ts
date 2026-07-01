@@ -10,7 +10,9 @@ import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js';
 import 'monaco-editor/esm/vs/language/typescript/monaco.contribution.js';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
+import EditorWorkerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?url';
 import TSWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?worker';
+import TSWorkerUrl from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?url';
 
 // Trino/generic SQL Monarch tokenizers from monaco-sql-languages
 // (imported directly — no contribution/worker setup, so no side effects)
@@ -54,6 +56,20 @@ export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from 
 
 let initialized = false;
 
+const workerBlobUrls = new Map<string, string>();
+
+/** COEP-isolated pages cannot spawn network workers unless the script has COEP. */
+async function createCoepSafeWorker(moduleUrl: string): Promise<Worker> {
+	const scriptUrl = new URL(moduleUrl, globalThis.location.href).href;
+	let blobUrl = workerBlobUrls.get(scriptUrl);
+	if (!blobUrl) {
+		const script = await fetch(scriptUrl).then((r) => r.text());
+		blobUrl = URL.createObjectURL(new Blob([script], { type: 'text/javascript' }));
+		workerBlobUrls.set(scriptUrl, blobUrl);
+	}
+	return new Worker(blobUrl, { type: 'classic' });
+}
+
 // Dialect → Monaco language ID mapping.
 // All external connections execute as Trino SQL; DuckDB is generic SQL.
 function toLanguageId(connectionType: ConnectionType): 'trinosql' | 'genericsql' {
@@ -95,9 +111,15 @@ export function setupMonaco(): typeof monaco {
 	if (initialized) return monaco;
 	initialized = true;
 
+	const useBlobWorkers = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
 	self.MonacoEnvironment = {
-		getWorker: (_workerId: string, label: string) =>
-			label === 'typescript' || label === 'javascript' ? new TSWorker() : new EditorWorker()
+		getWorker: (_workerId: string, label: string) => {
+			const isTs = label === 'typescript' || label === 'javascript';
+			if (useBlobWorkers) {
+				return createCoepSafeWorker(isTs ? TSWorkerUrl : EditorWorkerUrl);
+			}
+			return isTs ? new TSWorker() : new EditorWorker();
+		}
 	};
 
 	registerSqlDialects();

@@ -16,6 +16,8 @@ let started = false;
 
 export function startSqlLspClient(_monaco: typeof Monaco): void {
 	if (started) return;
+	// The SQL LSP WebSocket is only served by the Vite dev plugin — not in production builds.
+	if (!import.meta.env.DEV) return;
 	started = true;
 
 	function connect() {
