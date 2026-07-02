@@ -2,6 +2,9 @@ import type { RequestHandler } from './$types';
 import { getShareByTokenOrSlug, toPublicShareView } from '$lib/server/shared-reports';
 import { isShareExpired } from '$lib/server/share-run';
 import { requireSharesRead } from '$lib/server/share-guards';
+import type { Cell } from '$lib/stores/notebook.svelte';
+import { renderMarkdocCellToStaticHtml } from '$lib/services/report-markdoc-static-html';
+import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const denied = requireSharesRead(locals);
@@ -12,11 +15,43 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (isShareExpired(share)) return new Response('This report link has expired.', { status: 410 });
 
 	const view = toPublicShareView(share);
-	const frozenJson = JSON.stringify(
-		view.cells
-			.filter((c) => !c.isLive && c.frozenResult)
-			.map((c) => ({ id: c.id, result: c.frozenResult }))
-	);
+
+	// Markdoc uses `$outputName` variables backed by query results. The shared export
+	// needs to provide those variables so `{% datatable %}` and other widgets render.
+	const markdocCells = view.cells.map((c) => {
+		if (c.cellType !== 'query') return { cellType: c.cellType } as unknown as Cell;
+		return {
+			cellType: c.cellType,
+			outputName: c.outputName,
+			result: c.frozenResult ?? null,
+			resultChartConfig: c.resultChartConfig ?? null
+		} as unknown as Cell;
+	});
+
+	const frozenById = new Map(view.cells.filter((c) => c.cellType === 'query' && c.frozenResult).map((c) => [c.id, c.frozenResult]));
+
+	const cellsHtml = view.cells
+		.map((cell) => {
+			if (cell.cellType === 'markdown' && cell.markdown) {
+				const mdHtml = renderMarkdocCellToStaticHtml(cell.markdown, markdocCells as unknown as Cell[]);
+				return `<div class="cell"><div class="report-markdown">${mdHtml}</div></div>`;
+			}
+
+			if (cell.cellType === 'query') {
+				const snap = frozenById.get(cell.id);
+				if (!snap) return `<div class="cell"><em>No static result available.</em></div>`;
+				const truncated = snap.rows.length > 500;
+				const tableHtml = renderReportTableToStaticHtml(snap.rows, snap.columns, {
+					name: cell.outputName || 'result',
+					maxRows: 500,
+					truncated
+				});
+				return `<div class="cell">${tableHtml}</div>`;
+			}
+
+			return `<div class="cell"></div>`;
+		})
+		.join('\n');
 
 	const html = `<!DOCTYPE html>
 <html lang="en">
@@ -25,58 +60,44 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   <title>${escapeHtml(view.notebookName)}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
+    :root {
+      --tag-1: oklch(0.52 0.185 25);
+      --tag-2: oklch(0.53 0.15 70);
+      --tag-3: oklch(0.51 0.14 140);
+      --tag-4: oklch(0.52 0.13 195);
+      --tag-5: oklch(0.49 0.17 255);
+      --tag-6: oklch(0.49 0.19 300);
+      --tag-7: oklch(0.52 0.19 340);
+      --tag-8: oklch(0.45 0.03 60);
+    }
     body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 0 auto; padding: 2rem 1.5rem; }
     h1 { font-size: 1.5rem; }
     .cell { margin: 1.5rem 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
-    th { background: #f5f5f5; }
+    .report-markdown { font-size: 0.95rem; line-height: 1.7; }
+    .report-markdown p { margin: 0 0 0.75rem; }
+    .report-markdown h1, .report-markdown h2, .report-markdown h3, .report-markdown h4, .report-markdown h5, .report-markdown h6 { margin: 1.25rem 0 0.5rem; font-weight: 700; }
+    .report-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.85em; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: auto; }
+    .report-table th, .report-table td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; vertical-align: top; text-align: left; }
+    .report-table th { background: #f5f5f5; font-weight: 600; }
+    .report-table .num { text-align: right; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    .muted { color: #6b7280; }
+    .link { color: #2563eb; text-decoration: underline; }
+    .category { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .tag-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; transform: translateY(1px); }
+    .truncate { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+    .table-note { font-size: 0.72rem; opacity: 0.7; margin-top: 0.35rem; }
   </style>
 </head>
 <body>
   <h1>${escapeHtml(view.notebookName)}</h1>
   ${view.description ? `<p>${escapeHtml(view.description)}</p>` : ''}
   <p><em>Static export — live cells are not refreshed in this file.</em></p>
-  <div id="report-root"></div>
-  <script>
-    const data = ${JSON.stringify(view)};
-    const frozen = ${frozenJson};
-    const root = document.getElementById('report-root');
-    for (const cell of data.cells) {
-      const div = document.createElement('div');
-      div.className = 'cell';
-      if (cell.cellType === 'markdown' && cell.markdown) {
-        div.innerHTML = '<pre>' + cell.markdown.replace(/</g, '&lt;') + '</pre>';
-      } else if (cell.cellType === 'query') {
-        const snap = frozen.find(f => f.id === cell.id);
-        if (snap && snap.result) {
-          const table = document.createElement('table');
-          const thead = document.createElement('thead');
-          const hr = document.createElement('tr');
-          for (const col of snap.result.columns) {
-            const th = document.createElement('th');
-            th.textContent = col;
-            hr.appendChild(th);
-          }
-          thead.appendChild(hr);
-          table.appendChild(thead);
-          const tbody = document.createElement('tbody');
-          for (const row of snap.result.rows.slice(0, 500)) {
-            const tr = document.createElement('tr');
-            for (const col of snap.result.columns) {
-              const td = document.createElement('td');
-              td.textContent = row[col] == null ? '' : String(row[col]);
-              tr.appendChild(td);
-            }
-            tbody.appendChild(tr);
-          }
-          table.appendChild(tbody);
-          div.appendChild(table);
-        }
-      }
-      root.appendChild(div);
-    }
-  </script>
+  <div id="report-root">
+    ${cellsHtml}
+  </div>
 </body>
 </html>`;
 

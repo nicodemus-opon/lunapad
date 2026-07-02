@@ -5,7 +5,7 @@
 	import ChartConfigPanel from './ChartConfigPanel.svelte';
 	import StatsView from './StatsView.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Table2, TrendingUp, Sigma, Settings2 } from '@lucide/svelte';
+	import { Table2, TrendingUp, Sigma, Settings2, Search, X } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
 
@@ -75,6 +75,7 @@
 	let chartConfig = $state<ChartConfig | null>(untrack(() => initialChartConfig ?? null));
 	let showConfigPanel = $state(false);
 	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
+	let tableSearch = $state('');
 
 	// Sync when the parent changes viewMode or chartConfig externally (e.g., AI setting chart view)
 	$effect(() => {
@@ -159,7 +160,32 @@
 			</Button>
 		</div>
 
-		<div class="flex h-7 shrink-0 items-center justify-end gap-1">
+		<div class="flex h-7 min-w-0 shrink-0 items-center justify-end gap-1">
+			{#if viewMode === 'table'}
+				<label class="group/search relative hidden items-center sm:flex">
+					<Search
+						class="pointer-events-none absolute left-2 h-3 w-3 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
+					/>
+					<input
+						class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-150 ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border/70 focus:bg-background motion-reduce:transition-none"
+						type="text"
+						placeholder="Search"
+						aria-label="Search table"
+						bind:value={tableSearch}
+					/>
+					{#if tableSearch.trim()}
+						<button
+							type="button"
+							class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+							onclick={() => (tableSearch = '')}
+							aria-label="Clear search"
+							title="Clear search"
+						>
+							<X class="h-2.5 w-2.5" />
+						</button>
+					{/if}
+				</label>
+			{/if}
 			{#if executionMs != null}
 				<span class="text-2xs text-muted-foreground tabular-nums" title="Query execution time"
 					>{fmtMs(executionMs)}</span
@@ -245,6 +271,9 @@
 				{onAddFilter}
 				{columnDescriptions}
 				{onColumnDescriptionChange}
+				searchValue={tableSearch}
+				onSearchValueChange={(value) => (tableSearch = value)}
+				showSearch={false}
 			/>
 		</div>
 	{/if}

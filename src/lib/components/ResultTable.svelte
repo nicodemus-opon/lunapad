@@ -1,14 +1,19 @@
 <script lang="ts">
 	import {
 		type ColumnDef,
+		type ColumnFiltersState,
 		type PaginationState,
+		type SortingState,
 		getCoreRowModel,
-		getPaginationRowModel
+		getFilteredRowModel,
+		getPaginationRowModel,
+		getSortedRowModel
 	} from '@tanstack/table-core';
 	import { createSvelteTable } from '$lib/components/ui/data-table/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import { coerceNumber } from '$lib/utils';
 	import {
 		Download,
 		X,
@@ -16,7 +21,9 @@
 		Check,
 		ArrowUp,
 		ArrowDown,
+		ArrowUpDown,
 		Filter,
+		Search,
 		MessageSquare,
 		Hash,
 		Calendar,
@@ -31,11 +38,12 @@
 		DollarSign
 	} from '@lucide/svelte';
 	import FormattedCell from '$lib/components/FormattedCell.svelte';
+	import { buildReportTableModel } from '$lib/services/report-table-model';
 	import {
-		detectColumnFormat,
 		type ColumnFormat,
 		type ColumnFormatKind
 	} from '$lib/services/column-format';
+	import { formatCellPlainText, formatFullValueText } from '$lib/services/report-table-format';
 	import { computeTableHeaderStats } from '$lib/services/column-profile';
 
 	interface Props {
@@ -45,6 +53,13 @@
 		name?: string;
 		headerInsights?: 'full' | 'compact';
 		columnDescriptions?: Record<string, string>;
+		/** Optional formatting override for specific columns (used by pivot/summary outputs). */
+		columnFormatOverrides?: Record<string, ColumnFormat>;
+		/** Optional externally controlled global table search. */
+		searchValue?: string;
+		onSearchValueChange?: (value: string) => void;
+		/** Show the built-in search row (standalone markdown datatables). */
+		showSearch?: boolean;
 		onAddSort?: (column: string, dir: 'asc' | 'desc') => void;
 		onAddFilter?: (column: string) => void;
 		onColumnDescriptionChange?: (column: string, description: string) => void;
@@ -61,6 +76,10 @@
 		name = 'results',
 		headerInsights = 'full',
 		columnDescriptions = {},
+		columnFormatOverrides = {},
+		searchValue,
+		onSearchValueChange,
+		showSearch = true,
 		truncated = false,
 		fillHeight = false,
 		onAddSort,
@@ -86,6 +105,85 @@
 			onColumnDescriptionChange?.(descPopoverCol, descPopoverValue);
 		}
 		descPopoverCol = null;
+	}
+
+	// ── Table interaction state ─────────────────────────────────────────
+	// `ResultTable` is used both in notebooks and in exported/shared report views.
+	// These controls provide native client-side sorting/filtering/search while also
+	// optionally notifying the GUI layer via `onAddSort` / `onAddFilter`.
+	let internalSearch = $state('');
+	const globalSearch = $derived(searchValue ?? internalSearch);
+	let sorting = $state<SortingState>([]);
+	let columnFilters = $state<ColumnFiltersState>([]);
+
+	let filterPopoverCol = $state<string | null>(null);
+	let filterPopoverValue = $state('');
+	let filterPopoverTop = $state(0);
+	let filterPopoverLeft = $state(0);
+
+	function resetPaginationToFirstPage() {
+		pagination = { pageIndex: 0, pageSize: pagination.pageSize };
+	}
+
+	function setGlobalSearch(value: string) {
+		if (searchValue !== undefined) onSearchValueChange?.(value);
+		else internalSearch = value;
+		resetPaginationToFirstPage();
+	}
+
+	function setSort(col: string, dir: 'asc' | 'desc') {
+		sorting = [{ id: col, desc: dir === 'desc' }];
+		resetPaginationToFirstPage();
+	}
+
+	function toggleSort(col: string) {
+		const current = sorting.find((s) => s.id === col);
+		if (!current) {
+			setSort(col, 'asc');
+			onAddSort?.(col, 'asc');
+			return;
+		}
+		if (current.desc === false) {
+			setSort(col, 'desc');
+			onAddSort?.(col, 'desc');
+			return;
+		}
+		sorting = sorting.filter((s) => s.id !== col);
+		resetPaginationToFirstPage();
+	}
+
+	function sortDirFor(col: string): 'asc' | 'desc' | null {
+		const s = sorting.find((x) => x.id === col);
+		if (!s) return null;
+		return s.desc ? 'desc' : 'asc';
+	}
+
+	function hasFilterFor(col: string): boolean {
+		return columnFilters.some((f) => f.id === col && String(f.value ?? '').trim() !== '');
+	}
+
+	function openFilterPopover(col: string, anchorEl: HTMLElement) {
+		const r = anchorEl.getBoundingClientRect();
+		filterPopoverTop = r.bottom + 4;
+		filterPopoverLeft = r.left;
+		filterPopoverCol = col;
+		const existing = columnFilters.find((f) => f.id === col);
+		filterPopoverValue = existing?.value != null ? String(existing.value) : '';
+		onAddFilter?.(col);
+	}
+
+	function closeFilterPopover() {
+		filterPopoverCol = null;
+		filterPopoverValue = '';
+	}
+
+	function applyFilterPopover() {
+		if (!filterPopoverCol) return;
+		const term = filterPopoverValue.trim();
+		if (!term) columnFilters = columnFilters.filter((f) => f.id !== filterPopoverCol);
+		else columnFilters = [{ id: filterPopoverCol, value: term }];
+		closeFilterPopover();
+		resetPaginationToFirstPage();
 	}
 
 	const pageSizeOptions = [10, 25, 50, 100, 250];
@@ -128,9 +226,11 @@
 		const localRows = rows;
 		const localCols = [...columns];
 		const id = setTimeout(() => {
-			formatMap = Object.fromEntries(
-				localCols.map((col) => [col, detectColumnFormat(localRows, col)])
-			);
+			const model = buildReportTableModel(localRows, localCols, {
+				name,
+				formatOverrides: columnFormatOverrides
+			});
+			formatMap = Object.fromEntries(model.columns.map((c) => [c.id, c.format]));
 			statsMap =
 				headerInsights === 'full'
 					? Object.fromEntries(localCols.map((col) => [col, computeColStats(localRows, col)]))
@@ -149,21 +249,7 @@
 		return total > 0 ? ((n / total) * 100).toFixed(0) + '%' : '0%';
 	}
 
-	// Cap text put into the DOM — CSS truncate alone still renders the full
-	// string, which freezes the app on multi-MB values.
-	const CELL_DISPLAY_MAX = 200;
 	const DETAIL_DISPLAY_MAX = 20_000;
-
-	function formatCell(value: unknown): string {
-		if (value === null || value === undefined) return '—';
-		const s =
-			value instanceof Date
-				? value.toISOString()
-				: typeof value === 'object'
-					? JSON.stringify(value)
-					: String(value);
-		return s.length > CELL_DISPLAY_MAX ? s.slice(0, CELL_DISPLAY_MAX) + '…' : s;
-	}
 
 	// ── TanStack Table ────────────────────────────────────────────────────
 	// Use accessorFn + id instead of accessorKey to avoid dot-notation path
@@ -171,16 +257,52 @@
 	const tableColumns = $derived<ColumnDef<Record<string, unknown>>[]>(
 		columns.map((col) => ({
 			id: col,
-			accessorFn: (row: Record<string, unknown>) => row[col]
+			accessorFn: (row: Record<string, unknown>) => row[col],
+			// Sorting: prefer numeric ordering when values are coercible numbers,
+			// otherwise fall back to locale-aware string comparison.
+			sortingFn: (rowA, rowB, columnId) => {
+				const aRaw = rowA.getValue(columnId);
+				const bRaw = rowB.getValue(columnId);
+				if (aRaw === null || aRaw === undefined) return bRaw === null || bRaw === undefined ? 0 : -1;
+				if (bRaw === null || bRaw === undefined) return 1;
+
+				const aNum = coerceNumber(aRaw);
+				const bNum = coerceNumber(bRaw);
+				if (aNum !== null && bNum !== null) return aNum === bNum ? 0 : aNum < bNum ? -1 : 1;
+
+				const aStr = String(aRaw);
+				const bStr = String(bRaw);
+				return aStr.localeCompare(bStr, undefined, { sensitivity: 'base', numeric: true });
+			},
+			// Filtering: case-insensitive substring match on the stringified cell value.
+			filterFn: (row, columnId, filterValue) => {
+				const term = String(filterValue ?? '').trim().toLowerCase();
+				if (!term) return true;
+				const v = row.getValue(columnId);
+				if (v === null || v === undefined) return false;
+				return String(v).toLowerCase().includes(term);
+			}
 		}))
 	);
+
+	const effectiveRows = $derived.by(() => {
+		const term = globalSearch.trim().toLowerCase();
+		if (!term) return rows;
+		return rows.filter((r) =>
+			columns.some((col) => {
+				const v = r[col];
+				if (v === null || v === undefined) return false;
+				return String(v).toLowerCase().includes(term);
+			})
+		);
+	});
 
 	const initialPagination = (() => ({ pageIndex: 0, pageSize }))();
 	let pagination = $state<PaginationState>(initialPagination);
 
 	const table = createSvelteTable({
 		get data() {
-			return rows;
+			return effectiveRows;
 		},
 		get columns() {
 			return tableColumns;
@@ -188,20 +310,48 @@
 		state: {
 			get pagination() {
 				return pagination;
+			},
+			get sorting() {
+				return sorting;
+			},
+			get columnFilters() {
+				return columnFilters;
 			}
 		},
 		onPaginationChange(updater) {
 			pagination = typeof updater === 'function' ? updater(pagination) : updater;
 		},
+		onSortingChange(updater) {
+			sorting = typeof updater === 'function' ? updater(sorting) : updater;
+			resetPaginationToFirstPage();
+		},
+		onColumnFiltersChange(updater) {
+			columnFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
+			resetPaginationToFirstPage();
+		},
 		getCoreRowModel: getCoreRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
+		getSortedRowModel: getSortedRowModel(),
 		getPaginationRowModel: getPaginationRowModel()
 	});
 
-	const totalRows = $derived(rows.length);
+	const totalRows = $derived.by(() => table.getFilteredRowModel().rows.length);
 	const startRow = $derived(pagination.pageIndex * pagination.pageSize + 1);
 	const endRow = $derived(
 		Math.min(pagination.pageIndex * pagination.pageSize + pagination.pageSize, totalRows)
 	);
+
+	let previousSearch = $state<string | null>(null);
+	$effect(() => {
+		const current = globalSearch;
+		if (previousSearch === null) {
+			previousSearch = current;
+			return;
+		}
+		if (current === previousSearch) return;
+		previousSearch = current;
+		resetPaginationToFirstPage();
+	});
 
 	// ── Cell detail panel ────────────────────────────────────────────────
 	interface SelectedCell {
@@ -212,10 +362,7 @@
 	let copied = $state(false);
 
 	function formatFullValue(value: unknown): string {
-		if (value === null || value === undefined) return 'null';
-		if (value instanceof Date) return value.toISOString();
-		if (typeof value === 'object') return JSON.stringify(value, null, 2);
-		return String(value);
+		return formatFullValueText(value);
 	}
 
 	function formatDetailValue(value: unknown): string {
@@ -258,9 +405,81 @@
 	}
 </script>
 
+<!--
+	Header controls (client-side sort toggle + filter) shown for every column
+	regardless of whether the GUI callbacks are wired, so report/markdown tables
+	are fully interactive. Buttons stay faint until hovered or active.
+-->
+{#snippet headerControls(col: string)}
+	{@const dir = sortDirFor(col)}
+	{@const filtered = hasFilterFor(col)}
+	<div class="flex shrink-0 items-center gap-0.5">
+		<button
+			type="button"
+			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary {dir
+				? 'text-primary'
+				: 'text-muted-foreground/40 group-hover/col:text-muted-foreground'}"
+			onclick={() => toggleSort(col)}
+			aria-label="Sort by {col}"
+			title={dir === 'asc'
+				? 'Sorted ascending — click for descending'
+				: dir === 'desc'
+					? 'Sorted descending — click to clear'
+					: 'Sort'}
+		>
+			{#if dir === 'asc'}
+				<ArrowUp class="h-3 w-3" />
+			{:else if dir === 'desc'}
+				<ArrowDown class="h-3 w-3" />
+			{:else}
+				<ArrowUpDown class="h-3 w-3" />
+			{/if}
+		</button>
+		<button
+			type="button"
+			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary {filtered
+				? 'text-primary'
+				: 'text-muted-foreground/40 group-hover/col:text-muted-foreground'}"
+			onclick={(e) => openFilterPopover(col, e.currentTarget as HTMLElement)}
+			aria-label="Filter {col}"
+			title={filtered ? 'Filtered — click to edit or clear' : 'Filter'}
+		>
+			<Filter class="h-3 w-3" />
+		</button>
+	</div>
+{/snippet}
+
 <div class="flex min-h-0 flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
 	<div class="flex min-h-0 min-w-0 gap-2 {fillHeight ? 'flex-1' : ''}">
 		<div class="min-h-0 min-w-0 flex-1">
+			{#if showSearch}
+				<div class="flex items-center px-1">
+					<label class="group/search relative ml-auto flex items-center">
+						<Search
+							class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
+						/>
+						<input
+							class="h-7 w-40 rounded-md border border-transparent bg-transparent pr-6 pl-7 text-xs text-foreground transition-[width,background-color,border-color] duration-200 ease-out outline-none placeholder:text-muted-foreground/45 hover:bg-muted/40 focus:w-64 focus:border-border focus:bg-background motion-reduce:transition-none"
+							type="text"
+							placeholder="Search"
+							aria-label="Search table"
+							value={globalSearch}
+							oninput={(e) => setGlobalSearch(e.currentTarget.value)}
+						/>
+						{#if globalSearch.trim()}
+							<button
+								type="button"
+								class="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+								onclick={() => setGlobalSearch('')}
+								aria-label="Clear search"
+								title="Clear search"
+							>
+								<X class="h-3 w-3" />
+							</button>
+						{/if}
+					</label>
+				</div>
+			{/if}
 			<Table.Root
 				containerClass="overflow-auto rounded-md border {fillHeight
 					? 'h-full max-h-full'
@@ -286,8 +505,17 @@
 											<div class="group/col flex items-center gap-1">
 												<Icon class="h-3 w-3 shrink-0 text-muted-foreground" />
 												<span
-													class="flex-1 truncate text-xs leading-none font-semibold"
-													title={columnDescriptions[s.col] || undefined}>{s.col}</span
+													class="flex-1 cursor-pointer truncate text-xs leading-none font-semibold transition-colors select-none hover:text-primary"
+													title={columnDescriptions[s.col] || 'Click to sort'}
+													role="button"
+													tabindex={0}
+													onkeydown={(e) => {
+														if (e.key === 'Enter' || e.key === ' ') {
+															e.preventDefault();
+															toggleSort(s.col);
+														}
+													}}
+													onclick={() => toggleSort(s.col)}>{s.col}</span
 												>
 												{#if onColumnDescriptionChange || columnDescriptions[s.col]}
 													<div class="relative">
@@ -337,42 +565,11 @@
 																	>
 																</div>
 															</div>
-														{/if}
-													</div>
-												{/if}
-												{#if onAddSort || onAddFilter}
-													<div class="flex shrink-0 items-center gap-0.5">
-														{#if onAddSort}
-															<button
-																class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-																onclick={() => onAddSort?.(s.col, 'asc')}
-																aria-label="Sort ascending by {s.col}"
-																title="Sort ascending"
-															>
-																<ArrowUp class="h-3 w-3" />
-															</button>
-															<button
-																class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-																onclick={() => onAddSort?.(s.col, 'desc')}
-																aria-label="Sort descending by {s.col}"
-																title="Sort descending"
-															>
-																<ArrowDown class="h-3 w-3" />
-															</button>
-														{/if}
-														{#if onAddFilter}
-															<button
-																class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-																onclick={() => onAddFilter?.(s.col)}
-																aria-label="Filter by {s.col}"
-																title="Add filter"
-															>
-																<Filter class="h-3 w-3" />
-															</button>
-														{/if}
-													</div>
 												{/if}
 											</div>
+										{/if}
+											{@render headerControls(s.col)}
+										</div>
 											<!-- Histogram for numeric columns -->
 											{#if s.histBuckets}
 												{@const maxBucket = Math.max(...s.histBuckets, 1)}
@@ -415,42 +612,22 @@
 											</div>
 										</div>
 									{:else if !header.isPlaceholder}
-										<div class="flex items-center gap-1">
-											<span class="flex-1 truncate text-xs leading-none font-semibold"
+										<div class="group/col flex items-center gap-1">
+											<span
+												class="flex-1 cursor-pointer truncate text-xs leading-none font-semibold transition-colors select-none hover:text-primary"
+												title="Click to sort"
+												role="button"
+												tabindex={0}
+												onkeydown={(e) => {
+													if (e.key === 'Enter' || e.key === ' ') {
+														e.preventDefault();
+														toggleSort(header.id);
+													}
+												}}
+												onclick={() => toggleSort(header.id)}
 												>{header.id}</span
 											>
-											{#if onAddSort || onAddFilter}
-												<div class="flex shrink-0 items-center gap-0.5">
-													{#if onAddSort}
-														<button
-															class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-															onclick={() => onAddSort?.(header.id, 'asc')}
-															aria-label="Sort ascending by {header.id}"
-															title="Sort ascending"
-														>
-															<ArrowUp class="h-3 w-3" />
-														</button>
-														<button
-															class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-															onclick={() => onAddSort?.(header.id, 'desc')}
-															aria-label="Sort descending by {header.id}"
-															title="Sort descending"
-														>
-															<ArrowDown class="h-3 w-3" />
-														</button>
-													{/if}
-													{#if onAddFilter}
-														<button
-															class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-															onclick={() => onAddFilter?.(header.id)}
-															aria-label="Filter by {header.id}"
-															title="Add filter"
-														>
-															<Filter class="h-3 w-3" />
-														</button>
-													{/if}
-												</div>
-											{/if}
+											{@render headerControls(header.id)}
 										</div>
 									{/if}
 								</Table.Head>
@@ -479,7 +656,7 @@
 									{#if isNull}
 										<span class="font-mono text-xs text-muted-foreground">—</span>
 									{:else}
-										<FormattedCell {value} format={fmt} plainText={formatCell(value)} />
+										<FormattedCell {value} format={fmt} plainText={formatCellPlainText(value)} />
 									{/if}
 								</Table.Cell>
 							{/each}
@@ -497,6 +674,52 @@
 				</Table.Body>
 			</Table.Root>
 		</div>
+
+		{#if filterPopoverCol}
+			<!-- Click-away backdrop so the popover dismisses seamlessly. -->
+			<button
+				type="button"
+				class="fixed inset-0 z-[210] cursor-default"
+				aria-label="Dismiss filter"
+				tabindex={-1}
+				onclick={closeFilterPopover}
+			></button>
+			<div
+				style="position: fixed; top: {filterPopoverTop}px; left: {filterPopoverLeft}px; z-index: 220;"
+				class="w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+			>
+				<p class="mb-1 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+					<Filter class="h-3 w-3" />
+					<span class="truncate">Filter: {filterPopoverCol}</span>
+				</p>
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="w-full rounded border border-input bg-background px-2 py-1 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					type="text"
+					placeholder="Type to match…"
+					autofocus
+					bind:value={filterPopoverValue}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') applyFilterPopover();
+						if (e.key === 'Escape') closeFilterPopover();
+					}}
+				/>
+				<div class="mt-1.5 flex justify-end gap-1">
+					<button
+						class="rounded px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted"
+						onclick={closeFilterPopover}
+					>
+						Cancel
+					</button>
+					<button
+						class="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground transition-opacity hover:opacity-90"
+						onclick={applyFilterPopover}
+					>
+						Apply
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Cell detail panel -->
 		{#if selectedCell}

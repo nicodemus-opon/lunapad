@@ -17,6 +17,7 @@
 	import CodeBlock from './CodeBlock.svelte';
 	import MermaidDiagram from './MermaidDiagram.svelte';
 	import * as Table from '$lib/components/ui/table';
+	import ResultTable from '$lib/components/ResultTable.svelte';
 	import { resolveHeadingAnchorId, textFromMarkdocChildren } from '$lib/services/notebook-outline';
 
 	interface Props {
@@ -43,6 +44,53 @@
 		return resolveHeadingAnchorId(headingSlugPrefix, label, headingSlugTracker);
 	});
 	const nodeProps = $derived({ notebookId, headingSlugPrefix, headingSlugTracker });
+
+	function parseSimpleMarkdocTable(
+		input: Tag
+	): { columns: string[]; rows: Record<string, unknown>[] } | null {
+		const children = (input.children ?? []) as unknown[];
+
+		const thead = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'thead') as Tag | undefined;
+		const tbody = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tbody') as Tag | undefined;
+		if (!thead || !tbody) return null;
+
+		const headerTr = (thead.children ?? []).find(
+			(c) => TagImpl.isTag(c) && (c as Tag).name === 'tr'
+		) as Tag | undefined;
+
+		const headerCells = (headerTr?.children ?? []).filter(
+			(c) => TagImpl.isTag(c) && ((c as Tag).name === 'th' || (c as Tag).name === 'td')
+		) as Tag[];
+
+		const columns = headerCells
+			.map((th) => textFromMarkdocChildren(th.children as unknown[]).trim())
+			.filter(Boolean);
+
+		if (columns.length === 0) return null;
+		if (columns.length > 30) return null;
+
+		const rowTrs = (tbody.children ?? []).filter(
+			(c) => TagImpl.isTag(c) && (c as Tag).name === 'tr'
+		) as Tag[];
+
+		const MAX_ROWS = 500;
+		const trimmedTrs = rowTrs.slice(0, MAX_ROWS);
+
+		const rows = trimmedTrs.map((tr) => {
+			const cellTags = (tr.children ?? []).filter(
+				(c) => TagImpl.isTag(c) && ((c as Tag).name === 'td' || (c as Tag).name === 'th')
+			) as Tag[];
+
+			const row: Record<string, unknown> = {};
+			for (let i = 0; i < columns.length; i++) {
+				const cell = cellTags[i];
+				row[columns[i]] = cell ? textFromMarkdocChildren(cell.children as unknown[]).trim() : '';
+			}
+			return row;
+		});
+
+		return { columns, rows };
+	}
 </script>
 
 {#if !isTag}
@@ -94,9 +142,14 @@
 {:else if tag?.name === 'pre'}
 	<CodeBlock lang={tag.attributes?.['data-language'] ?? ''} children={tag.children} />
 {:else if tag?.name === 'table'}
-	<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
-		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
-	</Table.Root>
+	{@const parsed = parseSimpleMarkdocTable(tag)}
+	{#if parsed}
+		<ResultTable rows={parsed.rows} columns={parsed.columns} name="table" pageSize={10} headerInsights="compact" />
+	{:else}
+		<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
+			{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
+		</Table.Root>
+	{/if}
 {:else if tag?.name === 'thead'}
 	<Table.Header {...tag.attributes}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}

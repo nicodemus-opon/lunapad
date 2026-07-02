@@ -305,7 +305,19 @@ const datatableTag: Schema = {
 		data: { type: Array, required: true },
 		cols: { type: Array },
 		limit: { type: Number, default: 10 },
-		linkedFilter: { type: String }
+		linkedFilter: { type: String },
+		pageSize: { type: Number },
+		headerInsights: { type: String, matches: ['full', 'compact'], default: 'compact' },
+		index: { type: Array },
+		pivotBy: { type: String },
+		valueCol: { type: String },
+		agg: { type: String, matches: ['sum', 'avg', 'min', 'max', 'count'], default: 'sum' },
+		round: { type: Number },
+		valueFormatKind: {
+			type: String,
+			matches: ['boolean', 'id', 'email', 'url', 'datetime', 'date', 'percentage', 'currency', 'number', 'category', 'text']
+		},
+		valueCurrencySymbol: { type: String }
 	}
 };
 

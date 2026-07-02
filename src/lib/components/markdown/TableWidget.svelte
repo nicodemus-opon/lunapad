@@ -1,18 +1,48 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import { Maximize2, X, Download } from '@lucide/svelte';
-	import * as Table from '$lib/components/ui/table';
-	import { downloadCsv } from '$lib/services/widget-export';
+	import { Maximize2, X } from '@lucide/svelte';
+	import ResultTable from '$lib/components/ResultTable.svelte';
 	import { FILTER_CONTEXT_KEY, type FilterContextValue } from './filter-context';
+	import type { ColumnFormatKind } from '$lib/services/column-format';
+	import { pivotTable } from '$lib/services/report-table-pivot';
+	import { summarizeTable, type TableAggKind } from '$lib/services/report-table-summary';
 
 	interface Props {
 		data?: Record<string, unknown>[];
 		cols?: string[];
 		limit?: number;
 		linkedFilter?: string;
+		pageSize?: number;
+		headerInsights?: 'full' | 'compact';
+		/**
+		 * Advanced mechanics (client-side transforms) for `{% datatable %}`.
+		 * - If `pivotBy` is set: performs a crosstab/pivot with `index` as rows.
+		 * - Otherwise: performs a grouped summary with `index` as group-by.
+		 */
+		index?: string[];
+		pivotBy?: string;
+		valueCol?: string;
+		agg?: TableAggKind;
+		round?: number;
+		valueFormatKind?: ColumnFormatKind;
+		valueCurrencySymbol?: string;
 	}
 
-	const { data = [], cols, limit = 10, linkedFilter }: Props = $props();
+	const {
+		data = [],
+		cols,
+		limit = 10,
+		linkedFilter,
+		pageSize = 10,
+		headerInsights = 'compact',
+		index,
+		pivotBy,
+		valueCol,
+		agg = 'sum',
+		round,
+		valueFormatKind,
+		valueCurrencySymbol
+	}: Props = $props();
 
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
 	const isLinkedActive = $derived(
@@ -23,47 +53,63 @@
 	const rows = $derived(data.slice(0, limit));
 	let fullscreen = $state(false);
 
-	function fmt(v: unknown): string {
-		if (v === null || v === undefined) return '—';
-		if (typeof v === 'number') return v.toLocaleString();
-		return String(v);
-	}
+	const sourceRows = $derived.by(() => (fullscreen ? data : rows));
 
-	function exportCsv() {
-		downloadCsv('table.csv', columns, data);
-	}
+	const transformed = $derived.by(() => {
+		const src = sourceRows;
+		const baseCols = columns;
+
+		const resolvedIndex =
+			index && index.length
+				? index
+				: pivotBy && valueCol
+					? baseCols.filter((c) => c !== pivotBy && c !== valueCol)
+					: index ?? [];
+
+		if (pivotBy && valueCol && resolvedIndex.length) {
+			return pivotTable(src, {
+				index: resolvedIndex,
+				pivotBy,
+				valueCol,
+				agg,
+				round,
+				valueFormatKind,
+				valueCurrencySymbol
+			});
+		}
+
+		if (valueCol && resolvedIndex.length && resolvedIndex.length) {
+			return summarizeTable(src, {
+				groupBy: resolvedIndex,
+				valueCol,
+				agg,
+				round,
+				valueFormatKind,
+				valueCurrencySymbol
+			});
+		}
+
+		return {
+			columns: baseCols,
+			rows: src,
+			formatOverrides: undefined
+		};
+	});
 </script>
-
-{#snippet table(rowsToShow: Record<string, unknown>[])}
-	<Table.Root containerClass="rounded-md " class="text-xs">
-		<Table.Header>
-			<Table.Row>
-				{#each columns as col (col)}<Table.Head class="h-7 px-2">{col}</Table.Head>{/each}
-			</Table.Row>
-		</Table.Header>
-		<Table.Body>
-			{#each rowsToShow as row, i (i)}
-				<Table.Row>
-					{#each columns as col (col)}<Table.Cell class="h-7 px-2">{fmt(row[col])}</Table.Cell
-						>{/each}
-				</Table.Row>
-			{/each}
-		</Table.Body>
-	</Table.Root>
-{/snippet}
 
 {#if rows.length}
 	<div class="md-datatable-wrap" class:linked-active={isLinkedActive}>
-		{@render table(rows)}
+		<ResultTable
+			rows={transformed.rows}
+			columns={transformed.columns}
+			name="datatable"
+			pageSize={pageSize}
+			headerInsights={headerInsights}
+			truncated={!fullscreen && data.length > limit}
+			columnFormatOverrides={transformed.formatOverrides}
+			fillHeight={false}
+		/>
 		<div class="md-datatable-actions">
-			<button
-				class="md-datatable-expand"
-				onclick={exportCsv}
-				title="Download CSV"
-				aria-label="Download CSV"
-			>
-				<Download class="h-3 w-3" />
-			</button>
 			{#if data.length > limit}
 				<button
 					class="md-datatable-expand"
@@ -92,7 +138,16 @@
 			</button>
 		</div>
 		<div class="md-datatable-overlay-body">
-			{@render table(data)}
+			<ResultTable
+				rows={transformed.rows}
+				columns={transformed.columns}
+				name="datatable"
+				pageSize={pageSize}
+				headerInsights={headerInsights}
+				fillHeight={true}
+				truncated={false}
+				columnFormatOverrides={transformed.formatOverrides}
+			/>
 		</div>
 	</div>
 {/if}
@@ -119,7 +174,8 @@
 	}
 	.md-datatable-actions {
 		position: absolute;
-		top: 0.5rem;
+		/* Place actions below `ResultTable`'s global search input. */
+		top: 2.25rem;
 		right: 0.4rem;
 		display: flex;
 		gap: 0.25rem;
