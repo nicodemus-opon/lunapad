@@ -315,7 +315,19 @@ const datatableTag: Schema = {
 		round: { type: Number },
 		valueFormatKind: {
 			type: String,
-			matches: ['boolean', 'id', 'email', 'url', 'datetime', 'date', 'percentage', 'currency', 'number', 'category', 'text']
+			matches: [
+				'boolean',
+				'id',
+				'email',
+				'url',
+				'datetime',
+				'date',
+				'percentage',
+				'currency',
+				'number',
+				'category',
+				'text'
+			]
 		},
 		valueCurrencySymbol: { type: String },
 		conditionalFormats: { type: Array }

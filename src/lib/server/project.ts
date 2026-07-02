@@ -59,9 +59,48 @@ export function assertSafe(root: string, target: string): void {
 	}
 }
 
+function configuredProjectRoots(): string[] {
+	const raw = [
+		process.env.LUNAPAD_PROJECT_ROOTS,
+		process.env.PROJECTS_ROOT,
+		process.env.PROJECT_ROOT,
+		process.env.PROJECT_FOLDER
+	]
+		.filter(Boolean)
+		.join(path.delimiter);
+	const roots = raw
+		.split(path.delimiter)
+		.map((p) => p.trim())
+		.filter(Boolean)
+		.map((p) => path.resolve(p));
+
+	// Multi-tenant production deployments must not be able to browse arbitrary
+	// host paths just because a route accepts `folder`. If the operator forgot to
+	// configure an explicit root, fail closed to the process working directory.
+	if (roots.length === 0 && process.env.NODE_ENV === 'production')
+		return [path.resolve(process.cwd())];
+	return roots;
+}
+
+function isInside(root: string, target: string): boolean {
+	const resolvedRoot = path.resolve(root);
+	const resolvedTarget = path.resolve(target);
+	return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(`${resolvedRoot}${path.sep}`);
+}
+
+export function assertAllowedProjectFolder(folder: string): void {
+	if (!folder || folder.includes('\0')) throw new Error('Project folder is required.');
+	const resolved = path.resolve(folder);
+	const roots = configuredProjectRoots();
+	if (roots.length > 0 && !roots.some((root) => isInside(root, resolved))) {
+		throw new Error('Project folder is outside the configured project roots.');
+	}
+}
+
 // ── Project detection ────────────────────────────────────────────────────────
 
 export async function detectProject(folder: string): Promise<ProjectInfo> {
+	assertAllowedProjectFolder(folder);
 	const dbtProjectFile = path.join(folder, 'dbt_project.yml');
 	let isDbtProject = false;
 	let projectName: string | null = null;
@@ -99,6 +138,7 @@ export async function detectProject(folder: string): Promise<ProjectInfo> {
 // ── Directory scaffolding ────────────────────────────────────────────────────
 
 export async function scaffoldDbtProject(folder: string, name: string): Promise<void> {
+	assertAllowedProjectFolder(folder);
 	await fs.mkdir(folder, { recursive: true });
 
 	// dbt best-practice folder structure:
@@ -219,6 +259,7 @@ export interface ProjectNotebooks {
  * Notebook IDs follow the same convention (`models/staging/stg_orders`).
  */
 export async function walkProjectDirectory(folder: string): Promise<ProjectNotebooks> {
+	assertAllowedProjectFolder(folder);
 	const notebooks: Notebook[] = [];
 	const folders: NotebookFolder[] = [];
 
@@ -522,6 +563,7 @@ async function loadMissingModelsFromManifest(
 			editMode: 'prql',
 			resultViewMode: 'table',
 			resultChartConfig: null,
+			columnFormatRules: {},
 			display: 'full',
 			stageResultsCollapsed: [],
 			materializeMode: mat,
@@ -781,6 +823,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -836,6 +879,7 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -891,6 +935,7 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -950,6 +995,7 @@ function buildMarkdownCell(
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -1005,6 +1051,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		editMode: entry.meta.editMode ?? (entry.lang === 'sql' ? 'prql' : 'gui'),
 		resultViewMode: entry.meta.resultViewMode ?? 'table',
 		resultChartConfig: entry.meta.chartConfig ?? null,
+		columnFormatRules: entry.meta.columnFormatRules ?? {},
 		display: entry.meta.display ?? 'full',
 		hideResult: entry.meta.hideResult ?? false,
 		hideInReport: entry.meta.hideInReport ?? false,
@@ -1095,6 +1142,7 @@ async function readCellFile(
 		editMode: parsed.meta.editMode ?? (parsed.language === 'sql' ? 'prql' : 'gui'),
 		resultViewMode: parsed.meta.resultViewMode ?? 'table',
 		resultChartConfig: parsed.meta.chartConfig ?? null,
+		columnFormatRules: {},
 		display: parsed.meta.display ?? (parsed.meta.collapsed ? 'collapsed' : 'full'),
 		hideResult: parsed.meta.hideResult ?? false,
 		hideInReport: parsed.meta.hideInReport ?? false,
@@ -1140,6 +1188,10 @@ export async function readNotebookFile(
 	projectRoot?: string,
 	fileLanguage: CellLanguage = 'prql'
 ): Promise<Notebook> {
+	if (projectRoot) {
+		assertAllowedProjectFolder(projectRoot);
+		assertSafe(projectRoot, filePath);
+	}
 	const { cell } = await readCellFile(filePath, outputName, 0, projectRoot, fileLanguage);
 	return {
 		id: outputName,
@@ -1159,6 +1211,7 @@ export async function writeCellFile(
 	cell: Cell,
 	knownModels: string[] = []
 ): Promise<void> {
+	assertAllowedProjectFolder(path.dirname(filePath));
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
 	const content = serializeCell(cell, knownModels);
 	await fs.writeFile(filePath, content, 'utf-8');
@@ -1168,6 +1221,7 @@ export async function writeCellFile(
  * Write (or update) `.lunapad.json` metadata for a multi-cell notebook.
  */
 export async function writeNotebookMeta(dirPath: string, meta: NotebookMeta): Promise<void> {
+	assertAllowedProjectFolder(dirPath);
 	await fs.mkdir(dirPath, { recursive: true });
 	await fs.writeFile(path.join(dirPath, '.lunapad.json'), JSON.stringify(meta, null, 2), 'utf-8');
 }
@@ -1177,6 +1231,7 @@ export async function writeNotebookMeta(dirPath: string, meta: NotebookMeta): Pr
  * parent directory if it is now empty.
  */
 export async function deleteCellFile(filePath: string): Promise<void> {
+	assertAllowedProjectFolder(path.dirname(filePath));
 	await fs.unlink(filePath);
 	// Remove companion compiled .sql so dbt doesn't see a ghost model
 	if (filePath.endsWith('.prql')) {
@@ -1203,6 +1258,8 @@ export async function deleteCellFile(filePath: string): Promise<void> {
  * Rename or move a `.prql` file, carrying its companion `.sql` artifact along.
  */
 export async function renameCellFile(oldPath: string, newPath: string): Promise<void> {
+	assertAllowedProjectFolder(path.dirname(oldPath));
+	assertAllowedProjectFolder(path.dirname(newPath));
 	if (path.resolve(oldPath) !== path.resolve(newPath)) {
 		const exists = await fs.stat(newPath).then(
 			() => true,
@@ -1232,6 +1289,7 @@ export async function renameCellFile(oldPath: string, newPath: string): Promise<
  * generated `.sql` artifacts that have no source `.prql` to regenerate from.
  */
 export async function auditAndFixProjectYmls(projectFolder: string): Promise<AuditResult> {
+	assertAllowedProjectFolder(projectFolder);
 	const stubsAdded: string[] = [];
 
 	async function auditDir(absDir: string): Promise<void> {

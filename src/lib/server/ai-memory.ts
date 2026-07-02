@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertSafe } from './project.js';
+import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
 /**
  * Durable, per-project AI memory — decisions and discoveries recorded via the
@@ -31,7 +31,10 @@ export interface MemoryIndexEntry {
 }
 
 function memoryDir(folder: string): string {
-	return path.join(folder, '.lunapad', 'memory');
+	assertAllowedProjectFolder(folder);
+	const dir = path.join(folder, '.lunapad', 'memory');
+	assertSafe(folder, dir);
+	return dir;
 }
 
 function indexPath(folder: string): string {
@@ -43,7 +46,10 @@ function conventionsPath(folder: string): string {
 }
 
 function entryPath(folder: string, slug: string): string {
-	return path.join(memoryDir(folder), `${slug}.md`);
+	if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) throw new Error('Invalid memory entry slug.');
+	const filePath = path.join(memoryDir(folder), `${slug}.md`);
+	assertSafe(memoryDir(folder), filePath);
+	return filePath;
 }
 
 const STOPWORDS = new Set([

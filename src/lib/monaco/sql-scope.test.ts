@@ -19,9 +19,9 @@ describe('getSqlScope', () => {
 		const scope = getSqlScope('SELECT o.id FROM orders o', 'duckdb-wasm');
 		expect(scope).not.toBeNull();
 		expect(resolveTableRef(scope, 'o')).toBe('orders');
-		expect(columnsForRef(scope, new Map([['orders', [{ name: 'id', detail: 'INT' }]]]), 'o')).toEqual([
-			{ name: 'id', detail: 'INT' }
-		]);
+		expect(
+			columnsForRef(scope, new Map([['orders', [{ name: 'id', detail: 'INT' }]]]), 'o')
+		).toEqual([{ name: 'id', detail: 'INT' }]);
 	});
 
 	it('collects JOIN tables', () => {

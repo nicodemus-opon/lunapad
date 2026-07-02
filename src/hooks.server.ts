@@ -10,7 +10,13 @@ import {
 	SIGN_UP_PATH
 } from '$lib/server/auth';
 import { ensureApiKeyTableOnce, verifyApiKey, getUserById } from '$lib/server/api-keys';
-import { isUserBanned } from '$lib/server/permissions';
+import {
+	can,
+	hasApiScope,
+	isUserBanned,
+	userFromLocals,
+	type PermissionAction
+} from '$lib/server/permissions';
 import { startShareRefreshWorker } from '$lib/server/share-refresh-worker';
 
 startShareRefreshWorker();
@@ -88,6 +94,71 @@ function isDemoBlockedPath(pathname: string): boolean {
 	return DEMO_BLOCKED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function routePermission(pathname: string, method: string): PermissionAction | null {
+	if (isPublicPath(pathname)) return null;
+
+	const write = method !== 'GET' && method !== 'HEAD';
+
+	if (pathname.startsWith('/api/workspace/load')) return 'workspace:read';
+	if (pathname.startsWith('/api/workspace/save')) return 'workspace:write';
+
+	if (pathname.startsWith('/api/connections/query')) return 'connections:query';
+	if (pathname.startsWith('/api/connections/schema')) return 'connections:query';
+	if (pathname.startsWith('/api/connections/cancel')) return 'connections:query';
+	if (pathname.startsWith('/api/connections')) return 'connections:manage';
+
+	if (pathname.startsWith('/api/dbt/manifest') || pathname.startsWith('/api/dbt/logs')) {
+		return 'dbt:read';
+	}
+	if (pathname.startsWith('/api/dbt')) return 'dbt:run';
+
+	if (pathname.startsWith('/api/v1/query')) return 'connections:query';
+	if (pathname.startsWith('/api/v1/connections')) return 'connections:query';
+	if (pathname.startsWith('/api/v1/dbt/manifest') || pathname.startsWith('/api/v1/dbt/jobs')) {
+		return 'dbt:read';
+	}
+	if (pathname.startsWith('/api/v1/dbt')) return 'dbt:run';
+	if (pathname.startsWith('/api/v1/notebooks')) return write ? 'workspace:write' : 'workspace:read';
+	if (pathname.startsWith('/api/v1/prql')) return 'workspace:read';
+	if (pathname.startsWith('/api/mcp')) return 'connections:query';
+
+	if (pathname.startsWith('/api/project')) return write ? 'workspace:write' : 'workspace:read';
+
+	// Server-side Python/Evidence endpoints execute or inspect local server processes.
+	// On a multi-tenant deployment they are admin-only even if editors can run dbt.
+	if (pathname.startsWith('/api/python')) return 'admin:manage';
+	if (pathname.startsWith('/api/evidence')) return 'admin:manage';
+
+	if (pathname.startsWith('/api/shares/check-slug')) return 'shares:publish';
+	if (pathname.startsWith('/api/shares/refresh-schedule')) return 'shares:publish';
+	if (pathname.startsWith('/api/shares/regenerate')) return 'shares:publish';
+	if (pathname.startsWith('/api/shares')) return write ? 'shares:publish' : 'shares:read';
+
+	if (pathname.startsWith('/api/sites')) return 'sites:manage';
+
+	if (pathname.startsWith('/api/comments')) {
+		if (method === 'DELETE' || method === 'PATCH') return 'comments:resolve';
+		return write ? 'comments:write' : 'comments:read';
+	}
+	if (pathname.startsWith('/api/team/users')) return 'comments:read';
+	if (pathname.startsWith('/api/presence')) return 'comments:read';
+
+	if (pathname.startsWith('/api/ai/authorize-tool')) return 'ai:read';
+	if (pathname.startsWith('/api/ai/edit-cell')) return 'ai:mutate';
+	if (pathname.startsWith('/api/ai/sessions') && write) return 'ai:mutate';
+	if (pathname.startsWith('/api/ai')) return 'ai:read';
+	if (pathname.startsWith('/api/llm')) return 'ai:mutate';
+
+	if (pathname.startsWith('/api/schedules')) return 'dbt:run';
+	if (pathname.startsWith('/api/audit')) return 'admin:manage';
+	if (pathname.startsWith('/api/invitations')) return 'admin:manage';
+	if (pathname.startsWith('/api/account')) return null;
+	if (pathname.startsWith('/api/setup')) return null;
+	if (pathname.startsWith('/api/health')) return null;
+
+	return null;
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	if (DEMO_MODE && isDemoBlockedPath(event.url.pathname)) {
 		return event.url.pathname.startsWith('/api/')
@@ -160,6 +231,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (path.startsWith('/admin') && event.locals.user?.role !== 'admin') {
 		return new Response('Forbidden', { status: 403 });
+	}
+
+	const requiredPermission = routePermission(path, event.request.method);
+	if (requiredPermission) {
+		const user = userFromLocals(event.locals.user);
+		if (!can(user, requiredPermission)) {
+			return json({ error: 'Forbidden' }, { status: 403 });
+		}
+		if (!hasApiScope(event.locals.apiKeyScopes, requiredPermission)) {
+			return json(
+				{ error: 'Forbidden: API key scope does not allow this action' },
+				{ status: 403 }
+			);
+		}
 	}
 
 	const response = await svelteKitHandler({ event, resolve, auth, building });

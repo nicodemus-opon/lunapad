@@ -6,6 +6,7 @@
 	import {
 		parseVisualBlocks,
 		serializeVisualBlocks,
+		splitFrontmatter,
 		insertVisualBlock,
 		removeVisualBlock,
 		moveVisualBlock,
@@ -30,6 +31,9 @@
 
 	let blocks = $state<VisualBlock[]>([]);
 	let selectedId = $state<string | null>(null);
+	// Leading YAML frontmatter is not a block; keep it verbatim so editing the
+	// blocks below it never silently discards the cell's frontmatter.
+	let frontmatter = '';
 	// The exact markdown string this component last emitted. When the incoming `value`
 	// matches it, the change originated here — so we keep the current in-memory blocks
 	// (and their IDs / the active selection / inspector focus) instead of re-parsing.
@@ -57,14 +61,17 @@
 		untrack(() => {
 			if (v === lastEmitted) return;
 			lastEmitted = v;
-			blocks = parseVisualBlocks(v);
+			const split = splitFrontmatter(v);
+			frontmatter = split.frontmatter;
+			blocks = parseVisualBlocks(split.body);
 			if (selectedId && !blocks.some((b) => b.id === selectedId)) selectedId = null;
 		});
 	});
 
 	function emit(nextBlocks: VisualBlock[]) {
 		blocks = nextBlocks;
-		const serialized = serializeVisualBlocks(nextBlocks);
+		const body = serializeVisualBlocks(nextBlocks);
+		const serialized = frontmatter ? `${frontmatter}\n\n${body}` : body;
 		lastEmitted = serialized;
 		onchange(serialized);
 	}

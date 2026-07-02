@@ -54,7 +54,12 @@ export {
 	clearModelPythonSchema
 } from './completions';
 export { setGhostInlineEditActive } from './ghost-completions';
-export type { CompletionEntry, PythonCellContext, PythonUpstreamSchema, SqlModelContext } from './completions';
+export type {
+	CompletionEntry,
+	PythonCellContext,
+	PythonUpstreamSchema,
+	SqlModelContext
+} from './completions';
 export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from './plot-globals';
 
 let initialized = false;

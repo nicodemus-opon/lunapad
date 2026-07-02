@@ -10,6 +10,7 @@ import type { Notebook } from '$lib/stores/notebook.svelte';
 import type { Connection } from '$lib/types/connection';
 import { getSecret } from './connection-secrets.js';
 import { evaluateAlertRule, resolveMetricFromRows } from '$lib/services/share-alerts.js';
+import { assertSafeOutboundHttpUrl } from './safe-outbound-url.js';
 
 let workerStarted = false;
 
@@ -35,7 +36,8 @@ function getNotebookAlertRules(notebook: Notebook) {
 
 async function fireAlertWebhook(url: string, body: Record<string, unknown>): Promise<void> {
 	try {
-		await fetch(url, {
+		const safeUrl = assertSafeOutboundHttpUrl(url);
+		await fetch(safeUrl, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body)

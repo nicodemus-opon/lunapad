@@ -33,7 +33,7 @@
 			mermaidInstance.initialize({
 				startOnLoad: false,
 				theme: 'base',
-				securityLevel: 'antiscript',
+				securityLevel: 'strict',
 				themeVariables: buildMermaidThemeVars(isDarkMode())
 			});
 			const { svg } = await mermaidInstance.render(id, normalized.trim());

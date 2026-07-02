@@ -199,7 +199,8 @@ function makeInlineItem(
 }
 
 function ghostApiLanguage(languageId: string): 'prql' | 'sql' | 'python' {
-	if (languageId === 'trinosql' || languageId === 'genericsql' || languageId === 'sql') return 'sql';
+	if (languageId === 'trinosql' || languageId === 'genericsql' || languageId === 'sql')
+		return 'sql';
 	if (languageId === 'python') return 'python';
 	return 'prql';
 }

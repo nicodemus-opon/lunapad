@@ -160,7 +160,10 @@ function toneForScale(
 	return midColor;
 }
 
-function mergeStyles(base: CellConditionalStyle, incoming: CellConditionalStyle): CellConditionalStyle {
+function mergeStyles(
+	base: CellConditionalStyle,
+	incoming: CellConditionalStyle
+): CellConditionalStyle {
 	return {
 		tone: incoming.tone ?? base.tone,
 		textTone: incoming.textTone ?? base.textTone,
@@ -277,7 +280,11 @@ export function conditionalToneToCssVar(tone: ConditionalTone): string {
 
 export function defaultConditionalRulesForColumn(col: string): ReportTableConditionalRule[] {
 	const name = col.toLowerCase();
-	if (/(amount|price|cost|revenue|income|balance|paid|withdrawn|delta|change|pct|percent|rate)/i.test(name)) {
+	if (
+		/(amount|price|cost|revenue|income|balance|paid|withdrawn|delta|change|pct|percent|rate)/i.test(
+			name
+		)
+	) {
 		return [
 			{
 				id: `${col}:neg`,
@@ -304,4 +311,3 @@ export function defaultConditionalRulesForColumn(col: string): ReportTableCondit
 		}
 	];
 }
-

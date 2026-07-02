@@ -84,8 +84,6 @@ export function lookupColumn(
 }
 
 export function formatTableHover(name: string, cols: SchemaColumn[]): string {
-	const body = cols
-		.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : ''))
-		.join('\n');
+	const body = cols.map((c) => `- \`${c.name}\`` + (c.detail ? ` *${c.detail}*` : '')).join('\n');
 	return `**${name}**\n\n${body}`;
 }

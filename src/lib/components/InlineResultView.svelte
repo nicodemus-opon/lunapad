@@ -256,7 +256,7 @@
 				? 'max-h-64 overflow-auto'
 				: ''}"
 		>
-			<StatsView {rows} {columns} {name} compact={compact} {truncated} {fillHeight} />
+			<StatsView {rows} {columns} {name} {compact} {truncated} {fillHeight} />
 		</div>
 	{:else}
 		<div

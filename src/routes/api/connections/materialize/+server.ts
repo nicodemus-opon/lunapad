@@ -6,6 +6,7 @@ import {
 	type ExternalMaterializationMode
 } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
+import { getConnectionMetadata } from '$lib/server/connections-store';
 
 interface MaterializeConnectionRequest {
 	connection: Connection;
@@ -32,9 +33,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Materialization mode is invalid.' }, { status: 400 });
 		}
 
-		const secret = await getSecret(body.connection.id);
+		const connection = await getConnectionMetadata(body.connection.id);
+		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
+		const secret = await getSecret(connection.id);
 		const result = await materializeExternalConnection(
-			body.connection,
+			connection,
 			secret ?? undefined,
 			body.targetName,
 			typeof body.targetSchema === 'string' ? body.targetSchema : undefined,

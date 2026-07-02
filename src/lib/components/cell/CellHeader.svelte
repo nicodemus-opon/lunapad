@@ -13,7 +13,12 @@
 		Sparkles,
 		Maximize2
 	} from '@lucide/svelte';
-	import { updateCellName, setCellDisplay, setCellHideInReport, type Cell } from '$lib/stores/notebook.svelte';
+	import {
+		updateCellName,
+		setCellDisplay,
+		setCellHideInReport,
+		type Cell
+	} from '$lib/stores/notebook.svelte';
 
 	let {
 		cell,
@@ -352,7 +357,7 @@
 			>
 				<button
 					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
-					'visual') === 'visual'
+						'visual') === 'visual'
 						? 'bg-secondary text-secondary-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
 					onclick={() => onMarkdownModeChange?.('visual')}
@@ -362,7 +367,7 @@
 				>
 				<button
 					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
-					'visual') === 'source'
+						'visual') === 'source'
 						? 'bg-secondary text-secondary-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
 					onclick={() => onMarkdownModeChange?.('source')}

@@ -420,12 +420,7 @@ export function buildSqlCompletions(input: SqlCompletionInput): CompletionCandid
 		for (const { columns, qualifiedPrefix } of scoped) {
 			for (const c of columns) {
 				const qualified = `${qualifiedPrefix}.${c.name}`;
-				if (
-					prefix &&
-					!prefixMatches(c.name, prefix) &&
-					!prefixMatches(qualified, prefix)
-				)
-					continue;
+				if (prefix && !prefixMatches(c.name, prefix) && !prefixMatches(qualified, prefix)) continue;
 				push({
 					label: qualified,
 					insertText: qualified,
@@ -449,8 +444,7 @@ export function buildSqlCompletions(input: SqlCompletionInput): CompletionCandid
 		for (const [table, cols] of tables) {
 			if (prefix && !prefixMatches(table, prefix)) {
 				const anyCol = cols.some(
-					(c) =>
-						prefixMatches(c.name, prefix) || prefixMatches(`${table}.${c.name}`, prefix)
+					(c) => prefixMatches(c.name, prefix) || prefixMatches(`${table}.${c.name}`, prefix)
 				);
 				if (!anyCol) continue;
 			}
@@ -463,12 +457,7 @@ export function buildSqlCompletions(input: SqlCompletionInput): CompletionCandid
 			});
 			for (const c of cols) {
 				const qualified = `${table}.${c.name}`;
-				if (
-					prefix &&
-					!prefixMatches(qualified, prefix) &&
-					!prefixMatches(c.name, prefix)
-				)
-					continue;
+				if (prefix && !prefixMatches(qualified, prefix) && !prefixMatches(c.name, prefix)) continue;
 				push({
 					label: qualified,
 					insertText: qualified,

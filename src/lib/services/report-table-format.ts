@@ -114,13 +114,19 @@ export function formatCellForDisplay(value: unknown, format: ColumnFormat): Form
 		case 'currency': {
 			const n = coerceNumber(value);
 			if (n === null) return { text: plainText };
-			const code =
-				CURRENCY_CODE_BY_SYMBOL[format.currencySymbol ?? '$'] ?? 'USD';
-			return { text: new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(n) };
+			const code = CURRENCY_CODE_BY_SYMBOL[format.currencySymbol ?? '$'] ?? 'USD';
+			return {
+				text: new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(n)
+			};
 		}
 		case 'number': {
 			const n = coerceNumber(value);
-			return { text: n === null ? plainText : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n) };
+			return {
+				text:
+					n === null
+						? plainText
+						: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n)
+			};
 		}
 		case 'category': {
 			return { text: plainText, categorySeed: paletteSeedForValue(plainText) };
@@ -130,4 +136,3 @@ export function formatCellForDisplay(value: unknown, format: ColumnFormat): Form
 			return { text: plainText };
 	}
 }
-

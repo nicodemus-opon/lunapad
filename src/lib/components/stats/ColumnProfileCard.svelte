@@ -3,7 +3,14 @@
 	import MiniHistogram from './MiniHistogram.svelte';
 	import MiniBoxPlot from './MiniBoxPlot.svelte';
 	import TopValuesList from './TopValuesList.svelte';
-	import { KIND_ICON, kindBadgeClass, fmtStatNum, fmtPct, STATS_BAR_PRIMARY, STATS_BAR_SECONDARY } from './stats-ui';
+	import {
+		KIND_ICON,
+		kindBadgeClass,
+		fmtStatNum,
+		fmtPct,
+		STATS_BAR_PRIMARY,
+		STATS_BAR_SECONDARY
+	} from './stats-ui';
 
 	interface Props {
 		profile: ColumnProfile;
@@ -24,7 +31,8 @@
 			{label}
 		</span>
 		{#if profile.isLikelyId}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">likely id</span>
+			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">likely id</span
+			>
 		{/if}
 		{#if profile.isConstant}
 			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">constant</span>
@@ -43,7 +51,10 @@
 					<span class="font-medium tabular-nums">{fmtPct(profile.completeness, 1)}</span>
 				</div>
 				<div class="h-2 overflow-hidden rounded-full bg-muted">
-					<div class="h-full rounded-full {STATS_BAR_PRIMARY}" style="width: {profile.completeness}%"></div>
+					<div
+						class="h-full rounded-full {STATS_BAR_PRIMARY}"
+						style="width: {profile.completeness}%"
+					></div>
 				</div>
 				{#if profile.nullCount > 0}
 					<p class="mt-0.5 text-[10px] text-muted-foreground tabular-nums">

@@ -279,7 +279,9 @@
 		!worksheet && reportView && shouldHideCellInReportView(cell, getCells())
 	);
 	const codeHidden = $derived(!worksheet && isQueryCell && effectiveDisplay !== 'full');
-	const markdownEditorHidden = $derived(!worksheet && isMarkdownCell && effectiveDisplay !== 'full');
+	const markdownEditorHidden = $derived(
+		!worksheet && isMarkdownCell && effectiveDisplay !== 'full'
+	);
 	const headerCodeHidden = $derived(isMarkdownCell ? markdownEditorHidden : codeHidden);
 	const supportsWorksheet = $derived(isQueryCell || isPythonCell || isPlotCell);
 	const editorLayout = $derived(worksheet ? ('fill' as const) : ('auto' as const));
@@ -626,11 +628,7 @@
 			for (let i = 0; i < table.columns.length; i++) {
 				if (entries.size >= EDITOR_COMPLETION_LIMIT) break;
 				const col = table.columns[i];
-				setEntry(
-					`${table.name}.${col}`,
-					table.columnTypes?.[i],
-					meta?.columnDescriptions?.[i]
-				);
+				setEntry(`${table.name}.${col}`, table.columnTypes?.[i], meta?.columnDescriptions?.[i]);
 				if (parts.length === 3) {
 					setEntry(
 						`${parts[1]}.${parts[2]}.${col}`,
@@ -988,9 +986,7 @@
 	bind:this={cellContainerEl}
 	class="notebook-cell group relative text-foreground outline-none {worksheet
 		? 'flex min-h-0 flex-1 flex-col border-l-0 p-0'
-		: 'border-l-4 p-4'} {entering
-		? 'is-entering'
-		: ''} {worksheet
+		: 'border-l-4 p-4'} {entering ? 'is-entering' : ''} {worksheet
 		? ''
 		: cellFocused
 			? 'border-primary/20'
@@ -1019,339 +1015,332 @@
 	aria-busy={running}
 >
 	{#snippet editorInner()}
-							{#if canInlinePrompt}
-								<InlinePromptBar
-									bind:open={inlinePromptOpen}
-									cellId={cell.id}
-									cellType={isPythonCell ? 'python' : 'query'}
-									language={isPythonCell ? undefined : cell.language}
-									code={cell.code}
-									outputName={cell.outputName}
-									pythonAvailable={getPythonAvailable()}
-									sourceTable={inlinePromptSourceTable}
-									columns={inlinePromptColumns}
-									otherTables={inlinePromptTables}
-									{editorRef}
-									autoSubmitInstruction={inlinePromptPreset}
-									onAutoSubmitConsumed={() => (inlinePromptPreset = null)}
-									onApply={(code) =>
-										isPythonCell
-											? updatePythonCellCode(cell.id, code)
-											: updateCellCode(cell.id, code)}
-									onCreateAlternative={handleCreateAlternative}
-									onContinueInChat={onContinueWithAI}
-								/>
-							{/if}
-							{#if isUdfCell}
-								<Editor
-									bind:this={editorRef}
-									code={cell.udfBody}
-									errors={cell.errors}
-									language="python"
-									pythonContext={{ kind: 'udf' }}
-									{dark}
-									layout={editorLayout}
-									onchange={(c) => updateCellUdfBody(cell.id, c)}
-								/>
-							{:else if isPlotCell}
-								<div class="mb-1 flex justify-end">
-									<select
-										class="h-6 rounded-md border border-input bg-background px-1.5 text-2xs text-muted-foreground"
-										value=""
-										onchange={(e) => {
-											const select = e.target as HTMLSelectElement;
-											const tpl = PLOT_TEMPLATES.find((t) => t.id === select.value);
-											if (tpl) editorRef?.insertAtCursor(tpl.code);
-											select.value = '';
-										}}
-									>
-										<option value="" disabled selected>Insert template…</option>
-										{#each PLOT_TEMPLATES as tpl (tpl.id)}
-											<option value={tpl.id}>{tpl.label}</option>
-										{/each}
-									</select>
-								</div>
-								<Editor
-									bind:this={editorRef}
-									code={cell.code}
-									errors={cell.errors}
-									language="javascript"
-									plotGlobalsDts={plotCellGlobalsDts}
-									{dark}
-									layout={editorLayout}
-									onchange={(c) => updatePlotCellCode(cell.id, c)}
-								/>
-								{#if !worksheet}
-								<p class="mt-1 text-2xs text-muted-foreground">
-									Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
-									<code>return {'{ data: [...], layout: {...} }'}</code>.
-								</p>
-								{/if}
-							{:else if isPythonCell}
-								<Editor
-									bind:this={editorRef}
-									code={cell.code}
-									errors={cell.errors}
-									language="python"
-									pythonContext={{ kind: 'data', notebookId }}
-									pythonSchemas={prevCellSources}
-									{dark}
-									layout={editorLayout}
-									onchange={(c) => updatePythonCellCode(cell.id, c)}
-								/>
-								{#if !worksheet}
-								<p class="mt-1 text-2xs text-muted-foreground">
-									Reference upstream cells by name — they're already DataFrames. End the cell with a
-									bare expression (like Jupyter), or assign to <code>result</code> or
-									<code>fig</code>, to surface a table or Plotly chart.
-								</p>
-								{/if}
-							{:else if !isQueryCell}
-								<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
-									{#if isMarkdownOutputOnly}
-										<!-- svelte-ignore a11y_no_static_element_interactions -->
-										<div
-											class="markdown-body prose"
-											class:cursor-text={!reportView}
-											onclick={!reportView ? handleMarkdownPreviewClick : undefined}
-										>
-											{#if markdocResult}
-												<MarkdocRenderer
-													content={markdocResult.tree}
-													errors={markdocResult.errors}
-													{notebookId}
-													headingSlugPrefix={cell.id}
-												/>
-											{/if}
-										</div>
-									{:else}
-										<div class="markdown-editor-stack relative min-h-32">
-											<div
-												class="transition-opacity duration-150 {isMarkdownVisualEditing
-													? 'pointer-events-auto relative opacity-100'
-													: 'pointer-events-none absolute inset-0 opacity-0'}"
-											>
-												<VisualDashboardEditor
-													value={cell.markdown ?? ''}
-													onchange={(v) => updateCellMarkdown(cell.id, v)}
-													cells={markdownValidationCells}
-													{notebookId}
-													refEntries={markdownRefEntries}
-												/>
-											</div>
-											<div
-												class="transition-opacity duration-150 {isMarkdownSourceEditing
-													? 'pointer-events-auto relative opacity-100'
-													: 'pointer-events-none absolute inset-0 opacity-0'}"
-											>
-												<MarkdownToolbar
-													{refPickerEntries}
-													onFormat={handleToolbarFormat}
-													onInsertSnippet={insertMarkdownSnippet}
-													onInsertRef={insertMarkdownRef}
-													onTogglePreview={() => setCellDisplay(cell.id, 'output')}
-												/>
-												<MarkdownEditor
-													bind:handle={markdownHandle}
-													value={cell.markdown ?? ''}
-													onchange={(v) => updateCellMarkdown(cell.id, v)}
-													refEntries={markdownRefEntries}
-													cellsForValidation={markdownValidationCells}
-												/>
-											</div>
-										</div>
-										{#if hasLiveRefs}
-											<p class="mt-0.5 text-2xs text-muted-foreground select-none">
-												⚡ Live refs active — run upstream cells to update values
-											</p>
-										{/if}
-									{/if}
-								</div>
-							{:else if cell.editMode === 'gui'}
-								<div class={worksheet ? 'min-h-0 flex-1 overflow-y-auto' : ''}>
-								<GUIEditor
-									stages={cell.guiStages}
-									tables={guiTables}
-									{prevCellSources}
-									{dark}
-									connectionId={connectionValue}
-									{connectionType}
-									stageResultsCollapsed={cell.stageResultsCollapsed}
-									{stageErrorMap}
-									onStagesChange={(stages) => updateGuiStages(cell.id, stages)}
-									onRunStage={(upToStageIdx) => runGuiStagePreview(cell.id, upToStageIdx)}
-									onStageResultCollapsedChange={(stageIdx, c) =>
-										setStageResultCollapsed(cell.id, stageIdx, c)}
-									onEscapeEditor={() => cellContainerEl?.focus()}
-								/>
-								</div>
-							{:else}
-								<Editor
-									bind:this={editorRef}
-									code={cell.code}
-									errors={cell.errors}
-									completions={editorCompletions}
-									language={cell.language}
-									sqlDialect={cellSqlDialect}
-									{connectionType}
-									connectionId={connectionValue}
-									externalSchema={cellExternalSchema}
-									{udfFunctionNames}
-									{dark}
-									layout={editorLayout}
-									onchange={(c) => updateCellCode(cell.id, c)}
-								/>
-							{/if}
+		{#if canInlinePrompt}
+			<InlinePromptBar
+				bind:open={inlinePromptOpen}
+				cellId={cell.id}
+				cellType={isPythonCell ? 'python' : 'query'}
+				language={isPythonCell ? undefined : cell.language}
+				code={cell.code}
+				outputName={cell.outputName}
+				pythonAvailable={getPythonAvailable()}
+				sourceTable={inlinePromptSourceTable}
+				columns={inlinePromptColumns}
+				otherTables={inlinePromptTables}
+				{editorRef}
+				autoSubmitInstruction={inlinePromptPreset}
+				onAutoSubmitConsumed={() => (inlinePromptPreset = null)}
+				onApply={(code) =>
+					isPythonCell ? updatePythonCellCode(cell.id, code) : updateCellCode(cell.id, code)}
+				onCreateAlternative={handleCreateAlternative}
+				onContinueInChat={onContinueWithAI}
+			/>
+		{/if}
+		{#if isUdfCell}
+			<Editor
+				bind:this={editorRef}
+				code={cell.udfBody}
+				errors={cell.errors}
+				language="python"
+				pythonContext={{ kind: 'udf' }}
+				{dark}
+				layout={editorLayout}
+				onchange={(c) => updateCellUdfBody(cell.id, c)}
+			/>
+		{:else if isPlotCell}
+			<div class="mb-1 flex justify-end">
+				<select
+					class="h-6 rounded-md border border-input bg-background px-1.5 text-2xs text-muted-foreground"
+					value=""
+					onchange={(e) => {
+						const select = e.target as HTMLSelectElement;
+						const tpl = PLOT_TEMPLATES.find((t) => t.id === select.value);
+						if (tpl) editorRef?.insertAtCursor(tpl.code);
+						select.value = '';
+					}}
+				>
+					<option value="" disabled selected>Insert template…</option>
+					{#each PLOT_TEMPLATES as tpl (tpl.id)}
+						<option value={tpl.id}>{tpl.label}</option>
+					{/each}
+				</select>
+			</div>
+			<Editor
+				bind:this={editorRef}
+				code={cell.code}
+				errors={cell.errors}
+				language="javascript"
+				plotGlobalsDts={plotCellGlobalsDts}
+				{dark}
+				layout={editorLayout}
+				onchange={(c) => updatePlotCellCode(cell.id, c)}
+			/>
+			{#if !worksheet}
+				<p class="mt-1 text-2xs text-muted-foreground">
+					Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
+					<code>return {'{ data: [...], layout: {...} }'}</code>.
+				</p>
+			{/if}
+		{:else if isPythonCell}
+			<Editor
+				bind:this={editorRef}
+				code={cell.code}
+				errors={cell.errors}
+				language="python"
+				pythonContext={{ kind: 'data', notebookId }}
+				pythonSchemas={prevCellSources}
+				{dark}
+				layout={editorLayout}
+				onchange={(c) => updatePythonCellCode(cell.id, c)}
+			/>
+			{#if !worksheet}
+				<p class="mt-1 text-2xs text-muted-foreground">
+					Reference upstream cells by name — they're already DataFrames. End the cell with a bare
+					expression (like Jupyter), or assign to <code>result</code> or
+					<code>fig</code>, to surface a table or Plotly chart.
+				</p>
+			{/if}
+		{:else if !isQueryCell}
+			<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
+				{#if isMarkdownOutputOnly}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="markdown-body prose"
+						class:cursor-text={!reportView}
+						onclick={!reportView ? handleMarkdownPreviewClick : undefined}
+					>
+						{#if markdocResult}
+							<MarkdocRenderer
+								content={markdocResult.tree}
+								errors={markdocResult.errors}
+								{notebookId}
+								headingSlugPrefix={cell.id}
+							/>
+						{/if}
+					</div>
+				{:else}
+					<div class="markdown-editor-stack relative min-h-32">
+						<div
+							class="transition-opacity duration-150 {isMarkdownVisualEditing
+								? 'pointer-events-auto relative opacity-100'
+								: 'pointer-events-none absolute inset-0 opacity-0'}"
+						>
+							<VisualDashboardEditor
+								value={cell.markdown ?? ''}
+								onchange={(v) => updateCellMarkdown(cell.id, v)}
+								cells={markdownValidationCells}
+								{notebookId}
+								refEntries={markdownRefEntries}
+							/>
+						</div>
+						<div
+							class="transition-opacity duration-150 {isMarkdownSourceEditing
+								? 'pointer-events-auto relative opacity-100'
+								: 'pointer-events-none absolute inset-0 opacity-0'}"
+						>
+							<MarkdownToolbar
+								{refPickerEntries}
+								onFormat={handleToolbarFormat}
+								onInsertSnippet={insertMarkdownSnippet}
+								onInsertRef={insertMarkdownRef}
+								onTogglePreview={() => setCellDisplay(cell.id, 'output')}
+							/>
+							<MarkdownEditor
+								bind:handle={markdownHandle}
+								value={cell.markdown ?? ''}
+								onchange={(v) => updateCellMarkdown(cell.id, v)}
+								refEntries={markdownRefEntries}
+								cellsForValidation={markdownValidationCells}
+							/>
+						</div>
+					</div>
+					{#if hasLiveRefs}
+						<p class="mt-0.5 text-2xs text-muted-foreground select-none">
+							⚡ Live refs active — run upstream cells to update values
+						</p>
+					{/if}
+				{/if}
+			</div>
+		{:else if cell.editMode === 'gui'}
+			<div class={worksheet ? 'min-h-0 flex-1 overflow-y-auto' : ''}>
+				<GUIEditor
+					stages={cell.guiStages}
+					tables={guiTables}
+					{prevCellSources}
+					{dark}
+					connectionId={connectionValue}
+					{connectionType}
+					stageResultsCollapsed={cell.stageResultsCollapsed}
+					{stageErrorMap}
+					onStagesChange={(stages) => updateGuiStages(cell.id, stages)}
+					onRunStage={(upToStageIdx) => runGuiStagePreview(cell.id, upToStageIdx)}
+					onStageResultCollapsedChange={(stageIdx, c) =>
+						setStageResultCollapsed(cell.id, stageIdx, c)}
+					onEscapeEditor={() => cellContainerEl?.focus()}
+				/>
+			</div>
+		{:else}
+			<Editor
+				bind:this={editorRef}
+				code={cell.code}
+				errors={cell.errors}
+				completions={editorCompletions}
+				language={cell.language}
+				sqlDialect={cellSqlDialect}
+				{connectionType}
+				connectionId={connectionValue}
+				externalSchema={cellExternalSchema}
+				{udfFunctionNames}
+				{dark}
+				layout={editorLayout}
+				onchange={(c) => updateCellCode(cell.id, c)}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet outputInner()}
-					<!-- Compiled SQL preview -->
-					{#if sqlExpanded && cell.compiledSQL}
-						<CellSqlPreview sql={cell.compiledSQL} />
-					{/if}
+		<!-- Compiled SQL preview -->
+		{#if sqlExpanded && cell.compiledSQL}
+			<CellSqlPreview sql={cell.compiledSQL} />
+		{/if}
 
-					<!-- Errors — quiet inline annotation bar (plot cells show errors inline
+		<!-- Errors — quiet inline annotation bar (plot cells show errors inline
 					     in their own output area instead, via PlotCellOutput below) -->
-					{#if !isPlotCell && cell.errors.length > 0}
-						<div
-							class="space-y-0.5 pl-0.5 {worksheet ? 'shrink-0' : ''}"
-							in:fly={{ y: -4, duration: 130 }}
-						>
-							{#each cell.errors as error, errorIdx (errorIdx)}
-								<div class="rounded-r-sm border-destructive/80 py-2">
-									<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
-										{error.display ?? error.reason}
-									</p>
-								</div>
-							{/each}
-						</div>
-					{/if}
+		{#if !isPlotCell && cell.errors.length > 0}
+			<div
+				class="space-y-0.5 pl-0.5 {worksheet ? 'shrink-0' : ''}"
+				in:fly={{ y: -4, duration: 130 }}
+			>
+				{#each cell.errors as error, errorIdx (errorIdx)}
+					<div class="rounded-r-sm border-destructive/80 py-2">
+						<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
+							{error.display ?? error.reason}
+						</p>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
-					{#if cell.materializeError}
-						<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm py-2">
-							<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
-								{cell.materializeError}
-							</p>
-						</div>
-					{/if}
+		{#if cell.materializeError}
+			<div in:fly={{ y: -4, duration: 130 }} class="rounded-r-sm py-2">
+				<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
+					{cell.materializeError}
+				</p>
+			</div>
+		{/if}
 
-					<!-- Plot cell output: rendered reactively from cell.code + its
+		<!-- Plot cell output: rendered reactively from cell.code + its
 					     resolved upstream cells' .result, same as ChartView's plotRender
 					     derived — not stored state, so it stays live as you type. -->
-					{#if isPlotCell}
-						<div
-							in:fade={{ duration: 220 }}
-							class={worksheet ? 'min-h-0 flex-1' : 'min-h-64'}
-						>
-							<PlotCellOutput {cell} deps={plotDeps} />
-						</div>
-					{/if}
+		{#if isPlotCell}
+			<div in:fade={{ duration: 220 }} class={worksheet ? 'min-h-0 flex-1' : 'min-h-64'}>
+				<PlotCellOutput {cell} deps={plotDeps} />
+			</div>
+		{/if}
 
-					<!-- Python cell output: stdout + captured Plotly figures + traceback.
+		<!-- Python cell output: stdout + captured Plotly figures + traceback.
 					     The resulting DataFrame (if any) renders below via the shared
 					     Results block, same InlineResultView every other cell type uses. -->
-					{#if showPythonOutput}
-						<div in:fade={{ duration: 220 }} class={worksheet ? 'shrink-0' : ''}>
-							<PythonCellOutput output={cell.pythonOutput!} />
-						</div>
-					{/if}
+		{#if showPythonOutput}
+			<div in:fade={{ duration: 220 }} class={worksheet ? 'shrink-0' : ''}>
+				<PythonCellOutput output={cell.pythonOutput!} />
+			</div>
+		{/if}
 
-					<!-- Results -->
-					{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
-						<div
-							in:fade={{ duration: 220 }}
-							class="relative transition-opacity duration-300 {worksheet
-								? 'flex min-h-0 flex-1 flex-col'
-								: ''} {running ? 'opacity-70' : 'opacity-100'}"
-						>
-							{#if running}
+		<!-- Results -->
+		{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
+			<div
+				in:fade={{ duration: 220 }}
+				class="relative transition-opacity duration-300 {worksheet
+					? 'flex min-h-0 flex-1 flex-col'
+					: ''} {running ? 'opacity-70' : 'opacity-100'}"
+			>
+				{#if running}
+					<div
+						class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
+					>
+						<Loader2 class="h-3 w-3 animate-spin" />
+						<span>Updating</span>
+					</div>
+				{/if}
+				{#if cell.result.rows.length === 0}
+					<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
+				{:else}
+					<InlineResultView
+						rows={cell.result.rows}
+						columns={cell.result.columns}
+						truncated={cell.result.truncated ?? false}
+						name={cell.outputName || `result${index + 1}`}
+						initialViewMode={cell.resultViewMode}
+						initialChartConfig={cell.resultChartConfig}
+						controlsVisible={showResultControls}
+						toolbarReserveSpace={!codeHidden}
+						fillHeight={worksheet}
+						onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
+						onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
+						onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
+						onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
+						columnFormatRules={cell.columnFormatRules}
+						onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
+						columnDescriptions={isDbtProject ? columnDescriptions : undefined}
+						onColumnDescriptionChange={isDbtProject ? handleColumnDescriptionChange : undefined}
+					>
+						{#snippet toolbarActions()}
+							{#if onOpenResultTab}
 								<div
-									class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
+									class="flex items-center gap-1 transition-opacity duration-150 ease-(--motion-ease-out) {showResultControls
+										? 'opacity-100'
+										: 'pointer-events-none opacity-0'}"
+									aria-hidden={!showResultControls}
 								>
-									<Loader2 class="h-3 w-3 animate-spin" />
-									<span>Updating</span>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 w-6 p-0"
+												onclick={() =>
+													onOpenResultTab!(
+														cell.id,
+														notebookId,
+														cell.outputName || `result${index + 1}`,
+														cell.resultViewMode
+													)}><ExternalLink class="h-3 w-3" /></Button
+											>
+										</Tooltip.Trigger>
+										<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
+									</Tooltip.Root>
 								</div>
 							{/if}
-							{#if cell.result.rows.length === 0}
-								<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
-							{:else}
-								<InlineResultView
-									rows={cell.result.rows}
-									columns={cell.result.columns}
-									truncated={cell.result.truncated ?? false}
-									name={cell.outputName || `result${index + 1}`}
-									initialViewMode={cell.resultViewMode}
-									initialChartConfig={cell.resultChartConfig}
-									controlsVisible={showResultControls}
-									toolbarReserveSpace={!codeHidden}
-									fillHeight={worksheet}
-									onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
-									onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
-									onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
-									onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
-									columnFormatRules={cell.columnFormatRules}
-									onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
-									columnDescriptions={isDbtProject ? columnDescriptions : undefined}
-									onColumnDescriptionChange={isDbtProject
-										? handleColumnDescriptionChange
-										: undefined}
-								>
-									{#snippet toolbarActions()}
-										{#if onOpenResultTab}
-											<div
-												class="flex items-center gap-1 transition-opacity duration-150 ease-(--motion-ease-out) {showResultControls
-													? 'opacity-100'
-													: 'pointer-events-none opacity-0'}"
-												aria-hidden={!showResultControls}
-											>
-												<Tooltip.Root>
-													<Tooltip.Trigger>
-														<Button
-															variant="ghost"
-															size="sm"
-															class="h-6 w-6 p-0"
-															onclick={() =>
-																onOpenResultTab!(
-																	cell.id,
-																	notebookId,
-																	cell.outputName || `result${index + 1}`,
-																	cell.resultViewMode
-																)}><ExternalLink class="h-3 w-3" /></Button
-														>
-													</Tooltip.Trigger>
-													<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
-												</Tooltip.Root>
-											</div>
-										{/if}
-									{/snippet}
-								</InlineResultView>
-							{/if}
-						</div>
-					{/if}
+						{/snippet}
+					</InlineResultView>
+				{/if}
+			</div>
+		{/if}
 
-					{#if hasStatusLine}
-						<CellStatusLine
-							{cell}
-							{showResult}
-							{running}
-							{intelligenceSummary}
-							connectionName={cellConnectionName}
-							{isDbtProject}
-							onOpenMaterialize={() => (materializeDialogOpen = true)}
-							onShowSql={() => (sqlExpanded = true)}
-							onRunTests={() => void testCell(cell.id)}
-							onOverlayChange={handleOverlayChange}
-							onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
-								? () =>
-										onOpenResultTab!(
-											cell.id,
-											notebookId,
-											cell.outputName || `result${index + 1}`,
-											'table'
-										)
-								: undefined}
-						/>
-					{/if}
+		{#if hasStatusLine}
+			<CellStatusLine
+				{cell}
+				{showResult}
+				{running}
+				{intelligenceSummary}
+				connectionName={cellConnectionName}
+				{isDbtProject}
+				onOpenMaterialize={() => (materializeDialogOpen = true)}
+				onShowSql={() => (sqlExpanded = true)}
+				onRunTests={() => void testCell(cell.id)}
+				onOverlayChange={handleOverlayChange}
+				onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
+					? () =>
+							onOpenResultTab!(
+								cell.id,
+								notebookId,
+								cell.outputName || `result${index + 1}`,
+								'table'
+							)
+					: undefined}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet cellMain()}
@@ -1363,10 +1352,7 @@
 						class="flex min-h-40 shrink-0 flex-col overflow-hidden"
 					>
 						{#if !codeHidden}
-							<div
-								onfocusin={onEditorFocus}
-								class="flex min-h-0 flex-1 flex-col overflow-hidden"
-							>
+							<div onfocusin={onEditorFocus} class="flex min-h-0 flex-1 flex-col overflow-hidden">
 								{@render editorInner()}
 							</div>
 						{/if}
@@ -1424,7 +1410,7 @@
 					<CellHeader
 						{cell}
 						{isQueryCell}
-						isMarkdownCell={isMarkdownCell}
+						{isMarkdownCell}
 						{collapsed}
 						codeHidden={headerCodeHidden}
 						{revealed}
@@ -1490,7 +1476,7 @@
 							onRunTests={() => void testCell(cell.id)}
 							onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
 							onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
-							isPlotCell={isPlotCell}
+							{isPlotCell}
 						/>
 					{/snippet}
 				</CellGutter>

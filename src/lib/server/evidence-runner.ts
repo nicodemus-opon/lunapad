@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { assertAllowedProjectFolder } from './project.js';
 
 export interface EvidenceJob {
 	id: string;
@@ -41,6 +42,7 @@ function detectPackageManager(folder: string): string {
 // ── Job management ────────────────────────────────────────────────────────────
 
 export function startEvidenceServer(folder: string): string {
+	assertAllowedProjectFolder(folder);
 	// Stop any existing server first
 	if (runningJobId) {
 		stopEvidenceServer(runningJobId);

@@ -16,6 +16,7 @@ function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell 
 		editMode: 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		guiStages: [{ type: 'from', table: '' }],
 		display: 'full',
 		hideResult: false,

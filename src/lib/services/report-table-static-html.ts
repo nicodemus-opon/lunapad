@@ -1,6 +1,7 @@
 import { buildReportTableModel, type ReportTableModel } from '$lib/services/report-table-model';
 import { formatCellForDisplay } from '$lib/services/report-table-format';
 import type { ColumnFormat } from '$lib/services/column-format';
+import { sanitizeUrl } from '$lib/services/safe-url';
 import {
 	conditionalToneToCssVar,
 	evaluateConditionalCellStyle,
@@ -36,10 +37,13 @@ function formatCellHtml(value: unknown, format: ColumnFormat, colId: string): st
 			return `<a class="link mono" href="mailto:${escapeHtmlAttr(
 				String(value)
 			)}">${escapeHtml(text)}</a>`;
-		case 'url':
-			return `<a class="link mono" href="${escapeHtmlAttr(String(value))}" rel="noopener noreferrer" target="_blank">${escapeHtml(
+		case 'url': {
+			const safeHref = sanitizeUrl(value);
+			if (!safeHref) return `<span class="mono">${escapeHtml(text)}</span>`;
+			return `<a class="link mono" href="${escapeHtmlAttr(safeHref)}" rel="noopener noreferrer" target="_blank">${escapeHtml(
 				text
 			)}</a>`;
+		}
 		case 'date':
 		case 'datetime':
 		case 'number':
@@ -70,8 +74,13 @@ export function renderReportTableToStaticHtml(
 		columnFormatRules?: ColumnConditionalRules;
 	} = {}
 ): string {
-	const { name, maxRows = 500, truncated = false, columnFormatOverrides, columnFormatRules = {} } =
-		options;
+	const {
+		name,
+		maxRows = 500,
+		truncated = false,
+		columnFormatOverrides,
+		columnFormatRules = {}
+	} = options;
 	const model: ReportTableModel = buildReportTableModel(rows, columns, {
 		name,
 		formatOverrides: columnFormatOverrides
@@ -123,7 +132,9 @@ export function renderReportTableToStaticHtml(
 		})
 		.join('');
 
-	const footerNote = truncated ? `<div class="table-note">· first ${visibleRows.length.toLocaleString()} rows</div>` : '';
+	const footerNote = truncated
+		? `<div class="table-note">· first ${visibleRows.length.toLocaleString()} rows</div>`
+		: '';
 
 	return `
 <div class="table-wrap">
@@ -139,4 +150,3 @@ export function renderReportTableToStaticHtml(
 </div>
 `.trim();
 }
-

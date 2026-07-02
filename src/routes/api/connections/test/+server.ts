@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import type { Connection, ConnectionSecret } from '$lib/types/connection';
 import { testExternalConnection } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
+import { getConnectionMetadata } from '$lib/server/connections-store';
 
 interface TestConnectionRequest {
 	connection: Connection;
@@ -19,8 +20,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
 
-		const secret = body.secret ?? (await getSecret(body.connection.id)) ?? undefined;
-		const result = await testExternalConnection(body.connection, secret);
+		const savedConnection = await getConnectionMetadata(body.connection.id);
+		const connection = savedConnection ?? body.connection;
+		const secret = body.secret ?? (await getSecret(connection.id)) ?? undefined;
+		const result = await testExternalConnection(connection, secret);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to test connection.';

@@ -21,7 +21,7 @@ function escapeRegExp(s: string): string {
 
 export function findFilterUsages(cells: Cell[], param: string): FilterUsage[] {
 	if (!param) return [];
-	const re = new RegExp(`\\$\\{\\s*${escapeRegExp(param)}\\s*\\}`, 'g');
+	const re = new RegExp(`\\$\\{\\s*${escapeRegExp(param)}\\s*\\}`);
 	return cells
 		.filter((cell) => cell.cellType === 'query' && cell.outputName && re.test(cell.code ?? ''))
 		.map((cell) => ({

@@ -14,11 +14,7 @@
 		block: VisualBlock | null;
 		refEntries?: MarkdownRefEntry[];
 		filterUsages?: Record<string, FilterUsage[]>;
-		onPatch: (patch: {
-			attrs?: Record<string, unknown>;
-			body?: string;
-			source?: string;
-		}) => void;
+		onPatch: (patch: { attrs?: Record<string, unknown>; body?: string; source?: string }) => void;
 	}
 
 	const { block, refEntries = [], filterUsages = {}, onPatch }: Props = $props();
@@ -92,7 +88,9 @@
 </script>
 
 {#if !block}
-	<div class="inspector-empty text-xs text-muted-foreground">Select a block to edit properties.</div>
+	<div class="inspector-empty text-xs text-muted-foreground">
+		Select a block to edit properties.
+	</div>
 {:else if !parsed}
 	<div class="inspector-prose space-y-2">
 		<p class="text-xs font-semibold text-muted-foreground">Prose / container</p>
@@ -119,15 +117,24 @@
 		{#if parsed.tagName === 'metric'}
 			<label class="field">
 				<span>Value</span>
-				<input value={String(parsed.attrs.value ?? '')} oninput={(e) => setAttr('value', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.value ?? '')}
+					oninput={(e) => setAttr('value', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Label</span>
-				<input value={String(parsed.attrs.label ?? '')} oninput={(e) => setAttr('label', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.label ?? '')}
+					oninput={(e) => setAttr('label', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Compare (vs)</span>
-				<input value={String(parsed.attrs.vs ?? '')} oninput={(e) => setAttr('vs', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.vs ?? '')}
+					oninput={(e) => setAttr('vs', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Format</span>
@@ -205,7 +212,9 @@
 			<label class="field">
 				<span>Secondary Y columns (JSON array)</span>
 				<input
-					value={parsed.attrs.yColumnsSecondary ? JSON.stringify(parsed.attrs.yColumnsSecondary) : ''}
+					value={parsed.attrs.yColumnsSecondary
+						? JSON.stringify(parsed.attrs.yColumnsSecondary)
+						: ''}
 					oninput={(e) => setJsonArrayAttr('yColumnsSecondary', e.currentTarget.value)}
 				/>
 			</label>
@@ -276,7 +285,10 @@
 			</label>
 			<label class="field">
 				<span>Title</span>
-				<input value={String(parsed.attrs.title ?? '')} oninput={(e) => setAttr('title', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.title ?? '')}
+					oninput={(e) => setAttr('title', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Height</span>
@@ -382,7 +394,10 @@
 					type="number"
 					value={parsed.attrs.round != null ? Number(parsed.attrs.round) : ''}
 					oninput={(e) =>
-						setAttr('round', e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value))}
+						setAttr(
+							'round',
+							e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value)
+						)}
 				/>
 			</label>
 			<label class="field">
@@ -410,15 +425,24 @@
 			{@const param = String(parsed.attrs.param ?? '')}
 			<label class="field">
 				<span>Param</span>
-				<input value={String(parsed.attrs.param ?? '')} oninput={(e) => setAttr('param', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.param ?? '')}
+					oninput={(e) => setAttr('param', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Label</span>
-				<input value={String(parsed.attrs.label ?? '')} oninput={(e) => setAttr('label', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.label ?? '')}
+					oninput={(e) => setAttr('label', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Kind</span>
-				<select value={String(parsed.attrs.kind ?? 'dropdown')} onchange={(e) => setAttr('kind', e.currentTarget.value)}>
+				<select
+					value={String(parsed.attrs.kind ?? 'dropdown')}
+					onchange={(e) => setAttr('kind', e.currentTarget.value)}
+				>
 					{#each ['dropdown', 'text-input', 'date-range', 'button-group', 'multi-select', 'relative-date', 'numeric-range', 'searchable-dropdown'] as k (k)}
 						<option value={k}>{k}</option>
 					{/each}
@@ -427,7 +451,9 @@
 			<label class="field">
 				<span>Options (JSON array or $cell.rows)</span>
 				<input
-					value={Array.isArray(parsed.attrs.options) ? JSON.stringify(parsed.attrs.options) : String(parsed.attrs.options ?? '')}
+					value={Array.isArray(parsed.attrs.options)
+						? JSON.stringify(parsed.attrs.options)
+						: String(parsed.attrs.options ?? '')}
 					oninput={(e) => {
 						const raw = e.currentTarget.value.trim();
 						if (raw.startsWith('$')) setAttr('options', raw);
@@ -491,7 +517,9 @@
 						{/each}
 					</ul>
 				{:else if param}
-					<p class="mt-1 text-warning">No query cell references <code>{'${' + param + '}'}</code>.</p>
+					<p class="mt-1 text-warning">
+						No query cell references <code>{'${' + param + '}'}</code>.
+					</p>
 				{:else}
 					<p class="mt-1">Set a param to see linked query cells.</p>
 				{/if}
@@ -499,11 +527,17 @@
 		{:else if parsed.tagName === 'badge'}
 			<label class="field">
 				<span>Value</span>
-				<input value={String(parsed.attrs.value ?? '')} oninput={(e) => setAttr('value', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.value ?? '')}
+					oninput={(e) => setAttr('value', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Color</span>
-				<select value={String(parsed.attrs.color ?? 'info')} onchange={(e) => setAttr('color', e.currentTarget.value)}>
+				<select
+					value={String(parsed.attrs.color ?? 'info')}
+					onchange={(e) => setAttr('color', e.currentTarget.value)}
+				>
 					{#each ['info', 'success', 'warning', 'error', 'neutral'] as c (c)}
 						<option value={c}>{c}</option>
 					{/each}
@@ -512,7 +546,10 @@
 		{:else if parsed.tagName === 'progress'}
 			<label class="field">
 				<span>Value</span>
-				<input value={String(parsed.attrs.value ?? '')} oninput={(e) => setAttr('value', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.value ?? '')}
+					oninput={(e) => setAttr('value', e.currentTarget.value)}
+				/>
 			</label>
 			<label class="field">
 				<span>Max</span>
@@ -524,7 +561,10 @@
 			</label>
 			<label class="field">
 				<span>Label</span>
-				<input value={String(parsed.attrs.label ?? '')} oninput={(e) => setAttr('label', e.currentTarget.value)} />
+				<input
+					value={String(parsed.attrs.label ?? '')}
+					oninput={(e) => setAttr('label', e.currentTarget.value)}
+				/>
 			</label>
 		{:else if parsed.tagName === 'grid' || parsed.tagName === 'columns' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
 			{#if parsed.tagName === 'grid'}
@@ -548,12 +588,18 @@
 			{:else if parsed.tagName === 'tab'}
 				<label class="field">
 					<span>Label</span>
-					<input value={String(parsed.attrs.label ?? '')} oninput={(e) => setAttr('label', e.currentTarget.value)} />
+					<input
+						value={String(parsed.attrs.label ?? '')}
+						oninput={(e) => setAttr('label', e.currentTarget.value)}
+					/>
 				</label>
 			{:else if parsed.tagName === 'details'}
 				<label class="field">
 					<span>Summary</span>
-					<input value={String(parsed.attrs.summary ?? '')} oninput={(e) => setAttr('summary', e.currentTarget.value)} />
+					<input
+						value={String(parsed.attrs.summary ?? '')}
+						oninput={(e) => setAttr('summary', e.currentTarget.value)}
+					/>
 				</label>
 				<label class="inline-field">
 					<input
@@ -573,7 +619,8 @@
 					/>
 				</label>
 				<p class="text-2xs text-muted-foreground">
-					Use comparison helpers like <code>gt($orders.count, 0)</code>. Keep else branches in the body source.
+					Use comparison helpers like <code>gt($orders.count, 0)</code>. Keep else branches in the
+					body source.
 				</p>
 			{:else if parsed.tagName === 'group'}
 				<label class="field">
@@ -642,12 +689,18 @@
 			{#if parsed.tagName === 'card'}
 				<label class="field">
 					<span>Title</span>
-					<input value={String(parsed.attrs.title ?? '')} oninput={(e) => setAttr('title', e.currentTarget.value)} />
+					<input
+						value={String(parsed.attrs.title ?? '')}
+						oninput={(e) => setAttr('title', e.currentTarget.value)}
+					/>
 				</label>
 			{:else}
 				<label class="field">
 					<span>Type</span>
-					<select value={String(parsed.attrs.type ?? 'info')} onchange={(e) => setAttr('type', e.currentTarget.value)}>
+					<select
+						value={String(parsed.attrs.type ?? 'info')}
+						onchange={(e) => setAttr('type', e.currentTarget.value)}
+					>
 						{#each ['info', 'success', 'warning', 'error'] as t (t)}
 							<option value={t}>{t}</option>
 						{/each}

@@ -69,7 +69,7 @@
 				? index
 				: pivotBy && valueCol
 					? baseCols.filter((c) => c !== pivotBy && c !== valueCol)
-					: index ?? [];
+					: (index ?? []);
 
 		if (pivotBy && valueCol && resolvedIndex.length) {
 			return pivotTable(src, {
@@ -120,7 +120,7 @@
 			columns={transformed.columns}
 			name="datatable"
 			pageSize={effectivePageSize}
-			headerInsights={headerInsights}
+			{headerInsights}
 			truncated={false}
 			columnFormatOverrides={transformed.formatOverrides}
 			columnFormatRules={conditionalRuleMap}
@@ -157,7 +157,7 @@
 				columns={transformed.columns}
 				name="datatable"
 				pageSize={effectivePageSize}
-				headerInsights={headerInsights}
+				{headerInsights}
 				fillHeight={true}
 				truncated={false}
 				columnFormatOverrides={transformed.formatOverrides}

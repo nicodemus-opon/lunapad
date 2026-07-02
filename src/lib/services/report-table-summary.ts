@@ -65,7 +65,10 @@ export function summarizeTable(
 	const outputValueCol = formatOutputColName(agg, valueCol);
 
 	// group key -> { groupValues, valueSamples }
-	const groups = new Map<string, { groupValues: Record<string, unknown>; valueSamples: unknown[] }>();
+	const groups = new Map<
+		string,
+		{ groupValues: Record<string, unknown>; valueSamples: unknown[] }
+	>();
 
 	for (const r of rows) {
 		const keyParts = groupBy.map((c) => String(r[c] ?? '__null__'));
@@ -105,4 +108,3 @@ export function summarizeTable(
 		formatOverrides
 	};
 }
-

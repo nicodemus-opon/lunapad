@@ -204,9 +204,12 @@ function capSuggestions<T>(items: T[], max: number): T[] {
 }
 
 export function registerCompletions(monaco: typeof Monaco): void {
-	monaco.editor.registerCommand('lunapad.recordCompletion', (_accessor, label: string, connectionId?: string) => {
-		if (typeof label === 'string') recordCompletionAcceptance(connectionId, label);
-	});
+	monaco.editor.registerCommand(
+		'lunapad.recordCompletion',
+		(_accessor, label: string, connectionId?: string) => {
+			if (typeof label === 'string') recordCompletionAcceptance(connectionId, label);
+		}
+	);
 
 	for (const languageId of ['prql', 'sql', 'trinosql', 'genericsql'] as const) {
 		const isSql = languageId === 'sql' || languageId === 'trinosql' || languageId === 'genericsql';
@@ -275,9 +278,7 @@ function provideSqlLikeCompletions(
 	// PRQL relation context: `from|join|append|intersect|remove <here>` →
 	// only relations make sense, not transform keywords/builtins.
 	if (languageId === 'prql') {
-		const relationMatch = lineBefore.match(
-			/\b(from|join|append|intersect|remove)\s+[\w.`]*$/i
-		);
+		const relationMatch = lineBefore.match(/\b(from|join|append|intersect|remove)\s+[\w.`]*$/i);
 		if (relationMatch) {
 			const relSuggestions: Monaco.languages.CompletionItem[] = [];
 			for (const table of tables.keys()) {

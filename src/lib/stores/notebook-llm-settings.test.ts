@@ -137,9 +137,7 @@ describe('notebook LLM settings persistence', () => {
 		initWorkspaceMode(false);
 		const fetchMock = vi.mocked(fetch);
 		fetchMock
-			.mockResolvedValueOnce(
-				new Response(JSON.stringify({ settings: {} }), { status: 200 })
-			)
+			.mockResolvedValueOnce(new Response(JSON.stringify({ settings: {} }), { status: 200 }))
 			.mockResolvedValueOnce(
 				new Response(JSON.stringify({ settings: { llmConfig: { model: 'legacy-model' } } }), {
 					status: 200

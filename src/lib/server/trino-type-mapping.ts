@@ -47,14 +47,11 @@ export function catalogTypeMappingProperties(
 		case 'mysql':
 		case 'mariadb':
 		case 'singlestore':
-			return jdbcCatalogProperties(
-				'binary,varbinary,tinyblob,blob,mediumblob,longblob',
-				{
-					// DECIMAL(p,s) with p > 38 otherwise fails at runtime.
-					'decimal-mapping': 'allow_overflow',
-					'decimal-default-scale': '0'
-				}
-			);
+			return jdbcCatalogProperties('binary,varbinary,tinyblob,blob,mediumblob,longblob', {
+				// DECIMAL(p,s) with p > 38 otherwise fails at runtime.
+				'decimal-mapping': 'allow_overflow',
+				'decimal-default-scale': '0'
+			});
 		case 'sqlserver':
 			return jdbcCatalogProperties('binary,varbinary,image');
 		case 'redshift':

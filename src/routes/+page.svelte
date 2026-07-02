@@ -1794,316 +1794,317 @@
 						<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 							{#if worksheetCell && activeNotebook}
 								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-								<CellWorksheetView
-									cell={worksheetCell}
-									index={worksheetCellIndex}
-									notebookId={activeTabId}
-									dark={isDark}
-									prevCellSources={prevSourcesForCell(worksheetCellIndex)}
-									{autoRun}
-									{collabEnabled}
-									onShareWithAI={() => {
-										setAIChatOpen(true);
-										addContextCell(worksheetCell.id);
-									}}
-									onFixWithAI={aiChatOpen
-										? (errorMsg) => {
-												addContextCell(worksheetCell.id);
-												setAIChatOpen(true);
-												void submitAIMessage(
-													`Fix this SQL error in \`${worksheetCell.outputName}\`: ${errorMsg}`
-												);
-											}
-										: undefined}
-									onContinueWithAI={(instruction) => {
-										addContextCell(worksheetCell.id);
-										setAIChatOpen(true);
-										setPendingSuggestion(instruction);
-									}}
-									onOpenResultTab={handleOpenResultTab}
-								/>
+									<CellWorksheetView
+										cell={worksheetCell}
+										index={worksheetCellIndex}
+										notebookId={activeTabId}
+										dark={isDark}
+										prevCellSources={prevSourcesForCell(worksheetCellIndex)}
+										{autoRun}
+										{collabEnabled}
+										onShareWithAI={() => {
+											setAIChatOpen(true);
+											addContextCell(worksheetCell.id);
+										}}
+										onFixWithAI={aiChatOpen
+											? (errorMsg) => {
+													addContextCell(worksheetCell.id);
+													setAIChatOpen(true);
+													void submitAIMessage(
+														`Fix this SQL error in \`${worksheetCell.outputName}\`: ${errorMsg}`
+													);
+												}
+											: undefined}
+										onContinueWithAI={(instruction) => {
+											addContextCell(worksheetCell.id);
+											setAIChatOpen(true);
+											setPendingSuggestion(instruction);
+										}}
+										onOpenResultTab={handleOpenResultTab}
+									/>
 								</div>
 							{:else}
-							<main
-								bind:this={notebookScrollEl}
-								class="notebook-scroll flex-1 overflow-y-auto bg-background"
-							>
-								<div class=" mx-auto px-10 pt-8 pb-32">
-									<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
-										<input
-											class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
-											placeholder="Untitled notebook"
-											value={activeNotebook?.name ?? ''}
-											onblur={(e) => {
-												const next = (e.target as HTMLInputElement).value.trim();
-												if (activeNotebook && next && next !== activeNotebook.name)
-													renameNotebook(activeNotebook.id, next);
-											}}
-											onkeydown={(e) => {
-												if (e.key === 'Enter') {
-													e.preventDefault();
-													(e.target as HTMLInputElement).blur();
-												}
-											}}
-										/>
+								<main
+									bind:this={notebookScrollEl}
+									class="notebook-scroll flex-1 overflow-y-auto bg-background"
+								>
+									<div class=" mx-auto px-10 pt-8 pb-32">
+										<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
+											<input
+												class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+												placeholder="Untitled notebook"
+												value={activeNotebook?.name ?? ''}
+												onblur={(e) => {
+													const next = (e.target as HTMLInputElement).value.trim();
+													if (activeNotebook && next && next !== activeNotebook.name)
+														renameNotebook(activeNotebook.id, next);
+												}}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') {
+														e.preventDefault();
+														(e.target as HTMLInputElement).blur();
+													}
+												}}
+											/>
 
-										<Select.Root
-											type="single"
-											disabled={connections.length === 0}
-											value={activeNotebookConnectionValue}
-											onValueChange={(value) => {
-												if (!activeNotebook || value === '__mixed__') return;
-												setNotebookConnection(
-													activeNotebook.id,
-													value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
-												);
-											}}
-										>
-											<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
-												{#if activeNotebookConnectionValue === '__mixed__'}
-													Mixed connections
-												{:else}
-													{connections.find(
-														(connection) => connection.id === activeNotebookConnectionValue
-													)?.name ?? 'DuckDB (built-in)'}
-												{/if}
-											</Select.Trigger>
-											<Select.Content>
-												{#if activeNotebookConnectionValue === '__mixed__'}
-													<Select.Item value="__mixed__" class="font-mono text-xs"
-														>Mixed connections</Select.Item
-													>
-												{/if}
-												{#each connections as connection (connection.id)}
-													<Select.Item value={connection.id} class="font-mono text-xs"
-														>{connection.name}</Select.Item
-													>
-												{/each}
-											</Select.Content>
-										</Select.Root>
-
-										<Select.Root
-											type="single"
-											value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
-											onValueChange={(value) => {
-												if (!activeNotebook) return;
-												setNotebookAutoRefresh(activeNotebook.id, Number(value));
-											}}
-										>
-											<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
-												<RefreshCw class="h-3 w-3" />
-												{#if !activeNotebook?.autoRefreshIntervalMs}
-													Off
-												{:else if activeNotebook.autoRefreshIntervalMs === 30000}
-													30s
-												{:else if activeNotebook.autoRefreshIntervalMs === 60000}
-													1m
-												{:else if activeNotebook.autoRefreshIntervalMs === 300000}
-													5m
-												{:else if activeNotebook.autoRefreshIntervalMs === 900000}
-													15m
-												{:else if activeNotebook.autoRefreshIntervalMs === 1800000}
-													30m
-												{:else if activeNotebook.autoRefreshIntervalMs === 3600000}
-													1h
-												{:else}
-													{Math.round(activeNotebook.autoRefreshIntervalMs / 60_000)}m
-												{/if}
-											</Select.Trigger>
-											<Select.Content>
-												<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
-												<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
-												<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
-												<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
-												<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
-												<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
-												<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
-											</Select.Content>
-										</Select.Root>
-									</div>
-
-									{#if cells.length === 0}
-										<div class="flex flex-col items-center gap-4 py-16 text-center">
-											<div class="flex flex-col items-center gap-2">
-												<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
-												<p class="max-w-xs text-xs text-muted-foreground">
-													Add a query cell to start exploring your data. Reference upstream cells by
-													name using <code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
-														>from cell_name</code
-													>.
-												</p>
-											</div>
-											<div class="flex w-full max-w-xs flex-col gap-2">
-												<Button
-													variant="default"
-													size="sm"
-													class="h-8 w-full gap-2 text-xs"
-													onclick={() => addCellWithLanguage('prql')}
-												>
-													<Plus class="h-3.5 w-3.5" />
-													Add PRQL Cell
-													<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
-												</Button>
-												<Button
-													variant="outline"
-													size="sm"
-													class="h-8 w-full gap-2 text-xs"
-													onclick={() => addCellWithLanguage('sql')}
-												>
-													<Plus class="h-3.5 w-3.5" />
-													Add SQL Cell
-												</Button>
-												<Button
-													variant="outline"
-													size="sm"
-													class="h-8 w-full gap-2 text-xs"
-													onclick={addMarkdownCell}
-												>
-													<Info class="h-3.5 w-3.5" />
-													Add Markdown Cell
-													<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
-												</Button>
-											</div>
-											<div class="space-y-0.5 text-2xs text-muted-foreground">
-												<p>
-													Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
-												</p>
-											</div>
-										</div>
-									{:else}
-										{#if showDemoCta}
-											<div
-												class="mb-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+											<Select.Root
+												type="single"
+												disabled={connections.length === 0}
+												value={activeNotebookConnectionValue}
+												onValueChange={(value) => {
+													if (!activeNotebook || value === '__mixed__') return;
+													setNotebookConnection(
+														activeNotebook.id,
+														value === BUILTIN_DUCKDB_CONNECTION_ID ? null : value
+													);
+												}}
 											>
-												<div>
-													<p class="text-sm font-medium text-foreground">New here?</p>
-													<p class="text-xs text-muted-foreground">
-														Load the interactive demo to see charts, PRQL, and dashboards in about
-														30 seconds.
+												<Select.Trigger class="h-7 min-w-44 font-mono text-xs">
+													{#if activeNotebookConnectionValue === '__mixed__'}
+														Mixed connections
+													{:else}
+														{connections.find(
+															(connection) => connection.id === activeNotebookConnectionValue
+														)?.name ?? 'DuckDB (built-in)'}
+													{/if}
+												</Select.Trigger>
+												<Select.Content>
+													{#if activeNotebookConnectionValue === '__mixed__'}
+														<Select.Item value="__mixed__" class="font-mono text-xs"
+															>Mixed connections</Select.Item
+														>
+													{/if}
+													{#each connections as connection (connection.id)}
+														<Select.Item value={connection.id} class="font-mono text-xs"
+															>{connection.name}</Select.Item
+														>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+
+											<Select.Root
+												type="single"
+												value={String(activeNotebook?.autoRefreshIntervalMs ?? 0)}
+												onValueChange={(value) => {
+													if (!activeNotebook) return;
+													setNotebookAutoRefresh(activeNotebook.id, Number(value));
+												}}
+											>
+												<Select.Trigger class="h-7 min-w-24 gap-1.5 text-xs">
+													<RefreshCw class="h-3 w-3" />
+													{#if !activeNotebook?.autoRefreshIntervalMs}
+														Off
+													{:else if activeNotebook.autoRefreshIntervalMs === 30000}
+														30s
+													{:else if activeNotebook.autoRefreshIntervalMs === 60000}
+														1m
+													{:else if activeNotebook.autoRefreshIntervalMs === 300000}
+														5m
+													{:else if activeNotebook.autoRefreshIntervalMs === 900000}
+														15m
+													{:else if activeNotebook.autoRefreshIntervalMs === 1800000}
+														30m
+													{:else if activeNotebook.autoRefreshIntervalMs === 3600000}
+														1h
+													{:else}
+														{Math.round(activeNotebook.autoRefreshIntervalMs / 60_000)}m
+													{/if}
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
+													<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
+													<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
+													<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
+													<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
+													<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
+													<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										</div>
+
+										{#if cells.length === 0}
+											<div class="flex flex-col items-center gap-4 py-16 text-center">
+												<div class="flex flex-col items-center gap-2">
+													<p class="text-sm font-medium text-foreground/70">Empty notebook</p>
+													<p class="max-w-xs text-xs text-muted-foreground">
+														Add a query cell to start exploring your data. Reference upstream cells
+														by name using <code
+															class="rounded bg-muted px-1 py-0.5 font-mono text-2xs"
+															>from cell_name</code
+														>.
 													</p>
 												</div>
-												<Button
-													size="sm"
-													class="shrink-0 gap-2"
-													onclick={() => void bootstrapDemoNotebook({ runCells: true })}
-												>
-													<FlaskConical class="h-3.5 w-3.5" />
-													Explore demo
-												</Button>
+												<div class="flex w-full max-w-xs flex-col gap-2">
+													<Button
+														variant="default"
+														size="sm"
+														class="h-8 w-full gap-2 text-xs"
+														onclick={() => addCellWithLanguage('prql')}
+													>
+														<Plus class="h-3.5 w-3.5" />
+														Add PRQL Cell
+														<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧↵</span>
+													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														class="h-8 w-full gap-2 text-xs"
+														onclick={() => addCellWithLanguage('sql')}
+													>
+														<Plus class="h-3.5 w-3.5" />
+														Add SQL Cell
+													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														class="h-8 w-full gap-2 text-xs"
+														onclick={addMarkdownCell}
+													>
+														<Info class="h-3.5 w-3.5" />
+														Add Markdown Cell
+														<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
+													</Button>
+												</div>
+												<div class="space-y-0.5 text-2xs text-muted-foreground">
+													<p>
+														Press <kbd class="rounded bg-muted px-1 font-mono">?</kbd> for keyboard shortcuts
+													</p>
+												</div>
 											</div>
-										{/if}
-										{#if reportView}
-											<ReportViewShell
-												notebookId={activeTabId}
-												markdowns={reportMarkdowns}
-												onDrill={handleDrillToCell}
-											>
-												{#snippet children()}
-													<div bind:this={cellListEl}>
-														{#each cells as cell, idx (cell.id)}
-															<div data-cell-id={cell.id}>
-																<NotebookCell
-																	{cell}
-																	index={idx}
-																	isFirst={idx === 0}
-																	isLast={idx === cells.length - 1}
-																	dark={isDark}
-																	prevCellSources={prevSourcesForCell(idx)}
-																	notebookId={activeTabId}
-																	{autoRun}
-																	reportView={true}
-																	isGhost={ghostCellIds.has(cell.id)}
-																	onShareWithAI={() => {
-																		setAIChatOpen(true);
-																		addContextCell(cell.id);
-																	}}
-																	onFixWithAI={aiChatOpen
-																		? (errorMsg) => {
-																				addContextCell(cell.id);
-																				setAIChatOpen(true);
-																				void submitAIMessage(
-																					`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
-																				);
-																			}
-																		: undefined}
-																	onContinueWithAI={(instruction) => {
-																		addContextCell(cell.id);
-																		setAIChatOpen(true);
-																		setPendingSuggestion(instruction);
-																	}}
-																	onOpenResultTab={handleOpenResultTab}
-																	{collabEnabled}
-																/>
-															</div>
-														{/each}
-													</div>
-												{/snippet}
-											</ReportViewShell>
 										{:else}
-											<div bind:this={cellListEl}>
-												{#each cells as cell, idx (cell.id)}
-													<div data-cell-id={cell.id}>
-														{#if !reportView}
-															<div class="pl-(--cell-gutter)">
-																<AddCellDivider
-																	onAdd={(kind) => insertBeforeCell(kind, idx)}
-																	showUdf={canAddUdfCell()}
-																	showPlot={canAddPlotCell()}
-																	showPython={canAddPythonCell()}
-																/>
-															</div>
-														{/if}
-														<NotebookCell
-															{cell}
-															index={idx}
-															isFirst={idx === 0}
-															isLast={idx === cells.length - 1}
-															dark={isDark}
-															prevCellSources={prevSourcesForCell(idx)}
-															notebookId={activeTabId}
-															{autoRun}
-															{reportView}
-															isGhost={ghostCellIds.has(cell.id)}
-															onShareWithAI={() => {
-																setAIChatOpen(true);
-																addContextCell(cell.id);
-															}}
-															onFixWithAI={aiChatOpen
-																? (errorMsg) => {
-																		addContextCell(cell.id);
-																		setAIChatOpen(true);
-																		void submitAIMessage(
-																			`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
-																		);
-																	}
-																: undefined}
-															onContinueWithAI={(instruction) => {
-																addContextCell(cell.id);
-																setAIChatOpen(true);
-																setPendingSuggestion(instruction);
-															}}
-															onOpenResultTab={handleOpenResultTab}
-															{collabEnabled}
-														/>
+											{#if showDemoCta}
+												<div
+													class="mb-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+												>
+													<div>
+														<p class="text-sm font-medium text-foreground">New here?</p>
+														<p class="text-xs text-muted-foreground">
+															Load the interactive demo to see charts, PRQL, and dashboards in about
+															30 seconds.
+														</p>
 													</div>
-												{/each}
-											</div>
-										{/if}
+													<Button
+														size="sm"
+														class="shrink-0 gap-2"
+														onclick={() => void bootstrapDemoNotebook({ runCells: true })}
+													>
+														<FlaskConical class="h-3.5 w-3.5" />
+														Explore demo
+													</Button>
+												</div>
+											{/if}
+											{#if reportView}
+												<ReportViewShell
+													notebookId={activeTabId}
+													markdowns={reportMarkdowns}
+													onDrill={handleDrillToCell}
+												>
+													{#snippet children()}
+														<div bind:this={cellListEl}>
+															{#each cells as cell, idx (cell.id)}
+																<div data-cell-id={cell.id}>
+																	<NotebookCell
+																		{cell}
+																		index={idx}
+																		isFirst={idx === 0}
+																		isLast={idx === cells.length - 1}
+																		dark={isDark}
+																		prevCellSources={prevSourcesForCell(idx)}
+																		notebookId={activeTabId}
+																		{autoRun}
+																		reportView={true}
+																		isGhost={ghostCellIds.has(cell.id)}
+																		onShareWithAI={() => {
+																			setAIChatOpen(true);
+																			addContextCell(cell.id);
+																		}}
+																		onFixWithAI={aiChatOpen
+																			? (errorMsg) => {
+																					addContextCell(cell.id);
+																					setAIChatOpen(true);
+																					void submitAIMessage(
+																						`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
+																					);
+																				}
+																			: undefined}
+																		onContinueWithAI={(instruction) => {
+																			addContextCell(cell.id);
+																			setAIChatOpen(true);
+																			setPendingSuggestion(instruction);
+																		}}
+																		onOpenResultTab={handleOpenResultTab}
+																		{collabEnabled}
+																	/>
+																</div>
+															{/each}
+														</div>
+													{/snippet}
+												</ReportViewShell>
+											{:else}
+												<div bind:this={cellListEl}>
+													{#each cells as cell, idx (cell.id)}
+														<div data-cell-id={cell.id}>
+															{#if !reportView}
+																<div class="pl-(--cell-gutter)">
+																	<AddCellDivider
+																		onAdd={(kind) => insertBeforeCell(kind, idx)}
+																		showUdf={canAddUdfCell()}
+																		showPlot={canAddPlotCell()}
+																		showPython={canAddPythonCell()}
+																	/>
+																</div>
+															{/if}
+															<NotebookCell
+																{cell}
+																index={idx}
+																isFirst={idx === 0}
+																isLast={idx === cells.length - 1}
+																dark={isDark}
+																prevCellSources={prevSourcesForCell(idx)}
+																notebookId={activeTabId}
+																{autoRun}
+																{reportView}
+																isGhost={ghostCellIds.has(cell.id)}
+																onShareWithAI={() => {
+																	setAIChatOpen(true);
+																	addContextCell(cell.id);
+																}}
+																onFixWithAI={aiChatOpen
+																	? (errorMsg) => {
+																			addContextCell(cell.id);
+																			setAIChatOpen(true);
+																			void submitAIMessage(
+																				`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
+																			);
+																		}
+																	: undefined}
+																onContinueWithAI={(instruction) => {
+																	addContextCell(cell.id);
+																	setAIChatOpen(true);
+																	setPendingSuggestion(instruction);
+																}}
+																onOpenResultTab={handleOpenResultTab}
+																{collabEnabled}
+															/>
+														</div>
+													{/each}
+												</div>
+											{/if}
 
-										{#if !reportView}
-											<div class="mt-2 pl-(--cell-gutter)">
-												<AddCellDivider
-													persistent
-													onAdd={appendCell}
-													showUdf={canAddUdfCell()}
-													showPlot={canAddPlotCell()}
-													showPython={canAddPythonCell()}
-												/>
-											</div>
+											{#if !reportView}
+												<div class="mt-2 pl-(--cell-gutter)">
+													<AddCellDivider
+														persistent
+														onAdd={appendCell}
+														showUdf={canAddUdfCell()}
+														showPlot={canAddPlotCell()}
+														showPython={canAddPythonCell()}
+													/>
+												</div>
+											{/if}
 										{/if}
-									{/if}
-								</div>
-							</main>
+									</div>
+								</main>
 							{/if}
 							<NotebookStatusBar
 								{connections}

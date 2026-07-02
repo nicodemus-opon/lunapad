@@ -47,8 +47,7 @@ export function fmtPct(value: number, digits = 1): string {
 
 /** List selection — same pairing as dropdown-menu / inline-chip-label. */
 export const STATS_ITEM_SELECTED = 'bg-accent text-accent-foreground';
-export const STATS_ITEM_IDLE =
-	'text-muted-foreground hover:bg-muted/50 hover:text-foreground';
+export const STATS_ITEM_IDLE = 'text-muted-foreground hover:bg-muted/50 hover:text-foreground';
 
 /** Low-chroma data bars (chart-4 is muted in both themes; never use secondary as fill). */
 export const STATS_BAR_PRIMARY = 'bg-chart-4/80';

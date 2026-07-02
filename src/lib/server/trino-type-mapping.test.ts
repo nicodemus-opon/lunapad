@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	catalogTypeMappingProperties,
-	catalogTypeMappingSession
-} from './trino-type-mapping';
+import { catalogTypeMappingProperties, catalogTypeMappingSession } from './trino-type-mapping';
 
 const JDBC_BASE = {
 	'unsupported-type-handling': 'CONVERT_TO_VARCHAR'

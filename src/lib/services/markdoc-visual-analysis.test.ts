@@ -22,14 +22,19 @@ describe('markdoc-visual-analysis', () => {
 		]);
 	});
 
+	it('finds every matching cell regardless of scan order (no stateful-regex misses)', () => {
+		const cells = [
+			cell('a', 'from a\nfilter x == "${region}"'),
+			cell('b', 'from b\nfilter y == "${region}"'),
+			cell('c', 'from c\nfilter z == "${region}"')
+		];
+		expect(findFilterUsages(cells, 'region').map((u) => u.cellId)).toEqual(['a', 'b', 'c']);
+	});
+
 	it('builds visual ref options for cells, rows, and columns', () => {
 		const entries = [{ cellName: 'orders', columns: [{ name: 'revenue' }] }];
 		const options = buildVisualRefOptions(entries);
-		expect(options.map((o) => o.value)).toEqual([
-			'$orders',
-			'$orders.rows',
-			'$orders.revenue'
-		]);
+		expect(options.map((o) => o.value)).toEqual(['$orders', '$orders.rows', '$orders.revenue']);
 		expect(columnsForRef(entries, '$orders.rows')).toEqual(['revenue']);
 	});
 });

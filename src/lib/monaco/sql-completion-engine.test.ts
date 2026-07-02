@@ -46,9 +46,7 @@ describe('buildSqlCompletions', () => {
 			wordStartColumn: sql.length + 1,
 			dialect: 'duckdb-wasm'
 		});
-		expect(results.some((r) => r.label === 'orders' && r.insertText.includes('VALUES'))).toBe(
-			true
-		);
+		expect(results.some((r) => r.label === 'orders' && r.insertText.includes('VALUES'))).toBe(true);
 	});
 
 	it('matches camelCase prefix on columns', () => {

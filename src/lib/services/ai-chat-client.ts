@@ -134,6 +134,7 @@ import {
 	knownTableNames,
 	assertKnownTable
 } from '$lib/services/ai-investigation-tools.js';
+import { checkReadableSQL } from '$lib/utils/sql-readonly';
 import {
 	emitAgentTelemetry,
 	resetAgentSessionId,
@@ -440,6 +441,19 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 		switch (call.tool) {
 			case 'query_data': {
 				const { sql, limit = 20 } = call.args as QueryDataArgs;
+				// The SQL is LLM-authored — enforce read-only before it ever reaches the
+				// engine. Without this, a statement that already contains LIMIT is passed
+				// through raw, so `DROP TABLE x; SELECT 1 LIMIT 1` would execute DDL.
+				const sqlError = checkReadableSQL(sql);
+				if (sqlError) {
+					return {
+						llmText: `query_data failed: ${sqlError}`,
+						previewText: sqlError,
+						label: 'Rejected non-read-only SQL',
+						contextKey: `error: query_data`,
+						contextSummary: sqlError
+					};
+				}
 				const safeLimit = Math.min(limit ?? 20, 50);
 				const wrappedSql = /\bLIMIT\s+\d+/i.test(sql)
 					? sql

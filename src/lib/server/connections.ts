@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
+import { assertReadableSQL } from '$lib/utils/sql-readonly';
 import {
 	catalogTypeMappingProperties,
 	catalogTypeMappingSession
@@ -487,30 +487,6 @@ export async function unregisterCatalog(catalogName: string): Promise<void> {
 
 // ── SQL validation ────────────────────────────────────────────────────────────
 
-const WRITE_KEYWORD_RE =
-	/\b(insert|update|delete|drop|create|alter|truncate|replace|merge|grant|revoke|call|execute|exec|copy|vacuum|analyze|refresh|set\s+local|set\s+session|do\b)\b/i;
-
-function assertReadableSQL(sql: string): void {
-	// Trino's inline Python UDFs (`WITH FUNCTION ... AS $$ <python> $$`) embed
-	// arbitrary Python source, which can plausibly contain blocklisted keywords
-	// or semicolons as literal text. Mask dollar-quoted blocks before validating
-	// so only the surrounding SQL shell — not the UDF body — is checked.
-	const normalized = maskDollarQuotedBlocks(sql.trim()).toLowerCase();
-	if (!normalized) throw new Error('SQL query is required.');
-	if (normalized.includes(';')) throw new Error('Only a single SQL statement is allowed.');
-	if (
-		!normalized.startsWith('select') &&
-		!normalized.startsWith('with') &&
-		!normalized.startsWith('values') &&
-		!normalized.startsWith('explain')
-	) {
-		throw new Error('Only read-only SQL statements are allowed for external connections.');
-	}
-	if (WRITE_KEYWORD_RE.test(normalized)) {
-		throw new Error('Only read-only SQL statements are allowed for external connections.');
-	}
-}
-
 function stripTrailingSemicolon(sql: string): string {
 	return sql.trim().replace(/;\s*$/, '');
 }
@@ -628,7 +604,12 @@ async function materializeTrinoConnection(
 		if (existingType === 'table') {
 			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		}
-		await trinoExec(`CREATE OR REPLACE VIEW ${ident} AS ${sourceSQL}`, catalogName, schema, trinoOpts);
+		await trinoExec(
+			`CREATE OR REPLACE VIEW ${ident} AS ${sourceSQL}`,
+			catalogName,
+			schema,
+			trinoOpts
+		);
 		return { name: targetName, type: 'view' };
 	}
 
@@ -652,7 +633,12 @@ async function materializeTrinoConnection(
 		await trinoExec(`CREATE TABLE ${ident} AS ${sourceSQL}`, catalogName, schema, trinoOpts);
 		return { name: targetName, type: 'table' };
 	}
-	await trinoExec(`INSERT INTO ${ident} SELECT * FROM (${sourceSQL})`, catalogName, schema, trinoOpts);
+	await trinoExec(
+		`INSERT INTO ${ident} SELECT * FROM (${sourceSQL})`,
+		catalogName,
+		schema,
+		trinoOpts
+	);
 	return { name: targetName, type: 'table' };
 }
 

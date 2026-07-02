@@ -31,10 +31,7 @@ export function buildLeafCollisions(tables: Map<string, ColumnEntry[]>): Map<str
 }
 
 /** Pick insert text for a table: shortest unambiguous, or fully qualified on collision. */
-export function qualifyTableName(
-	fullName: string,
-	leafCollisions: Map<string, string[]>
-): string {
+export function qualifyTableName(fullName: string, leafCollisions: Map<string, string[]>): string {
 	const leaf = fullName.split('.').pop()?.toLowerCase() ?? fullName.toLowerCase();
 	const collisions = leafCollisions.get(leaf);
 	if (!collisions || collisions.length <= 1) {

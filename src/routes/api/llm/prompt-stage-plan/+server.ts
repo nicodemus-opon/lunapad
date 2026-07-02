@@ -7,6 +7,7 @@ import {
 import type { LLMPlanningContext } from '$lib/services/intelligence-db';
 import type { PromptLLMConfig } from '$lib/services/prompt-llm';
 import { rankColumnsByRelevance } from '$lib/server/ai-schema-context.js';
+import { normalizeSafeLlmBaseUrl } from '$lib/server/safe-outbound-url';
 
 interface PromptStagePlanRequest {
 	query: string;
@@ -39,9 +40,7 @@ function normalizeTimeoutMs(value: unknown): number {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-	const trimmed = baseUrl.trim().replace(/\/+$/, '');
-	if (/\/v\d+$/i.test(trimmed)) return trimmed;
-	return `${trimmed}/v1`;
+	return normalizeSafeLlmBaseUrl(baseUrl);
 }
 
 function extractFirstJSONObject(value: string): string | null {

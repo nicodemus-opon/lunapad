@@ -25,10 +25,8 @@
 		</p>
 		{#if overview.rowCount > 0 && overview.columnCount > 0}
 			<p class="text-[10px] text-muted-foreground tabular-nums">
-				{fmtPct(
-					(overview.totalMissingCells / (overview.rowCount * overview.columnCount)) * 100,
-					1
-				)} of grid
+				{fmtPct((overview.totalMissingCells / (overview.rowCount * overview.columnCount)) * 100, 1)} of
+				grid
 			</p>
 		{/if}
 	</div>

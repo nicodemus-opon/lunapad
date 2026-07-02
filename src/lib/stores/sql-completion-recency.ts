@@ -17,7 +17,9 @@ function loadMap(): RecencyMap {
 
 function saveMap(map: RecencyMap): void {
 	if (typeof localStorage === 'undefined') return;
-	const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, MAX_ENTRIES);
+	const entries = Object.entries(map)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, MAX_ENTRIES);
 	try {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
 	} catch {
@@ -43,10 +45,7 @@ export function getRecencyScore(connectionId: string | undefined, label: string)
 }
 
 /** Record that the user accepted a completion item. */
-export function recordCompletionAcceptance(
-	connectionId: string | undefined,
-	label: string
-): void {
+export function recordCompletionAcceptance(connectionId: string | undefined, label: string): void {
 	const map = loadMap();
 	map[recencyKey(connectionId, label)] = Date.now();
 	saveMap(map);

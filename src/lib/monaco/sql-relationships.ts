@@ -2,12 +2,7 @@
 
 import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
 import type { SqlScope } from './sql-scope';
-import {
-	generateTableAlias,
-	qualifyTableName,
-	type ColumnEntry,
-	uniqueAlias
-} from './sql-qualify';
+import { generateTableAlias, qualifyTableName, type ColumnEntry, uniqueAlias } from './sql-qualify';
 
 export interface SchemaForeignKey {
 	column: string;
@@ -182,11 +177,13 @@ export function suggestJoinCompletions(
 		const fks = relationshipIndex.byTable.get(sourceKey) ?? [];
 
 		for (const fk of fks) {
-			const targetKey = resolveTableKey(relationshipIndex, fk.referencedTable) ?? fk.referencedTable;
+			const targetKey =
+				resolveTableKey(relationshipIndex, fk.referencedTable) ?? fk.referencedTable;
 			if (scope.sources.some((s) => s.name.toLowerCase() === targetKey.toLowerCase())) continue;
 
 			const insertName = qualifyTableName(targetKey, leafCollisions);
-			if (!matchFn(insertName, prefix) && !matchFn(targetKey.split('.').pop() ?? '', prefix)) continue;
+			if (!matchFn(insertName, prefix) && !matchFn(targetKey.split('.').pop() ?? '', prefix))
+				continue;
 
 			const alias = uniqueAlias(generateTableAlias(targetKey), used);
 			used.add(alias.toLowerCase());
@@ -250,7 +247,8 @@ export function suggestJoinOnPairs(
 	for (const fk of fks) {
 		if (
 			fk.referencedTable.toLowerCase() === right.name.toLowerCase() ||
-			fk.referencedTable.split('.').pop()?.toLowerCase() === right.name.split('.').pop()?.toLowerCase()
+			fk.referencedTable.split('.').pop()?.toLowerCase() ===
+				right.name.split('.').pop()?.toLowerCase()
 		) {
 			pairs.push({
 				label: `${leftAlias}.${fk.column} = ${rightAlias}.${fk.referencedColumn}`,

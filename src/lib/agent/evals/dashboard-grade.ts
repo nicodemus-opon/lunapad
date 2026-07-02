@@ -65,6 +65,7 @@ export function stubCellsForRefs(outputNames: Iterable<string>): Cell[] {
 		editMode: 'prql' as const,
 		resultViewMode: 'table' as const,
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full' as const,
 		stageResultsCollapsed: [],
 		materializeMode: 'ephemeral' as const,

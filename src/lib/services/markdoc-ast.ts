@@ -74,6 +74,18 @@ function stableBlockId(source: string, seen: Map<string, number>): string {
 	return `b_${base}_${n}`;
 }
 
+/**
+ * Split leading YAML frontmatter (`---\n…\n---`) from the markdown body.
+ * Markdoc parks frontmatter on `ast.attributes` rather than in `ast.children`, so
+ * the block-based visual editor would otherwise drop it on the first re-serialize.
+ * The editor keeps `frontmatter` verbatim and re-prepends it when emitting.
+ */
+export function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+	const m = markdown.match(/^(---\r?\n[\s\S]*?\r?\n---)[ \t]*(?:\r?\n)*/);
+	if (!m) return { frontmatter: '', body: markdown };
+	return { frontmatter: m[1], body: markdown.slice(m[0].length) };
+}
+
 export function parseVisualBlocks(markdown: string): VisualBlock[] {
 	if (!markdown.trim()) return [];
 	const ast = Markdoc.parse(markdown);
@@ -109,7 +121,8 @@ export function parseBlockWidget(block: VisualBlock): ParsedWidgetBlock | null {
 	const tagNode = findFirstTag(ast);
 	if (!tagNode) return null;
 
-	const selfClosing = Boolean(tagNode.close?.type === 'self-closing') || isSelfClosingTag(tagNode.tag);
+	const selfClosing =
+		Boolean(tagNode.close?.type === 'self-closing') || isSelfClosingTag(tagNode.tag);
 	const attrs = { ...tagNode.attributes } as Record<string, unknown>;
 	const condition = tagNode.tag === 'if' ? extractIfCondition(block.source) : undefined;
 
@@ -130,9 +143,7 @@ function extractIfCondition(source: string): string | undefined {
 	return match?.[1]?.trim();
 }
 
-function findFirstTag(
-	ast: unknown
-): {
+function findFirstTag(ast: unknown): {
 	tag: string;
 	attributes: Record<string, unknown>;
 	lines?: number[];

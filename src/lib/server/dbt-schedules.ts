@@ -2,6 +2,7 @@ import { Cron } from 'croner';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DbtSchedule } from '$lib/types/schedule';
+import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
 // The currently open dbt project folder — set when a project is opened.
 let currentFolder: string | null = null;
@@ -11,13 +12,17 @@ export function getCurrentFolder(): string | null {
 }
 
 export function setCurrentFolder(folder: string | null): void {
+	if (folder) assertAllowedProjectFolder(folder);
 	currentFolder = folder;
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 function schedulesFilePath(folder: string): string {
-	return path.join(folder, 'schedules.json');
+	assertAllowedProjectFolder(folder);
+	const filePath = path.join(folder, 'schedules.json');
+	assertSafe(folder, filePath);
+	return filePath;
 }
 
 export function loadSchedules(folder: string): DbtSchedule[] {

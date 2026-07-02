@@ -8,16 +8,8 @@ import {
 	getModelCompletions,
 	parseRegistry
 } from './completions';
-import {
-	formatTableHover,
-	lookupTable,
-	sqlIdentBeforeCursor
-} from './sql-schema-context';
-import {
-	findColumnInScope,
-	getCachedSqlScope,
-	resolveTableRef
-} from './sql-scope';
+import { formatTableHover, lookupTable, sqlIdentBeforeCursor } from './sql-schema-context';
+import { findColumnInScope, getCachedSqlScope, resolveTableRef } from './sql-scope';
 import { hoverPython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
 

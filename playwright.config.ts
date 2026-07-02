@@ -9,6 +9,7 @@ import { defineConfig, devices } from '@playwright/test';
 // Note: the dev server binds IPv6 only, so reach it via `localhost` (resolves to ::1),
 // not `127.0.0.1` (IPv4 — won't connect).
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === '1';
 
 export default defineConfig({
 	testDir: './e2e',
@@ -45,7 +46,7 @@ export default defineConfig({
 				webServer: {
 					command: 'pnpm dev',
 					url: baseURL,
-					reuseExistingServer: true,
+					reuseExistingServer,
 					timeout: 60_000,
 					// e2e specs have no login flow — bypass auth gating for the test server only.
 					// hooks.server.ts refuses to start with this combined with NODE_ENV=production.

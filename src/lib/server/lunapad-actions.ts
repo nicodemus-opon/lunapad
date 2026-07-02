@@ -4,7 +4,7 @@ import type { Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
 import { listConnectionsMetadata, getConnectionMetadata } from './connections-store.js';
 import { getSecret } from './connection-secrets.js';
 import { queryExternalConnection } from './connections.js';
-import { walkProjectDirectory } from './project.js';
+import { assertAllowedProjectFolder, walkProjectDirectory } from './project.js';
 import { getCurrentFolder } from './dbt-schedules.js';
 import { spawnDbt, getJob } from './dbt-runner.js';
 import { precompileProjectModels, collectProjectModelNames } from './prql-compiler.js';
@@ -96,6 +96,7 @@ function resolveFolder(folder: string | undefined): string {
 			'No project folder specified and none is currently open. Pass `folder` explicitly.'
 		);
 	}
+	assertAllowedProjectFolder(resolved);
 	return resolved;
 }
 

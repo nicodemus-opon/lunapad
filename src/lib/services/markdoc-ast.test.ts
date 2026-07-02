@@ -2,11 +2,31 @@ import { describe, expect, it } from 'vitest';
 import {
 	parseVisualBlocks,
 	serializeVisualBlocks,
+	splitFrontmatter,
 	parseBlockWidget,
 	updateBlockWidgetSource,
 	visualBlocksRoundTripLossy,
 	serializeMarkdocTag
 } from './markdoc-ast';
+
+describe('splitFrontmatter', () => {
+	it('extracts leading YAML frontmatter and body', () => {
+		const md = '---\ntitle: Report\ntags: [a, b]\n---\n\n## Body\n\ntext';
+		const { frontmatter, body } = splitFrontmatter(md);
+		expect(frontmatter).toBe('---\ntitle: Report\ntags: [a, b]\n---');
+		expect(body).toBe('## Body\n\ntext');
+	});
+
+	it('returns empty frontmatter when absent', () => {
+		const md = '## Body\n\ntext';
+		expect(splitFrontmatter(md)).toEqual({ frontmatter: '', body: md });
+	});
+
+	it('does not treat a mid-document --- (thematic break) as frontmatter', () => {
+		const md = '## Body\n\n---\n\nmore';
+		expect(splitFrontmatter(md).frontmatter).toBe('');
+	});
+});
 
 const SAMPLE = `## Revenue dashboard
 

@@ -37,6 +37,7 @@ import type {
 	CellScheduleScope
 } from '$lib/stores/notebook.svelte';
 import type { ChartConfig, GUIPipelineStage, ResultViewMode } from '$lib/types/gui-pipeline';
+import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
 
 const QUERY_OPEN_RE = /^\{%\s*query\s+([^%]*?)\s*%\}\s*$/;
 const QUERY_CLOSE_RE = /^\{%\s*\/query\s*%\}\s*$/;
@@ -66,6 +67,7 @@ export interface LunaQueryMeta {
 	editMode?: CellEditMode;
 	resultViewMode?: ResultViewMode;
 	chartConfig?: ChartConfig | null;
+	columnFormatRules?: ColumnConditionalRules;
 	guiStages?: GUIPipelineStage[];
 	display?: CellDisplay;
 	hideResult?: boolean;
@@ -296,6 +298,7 @@ export interface SerializableCell {
 	editMode: CellEditMode;
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
+	columnFormatRules: ColumnConditionalRules;
 	guiStages: GUIPipelineStage[];
 	display: CellDisplay;
 	hideResult: boolean;
@@ -313,6 +316,10 @@ function buildMeta(cell: SerializableCell): LunaQueryMeta {
 		editMode: cell.editMode,
 		resultViewMode: cell.resultViewMode,
 		chartConfig: cell.resultChartConfig,
+		columnFormatRules:
+			cell.columnFormatRules && Object.keys(cell.columnFormatRules).length > 0
+				? cell.columnFormatRules
+				: undefined,
 		guiStages: cell.guiStages,
 		display: cell.display,
 		hideResult: cell.hideResult,
@@ -329,6 +336,7 @@ function hasNonDefaultMeta(meta: LunaQueryMeta, lang: CellLanguage): boolean {
 		meta.editMode !== (lang === 'sql' ? 'prql' : 'gui') ||
 		meta.resultViewMode !== 'table' ||
 		!!meta.chartConfig ||
+		(!!meta.columnFormatRules && Object.keys(meta.columnFormatRules).length > 0) ||
 		(meta.guiStages?.length ?? 0) > 1 ||
 		meta.display !== 'full' ||
 		!!meta.hideResult ||

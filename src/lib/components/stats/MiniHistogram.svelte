@@ -14,18 +14,11 @@
 </script>
 
 <div class="space-y-0.5">
-	<svg {width} {height} viewBox="0 0 {width} {height}" class="{STATS_HISTOGRAM}">
+	<svg {width} {height} viewBox="0 0 {width} {height}" class={STATS_HISTOGRAM}>
 		{#each buckets as v, i (i)}
 			{@const bw = width / buckets.length}
 			{@const bh = (v / maxBucket) * height}
-			<rect
-				x={i * bw}
-				y={height - bh}
-				width={bw - 0.5}
-				height={bh}
-				fill="currentColor"
-				rx="0.5"
-			/>
+			<rect x={i * bw} y={height - bh} width={bw - 0.5} height={bh} fill="currentColor" rx="0.5" />
 		{/each}
 	</svg>
 	{#if min != null && max != null}

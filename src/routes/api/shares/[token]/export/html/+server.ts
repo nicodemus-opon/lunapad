@@ -29,12 +29,19 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		} as unknown as Cell;
 	});
 
-	const frozenById = new Map(view.cells.filter((c) => c.cellType === 'query' && c.frozenResult).map((c) => [c.id, c.frozenResult]));
+	const frozenById = new Map(
+		view.cells
+			.filter((c) => c.cellType === 'query' && c.frozenResult)
+			.map((c) => [c.id, c.frozenResult])
+	);
 
 	const cellsHtml = view.cells
 		.map((cell) => {
 			if (cell.cellType === 'markdown' && cell.markdown) {
-				const mdHtml = renderMarkdocCellToStaticHtml(cell.markdown, markdocCells as unknown as Cell[]);
+				const mdHtml = renderMarkdocCellToStaticHtml(
+					cell.markdown,
+					markdocCells as unknown as Cell[]
+				);
 				return `<div class="cell"><div class="report-markdown">${mdHtml}</div></div>`;
 			}
 

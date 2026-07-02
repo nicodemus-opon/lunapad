@@ -6,6 +6,7 @@
 		paletteSeedForValue,
 		type ColumnFormat
 	} from '$lib/services/column-format';
+	import { sanitizeUrl } from '$lib/services/safe-url';
 
 	interface Props {
 		value: unknown;
@@ -58,6 +59,8 @@
 		return format.kind === 'datetime' ? datetimeFmt.format(d) : dateFmt.format(d);
 	});
 
+	const safeUrl = $derived(format.kind === 'url' ? sanitizeUrl(value) : '');
+
 	const formattedNumber = $derived.by(() => {
 		const n = coerceNumber(value);
 		if (n === null) return null;
@@ -88,9 +91,9 @@
 	>
 		{plainText}
 	</a>
-{:else if format.kind === 'url'}
+{:else if format.kind === 'url' && safeUrl}
 	<a
-		href={String(value)}
+		href={safeUrl}
 		target="_blank"
 		rel="noopener noreferrer"
 		class="inline-flex items-center gap-0.5 truncate text-xs text-primary hover:underline"
@@ -99,6 +102,8 @@
 		{plainText}
 		<ExternalLink class="h-2.5 w-2.5 shrink-0 opacity-60" />
 	</a>
+{:else if format.kind === 'url'}
+	<span class="font-mono text-xs">{plainText}</span>
 {:else if (format.kind === 'date' || format.kind === 'datetime') && formattedDate}
 	<span class="font-mono text-xs tabular-nums">{formattedDate}</span>
 {:else if (format.kind === 'number' || format.kind === 'currency' || format.kind === 'percentage') && formattedNumber}

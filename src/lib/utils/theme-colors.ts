@@ -31,6 +31,29 @@ export function oklchToRgb(l: number, c: number, h: number): string {
 	return `rgb(${Math.round(gamma(lr) * 255)},${Math.round(gamma(lg) * 255)},${Math.round(gamma(lb) * 255)})`;
 }
 
+// The published report page (/r/[token]) renders its charts during SSR, where
+// `getComputedStyle`/`document` don't exist — reading a live CSS var there throws
+// `ReferenceError: getComputedStyle is not defined` and 500s the whole page. Fall
+// back to the `:root` (light-theme) design tokens from layout.css so SSR produces
+// valid output; the client re-resolves the live theme (incl. dark mode) on hydration.
+const isBrowser = typeof document !== 'undefined' && typeof getComputedStyle !== 'undefined';
+
+const SSR_TOKEN_FALLBACKS: Record<string, string> = {
+	'--chart-1': 'oklch(0.809 0.105 251.813)',
+	'--chart-2': 'oklch(0.811 0.111 293.571)',
+	'--chart-3': 'oklch(0.8816 0.0276 93.128)',
+	'--chart-4': 'oklch(0.704 0.04 256.788)',
+	'--chart-5': 'oklch(0.588 0.158 241.966)',
+	'--radius': '0.395rem'
+};
+
+/** Reads a CSS custom property off `:root`, or an SSR-safe fallback when the DOM
+ *  isn't available (server render of the shared report page). */
+function readCSSVar(varName: string): string {
+	if (!isBrowser) return SSR_TOKEN_FALLBACKS[varName] ?? '';
+	return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
 /** Resolves a CSS custom property (e.g. `--chart-1`) on `:root` to a concrete
  *  color string — converts an `oklch(...)` value via oklchToRgb, passes
  *  anything else through unchanged.
@@ -40,7 +63,7 @@ export function oklchToRgb(l: number, c: number, h: number): string {
  *  what the production CSS minifier rewrites it to) — both are valid oklch()
  *  syntax, so the regex has to accept the optional `%` and rescale. */
 export function resolveCSSColor(varName: string): string {
-	const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+	const raw = readCSSVar(varName);
 	const m = raw.match(/^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+([\d.]+)/);
 	if (m) {
 		const l = parseFloat(m[1]) / (m[2] ? 100 : 1);
@@ -51,13 +74,14 @@ export function resolveCSSColor(varName: string): string {
 
 /** Resolves a CSS length custom property (e.g. `--radius`) to pixels. */
 export function resolveCSSLengthPx(varName: string): number {
-	const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+	const raw = readCSSVar(varName);
 	if (!raw) return 6;
 	if (raw.endsWith('px')) return parseFloat(raw);
 	if (raw.endsWith('rem')) {
-		const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
+		const rootPx = isBrowser ? parseFloat(getComputedStyle(document.documentElement).fontSize) : 16;
 		return parseFloat(raw) * rootPx;
 	}
+	if (!isBrowser) return 6;
 	const probe = document.createElement('div');
 	probe.style.cssText = `position:absolute;visibility:hidden;width:${raw}`;
 	document.body.appendChild(probe);
@@ -68,7 +92,7 @@ export function resolveCSSLengthPx(varName: string): number {
 
 /** Reads a CSS font-family stack from a custom property. */
 export function resolveCSSFontFamily(varName: string): string {
-	return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+	return readCSSVar(varName);
 }
 
 export const CHART_COLORWAY_VARS = [

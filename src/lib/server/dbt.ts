@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readSchemaFile, findSchemaFile, upsertModelEntry, writeSchemaFile } from './dbt-schema.js';
+import { assertAllowedProjectFolder } from './project.js';
 
 export interface DbtModel {
 	name: string;
@@ -35,6 +36,7 @@ interface RunResults {
 // ── Manifest parsing ─────────────────────────────────────────────────────────
 
 export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
+	assertAllowedProjectFolder(projectRoot);
 	const manifestPath = path.join(projectRoot, 'target', 'manifest.json');
 	const runResultsPath = path.join(projectRoot, 'target', 'run_results.json');
 
@@ -167,6 +169,7 @@ async function parseModelFiles(projectRoot: string): Promise<DbtModel[]> {
  * descriptions. Safe to call after every successful `dbt compile`.
  */
 export async function backfillColumnsFromManifest(projectRoot: string): Promise<void> {
+	assertAllowedProjectFolder(projectRoot);
 	const manifestPath = path.join(projectRoot, 'target', 'manifest.json');
 	let manifest: Manifest = {};
 	try {

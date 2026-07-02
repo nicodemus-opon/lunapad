@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import type { Connection } from '$lib/types/connection';
 import { uploadToExternalConnection } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
+import { getConnectionMetadata } from '$lib/server/connections-store';
 
 interface UploadConnectionRequest {
 	connection: Connection;
@@ -31,9 +32,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	const mode = body.mode === 'append' ? 'append' : 'replace';
 
 	try {
-		const secret = await getSecret(body.connection.id);
+		const connection = await getConnectionMetadata(body.connection.id);
+		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
+		const secret = await getSecret(connection.id);
 		const result = await uploadToExternalConnection(
-			body.connection,
+			connection,
 			secret ?? undefined,
 			body.tableName,
 			body.schema,

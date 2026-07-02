@@ -6,6 +6,7 @@ import { textFromMarkdocChildren } from '$lib/services/notebook-outline';
 import type { ColumnFormatKind } from '$lib/services/column-format';
 import type { TableAggKind } from '$lib/services/report-table-summary';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
+import { sanitizeUrl } from '$lib/services/safe-url';
 import { pivotTable } from '$lib/services/report-table-pivot';
 import { summarizeTable } from '$lib/services/report-table-summary';
 import type {
@@ -24,14 +25,22 @@ function escapeHtml(s: string): string {
 		.replace(/'/g, '&#39;');
 }
 
-function parseSimpleMarkdocTable(input: Tag): { columns: string[]; rows: Record<string, unknown>[] } | null {
+function parseSimpleMarkdocTable(
+	input: Tag
+): { columns: string[]; rows: Record<string, unknown>[] } | null {
 	const children = (input.children ?? []) as unknown[];
 
-	const thead = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'thead') as Tag | undefined;
-	const tbody = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tbody') as Tag | undefined;
+	const thead = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'thead') as
+		| Tag
+		| undefined;
+	const tbody = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tbody') as
+		| Tag
+		| undefined;
 	if (!thead || !tbody) return null;
 
-	const headerTr = (thead.children ?? []).find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tr') as Tag | undefined;
+	const headerTr = (thead.children ?? []).find(
+		(c) => TagImpl.isTag(c) && (c as Tag).name === 'tr'
+	) as Tag | undefined;
 	const headerCells = (headerTr?.children ?? []).filter(
 		(c) => TagImpl.isTag(c) && ((c as Tag).name === 'th' || (c as Tag).name === 'td')
 	) as Tag[];
@@ -76,8 +85,12 @@ function datatableTagToStaticTable(tag: Tag): string {
 	const valueCol = typeof attrs.valueCol === 'string' ? attrs.valueCol : undefined;
 	const agg = (typeof attrs.agg === 'string' ? (attrs.agg as TableAggKind) : 'sum') as TableAggKind;
 	const round = typeof attrs.round === 'number' ? attrs.round : undefined;
-	const valueCurrencySymbol = typeof attrs.valueCurrencySymbol === 'string' ? attrs.valueCurrencySymbol : undefined;
-	const valueFormatKind = typeof attrs.valueFormatKind === 'string' ? (attrs.valueFormatKind as ColumnFormatKind) : undefined;
+	const valueCurrencySymbol =
+		typeof attrs.valueCurrencySymbol === 'string' ? attrs.valueCurrencySymbol : undefined;
+	const valueFormatKind =
+		typeof attrs.valueFormatKind === 'string'
+			? (attrs.valueFormatKind as ColumnFormatKind)
+			: undefined;
 	const index = Array.isArray(attrs.index) ? (attrs.index as string[]) : undefined;
 	const conditionalFormats = Array.isArray(attrs.conditionalFormats)
 		? (attrs.conditionalFormats as Array<{ column: string; rules: ReportTableConditionalRule[] }>)
@@ -89,12 +102,7 @@ function datatableTagToStaticTable(tag: Tag): string {
 		conditionalRuleMap[item.column] = item.rules;
 	}
 
-	const columns =
-		cols.length > 0
-			? cols
-			: data[0]
-				? Object.keys(data[0])
-				: [];
+	const columns = cols.length > 0 ? cols : data[0] ? Object.keys(data[0]) : [];
 
 	const src = data.slice(0, limit);
 
@@ -103,7 +111,7 @@ function datatableTagToStaticTable(tag: Tag): string {
 			? index
 			: pivotBy && valueCol
 				? columns.filter((c) => c !== pivotBy && c !== valueCol)
-				: index ?? [];
+				: (index ?? []);
 
 	if (pivotBy && valueCol && resolvedIndex.length) {
 		const pivot = pivotTable(src, {
@@ -180,10 +188,14 @@ const VOID_TAGS = new Set(['hr', 'br', 'img']);
 function renderTagAttributes(name: string, attributes: Record<string, unknown>): string {
 	const parts: string[] = [];
 	if (name === 'a' && typeof attributes.href === 'string') {
-		parts.push(`href="${escapeHtml(attributes.href)}"`);
+		const safeHref = sanitizeUrl(attributes.href);
+		if (safeHref) parts.push(`href="${escapeHtml(safeHref)}"`);
 	}
 	if (name === 'img') {
-		if (typeof attributes.src === 'string') parts.push(`src="${escapeHtml(attributes.src)}"`);
+		if (typeof attributes.src === 'string') {
+			const safeSrc = sanitizeUrl(attributes.src);
+			if (safeSrc) parts.push(`src="${escapeHtml(safeSrc)}"`);
+		}
 		if (typeof attributes.alt === 'string') parts.push(`alt="${escapeHtml(attributes.alt)}"`);
 	}
 	return parts.length ? ` ${parts.join(' ')}` : '';
@@ -237,4 +249,3 @@ export function renderMarkdocCellToStaticHtml(markdown: string, cells: Cell[]): 
 	const { tree } = renderMarkdocCell(markdown, cells);
 	return tree.map((n) => renderRenderableToStaticHtml(n)).join('\n');
 }
-

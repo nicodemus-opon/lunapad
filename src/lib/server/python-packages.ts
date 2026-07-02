@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertSafe } from './project.js';
+import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
 /**
  * Project-level pinned Python packages, beyond the curated set
@@ -16,7 +16,10 @@ export interface PinnedPackage {
 }
 
 function pinnedPath(folder: string): string {
-	return path.join(folder, '.lunapad', 'python-packages.json');
+	assertAllowedProjectFolder(folder);
+	const filePath = path.join(folder, '.lunapad', 'python-packages.json');
+	assertSafe(folder, filePath);
+	return filePath;
 }
 
 export async function readPinnedPackages(folder: string): Promise<PinnedPackage[]> {

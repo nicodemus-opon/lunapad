@@ -2,6 +2,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { assertAllowedProjectFolder } from './project.js';
 import os from 'node:os';
 
 export interface DbtJob {
@@ -165,6 +166,7 @@ export function resolveDbtBinary(projectFolder: string): string {
  * Completion is emitted as `'done'` with exit code.
  */
 export function spawnDbt(args: string[], cwd: string): string {
+	assertAllowedProjectFolder(cwd);
 	const id = makeId();
 	const emitter = new EventEmitter();
 	emitter.setMaxListeners(50);

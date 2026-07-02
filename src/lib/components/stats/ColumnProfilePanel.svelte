@@ -1,5 +1,8 @@
 <script lang="ts">
-	import type { ColumnProfile, DatasetOverview as DatasetOverviewData } from '$lib/services/column-profile';
+	import type {
+		ColumnProfile,
+		DatasetOverview as DatasetOverviewData
+	} from '$lib/services/column-profile';
 	import {
 		collectQualityHints,
 		compactProfileColumns,
@@ -45,9 +48,7 @@
 	const compactProfiles = $derived(compactProfileColumns(profiles, 2));
 </script>
 
-<div
-	class="flex flex-col gap-3 {fillHeight ? 'h-full min-h-0' : ''}"
->
+<div class="flex flex-col gap-3 {fillHeight ? 'h-full min-h-0' : ''}">
 	{#if overview.name}
 		<div class="flex items-baseline gap-2">
 			<h3 class="font-mono text-sm font-semibold">{overview.name}</h3>

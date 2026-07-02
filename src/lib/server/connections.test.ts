@@ -627,7 +627,11 @@ describe('queryExternalConnection', () => {
 	it('sets map_string_as_varchar session for ClickHouse queries', async () => {
 		fetchMock.mockResolvedValueOnce(trinoPage([{ name: 'role_category' }], [['Legal']]));
 
-		await queryExternalConnection(clickHouseConnection, undefined, 'SELECT role_category FROM jobs');
+		await queryExternalConnection(
+			clickHouseConnection,
+			undefined,
+			'SELECT role_category FROM jobs'
+		);
 
 		const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
 		expect(headers?.['X-Trino-Session']).toBe('primary_clickhouse.map_string_as_varchar=true');

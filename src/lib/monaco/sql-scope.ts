@@ -82,11 +82,7 @@ function columnsFromSelect(ast: SelectAst | undefined): SchemaColumn[] | undefin
 	return cols.length > 0 ? cols : undefined;
 }
 
-function addSource(
-	scope: SqlScope,
-	source: ScopedSource,
-	registryKey?: string
-): void {
+function addSource(scope: SqlScope, source: ScopedSource, registryKey?: string): void {
 	scope.sources.push(source);
 	const key = registryKey ?? source.name;
 	if (source.alias) scope.aliasToName.set(source.alias.toLowerCase(), key);
@@ -181,9 +177,7 @@ function mergeScopes(primary: SqlScope, fallback: SqlScope): SqlScope {
 		const exists = merged.sources.some(
 			(s) =>
 				s.name.toLowerCase() === source.name.toLowerCase() ||
-				(s.alias &&
-					source.alias &&
-					s.alias.toLowerCase() === source.alias.toLowerCase())
+				(s.alias && source.alias && s.alias.toLowerCase() === source.alias.toLowerCase())
 		);
 		if (!exists) merged.sources.push(source);
 		if (source.alias) merged.aliasToName.set(source.alias.toLowerCase(), source.name);
@@ -316,7 +310,10 @@ export function findColumnInScope(
 
 // ── Per-model cache (debounced invalidation via version counter) ─────────────
 
-const scopeCache = new Map<string, { sql: string; dialect: SqlParserDialect; scope: SqlScope | null }>();
+const scopeCache = new Map<
+	string,
+	{ sql: string; dialect: SqlParserDialect; scope: SqlScope | null }
+>();
 
 export function getCachedSqlScope(
 	modelUri: string,
@@ -345,10 +342,7 @@ export {
 	lineBeforeWord,
 	type SqlClauseContext
 } from './sql-clause-context';
-import {
-	detectSqlClauseContext as detectFull,
-	isColumnClause
-} from './sql-clause-context';
+import { detectSqlClauseContext as detectFull, isColumnClause } from './sql-clause-context';
 
 /** Legacy single-line clause detection for backward compatibility. */
 export type SqlClauseContextLegacy = 'from' | 'join' | 'column' | 'general';

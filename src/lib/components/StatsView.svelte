@@ -1,9 +1,6 @@
 <script lang="ts">
 	import ColumnProfilePanel from './stats/ColumnProfilePanel.svelte';
-	import {
-		computeProfilesFromRows,
-		computeDatasetOverview
-	} from '$lib/services/column-profile';
+	import { computeProfilesFromRows, computeDatasetOverview } from '$lib/services/column-profile';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -24,9 +21,7 @@
 	}: Props = $props();
 
 	const profiles = $derived(computeProfilesFromRows(rows, columns));
-	const overview = $derived(
-		computeDatasetOverview(profiles, { name, rowCount: rows.length })
-	);
+	const overview = $derived(computeDatasetOverview(profiles, { name, rowCount: rows.length }));
 </script>
 
 <ColumnProfilePanel

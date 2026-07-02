@@ -58,9 +58,7 @@ describe('lookupTable', () => {
 	});
 
 	it('matches schema.table against catalog-prefixed registry keys', () => {
-		const tables = new Map([
-			['hive.mm_raw.mpesa_raw', [{ name: 'id', detail: 'BIGINT' }]]
-		]);
+		const tables = new Map([['hive.mm_raw.mpesa_raw', [{ name: 'id', detail: 'BIGINT' }]]]);
 		expect(lookupTable(tables, 'mm_raw.mpesa_raw')?.[0]?.name).toBe('id');
 	});
 });

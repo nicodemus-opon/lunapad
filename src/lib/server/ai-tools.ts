@@ -4,6 +4,8 @@
 // these exact definitions (concatenated with its own mutating tools) so both surfaces stay in
 // sync; the actual client-side execution lives in `$lib/services/ai-investigation-tools.ts`.
 
+import { assertSafeOutboundHttpUrl } from '$lib/server/safe-outbound-url';
+
 export const READONLY_INVESTIGATION_TOOLS = [
 	{
 		type: 'function',
@@ -152,23 +154,26 @@ export async function callLLMWithTools(input: {
 
 	const useStream = !!input.onDelta;
 
-	const response = await fetch(input.completionUrl, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
-		},
-		body: JSON.stringify({
-			model: input.model,
-			temperature: 0.2,
-			top_p: 0.9,
-			stream: useStream,
-			...(isQwen3 ? { options: { think: false } } : {}),
-			...(input.tools ? { tools: input.tools, tool_choice: 'auto' } : {}),
-			messages
-		}),
-		signal: input.signal
-	});
+	const response = await fetch(
+		assertSafeOutboundHttpUrl(input.completionUrl, { allowLocalhostInDev: true }),
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
+			},
+			body: JSON.stringify({
+				model: input.model,
+				temperature: 0.2,
+				top_p: 0.9,
+				stream: useStream,
+				...(isQwen3 ? { options: { think: false } } : {}),
+				...(input.tools ? { tools: input.tools, tool_choice: 'auto' } : {}),
+				messages
+			}),
+			signal: input.signal
+		}
+	);
 
 	if (!response.ok) {
 		const text = await response.text();
@@ -343,29 +348,32 @@ export async function callLLMText(input: {
 	const isOllama = input.provider === 'ollama';
 	const systemContent = isQwen3 ? `${input.systemPrompt}\n/no_think` : input.systemPrompt;
 
-	const response = await fetch(input.completionUrl, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
-		},
-		body: JSON.stringify({
-			model: input.model,
-			temperature: 0.2,
-			top_p: 0.9,
-			stream: false,
-			max_tokens: input.maxTokens ?? 160,
-			// Best-effort — not every reasoning-capable Ollama model honors this, but it's
-			// free to send and helps the ones that do (sanitizeCompletion also strips any
-			// literal <think> tags that slip through as defense-in-depth).
-			...(isOllama ? { think: false, options: { think: false } } : {}),
-			messages: [
-				{ role: 'system', content: systemContent },
-				{ role: 'user', content: input.userPrompt }
-			]
-		}),
-		signal: input.signal
-	});
+	const response = await fetch(
+		assertSafeOutboundHttpUrl(input.completionUrl, { allowLocalhostInDev: true }),
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
+			},
+			body: JSON.stringify({
+				model: input.model,
+				temperature: 0.2,
+				top_p: 0.9,
+				stream: false,
+				max_tokens: input.maxTokens ?? 160,
+				// Best-effort — not every reasoning-capable Ollama model honors this, but it's
+				// free to send and helps the ones that do (sanitizeCompletion also strips any
+				// literal <think> tags that slip through as defense-in-depth).
+				...(isOllama ? { think: false, options: { think: false } } : {}),
+				messages: [
+					{ role: 'system', content: systemContent },
+					{ role: 'user', content: input.userPrompt }
+				]
+			}),
+			signal: input.signal
+		}
+	);
 
 	if (!response.ok) {
 		const text = await response.text();

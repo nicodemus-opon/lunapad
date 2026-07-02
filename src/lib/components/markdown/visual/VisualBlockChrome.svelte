@@ -41,9 +41,11 @@
 		onselect?.();
 	}}
 >
-	<div class="block-chrome absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-hover/block:opacity-100 group-focus-within/block:opacity-100 {selected
-		? 'opacity-100'
-		: ''}">
+	<div
+		class="block-chrome absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-focus-within/block:opacity-100 group-hover/block:opacity-100 {selected
+			? 'opacity-100'
+			: ''}"
+	>
 		<button
 			type="button"
 			class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -52,9 +52,7 @@
 	const running = $derived(cell.status === 'running');
 	const connections = $derived(getConnections());
 	const connectionName = $derived(
-		cell.connectionId
-			? (connections.find((c) => c.id === cell.connectionId)?.name ?? null)
-			: null
+		cell.connectionId ? (connections.find((c) => c.id === cell.connectionId)?.name ?? null) : null
 	);
 
 	function run() {
@@ -69,9 +67,7 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-	<div
-		class="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 py-2"
-	>
+	<div class="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 py-2">
 		<span class="truncate font-mono text-sm font-medium text-foreground">
 			{cell.outputName || `cell ${index + 1}`}
 		</span>

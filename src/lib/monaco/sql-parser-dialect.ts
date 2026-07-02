@@ -10,7 +10,10 @@ export function connectionToParserDialect(
 }
 
 type ParserInstance = {
-	astify: (sql: string, opt?: { database?: string; parseOptions?: { includeLocations?: boolean } }) => unknown;
+	astify: (
+		sql: string,
+		opt?: { database?: string; parseOptions?: { includeLocations?: boolean } }
+	) => unknown;
 };
 
 let trinoParser: ParserInstance | null = null;

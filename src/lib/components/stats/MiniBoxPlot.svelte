@@ -41,24 +41,8 @@
 			stroke-width="1.5"
 			opacity="0.9"
 		/>
-		<line
-			x1="2"
-			y1="5"
-			x2="2"
-			y2="11"
-			stroke="currentColor"
-			stroke-width="1"
-			opacity="0.5"
-		/>
-		<line
-			x1="98"
-			y1="5"
-			x2="98"
-			y2="11"
-			stroke="currentColor"
-			stroke-width="1"
-			opacity="0.5"
-		/>
+		<line x1="2" y1="5" x2="2" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5" />
+		<line x1="98" y1="5" x2="98" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5" />
 	</svg>
 	<div class="flex justify-between font-mono text-[10px] text-muted-foreground tabular-nums">
 		<span>{fmtStatNum(min)}</span>

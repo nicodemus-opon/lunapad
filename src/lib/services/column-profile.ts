@@ -125,7 +125,10 @@ export function stddev(values: number[]): number | null {
 	return Math.sqrt(variance);
 }
 
-export function buildHistogramBuckets(values: number[], buckets = HISTOGRAM_BUCKETS): number[] | null {
+export function buildHistogramBuckets(
+	values: number[],
+	buckets = HISTOGRAM_BUCKETS
+): number[] | null {
 	if (values.length === 0) return null;
 	const min = values[0];
 	const max = values[values.length - 1];
@@ -225,7 +228,11 @@ function duckDbKindFromType(type: string): ColumnFormatKind {
 	return 'text';
 }
 
-function buildNumericProfile(values: number[], skew?: number | null, kurt?: number | null): ColumnProfileNumeric {
+function buildNumericProfile(
+	values: number[],
+	skew?: number | null,
+	kurt?: number | null
+): ColumnProfileNumeric {
 	const sorted = [...values].sort((a, b) => a - b);
 	return {
 		count: values.length,
@@ -279,8 +286,12 @@ export function computeColumnProfile(
 	};
 
 	if (kind === 'boolean') {
-		const trueCount = nonNullValues.filter((v) => v === true || String(v).toLowerCase() === 'true').length;
-		const falseCount = nonNullValues.filter((v) => v === false || String(v).toLowerCase() === 'false').length;
+		const trueCount = nonNullValues.filter(
+			(v) => v === true || String(v).toLowerCase() === 'true'
+		).length;
+		const falseCount = nonNullValues.filter(
+			(v) => v === false || String(v).toLowerCase() === 'false'
+		).length;
 		profile.boolean = { trueCount, falseCount };
 	} else if (NUMERIC_KINDS.has(kind)) {
 		const numericValues = nonNullValues
@@ -315,7 +326,10 @@ export function computeColumnProfile(
 		const numericValues = nonNullValues
 			.map((v) => coerceNumber(v))
 			.filter((v): v is number => v !== null);
-		if (numericValues.length > 0 && numericValues.length / Math.max(nonNullValues.length, 1) >= 0.7) {
+		if (
+			numericValues.length > 0 &&
+			numericValues.length / Math.max(nonNullValues.length, 1) >= 0.7
+		) {
 			profile.numeric = buildNumericProfile(numericValues);
 		}
 	}
@@ -401,9 +415,7 @@ export function mapDuckDbProfile(
 		if (min != null) values.push(min);
 		if (max != null && max !== min) values.push(max);
 		const sorted =
-			min != null && max != null
-				? [min, max].sort((a, b) => a - b)
-				: values.sort((a, b) => a - b);
+			min != null && max != null ? [min, max].sort((a, b) => a - b) : values.sort((a, b) => a - b);
 		profile.numeric = {
 			count: nonNull,
 			min,
@@ -482,20 +494,14 @@ export function collectQualityHints(
 
 	if (highNullCols > 0) {
 		hints.push(
-			highNullCols === 1
-				? '1 column has >20% nulls'
-				: `${highNullCols} columns have >20% nulls`
+			highNullCols === 1 ? '1 column has >20% nulls' : `${highNullCols} columns have >20% nulls`
 		);
 	}
 	if (constantCols > 0) {
-		hints.push(
-			constantCols === 1 ? '1 constant column' : `${constantCols} constant columns`
-		);
+		hints.push(constantCols === 1 ? '1 constant column' : `${constantCols} constant columns`);
 	}
 	if (idCols > 0) {
-		hints.push(
-			idCols === 1 ? '1 likely identifier column' : `${idCols} likely identifier columns`
-		);
+		hints.push(idCols === 1 ? '1 likely identifier column' : `${idCols} likely identifier columns`);
 	}
 	if (options.truncated) {
 		hints.push('Results capped at 1,000 rows');

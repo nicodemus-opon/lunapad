@@ -35,7 +35,10 @@ vi.mock('./connections-store.js', () => ({
 }));
 vi.mock('./connection-secrets.js', () => ({ getSecret: getSecretMock }));
 vi.mock('./connections.js', () => ({ queryExternalConnection: queryExternalConnectionMock }));
-vi.mock('./project.js', () => ({ walkProjectDirectory: walkProjectDirectoryMock }));
+vi.mock('./project.js', () => ({
+	assertAllowedProjectFolder: vi.fn(),
+	walkProjectDirectory: walkProjectDirectoryMock
+}));
 vi.mock('./dbt-schedules.js', () => ({ getCurrentFolder: getCurrentFolderMock }));
 vi.mock('./dbt-runner.js', () => ({ spawnDbt: spawnDbtMock, getJob: getJobMock }));
 vi.mock('./prql-compiler.js', () => ({

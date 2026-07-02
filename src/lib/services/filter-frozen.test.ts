@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	filterFrozenRows,
-	shouldHideCellInReportView,
-	shouldHideQueryCell
-} from './filter-frozen';
+import { filterFrozenRows, shouldHideCellInReportView, shouldHideQueryCell } from './filter-frozen';
 import type { PublicShareCell } from '$lib/server/shared-reports';
 
 describe('filter-frozen', () => {
@@ -67,10 +63,7 @@ describe('filter-frozen', () => {
 			)
 		).toBe(true);
 		expect(
-			shouldHideCellInReportView(
-				{ cellType: 'query', outputName: 'other', display: 'full' },
-				cells
-			)
+			shouldHideCellInReportView({ cellType: 'query', outputName: 'other', display: 'full' }, cells)
 		).toBe(false);
 	});
 });

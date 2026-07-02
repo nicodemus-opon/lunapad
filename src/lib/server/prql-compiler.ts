@@ -2,11 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { compile, CompileOptions } from 'prqlc/dist/node/prqlc_js';
 import { parseCellFile, injectRefs } from '$lib/services/prql-file';
+import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
 type SqlTarget = 'sql.duckdb' | 'sql.trino';
 
 /** Parse profiles.yml and extract the adapter type for the active target. */
 async function readProfileTarget(projectFolder: string): Promise<SqlTarget> {
+	assertAllowedProjectFolder(projectFolder);
 	try {
 		const content = await fs.readFile(path.join(projectFolder, 'profiles.yml'), 'utf-8');
 		const typeMatch = content.match(/^\s+type:\s*(\w+)/m);
@@ -51,6 +53,8 @@ export async function compileSingleModel(
 	projectFolder: string,
 	knownModels: string[]
 ): Promise<string | null> {
+	assertAllowedProjectFolder(projectFolder);
+	assertSafe(projectFolder, prqlPath);
 	const target = await readProfileTarget(projectFolder);
 	try {
 		const content = await fs.readFile(prqlPath, 'utf-8');
@@ -89,7 +93,9 @@ export async function compileSingleModel(
 		}
 
 		const configBlock = configParts.length > 0 ? `{{ config(${configParts.join(', ')}) }}\n\n` : '';
-		await fs.writeFile(prqlPath.replace(/\.prql$/, '.sql'), `${configBlock}${sql}\n`, 'utf-8');
+		const sqlPath = prqlPath.replace(/\.prql$/, '.sql');
+		assertSafe(projectFolder, sqlPath);
+		await fs.writeFile(sqlPath, `${configBlock}${sql}\n`, 'utf-8');
 		return null;
 	} catch (err) {
 		return `${path.basename(prqlPath)}: ${(err as Error).message}`;
@@ -113,6 +119,7 @@ export async function precompileProjectModels(
 	projectFolder: string,
 	knownModels: string[]
 ): Promise<{ compiled: number; errors: string[] }> {
+	assertAllowedProjectFolder(projectFolder);
 	const prqlFiles = [
 		...(await findPRQLFiles(path.join(projectFolder, 'models'))),
 		...(await findPRQLFiles(path.join(projectFolder, 'analyses')))
@@ -138,6 +145,7 @@ export async function precompileProjectModels(
 /** Collect all model names from .prql AND .sql files in a project.
  *  Including .sql ensures existing SQL models receive {{ ref() }} injection. */
 export async function collectProjectModelNames(projectFolder: string): Promise<string[]> {
+	assertAllowedProjectFolder(projectFolder);
 	const names = new Set<string>();
 
 	async function walk(dir: string): Promise<void> {

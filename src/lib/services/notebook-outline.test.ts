@@ -29,6 +29,7 @@ function makeCell(partial: Partial<Cell> & Pick<Cell, 'id' | 'cellType'>): Cell 
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',

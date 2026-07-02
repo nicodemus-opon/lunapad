@@ -19,6 +19,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import ResultTable from '$lib/components/ResultTable.svelte';
 	import { resolveHeadingAnchorId, textFromMarkdocChildren } from '$lib/services/notebook-outline';
+	import { sanitizeUrl } from '$lib/services/safe-url';
 
 	interface Props {
 		node: RenderableTreeNode;
@@ -45,13 +46,33 @@
 	});
 	const nodeProps = $derived({ notebookId, headingSlugPrefix, headingSlugTracker });
 
+	// Strip dangerous URL schemes (javascript:, data:, …) from link/image
+	// attributes before they reach the DOM. Escaping alone doesn't stop them.
+	const safeAttributes = $derived.by(() => {
+		const attrs = (tag?.attributes ?? {}) as Record<string, unknown>;
+		if (!tag || (tag.name !== 'a' && tag.name !== 'img')) return attrs;
+		const copy = { ...attrs };
+		for (const key of ['href', 'src']) {
+			if (typeof copy[key] === 'string') {
+				const safe = sanitizeUrl(copy[key]);
+				if (safe) copy[key] = safe;
+				else delete copy[key];
+			}
+		}
+		return copy;
+	});
+
 	function parseSimpleMarkdocTable(
 		input: Tag
 	): { columns: string[]; rows: Record<string, unknown>[] } | null {
 		const children = (input.children ?? []) as unknown[];
 
-		const thead = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'thead') as Tag | undefined;
-		const tbody = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tbody') as Tag | undefined;
+		const thead = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'thead') as
+			| Tag
+			| undefined;
+		const tbody = children.find((c) => TagImpl.isTag(c) && (c as Tag).name === 'tbody') as
+			| Tag
+			| undefined;
 		if (!thead || !tbody) return null;
 
 		const headerTr = (thead.children ?? []).find(
@@ -144,7 +165,13 @@
 {:else if tag?.name === 'table'}
 	{@const parsed = parseSimpleMarkdocTable(tag)}
 	{#if parsed}
-		<ResultTable rows={parsed.rows} columns={parsed.columns} name="table" pageSize={10} headerInsights="compact" />
+		<ResultTable
+			rows={parsed.rows}
+			columns={parsed.columns}
+			name="table"
+			pageSize={10}
+			headerInsights="compact"
+		/>
 	{:else}
 		<Table.Root containerClass="rounded-md border my-2" {...tag.attributes}>
 			{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
@@ -175,7 +202,7 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</svelte:element>
 {:else}
-	<svelte:element this={tag?.name} {...tag?.attributes}>
+	<svelte:element this={tag?.name} {...safeAttributes}>
 		{#each tag?.children ?? [] as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</svelte:element>
 {/if}

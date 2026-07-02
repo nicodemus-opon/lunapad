@@ -71,4 +71,3 @@ export function getReportTableColumn(
 ): ReportTableColumn | undefined {
 	return model.columns.find((c) => c.id === colId);
 }
-

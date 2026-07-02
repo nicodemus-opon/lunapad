@@ -91,12 +91,10 @@
 	let clearModelCompletions: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelDialect: ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void) | null =
 		null;
-	let setSqlModelLanguage:
-		| ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void)
-		| null = null;
-	let setModelSqlContext:
-		| ((m: Monaco.editor.ITextModel, context: SqlModelContext) => void)
-		| null = null;
+	let setSqlModelLanguage: ((m: Monaco.editor.ITextModel, dialect: ConnectionType) => void) | null =
+		null;
+	let setModelSqlContext: ((m: Monaco.editor.ITextModel, context: SqlModelContext) => void) | null =
+		null;
 	let clearModelDialect: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let setModelPythonContext:
 		| ((m: Monaco.editor.ITextModel, context: PythonCellContext) => void)

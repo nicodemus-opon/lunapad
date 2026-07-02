@@ -24,12 +24,7 @@ describe('column-profile', () => {
 	});
 
 	it('profiles numeric column with histogram', () => {
-		const rows = [
-			{ amount: 10 },
-			{ amount: 20 },
-			{ amount: 30 },
-			{ amount: null }
-		];
+		const rows = [{ amount: 10 }, { amount: 20 }, { amount: 30 }, { amount: null }];
 		const profile = computeColumnProfile(rows, 'amount');
 		expect(profile.nullCount).toBe(1);
 		expect(profile.nullPct).toBe(25);
@@ -40,11 +35,7 @@ describe('column-profile', () => {
 	});
 
 	it('profiles boolean column', () => {
-		const rows = [
-			{ active: true },
-			{ active: false },
-			{ active: true }
-		];
+		const rows = [{ active: true }, { active: false }, { active: true }];
 		const profile = computeColumnProfile(rows, 'active');
 		expect(profile.boolean?.trueCount).toBe(2);
 		expect(profile.boolean?.falseCount).toBe(1);
@@ -59,10 +50,7 @@ describe('column-profile', () => {
 	});
 
 	it('profiles temporal column', () => {
-		const rows = [
-			{ created_at: '2024-01-01' },
-			{ created_at: '2024-06-01' }
-		];
+		const rows = [{ created_at: '2024-01-01' }, { created_at: '2024-06-01' }];
 		const profile = computeColumnProfile(rows, 'created_at');
 		expect(profile.temporal?.min).toBe('2024-01-01');
 		expect(profile.temporal?.max).toBe('2024-06-01');
@@ -70,7 +58,10 @@ describe('column-profile', () => {
 	});
 
 	it('computes dataset overview', () => {
-		const rows = [{ a: 1, b: 'x' }, { a: 2, b: 'y' }];
+		const rows = [
+			{ a: 1, b: 'x' },
+			{ a: 2, b: 'y' }
+		];
 		const profiles = computeProfilesFromRows(rows, ['a', 'b']);
 		const overview = computeDatasetOverview(profiles, { name: 'test', rowCount: 2 });
 		expect(overview.rowCount).toBe(2);
@@ -120,7 +111,10 @@ describe('column-profile', () => {
 
 	it('picks default selected column from flags', () => {
 		const profiles = computeProfilesFromRows(
-			[{ a: 1, b: null }, { a: 2, b: null }],
+			[
+				{ a: 1, b: null },
+				{ a: 2, b: null }
+			],
 			['a', 'b']
 		);
 		expect(defaultSelectedColumn(profiles)).toBe('b');

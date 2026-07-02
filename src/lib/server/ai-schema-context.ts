@@ -11,6 +11,7 @@ import {
 	fitToTokenBudget,
 	DEFAULT_SCHEMA_TOKEN_BUDGET
 } from '$lib/services/token-budget.js';
+import { assertSafeOutboundHttpUrl, normalizeSafeLlmBaseUrl } from '$lib/server/safe-outbound-url';
 import { hasPostgres, hasOllama } from '$lib/server/ai-capabilities.js';
 import {
 	countSchemaEmbeddings,
@@ -49,9 +50,7 @@ export function normalizeTimeoutMs(value: unknown): number {
 }
 
 export function normalizeBaseUrl(baseUrl: string): string {
-	const trimmed = baseUrl.trim().replace(/\/+$/, '');
-	if (/\/v\d+$/i.test(trimmed)) return trimmed;
-	return `${trimmed}/v1`;
+	return normalizeSafeLlmBaseUrl(baseUrl);
 }
 
 /** Backtick-quote identifiers with non-identifier characters. Purely informational in the
@@ -69,7 +68,7 @@ export function sqlTypeMismatchCast(dataKind: string, sqlType: string | undefine
 		return 'varbinary — use from_utf8(col) for text comparisons; re-save source if column should be varchar';
 	}
 	if (sql.includes('JSON')) {
-		return 'json — use json_parse(col) and json_extract_scalar(col, \'$.key\')';
+		return "json — use json_parse(col) and json_extract_scalar(col, '$.key')";
 	}
 	if (sql.includes('IPADDRESS') || sql === 'INET') {
 		return 'ip address — CAST(col AS VARCHAR) for string comparison';
@@ -210,28 +209,31 @@ export async function callLLMJson(input: {
 	const isQwen3 = /qwen3/i.test(input.model ?? '');
 	const systemContent = isQwen3 ? input.systemPrompt + '\n/no_think' : input.systemPrompt;
 
-	const response = await fetch(input.completionUrl, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
-		},
-		body: JSON.stringify({
-			model: input.model,
-			temperature: 0.2,
-			top_p: 0.9,
-			frequency_penalty: 0.0,
-			presence_penalty: 0.0,
-			stream: false,
-			response_format: { type: 'json_object' },
-			...(isQwen3 ? { options: { think: false } } : {}),
-			messages: [
-				{ role: 'system', content: systemContent },
-				{ role: 'user', content: input.userPrompt }
-			]
-		}),
-		signal: input.signal
-	});
+	const response = await fetch(
+		assertSafeOutboundHttpUrl(input.completionUrl, { allowLocalhostInDev: true }),
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {})
+			},
+			body: JSON.stringify({
+				model: input.model,
+				temperature: 0.2,
+				top_p: 0.9,
+				frequency_penalty: 0.0,
+				presence_penalty: 0.0,
+				stream: false,
+				response_format: { type: 'json_object' },
+				...(isQwen3 ? { options: { think: false } } : {}),
+				messages: [
+					{ role: 'system', content: systemContent },
+					{ role: 'user', content: input.userPrompt }
+				]
+			}),
+			signal: input.signal
+		}
+	);
 
 	if (!response.ok) {
 		const text = await response.text();

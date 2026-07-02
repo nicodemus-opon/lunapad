@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
 // ── Page listing ──────────────────────────────────────────────────────────────
 
 /** Recursively list all .md files under pages/ relative to folder. */
 export async function listEvidencePages(folder: string): Promise<string[]> {
+	assertAllowedProjectFolder(folder);
 	const pagesDir = path.join(folder, 'pages');
 	const results: string[] = [];
 
@@ -43,6 +45,7 @@ export interface EvidenceConfig {
 
 /** Read Evidence port from package.json scripts or evidence.config.yaml (default 3000). */
 export async function getEvidenceConfig(folder: string): Promise<EvidenceConfig> {
+	assertAllowedProjectFolder(folder);
 	// Try reading package.json dev script for a port override (e.g. --port 3001)
 	try {
 		const pkgRaw = await fs.readFile(path.join(folder, 'package.json'), 'utf-8');
@@ -59,7 +62,10 @@ export async function getEvidenceConfig(folder: string): Promise<EvidenceConfig>
 // ── Page I/O ──────────────────────────────────────────────────────────────────
 
 export async function readEvidencePage(folder: string, pagePath: string): Promise<string> {
-	return fs.readFile(path.join(folder, pagePath), 'utf-8');
+	assertAllowedProjectFolder(folder);
+	const fullPath = path.join(folder, pagePath);
+	assertSafe(folder, fullPath);
+	return fs.readFile(fullPath, 'utf-8');
 }
 
 export async function writeEvidencePage(
@@ -67,7 +73,9 @@ export async function writeEvidencePage(
 	pagePath: string,
 	content: string
 ): Promise<void> {
+	assertAllowedProjectFolder(folder);
 	const fullPath = path.join(folder, pagePath);
+	assertSafe(folder, fullPath);
 	await fs.mkdir(path.dirname(fullPath), { recursive: true });
 	await fs.writeFile(fullPath, content, 'utf-8');
 }

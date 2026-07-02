@@ -1843,8 +1843,13 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 	let legacyLlmConfig: Partial<LLMConfig> | null = null;
 	const cached = localStorage.getItem(STORAGE_KEY);
 	if (cached) {
-		legacyLlmConfig = parseLegacyLlmConfig(JSON.parse(cached));
-		deserialize(cached);
+		try {
+			legacyLlmConfig = parseLegacyLlmConfig(JSON.parse(cached));
+			deserialize(cached);
+		} catch (e) {
+			// Corrupt cache must not abort hydration — fall through to the server load.
+			console.warn('[workspace] ignoring corrupt cached workspace copy', e);
+		}
 	}
 	try {
 		const res = await fetch('/api/workspace/load');
@@ -2215,7 +2220,12 @@ function scheduleLunaNotebookSave(notebookId: string): void {
 			if (!nb || !state.projectFolder) return;
 			const content = serializeLunaFile(nb.cells);
 			writeProjectFile(state.projectFolder, `${nb.id}.luna`, content, state.isDbtProject).catch(
-				() => {}
+				(e) => {
+					// A failed write must not leave the notebook falsely marked clean —
+					// re-flag it dirty so the unsaved state is accurate and a later edit retries.
+					console.error('[workspace] failed to save notebook to disk', e);
+					dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
+				}
 			);
 		}, 500)
 	);
@@ -2252,7 +2262,12 @@ export function scheduleFileSave(notebookId: string, cellId: string): void {
 			// so the file-watcher reload re-groups them under the correct notebook.
 			const notebookAnnotation = cell.outputName !== nb.name ? nb.id : undefined;
 			const content = serializeCellToFile(cell, knownModels, notebookAnnotation);
-			writeProjectFile(state.projectFolder, relPath, content, state.isDbtProject).catch(() => {});
+			writeProjectFile(state.projectFolder, relPath, content, state.isDbtProject).catch((e) => {
+				// A failed write must not leave the notebook falsely marked clean —
+				// re-flag it dirty so the unsaved state is accurate and a later edit retries.
+				console.error('[workspace] failed to save cell to disk', e);
+				dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
+			});
 		}, 500)
 	);
 }
@@ -4558,7 +4573,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			udfBody: snap.udfBody,
 			display: snap.display,
 			hideResult: snap.hideResult ?? false,
-		hideInReport: snap.hideInReport ?? false,
+			hideInReport: snap.hideInReport ?? false,
 			guiStages: snap.guiStages,
 			editMode: snap.editMode,
 			connectionId: snap.connectionId,

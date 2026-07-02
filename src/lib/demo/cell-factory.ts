@@ -32,6 +32,7 @@ export function makeDemoCell(
 		editMode: language === 'sql' ? 'prql' : 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',

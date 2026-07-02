@@ -40,6 +40,7 @@ import {
 	type ChatToolPolicyContext
 } from '$lib/agent/server/chat-tool-policy.js';
 import { buildUserContent } from '$lib/server/ai-user-content.js';
+import { normalizeSafeLlmBaseUrl } from '$lib/server/safe-outbound-url';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
 
@@ -65,21 +66,6 @@ function formatCellGraph(c: AIChatCell): string {
 	if (c.errorMessage) parts.push(`[ERROR: ${c.errorMessage}]`);
 	if (c.pythonError) parts.push(`[ERROR: ${c.pythonError}]`);
 	return parts.join(' ');
-}
-
-function normalizeBaseUrl(baseUrl: string): string {
-	const trimmed = baseUrl.trim().replace(/\/+$/, '');
-	// Only allow HTTPS endpoints or local development addresses (for Ollama etc.)
-	if (
-		!trimmed.startsWith('https://') &&
-		!trimmed.startsWith('http://localhost') &&
-		!trimmed.startsWith('http://127.0.0.1') &&
-		!trimmed.startsWith('http://[::1]')
-	) {
-		throw new Error(`Invalid LLM base URL: must start with https:// or http://localhost`);
-	}
-	if (/\/v\d+$/i.test(trimmed)) return trimmed;
-	return `${trimmed}/v1`;
 }
 
 /**
@@ -988,7 +974,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 	}
 	try {
-		normalizeBaseUrl(body.llmConfig.baseUrl);
+		normalizeSafeLlmBaseUrl(body.llmConfig.baseUrl);
 	} catch (err) {
 		return new Response(
 			JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid baseUrl' }),
@@ -1017,7 +1003,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	};
 	const connectionSchema = Array.isArray(rawConnectionSchema) ? rawConnectionSchema : [];
 	const workspaceMemory = req.workspaceMemory;
-	const completionUrl = `${normalizeBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
+	const completionUrl = `${normalizeSafeLlmBaseUrl(req.llmConfig.baseUrl)}/chat/completions`;
 
 	// Local Ollama models use a compact directive prompt with explicit <tool_call> XML tags.
 	// The full XML prompt is designed for smart cloud models (GPT-4, Claude) — it overwhelms

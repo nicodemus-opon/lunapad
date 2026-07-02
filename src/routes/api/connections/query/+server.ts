@@ -4,6 +4,7 @@ import type { Connection } from '$lib/types/connection';
 import { queryExternalConnection } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
 import { registerQuery, unregisterQuery } from '$lib/server/query-registry';
+import { getConnectionMetadata } from '$lib/server/connections-store';
 
 interface QueryConnectionRequest {
 	connection: Connection;
@@ -20,9 +21,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { runId } = body;
 	const controller = runId ? registerQuery(runId) : new AbortController();
 	try {
-		const secret = await getSecret(body.connection.id);
+		const connection = await getConnectionMetadata(body.connection.id);
+		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
+		const secret = await getSecret(connection.id);
 		const result = await queryExternalConnection(
-			body.connection,
+			connection,
 			secret ?? undefined,
 			body.sql,
 			controller.signal

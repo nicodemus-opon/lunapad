@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { buildUserContent } from './ai-user-content.js';
 import type { AIChatCell } from '$lib/types/ai-chat.js';
 
-function cell(partial: Partial<AIChatCell> & Pick<AIChatCell, 'id' | 'outputName' | 'code'>): AIChatCell {
+function cell(
+	partial: Partial<AIChatCell> & Pick<AIChatCell, 'id' | 'outputName' | 'code'>
+): AIChatCell {
 	return {
 		language: 'sql',
 		resultColumns: [],
@@ -30,9 +32,7 @@ describe('buildUserContent', () => {
 
 	it('still includes code when outputName is mentioned in the message', () => {
 		const cells = [cell({ id: 'c2', outputName: 'stg_orders', code: 'SELECT * FROM orders' })];
-		const out = buildUserContent(cells, [
-			{ role: 'user', content: 'fix stg_orders please' }
-		]);
+		const out = buildUserContent(cells, [{ role: 'user', content: 'fix stg_orders please' }]);
 		expect(out).toContain('stg_orders');
 		expect(out).toContain('SELECT * FROM orders');
 	});

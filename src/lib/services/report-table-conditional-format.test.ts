@@ -54,4 +54,3 @@ describe('defaultConditionalRulesForColumn', () => {
 		expect(rules.some((r) => r.type === 'threshold')).toBe(true);
 	});
 });
-
