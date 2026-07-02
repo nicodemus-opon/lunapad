@@ -81,16 +81,17 @@
 			: null
 	);
 
+	// Keep the per-message activity accordion collapsed by default — live progress is
+	// surfaced once in the pinned AIChatAgentStatus bar, so don't duplicate it here.
+	// Only auto-expand on error so failures stay visible.
 	let _wasStreaming = $state(false);
 	$effect(() => {
-		if (message.isStreaming && message.actionEvents.length > 0 && !_wasStreaming) {
-			activityExpanded = true;
+		if (message.isStreaming) {
 			_wasStreaming = true;
+			return;
 		}
-		if (!message.isStreaming && _wasStreaming) {
-			if (!message.hasError) {
-				activityExpanded = false;
-			}
+		if (_wasStreaming) {
+			activityExpanded = message.hasError ?? false;
 			_wasStreaming = false;
 		}
 	});
@@ -114,19 +115,19 @@
 	<div class="mt-0.5 shrink-0">
 		{#if message.role === 'user'}
 			<div class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-				<User size={13} />
+				<User class="h-3.5 w-3.5" />
 			</div>
 		{:else if message.role === 'error'}
 			<div
 				class="flex h-6 w-6 items-center justify-center rounded-full bg-destructive/10 text-destructive"
 			>
-				<BotMessageSquare size={13} />
+				<BotMessageSquare class="h-3.5 w-3.5" />
 			</div>
 		{:else}
 			<div
 				class="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground"
 			>
-				<BotMessageSquare size={13} />
+				<BotMessageSquare class="h-3.5 w-3.5" />
 			</div>
 		{/if}
 	</div>
@@ -183,93 +184,88 @@
 				class="flex items-center gap-1 text-xs text-muted-foreground/70"
 				data-testid="ai-stopped"
 			>
-				<Square size={10} class="shrink-0" />
+				<Square class="h-3 w-3 shrink-0" />
 				<span>Stopped</span>
 			</div>
 		{/if}
 
 		{#if message.actionEvents.length > 0}
-			{#if message.isStreaming}
-				<div
-					class="flex items-center gap-2 text-xs text-muted-foreground"
-					data-testid="ai-activity"
+			<div
+				class="w-full overflow-hidden rounded-lg border border-border/35 bg-muted/25 text-xs text-muted-foreground"
+				data-testid="ai-activity"
+			>
+				<button
+					class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/40"
+					onclick={toggleActivity}
 				>
-					<span class="ai-dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>
-					<span class="truncate">{latestEventLabel ?? 'Working…'}</span>
-				</div>
-			{:else}
-				<div
-					class="w-full overflow-hidden rounded-lg border border-border/35 bg-muted/25 text-xs text-muted-foreground"
-					data-testid="ai-activity"
-				>
-					<button
-						class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/40"
-						onclick={toggleActivity}
-					>
-						{#if activityExpanded}
-							<ChevronDown size={11} class="shrink-0 opacity-40" />
-						{:else}
-							<ChevronRight size={11} class="shrink-0 opacity-40" />
-						{/if}
-						<span class="flex-1 text-xs text-muted-foreground/80"
-							>{summarizeEvents(message.actionEvents)}</span
-						>
-					</button>
-
 					{#if activityExpanded}
-						<div class="flex flex-col border-t border-border/25">
-							{#each message.actionEvents as ev (ev.id)}
-								{@const Icon = toolIcons[ev.tool] ?? SquarePlay}
-								{@const hasDiff =
-									ev.tool === 'update_cell' && ev.oldCode !== undefined && ev.newCode !== undefined}
-								{@const hasPreview = DATA_TOOLS.has(ev.tool) && ev.preview}
-								{@const isExpandable = hasPreview || hasDiff}
-								{@const isExpanded = expandedChips.has(ev.id ?? '')}
-								<div class="border-b border-border/20 last:border-b-0">
-									{#if isExpandable}
-										<button
-											class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/50"
-											onclick={() => toggleChip(ev.id ?? '')}
-											data-testid="ai-activity-chip"
-										>
-											<Icon size={11} class="shrink-0 text-primary/60" />
-											<span class="flex-1 truncate font-mono text-xs">{ev.label}</span>
-											{#if isExpanded}
-												<ChevronDown size={10} class="shrink-0 opacity-40" />
-											{:else}
-												<ChevronRight size={10} class="shrink-0 opacity-40" />
-											{/if}
-										</button>
-									{:else}
+						<ChevronDown class="h-3 w-3 shrink-0 opacity-40" />
+					{:else}
+						<ChevronRight class="h-3 w-3 shrink-0 opacity-40" />
+					{/if}
+					<span class="flex-1 text-xs text-muted-foreground/80"
+						>{message.isStreaming
+							? (latestEventLabel ?? 'Working…')
+							: summarizeEvents(message.actionEvents)}</span
+					>
+					{#if message.isStreaming}
+						<span class="ai-dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>
+					{/if}
+				</button>
+
+				{#if activityExpanded}
+					<div class="flex flex-col border-t border-border/25">
+						{#each message.actionEvents as ev (ev.id)}
+							{@const Icon = toolIcons[ev.tool] ?? SquarePlay}
+							{@const hasDiff =
+								ev.tool === 'update_cell' && ev.oldCode !== undefined && ev.newCode !== undefined}
+							{@const hasPreview = DATA_TOOLS.has(ev.tool) && ev.preview}
+							{@const isExpandable = hasPreview || hasDiff}
+							{@const isExpanded = expandedChips.has(ev.id ?? '')}
+							<div class="border-b border-border/20 last:border-b-0">
+								{#if isExpandable}
+									<button
+										class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/50"
+										onclick={() => toggleChip(ev.id ?? '')}
+										data-testid="ai-activity-chip"
+									>
+										<Icon class="h-3 w-3 shrink-0 text-primary/60" />
+										<span class="flex-1 truncate font-mono text-xs">{ev.label}</span>
+										{#if isExpanded}
+											<ChevronDown class="h-3 w-3 shrink-0 opacity-40" />
+										{:else}
+											<ChevronRight class="h-3 w-3 shrink-0 opacity-40" />
+										{/if}
+									</button>
+								{:else}
+									<div
+										class="flex items-center gap-1.5 px-2.5 py-1.5"
+										data-testid="ai-activity-chip"
+									>
+										<Icon class="h-3 w-3 shrink-0 text-primary/60" />
+										<span class="truncate font-mono text-xs">{ev.label}</span>
+									</div>
+								{/if}
+								{#if isExpandable && isExpanded}
+									{#if hasDiff}
+										<DiffView
+											class="border-t border-border/20"
+											oldCode={ev.oldCode!}
+											newCode={ev.newCode!}
+										/>
+									{:else if hasPreview}
 										<div
-											class="flex items-center gap-1.5 px-2.5 py-1.5"
-											data-testid="ai-activity-chip"
+											class="overflow-x-auto border-t border-border/20 px-2.5 py-1.5 font-mono text-xs whitespace-pre text-foreground/60"
 										>
-											<Icon size={11} class="shrink-0 text-primary/60" />
-											<span class="truncate font-mono text-xs">{ev.label}</span>
+											{ev.preview}
 										</div>
 									{/if}
-									{#if isExpandable && isExpanded}
-										{#if hasDiff}
-											<DiffView
-												class="border-t border-border/20"
-												oldCode={ev.oldCode!}
-												newCode={ev.newCode!}
-											/>
-										{:else if hasPreview}
-											<div
-												class="overflow-x-auto border-t border-border/20 px-2.5 py-1.5 font-mono text-xs whitespace-pre text-foreground/60"
-											>
-												{ev.preview}
-											</div>
-										{/if}
-									{/if}
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			{/if}
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		{/if}
 
 		{#if message.suggestions?.length && !message.isStreaming}
@@ -310,9 +306,9 @@
 		height: 3px;
 		background: linear-gradient(
 			90deg,
-			color-mix(in oklab, var(--color-primary, #6366f1) 20%, transparent) 0%,
-			color-mix(in oklab, var(--color-primary, #6366f1) 50%, transparent) 50%,
-			color-mix(in oklab, var(--color-primary, #6366f1) 20%, transparent) 100%
+			color-mix(in oklab, var(--primary) 20%, transparent) 0%,
+			color-mix(in oklab, var(--primary) 50%, transparent) 50%,
+			color-mix(in oklab, var(--primary) 20%, transparent) 100%
 		);
 		background-size: 200% 100%;
 		animation: ai-shimmer 1.4s ease-in-out infinite;
@@ -376,15 +372,15 @@
 	}
 	:global(.ai-prose code) {
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		font-size: 0.82em;
+		font-size: var(--text-2xs);
 		background: color-mix(in oklab, currentColor 10%, transparent);
 		padding: 0.15em 0.35em;
-		border-radius: 0.25em;
+		border-radius: var(--radius-sm);
 	}
 	:global(.ai-prose pre) {
-		background: color-mix(in oklab, var(--color-foreground, #000) 7%, transparent);
-		border: 1px solid color-mix(in oklab, var(--color-border, #888) 50%, transparent);
-		border-radius: 0.5em;
+		background: color-mix(in oklab, var(--foreground) 7%, transparent);
+		border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+		border-radius: var(--radius);
 		padding: 0.65em 0.85em;
 		overflow-x: auto;
 		margin: 0.45em 0;
@@ -402,7 +398,7 @@
 		font-style: italic;
 	}
 	:global(.ai-prose blockquote) {
-		border-left: 2px solid color-mix(in oklab, var(--color-primary, #6366f1) 60%, transparent);
+		border-left: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
 		padding-left: 0.75em;
 		margin: 0.35em 0;
 		opacity: 0.85;
@@ -414,7 +410,7 @@
 		margin: 0.45em 0;
 	}
 	:global(.ai-prose a) {
-		color: var(--color-primary);
+		color: var(--primary);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

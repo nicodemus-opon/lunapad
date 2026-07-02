@@ -90,7 +90,7 @@
 								style="color: var({style.colorVar})"
 								title={style.label}
 							>
-								<TypeIcon size={12} />
+								<TypeIcon class="h-3 w-3" />
 							</span>
 							<div class="min-w-0 flex-1">
 								<span class="block text-xs font-medium text-foreground">{task.title}</span>
@@ -104,7 +104,7 @@
 								title="Remove this task from the plan"
 								aria-label="Remove task"
 							>
-								<X size={11} />
+								<X class="h-3 w-3" />
 							</button>
 						</li>
 					{/each}
@@ -139,7 +139,7 @@
 
 		{#if confirmationRequest}
 			<div
-				class="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 shadow-sm backdrop-blur-sm"
+				class="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 shadow-sm backdrop-blur-sm"
 				data-testid="ai-confirm-bar"
 			>
 				<span class="text-xs text-warning">
@@ -164,21 +164,21 @@
 
 		{#if undoAvailable}
 			<div
-				class="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 shadow-sm backdrop-blur-sm"
+				class="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 shadow-sm backdrop-blur-sm"
 				data-testid="ai-undo-bar"
 			>
 				<span class="text-xs text-primary/80">AI changes applied</span>
 				<div class="flex items-center gap-2">
 					{#if checkpointCount > 1}
 						<button
-							class="rounded-md px-2 py-1 text-xs text-primary/70 transition-colors hover:bg-primary/10"
+							class="rounded-md px-2 py-1 text-xs text-primary/70 transition-colors hover:bg-primary/20"
 							onclick={undoLastAIStep}
 						>
 							Undo last step
 						</button>
 					{/if}
 					<button
-						class="rounded-md px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+						class="rounded-md px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
 						onclick={undoAIChanges}
 					>
 						Undo all

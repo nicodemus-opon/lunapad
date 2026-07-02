@@ -27,15 +27,15 @@
 	<div class="flex items-center gap-2 border-b bg-muted/30 px-3 py-2.5">
 		<Icon class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 		<span class="min-w-0 flex-1 truncate font-mono text-sm font-medium">{profile.column}</span>
-		<span class="rounded px-1.5 py-0.5 text-[10px] font-medium {kindBadgeClass(profile.kind)}">
+		<span class="rounded-md px-1.5 py-0.5 text-2xs font-medium {kindBadgeClass(profile.kind)}">
 			{label}
 		</span>
 		{#if profile.isLikelyId}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">likely id</span
+			<span class="rounded-md bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground">likely id</span
 			>
 		{/if}
 		{#if profile.isConstant}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">constant</span>
+			<span class="rounded-md bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground">constant</span>
 		{/if}
 	</div>
 
@@ -46,7 +46,7 @@
 	>
 		<div class="space-y-3 px-3 py-3">
 			<div>
-				<div class="mb-1 flex items-center justify-between text-[11px]">
+				<div class="mb-1 flex items-center justify-between text-2xs">
 					<span class="text-muted-foreground">Completeness</span>
 					<span class="font-medium tabular-nums">{fmtPct(profile.completeness, 1)}</span>
 				</div>
@@ -57,16 +57,16 @@
 					></div>
 				</div>
 				{#if profile.nullCount > 0}
-					<p class="mt-0.5 text-[10px] text-muted-foreground tabular-nums">
+					<p class="mt-0.5 text-2xs text-muted-foreground tabular-nums">
 						{profile.nullCount.toLocaleString()} missing ({fmtPct(profile.nullPct, 1)})
 					</p>
 				{:else}
-					<p class="mt-0.5 text-[10px] text-muted-foreground">No missing values</p>
+					<p class="mt-0.5 text-2xs text-muted-foreground">No missing values</p>
 				{/if}
 			</div>
 
 			<div>
-				<div class="mb-1 flex items-center justify-between text-[11px]">
+				<div class="mb-1 flex items-center justify-between text-2xs">
 					<span class="text-muted-foreground">Distinct</span>
 					<span class="font-medium tabular-nums">
 						{profile.unique.toLocaleString()}
@@ -83,7 +83,7 @@
 
 			{#if profile.numeric}
 				{@const n = profile.numeric}
-				<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+				<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-2xs">
 					<div class="flex justify-between gap-2">
 						<span class="text-muted-foreground">Min</span>
 						<span class="font-mono tabular-nums">{fmtStatNum(n.min)}</span>
@@ -139,7 +139,7 @@
 			{:else if profile.boolean}
 				{@const total = profile.boolean.trueCount + profile.boolean.falseCount || 1}
 				{@const truePct = (profile.boolean.trueCount / total) * 100}
-				<div class="space-y-1.5 text-[11px]">
+				<div class="space-y-1.5 text-2xs">
 					<div class="flex items-center gap-2">
 						<span class="w-10 text-muted-foreground">True</span>
 						<div class="h-3 flex-1 overflow-hidden rounded bg-muted">
@@ -163,7 +163,7 @@
 					</div>
 				</div>
 			{:else if profile.temporal}
-				<div class="grid grid-cols-1 gap-y-1 text-[11px]">
+				<div class="grid grid-cols-1 gap-y-1 text-2xs">
 					<div class="flex justify-between gap-2">
 						<span class="text-muted-foreground">Min</span>
 						<span class="font-mono">{profile.temporal.min ?? '—'}</span>
@@ -182,7 +182,7 @@
 					</div>
 				</div>
 			{:else if profile.text}
-				<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+				<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-2xs">
 					<div class="flex justify-between gap-2">
 						<span class="text-muted-foreground">Avg length</span>
 						<span class="font-mono tabular-nums">{fmtStatNum(profile.text.avgLen, 1)}</span>
@@ -204,7 +204,7 @@
 		</div>
 
 		<div class="px-3 py-3">
-			<p class="mb-2 text-[10px] tracking-wider text-muted-foreground uppercase">Top values</p>
+			<p class="mb-2 text-2xs tracking-wider text-muted-foreground uppercase">Top values</p>
 			<TopValuesList values={profile.topValues} {compact} />
 		</div>
 	</div>

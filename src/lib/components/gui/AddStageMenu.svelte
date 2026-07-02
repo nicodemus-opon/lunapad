@@ -1015,13 +1015,13 @@
 					</div>
 					<!-- Compact keyboard hint row -->
 					<div class="flex items-center gap-2 pt-1.5 pb-0.5">
-						<span class="mr-0.5 text-[9px] tracking-[0.18em] text-muted-foreground/50 uppercase"
+						<span class="mr-0.5 text-3xs tracking-[0.18em] text-muted-foreground/50 uppercase"
 							>Stage palette</span
 						>
 						{#each [['/', 'open'], ['1–9', 'pick'], ['↵', 'AI generate'], ['⌘↵', 'AI + apply']] as [key, hint]}
-							<span class="inline-flex items-center gap-1 text-[9px] text-muted-foreground/50">
+							<span class="inline-flex items-center gap-1 text-3xs text-muted-foreground/50">
 								<kbd
-									class="rounded border border-border/50 bg-muted/40 px-1 py-0.5 font-mono text-[8px] leading-none"
+									class="rounded border border-border/50 bg-muted/40 px-1 py-0.5 font-mono text-3xs leading-none"
 									>{key}</kbd
 								>
 								{hint}
@@ -1035,7 +1035,7 @@
 						{#if llmFullQuery}
 							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
 								<div class="flex flex-wrap items-center justify-between gap-2">
-									<p class="flex items-center gap-1.5 text-[11px] font-medium text-primary">
+									<p class="flex items-center gap-1.5 text-2xs font-medium text-primary">
 										<Sparkles class="h-3 w-3" />
 										AI full query — window / join / analytics
 									</p>
@@ -1046,7 +1046,7 @@
 										<Button
 											variant="outline"
 											size="sm"
-											class="h-7 border-primary/30 px-2 text-[10px] hover:bg-primary/10"
+											class="h-7 border-primary/30 px-2 text-2xs hover:bg-primary/10"
 											onclick={applyLLMFullQuery}
 										>
 											Apply
@@ -1054,14 +1054,14 @@
 									</div>
 								</div>
 								<pre
-									class="mt-2 max-h-40 overflow-x-auto rounded bg-muted/20 p-2 font-mono text-[10px] leading-relaxed whitespace-pre text-muted-foreground">{llmFullQuery.prql}</pre>
+									class="mt-2 max-h-40 overflow-x-auto rounded bg-muted/20 p-2 font-mono text-2xs leading-relaxed whitespace-pre text-muted-foreground">{llmFullQuery.prql}</pre>
 							</div>
 						{/if}
 
 						{#if promptPlan}
 							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-2">
 								<div class="flex flex-wrap items-center justify-between gap-2">
-									<p class="text-[11px] text-primary/95">
+									<p class="text-2xs text-primary/95">
 										Generated block: {promptPlan.suggestion.label}
 									</p>
 									<div class="flex items-center gap-2">
@@ -1072,7 +1072,7 @@
 										<Button
 											variant="ghost"
 											size="sm"
-											class="h-7 px-2 text-[10px] text-muted-foreground"
+											class="h-7 px-2 text-2xs text-muted-foreground"
 											onclick={() => void runPromptGeneration('llm', false)}
 											disabled={llmGenerating}
 										>
@@ -1082,7 +1082,7 @@
 										<Button
 											variant="outline"
 											size="sm"
-											class="h-7 px-2 text-[10px]"
+											class="h-7 px-2 text-2xs"
 											onclick={applyPromptPlan}
 											disabled={!promptPlan.validation.isValid}
 										>
@@ -1090,7 +1090,7 @@
 										</Button>
 									</div>
 								</div>
-								<p class="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
+								<p class="mt-1 line-clamp-2 text-2xs text-muted-foreground">
 									{promptPlan.suggestion.prompt}
 								</p>
 							</div>
@@ -1098,7 +1098,7 @@
 
 						{#if promptPlanMessage}
 							<p
-								class="mb-2 rounded-md border border-border/65 bg-muted/15 px-2.5 py-1.5 text-[10px] text-muted-foreground"
+								class="mb-2 rounded-md border border-border/65 bg-muted/15 px-2.5 py-1.5 text-2xs text-muted-foreground"
 							>
 								{promptPlanMessage}
 							</p>
@@ -1108,7 +1108,7 @@
 							<div
 								class="mb-2 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-1.5"
 							>
-								<p class="text-[11px] text-primary/95">Semantic column match detected</p>
+								<p class="text-2xs text-primary/95">Semantic column match detected</p>
 								<span class="add-stage-badge">Adapted for {matchedColumn}</span>
 							</div>
 						{/if}
@@ -1123,16 +1123,16 @@
 									<section class="space-y-0.5">
 										<div class="flex items-center gap-2 px-0.5 pb-0.5">
 											<p class="chip-lane-heading">{lane.title}</p>
-											<span class="text-[9px] text-muted-foreground/50">{lane.description}</span>
+											<span class="text-3xs text-muted-foreground/50">{lane.description}</span>
 										</div>
 										{#each lane.results as result, idx (`${lane.key}-${idx}`)}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-120 hover:border-border/70 hover:bg-accent"
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/70 hover:bg-accent"
 												onclick={() => chooseCommand(result)}
 											>
 												<div class="flex items-center gap-2">
 													<span
-														class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														class="w-3.5 shrink-0 font-mono text-2xs text-muted-foreground/60 tabular-nums"
 														>{lane.startIndex + idx + 1}</span
 													>
 													{#if result.kind === 'stage'}
@@ -1161,7 +1161,7 @@
 															{:else if result.kind === 'analysis'}Query
 															{:else}Semantic{/if}
 														</span>
-														<p class="truncate text-[10px] text-muted-foreground/65">
+														<p class="truncate text-2xs text-muted-foreground/65">
 															{#if result.kind === 'stage'}{result.description}
 															{:else if result.kind === 'preset'}{result.suggestion.reasons[0] ??
 																	result.suggestion.preset.description}
@@ -1186,13 +1186,13 @@
 										{#each quickChips as chip, idx (chip.id)}
 											{@const ItemIcon = ICONS[chip.icon]}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-120 hover:border-border/80 hover:bg-accent"
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/80 hover:bg-accent"
 												onclick={() => chooseQuickChip(idx)}
 												title={chip.label}
 											>
 												<div class="flex items-center gap-2">
 													<span
-														class="w-3.5 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														class="w-3.5 font-mono text-2xs text-muted-foreground/60 tabular-nums"
 														>{idx + 1}</span
 													>
 													<ItemIcon
@@ -1213,18 +1213,18 @@
 							<section class="space-y-1.5">
 								<div class="flex items-center gap-2 px-0.5">
 									<p class="chip-lane-heading">Stage primitives</p>
-									<span class="text-[9px] text-muted-foreground/50">press number to add</span>
+									<span class="text-3xs text-muted-foreground/50">press number to add</span>
 								</div>
 								<div class="grid grid-cols-2 gap-1">
 									{#each stageResults as item, idx (item.type)}
 										{@const ItemIcon = ICONS[item.type]}
 										<button
-											class="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/8 px-2.5 py-2 text-left transition-[background-color,border-color] duration-120 ease-(--motion-ease-out) hover:border-border/80 hover:bg-accent"
+											class="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2 text-left transition-[background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) hover:border-border/80 hover:bg-accent"
 											onclick={() => choose(item.type)}
 											title={item.description}
 										>
 											<span
-												class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+												class="w-3.5 shrink-0 font-mono text-2xs text-muted-foreground/60 tabular-nums"
 												>{idx + 1}</span
 											>
 											<ItemIcon class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
@@ -1232,7 +1232,7 @@
 												<p class="text-xs leading-tight font-medium text-foreground">
 													{item.label}
 												</p>
-												<p class="truncate text-[10px] text-muted-foreground/70">
+												<p class="truncate text-2xs text-muted-foreground/70">
 													{item.description}
 												</p>
 											</div>
@@ -1243,13 +1243,13 @@
 
 							<!-- Templates + analysis collapsed behind toggle -->
 							<button
-								class="flex w-full items-center gap-1.5 px-0.5 text-[10px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+								class="flex w-full items-center gap-1.5 px-0.5 text-2xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
 								onclick={() => (showMoreStageOptions = !showMoreStageOptions)}
 							>
-								<span class="text-[9px]">{showMoreStageOptions ? '▾' : '▸'}</span>
+								<span class="text-3xs">{showMoreStageOptions ? '▾' : '▸'}</span>
 								Templates &amp; analysis prompts
 								{#if filteredPresetSuggestions.length + analysisResults.length > 0}
-									<span class="text-[9px] opacity-60"
+									<span class="text-3xs opacity-60"
 										>({filteredPresetSuggestions.length + analysisResults.length})</span
 									>
 								{/if}
@@ -1268,7 +1268,7 @@
 												matchedColumn
 											)}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-120 hover:border-border/80 hover:bg-accent {matchedColumn &&
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-(--motion-fast) hover:border-border/80 hover:bg-accent {matchedColumn &&
 												!referencesMatchedColumn
 													? 'opacity-55'
 													: ''}"
@@ -1277,7 +1277,7 @@
 											>
 												<div class="flex items-center gap-2">
 													<span
-														class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+														class="w-3.5 shrink-0 font-mono text-2xs text-muted-foreground/60 tabular-nums"
 														>{idx + 1}</span
 													>
 													<WandSparkles class="h-3 w-3 shrink-0 text-primary/70" />
@@ -1285,7 +1285,7 @@
 														<p class="truncate text-xs font-medium text-foreground">
 															{suggestion.preset.label}
 														</p>
-														<p class="truncate text-[10px] text-muted-foreground/70">
+														<p class="truncate text-2xs text-muted-foreground/70">
 															{suggestion.reasons[0] ?? suggestion.preset.description}
 														</p>
 													</div>
@@ -1301,13 +1301,13 @@
 										<div class="space-y-0.5">
 											{#each analysisResults as suggestion, idx (suggestion.id)}
 												<button
-													class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-120 hover:border-border/80 hover:bg-accent"
+													class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/80 hover:bg-accent"
 													onclick={() => chooseCommand({ kind: 'analysis', suggestion })}
 													title={suggestion.prompt}
 												>
 													<div class="flex items-center gap-2">
 														<span
-															class="w-3.5 shrink-0 font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+															class="w-3.5 shrink-0 font-mono text-2xs text-muted-foreground/60 tabular-nums"
 															>{idx + 1}</span
 														>
 														<Sparkles class="h-3 w-3 shrink-0 text-primary/70" />
@@ -1315,7 +1315,7 @@
 															<p class="truncate text-xs font-medium text-foreground">
 																{suggestion.label}
 															</p>
-															<p class="truncate text-[10px] text-muted-foreground/70">
+															<p class="truncate text-2xs text-muted-foreground/70">
 																{suggestion.prompt}
 															</p>
 														</div>
@@ -1338,39 +1338,39 @@
 	.add-stage-trigger {
 		position: relative;
 		display: inline-flex;
-		border-radius: 0.375rem;
+		border-radius: var(--radius);
 	}
 
 	.add-stage-trigger:hover :global(button) {
-		border-color: hsl(var(--muted-foreground) / 0.45);
+		border-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
 	}
 
 	.add-stage-badge {
 		font-size: var(--text-2xs, 0.6875rem);
 		line-height: 1.1;
 		padding: 0.2rem 0.5rem;
-		border-radius: calc(var(--radius) - 2px);
-		border: 1px solid hsl(var(--border));
-		background: hsl(var(--muted) / 0.5);
-		color: hsl(var(--muted-foreground));
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+		background: color-mix(in oklab, var(--muted) 50%, transparent);
+		color: var(--muted-foreground);
 		text-transform: none;
 	}
 
 	.add-stage-kind {
-		font-size: 9px;
+		font-size: var(--text-3xs, 0.5625rem);
 		line-height: 1;
 		padding: 0.18rem 0.35rem;
 		border-radius: 999px;
-		border: 1px solid hsl(var(--border));
-		color: hsl(var(--muted-foreground));
-		background: hsl(var(--background));
+		border: 1px solid var(--border);
+		color: var(--muted-foreground);
+		background: var(--background);
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 	}
 
 	.add-stage-kind--preset {
-		border-color: hsl(var(--primary) / 0.35);
-		color: hsl(var(--primary));
-		background: hsl(var(--primary) / 0.08);
+		border-color: color-mix(in oklab, var(--primary) 30%, transparent);
+		color: var(--primary);
+		background: color-mix(in oklab, var(--primary) 10%, transparent);
 	}
 </style>

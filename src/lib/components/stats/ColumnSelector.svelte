@@ -42,7 +42,7 @@
 			</button>
 		{/each}
 		{#if filtered.length === 0}
-			<p class="px-2 py-1 text-[11px] text-muted-foreground italic">No matching columns</p>
+			<p class="px-2 py-1 text-2xs text-muted-foreground italic">No matching columns</p>
 		{/if}
 	</div>
 </div>

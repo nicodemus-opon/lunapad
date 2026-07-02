@@ -11,12 +11,15 @@
 		notebookId,
 		notebookName,
 		cells,
-		scrollContainer = null
+		scrollContainer = null,
+		showHeader = true
 	}: {
 		notebookId: string;
 		notebookName: string;
 		cells: Cell[];
 		scrollContainer?: HTMLElement | null;
+		/** Hide the internal title header when embedded under a panel that already labels it. */
+		showHeader?: boolean;
 	} = $props();
 
 	const outline = $derived(buildNotebookOutline(cells));
@@ -83,17 +86,19 @@
 	});
 </script>
 
-<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
-	<span
-		class="min-w-0 flex-1 truncate text-2xs font-medium text-muted-foreground"
-		title={notebookName}
-	>
-		{notebookName}
-	</span>
-	{#if outline.length > 0}
-		<span class="shrink-0 text-2xs text-muted-foreground/70">{outline.length}</span>
-	{/if}
-</div>
+{#if showHeader}
+	<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+		<span
+			class="min-w-0 flex-1 truncate text-2xs font-medium text-muted-foreground"
+			title={notebookName}
+		>
+			{notebookName}
+		</span>
+		{#if outline.length > 0}
+			<span class="shrink-0 text-2xs text-muted-foreground/70">{outline.length}</span>
+		{/if}
+	</div>
+{/if}
 
 <div class="flex-1 overflow-y-auto py-1" role="tree" aria-label="Notebook outline">
 	{#if outline.length === 0}

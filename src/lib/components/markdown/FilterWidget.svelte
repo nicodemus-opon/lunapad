@@ -239,22 +239,35 @@
 	.md-filter {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.45rem;
 		margin: 0.2rem 0.3rem 0.2rem 0;
 		vertical-align: middle;
 	}
 	.md-filter-label {
 		font-size: 0.75rem;
 		font-weight: 600;
-		opacity: 0.7;
+		color: var(--muted-foreground);
 	}
 	.md-filter-control {
-		height: 1.6rem;
-		border-radius: 0.35rem;
-		border: 1px solid color-mix(in oklch, currentColor 20%, transparent);
-		background: color-mix(in oklch, currentColor 3%, transparent);
-		padding: 0 0.4rem;
+		height: 1.75rem;
+		border-radius: var(--radius-md, 0.35rem);
+		border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+		background: color-mix(in oklab, var(--background) 92%, transparent);
+		color: var(--foreground);
+		padding: 0 0.5rem;
 		font-size: 0.78rem;
+		transition:
+			border-color 0.12s ease,
+			box-shadow 0.12s ease,
+			background 0.12s ease;
+	}
+	.md-filter-control:hover {
+		border-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+	}
+	.md-filter-control:focus-visible {
+		outline: none;
+		border-color: var(--primary);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 25%, transparent);
 	}
 	.md-filter-search {
 		width: 6rem;
@@ -267,6 +280,7 @@
 		align-items: center;
 		gap: 0.3rem;
 		font-size: 0.75rem;
+		color: var(--muted-foreground);
 	}
 	.md-filter-buttons,
 	.md-filter-multiselect {
@@ -275,16 +289,35 @@
 		gap: 0.25rem;
 	}
 	.md-filter-btn {
-		height: 1.5rem;
-		padding: 0 0.5rem;
-		border-radius: 0.3rem;
-		border: 1px solid color-mix(in oklch, currentColor 20%, transparent);
+		height: 1.75rem;
+		padding: 0 0.6rem;
+		border-radius: var(--radius-md, 0.3rem);
+		border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
 		font-size: 0.75rem;
-		background: transparent;
+		font-weight: 500;
+		color: var(--foreground);
+		background: color-mix(in oklab, var(--background) 92%, transparent);
+		cursor: pointer;
+		transition:
+			border-color 0.12s ease,
+			background 0.12s ease,
+			color 0.12s ease;
+	}
+	.md-filter-btn:hover {
+		border-color: color-mix(in oklab, var(--primary) 40%, transparent);
+		background: color-mix(in oklab, var(--primary) 8%, transparent);
+	}
+	.md-filter-btn:focus-visible {
+		outline: none;
+		border-color: var(--primary);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 25%, transparent);
 	}
 	.md-filter-btn.active {
-		background: color-mix(in oklch, var(--chart-1, #3b82f6) 80%, transparent);
-		color: white;
+		background: var(--primary);
+		color: var(--primary-foreground);
 		border-color: transparent;
+	}
+	.md-filter-btn.active:hover {
+		background: color-mix(in oklab, var(--primary) 90%, black 10%);
 	}
 </style>

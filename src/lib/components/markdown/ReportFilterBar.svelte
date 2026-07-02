@@ -2,9 +2,13 @@
 	import FilterWidget from './FilterWidget.svelte';
 	import type { ReportFilterDef } from '$lib/services/report-filters';
 	import { activeFilterChips } from '$lib/services/report-filters';
-	import { getContext } from 'svelte';
-	import { FILTER_CONTEXT_KEY, type FilterContextValue } from './filter-context';
-	import { X } from '@lucide/svelte';
+	import { getContext, setContext } from 'svelte';
+	import {
+		FILTER_CONTEXT_KEY,
+		SUPPRESS_INLINE_FILTERS_KEY,
+		type FilterContextValue
+	} from './filter-context';
+	import { SlidersHorizontal, X } from '@lucide/svelte';
 
 	interface Props {
 		filters: ReportFilterDef[];
@@ -16,6 +20,12 @@
 	const { filters, notebookId = '', presets = [], onApplyPreset }: Props = $props();
 
 	let collapsed = $state(false);
+
+	// The report shells set SUPPRESS_INLINE_FILTERS so the same {% filter %} tags don't
+	// also render inside the prose. The controls that live in *this* bar must ignore that
+	// suppression, otherwise every FilterWidget below renders nothing (and Hide/Show has
+	// nothing to toggle). Re-enable rendering for our own subtree.
+	setContext(SUPPRESS_INLINE_FILTERS_KEY, false);
 
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
 	const values = $derived.by(() => {
@@ -33,28 +43,26 @@
 	function clearChip(param: string) {
 		filterCtx?.setValue(param, '');
 	}
+
+	function clearAll() {
+		if (!filterCtx) return;
+		const cleared: Record<string, string> = {};
+		for (const chip of chips) cleared[chip.param] = '';
+		if (filterCtx.setValues) filterCtx.setValues(cleared);
+		else for (const param of Object.keys(cleared)) filterCtx.setValue(param, '');
+	}
 </script>
 
 {#if filters.length > 0}
 	<div class="report-filter-bar" class:collapsed>
-		<div class="report-filter-bar-header">
-			<span class="report-filter-bar-title">Filters</span>
-			<div class="report-filter-bar-actions">
-				{#each presets as preset (preset.id)}
-					<button type="button" class="preset-chip" onclick={() => onApplyPreset?.(preset.id)}>
-						{preset.name}
-					</button>
-				{/each}
-				<button
-					type="button"
-					class="collapse-btn"
-					onclick={() => (collapsed = !collapsed)}
-					aria-expanded={!collapsed}
-				>
-					{collapsed ? 'Show' : 'Hide'}
-				</button>
-			</div>
-		</div>
+		<span class="report-filter-bar-title">
+			<SlidersHorizontal class="h-3.5 w-3.5" />
+			<span class="title-text">Filters</span>
+			{#if chips.length > 0}
+				<span class="report-filter-count">{chips.length}</span>
+			{/if}
+		</span>
+
 		{#if !collapsed}
 			<div class="report-filter-bar-controls">
 				{#each filters as def (def.param)}
@@ -62,13 +70,35 @@
 				{/each}
 			</div>
 		{/if}
+
+		<div class="report-filter-bar-actions">
+			{#each presets as preset (preset.id)}
+				<button type="button" class="preset-chip" onclick={() => onApplyPreset?.(preset.id)}>
+					{preset.name}
+				</button>
+			{/each}
+			{#if chips.length > 0}
+				<button type="button" class="ghost-btn clear-all" onclick={clearAll}>Clear</button>
+			{/if}
+			<button
+				type="button"
+				class="ghost-btn collapse-btn"
+				onclick={() => (collapsed = !collapsed)}
+				aria-expanded={!collapsed}
+			>
+				{collapsed ? 'Show' : 'Hide'}
+			</button>
+		</div>
+
 		{#if chips.length > 0}
 			<div class="active-chips">
 				{#each chips as chip (chip.param)}
 					<span class="active-chip">
-						{chip.label}: {chip.value}
+						<span class="active-chip-label">{chip.label}</span>
+						<span class="active-chip-value">{chip.value}</span>
 						<button
 							type="button"
+							class="active-chip-clear"
 							aria-label="Clear {chip.label}"
 							onclick={() => clearChip(chip.param)}
 						>
@@ -84,68 +114,141 @@
 <style>
 	.report-filter-bar {
 		position: sticky;
-		top: 0;
-		z-index: 20;
-		background: color-mix(in oklch, var(--background, white) 92%, transparent);
-		backdrop-filter: blur(8px);
-		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
-		border-radius: 0.5rem;
-		padding: 0.5rem 0.65rem;
-		margin-bottom: 0.75rem;
-	}
-	.report-filter-bar-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.35rem;
-	}
-	.report-filter-bar-title {
-		font-size: 0.7rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		opacity: 0.65;
-	}
-	.report-filter-bar-actions {
+		top: 0.5rem;
+		z-index: var(--z-sticky);
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.6rem;
+		background: color-mix(in oklab, var(--card) 88%, transparent);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow-sm);
+		padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+		margin-bottom: 1rem;
+	}
+	.report-filter-bar-title {
+		display: inline-flex;
+		align-items: center;
 		gap: 0.35rem;
+		flex: 0 0 auto;
+		font-size: var(--text-2xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted-foreground);
+	}
+	.report-filter-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1rem;
+		height: 1rem;
+		padding: 0 0.28rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.625rem;
+		font-weight: 600;
+		letter-spacing: 0;
+		background: color-mix(in oklab, var(--primary) 15%, transparent);
+		color: var(--primary);
 	}
 	.report-filter-bar-controls {
 		display: flex;
+		flex: 1 1 auto;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.25rem;
+		gap: 0.3rem 0.6rem;
+		min-width: 0;
 	}
-	.collapse-btn,
+	.report-filter-bar-actions {
+		display: flex;
+		flex: 0 0 auto;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.15rem;
+		margin-left: auto;
+	}
+	.ghost-btn,
 	.preset-chip {
-		font-size: 0.72rem;
-		padding: 0.15rem 0.45rem;
-		border-radius: 0.3rem;
-		border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+		font-size: var(--text-2xs);
+		font-weight: 500;
+		line-height: 1;
+		padding: 0.3rem 0.45rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid transparent;
 		background: transparent;
+		color: var(--muted-foreground);
+		cursor: pointer;
+		transition:
+			background var(--motion-fast) ease,
+			color var(--motion-fast) ease,
+			border-color var(--motion-fast) ease;
+	}
+	.ghost-btn:hover {
+		background: color-mix(in oklab, var(--muted) 60%, transparent);
+		color: var(--foreground);
+	}
+	.clear-all:hover {
+		color: var(--destructive);
+	}
+	.preset-chip {
+		border-color: color-mix(in oklab, var(--border) 70%, transparent);
 	}
 	.preset-chip:hover {
-		background: color-mix(in oklch, var(--chart-1, #3b82f6) 12%, transparent);
+		background: color-mix(in oklab, var(--primary) 10%, transparent);
+		border-color: color-mix(in oklab, var(--primary) 30%, transparent);
+		color: var(--foreground);
 	}
 	.active-chips {
 		display: flex;
+		flex-basis: 100%;
 		flex-wrap: wrap;
-		gap: 0.35rem;
-		margin-top: 0.4rem;
+		gap: 0.3rem;
+		padding: 0.1rem 0.2rem 0.15rem;
 	}
 	.active-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.25rem;
-		font-size: 0.72rem;
-		padding: 0.1rem 0.35rem;
-		border-radius: 999px;
-		background: color-mix(in oklch, var(--chart-1, #3b82f6) 15%, transparent);
+		gap: 0.3rem;
+		font-size: var(--text-2xs);
+		line-height: 1;
+		padding: 0.22rem 0.3rem 0.22rem 0.45rem;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--primary) 10%, transparent);
+		border: 1px solid color-mix(in oklab, var(--primary) 30%, transparent);
+		color: var(--foreground);
 	}
-	.active-chip button {
+	.active-chip-label {
+		font-weight: 600;
+		color: var(--muted-foreground);
+	}
+	.active-chip-value {
+		font-weight: 500;
+	}
+	.active-chip-clear {
 		display: inline-flex;
-		opacity: 0.7;
+		align-items: center;
+		justify-content: center;
+		padding: 0.1rem;
+		border-radius: var(--radius-sm);
+		color: color-mix(in oklab, var(--foreground) 55%, transparent);
+		transition:
+			background var(--motion-fast) ease,
+			color var(--motion-fast) ease;
+	}
+	.active-chip-clear:hover {
+		background: color-mix(in oklab, var(--primary) 20%, transparent);
+		color: var(--foreground);
+	}
+
+	@media print {
+		.report-filter-bar {
+			position: static;
+			box-shadow: none;
+			backdrop-filter: none;
+			-webkit-backdrop-filter: none;
+		}
 	}
 </style>

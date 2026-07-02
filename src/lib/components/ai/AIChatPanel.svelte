@@ -54,7 +54,7 @@
 	<!-- Header -->
 	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border/40 px-2.5">
 		<div class="flex items-center gap-1.5 text-sm font-medium text-foreground">
-			<Sparkles size={14} class="text-primary" />
+			<Sparkles class="h-3.5 w-3.5 text-primary" />
 			<span>Assistant</span>
 		</div>
 		<div class="flex items-center gap-0.5">
@@ -66,18 +66,18 @@
 							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 							aria-label="More options"
 						>
-							<MoreHorizontal size={14} />
+							<MoreHorizontal class="h-3.5 w-3.5" />
 						</button>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="w-44">
 					<DropdownMenu.Item onclick={() => (standardsOpen = true)}>
-						<SlidersHorizontal size={14} class="mr-2 opacity-60" />
+						<SlidersHorizontal class="mr-2 h-3.5 w-3.5 opacity-60" />
 						Modeling standards
 					</DropdownMenu.Item>
 					{#if messageCount > 0}
 						<DropdownMenu.Item onclick={clearConversation}>
-							<RotateCcw size={14} class="mr-2 opacity-60" />
+							<RotateCcw class="mr-2 h-3.5 w-3.5 opacity-60" />
 							Clear conversation
 						</DropdownMenu.Item>
 					{/if}
@@ -88,7 +88,7 @@
 				onclick={() => setAIChatOpen(false)}
 				title="Close AI panel (⌘J)"
 			>
-				<X size={13} />
+				<X class="h-3.5 w-3.5" />
 			</button>
 		</div>
 	</div>

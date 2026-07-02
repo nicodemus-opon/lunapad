@@ -54,14 +54,14 @@
 
 <style>
 	.hljs-block {
-		background: color-mix(in oklch, currentColor 6%, transparent);
-		border-radius: 0.3rem;
+		background: color-mix(in oklab, var(--muted-foreground) 10%, transparent);
+		border-radius: var(--radius);
 		padding: 0.5rem 0.75rem;
 		margin: 0 0 0.5rem;
 		white-space: pre-wrap;
 		word-break: break-word;
 		font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-		font-size: 0.82em;
+		font-size: var(--text-2xs);
 		line-height: 1.6;
 	}
 	.hljs-block code {
@@ -80,11 +80,11 @@
 	}
 	.hljs-block :global(.hljs-string),
 	.hljs-block :global(.hljs-attr) {
-		color: var(--chart-2, #16a34a);
+		color: var(--chart-2);
 	}
 	.hljs-block :global(.hljs-number),
 	.hljs-block :global(.hljs-literal) {
-		color: var(--chart-1, #2563eb);
+		color: var(--chart-1);
 	}
 	.hljs-block :global(.hljs-comment),
 	.hljs-block :global(.hljs-quote) {
@@ -94,15 +94,15 @@
 	.hljs-block :global(.hljs-title),
 	.hljs-block :global(.hljs-section),
 	.hljs-block :global(.hljs-name) {
-		color: var(--chart-4, #d97706);
+		color: var(--chart-4);
 	}
 	.hljs-block :global(.hljs-variable),
 	.hljs-block :global(.hljs-template-variable) {
-		color: var(--chart-3, #db2777);
+		color: var(--chart-3);
 	}
 	.hljs-block :global(.hljs-type),
 	.hljs-block :global(.hljs-class) {
-		color: var(--chart-4, #d97706);
+		color: var(--chart-4);
 	}
 	.hljs-block :global(.hljs-meta) {
 		color: var(--muted-foreground);

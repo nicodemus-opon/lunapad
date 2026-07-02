@@ -236,12 +236,10 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="flex max-w-2xl flex-col gap-0 overflow-hidden p-0">
-		<div class="border-b border-border/60 px-4 py-3">
-			<p class="text-sm font-semibold">Upload file</p>
-			<p class="mt-0.5 text-2xs text-muted-foreground">
-				Import CSV, TSV, Parquet, or JSON into any connection
-			</p>
-		</div>
+		<Dialog.Header>
+			<Dialog.Title>Upload file</Dialog.Title>
+			<Dialog.Description>Import CSV, TSV, Parquet, or JSON into any connection</Dialog.Description>
+		</Dialog.Header>
 
 		<div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 py-4">
 			<!-- File drop zone -->
@@ -439,8 +437,8 @@
 		</div>
 
 		<!-- Footer -->
-		<div class="flex items-center justify-end gap-2 border-t border-border/60 px-4 py-3">
-			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => (open = false)}>
+		<Dialog.Footer>
+			<Button variant="ghost" size="sm" class="h-7 text-xs" onclick={() => (open = false)}>
 				Cancel
 			</Button>
 			<Button size="sm" class="h-7 text-xs" disabled={!canUpload} onclick={() => void upload()}>
@@ -452,7 +450,7 @@
 					Upload
 				{/if}
 			</Button>
-		</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 

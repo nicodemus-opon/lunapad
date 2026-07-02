@@ -3,22 +3,8 @@
 	import { toast } from 'svelte-sonner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
-	import {
-		Clock,
-		ChevronsUpDown,
-		XCircle,
-		Eye,
-		EyeOff,
-		BrainCircuit,
-		Sparkles,
-		Maximize2
-	} from '@lucide/svelte';
-	import {
-		updateCellName,
-		setCellDisplay,
-		setCellHideInReport,
-		type Cell
-	} from '$lib/stores/notebook.svelte';
+	import { Clock, XCircle, EyeOff, BrainCircuit } from '@lucide/svelte';
+	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
 
 	let {
 		cell,
@@ -36,14 +22,10 @@
 		cellMode,
 		markdownMode,
 		isMarkdownCell = false,
-		aiChatOpen = false,
 		onModeChange,
 		onMarkdownModeChange,
 		onOverlayChange,
-		onShareWithAI,
-		onFixWithAI,
-		onOpenInlinePrompt,
-		onOpenWorksheet
+		onFixWithAI
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -62,16 +44,10 @@
 		cellMode: 'prql' | 'visual' | 'sql';
 		markdownMode?: 'visual' | 'source';
 		isMarkdownCell?: boolean;
-		aiChatOpen?: boolean;
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
 		onMarkdownModeChange?: (mode: 'visual' | 'source') => void;
 		onOverlayChange?: (open: boolean) => void;
-		onShareWithAI?: () => void;
 		onFixWithAI?: (errorMsg: string) => void;
-		/** Opens the inline "Tell AI what to do" prompt for this cell — independent of the
-		 *  sidebar chat, so it's offered whenever the cell type supports it. */
-		onOpenInlinePrompt?: () => void;
-		onOpenWorksheet?: () => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -101,7 +77,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div
-	class="flex h-7 w-full items-center gap-2 transition-opacity duration-150 select-none {hidden
+	class="flex h-7 w-full items-center gap-2 transition-opacity duration-(--motion-fast) select-none {hidden
 		? revealed
 			? 'opacity-100'
 			: 'opacity-0'
@@ -110,7 +86,7 @@
 >
 	{#if cellNumber != null}
 		<span
-			class="pointer-events-none -ml-(--cell-gutter) w-(--cell-gutter) shrink-0 pr-1 text-right font-mono text-[13px] leading-none font-medium text-muted-foreground/50 tabular-nums transition-opacity duration-150 {showCellNumber
+			class="pointer-events-none -ml-(--cell-gutter) w-(--cell-gutter) shrink-0 pr-1 text-right font-mono text-xs leading-none font-medium text-muted-foreground/50 tabular-nums transition-opacity duration-(--motion-fast) {showCellNumber
 				? 'opacity-100'
 				: 'opacity-0'}"
 			aria-hidden="true"
@@ -125,7 +101,7 @@
 					<input
 						class="cell-name-input h-6 min-w-0 text-inherit {collapsed
 							? 'w-auto max-w-48'
-							: 'w-full'} font-mono text-[13px] font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
+							: 'w-full'} font-mono text-sm font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
 						placeholder={cell.cellType === 'udf'
 							? 'untitled udf…'
 							: isQueryCell
@@ -214,7 +190,7 @@
 			{/if}
 			{#if cell.needsRun && cell.status !== 'running'}
 				<span
-					class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-warning/60 bg-warning/12 px-1.5 text-2xs font-semibold text-warning shadow-2xs"
+					class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-warning/30 bg-warning/10 px-1.5 text-2xs font-semibold text-warning shadow-2xs"
 				>
 					<Clock class="h-2.5 w-2.5" />
 					stale
@@ -223,7 +199,7 @@
 			{#if errorCount > 0}
 				<Popover.Root onOpenChange={onOverlayChange}>
 					<Popover.Trigger
-						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/55 bg-destructive/12 px-1.5 text-2xs font-semibold text-destructive shadow-2xs transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
+						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/30 bg-destructive/10 px-1.5 text-2xs font-semibold text-destructive shadow-2xs transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
 						aria-label="Show errors"
 					>
 						<XCircle class="h-2.5 w-2.5" />
@@ -240,7 +216,7 @@
 						{/if}
 						{#if onFixWithAI}
 							<button
-								class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary/30 bg-primary/8 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
+								class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/20"
 								onclick={() =>
 									onFixWithAI!(
 										cell.errors[0]?.display ??
@@ -260,7 +236,7 @@
 	</div>
 
 	<div
-		class="flex shrink-0 items-center gap-1 transition-opacity duration-150 {revealed
+		class="flex shrink-0 items-center gap-1 transition-opacity duration-(--motion-fast) {revealed
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'}"
 	>
@@ -274,30 +250,13 @@
 					<EyeOff class="h-2.5 w-2.5" />
 					code hidden
 				</button>
-			{:else}
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<button
-							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-							onclick={() => setCellDisplay(cell.id, 'output')}
-							aria-label="Hide code — show result only"
-						>
-							<Eye class="h-3.5 w-3.5" />
-						</button>
-					</Tooltip.Trigger>
-					<Tooltip.Content
-						><p class="text-xs">
-							Hide code — show result only (⇧C in command mode)
-						</p></Tooltip.Content
-					>
-				</Tooltip.Root>
 			{/if}
 			<div
 				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
 				role="tablist"
 			>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
 					'prql'
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
@@ -307,7 +266,7 @@
 					aria-selected={cellMode === 'prql'}>PRQL</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
 					'visual'
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -317,7 +276,7 @@
 					aria-selected={cellMode === 'visual'}>Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
 					'sql'
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -337,26 +296,13 @@
 					<EyeOff class="h-2.5 w-2.5" />
 					editor hidden
 				</button>
-			{:else}
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<button
-							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-							onclick={() => setCellDisplay(cell.id, 'output')}
-							aria-label="Show dashboard output only"
-						>
-							<Eye class="h-3.5 w-3.5" />
-						</button>
-					</Tooltip.Trigger>
-					<Tooltip.Content><p class="text-xs">Show dashboard output only</p></Tooltip.Content>
-				</Tooltip.Root>
 			{/if}
 			<div
 				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
 				role="tablist"
 			>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {(markdownMode ??
 						'visual') === 'visual'
 						? 'bg-secondary text-secondary-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
@@ -366,7 +312,7 @@
 					aria-selected={(markdownMode ?? 'visual') === 'visual'}>Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {(markdownMode ??
 						'visual') === 'source'
 						? 'bg-secondary text-secondary-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
@@ -376,97 +322,6 @@
 					aria-selected={(markdownMode ?? 'visual') === 'source'}>Source</button
 				>
 			</div>
-		{/if}
-
-		{#if onOpenInlinePrompt}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-primary/20 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
-						onclick={onOpenInlinePrompt}
-						aria-label="Tell AI what to do"
-					>
-						<Sparkles class="h-3.5 w-3.5" />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Tell AI what to do (⌘⇧K)</p></Tooltip.Content>
-			</Tooltip.Root>
-		{/if}
-
-		{#if aiChatOpen && onShareWithAI}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-primary/20 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
-						onclick={onShareWithAI}
-						aria-label="Share with AI"
-					>
-						<BrainCircuit class="h-3.5 w-3.5" />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Share with AI</p></Tooltip.Content>
-			</Tooltip.Root>
-		{/if}
-
-		{#if onOpenWorksheet && !collapsed}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-						onclick={onOpenWorksheet}
-						aria-label="Switch to worksheet view"
-					>
-						<Maximize2 class="h-3.5 w-3.5" />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Switch to worksheet view (⌘E)</p></Tooltip.Content>
-			</Tooltip.Root>
-		{/if}
-
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<button
-					class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-					onclick={() => setCellDisplay(cell.id, collapsed ? 'full' : 'collapsed')}
-					aria-label={collapsed ? 'Expand cell' : 'Collapse cell'}
-				>
-					<ChevronsUpDown class="h-3.5 w-3.5" />
-				</button>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				><p class="text-xs">
-					{collapsed ? 'Expand cell' : 'Collapse cell'} (c in command mode)
-				</p></Tooltip.Content
-			>
-		</Tooltip.Root>
-
-		{#if reportView && (isQueryCell || cell.cellType === 'python')}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-						onclick={() => setCellHideInReport(cell.id, true)}
-						aria-label="Hide from report view"
-					>
-						<EyeOff class="h-3.5 w-3.5" />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Hide from report view</p></Tooltip.Content>
-			</Tooltip.Root>
-		{:else if !reportView && cell.hideInReport}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-						onclick={() => setCellHideInReport(cell.id, false)}
-						aria-label="Show in report view"
-					>
-						<EyeOff class="h-3 w-3" />
-						<span>Hidden in report</span>
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content><p class="text-xs">Click to show in report view</p></Tooltip.Content>
-			</Tooltip.Root>
 		{/if}
 	</div>
 </div>

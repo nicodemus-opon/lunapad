@@ -24,7 +24,7 @@
 </script>
 
 <div
-	class="group/divider relative flex h-4 items-center justify-center transition-opacity duration-150 {persistent ||
+	class="group/divider relative flex h-4 items-center justify-center transition-opacity duration-(--motion-fast) {persistent ||
 	menuOpen
 		? 'opacity-100'
 		: 'opacity-0 focus-within:opacity-100 hover:opacity-100'}"
@@ -32,7 +32,7 @@
 	aria-label="Add cell"
 >
 	<div
-		class="absolute inset-x-10 top-1/2 h-px -translate-y-1/2 bg-border opacity-0 transition-opacity duration-150 group-focus-within/divider:opacity-100 group-hover/divider:opacity-100"
+		class="absolute inset-x-10 top-1/2 h-px -translate-y-1/2 bg-border opacity-0 transition-opacity duration-(--motion-fast) group-focus-within/divider:opacity-100 group-hover/divider:opacity-100"
 	></div>
 	<div class="relative flex items-center gap-0.5">
 		<button

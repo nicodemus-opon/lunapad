@@ -18,14 +18,14 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-w-sm">
-		<div class="px-4 pt-4">
-			<p class="text-sm font-semibold">{title}</p>
+	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
+		<Dialog.Header>
+			<Dialog.Title>{title}</Dialog.Title>
 			{#if body}
-				<p class="mt-1 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
+				<Dialog.Description class="leading-relaxed">{body}</Dialog.Description>
 			{/if}
-		</div>
-		<div class="flex justify-end gap-2 px-4 py-3">
+		</Dialog.Header>
+		<Dialog.Footer>
 			<Button variant="ghost" size="sm" onclick={() => (open = false)}>Cancel</Button>
 			<Button
 				variant="destructive"
@@ -37,6 +37,6 @@
 			>
 				{confirmLabel}
 			</Button>
-		</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

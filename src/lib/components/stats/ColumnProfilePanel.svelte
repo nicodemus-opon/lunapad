@@ -67,14 +67,14 @@
 				<ColumnProfileCard {profile} compact />
 			{/each}
 			{#if profiles.length > 2}
-				<p class="text-center text-[11px] text-muted-foreground">
+				<p class="text-center text-2xs text-muted-foreground">
 					Open the full result tab for all {profiles.length} columns.
 				</p>
 			{/if}
 		</div>
 	{:else if useMasterDetail}
 		<div class="flex min-h-0 flex-1 gap-3 overflow-hidden">
-			<div class="w-48 shrink-0 overflow-hidden rounded-lg border bg-card p-2">
+			<div class="w-48 shrink-0 overflow-hidden border-r border-border pr-3">
 				<ColumnSelector
 					{profiles}
 					selected={selectedColumn}

@@ -7,11 +7,11 @@
 	const { value, color }: Props = $props();
 
 	const CHART_TOKENS = [
-		'var(--chart-1, #3b82f6)',
-		'var(--chart-2, #16a34a)',
-		'var(--chart-3, #d97706)',
-		'var(--chart-4, #8b5cf6)',
-		'var(--chart-5, #0ea5e9)'
+		'var(--chart-1)',
+		'var(--chart-2)',
+		'var(--chart-3)',
+		'var(--chart-4)',
+		'var(--chart-5)'
 	];
 
 	function hashIndex(s: string): number {
@@ -23,15 +23,15 @@
 	const token = $derived.by(() => {
 		switch (color) {
 			case 'info':
-				return 'var(--chart-1, #3b82f6)';
+				return 'var(--chart-1)';
 			case 'success':
-				return 'var(--chart-2, #16a34a)';
+				return 'var(--success)';
 			case 'warning':
-				return '#d97706';
+				return 'var(--warning)';
 			case 'error':
-				return 'var(--destructive, #dc2626)';
+				return 'var(--destructive)';
 			case 'neutral':
-				return 'var(--foreground, #1a1a1a)';
+				return 'var(--foreground)';
 			default:
 				return CHART_TOKENS[hashIndex(String(value))];
 		}
@@ -45,12 +45,12 @@
 		display: inline-flex;
 		align-items: center;
 		padding: 0.15rem 0.55rem;
-		border-radius: 0.395rem;
-		font-size: 0.75rem;
+		border-radius: var(--radius);
+		font-size: var(--text-xs);
 		font-weight: 600;
 		line-height: 1.4;
-		background: color-mix(in oklch, var(--md-badge-token) 8%, transparent);
-		border: 1px solid color-mix(in oklch, var(--md-badge-token) 25%, transparent);
+		background: color-mix(in oklab, var(--md-badge-token) 8%, transparent);
+		border: 1px solid color-mix(in oklab, var(--md-badge-token) 25%, transparent);
 		color: var(--md-badge-token);
 		margin: 0.1rem 0.15rem;
 		vertical-align: middle;

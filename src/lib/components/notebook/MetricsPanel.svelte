@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { buildMetricCatalog, filterCatalog } from '$lib/services/metric-catalog';
 	import type { Cell } from '$lib/stores/notebook.svelte';
-	import { Search } from '@lucide/svelte';
+	import { BarChart3, Search } from '@lucide/svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
+	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 
 	interface Props {
 		cells: Cell[];
@@ -25,24 +27,28 @@
 			bind:value={query}
 		/>
 	</div>
-	<div class="min-h-0 flex-1 overflow-y-auto">
+	<div class="-mx-2 min-h-0 flex-1 overflow-y-auto" role="tree" aria-label="Metric catalog">
 		{#if filtered.length === 0}
-			<p class="px-1 text-2xs text-muted-foreground">Run query cells to populate the catalog.</p>
+			<EmptyState
+				description={query
+					? 'No metrics match your search.'
+					: 'Run query cells to populate the catalog.'}
+			>
+				{#snippet icon()}
+					<BarChart3 class="h-4 w-4" />
+				{/snippet}
+			</EmptyState>
 		{:else}
-			<ul class="space-y-0.5">
-				{#each filtered as entry (entry.ref)}
-					<li>
-						<button
-							type="button"
-							class="w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60"
-							onclick={() => onInsertRef?.(entry.ref)}
-						>
-							<span class="font-mono">{entry.ref}</span>
-							<span class="ml-1 text-2xs text-muted-foreground">{entry.kind}</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
+			{#each filtered as entry (entry.ref)}
+				<TreeRow leafSpacer={false} onActivate={() => onInsertRef?.(entry.ref)}>
+					{#snippet label()}
+						<span class="min-w-0 flex-1 truncate font-mono text-xs">{entry.ref}</span>
+					{/snippet}
+					{#snippet trailing()}
+						<span class="shrink-0 text-2xs text-muted-foreground">{entry.kind}</span>
+					{/snippet}
+				</TreeRow>
+			{/each}
 		{/if}
 	</div>
 </div>

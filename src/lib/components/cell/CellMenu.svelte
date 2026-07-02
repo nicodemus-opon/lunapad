@@ -19,6 +19,7 @@
 		Trash2,
 		FileSpreadsheet,
 		Sparkles,
+		BrainCircuit,
 		ArrowUp,
 		ArrowDown,
 		Eraser,
@@ -61,6 +62,7 @@
 		onRunTests,
 		onOpenInlinePrompt,
 		onOpenWorksheet,
+		onShareWithAI,
 		isPlotCell = false
 	}: {
 		cell: Cell;
@@ -80,6 +82,7 @@
 		onRunTests: () => void;
 		onOpenInlinePrompt?: () => void;
 		onOpenWorksheet?: () => void;
+		onShareWithAI?: () => void;
 		isPlotCell?: boolean;
 	} = $props();
 
@@ -103,6 +106,13 @@
 				<Sparkles class="h-3.5 w-3.5" /> Tell AI what to do
 				<DropdownMenu.Shortcut>⌘⇧K</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
+		{/if}
+		{#if onShareWithAI}
+			<DropdownMenu.Item onclick={onShareWithAI}>
+				<BrainCircuit class="h-3.5 w-3.5" /> Share with AI
+			</DropdownMenu.Item>
+		{/if}
+		{#if onOpenInlinePrompt || onShareWithAI}
 			<DropdownMenu.Separator />
 		{/if}
 		{#if onOpenWorksheet && (isQueryCell || isPythonCell || isPlotCell)}

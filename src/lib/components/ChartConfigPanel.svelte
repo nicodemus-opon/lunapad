@@ -138,8 +138,8 @@
 	const BOX_LABELS = ['Min', 'Q1 (25th)', 'Median', 'Q3 (75th)', 'Max'] as const;
 
 	const sel =
-		'w-full h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring';
-	const label = 'text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
+		'w-full h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring';
+	const label = 'text-2xs font-medium uppercase tracking-wide text-muted-foreground';
 
 	// Infer the best chart type for the current data shape — used to surface a recommendation badge
 	const recommendedChartType = $derived.by(() => {
@@ -179,7 +179,7 @@
 		<div class="flex items-center gap-1.5">
 			<p class={label}>Chart Type</p>
 			{#if recommendedChartType && recommendedChartType !== config.chartType}
-				<span class="text-[9px] text-muted-foreground/60"
+				<span class="text-3xs text-muted-foreground/60"
 					>· recommended: {chartTypes.find((c) => c.type === recommendedChartType)?.label ??
 						recommendedChartType}</span
 				>
@@ -188,7 +188,7 @@
 		<div class="grid grid-cols-4 gap-1">
 			{#each chartTypes as ct (ct.type)}
 				<button
-					class="relative flex flex-col items-center gap-0.5 rounded-md px-1 py-1.5 text-[10px] transition-colors
+					class="relative flex flex-col items-center gap-0.5 rounded-md px-1 py-1.5 text-2xs transition-colors
 						{config.chartType === ct.type
 						? 'border border-primary/30 bg-primary/15 text-primary'
 						: 'border border-transparent text-muted-foreground hover:bg-muted'}"
@@ -221,7 +221,7 @@
 					onchange={(code) => update({ code })}
 				/>
 			</div>
-			<p class="text-[10px] text-muted-foreground">
+			<p class="text-2xs text-muted-foreground">
 				Receives <code>rows</code>, <code>columns</code>. Return a Plotly figure object:
 				<code>{'{ data: [...], layout: {...} }'}</code>.
 			</p>

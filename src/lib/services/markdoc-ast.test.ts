@@ -138,9 +138,7 @@ describe('markdoc-ast', () => {
 	});
 
 	it('does not duplicate the closing tag when a container attr is edited', () => {
-		const [block] = parseVisualBlocks(
-			'{% callout type="info" %}\nsome body text\n{% /callout %}'
-		);
+		const [block] = parseVisualBlocks('{% callout type="info" %}\nsome body text\n{% /callout %}');
 		const updated = updateBlockWidgetSource(block, { attrs: { type: 'warning' } });
 		expect(updated.source).toContain('type="warning"');
 		expect(updated.source).toContain('some body text');

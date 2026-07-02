@@ -4,8 +4,9 @@
 	import ChartView from './ChartView.svelte';
 	import ChartConfigPanel from './ChartConfigPanel.svelte';
 	import StatsView from './StatsView.svelte';
+	import ResultViewModeSwitcher from './ResultViewModeSwitcher.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Table2, TrendingUp, Sigma, Settings2, Search, X } from '@lucide/svelte';
+	import { Settings2, Search, X } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
 	import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
@@ -126,44 +127,14 @@
 <div class="flex flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
 	<!-- Toolbar -->
 	<div
-		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-150 ease-(--motion-ease-out) {showControls
+		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-(--motion-fast) ease-(--motion-ease-out) {showControls
 			? 'h-7 opacity-100'
 			: toolbarReserveSpace
 				? 'pointer-events-none h-7 opacity-0'
 				: 'pointer-events-none h-0 opacity-0'}"
 		aria-hidden={!showControls}
 	>
-		<div
-			class="inline-flex flex-nowrap items-center gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-0.5"
-		>
-			<Button
-				variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-				size="sm"
-				class="h-6 gap-1 px-2 text-2xs"
-				onclick={() => switchView('table')}
-			>
-				<Table2 class="h-3 w-3" />
-				Table
-			</Button>
-			<Button
-				variant={viewMode === 'chart' ? 'secondary' : 'ghost'}
-				size="sm"
-				class="h-6 gap-1 px-2 text-2xs"
-				onclick={() => switchView('chart')}
-			>
-				<TrendingUp class="h-3 w-3" />
-				Chart
-			</Button>
-			<Button
-				variant={viewMode === 'stats' ? 'secondary' : 'ghost'}
-				size="sm"
-				class="h-6 gap-1 px-2 text-2xs"
-				onclick={() => switchView('stats')}
-			>
-				<Sigma class="h-3 w-3" />
-				Stats
-			</Button>
-		</div>
+		<ResultViewModeSwitcher {viewMode} onSwitch={switchView} />
 
 		<div class="flex h-7 min-w-0 shrink-0 items-center justify-end gap-1">
 			{#if viewMode === 'table'}

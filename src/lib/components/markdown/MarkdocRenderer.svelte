@@ -30,11 +30,11 @@
 
 <style>
 	.md-error-banner {
-		font-size: 0.75rem;
-		color: var(--destructive, #dc2626);
-		background: color-mix(in oklch, var(--destructive, #dc2626) 8%, transparent);
-		border: 1px solid color-mix(in oklch, var(--destructive, #dc2626) 25%, transparent);
-		border-radius: 0.4rem;
+		font-size: var(--text-xs);
+		color: var(--destructive);
+		background: color-mix(in oklab, var(--destructive) 8%, transparent);
+		border: 1px solid color-mix(in oklab, var(--destructive) 25%, transparent);
+		border-radius: var(--radius);
 		padding: 0.4rem 0.6rem;
 		margin-bottom: 0.5rem;
 	}

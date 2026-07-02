@@ -9,29 +9,31 @@
 	const { overview }: Props = $props();
 </script>
 
-<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-	<div class="rounded-lg border bg-card px-3 py-2.5">
-		<p class="text-[10px] tracking-wider text-muted-foreground uppercase">Rows</p>
+<div
+	class="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border bg-card sm:grid-cols-4 sm:divide-y-0"
+>
+	<div class="px-3 py-2.5">
+		<p class="text-2xs tracking-wider text-muted-foreground uppercase">Rows</p>
 		<p class="mt-0.5 text-lg font-semibold tabular-nums">{overview.rowCount.toLocaleString()}</p>
 	</div>
-	<div class="rounded-lg border bg-card px-3 py-2.5">
-		<p class="text-[10px] tracking-wider text-muted-foreground uppercase">Columns</p>
+	<div class="px-3 py-2.5">
+		<p class="text-2xs tracking-wider text-muted-foreground uppercase">Columns</p>
 		<p class="mt-0.5 text-lg font-semibold tabular-nums">{overview.columnCount}</p>
 	</div>
-	<div class="rounded-lg border bg-card px-3 py-2.5">
-		<p class="text-[10px] tracking-wider text-muted-foreground uppercase">Missing cells</p>
+	<div class="px-3 py-2.5">
+		<p class="text-2xs tracking-wider text-muted-foreground uppercase">Missing cells</p>
 		<p class="mt-0.5 text-lg font-semibold tabular-nums">
 			{overview.totalMissingCells.toLocaleString()}
 		</p>
 		{#if overview.rowCount > 0 && overview.columnCount > 0}
-			<p class="text-[10px] text-muted-foreground tabular-nums">
+			<p class="text-2xs text-muted-foreground tabular-nums">
 				{fmtPct((overview.totalMissingCells / (overview.rowCount * overview.columnCount)) * 100, 1)} of
 				grid
 			</p>
 		{/if}
 	</div>
-	<div class="rounded-lg border bg-card px-3 py-2.5">
-		<p class="text-[10px] tracking-wider text-muted-foreground uppercase">Avg completeness</p>
+	<div class="px-3 py-2.5">
+		<p class="text-2xs tracking-wider text-muted-foreground uppercase">Avg completeness</p>
 		<p class="mt-0.5 text-lg font-semibold tabular-nums">
 			{fmtPct(overview.avgCompleteness, 1)}
 		</p>

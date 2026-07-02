@@ -10,12 +10,12 @@
 
 	const token = $derived(
 		color === 'success'
-			? 'var(--chart-2, #16a34a)'
+			? 'var(--success)'
 			: color === 'warning'
-				? '#d97706'
+				? 'var(--warning)'
 				: color === 'error'
-					? 'var(--destructive, #dc2626)'
-					: 'var(--chart-1, #3b82f6)'
+					? 'var(--destructive)'
+					: 'var(--chart-1)'
 	);
 
 	const pct = $derived(max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0);
@@ -33,21 +33,21 @@
 		margin: 0.35rem 0;
 	}
 	.md-progress-label {
-		font-size: 0.72rem;
+		font-size: var(--text-2xs);
 		opacity: 0.7;
 		margin-bottom: 0.25rem;
 	}
 	.md-progress-track {
 		width: 100%;
 		height: 0.45rem;
-		border-radius: 0.395rem;
-		background: color-mix(in oklch, currentColor 8%, transparent);
+		border-radius: var(--radius);
+		background: color-mix(in oklab, var(--muted-foreground) 15%, transparent);
 		overflow: hidden;
 	}
 	.md-progress-fill {
 		height: 100%;
-		border-radius: 0.395rem;
-		background: color-mix(in oklch, var(--md-progress-token) 70%, transparent);
+		border-radius: var(--radius);
+		background: color-mix(in oklab, var(--md-progress-token) 70%, transparent);
 		transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 </style>

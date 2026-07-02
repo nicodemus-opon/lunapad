@@ -339,13 +339,13 @@
 
 <style>
 	.stage-block[data-running='true'] {
-		background: hsl(var(--muted) / 0.3);
+		background: color-mix(in oklab, var(--muted) 30%, transparent);
 	}
 
 	/* Tint value chips inside an errored stage (stage-chip marker from chip-styles.ts) */
 	.err-chips :global(.stage-chip:not(.border-dashed)) {
-		border-color: hsl(var(--destructive) / 0.4) !important;
-		background-color: hsl(var(--destructive) / 0.08) !important;
-		color: hsl(var(--destructive)) !important;
+		border-color: color-mix(in oklab, var(--destructive) 40%, transparent) !important;
+		background-color: color-mix(in oklab, var(--destructive) 8%, transparent) !important;
+		color: var(--destructive) !important;
 	}
 </style>

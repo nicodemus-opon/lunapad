@@ -129,6 +129,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-w-3xl gap-0 overflow-hidden p-0">
+		<Dialog.Close class="absolute top-3 right-3 z-10" />
 		<div class="flex h-[560px]">
 			<div class="flex w-44 shrink-0 flex-col border-r border-border/60 bg-muted/20 p-2">
 				<p class="px-2 py-1.5 text-xs font-semibold">Settings</p>

@@ -15,7 +15,7 @@
 	<Tooltip.Trigger>
 		<Badge variant="secondary" class="h-6 gap-1 py-0.5 pr-1 pl-2 text-xs font-normal">
 			<Table2 class="h-3 w-3 shrink-0 text-muted-foreground" />
-			<span class="max-w-[120px] truncate font-mono">{table.name}</span>
+			<span class="max-w-30 truncate font-mono">{table.name}</span>
 			<span class="shrink-0 text-muted-foreground">{table.rowCount.toLocaleString()}r</span>
 			<button
 				class="ml-0.5 rounded-sm p-0.5 transition-colors hover:bg-destructive/20 hover:text-destructive"

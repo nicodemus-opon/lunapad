@@ -178,13 +178,13 @@
 		position: relative;
 	}
 	.md-datatable-empty {
-		font-size: 0.72rem;
+		font-size: var(--text-2xs);
 		opacity: 0.6;
 		margin: 0.2rem 0 0.5rem;
 	}
 	.md-datatable-wrap.linked-active {
-		outline: 2px solid color-mix(in oklch, var(--chart-1, #3b82f6) 50%, transparent);
-		border-radius: 0.35rem;
+		outline: 2px solid color-mix(in oklab, var(--chart-1) 50%, transparent);
+		border-radius: var(--radius);
 	}
 	.md-datatable-actions {
 		position: absolute;
@@ -197,9 +197,9 @@
 		transition: opacity 0.15s;
 	}
 	.md-datatable-expand {
-		background: color-mix(in oklch, var(--background, white) 80%, transparent);
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		border-radius: 0.3rem;
+		background: color-mix(in oklab, var(--background) 80%, transparent);
+		border: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
+		border-radius: var(--radius);
 		padding: 0.25rem;
 	}
 	.md-datatable-wrap:hover .md-datatable-actions {
@@ -209,7 +209,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 100;
-		background: color-mix(in oklch, var(--background, white) 96%, transparent);
+		background: color-mix(in oklab, var(--background) 96%, transparent);
 		backdrop-filter: blur(8px);
 		display: flex;
 		flex-direction: column;

@@ -26,20 +26,12 @@
 		Search,
 		MessageSquare,
 		Hash,
-		Calendar,
-		Clock,
-		ToggleLeft,
-		AtSign,
-		Link2,
-		Tag,
-		KeyRound,
-		Type,
-		Percent,
-		DollarSign
+		Type
 	} from '@lucide/svelte';
 	import FormattedCell from '$lib/components/FormattedCell.svelte';
+	import { KIND_ICON } from '$lib/components/stats/stats-ui';
 	import { buildReportTableModel } from '$lib/services/report-table-model';
-	import { type ColumnFormat, type ColumnFormatKind } from '$lib/services/column-format';
+	import { type ColumnFormat } from '$lib/services/column-format';
 	import { formatCellPlainText, formatFullValueText } from '$lib/services/report-table-format';
 	import { computeTableHeaderStats } from '$lib/services/column-profile';
 	import {
@@ -71,7 +63,7 @@
 		onColumnDescriptionChange?: (column: string, description: string) => void;
 		/** True when rows were capped at the auto-limit */
 		truncated?: boolean;
-		/** Fill the parent's height instead of capping the table at max-h-125 (full result tab) */
+		/** Fill the parent's height instead of capping the table at max-h-96 (full result tab) */
 		fillHeight?: boolean;
 	}
 
@@ -80,7 +72,7 @@
 		columns,
 		pageSize = 10,
 		name = 'results',
-		headerInsights = 'full',
+		headerInsights = 'compact',
 		columnDescriptions = {},
 		columnFormatOverrides = {},
 		columnFormatRules = {},
@@ -245,20 +237,6 @@
 
 	let statsMap = $state<Record<string, ColStats>>({});
 	let formatMap = $state<Record<string, ColumnFormat>>({});
-
-	const KIND_ICON: Record<ColumnFormatKind, typeof Hash> = {
-		boolean: ToggleLeft,
-		id: KeyRound,
-		email: AtSign,
-		url: Link2,
-		datetime: Clock,
-		date: Calendar,
-		percentage: Percent,
-		currency: DollarSign,
-		number: Hash,
-		category: Tag,
-		text: Type
-	};
 
 	$effect(() => {
 		// Capture reactive values before the async gap so the effect re-runs when they change.
@@ -520,7 +498,7 @@
 							class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
 						/>
 						<input
-							class="h-7 w-40 rounded-md border border-transparent bg-transparent pr-6 pl-7 text-xs text-foreground transition-[width,background-color,border-color] duration-200 ease-out outline-none placeholder:text-muted-foreground/45 hover:bg-muted/40 focus:w-64 focus:border-border focus:bg-background motion-reduce:transition-none"
+							class="h-7 w-40 rounded-md border border-transparent bg-transparent pr-6 pl-7 text-xs text-foreground transition-[width,background-color,border-color] duration-(--motion-medium) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/40 focus:w-72 focus:border-border focus:bg-background motion-reduce:transition-none"
 							type="text"
 							placeholder="Search"
 							aria-label="Search table"
@@ -544,7 +522,7 @@
 			<Table.Root
 				containerClass="overflow-auto rounded-md border {fillHeight
 					? 'h-full max-h-full'
-					: 'max-h-125'}"
+					: 'max-h-96'}"
 			>
 				<Table.Header>
 					{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
@@ -561,7 +539,7 @@
 											: s.isNumeric
 												? Hash
 												: Type}
-										<div class="flex min-w-22.5 flex-col gap-0.5">
+										<div class="flex min-w-24 flex-col gap-0.5">
 											<!-- Type icon + column name + action buttons -->
 											<div class="group/col flex items-center gap-1">
 												<Icon class="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -587,7 +565,7 @@
 													width="80"
 													height="24"
 													viewBox="0 0 80 24"
-													class="mt-0.5 text-primary opacity-70"
+													class="mt-0.5 text-chart-4/75"
 												>
 													{#each s.histBuckets as v, i (i)}
 														{@const bw = 80 / s.histBuckets.length}
@@ -602,20 +580,20 @@
 													{/each}
 												</svg>
 												<div
-													class="flex justify-between text-[9px] leading-none text-muted-foreground"
+													class="flex justify-between text-3xs leading-none text-muted-foreground"
 												>
 													<span>Min {fmtNum(s.min!)}</span>
 													<span>Max {fmtNum(s.max!)}</span>
 												</div>
 											{/if}
 											<!-- Missing -->
-											<div class="text-[10px] leading-none text-muted-foreground">
+											<div class="text-2xs leading-none text-muted-foreground">
 												Missing: <span class="font-medium"
 													>{s.missing} ({pct(s.missing, s.total)})</span
 												>
 											</div>
 											<!-- Distinct -->
-											<div class="text-[10px] leading-none text-muted-foreground">
+											<div class="text-2xs leading-none text-muted-foreground">
 												Distinct: <span class="font-medium"
 													>{s.distinct} ({pct(s.distinct, s.total)})</span
 												>
@@ -653,7 +631,7 @@
 								{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
 								{@const conditional = styleForCell(value, cell.column.id)}
 								<Table.Cell
-									class="max-w-70 cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
+									class="max-w-64 cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
 									{ci === 0 ? 'sticky left-0 z-10 bg-background' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage')
 										? 'text-right'
@@ -670,7 +648,7 @@
 										<span class="inline-flex items-center gap-1">
 											{#if conditional?.icon}
 												<span
-													class="shrink-0 text-[10px] font-semibold"
+													class="shrink-0 text-2xs font-semibold"
 													style="color: {conditionalToneToCssVar(
 														conditional.textTone ?? conditional.tone ?? 'neutral'
 													)}"
@@ -709,40 +687,38 @@
 			{@const menuCol = columnMenuCol}
 			<button
 				type="button"
-				class="fixed inset-0 z-[209] cursor-default"
+				class="fixed inset-0 z-(--z-overlay) cursor-default"
 				aria-label="Dismiss column actions"
 				tabindex={-1}
 				onclick={closeColumnMenu}
 			></button>
 			<div
-				style="position: fixed; top: {columnMenuTop}px; left: {columnMenuLeft}px; z-index: 220;"
-				class="column-menu w-60 rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/15 backdrop-blur-sm"
+				style="position: fixed; top: {columnMenuTop}px; left: {columnMenuLeft}px;"
+				class="column-menu z-(--z-dropdown) w-60 rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/15 backdrop-blur-sm"
 			>
 				<div class="flex items-start justify-between gap-2 px-2 py-1.5">
 					<div class="min-w-0">
-						<p class="truncate font-mono text-[11px] leading-none font-semibold text-foreground">
+						<p class="truncate font-mono text-2xs leading-none font-semibold text-foreground">
 							{menuCol}
 						</p>
-						<p class="mt-1 text-[10px] leading-none text-muted-foreground">Column actions</p>
+						<p class="mt-1 text-2xs leading-none text-muted-foreground">Column actions</p>
 					</div>
 					<div class="flex shrink-0 items-center gap-1 pt-0.5">
 						{#if sortDirFor(menuCol)}
-							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-[9px] text-primary">sort</span>
+							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-3xs text-primary">sort</span>
 						{/if}
 						{#if hasFilterFor(menuCol)}
-							<span class="rounded bg-warning/12 px-1.5 py-0.5 text-[9px] text-warning">filter</span
-							>
+							<span class="rounded bg-warning/12 px-1.5 py-0.5 text-3xs text-warning">filter</span>
 						{/if}
 						{#if hasRulesFor(menuCol)}
-							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-[9px] text-primary">format</span
-							>
+							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-3xs text-primary">format</span>
 						{/if}
 					</div>
 				</div>
 
-				<div class="grid gap-1">
-					<div class="rounded-md bg-muted/20 p-1">
-						<p class="px-1 pb-1 text-[10px] font-medium text-muted-foreground">Sort</p>
+				<div class="grid">
+					<div class="px-1 py-1.5">
+						<p class="px-1 pb-1 text-2xs font-medium text-muted-foreground">Sort</p>
 						<div class="grid grid-cols-3 gap-1">
 							<Button
 								variant="ghost"
@@ -793,7 +769,7 @@
 						</div>
 					</div>
 
-					<div class="grid gap-0.5 py-0.5">
+					<div class="grid gap-0.5 border-t border-border/60 px-1 py-1.5">
 						<Button
 							variant="ghost"
 							size="sm"
@@ -810,7 +786,7 @@
 							<Filter class="h-3 w-3" />
 							<span class="flex-1 text-left">Filter values</span>
 							{#if hasFilterFor(menuCol)}
-								<span class="text-[9px] text-muted-foreground">active</span>
+								<span class="text-3xs text-muted-foreground">active</span>
 							{/if}
 						</Button>
 						{#if onColumnDescriptionChange}
@@ -829,11 +805,11 @@
 						{/if}
 					</div>
 
-					<div class="rounded-md bg-muted/20 p-1">
+					<div class="border-t border-border/60 px-1 py-1.5">
 						<div class="flex items-center justify-between px-1 pb-1">
-							<p class="text-[10px] font-medium text-muted-foreground">Conditional format</p>
+							<p class="text-2xs font-medium text-muted-foreground">Conditional format</p>
 							{#if hasRulesFor(menuCol)}
-								<span class="text-[9px] text-primary">active</span>
+								<span class="text-3xs text-primary">active</span>
 							{/if}
 						</div>
 						<div class="grid grid-cols-2 gap-1">
@@ -914,22 +890,22 @@
 			<!-- Click-away backdrop so the popover dismisses seamlessly. -->
 			<button
 				type="button"
-				class="fixed inset-0 z-[210] cursor-default"
+				class="fixed inset-0 z-(--z-overlay) cursor-default"
 				aria-label="Dismiss filter"
 				tabindex={-1}
 				onclick={closeFilterPopover}
 			></button>
 			<div
-				style="position: fixed; top: {filterPopoverTop}px; left: {filterPopoverLeft}px; z-index: 220;"
-				class="w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+				style="position: fixed; top: {filterPopoverTop}px; left: {filterPopoverLeft}px;"
+				class="z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
 			>
-				<p class="mb-1 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+				<p class="mb-1 flex items-center gap-1 text-2xs font-medium text-muted-foreground">
 					<Filter class="h-3 w-3" />
 					<span class="truncate">Filter: {filterPopoverCol}</span>
 				</p>
 				<!-- svelte-ignore a11y_autofocus -->
 				<input
-					class="w-full rounded border border-input bg-background px-2 py-1 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					class="w-full rounded border border-input bg-background px-2 py-1 text-2xs focus:ring-1 focus:ring-primary/40 focus:outline-none"
 					type="text"
 					placeholder="Type to match…"
 					autofocus
@@ -941,13 +917,13 @@
 				/>
 				<div class="mt-1.5 flex justify-end gap-1">
 					<button
-						class="rounded px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted"
+						class="rounded px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted"
 						onclick={closeFilterPopover}
 					>
 						Cancel
 					</button>
 					<button
-						class="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground transition-opacity hover:opacity-90"
+						class="rounded bg-primary px-2 py-0.5 text-2xs text-primary-foreground transition-opacity hover:opacity-90"
 						onclick={applyFilterPopover}
 					>
 						Apply
@@ -959,31 +935,31 @@
 		{#if descPopoverCol}
 			<button
 				type="button"
-				class="fixed inset-0 z-[209] cursor-default"
+				class="fixed inset-0 z-(--z-overlay) cursor-default"
 				aria-label="Dismiss description editor"
 				tabindex={-1}
 				onclick={() => (descPopoverCol = null)}
 			></button>
 			<div
-				style="position: fixed; top: {descPopoverTop}px; left: {descPopoverLeft}px; z-index: 220;"
-				class="w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+				style="position: fixed; top: {descPopoverTop}px; left: {descPopoverLeft}px;"
+				class="z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
 			>
-				<p class="mb-1 text-[10px] font-medium text-muted-foreground">{descPopoverCol}</p>
+				<p class="mb-1 text-2xs font-medium text-muted-foreground">{descPopoverCol}</p>
 				<textarea
-					class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-2xs focus:ring-1 focus:ring-primary/40 focus:outline-none"
 					rows={3}
 					placeholder="Column description…"
 					bind:value={descPopoverValue}
 				></textarea>
 				<div class="mt-1 flex justify-end gap-1">
 					<button
-						class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+						class="rounded px-2 py-0.5 text-2xs text-muted-foreground hover:bg-muted"
 						onclick={() => (descPopoverCol = null)}
 					>
 						Cancel
 					</button>
 					<button
-						class="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground"
+						class="rounded bg-primary px-2 py-0.5 text-2xs text-primary-foreground"
 						onclick={saveDescPopover}
 					>
 						Save

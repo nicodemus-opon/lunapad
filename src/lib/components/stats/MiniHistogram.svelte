@@ -22,7 +22,7 @@
 		{/each}
 	</svg>
 	{#if min != null && max != null}
-		<div class="flex justify-between text-[10px] leading-none text-muted-foreground tabular-nums">
+		<div class="flex justify-between text-2xs leading-none text-muted-foreground tabular-nums">
 			<span>{min.toLocaleString()}</span>
 			<span>{max.toLocaleString()}</span>
 		</div>

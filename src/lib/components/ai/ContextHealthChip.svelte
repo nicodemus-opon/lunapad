@@ -22,10 +22,10 @@
 
 {#if degraded && !dismissed && health}
 	<div
-		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-warning"
+		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-2xs text-warning"
 		role="status"
 	>
-		<AlertTriangle size={12} class="mt-0.5 shrink-0 opacity-70" />
+		<AlertTriangle class="mt-0.5 h-3 w-3 shrink-0 opacity-70" />
 		<div class="min-w-0 flex-1">
 			<span class="font-medium">Limited context</span>
 			{#if (health.issues?.length ?? 0) > 0}

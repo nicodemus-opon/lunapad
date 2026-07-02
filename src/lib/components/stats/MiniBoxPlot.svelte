@@ -18,7 +18,7 @@
 </script>
 
 <div class="space-y-0.5">
-	<p class="text-[10px] text-muted-foreground">Distribution</p>
+	<p class="text-2xs text-muted-foreground">Distribution</p>
 	<svg class="h-8 w-full {STATS_BOX_PLOT}" viewBox="0 0 100 16" preserveAspectRatio="none">
 		<line x1="2" y1="8" x2="98" y2="8" stroke="currentColor" stroke-width="1" opacity="0.35" />
 		<rect
@@ -44,7 +44,7 @@
 		<line x1="2" y1="5" x2="2" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5" />
 		<line x1="98" y1="5" x2="98" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5" />
 	</svg>
-	<div class="flex justify-between font-mono text-[10px] text-muted-foreground tabular-nums">
+	<div class="flex justify-between font-mono text-2xs text-muted-foreground tabular-nums">
 		<span>{fmtStatNum(min)}</span>
 		<span>{fmtStatNum(max)}</span>
 	</div>

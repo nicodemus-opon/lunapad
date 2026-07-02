@@ -225,30 +225,30 @@
 	}
 	.md-callout {
 		padding: 0.6rem 0.8rem;
-		border-radius: 0.5rem;
+		border-radius: var(--radius);
 		border: 1px solid;
 		margin: 0.5rem 0;
 		font-size: 0.9em;
 	}
 	.md-callout--info {
-		background: color-mix(in oklch, var(--chart-1, #3b82f6) 8%, transparent);
-		border-color: color-mix(in oklch, var(--chart-1, #3b82f6) 25%, transparent);
+		background: color-mix(in oklab, var(--chart-1) 8%, transparent);
+		border-color: color-mix(in oklab, var(--chart-1) 25%, transparent);
 	}
 	.md-callout--success {
-		background: color-mix(in oklch, var(--chart-2, #16a34a) 8%, transparent);
-		border-color: color-mix(in oklch, var(--chart-2, #16a34a) 25%, transparent);
+		background: color-mix(in oklab, var(--success) 8%, transparent);
+		border-color: color-mix(in oklab, var(--success) 25%, transparent);
 	}
 	.md-callout--warning {
-		background: color-mix(in oklch, #d97706 8%, transparent);
-		border-color: color-mix(in oklch, #d97706 25%, transparent);
+		background: color-mix(in oklab, var(--warning) 8%, transparent);
+		border-color: color-mix(in oklab, var(--warning) 25%, transparent);
 	}
 	.md-callout--error {
-		background: color-mix(in oklch, var(--destructive, #dc2626) 8%, transparent);
-		border-color: color-mix(in oklch, var(--destructive, #dc2626) 25%, transparent);
+		background: color-mix(in oklab, var(--destructive) 8%, transparent);
+		border-color: color-mix(in oklab, var(--destructive) 25%, transparent);
 	}
 	.md-card {
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		border-radius: 0.5rem;
+		border: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
+		border-radius: var(--radius);
 		padding: 0.6rem 0.8rem;
 		margin: 0.5rem 0;
 	}

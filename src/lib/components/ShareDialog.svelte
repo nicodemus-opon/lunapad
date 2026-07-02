@@ -13,7 +13,8 @@
 		Undo2,
 		ExternalLink,
 		LayoutGrid,
-		Save
+		Save,
+		ChevronRight
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { buildShareSnapshot } from '$lib/services/share-snapshot';
@@ -54,6 +55,7 @@
 	let slugCheckTimer: ReturnType<typeof setTimeout> | null = null;
 	let versions = $state<ShareVersion[]>([]);
 	let showVersions = $state(false);
+	let showAdvanced = $state(false);
 	let rollingBackVersion = $state<number | null>(null);
 	let lastUpdatedAt = $state<string | null>(null);
 	let expiresAt = $state<string | null>(null);
@@ -302,13 +304,13 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-w-md gap-0 overflow-hidden p-0">
-		<div class="flex items-center justify-between border-b px-4 py-3">
-			<p class="text-xs font-semibold">Share report</p>
-		</div>
+		<Dialog.Header>
+			<Dialog.Title>Share report</Dialog.Title>
+		</Dialog.Header>
 
 		<div class="max-h-[75vh] space-y-3 overflow-y-auto px-4 py-3">
 			{#if publishSummary}
-				<div class="rounded border bg-muted/30 p-2 text-[11px] text-muted-foreground">
+				<div class="rounded border bg-muted/30 p-2 text-2xs text-muted-foreground">
 					<p>
 						{publishSummary.cellCount} cells · {publishSummary.live} live · {publishSummary.frozen}
 						frozen
@@ -324,7 +326,7 @@
 
 			{#if !loading && (unboundTokens.length > 0 || orphanedWidgets.length > 0 || uncollapsedData.length > 0 || emptyResults.length > 0 || duckdbFilterWarn)}
 				<div
-					class="space-y-0.5 rounded border border-warning/30 bg-warning/10 p-2 text-[11px] text-warning"
+					class="space-y-0.5 rounded border border-warning/30 bg-warning/10 p-2 text-2xs text-warning"
 				>
 					<p class="font-medium">Pre-publish checklist</p>
 					{#if unboundTokens.length > 0}
@@ -365,7 +367,7 @@
 						checked={requireAuth}
 						onchange={(e) => (requireAuth = (e.target as HTMLInputElement).checked)}
 					/>
-					<span class="text-[11px] text-muted-foreground">Require login to view</span>
+					<span class="text-2xs text-muted-foreground">Require login to view</span>
 				</label>
 				<Button
 					variant="outline"
@@ -386,125 +388,131 @@
 				</Button>
 			{:else}
 				<div class="flex items-center gap-1.5">
-					<Input class="h-7 flex-1 font-mono text-[11px]" readonly value={shareUrl} />
+					<Input class="h-7 flex-1 font-mono text-2xs" readonly value={shareUrl} />
 					<Button variant="outline" size="sm" class="h-7 w-7 shrink-0 p-0" onclick={copyLink}>
 						<Copy class="h-3.5 w-3.5" />
 					</Button>
 				</div>
 
 				<div class="flex gap-1.5">
-					<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={previewPublish}>
+					<Button variant="outline" size="sm" class="flex-1 text-2xs" onclick={previewPublish}>
 						<ExternalLink class="h-3 w-3" /> Preview
 					</Button>
 					{#if onOpenSites}
-						<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={onOpenSites}>
+						<Button variant="outline" size="sm" class="flex-1 text-2xs" onclick={onOpenSites}>
 							<LayoutGrid class="h-3 w-3" /> Add to site…
 						</Button>
 					{/if}
-					<Button variant="outline" size="sm" class="flex-1 text-[11px]" onclick={copyEmbed}>
+					<Button variant="outline" size="sm" class="flex-1 text-2xs" onclick={copyEmbed}>
 						Embed
 					</Button>
 				</div>
 
-				<div class="space-y-1">
-					<div class="flex items-center gap-1.5">
-						<span class="shrink-0 text-[11px] text-muted-foreground">/r/</span>
-						<Input
-							class="h-7 flex-1 font-mono text-[11px]"
-							placeholder={token ?? ''}
-							value={slugInput}
-							oninput={(e) => onSlugInput((e.target as HTMLInputElement).value)}
-						/>
-						<Button
-							variant="outline"
-							size="sm"
-							class="h-7 shrink-0 text-[11px]"
-							disabled={savingSlug ||
-								slugStatus === 'taken' ||
-								slugStatus === 'invalid' ||
-								slugInput === (savedSlug ?? '')}
-							onclick={saveSlug}
-						>
-							{#if savingSlug}<Loader2 class="h-3 w-3 animate-spin" />{:else}Save{/if}
-						</Button>
-					</div>
-				</div>
+				<!-- Advanced settings (progressive disclosure) -->
+				<button
+					type="button"
+					class="flex w-full items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground"
+					onclick={() => (showAdvanced = !showAdvanced)}
+				>
+					<ChevronRight class="h-3 w-3 transition-transform {showAdvanced ? 'rotate-90' : ''}" />
+					Advanced settings
+				</button>
 
-				<div class="grid grid-cols-2 gap-2">
-					<div>
-						<span class="text-[11px] text-muted-foreground">Refresh every</span>
-						<Select.Root
-							type="single"
-							value={String(pollIntervalSeconds)}
-							onValueChange={(v) => (pollIntervalSeconds = Number(v))}
-						>
-							<Select.Trigger class="mt-0.5 h-7 text-xs">Poll {pollIntervalSeconds}s</Select.Trigger
+				{#if showAdvanced}
+					<div class="space-y-3">
+						<div class="space-y-1">
+							<div class="flex items-center gap-1.5">
+								<span class="shrink-0 text-2xs text-muted-foreground">/r/</span>
+								<Input
+									class="h-7 flex-1 font-mono text-2xs"
+									placeholder={token ?? ''}
+									value={slugInput}
+									oninput={(e) => onSlugInput((e.target as HTMLInputElement).value)}
+								/>
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-7 shrink-0 text-2xs"
+									disabled={savingSlug ||
+										slugStatus === 'taken' ||
+										slugStatus === 'invalid' ||
+										slugInput === (savedSlug ?? '')}
+									onclick={saveSlug}
+								>
+									{#if savingSlug}<Loader2 class="h-3 w-3 animate-spin" />{:else}Save{/if}
+								</Button>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-2">
+							<div>
+								<span class="text-2xs text-muted-foreground">Refresh every</span>
+								<Select.Root
+									type="single"
+									value={String(pollIntervalSeconds)}
+									onValueChange={(v) => (pollIntervalSeconds = Number(v))}
+								>
+									<Select.Trigger class="mt-0.5 h-7 text-xs"
+										>Poll {pollIntervalSeconds}s</Select.Trigger
+									>
+									<Select.Content>
+										<Select.Item value="60" class="text-xs">1 min</Select.Item>
+										<Select.Item value="300" class="text-xs">5 min</Select.Item>
+										<Select.Item value="900" class="text-xs">15 min</Select.Item>
+										<Select.Item value="3600" class="text-xs">1 hr</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<div>
+								<span class="text-2xs text-muted-foreground">Link expires</span>
+								<Select.Root
+									type="single"
+									value={expiresAt ? 'custom' : 'never'}
+									onValueChange={(v) => {
+										if (v === 'never') expiresAt = null;
+										else if (v === '7d') expiresAt = new Date(Date.now() + 7 * 864e5).toISOString();
+										else if (v === '30d')
+											expiresAt = new Date(Date.now() + 30 * 864e5).toISOString();
+									}}
+								>
+									<Select.Trigger class="mt-0.5 h-7 text-xs">
+										{expiresAt ? 'Custom' : 'Never'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="never" class="text-xs">Never</Select.Item>
+										<Select.Item value="7d" class="text-xs">7 days</Select.Item>
+										<Select.Item value="30d" class="text-xs">30 days</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+
+						<div>
+							<span class="text-2xs text-muted-foreground">Auto-refresh DuckDB snapshot</span>
+							<Select.Root
+								type="single"
+								value={refreshScheduleHours}
+								onValueChange={(v) => (refreshScheduleHours = v)}
 							>
-							<Select.Content>
-								<Select.Item value="60" class="text-xs">1 min</Select.Item>
-								<Select.Item value="300" class="text-xs">5 min</Select.Item>
-								<Select.Item value="900" class="text-xs">15 min</Select.Item>
-								<Select.Item value="3600" class="text-xs">1 hr</Select.Item>
-							</Select.Content>
-						</Select.Root>
+								<Select.Trigger class="mt-0.5 h-7 text-xs">
+									{refreshScheduleHours === '0'
+										? 'Off'
+										: refreshScheduleHours === '1'
+											? 'Hourly'
+											: refreshScheduleHours === '24'
+												? 'Daily'
+												: 'Weekly'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="0" class="text-xs">Off</Select.Item>
+									<Select.Item value="1" class="text-xs">Hourly</Select.Item>
+									<Select.Item value="24" class="text-xs">Daily</Select.Item>
+									<Select.Item value="168" class="text-xs">Weekly</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
 					</div>
-					<div>
-						<span class="text-[11px] text-muted-foreground">Link expires</span>
-						<Select.Root
-							type="single"
-							value={expiresAt ? 'custom' : 'never'}
-							onValueChange={(v) => {
-								if (v === 'never') expiresAt = null;
-								else if (v === '7d') expiresAt = new Date(Date.now() + 7 * 864e5).toISOString();
-								else if (v === '30d') expiresAt = new Date(Date.now() + 30 * 864e5).toISOString();
-							}}
-						>
-							<Select.Trigger class="mt-0.5 h-7 text-xs">
-								{expiresAt ? 'Custom' : 'Never'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="never" class="text-xs">Never</Select.Item>
-								<Select.Item value="7d" class="text-xs">7 days</Select.Item>
-								<Select.Item value="30d" class="text-xs">30 days</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
-
-				<div>
-					<span class="text-[11px] text-muted-foreground">Auto-refresh DuckDB snapshot</span>
-					<Select.Root
-						type="single"
-						value={refreshScheduleHours}
-						onValueChange={(v) => (refreshScheduleHours = v)}
-					>
-						<Select.Trigger class="mt-0.5 h-7 text-xs">
-							{refreshScheduleHours === '0'
-								? 'Off'
-								: refreshScheduleHours === '1'
-									? 'Hourly'
-									: refreshScheduleHours === '24'
-										? 'Daily'
-										: 'Weekly'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="0" class="text-xs">Off</Select.Item>
-							<Select.Item value="1" class="text-xs">Hourly</Select.Item>
-							<Select.Item value="24" class="text-xs">Daily</Select.Item>
-							<Select.Item value="168" class="text-xs">Weekly</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<label class="flex cursor-pointer items-center gap-1.5">
-					<input
-						type="checkbox"
-						class="h-3.5 w-3.5 accent-primary"
-						checked={requireAuth}
-						onchange={(e) => (requireAuth = (e.target as HTMLInputElement).checked)}
-					/>
-					<span class="text-[11px] text-muted-foreground">Require login to view</span>
-				</label>
+				{/if}
 
 				<div class="flex gap-1.5">
 					<Button
@@ -545,7 +553,7 @@
 				{#if versions.length > 0}
 					<button
 						type="button"
-						class="flex w-full items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+						class="flex w-full items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground"
 						onclick={() => (showVersions = !showVersions)}
 					>
 						<History class="h-3 w-3" />
@@ -554,7 +562,7 @@
 					{#if showVersions}
 						<div class="max-h-40 space-y-1 overflow-y-auto rounded border p-1.5">
 							{#each versions as v (v.version)}
-								<div class="flex items-center justify-between gap-2 text-[11px]">
+								<div class="flex items-center justify-between gap-2 text-2xs">
 									<span class="text-muted-foreground"
 										>v{v.version} · {new Date(v.createdAt).toLocaleString()}</span
 									>
@@ -562,7 +570,7 @@
 										<Button
 											variant="outline"
 											size="sm"
-											class="h-5.5 shrink-0 px-1.5 text-[10px]"
+											class="h-5.5 shrink-0 px-1.5 text-3xs"
 											disabled={rollingBackVersion !== null}
 											onclick={() => rollback(v.version)}
 										>
@@ -574,7 +582,7 @@
 											Roll back
 										</Button>
 									{:else}
-										<span class="shrink-0 text-[10px] text-muted-foreground">current</span>
+										<span class="shrink-0 text-3xs text-muted-foreground">current</span>
 									{/if}
 								</div>
 							{/each}

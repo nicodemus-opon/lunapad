@@ -91,14 +91,18 @@
 	<div class="inspector-empty text-xs text-muted-foreground">
 		Select a block to edit properties.
 	</div>
-{:else if !parsed}
-	<div class="inspector-prose space-y-2">
-		<p class="text-xs font-semibold text-muted-foreground">Prose / container</p>
+{:else if block.kind === 'fence'}
+	<div class="inspector-fence space-y-2">
+		<p class="text-xs font-semibold text-muted-foreground">Code block</p>
 		<textarea
 			class="min-h-28 w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
 			value={block.source}
 			oninput={(e) => onPatch({ source: e.currentTarget.value })}
 		></textarea>
+	</div>
+{:else if !parsed}
+	<div class="inspector-empty text-xs text-muted-foreground">
+		Edit text inline in the document. Select a widget to configure it here.
 	</div>
 {:else}
 	<div class="inspector-widget space-y-3">
@@ -730,7 +734,7 @@
 
 <style>
 	.inspector-empty,
-	.inspector-prose,
+	.inspector-fence,
 	.inspector-widget {
 		padding: 0.5rem;
 	}
@@ -738,7 +742,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
-		font-size: 0.72rem;
+		font-size: var(--text-2xs);
 	}
 	.field span {
 		color: var(--muted-foreground);
@@ -746,10 +750,24 @@
 	.field input,
 	.field select,
 	.field textarea {
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		border-radius: 0.35rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
 		background: var(--background);
 		padding: 0.3rem 0.45rem;
-		font-size: 0.72rem;
+		font-size: var(--text-2xs);
+	}
+	.field input:focus-visible,
+	.field select:focus-visible,
+	.field textarea:focus-visible {
+		outline: none;
+		border-color: color-mix(in oklab, var(--ring) 60%, transparent);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 25%, transparent);
+	}
+	.inline-field {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: var(--text-2xs);
+		color: var(--muted-foreground);
 	}
 </style>

@@ -13,6 +13,8 @@
 		X,
 		Circle
 	} from '@lucide/svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
+	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 	import {
 		getProjectFolder,
 		getIsEvidenceProject,
@@ -159,25 +161,25 @@
 {#if isEvidence}
 	<div class="flex flex-col text-sm">
 		<!-- Header -->
-		<button
-			class="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40"
-			onclick={() => (expanded = !expanded)}
-		>
-			{#if expanded}
-				<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-			{:else}
-				<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-			{/if}
-			<span class="flex-1 text-left text-xs font-semibold tracking-wide text-foreground uppercase"
-				>Evidence</span
+		<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+			<button
+				class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+				onclick={() => (expanded = !expanded)}
 			>
-			{#if runningJobId}
-				<span class="flex shrink-0 items-center gap-1 text-2xs text-success">
-					<Circle class="h-2 w-2 fill-green-500" />
-					Port {devPort ?? '…'}
-				</span>
-			{/if}
-		</button>
+				{#if expanded}
+					<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				{:else}
+					<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				{/if}
+				<span class="text-2xs font-medium text-muted-foreground">Evidence</span>
+				{#if runningJobId}
+					<span class="ml-1 flex shrink-0 items-center gap-1 text-2xs text-success">
+						<Circle class="h-2 w-2 fill-success" />
+						Port {devPort ?? '…'}
+					</span>
+				{/if}
+			</button>
+		</div>
 
 		{#if expanded}
 			<!-- Server controls -->
@@ -217,11 +219,11 @@
 					{/if}
 				{/if}
 				<button
-					class="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+					class="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
 					onclick={() => void refreshEvidencePages()}
 					title="Refresh pages"
 				>
-					<RefreshCw class="h-3 w-3" />
+					<RefreshCw class="h-3.5 w-3.5" />
 				</button>
 			</div>
 
@@ -241,7 +243,7 @@
 				</button>
 				{#if logOpen}
 					<div
-						class="mx-3 mb-2 max-h-40 overflow-y-auto rounded bg-black/20 p-2 font-mono text-2xs leading-relaxed"
+						class="mx-3 mb-2 max-h-40 overflow-y-auto rounded bg-muted/40 p-2 font-mono text-2xs leading-relaxed"
 					>
 						{#each logLines as line (line)}
 							<div class={logLineClass(line)}>{line}</div>
@@ -251,11 +253,10 @@
 			{/if}
 
 			<!-- Pages list -->
-			<div class="flex items-center justify-between px-3 pb-1">
-				<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">Pages</span
-				>
+			<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+				<span class="flex-1 text-2xs font-medium text-muted-foreground">Pages</span>
 				<button
-					class="text-muted-foreground transition-colors hover:text-foreground"
+					class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
 					onclick={() => (showNewPage = !showNewPage)}
 					title="New page"
 				>
@@ -265,7 +266,7 @@
 
 			{#if showNewPage}
 				<form
-					class="flex gap-1 px-3 pb-2"
+					class="flex gap-1 px-3 pt-2 pb-2"
 					onsubmit={(e) => {
 						e.preventDefault();
 						void handleNewPage();
@@ -293,43 +294,49 @@
 			{/if}
 
 			{#if pages.length === 0}
-				<p class="px-3 pb-3 text-2xs text-muted-foreground">No pages found in pages/</p>
+				<EmptyState description="No pages found in pages/">
+					{#snippet icon()}
+						<FileText class="h-4 w-4" />
+					{/snippet}
+				</EmptyState>
 			{:else}
-				<div class="pb-2">
+				<div class="py-1" role="tree" aria-label="Evidence pages">
 					{#each pages as pagePath (pagePath)}
 						{@const label = pagePath.replace(/^pages\//, '').replace(/\.md$/, '')}
-						<div
-							class="group flex items-center gap-1 px-3 py-1 transition-colors hover:bg-muted/40"
-						>
-							<FileText class="h-3 w-3 shrink-0 text-muted-foreground" />
-							<span class="min-w-0 flex-1 truncate text-xs text-foreground" title={pagePath}
-								>{label}</span
-							>
-							<div
-								class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-							>
-								{#if serverUrl}
+						<TreeRow leafSpacer={false} onActivate={() => openEvidencePreviewTab(pagePath)}>
+							{#snippet icon()}
+								<FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							{/snippet}
+							{#snippet label()}
+								<span class="min-w-0 flex-1 truncate text-xs text-foreground" title={pagePath}
+									>{label}</span
+								>
+							{/snippet}
+							{#snippet trailing()}
+								<div
+									class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100"
+								>
 									<button
-										class="h-5 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-										onclick={() => openEvidencePreviewTab(pagePath)}
-										title="Preview">Preview</button
+										class="h-5 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+										onclick={(e) => {
+											e.stopPropagation();
+											openEvidencePreviewTab(pagePath);
+										}}
+										title={serverUrl ? 'Preview' : 'Start dev server to preview'}>Preview</button
 									>
-									<a
-										href="{serverUrl}/{label}"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-										title="Open in browser"><ExternalLink class="h-3 w-3" /></a
-									>
-								{:else}
-									<button
-										class="h-5 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-										onclick={() => openEvidencePreviewTab(pagePath)}
-										title="Start dev server to preview">Preview</button
-									>
-								{/if}
-							</div>
-						</div>
+									{#if serverUrl}
+										<a
+											href="{serverUrl}/{label}"
+											target="_blank"
+											rel="noopener noreferrer"
+											class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+											title="Open in browser"
+											onclick={(e) => e.stopPropagation()}><ExternalLink class="h-3 w-3" /></a
+										>
+									{/if}
+								</div>
+							{/snippet}
+						</TreeRow>
 					{/each}
 				</div>
 			{/if}

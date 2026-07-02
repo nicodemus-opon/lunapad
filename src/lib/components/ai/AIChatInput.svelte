@@ -117,7 +117,7 @@
 							onclick={() => removeContextCell(pill.id)}
 							aria-label="Remove context"
 						>
-							<X size={10} />
+							<X class="h-3 w-3" />
 						</button>
 					</span>
 				{/each}
@@ -145,7 +145,7 @@
 					aria-label="AI mode"
 				>
 					{modeLabel}
-					<ChevronDown size={11} class="opacity-50" />
+					<ChevronDown class="h-3 w-3 opacity-50" />
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="w-48">
 					{#each MODE_OPTIONS as opt}
@@ -171,7 +171,7 @@
 					title="Stop generation"
 					data-testid="ai-stop"
 				>
-					<Square size={13} />
+					<Square class="h-3.5 w-3.5" />
 				</button>
 			{:else}
 				<Tooltip.Root>
@@ -184,7 +184,7 @@
 								onclick={submit}
 								data-testid="ai-send"
 							>
-								<Send size={13} />
+								<Send class="h-3.5 w-3.5" />
 							</button>
 						{/snippet}
 					</Tooltip.Trigger>

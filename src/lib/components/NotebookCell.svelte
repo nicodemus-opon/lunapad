@@ -6,7 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import MarkdownEditor from './markdown/MarkdownEditor.svelte';
 	import type { MarkdownEditorHandle } from './markdown/MarkdownEditor.svelte';
-	import VisualDashboardEditor from './markdown/visual/VisualDashboardEditor.svelte';
+	import type TyporaEditorComponent from './markdown/visual/TyporaEditor.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
@@ -102,7 +102,7 @@
 		resolveConnection
 	} from '$lib/types/connection';
 	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
-	import { visualBlocksRoundTripLossy } from '$lib/services/markdoc-ast';
+	import { markdocPmRoundTripLossy } from '$lib/services/markdoc-pm';
 	import { shouldHideCellInReportView } from '$lib/services/filter-frozen';
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
@@ -414,6 +414,14 @@
 		}))
 	);
 	const markdownValidationCells = $derived(getAllCellsAcrossNotebooks());
+	let TyporaEditor = $state<typeof TyporaEditorComponent | null>(null);
+
+	$effect(() => {
+		if (!isMarkdownVisualEditing || TyporaEditor) return;
+		void import('./markdown/visual/TyporaEditor.svelte').then((m) => {
+			TyporaEditor = m.default;
+		});
+	});
 
 	function insertMarkdownSnippet(snippet: string) {
 		markdownHandle?.insertText(snippet);
@@ -431,7 +439,7 @@
 	function requestVisualMarkdownMode() {
 		if (!isMarkdownCell) return;
 		const md = cell.markdown ?? '';
-		const { lossy } = visualBlocksRoundTripLossy(md);
+		const { lossy } = markdocPmRoundTripLossy(md);
 		if (!lossy || !md.trim()) {
 			setMarkdownEditMode(cell.id, 'visual');
 			return;
@@ -988,8 +996,8 @@
 		? 'flex min-h-0 flex-1 flex-col border-l-0 p-0'
 		: 'border-l-4 p-4'} {entering ? 'is-entering' : ''} {worksheet
 		? ''
-		: cellFocused
-			? 'border-primary/20'
+		: !reportView && cellFocused
+			? 'border-primary/30'
 			: 'border-transparent'} {worksheet || reportView
 		? ''
 		: running
@@ -998,7 +1006,7 @@
 				? ''
 				: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
 		? 'cell-ai-ghost bg-primary/5 ring-1 ring-primary/30'
-		: ''} {reviewMode && hasOpenComments && !cellFocused
+		: ''} {!reportView && reviewMode && hasOpenComments && !cellFocused
 		? 'border-l-primary/35 bg-primary/[0.03]'
 		: ''}"
 	hidden={hiddenInReportView}
@@ -1121,20 +1129,26 @@
 				{:else}
 					<div class="markdown-editor-stack relative min-h-32">
 						<div
-							class="transition-opacity duration-150 {isMarkdownVisualEditing
+							class="transition-opacity duration-(--motion-fast) {isMarkdownVisualEditing
 								? 'pointer-events-auto relative opacity-100'
 								: 'pointer-events-none absolute inset-0 opacity-0'}"
 						>
-							<VisualDashboardEditor
-								value={cell.markdown ?? ''}
-								onchange={(v) => updateCellMarkdown(cell.id, v)}
-								cells={markdownValidationCells}
-								{notebookId}
-								refEntries={markdownRefEntries}
-							/>
+							{#if TyporaEditor}
+								<TyporaEditor
+									value={cell.markdown ?? ''}
+									onchange={(v) => updateCellMarkdown(cell.id, v)}
+									cells={markdownValidationCells}
+									{notebookId}
+									refEntries={markdownRefEntries}
+								/>
+							{:else}
+								<div class="min-h-28 rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground">
+									Loading visual editor…
+								</div>
+							{/if}
 						</div>
 						<div
-							class="transition-opacity duration-150 {isMarkdownSourceEditing
+							class="transition-opacity duration-(--motion-fast) {isMarkdownSourceEditing
 								? 'pointer-events-auto relative opacity-100'
 								: 'pointer-events-none absolute inset-0 opacity-0'}"
 						>
@@ -1251,7 +1265,7 @@
 		{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
 			<div
 				in:fade={{ duration: 220 }}
-				class="relative transition-opacity duration-300 {worksheet
+				class="relative transition-opacity duration-(--motion-slow) {worksheet
 					? 'flex min-h-0 flex-1 flex-col'
 					: ''} {running ? 'opacity-70' : 'opacity-100'}"
 			>
@@ -1288,7 +1302,7 @@
 						{#snippet toolbarActions()}
 							{#if onOpenResultTab}
 								<div
-									class="flex items-center gap-1 transition-opacity duration-150 ease-(--motion-ease-out) {showResultControls
+									class="flex items-center gap-1 transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showResultControls
 										? 'opacity-100'
 										: 'pointer-events-none opacity-0'}"
 									aria-hidden={!showResultControls}
@@ -1406,7 +1420,7 @@
 			{/if}
 
 			{#if !(reportView && !isQueryCell)}
-				<div class="min-w-0 overflow-visible pt-1 pr-2">
+				<div class="min-w-0 overflow-visible pt-1 pr-2 pb-1.5">
 					<CellHeader
 						{cell}
 						{isQueryCell}
@@ -1423,14 +1437,10 @@
 						{crossNotebookUsageCount}
 						{cellMode}
 						{markdownMode}
-						aiChatOpen={onShareWithAI !== undefined}
 						onModeChange={setCellMode}
 						onMarkdownModeChange={setMarkdownMode}
 						onOverlayChange={handleOverlayChange}
-						{onShareWithAI}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
-						onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
-						onOpenWorksheet={supportsWorksheet && !reportView ? handleOpenWorksheet : undefined}
 					/>
 				</div>
 			{:else}
@@ -1476,6 +1486,7 @@
 							onRunTests={() => void testCell(cell.id)}
 							onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
 							onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
+							{onShareWithAI}
 							{isPlotCell}
 						/>
 					{/snippet}

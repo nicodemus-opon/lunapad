@@ -402,7 +402,7 @@
 						<Tooltip.Root>
 							<Tooltip.Trigger class="w-full text-left">
 								<button
-									class="w-full rounded-lg border bg-accent/30 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-150
+									class="w-full rounded-lg border bg-accent/30 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-(--motion-fast)
 										{isFocused
 										? 'border-primary bg-background shadow-sm'
 										: 'border-border hover:border-primary/50 hover:shadow-sm'}"
@@ -413,13 +413,13 @@
 										<StatusIcon class="mt-0.5 h-3 w-3 shrink-0 {st.class}" />
 										<div class="min-w-0 flex-1">
 											<p
-												class="truncate font-mono text-[12px] leading-tight font-semibold text-foreground"
+												class="truncate font-mono text-xs leading-tight font-semibold text-foreground"
 												title={model.name}
 											>
 												{model.name}
 											</p>
 											<!-- Schema + materialized -->
-											<p class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+											<p class="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
 												{model.schema || 'default'}
 											</p>
 										</div>
@@ -431,13 +431,13 @@
 									<!-- Bottom row: materialized badge + test badge -->
 									<div class="mt-2 flex flex-wrap items-center gap-1">
 										<span
-											class="inline-flex items-center rounded border px-1.5 py-px font-mono text-[9px] font-medium {matColor}"
+											class="inline-flex items-center rounded border px-1.5 py-px font-mono text-3xs font-medium {matColor}"
 										>
 											{model.materialized}
 										</span>
 										{#if model.lastRunStatus !== 'unknown'}
 											<span
-												class="inline-flex items-center rounded border px-1.5 py-px text-[9px] font-medium
+												class="inline-flex items-center rounded border px-1.5 py-px text-3xs font-medium
 												{model.lastRunStatus === 'pass'
 													? 'border-success/20 bg-success/10 text-success'
 													: 'border-destructive/20 bg-destructive/10 text-destructive'}"
@@ -447,7 +447,7 @@
 										{/if}
 										{#if model.columns.some((c) => c.tests.length > 0)}
 											<span
-												class="inline-flex items-center gap-0.5 rounded border border-border px-1.5 py-px text-[9px] font-medium text-muted-foreground"
+												class="inline-flex items-center gap-0.5 rounded border border-border px-1.5 py-px text-3xs font-medium text-muted-foreground"
 											>
 												<FlaskConical class="h-2.5 w-2.5" />
 												tested
@@ -462,7 +462,7 @@
 										<p class="text-xs">{model.description}</p>
 									{/if}
 									{#if model.upstreamRefs.length > 0}
-										<p class="mt-1 text-[10px] text-muted-foreground">
+										<p class="mt-1 text-2xs text-muted-foreground">
 											Depends on: {model.upstreamRefs.join(', ')}
 										</p>
 									{/if}
@@ -478,7 +478,7 @@
 						<Tooltip.Root>
 							<Tooltip.Trigger class="w-full text-left">
 								<button
-									class="w-full rounded-lg border border-dashed bg-accent/10 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-150
+									class="w-full rounded-lg border border-dashed bg-accent/10 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-(--motion-fast)
 										{isFocused
 										? 'border-primary bg-background shadow-sm'
 										: 'border-border hover:border-primary/50 hover:shadow-sm'}"
@@ -488,12 +488,12 @@
 										<CellStatusIcon class="mt-0.5 h-3 w-3 shrink-0 {cst.class}" />
 										<div class="min-w-0 flex-1">
 											<p
-												class="truncate font-mono text-[12px] leading-tight font-semibold text-foreground"
+												class="truncate font-mono text-xs leading-tight font-semibold text-foreground"
 												title={node.entry.name}
 											>
 												{node.entry.name}
 											</p>
-											<p class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+											<p class="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
 												{node.entry.notebookName}
 											</p>
 										</div>
@@ -501,12 +501,12 @@
 									</div>
 									<div class="mt-2 flex flex-wrap items-center gap-1">
 										<span
-											class="inline-flex items-center rounded border border-border px-1.5 py-px font-mono text-[9px] font-medium text-muted-foreground"
+											class="inline-flex items-center rounded border border-border px-1.5 py-px font-mono text-3xs font-medium text-muted-foreground"
 										>
 											{cell.cellType} cell
 										</span>
 										<span
-											class="inline-flex items-center rounded border border-border px-1.5 py-px text-[9px] font-medium text-muted-foreground"
+											class="inline-flex items-center rounded border border-border px-1.5 py-px text-3xs font-medium text-muted-foreground"
 										>
 											not promoted
 										</span>
@@ -516,7 +516,7 @@
 							<Tooltip.Content side="right" class="max-w-56">
 								<p class="text-xs">Live notebook cell — not yet a dbt model.</p>
 								{#if node.entry.upstreamRefs.length > 0}
-									<p class="mt-1 text-[10px] text-muted-foreground">
+									<p class="mt-1 text-2xs text-muted-foreground">
 										Depends on: {node.entry.upstreamRefs.join(', ')}
 									</p>
 								{/if}
@@ -537,7 +537,7 @@
 			<Button variant="ghost" size="sm" class="h-7 w-7 p-0" onclick={zoomIn} title="Zoom in">
 				<ZoomIn class="h-3.5 w-3.5" />
 			</Button>
-			<div class="px-1 text-center font-mono text-[10px] text-muted-foreground">
+			<div class="px-1 text-center font-mono text-2xs text-muted-foreground">
 				{Math.round(scale * 100)}%
 			</div>
 			<Button variant="ghost" size="sm" class="h-7 w-7 p-0" onclick={zoomOut} title="Zoom out">
@@ -553,28 +553,28 @@
 		<div
 			class="pointer-events-auto rounded-lg border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur-sm"
 		>
-			<p class="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground/60 uppercase">
+			<p class="mb-1.5 text-2xs font-semibold tracking-wide text-muted-foreground/60 uppercase">
 				Legend
 			</p>
 			<div class="flex flex-col gap-1">
-				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					<CheckCircle2 class="h-3 w-3 text-success" /> Passing
 				</div>
-				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					<XCircle class="h-3 w-3 text-destructive" /> Error
 				</div>
-				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					<Minus class="h-3 w-3 text-muted-foreground/40" /> Unknown
 				</div>
-				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					<BookOpen class="h-3 w-3 text-muted-foreground/50" /> Has docs
 				</div>
-				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					<span class="h-3 w-3 rounded border border-dashed border-muted-foreground/50"></span> Live cell
 					(not promoted)
 				</div>
 			</div>
-			<p class="mt-2 text-[9px] text-muted-foreground/50">Scroll to zoom · Drag to pan</p>
+			<p class="mt-2 text-3xs text-muted-foreground/50">Scroll to zoom · Drag to pan</p>
 		</div>
 	</div>
 
@@ -583,7 +583,7 @@
 		{@const cellCount = lineageEntries.length - dbtModels.length}
 		<div class="pointer-events-none absolute top-3 left-3">
 			<span
-				class="rounded-full border border-border bg-background/90 px-2.5 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm"
+				class="rounded-full border border-border bg-background/90 px-2.5 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm"
 			>
 				{dbtModels.length} model{dbtModels.length === 1 ? '' : 's'}{#if cellCount > 0}
 					· {cellCount} cell{cellCount === 1 ? '' : 's'}{/if}

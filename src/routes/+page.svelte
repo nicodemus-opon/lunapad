@@ -88,6 +88,8 @@
 		reorderCell,
 		setAllCellsDisplay,
 		setNotebookReportView,
+		setCellResultViewMode,
+		setNotebookFilterValue,
 		undo,
 		redo,
 		getFocusedCellId,
@@ -145,6 +147,7 @@
 	import ProfileView from '$lib/components/ProfileView.svelte';
 	import DbtLineageView from '$lib/components/DbtLineageView.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from 'svelte-sonner';
@@ -500,8 +503,6 @@
 		localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
 	}
 
-	const RAIL_WIDTH = 36;
-
 	function selectSidebarPanel(panel: SidebarPanel) {
 		activeSidebarPanel = panel;
 		if (sidebarCollapsed) {
@@ -665,6 +666,17 @@
 				updateCellCode,
 				setEditMode,
 				getCells,
+				getCellByOutputName: (name: string) =>
+					getCells().find((c) => c.outputName === name) ?? null,
+				getActiveTabId,
+				runCell,
+				runAll,
+				setNotebookReportView,
+				setCellResultViewMode,
+				setNotebookFilterValue,
+				canAddPythonCell,
+				addPythonCell,
+				bootstrapDemoNotebook,
 				tick,
 				addTable,
 				refreshTablesFromCatalog,
@@ -1363,12 +1375,12 @@
 				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground {isDraggingSidebar
 					? 'transition-none'
 					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
-				style={`width: ${sidebarCollapsed ? RAIL_WIDTH : sidebarWidth}px`}
+				style={sidebarCollapsed ? 'width: var(--sidebar-rail-width)' : `width: ${sidebarWidth}px`}
 			>
-				<!-- Icon rail (width matches RAIL_WIDTH — w-9 disagrees with --spacing scale) -->
+				<!-- Icon rail (width tracks --sidebar-rail-width — w-9 disagrees with --spacing scale) -->
 				<div
 					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-sidebar px-1 pt-1 pb-1.5"
-					style={`width: ${RAIL_WIDTH}px`}
+					style="width: var(--sidebar-rail-width)"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
 					{#if isNotebookTab}
@@ -1406,7 +1418,9 @@
 					class="flex shrink-0 flex-col overflow-hidden {isDraggingSidebar
 						? 'transition-none'
 						: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
-					style={`width: ${sidebarCollapsed ? 0 : sidebarWidth - RAIL_WIDTH}px`}
+					style={sidebarCollapsed
+						? 'width: 0'
+						: `width: calc(${sidebarWidth}px - var(--sidebar-rail-width))`}
 					inert={sidebarCollapsed}
 					aria-hidden={sidebarCollapsed}
 				>
@@ -1514,6 +1528,7 @@
 											notebookName={activeNotebook.name}
 											cells={activeNotebook.cells}
 											scrollContainer={notebookScrollEl ?? null}
+											showHeader={false}
 										/>
 									</div>
 								{:else}
@@ -1541,25 +1556,20 @@
 								<!-- Databases & tables panel -->
 								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Databases</span>
+									<Button
+										variant="outline"
+										size="sm"
+										class="h-6 px-2 text-2xs"
+										onclick={() => {
+											settingsTab = 'connections';
+											settingsOpen = true;
+										}}
+									>
+										Manage
+									</Button>
 								</div>
 								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 									<FileImporter />
-									<div
-										class="flex items-center justify-between gap-2 border-b border-border/60 p-2"
-									>
-										<span class="text-xs font-semibold text-foreground/80">Data Sources</span>
-										<Button
-											variant="outline"
-											size="sm"
-											class="h-6 px-2 text-2xs"
-											onclick={() => {
-												settingsTab = 'connections';
-												settingsOpen = true;
-											}}
-										>
-											Manage
-										</Button>
-									</div>
 									<div class="min-h-0 flex-1 overflow-y-auto">
 										<DatabaseTree />
 									</div>
@@ -2252,74 +2262,59 @@
 </Dialog.Root>
 
 <!-- Open project dialog -->
-{#if projectOpenDialogOpen}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-		onclick={() => {
-			projectOpenDialogOpen = false;
-			projectFolderInput = '';
-		}}
-	></div>
-	<div
-		class="fixed top-[30%] left-1/2 z-50 w-105 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl"
-	>
-		<div class="flex items-center justify-between border-b border-border/60 px-5 py-4">
-			<h2 class="text-[15px] font-semibold">Open project folder</h2>
-			<button
-				class="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-				onclick={() => {
-					projectOpenDialogOpen = false;
-					projectFolderInput = '';
-				}}
-			>
-				<X class="h-4 w-4" />
-			</button>
-		</div>
-		<div class="flex flex-col gap-4 p-5">
-			<p class="text-[13px] leading-relaxed text-muted-foreground">
+<Dialog.Root
+	bind:open={projectOpenDialogOpen}
+	onOpenChange={(v) => {
+		if (!v) projectFolderInput = '';
+	}}
+>
+	<Dialog.Content class="relative max-w-105 gap-0 overflow-hidden p-0">
+		<Dialog.Header>
+			<Dialog.Title>Open project folder</Dialog.Title>
+			<Dialog.Description>
 				Enter the path to an existing project folder. Supports SQL, PRQL, and project formats
 				including dbt.
-			</p>
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Close class="absolute top-2.5 right-3" />
+
+		<div class="flex flex-col gap-4 px-4 py-4">
 			<div class="flex flex-col gap-1.5">
-				<label for="menu-open-folder-path" class="text-[12px] font-medium text-foreground/70"
+				<label for="menu-open-folder-path" class="text-xs font-medium text-foreground/70"
 					>Folder path</label
 				>
-				<input
+				<Input
 					id="menu-open-folder-path"
-					class="w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-[13px] placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/40 focus:outline-none"
+					class="h-8 font-mono text-sm"
 					placeholder="/Users/you/my-project"
 					bind:value={projectFolderInput}
-					onkeydown={(e) => {
+					onkeydown={(e: KeyboardEvent) => {
 						if (e.key === 'Enter') void handleOpenProject();
-						if (e.key === 'Escape') {
-							projectOpenDialogOpen = false;
-							projectFolderInput = '';
-						}
 					}}
 				/>
 			</div>
-			<div class="flex justify-end gap-2 pt-1">
-				<button
-					class="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
-					onclick={() => {
-						projectOpenDialogOpen = false;
-						projectFolderInput = '';
-					}}
-				>
-					Cancel
-				</button>
-				<button
-					class="rounded-lg bg-primary px-4 py-1.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-					onclick={() => void handleOpenProject()}
-					disabled={!projectFolderInput.trim() || projectOpenLoading}
-				>
-					{projectOpenLoading ? 'Opening…' : 'Open'}
-				</button>
-			</div>
 		</div>
-	</div>
-{/if}
+
+		<Dialog.Footer>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="h-7 text-xs"
+				onclick={() => (projectOpenDialogOpen = false)}
+			>
+				Cancel
+			</Button>
+			<Button
+				size="sm"
+				class="h-7 text-xs"
+				onclick={() => void handleOpenProject()}
+				disabled={!projectFolderInput.trim() || projectOpenLoading}
+			>
+				{projectOpenLoading ? 'Opening…' : 'Open'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <UploadDialog bind:open={uploadDialogOpen} />
 <ShareDialog
@@ -2344,12 +2339,14 @@
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>
-	<Dialog.Content class="max-w-sm p-4">
-		<div class="mb-4 flex items-center gap-2">
-			<Logo class="h-5 w-5 text-foreground" />
-			<h2 class="text-[15px] font-semibold">Lunapad</h2>
-		</div>
-		<div class="flex flex-col gap-3 text-sm text-muted-foreground">
+	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
+		<Dialog.Header>
+			<div class="flex items-center gap-2">
+				<Logo class="h-5 w-5 text-foreground" />
+				<Dialog.Title>Lunapad</Dialog.Title>
+			</div>
+		</Dialog.Header>
+		<div class="flex flex-col gap-3 px-4 py-4 text-sm text-muted-foreground">
 			<p>
 				A notebook-style SQL IDE that runs entirely in the browser. Write SQL, reference other cells
 				as CTEs, and query DuckDB or external databases interactively.

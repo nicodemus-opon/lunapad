@@ -32,6 +32,8 @@ src-tauri/gen/
 # Test artifacts
 test-results/
 playwright-report/
+artifacts/demo-videos/*.webm
+artifacts/demo-videos/*.mp4
 e2e/
 
 # Temp/scratch files
@@ -52,3 +54,4 @@ FEATURES.md
 project/
 .pnpm-store/
 graphify-out/
+artifacts/

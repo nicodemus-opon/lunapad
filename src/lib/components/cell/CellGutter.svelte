@@ -59,7 +59,7 @@
 
 	const commentBtnClass = $derived(
 		commentsAlwaysVisible
-			? 'border-primary/20 bg-primary/8 text-primary hover:bg-primary/12'
+			? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
 			: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'
 	);
 </script>
@@ -69,17 +69,17 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
+					class="flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
 					revealed
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {justSucceeded
-						? 'run-btn-success-pulse border-success/25 bg-success/8 text-success'
+						? 'run-btn-success-pulse border-success/30 bg-success/10 text-success'
 						: stalePulsing
-							? 'run-btn-stale-pulse border-warning/25 bg-warning/8 text-warning'
+							? 'run-btn-stale-pulse border-warning/30 bg-warning/10 text-warning'
 							: needsRun && !running
-								? 'border-warning/20 bg-warning/8 text-warning hover:bg-warning/15'
+								? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/20'
 								: status === 'error' && !running
-									? 'border-destructive/20 bg-destructive/8 text-destructive hover:bg-destructive/15'
+									? 'border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
 									: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'}"
 					aria-label={running ? 'Cancel run' : 'Run cell'}
 					onclick={() => (running ? onCancel() : onRun())}
@@ -111,7 +111,7 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="relative flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showChrome
+					class="relative flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showChrome
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {commentBtnClass}"
 					aria-label={commentCount > 0 ? `${commentCount} open threads` : 'Add comment'}
@@ -138,7 +138,7 @@
 	{/if}
 
 	<div
-		class="transition-opacity duration-150 {revealed
+		class="transition-opacity duration-(--motion-fast) {revealed
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'}"
 	>

@@ -91,16 +91,14 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-w-md gap-0 overflow-hidden p-0">
-		<div class="flex items-center justify-between border-b px-4 py-3">
-			<div>
-				<p class="text-xs font-semibold">Promote to dbt model</p>
-				<p class="mt-0.5 text-[11px] text-muted-foreground">
-					{chain.length > 1
-						? `${chain.length} cells will become real model files, wired with {{ ref() }}.`
-						: 'This cell will become a real model file.'}
-				</p>
-			</div>
-		</div>
+		<Dialog.Header>
+			<Dialog.Title>Promote to dbt model</Dialog.Title>
+			<Dialog.Description>
+				{chain.length > 1
+					? `${chain.length} cells will become real model files, wired with {{ ref() }}.`
+					: 'This cell will become a real model file.'}
+			</Dialog.Description>
+		</Dialog.Header>
 
 		<div class="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-3">
 			{#each chain as { cell: c } (c.id)}
@@ -108,13 +106,13 @@
 				{#if row}
 					<div class="space-y-1.5 rounded border border-border p-2.5">
 						<div class="flex items-center justify-between">
-							<p class="font-mono text-[11px] font-medium">{c.outputName}</p>
+							<p class="font-mono text-2xs font-medium">{c.outputName}</p>
 							{#if c.id !== cell.id}
-								<span class="text-[10px] text-muted-foreground">dependency</span>
+								<span class="text-3xs text-muted-foreground">dependency</span>
 							{/if}
 						</div>
 						<Input
-							class="h-7 font-mono text-[11px]"
+							class="h-7 font-mono text-2xs"
 							value={row.targetRelPath}
 							oninput={(e) =>
 								updateRow(c.id, { targetRelPath: (e.target as HTMLInputElement).value })}
@@ -123,7 +121,7 @@
 						<div class="flex flex-wrap gap-1.5">
 							{#each modes as mode}
 								<button
-									class="rounded border px-2 py-0.5 text-[10px] font-medium transition-colors {row.materialized ===
+									class="rounded border px-2 py-0.5 text-3xs font-medium transition-colors {row.materialized ===
 									mode
 										? 'border-primary/30 bg-primary/10 text-primary'
 										: 'border-border text-muted-foreground hover:bg-accent'}"
@@ -135,13 +133,13 @@
 						</div>
 						<div class="flex gap-1.5">
 							<Input
-								class="h-7 text-[11px]"
+								class="h-7 text-2xs"
 								placeholder="Schema override"
 								value={row.schema}
 								oninput={(e) => updateRow(c.id, { schema: (e.target as HTMLInputElement).value })}
 							/>
 							<Input
-								class="h-7 text-[11px]"
+								class="h-7 text-2xs"
 								placeholder="Tags (comma-separated)"
 								value={row.tags}
 								oninput={(e) => updateRow(c.id, { tags: (e.target as HTMLInputElement).value })}
@@ -154,21 +152,27 @@
 			{#if result}
 				<div class="space-y-1">
 					{#if result.promoted.length > 0}
-						<p class="flex items-center gap-1.5 text-[11px] text-success">
+						<p class="flex items-center gap-1.5 text-2xs text-success">
 							<CheckCircle2 class="h-3.5 w-3.5" /> Promoted: {result.promoted.join(', ')}
 						</p>
 					{/if}
 					{#each result.errors as err}
-						<p class="flex items-center gap-1.5 text-[11px] text-destructive">
+						<p class="flex items-center gap-1.5 text-2xs text-destructive">
 							<XCircle class="h-3.5 w-3.5 shrink-0" />
 							{err}
 						</p>
 					{/each}
 				</div>
 			{/if}
+		</div>
 
+		<Dialog.Footer>
+			<Button variant="ghost" size="sm" class="h-8 text-xs" onclick={() => (open = false)}>
+				Cancel
+			</Button>
 			<Button
-				class="h-8 w-full text-xs"
+				size="sm"
+				class="h-8 text-xs"
 				disabled={submitting || chain.length === 0}
 				onclick={submit}
 			>
@@ -179,6 +183,6 @@
 				{/if}
 				Promote {chain.length > 1 ? `${chain.length} cells` : 'cell'}
 			</Button>
-		</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

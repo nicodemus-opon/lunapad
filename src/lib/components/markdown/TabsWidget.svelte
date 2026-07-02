@@ -48,7 +48,7 @@
 		background: none;
 		border: none;
 		border-bottom: 2px solid transparent;
-		font-size: 0.82em;
+		font-size: var(--text-2xs);
 		font-weight: 600;
 		opacity: 0.6;
 		cursor: pointer;
@@ -61,7 +61,7 @@
 	}
 	.md-tab.active {
 		opacity: 1;
-		border-bottom-color: var(--chart-1, #3b82f6);
+		border-bottom-color: var(--chart-1);
 	}
 	.md-tabs-panel {
 		padding: 0.6rem 0;

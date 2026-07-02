@@ -42,41 +42,47 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
-		<div class="border-b px-4 py-3">
-			<p class="text-xs font-semibold">Promote to dbt seed</p>
-			<p class="mt-0.5 text-[11px] text-muted-foreground">
+		<Dialog.Header>
+			<Dialog.Title>Promote to dbt seed</Dialog.Title>
+			<Dialog.Description>
 				Writes this cell's last result to a CSV under <span class="font-mono">seeds/</span> — a one-shot
 				export, not a live link. Re-running the cell won't update the file; promote again when you want
 				a fresh snapshot.
-			</p>
-		</div>
+			</Dialog.Description>
+		</Dialog.Header>
 
 		<div class="space-y-3 px-4 py-3">
 			<div class="space-y-1">
-				<label for="seed-path" class="text-[11px] text-muted-foreground">Seed file path</label>
+				<label for="seed-path" class="text-2xs text-muted-foreground">Seed file path</label>
 				<Input id="seed-path" class="h-8 font-mono text-xs" bind:value={relPath} />
 			</div>
 
 			{#if !cell.result}
-				<p class="text-[11px] text-destructive">
+				<p class="text-2xs text-destructive">
 					Run this cell first — there's no result to export yet.
 				</p>
 			{/if}
 
 			{#if succeeded}
-				<p class="flex items-center gap-1.5 text-[11px] text-success">
+				<p class="flex items-center gap-1.5 text-2xs text-success">
 					<CheckCircle2 class="h-3.5 w-3.5" /> Exported to {relPath}
 				</p>
 			{/if}
 			{#if error}
-				<p class="flex items-center gap-1.5 text-[11px] text-destructive">
+				<p class="flex items-center gap-1.5 text-2xs text-destructive">
 					<XCircle class="h-3.5 w-3.5 shrink-0" />
 					{error}
 				</p>
 			{/if}
+		</div>
 
+		<Dialog.Footer>
+			<Button variant="ghost" size="sm" class="h-8 text-xs" onclick={() => (open = false)}>
+				Cancel
+			</Button>
 			<Button
-				class="h-8 w-full text-xs"
+				size="sm"
+				class="h-8 text-xs"
 				disabled={submitting || !relPath.trim() || !cell.result}
 				onclick={submit}
 			>
@@ -87,6 +93,6 @@
 				{/if}
 				{cell.promotedSeedPath ? 'Re-export' : 'Export'}
 			</Button>
-		</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -93,6 +93,18 @@
 	/* Notebook cell geometry */
 	--cell-gutter: 2.5rem;
 
+	/* Sidebar layout */
+	--sidebar-rail-width: 36px;
+	--tree-indent: 14px;
+
+	/*
+	 * Semantic tint ladder — use consistently for status chips, badges, and
+	 * tinted surfaces. Surface bg: /10, border: /30, hover bg: /20.
+	 */
+	--tint-surface: 0.1;
+	--tint-border: 0.3;
+	--tint-hover: 0.2;
+
 	/* Platform titlebar adaptation */
 	--titlebar-height: 0px;
 	--titlebar-inset-left: 0px;
@@ -228,6 +240,8 @@
 	--font-mono: var(--font-mono);
 	--font-serif: var(--font-serif);
 
+	--text-3xs: 0.5625rem;
+	--text-3xs--line-height: 1.4;
 	--text-2xs: 0.6875rem;
 	--text-2xs--line-height: 1.45;
 
@@ -264,7 +278,7 @@
 	   anti-aliases it across two pixel rows — the faint, uneven "two-tone" look. Pin the
 	   stroke to a crisp device-space width so icons stay sharp at every size. */
 	.lucide-icon {
-		stroke-width: 1.5px;
+		stroke-width: 1.25px;
 	}
 	.lucide-icon * {
 		vector-effect: non-scaling-stroke;

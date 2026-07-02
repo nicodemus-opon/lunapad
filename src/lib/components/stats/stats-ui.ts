@@ -27,8 +27,24 @@ export const KIND_ICON: Record<ColumnFormatKind, typeof Hash> = {
 	text: Type
 };
 
-export function kindBadgeClass(_kind: ColumnFormatKind): string {
-	return 'bg-muted text-muted-foreground';
+/** Kind → categorical tag token. Uses the semantic tint ladder (surface /10)
+ *  with flat tag-colored text, matching the --tag-* palette's intended use. */
+const KIND_BADGE: Record<ColumnFormatKind, string> = {
+	boolean: 'bg-tag-4/10 text-tag-4',
+	id: 'bg-tag-8/10 text-tag-8',
+	email: 'bg-tag-5/10 text-tag-5',
+	url: 'bg-tag-6/10 text-tag-6',
+	datetime: 'bg-tag-3/10 text-tag-3',
+	date: 'bg-tag-3/10 text-tag-3',
+	percentage: 'bg-tag-2/10 text-tag-2',
+	currency: 'bg-tag-2/10 text-tag-2',
+	number: 'bg-tag-1/10 text-tag-1',
+	category: 'bg-tag-7/10 text-tag-7',
+	text: 'bg-tag-8/10 text-tag-8'
+};
+
+export function kindBadgeClass(kind: ColumnFormatKind): string {
+	return KIND_BADGE[kind] ?? 'bg-muted text-muted-foreground';
 }
 
 export function fmtStatNum(value: number | null | undefined, digits = 2): string {

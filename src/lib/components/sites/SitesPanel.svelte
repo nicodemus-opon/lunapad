@@ -197,14 +197,14 @@
 						<a
 							href="/s/{selectedSite.slug}"
 							target="_blank"
-							class="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+							class="inline-flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
 						>
 							Open site <ExternalLink class="h-3 w-3" />
 						</a>
 					</div>
 					<div class="space-y-1">
 						{#each pages as page (page.id)}
-							<div class="flex items-center gap-1 rounded border px-2 py-1 text-[11px]">
+							<div class="flex items-center gap-1 rounded border px-2 py-1 text-2xs">
 								<GripVertical class="h-3 w-3 text-muted-foreground" />
 								<span class="flex-1">{page.navLabel}</span>
 								<Button

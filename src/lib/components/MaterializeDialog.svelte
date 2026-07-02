@@ -3,7 +3,16 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Loader2, Play, Database, CheckCircle2, XCircle, Copy, Trash2 } from '@lucide/svelte';
+	import {
+		Loader2,
+		Play,
+		Database,
+		CheckCircle2,
+		XCircle,
+		Copy,
+		Trash2,
+		ChevronRight
+	} from '@lucide/svelte';
 	import {
 		materializeCell,
 		materializePythonCell,
@@ -48,6 +57,7 @@
 	);
 	let scheduleCronError = $state<string | null>(null);
 	let logEl = $state<HTMLPreElement | undefined>();
+	let showSchedule = $state(false);
 
 	// Only reset dialog state when open transitions to true. Using untrack for cell
 	// reads so that cell mutations (e.g. after refreshTablesFromCatalog) don't
@@ -59,6 +69,7 @@
 			dbtRunSelect = '';
 			dbtLogs = [];
 			dbtExitCode = null;
+			showSchedule = untrack(() => cell.scheduleEnabled);
 		}
 	});
 
@@ -182,26 +193,24 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-w-sm gap-0 overflow-hidden p-0">
 		<!-- Header -->
-		<div class="flex items-center justify-between border-b px-4 py-3">
-			<div>
-				<p class="text-xs font-semibold">{isDbtProject ? 'Deploy' : 'Materialize'}</p>
-				{#if cell.outputName}
-					<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">{cell.outputName}</p>
-				{/if}
-			</div>
-		</div>
+		<Dialog.Header>
+			<Dialog.Title>{isDbtProject ? 'Deploy' : 'Materialize'}</Dialog.Title>
+			{#if cell.outputName}
+				<Dialog.Description class="font-mono">{cell.outputName}</Dialog.Description>
+			{/if}
+		</Dialog.Header>
 
 		<div class="max-h-[80vh] space-y-4 overflow-y-auto px-4 py-3">
 			{#if !isPythonCell}
 				<!-- Materialization mode -->
 				<div class="space-y-1.5">
-					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+					<p class="text-3xs font-semibold tracking-wide text-muted-foreground uppercase">
 						Materialize as
 					</p>
 					<div class="flex flex-wrap gap-1.5">
 						{#each modes as mode}
 							<button
-								class="rounded border px-2.5 py-1 text-[11px] font-medium transition-colors {cell.materializeMode ===
+								class="rounded border px-2.5 py-1 text-2xs font-medium transition-colors {cell.materializeMode ===
 								mode
 									? (modeColors[mode] ?? 'border-primary/30 bg-primary/10 text-primary')
 									: 'border-border text-muted-foreground hover:bg-accent'}"
@@ -220,11 +229,11 @@
 			<!-- dbt settings -->
 			{#if isDbtProject && !isPythonCell}
 				<div class="space-y-1.5">
-					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+					<p class="text-3xs font-semibold tracking-wide text-muted-foreground uppercase">
 						dbt settings
 					</p>
 					<textarea
-						class="w-full resize-none rounded border border-input bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
+						class="w-full resize-none rounded border border-input bg-background px-2.5 py-1.5 text-2xs placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
 						placeholder="Describe this model…"
 						rows={2}
 						value={cell.description ?? ''}
@@ -234,7 +243,7 @@
 							setCellDescription(cell.id, (e.target as HTMLTextAreaElement).value || null)}
 					></textarea>
 					<Input
-						class="h-7 font-mono text-[11px]"
+						class="h-7 font-mono text-2xs"
 						placeholder="Schema override"
 						value={cell.dbtSchema ?? ''}
 						oninput={(e) =>
@@ -243,7 +252,7 @@
 							})}
 					/>
 					<Input
-						class="h-7 font-mono text-[11px]"
+						class="h-7 font-mono text-2xs"
 						placeholder="Tags (comma-separated)"
 						value={cell.dbtTags?.join(', ') ?? ''}
 						oninput={(e) =>
@@ -259,12 +268,12 @@
 
 			<!-- Actions -->
 			<div class="space-y-1.5">
-				<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">Run</p>
+				<p class="text-3xs font-semibold tracking-wide text-muted-foreground uppercase">Run</p>
 				{#if isDbtProject && !isPythonCell}
 					<div class="grid grid-cols-3 gap-1.5">
 						{#each [{ label: 'Model only', select: cell.outputName, title: `dbt run --select ${cell.outputName}` }, { label: 'With deps', select: '+' + cell.outputName, title: `dbt run --select +${cell.outputName}` }, { label: 'With all', select: cell.outputName + '+', title: `dbt run --select ${cell.outputName}+` }] as { label, select, title }}
 							<button
-								class="flex flex-col items-center gap-1 rounded border border-border px-2 py-2 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+								class="flex flex-col items-center gap-1 rounded border border-border px-2 py-2 text-3xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
 								disabled={dbtRunning || !cell.outputName}
 								{title}
 								onclick={() => void runDbtWithSelect(select)}
@@ -307,13 +316,13 @@
 			{#if dbtLogs.length > 0 || dbtRunning}
 				<div class="space-y-1">
 					<div class="flex items-center justify-between">
-						<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+						<p class="text-3xs font-semibold tracking-wide text-muted-foreground uppercase">
 							Output
 						</p>
 						<div class="flex items-center gap-1.5">
 							{#if dbtExitCode !== null}
 								<span
-									class="flex items-center gap-1 text-[10px] font-medium {dbtExitCode === 0
+									class="flex items-center gap-1 text-3xs font-medium {dbtExitCode === 0
 										? 'text-success'
 										: 'text-destructive'}"
 								>
@@ -348,89 +357,103 @@
 					</div>
 					<pre
 						bind:this={logEl}
-						class="max-h-48 overflow-y-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-[10px] leading-relaxed break-all whitespace-pre-wrap">{dbtLogs.join(
+						class="max-h-48 overflow-y-auto rounded border border-border bg-muted/40 px-2.5 py-2 font-mono text-3xs leading-relaxed break-all whitespace-pre-wrap">{dbtLogs.join(
 							'\n'
 						)}{#if dbtRunning}
 							▌{/if}</pre>
 				</div>
 			{/if}
 
-			<!-- Schedule -->
+			<!-- Schedule (progressive disclosure) -->
 			<div class="space-y-2">
-				<div class="flex items-center justify-between">
-					<p class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-						Auto-materialize
-					</p>
-					<button
-						class="rounded border px-2 py-0.5 text-[11px] font-medium transition-colors {cell.scheduleEnabled
-							? 'border-primary/30 bg-primary/10 text-primary'
-							: 'border-border text-muted-foreground hover:bg-accent'}"
-						onclick={() => setCellScheduleEnabled(cell.id, !cell.scheduleEnabled)}
-					>
-						{cell.scheduleEnabled ? 'On' : 'Off'}
-					</button>
-				</div>
-				<div class="flex items-center gap-2">
-					<span class="shrink-0 text-[11px] text-muted-foreground">Every</span>
-					<Input
-						type="number"
-						min="1"
-						max="1440"
-						value={String(cell.scheduleIntervalMinutes)}
-						class="h-7 text-xs"
-						onchange={(e) => onIntervalInput((e.target as HTMLInputElement).value)}
-						disabled={!cell.scheduleEnabled}
-					/>
-					<span class="shrink-0 text-[11px] text-muted-foreground">min</span>
-				</div>
-				<div class="flex items-center gap-1.5">
-					<span class="shrink-0 text-[11px] text-muted-foreground">Cron</span>
-					<Input
-						value={scheduleCronInput}
-						class="h-7 font-mono text-xs"
-						placeholder="*/15 * * * *"
-						oninput={(e) => {
-							scheduleCronInput = (e.target as HTMLInputElement).value;
-							scheduleCronError = null;
-						}}
-						disabled={!cell.scheduleEnabled}
-					/>
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 shrink-0 px-2 text-[11px]"
-						onclick={applyCron}
-						disabled={!cell.scheduleEnabled}
-					>
-						Apply
-					</Button>
-				</div>
-				{#if scheduleCronError}
-					<p class="text-[10px] text-destructive">{scheduleCronError}</p>
-				{/if}
-				<div class="flex items-center gap-1">
-					{#each ['cell', 'segment'] as scope}
-						<button
-							class="rounded border px-2.5 py-1 text-[11px] transition-colors {cell.scheduleScope ===
-							scope
-								? 'border-border bg-accent text-foreground'
-								: 'border-transparent text-muted-foreground hover:bg-accent/50'}"
-							disabled={!cell.scheduleEnabled}
-							onclick={() => setCellScheduleScope(cell.id, scope as CellScheduleScope)}
+				<button
+					type="button"
+					class="flex w-full items-center gap-1.5 text-3xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground"
+					onclick={() => (showSchedule = !showSchedule)}
+				>
+					<ChevronRight class="h-3 w-3 transition-transform {showSchedule ? 'rotate-90' : ''}" />
+					Auto-materialize
+					{#if cell.scheduleEnabled}
+						<span class="rounded bg-primary/10 px-1.5 py-0.5 text-3xs text-primary normal-case"
+							>On</span
 						>
-							{scope}
+					{/if}
+				</button>
+
+				{#if showSchedule}
+					<div class="flex items-center justify-between">
+						<span class="text-2xs text-muted-foreground">Enable schedule</span>
+						<button
+							class="rounded border px-2 py-0.5 text-2xs font-medium transition-colors {cell.scheduleEnabled
+								? 'border-primary/30 bg-primary/10 text-primary'
+								: 'border-border text-muted-foreground hover:bg-accent'}"
+							onclick={() => setCellScheduleEnabled(cell.id, !cell.scheduleEnabled)}
+						>
+							{cell.scheduleEnabled ? 'On' : 'Off'}
 						</button>
-					{/each}
-					<button
-						class="ml-auto rounded border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent"
-						onclick={async () => processScheduledMaterializations()}
-					>
-						Run due
-					</button>
-				</div>
-				<p class="text-[10px] text-muted-foreground">
-					Next run: {formatNextRun(cell.scheduleNextRunAt)}
-				</p>
+					</div>
+					<div class="flex items-center gap-2">
+						<span class="shrink-0 text-2xs text-muted-foreground">Every</span>
+						<Input
+							type="number"
+							min="1"
+							max="1440"
+							value={String(cell.scheduleIntervalMinutes)}
+							class="h-7 text-xs"
+							onchange={(e) => onIntervalInput((e.target as HTMLInputElement).value)}
+							disabled={!cell.scheduleEnabled}
+						/>
+						<span class="shrink-0 text-2xs text-muted-foreground">min</span>
+					</div>
+					<div class="flex items-center gap-1.5">
+						<span class="shrink-0 text-2xs text-muted-foreground">Cron</span>
+						<Input
+							value={scheduleCronInput}
+							class="h-7 font-mono text-xs"
+							placeholder="*/15 * * * *"
+							oninput={(e) => {
+								scheduleCronInput = (e.target as HTMLInputElement).value;
+								scheduleCronError = null;
+							}}
+							disabled={!cell.scheduleEnabled}
+						/>
+						<Button
+							variant="outline"
+							size="sm"
+							class="h-7 shrink-0 px-2 text-2xs"
+							onclick={applyCron}
+							disabled={!cell.scheduleEnabled}
+						>
+							Apply
+						</Button>
+					</div>
+					{#if scheduleCronError}
+						<p class="text-3xs text-destructive">{scheduleCronError}</p>
+					{/if}
+					<div class="flex items-center gap-1">
+						{#each ['cell', 'segment'] as scope}
+							<button
+								class="rounded border px-2.5 py-1 text-2xs transition-colors {cell.scheduleScope ===
+								scope
+									? 'border-border bg-accent text-foreground'
+									: 'border-transparent text-muted-foreground hover:bg-accent/50'}"
+								disabled={!cell.scheduleEnabled}
+								onclick={() => setCellScheduleScope(cell.id, scope as CellScheduleScope)}
+							>
+								{scope}
+							</button>
+						{/each}
+						<button
+							class="ml-auto rounded border border-border px-2.5 py-1 text-2xs text-muted-foreground transition-colors hover:bg-accent"
+							onclick={async () => processScheduledMaterializations()}
+						>
+							Run due
+						</button>
+					</div>
+					<p class="text-3xs text-muted-foreground">
+						Next run: {formatNextRun(cell.scheduleNextRunAt)}
+					</p>
+				{/if}
 			</div>
 		</div>
 	</Dialog.Content>

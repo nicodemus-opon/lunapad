@@ -1078,7 +1078,7 @@
 						source: links.map((l) => indexByName.get(l.source) ?? 0),
 						target: links.map((l) => indexByName.get(l.target) ?? 0),
 						value: links.map((l) => l.value),
-						color: 'rgba(128,128,128,0.3)'
+						color: 'color-mix(in oklab, var(--muted-foreground) 30%, transparent)'
 					}
 				} as unknown as Data
 			],
@@ -1120,10 +1120,7 @@
 	}
 </script>
 
-<div
-	class="flex w-full flex-col rounded-md border bg-background px-8 py-8"
-	style="height:{height}px"
->
+<div class="flex w-full flex-col rounded-md border bg-background p-4" style="height:{height}px">
 	{#if config.title}
 		<div class="mb-1 shrink-0 px-1">
 			<p class="text-sm leading-tight font-medium text-foreground">{config.title}</p>
@@ -1133,7 +1130,7 @@
 	<div class="min-h-0 flex-1">
 		{#if config.chartType === 'table'}
 			{@const displayCols = columns.length > 0 ? columns : rows[0] ? Object.keys(rows[0]) : []}
-			<div class="h-full w-full overflow-auto rounded-md border border-border/60 text-xs">
+			<div class="h-full w-full overflow-auto rounded-md text-xs">
 				<table class="w-full border-collapse">
 					<thead class="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
 						<tr>

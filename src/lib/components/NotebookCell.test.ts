@@ -51,7 +51,7 @@ describe('NotebookCell anatomy', () => {
 
 	it('renders markdown read-only in report view and supports visual dashboard editor', () => {
 		expect(source).toContain('isMarkdownOutputOnly');
-		expect(source).toContain('VisualDashboardEditor');
+		expect(source).toContain('TyporaEditor');
 		expect(source).toContain('setMarkdownEditMode');
 		expect(source).toContain('MARKDOWN_INTERACTIVE_SELECTOR');
 		expect(source).toContain('handleMarkdownPreviewClick');
@@ -102,9 +102,10 @@ describe('CellHeader', () => {
 		expect(source).toContain('onRowClick');
 	});
 
-	it('exposes worksheet view entry point', () => {
-		expect(source).toContain('Maximize2');
-		expect(source).toContain('onOpenWorksheet');
+	it('exposes worksheet view entry point via CellMenu', () => {
+		const cellMenuSource = read('./cell/CellMenu.svelte');
+		expect(cellMenuSource).toContain('Maximize2');
+		expect(cellMenuSource).toContain('onOpenWorksheet');
 	});
 
 	it('exposes markdown visual/source mode toggle', () => {

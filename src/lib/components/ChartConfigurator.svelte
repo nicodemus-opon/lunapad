@@ -31,7 +31,7 @@
 	</Popover.Trigger>
 	<Popover.Portal>
 		<Popover.Content
-			class="z-50 max-h-[80vh] w-72 overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+			class="z-(--z-dropdown) max-h-[80vh] w-72 overflow-y-auto rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
 			sideOffset={6}
 			align="end"
 		>

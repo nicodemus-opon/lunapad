@@ -19,10 +19,11 @@
 	} = $props();
 
 	const toneClass: Record<Tone, string> = {
-		neutral: 'border-border/70 text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-		warning: 'border-warning/50 bg-warning/10 text-warning hover:bg-warning/20',
-		positive: 'border-success/40 bg-success/10 text-success hover:bg-success/20',
-		destructive: 'border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20'
+		neutral:
+			'border-border/30 bg-muted/10 text-muted-foreground hover:bg-muted/20 hover:text-foreground',
+		warning: 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/20',
+		positive: 'border-success/30 bg-success/10 text-success hover:bg-success/20',
+		destructive: 'border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
 	};
 </script>
 

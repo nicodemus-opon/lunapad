@@ -95,19 +95,19 @@
 		line-height: 1.1;
 	}
 	.md-metric-label {
-		font-size: 0.7rem;
+		font-size: var(--text-2xs);
 		opacity: 0.65;
 		text-transform: uppercase;
 		letter-spacing: 0.02em;
 	}
 	.md-metric-delta {
-		font-size: 0.72rem;
+		font-size: var(--text-2xs);
 		font-weight: 600;
 	}
 	.md-metric-delta--up {
-		color: var(--chart-2, #16a34a);
+		color: var(--success);
 	}
 	.md-metric-delta--down {
-		color: var(--destructive, #dc2626);
+		color: var(--destructive);
 	}
 </style>

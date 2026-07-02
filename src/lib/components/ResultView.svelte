@@ -3,7 +3,9 @@
 	import ChartView from '$lib/components/ChartView.svelte';
 	import ChartConfigPanel from '$lib/components/ChartConfigPanel.svelte';
 	import StatsView from '$lib/components/StatsView.svelte';
-	import { Table2, TrendingUp, Sigma, Maximize2, X, Download, Settings2 } from '@lucide/svelte';
+	import ResultViewModeSwitcher from '$lib/components/ResultViewModeSwitcher.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Maximize2, X, Download, Settings2 } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import {
 		setTabViewMode,
@@ -132,60 +134,27 @@
 <div class="flex h-full flex-col">
 	<!-- Toolbar -->
 	<div class="flex shrink-0 items-center justify-between gap-2 pb-2">
-		<div
-			class="flex items-center overflow-hidden rounded-xl border border-border/80 bg-muted/25 shadow-sm"
-		>
-			<button
-				class="flex h-7 items-center gap-1.5 rounded-l-xl px-3 text-xs transition-colors
-					{viewMode === 'table'
-					? 'bg-card font-medium text-foreground'
-					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-				onclick={() => switchView('table')}><Table2 class="h-3 w-3" />Table</button
-			>
-			<div class="h-7 w-px bg-border/80"></div>
-			<button
-				class="flex h-7 items-center gap-1.5 px-3 text-xs transition-colors
-					{viewMode === 'chart'
-					? 'bg-card font-medium text-foreground'
-					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-				onclick={() => switchView('chart')}><TrendingUp class="h-3 w-3" />Chart</button
-			>
-			<div class="h-7 w-px bg-border/80"></div>
-			<button
-				class="flex h-7 items-center gap-1.5 rounded-r-xl px-3 text-xs transition-colors
-					{viewMode === 'stats'
-					? 'bg-card font-medium text-foreground'
-					: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-				onclick={() => switchView('stats')}><Sigma class="h-3 w-3" />Stats</button
-			>
-		</div>
+		<ResultViewModeSwitcher {viewMode} onSwitch={switchView} size="md" />
 
 		{#if viewMode === 'chart' && activeConfig}
 			<div class="flex items-center gap-0.5">
-				<!-- Settings panel toggle -->
-				<button
-					class="flex h-7 w-7 items-center justify-center rounded transition-colors
-						{showConfigPanel
-						? 'bg-primary/15 text-primary'
-						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class={showConfigPanel ? 'bg-primary/10 text-primary' : ''}
 					title="Chart settings"
 					onclick={() => (showConfigPanel = !showConfigPanel)}
-					><Settings2 class="h-3.5 w-3.5" /></button
 				>
+					<Settings2 class="h-3.5 w-3.5" />
+				</Button>
 
-				<!-- PNG download -->
-				<button
-					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-					title="Download as PNG"
-					onclick={downloadChartPng}><Download class="h-3.5 w-3.5" /></button
-				>
+				<Button variant="ghost" size="icon-sm" title="Download as PNG" onclick={downloadChartPng}>
+					<Download class="h-3.5 w-3.5" />
+				</Button>
 
-				<!-- Fullscreen -->
-				<button
-					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-					title="Fullscreen"
-					onclick={() => (expanded = true)}><Maximize2 class="h-3.5 w-3.5" /></button
-				>
+				<Button variant="ghost" size="icon-sm" title="Fullscreen" onclick={() => (expanded = true)}>
+					<Maximize2 class="h-3.5 w-3.5" />
+				</Button>
 			</div>
 		{/if}
 	</div>
@@ -251,7 +220,7 @@
 <!-- Fullscreen overlay -->
 {#if expanded && activeConfig}
 	<div
-		class="fixed inset-0 z-100 flex flex-col bg-background/95 backdrop-blur-sm"
+		class="fixed inset-0 z-(--z-modal) flex flex-col bg-background/95 backdrop-blur-sm"
 		role="dialog"
 		aria-modal="true"
 	>

@@ -80,7 +80,7 @@
 </script>
 
 <!-- Project bar (always visible at top of sidebar) -->
-<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border/40 px-3">
+<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border/30 px-2">
 	{#if projectFolder}
 		<FolderCode class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
 		<span
@@ -91,28 +91,28 @@
 		</span>
 		{#if isDbtProject}
 			<span
-				class="shrink-0 rounded border bg-accent px-1 py-px text-[9px] font-semibold tracking-wide text-foreground"
+				class="shrink-0 rounded border bg-accent px-1 py-px text-3xs font-semibold tracking-wide text-foreground"
 			>
 				dbt
 			</span>
 		{/if}
 		<Tooltip.Root>
 			<Tooltip.Trigger
-				class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+				class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 				onclick={revealInFinder.bind(null, projectFolder)}
 				aria-label="Reveal in Finder"
 			>
-				<ExternalLink class="h-3 w-3" />
+				<ExternalLink class="h-3.5 w-3.5" />
 			</Tooltip.Trigger>
 			<Tooltip.Content side="bottom">Reveal in Finder</Tooltip.Content>
 		</Tooltip.Root>
 		<Tooltip.Root>
 			<Tooltip.Trigger
-				class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+				class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 				onclick={closeProject}
 				aria-label="Close project"
 			>
-				<FolderX class="h-3 w-3" />
+				<FolderX class="h-3.5 w-3.5" />
 			</Tooltip.Trigger>
 			<Tooltip.Content side="bottom">Close project</Tooltip.Content>
 		</Tooltip.Root>
@@ -141,28 +141,30 @@
 		if (!v) closeDialog();
 	}}
 >
-	<Dialog.Content class="max-w-md">
-		<!-- Header -->
-		<div class="border-b border-border/60 px-5 py-4">
-			<h2 class="text-[15px] font-semibold">
-				{dialog === 'open' ? 'Open project folder' : 'Create new dbt project'}
-			</h2>
-		</div>
+	<Dialog.Content class="flex max-w-md flex-col gap-0 overflow-hidden p-0">
+		<Dialog.Header class="items-center">
+			<div class="min-w-0 flex-1">
+				<Dialog.Title>
+					{dialog === 'open' ? 'Open project folder' : 'Create new dbt project'}
+				</Dialog.Title>
+			</div>
+			<Dialog.Close />
+		</Dialog.Header>
 
 		{#if dialog === 'open'}
 			<!-- Open existing project -->
-			<div class="flex flex-col gap-4 p-5">
-				<p class="text-[13px] leading-relaxed text-muted-foreground">
+			<div class="flex flex-col gap-4 px-4 py-4">
+				<Dialog.Description>
 					Enter the path to an existing project folder. Supports SQL, PRQL, and project formats
 					including dbt.
-				</p>
+				</Dialog.Description>
 				<div class="flex flex-col gap-1.5">
 					<label for="open-folder-path" class="text-xs font-medium text-foreground/70"
 						>Folder path</label
 					>
 					<Input
 						id="open-folder-path"
-						class="font-mono text-[13px]"
+						class="font-mono text-xs"
 						placeholder="/Users/you/my-project"
 						bind:value={folderInput}
 						onkeydown={(e) => {
@@ -170,20 +172,20 @@
 						}}
 					/>
 				</div>
-				<div class="flex justify-end gap-2 pt-1">
-					<Button variant="ghost" size="sm" onclick={closeDialog}>Cancel</Button>
-					<Button
-						size="sm"
-						onclick={() => void handleOpen()}
-						disabled={!folderInput.trim() || loading}
-					>
-						{loading ? 'Opening…' : 'Open project'}
-					</Button>
-				</div>
 			</div>
+			<Dialog.Footer>
+				<Button variant="ghost" size="sm" onclick={closeDialog}>Cancel</Button>
+				<Button
+					size="sm"
+					onclick={() => void handleOpen()}
+					disabled={!folderInput.trim() || loading}
+				>
+					{loading ? 'Opening…' : 'Open project'}
+				</Button>
+			</Dialog.Footer>
 
 			<!-- Switch to New -->
-			<div class="border-t border-border/40 px-5 py-3">
+			<div class="border-t border-border/40 px-4 py-3">
 				<button
 					class="flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					onclick={() => {
@@ -197,11 +199,11 @@
 			</div>
 		{:else if dialog === 'new'}
 			<!-- Create new dbt project -->
-			<div class="flex flex-col gap-4 p-5">
-				<p class="text-[13px] leading-relaxed text-muted-foreground">
+			<div class="flex flex-col gap-4 px-4 py-4">
+				<Dialog.Description>
 					Scaffolds a new project following best-practice layer structure
 					<span class="font-mono text-foreground/80">(staging → intermediate → marts)</span>.
-				</p>
+				</Dialog.Description>
 
 				<div class="flex flex-col gap-3">
 					<div class="flex flex-col gap-1.5">
@@ -210,7 +212,7 @@
 						>
 						<Input
 							id="new-project-name"
-							class="font-mono text-[13px]"
+							class="font-mono text-xs"
 							placeholder="analytics"
 							bind:value={newName}
 						/>
@@ -225,7 +227,7 @@
 						>
 						<Input
 							id="new-folder-path"
-							class="font-mono text-[13px]"
+							class="font-mono text-xs"
 							placeholder="/Users/you/analytics"
 							bind:value={newFolder}
 							onkeydown={(e) => {
@@ -259,21 +261,20 @@
 						<div>macros/</div>
 					</div>
 				</div>
-
-				<div class="flex justify-end gap-2 pt-1">
-					<Button variant="ghost" size="sm" onclick={closeDialog}>Cancel</Button>
-					<Button
-						size="sm"
-						onclick={() => void handleCreate()}
-						disabled={!newFolder.trim() || loading}
-					>
-						{loading ? 'Creating…' : 'Create project'}
-					</Button>
-				</div>
 			</div>
+			<Dialog.Footer>
+				<Button variant="ghost" size="sm" onclick={closeDialog}>Cancel</Button>
+				<Button
+					size="sm"
+					onclick={() => void handleCreate()}
+					disabled={!newFolder.trim() || loading}
+				>
+					{loading ? 'Creating…' : 'Create project'}
+				</Button>
+			</Dialog.Footer>
 
 			<!-- Switch to Open -->
-			<div class="border-t border-border/40 px-5 py-3">
+			<div class="border-t border-border/40 px-4 py-3">
 				<button
 					class="flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					onclick={() => {

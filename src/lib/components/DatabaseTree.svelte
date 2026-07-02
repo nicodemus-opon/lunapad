@@ -216,7 +216,7 @@
 		<ContextMenu.Trigger>
 			<TreeRow depth={1} expandable {expanded} onActivate={onToggle}>
 				{#snippet icon()}
-					<LayoutGrid class="h-3 w-3 shrink-0 text-muted-foreground" />
+					<LayoutGrid class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 				{/snippet}
 				{#snippet label()}
 					<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>
@@ -252,7 +252,7 @@
 		<ContextMenu.Trigger>
 			<TreeRow depth={2} expandable {expanded} onActivate={onToggle}>
 				{#snippet icon()}
-					<Table2 class="h-3 w-3 shrink-0 text-muted-foreground" />
+					<Table2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 				{/snippet}
 				{#snippet label()}
 					<span class="min-w-0 flex-1 truncate text-xs text-foreground/80">{name}</span>

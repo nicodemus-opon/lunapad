@@ -170,7 +170,7 @@
 							<span
 								class="mt-0.5 shrink-0 rounded px-1 py-0.5 text-xs font-medium {entry.type ===
 								'discovery'
-									? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+									? 'bg-warning/15 text-warning'
 									: 'bg-primary/15 text-primary'}"
 							>
 								{entry.type}

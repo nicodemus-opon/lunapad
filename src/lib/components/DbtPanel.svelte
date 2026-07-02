@@ -36,6 +36,8 @@
 	import type { DbtModel } from '$lib/server/dbt';
 	import type { DbtSchedule } from '$lib/types/schedule';
 	import DbtScheduleModal from './DbtScheduleModal.svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
+	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 
 	const projectFolder = $derived(getProjectFolder());
 	const dbtModels = $derived(getDbtModels());
@@ -290,7 +292,7 @@
 
 <div class="border-t border-border/40">
 	<!-- Section header -->
-	<div class="flex h-10 shrink-0 items-center px-2">
+	<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
 		<button
 			class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 			onclick={() => (expanded = !expanded)}
@@ -300,7 +302,7 @@
 			{:else}
 				<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			{/if}
-			<span class="text-2xs font-semibold tracking-wide text-foreground/60 uppercase">dbt</span>
+			<span class="text-2xs font-medium text-muted-foreground">dbt</span>
 			{#if runningJobId}
 				<span class="ml-1 inline-flex items-center gap-1 text-2xs text-muted-foreground">
 					<span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-chart-1"></span>
@@ -313,14 +315,14 @@
 		<!-- Action buttons -->
 		<div class="flex items-center gap-0.5">
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
 				title="View lineage"
 				onclick={() => openLineageTab()}
 			>
 				<Network class="h-3.5 w-3.5" />
 			</button>
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
 				title="Compile"
 				disabled={!!runningJobId || !projectFolder}
 				onclick={() => runCommand(() => dbtCompile(projectFolder!), 'Compile')}
@@ -328,7 +330,7 @@
 				<Zap class="h-3.5 w-3.5" />
 			</button>
 			<button
-				class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
 				title="Refresh manifest"
 				disabled={!!runningJobId || !projectFolder}
 				onclick={() => void refreshDbtManifest()}
@@ -371,7 +373,7 @@
 			<!-- Autocomplete dropdown -->
 			{#if selectorFocused && selectorSuggestions.length > 0}
 				<div
-					class="absolute top-full right-2 left-2 z-50 mt-0.5 rounded border border-border bg-popover shadow-md"
+					class="absolute top-full right-2 left-2 z-(--z-dropdown) mt-0.5 rounded border border-border bg-popover shadow-md"
 				>
 					{#each selectorSuggestions as suggestion, i}
 						<button
@@ -422,49 +424,52 @@
 
 		<!-- Model list -->
 		{#if dbtModels.length === 0}
-			<p class="px-4 pb-2 text-2xs text-muted-foreground">
-				No models found. Run <span class="font-mono">dbt compile</span> to load the manifest.
-			</p>
+			<EmptyState description="No models found. Run dbt compile to load the manifest.">
+				{#snippet icon()}
+					<Network class="h-4 w-4" />
+				{/snippet}
+			</EmptyState>
 		{:else}
-			<div class="max-h-48 overflow-y-auto pb-1">
+			<div class="max-h-48 overflow-y-auto pb-1" role="tree" aria-label="dbt models">
 				{#each [...modelsBySchema.entries()] as [schema, models]}
-					<div class="px-3 pb-0.5">
-						<span class="text-2xs font-semibold tracking-wider text-muted-foreground/50 uppercase"
-							>{schema}</span
-						>
+					<div class="px-3 pt-1 pb-0.5">
+						<span class="text-2xs font-medium text-muted-foreground/50">{schema}</span>
 					</div>
 					{#each models as model}
 						{@const status = modelStatusIcon(model)}
-						<div
-							class="group flex items-center gap-1.5 px-4 py-0.5 hover:bg-muted/50"
-							title={model.description ?? undefined}
-						>
-							<status.icon class="h-3 w-3 shrink-0 {status.class}" />
-							<span class="min-w-0 flex-1 truncate font-mono text-xs">{model.name}</span>
-							{#if model.description}
-								<BookOpen
-									class="h-2.5 w-2.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground"
-								/>
-							{/if}
-							<button
-								class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
-								title="Test model"
-								onclick={() =>
-									runCommand(() => dbtTest(projectFolder!, model.name), `Test ${model.name}`)}
-								disabled={!!runningJobId}
-							>
-								<FlaskConical class="h-2.5 w-2.5" />
-							</button>
-							<button
-								class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
-								title="Run model"
-								onclick={() =>
-									runCommand(() => dbtRun(projectFolder!, model.name), `Run ${model.name}`)}
-								disabled={!!runningJobId}
-							>
-								<Play class="h-2.5 w-2.5" />
-							</button>
-						</div>
+						<TreeRow depth={1} leafSpacer={false} title={model.description ?? undefined}>
+							{#snippet icon()}
+								<status.icon class="h-3 w-3 shrink-0 {status.class}" />
+							{/snippet}
+							{#snippet label()}
+								<span class="min-w-0 flex-1 truncate font-mono text-xs">{model.name}</span>
+							{/snippet}
+							{#snippet trailing()}
+								{#if model.description}
+									<BookOpen
+										class="h-2.5 w-2.5 shrink-0 text-muted-foreground/50 group-hover/row:text-muted-foreground"
+									/>
+								{/if}
+								<button
+									class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
+									title="Test model"
+									onclick={() =>
+										runCommand(() => dbtTest(projectFolder!, model.name), `Test ${model.name}`)}
+									disabled={!!runningJobId}
+								>
+									<FlaskConical class="h-2.5 w-2.5" />
+								</button>
+								<button
+									class="invisible shrink-0 rounded px-1 text-2xs text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
+									title="Run model"
+									onclick={() =>
+										runCommand(() => dbtRun(projectFolder!, model.name), `Run ${model.name}`)}
+									disabled={!!runningJobId}
+								>
+									<Play class="h-2.5 w-2.5" />
+								</button>
+							{/snippet}
+						</TreeRow>
 					{/each}
 				{/each}
 			</div>
@@ -474,7 +479,7 @@
 	<!-- Schedules sub-section -->
 	{#if projectFolder}
 		<div class="border-t border-border/40">
-			<div class="flex h-10 shrink-0 items-center px-2">
+			<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
 				<button
 					class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 					onclick={() => (schedulesExpanded = !schedulesExpanded)}
@@ -485,9 +490,7 @@
 						<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 					{/if}
 					<Clock class="h-3 w-3 shrink-0 text-muted-foreground/60" />
-					<span class="text-2xs font-semibold tracking-wide text-foreground/60 uppercase"
-						>Schedules</span
-					>
+					<span class="text-2xs font-medium text-muted-foreground">Schedules</span>
 					{#if runningScheduleId}
 						<span class="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-chart-1"
 						></span>
@@ -502,13 +505,13 @@
 					href="http://localhost:8288"
 					target="_blank"
 					rel="noopener"
-					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
 					title="Open Inngest dashboard (run history & logs)"
 				>
 					<Network class="h-3.5 w-3.5" />
 				</a>
 				<button
-					class="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
 					title="Add schedule"
 					onclick={openAddModal}
 				>
@@ -518,62 +521,65 @@
 
 			{#if schedulesExpanded}
 				{#if schedules.length === 0}
-					<p class="px-4 pb-3 text-2xs text-muted-foreground/50">No schedules — add one with +</p>
+					<EmptyState description="No schedules — add one with +">
+						{#snippet icon()}
+							<Clock class="h-4 w-4" />
+						{/snippet}
+					</EmptyState>
 				{:else}
-					<div class="pb-1">
+					<div class="pb-1" role="tree" aria-label="dbt schedules">
 						{#each schedules as schedule}
-							<div class="group flex items-center gap-1.5 px-3 py-0.5 hover:bg-muted/50">
-								<!-- Enable/disable dot -->
-								<button
-									class="h-2 w-2 shrink-0 rounded-full transition-colors {schedule.enabled
-										? 'bg-chart-1'
-										: 'bg-muted-foreground/30'}"
-									title={schedule.enabled ? 'Disable' : 'Enable'}
-									onclick={() => void handleToggleSchedule(schedule)}
-								></button>
+							<TreeRow leafSpacer={false}>
+								{#snippet icon()}
+									<!-- Enable/disable dot -->
+									<button
+										class="h-2 w-2 shrink-0 rounded-full transition-colors {schedule.enabled
+											? 'bg-chart-1'
+											: 'bg-muted-foreground/30'}"
+										title={schedule.enabled ? 'Disable' : 'Enable'}
+										onclick={() => void handleToggleSchedule(schedule)}
+										aria-label={schedule.enabled ? 'Disable schedule' : 'Enable schedule'}
+									></button>
+								{/snippet}
+								{#snippet label()}
+									<span class="min-w-0 flex-1 truncate font-mono text-xs">{schedule.label}</span>
+								{/snippet}
+								{#snippet trailing()}
+									{#if schedule.select}
+										<span
+											class="shrink-0 rounded-sm border border-border/50 px-1 font-mono text-3xs text-muted-foreground/50"
+											>{schedule.select}</span
+										>
+									{/if}
 
-								<!-- Label -->
-								<span class="min-w-0 flex-1 truncate font-mono text-xs">{schedule.label}</span>
+									<!-- Status badge -->
+									{#if runningScheduleId === schedule.id}
+										<Loader2 class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+									{:else if schedule.lastRunStatus === 'pass'}
+										<CheckCircle2 class="h-3 w-3 shrink-0 text-success" />
+									{:else if schedule.lastRunStatus === 'error'}
+										<XCircle class="h-3 w-3 shrink-0 text-destructive" />
+									{:else}
+										<Minus class="h-3 w-3 shrink-0 text-muted-foreground/40" />
+									{/if}
 
-								<!-- Cron hint / next run label -->
-								<span
-									class="hidden shrink-0 font-mono text-2xs text-muted-foreground/50 group-[.wide]:inline"
-									>{schedule.cron}</span
-								>
-								{#if schedule.select}
-									<span
-										class="shrink-0 rounded-sm border border-border/50 px-1 font-mono text-[9px] text-muted-foreground/50"
-										>{schedule.select}</span
+									<!-- Hover actions -->
+									<button
+										class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
+										title="Edit"
+										onclick={() => openEditModal(schedule)}
 									>
-								{/if}
-
-								<!-- Status badge -->
-								{#if runningScheduleId === schedule.id}
-									<Loader2 class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-								{:else if schedule.lastRunStatus === 'pass'}
-									<CheckCircle2 class="h-3 w-3 shrink-0 text-success" />
-								{:else if schedule.lastRunStatus === 'error'}
-									<XCircle class="h-3 w-3 shrink-0 text-destructive" />
-								{:else}
-									<Minus class="h-3 w-3 shrink-0 text-muted-foreground/40" />
-								{/if}
-
-								<!-- Hover actions -->
-								<button
-									class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover:visible hover:bg-muted hover:text-foreground"
-									title="Edit"
-									onclick={() => openEditModal(schedule)}
-								>
-									<Pencil class="h-3 w-3" />
-								</button>
-								<button
-									class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover:visible hover:bg-muted hover:text-destructive"
-									title="Delete"
-									onclick={() => void handleDeleteSchedule(schedule.id)}
-								>
-									<Trash2 class="h-3 w-3" />
-								</button>
-							</div>
+										<Pencil class="h-3 w-3" />
+									</button>
+									<button
+										class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-destructive"
+										title="Delete"
+										onclick={() => void handleDeleteSchedule(schedule.id)}
+									>
+										<Trash2 class="h-3 w-3" />
+									</button>
+								{/snippet}
+							</TreeRow>
 						{/each}
 					</div>
 				{/if}
@@ -584,7 +590,7 @@
 	<!-- Live log drawer — floats above the sidebar, does not push layout -->
 	{#if logOpen && logLines.length > 0}
 		<div
-			class="fixed bottom-0 left-0 z-50 w-72 rounded-tr-lg border border-border bg-background shadow-xl"
+			class="fixed bottom-0 left-0 z-(--z-overlay) w-72 rounded-tr-lg border border-border bg-background shadow-xl"
 		>
 			<div class="flex items-center justify-between border-b border-border/40 px-2 py-1">
 				<span class="truncate text-2xs font-medium text-muted-foreground">

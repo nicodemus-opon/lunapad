@@ -13,12 +13,12 @@
 </script>
 
 {#if values.length === 0}
-	<p class="text-[11px] text-muted-foreground italic">No data</p>
+	<p class="text-2xs text-muted-foreground italic">No data</p>
 {:else}
 	<div class="space-y-1">
 		{#each values as row (`${row.value ?? 'null'}-${row.count}`)}
 			{@const barPct = maxCount > 0 ? (row.count / maxCount) * 100 : 0}
-			<div class="flex items-center gap-2 text-[11px]">
+			<div class="flex items-center gap-2 text-2xs">
 				<span
 					class="{compact ? 'w-1/2' : 'w-2/5'} shrink-0 truncate font-mono text-foreground/80"
 					title={row.value ?? ''}

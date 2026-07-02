@@ -172,7 +172,7 @@
 						{/if}
 					</p>
 					<button
-						class="inline-flex items-center gap-1 rounded border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
+						class="inline-flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
 						onclick={() => runCell(cell.id)}
 					>
 						<Play class="h-2.5 w-2.5 fill-current" />

@@ -21,8 +21,11 @@
 		PanelTopClose,
 		AlertCircle,
 		Layers,
-		Workflow
+		Workflow,
+		Plus,
+		ChevronDown
 	} from '@lucide/svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import RefPickerMenu from './RefPickerMenu.svelte';
 	import FilterPickerMenu from './FilterPickerMenu.svelte';
 	import { WIDGET_SNIPPETS } from '$lib/services/markdown-format';
@@ -204,22 +207,23 @@
 
 	<div class="md-toolbar-sep"></div>
 
-	<!-- Markdoc widgets -->
+	<!-- Markdoc widgets grouped into an overflow "Insert" menu -->
 	<div class="md-toolbar-group">
-		{#each widgetButtons as btn}
-			<button
-				type="button"
-				class="md-toolbar-btn"
-				title={btn.title}
-				aria-label={btn.title}
-				onmousedown={(e) => {
-					e.preventDefault();
-					onInsertSnippet(btn.snippet);
-				}}
-			>
-				<btn.icon size={13} />
-			</button>
-		{/each}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger class="md-toolbar-btn" title="Insert widget" aria-label="Insert widget">
+				<Plus size={13} />
+				<span>Insert</span>
+				<ChevronDown size={11} class="opacity-50" />
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="start" class="min-w-40">
+				{#each widgetButtons as btn}
+					<DropdownMenu.Item onclick={() => onInsertSnippet(btn.snippet)}>
+						<btn.icon class="h-3.5 w-3.5" />
+						{btn.title}
+					</DropdownMenu.Item>
+				{/each}
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 	</div>
 
 	<div class="md-toolbar-sep"></div>
@@ -284,8 +288,8 @@
 		border: none;
 		cursor: pointer;
 		transition:
-			color 100ms,
-			background-color 100ms;
+			color var(--motion-fast) var(--motion-ease-out),
+			background-color var(--motion-fast) var(--motion-ease-out);
 		line-height: 1;
 	}
 	:global(.md-toolbar-btn:hover) {
