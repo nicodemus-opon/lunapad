@@ -11,6 +11,7 @@ function queryCell(outputName: string, columns: string[], row: Record<string, un
 		code: '',
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source' as const,
 		connectionId: 'builtin.duckdb',
 		language: 'sql',
 		status: 'success',

@@ -8,6 +8,7 @@
 	import { Table2, TrendingUp, Sigma, Settings2, Search, X } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
+	import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -25,6 +26,8 @@
 		onAddFilter?: (column: string) => void;
 		columnDescriptions?: Record<string, string>;
 		onColumnDescriptionChange?: (column: string, description: string) => void;
+		columnFormatRules?: ColumnConditionalRules;
+		onColumnFormatRulesChange?: (rules: ColumnConditionalRules) => void;
 		/** Hide non-essential controls until the surrounding cell is focused */
 		controlsVisible?: boolean;
 		/** When false, the hidden toolbar collapses to 0 height instead of reserving a row (used when the cell shows output only) */
@@ -53,6 +56,8 @@
 		onAddFilter,
 		columnDescriptions,
 		onColumnDescriptionChange,
+		columnFormatRules = {},
+		onColumnFormatRulesChange,
 		controlsVisible = true,
 		toolbarReserveSpace = true,
 		toolbarActions,
@@ -271,6 +276,8 @@
 				{onAddFilter}
 				{columnDescriptions}
 				{onColumnDescriptionChange}
+				{columnFormatRules}
+				{onColumnFormatRulesChange}
 				searchValue={tableSearch}
 				onSearchValueChange={(value) => (tableSearch = value)}
 				showSearch={false}

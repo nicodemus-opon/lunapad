@@ -49,6 +49,7 @@ export function stubCellsForRefs(outputNames: Iterable<string>): Cell[] {
 		code: '',
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source' as const,
 		udfBody: '',
 		language: 'sql' as const,
 		status: 'success' as const,

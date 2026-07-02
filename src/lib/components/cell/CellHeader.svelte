@@ -29,8 +29,11 @@
 		downstreamCount,
 		crossNotebookUsageCount,
 		cellMode,
+		markdownMode,
+		isMarkdownCell = false,
 		aiChatOpen = false,
 		onModeChange,
+		onMarkdownModeChange,
 		onOverlayChange,
 		onShareWithAI,
 		onFixWithAI,
@@ -52,8 +55,11 @@
 		downstreamCount: number;
 		crossNotebookUsageCount: number;
 		cellMode: 'prql' | 'visual' | 'sql';
+		markdownMode?: 'visual' | 'source';
+		isMarkdownCell?: boolean;
 		aiChatOpen?: boolean;
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
+		onMarkdownModeChange?: (mode: 'visual' | 'source') => void;
 		onOverlayChange?: (open: boolean) => void;
 		onShareWithAI?: () => void;
 		onFixWithAI?: (errorMsg: string) => void;
@@ -283,6 +289,7 @@
 			{/if}
 			<div
 				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
+				role="tablist"
 			>
 				<button
 					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
@@ -290,7 +297,9 @@
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
 					onclick={() => onModeChange('prql')}
-					title="PRQL code mode">PRQL</button
+					title="PRQL code mode"
+					role="tab"
+					aria-selected={cellMode === 'prql'}>PRQL</button
 				>
 				<button
 					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
@@ -298,7 +307,9 @@
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					onclick={() => onModeChange('visual')}
-					title="Visual pipeline editor">Visual</button
+					title="Visual pipeline editor"
+					role="tab"
+					aria-selected={cellMode === 'visual'}>Visual</button
 				>
 				<button
 					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {cellMode ===
@@ -306,7 +317,58 @@
 						? 'bg-secondary text-secondary-foreground  '
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					onclick={() => onModeChange('sql')}
-					title="SQL mode">SQL</button
+					title="SQL mode"
+					role="tab"
+					aria-selected={cellMode === 'sql'}>SQL</button
+				>
+			</div>
+		{:else if isMarkdownCell && !collapsed && onMarkdownModeChange}
+			{#if codeHidden}
+				<button
+					class="inline-flex h-5 items-center gap-1 rounded px-1.5 text-2xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+					title="Show editor"
+					onclick={() => setCellDisplay(cell.id, 'full')}
+				>
+					<EyeOff class="h-2.5 w-2.5" />
+					editor hidden
+				</button>
+			{:else}
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<button
+							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+							onclick={() => setCellDisplay(cell.id, 'output')}
+							aria-label="Show dashboard output only"
+						>
+							<Eye class="h-3.5 w-3.5" />
+						</button>
+					</Tooltip.Trigger>
+					<Tooltip.Content><p class="text-xs">Show dashboard output only</p></Tooltip.Content>
+				</Tooltip.Root>
+			{/if}
+			<div
+				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
+				role="tablist"
+			>
+				<button
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
+					'visual') === 'visual'
+						? 'bg-secondary text-secondary-foreground'
+						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+					onclick={() => onMarkdownModeChange?.('visual')}
+					title="Visual dashboard editor"
+					role="tab"
+					aria-selected={(markdownMode ?? 'visual') === 'visual'}>Visual</button
+				>
+				<button
+					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-100 {(markdownMode ??
+					'visual') === 'source'
+						? 'bg-secondary text-secondary-foreground'
+						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+					onclick={() => onMarkdownModeChange?.('source')}
+					title="Markdoc source"
+					role="tab"
+					aria-selected={(markdownMode ?? 'visual') === 'source'}>Source</button
 				>
 			</div>
 		{/if}

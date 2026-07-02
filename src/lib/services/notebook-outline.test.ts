@@ -16,6 +16,7 @@ function makeCell(partial: Partial<Cell> & Pick<Cell, 'id' | 'cellType'>): Cell 
 		code: partial.code ?? '',
 		markdown: partial.markdown ?? '',
 		markdownPreview: false,
+		markdownEditMode: 'source' as const,
 		udfBody: '',
 		language: 'prql',
 		status: 'idle',

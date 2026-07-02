@@ -65,6 +65,7 @@ export interface PublicShareCell {
 	frozenResult: ShareCellSnapshot['frozenResult'];
 	resultChartConfig: ShareCellSnapshot['resultChartConfig'];
 	resultViewMode: ShareCellSnapshot['resultViewMode'];
+	columnFormatRules?: ShareCellSnapshot['columnFormatRules'];
 }
 
 export interface PublicShareView {
@@ -97,7 +98,8 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 			isLive: cell.isLive,
 			frozenResult: cell.isLive ? null : cell.frozenResult,
 			resultChartConfig: cell.resultChartConfig,
-			resultViewMode: cell.resultViewMode
+			resultViewMode: cell.resultViewMode,
+			columnFormatRules: cell.columnFormatRules
 		}))
 	};
 }

@@ -112,9 +112,10 @@ function registerSqlDialects(): void {
 }
 
 export function setupMonaco(): typeof monaco {
-	if (initialized || (globalThis as Record<string, boolean>)[SETUP_KEY]) return monaco;
+	const setupState = globalThis as unknown as Record<string, boolean>;
+	if (initialized || setupState[SETUP_KEY]) return monaco;
 	initialized = true;
-	(globalThis as Record<string, boolean>)[SETUP_KEY] = true;
+	setupState[SETUP_KEY] = true;
 
 	const useBlobWorkers = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
 	self.MonacoEnvironment = {

@@ -15,6 +15,7 @@ import {
 	type Connection
 } from '$lib/types/connection';
 import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
+import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
 
 import { extractBareMarkdocRefRoots, extractMarkdocRefs } from './markdoc-interp';
 
@@ -34,6 +35,7 @@ export interface ShareCellSnapshot {
 	sqlTemplate: string | null;
 	resultChartConfig: ChartConfig | null;
 	resultViewMode: ResultViewMode;
+	columnFormatRules?: ColumnConditionalRules;
 }
 
 export interface ShareConnectionInput {
@@ -103,7 +105,8 @@ function buildShareSnapshotInternal(
 			language: cell.language,
 			markdown: cell.markdown,
 			resultChartConfig: cell.resultChartConfig,
-			resultViewMode: cell.resultViewMode
+			resultViewMode: cell.resultViewMode,
+			columnFormatRules: cell.columnFormatRules
 		};
 
 		if (cell.cellType !== 'query') {

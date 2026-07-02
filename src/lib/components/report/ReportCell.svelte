@@ -65,6 +65,7 @@
 				name={cell.outputName || 'result'}
 				initialViewMode={cell.resultViewMode}
 				initialChartConfig={cell.resultChartConfig}
+				columnFormatRules={cell.columnFormatRules}
 				controlsVisible={exportEnabled}
 				toolbarReserveSpace={false}
 			/>

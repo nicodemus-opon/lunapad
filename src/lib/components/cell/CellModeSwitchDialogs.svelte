@@ -5,16 +5,20 @@
 		confirmSwitchToGui = $bindable(false),
 		confirmSwitchToSql = $bindable(false),
 		confirmSwitchToPrql = $bindable(false),
+		confirmSwitchToVisualMarkdown = $bindable(false),
 		onSwitchToGui,
 		onSwitchToSql,
-		onSwitchToPrql
+		onSwitchToPrql,
+		onSwitchToVisualMarkdown
 	}: {
 		confirmSwitchToGui?: boolean;
 		confirmSwitchToSql?: false | 'with-code' | 'without-code';
 		confirmSwitchToPrql?: boolean;
+		confirmSwitchToVisualMarkdown?: boolean;
 		onSwitchToGui: () => void;
 		onSwitchToSql: (useCompiledCode: boolean) => void;
 		onSwitchToPrql: () => void;
+		onSwitchToVisualMarkdown?: () => void;
 	} = $props();
 </script>
 
@@ -87,6 +91,24 @@
 					>Cancel</Button
 				>
 				<Button size="sm" onclick={onSwitchToPrql}>Switch to PRQL</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if confirmSwitchToVisualMarkdown}
+	<div class="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-black/40">
+		<div class="mx-4 w-full max-w-sm space-y-3 rounded-lg border bg-card p-5 shadow-xl">
+			<p class="text-sm font-semibold">Switch to Visual mode?</p>
+			<p class="text-xs text-muted-foreground">
+				Some Markdoc may not map cleanly to visual blocks yet. Unknown sections stay as editable
+				source slices inside the canvas.
+			</p>
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" size="sm" onclick={() => (confirmSwitchToVisualMarkdown = false)}
+					>Cancel</Button
+				>
+				<Button size="sm" onclick={() => onSwitchToVisualMarkdown?.()}>Switch to Visual</Button>
 			</div>
 		</div>
 	</div>

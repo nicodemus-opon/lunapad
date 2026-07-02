@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import MarkdownEditor from './markdown/MarkdownEditor.svelte';
 	import type { MarkdownEditorHandle } from './markdown/MarkdownEditor.svelte';
+	import VisualDashboardEditor from './markdown/visual/VisualDashboardEditor.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
@@ -43,6 +44,7 @@
 		getRunImpact,
 		setCellResultViewMode,
 		setCellResultChartConfig,
+		updateCellColumnFormatRules,
 		updateCellMarkdown,
 		updateCellUdfBody,
 		updatePlotCellCode,
@@ -53,6 +55,7 @@
 		insertCellAfter,
 		getPythonAvailable,
 		setCellMarkdownPreview,
+		setMarkdownEditMode,
 		testCell,
 		getIsDbtProject,
 		getProjectFolder,
@@ -99,6 +102,7 @@
 		resolveConnection
 	} from '$lib/types/connection';
 	import { renderMarkdocCell, extractMarkdocRefs } from '$lib/services/markdoc-interp';
+	import { visualBlocksRoundTripLossy } from '$lib/services/markdoc-ast';
 	import { shouldHideCellInReportView } from '$lib/services/filter-frozen';
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
@@ -275,6 +279,8 @@
 		!worksheet && reportView && shouldHideCellInReportView(cell, getCells())
 	);
 	const codeHidden = $derived(!worksheet && isQueryCell && effectiveDisplay !== 'full');
+	const markdownEditorHidden = $derived(!worksheet && isMarkdownCell && effectiveDisplay !== 'full');
+	const headerCodeHidden = $derived(isMarkdownCell ? markdownEditorHidden : codeHidden);
 	const supportsWorksheet = $derived(isQueryCell || isPythonCell || isPlotCell);
 	const editorLayout = $derived(worksheet ? ('fill' as const) : ('auto' as const));
 
@@ -344,6 +350,7 @@
 	let confirmSwitchToSql = $state<false | 'with-code' | 'without-code'>(false);
 	let compiledSqlForSwitch = $state('');
 	let confirmSwitchToPrql = $state(false);
+	let confirmSwitchToVisualMarkdown = $state(false);
 	let markdownEditContainerEl: HTMLDivElement | null = $state(null);
 	let markdownHandle: MarkdownEditorHandle | null = $state(null);
 	const revealed = $derived(
@@ -369,12 +376,24 @@
 		return renderMarkdocCell(cell.markdown ?? '', getAllCellsAcrossNotebooks());
 	});
 	const isMarkdownPreviewMode = $derived(
-		isMarkdownCell && cell.markdownPreview && !!cell.markdown?.trim()
+		isMarkdownCell &&
+			(cell.markdownPreview || markdownEditorHidden || reportView) &&
+			!!cell.markdown?.trim()
 	);
-	const isMarkdownRendered = $derived(
-		isMarkdownCell && !!cell.markdown?.trim() && (cell.markdownPreview || reportView)
+	const isMarkdownOutputOnly = $derived(
+		isMarkdownCell && (reportView || markdownEditorHidden) && !!cell.markdown?.trim()
 	);
-	const isMarkdownClickToEdit = $derived(isMarkdownRendered && !reportView);
+	const isMarkdownVisualEditing = $derived(
+		isMarkdownCell && cell.markdownEditMode === 'visual' && !isMarkdownOutputOnly
+	);
+	const isMarkdownSourceEditing = $derived(
+		isMarkdownCell && cell.markdownEditMode === 'source' && !isMarkdownOutputOnly
+	);
+	const isMarkdownRendered = $derived(isMarkdownOutputOnly);
+	const isMarkdownClickToEdit = $derived(false);
+	const markdownMode = $derived<'visual' | 'source'>(
+		cell.markdownEditMode === 'source' ? 'source' : 'visual'
+	);
 
 	const MARKDOWN_INTERACTIVE_SELECTOR =
 		'a, button, input, select, textarea, label, [role="tab"], [role="tablist"], .md-filter, .md-details';
@@ -404,7 +423,32 @@
 
 	function handleMarkdownPreviewClick(e: MouseEvent) {
 		if ((e.target as HTMLElement).closest(MARKDOWN_INTERACTIVE_SELECTOR)) return;
-		setCellMarkdownPreview(cell.id, false);
+		setCellDisplay(cell.id, 'full');
+	}
+
+	function requestVisualMarkdownMode() {
+		if (!isMarkdownCell) return;
+		const md = cell.markdown ?? '';
+		const { lossy } = visualBlocksRoundTripLossy(md);
+		if (!lossy || !md.trim()) {
+			setMarkdownEditMode(cell.id, 'visual');
+			return;
+		}
+		confirmSwitchToVisualMarkdown = true;
+	}
+
+	function setMarkdownMode(mode: 'visual' | 'source') {
+		if (!isMarkdownCell) return;
+		if (mode === 'visual') {
+			requestVisualMarkdownMode();
+			return;
+		}
+		setMarkdownEditMode(cell.id, 'source');
+	}
+
+	function doSwitchToVisualMarkdown() {
+		confirmSwitchToVisualMarkdown = false;
+		setMarkdownEditMode(cell.id, 'visual');
 	}
 
 	const prevCellNames = $derived(prevCellSources.map((source) => source.name));
@@ -1064,13 +1108,12 @@
 								{/if}
 							{:else if !isQueryCell}
 								<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
-									{#if isMarkdownRendered}
-										<!-- Preview / report: rendered markdown; click-to-edit only outside report view -->
+									{#if isMarkdownOutputOnly}
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<div
 											class="markdown-body prose"
-											class:cursor-text={isMarkdownClickToEdit}
-											onclick={isMarkdownClickToEdit ? handleMarkdownPreviewClick : undefined}
+											class:cursor-text={!reportView}
+											onclick={!reportView ? handleMarkdownPreviewClick : undefined}
 										>
 											{#if markdocResult}
 												<MarkdocRenderer
@@ -1081,30 +1124,42 @@
 												/>
 											{/if}
 										</div>
-										{#if isMarkdownClickToEdit}
-											<button
-												class="absolute top-0 right-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
-												onclick={() => setCellMarkdownPreview(cell.id, false)}
-											>
-												Edit
-											</button>
-										{/if}
 									{:else}
-										<!-- Edit mode: toolbar + textarea + slash palette -->
-										<MarkdownToolbar
-											{refPickerEntries}
-											onFormat={handleToolbarFormat}
-											onInsertSnippet={insertMarkdownSnippet}
-											onInsertRef={insertMarkdownRef}
-											onTogglePreview={() => setCellMarkdownPreview(cell.id, true)}
-										/>
-										<MarkdownEditor
-											bind:handle={markdownHandle}
-											value={cell.markdown ?? ''}
-											onchange={(v) => updateCellMarkdown(cell.id, v)}
-											refEntries={markdownRefEntries}
-											cellsForValidation={markdownValidationCells}
-										/>
+										<div class="markdown-editor-stack relative min-h-32">
+											<div
+												class="transition-opacity duration-150 {isMarkdownVisualEditing
+													? 'pointer-events-auto relative opacity-100'
+													: 'pointer-events-none absolute inset-0 opacity-0'}"
+											>
+												<VisualDashboardEditor
+													value={cell.markdown ?? ''}
+													onchange={(v) => updateCellMarkdown(cell.id, v)}
+													cells={markdownValidationCells}
+													{notebookId}
+													refEntries={markdownRefEntries}
+												/>
+											</div>
+											<div
+												class="transition-opacity duration-150 {isMarkdownSourceEditing
+													? 'pointer-events-auto relative opacity-100'
+													: 'pointer-events-none absolute inset-0 opacity-0'}"
+											>
+												<MarkdownToolbar
+													{refPickerEntries}
+													onFormat={handleToolbarFormat}
+													onInsertSnippet={insertMarkdownSnippet}
+													onInsertRef={insertMarkdownRef}
+													onTogglePreview={() => setCellDisplay(cell.id, 'output')}
+												/>
+												<MarkdownEditor
+													bind:handle={markdownHandle}
+													value={cell.markdown ?? ''}
+													onchange={(v) => updateCellMarkdown(cell.id, v)}
+													refEntries={markdownRefEntries}
+													cellsForValidation={markdownValidationCells}
+												/>
+											</div>
+										</div>
 										{#if hasLiveRefs}
 											<p class="mt-0.5 text-2xs text-muted-foreground select-none">
 												⚡ Live refs active — run upstream cells to update values
@@ -1234,6 +1289,8 @@
 									onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
 									onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
 									onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
+									columnFormatRules={cell.columnFormatRules}
+									onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
 									columnDescriptions={isDbtProject ? columnDescriptions : undefined}
 									onColumnDescriptionChange={isDbtProject
 										? handleColumnDescriptionChange
@@ -1367,8 +1424,9 @@
 					<CellHeader
 						{cell}
 						{isQueryCell}
+						isMarkdownCell={isMarkdownCell}
 						{collapsed}
-						{codeHidden}
+						codeHidden={headerCodeHidden}
 						{revealed}
 						{reportView}
 						hidden={isMarkdownPreviewMode}
@@ -1378,8 +1436,10 @@
 						downstreamCount={sameNotebookUsageCount}
 						{crossNotebookUsageCount}
 						{cellMode}
+						{markdownMode}
 						aiChatOpen={onShareWithAI !== undefined}
 						onModeChange={setCellMode}
+						onMarkdownModeChange={setMarkdownMode}
 						onOverlayChange={handleOverlayChange}
 						{onShareWithAI}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
@@ -1451,9 +1511,11 @@
 		bind:confirmSwitchToGui
 		bind:confirmSwitchToSql
 		bind:confirmSwitchToPrql
+		bind:confirmSwitchToVisualMarkdown
 		onSwitchToGui={doSwitchToGui}
 		onSwitchToSql={doSwitchToSql}
 		onSwitchToPrql={doSwitchToPrql}
+		onSwitchToVisualMarkdown={doSwitchToVisualMarkdown}
 	/>
 </div>
 

@@ -11,6 +11,7 @@
 		setCellResultChartConfig
 	} from '$lib/stores/notebook.svelte';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
+	import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
 
 	interface Props {
 		tabId: string;
@@ -23,6 +24,7 @@
 		chartConfig: ChartConfig | null;
 		onAddSort?: (column: string, dir: 'asc' | 'desc') => void;
 		onAddFilter?: (column: string) => void;
+		columnFormatRules?: ColumnConditionalRules;
 		/** True when rows were capped at the auto-limit */
 		truncated?: boolean;
 	}
@@ -38,6 +40,7 @@
 		chartConfig,
 		onAddSort,
 		onAddFilter,
+		columnFormatRules = {},
 		truncated = false
 	}: Props = $props();
 
@@ -199,6 +202,7 @@
 				fillHeight
 				{onAddSort}
 				{onAddFilter}
+				{columnFormatRules}
 			/>
 		</div>
 	{:else if viewMode === 'chart' && activeConfig}

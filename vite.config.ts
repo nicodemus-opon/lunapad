@@ -87,6 +87,23 @@ const duckdbStaticServe: Plugin = {
 	}
 };
 
+// `@duckdb/duckdb-wasm` cannot be loaded outside the browser: its Node entry
+// crashes at import (reads `worker_threads.workerData`) and its browser entry
+// references `Worker` at module scope. During the SSR build Vite loads the
+// dependency to inspect its exports, which triggers that crash and fails the
+// whole build. DuckDB is browser-only here (all call sites run in onMount /
+// browser-guarded code), so we swap in a harmless stub for every non-client
+// environment while the client bundle keeps the real package.
+const duckdbSsrStub: Plugin = {
+	name: 'duckdb-ssr-stub',
+	enforce: 'pre',
+	resolveId(id) {
+		if (id === '@duckdb/duckdb-wasm' && this.environment?.name !== 'client') {
+			return resolve(__dirname, 'src/lib/services/duckdb-ssr-stub.ts');
+		}
+	}
+};
+
 function toRpcSocket(ws: WebSocket): IWebSocket {
 	return {
 		send: (content) => ws.send(content),
@@ -125,6 +142,7 @@ export default defineConfig({
 	plugins: [
 		sqlLspPlugin,
 		duckdbStaticServe,
+		duckdbSsrStub,
 		svelteNodeModulesStyleFix,
 		tailwindcss(),
 		sveltekit()

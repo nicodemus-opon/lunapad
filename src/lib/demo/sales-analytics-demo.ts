@@ -171,7 +171,7 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 	const cells: Cell[] = [
 		{
 			...makeDemoMarkdownCell(introMarkdown),
-			markdownPreview: true
+			display: 'output'
 		},
 		{
 			...makeDemoCell(seedSQL, 'orders', 'sql'),
@@ -301,7 +301,7 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		},
 		{
 			...makeDemoMarkdownCell(dashboardMarkdown),
-			markdownPreview: true
+			display: 'output'
 		},
 		{
 			...makeDemoCell(regionFilteredOrdersSQL, 'region_filtered_orders', 'sql'),
@@ -310,7 +310,7 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		},
 		{
 			...makeDemoMarkdownCell(closingMarkdown),
-			markdownPreview: true
+			display: 'output'
 		}
 	];
 

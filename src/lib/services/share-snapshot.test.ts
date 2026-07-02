@@ -42,4 +42,25 @@ describe('buildShareSnapshot', () => {
 		expect(orders?.publishRole).toBe('data');
 		expect(orders?.isLive).toBe(false);
 	});
+
+	it('includes column conditional format rules in snapshots', () => {
+		const notebook = makeNotebook([
+			{
+				id: 'q1',
+				cellType: 'query',
+				outputName: 'orders',
+				display: 'full',
+				language: 'sql',
+				code: 'select 1',
+				connectionId: BUILTIN_DUCKDB_CONNECTION.id,
+				result: { rows: [{ n: 1 }], columns: ['n'] },
+				columnFormatRules: {
+					n: [{ id: 'n:rule', type: 'threshold', op: '>', value: 0, tone: 'positive' }]
+				}
+			} as unknown as Notebook['cells'][number]
+		]);
+		const snapshot = buildShareSnapshot(notebook);
+		const orders = snapshot.cells.find((c) => c.outputName === 'orders');
+		expect(orders?.columnFormatRules?.n?.length).toBe(1);
+	});
 });

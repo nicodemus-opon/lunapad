@@ -19,6 +19,7 @@ export function makeDemoCell(
 		code,
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source' as const,
 		udfBody: '',
 		language,
 		status: 'idle',
@@ -71,6 +72,7 @@ export function makeDemoMarkdownCell(markdown = '', overrides: Partial<Cell> = {
 		cellType: 'markdown',
 		markdown,
 		markdownPreview: false,
+		markdownEditMode: 'visual' as const,
 		editMode: 'prql',
 		...overrides
 	};

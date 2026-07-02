@@ -24,7 +24,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			cellType: c.cellType,
 			outputName: c.outputName,
 			result: c.frozenResult ?? null,
-			resultChartConfig: c.resultChartConfig ?? null
+			resultChartConfig: c.resultChartConfig ?? null,
+			columnFormatRules: c.columnFormatRules ?? {}
 		} as unknown as Cell;
 	});
 
@@ -44,7 +45,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				const tableHtml = renderReportTableToStaticHtml(snap.rows, snap.columns, {
 					name: cell.outputName || 'result',
 					maxRows: 500,
-					truncated
+					truncated,
+					columnFormatRules: cell.columnFormatRules ?? {}
 				});
 				return `<div class="cell">${tableHtml}</div>`;
 			}
@@ -61,6 +63,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
+      --table-positive: oklch(0.73 0.17 150);
+      --table-negative: oklch(0.67 0.2 25);
       --tag-1: oklch(0.52 0.185 25);
       --tag-2: oklch(0.53 0.15 70);
       --tag-3: oklch(0.51 0.14 140);

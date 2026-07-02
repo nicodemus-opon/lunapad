@@ -510,6 +510,7 @@ async function loadMissingModelsFromManifest(
 			code,
 			markdown: '',
 			markdownPreview: false,
+			markdownEditMode: 'source',
 			udfBody: '',
 			status: 'idle',
 			result: null,
@@ -690,7 +691,7 @@ async function hydrateLunaEntries(
 			// (unlike query/udf/plot cells, keyed by outputName) — fall back to
 			// document position so the id survives a save+reparse round-trip and
 			// the in-memory merge in loadProjectNotebooks() can still match it up.
-			cells.push(buildMarkdownCell(entry.markdown, i));
+			cells.push(buildMarkdownCell(entry.markdown, i, entry.editMode));
 			continue;
 		}
 		if (entry.kind === 'query') {
@@ -768,6 +769,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		code: '',
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody,
 		status: 'idle',
 		result: null,
@@ -822,6 +824,7 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		code,
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody: '',
 		status: 'idle',
 		result: null,
@@ -876,6 +879,7 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 		code,
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody: '',
 		status: 'idle',
 		result: null,
@@ -920,7 +924,11 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 	};
 }
 
-function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
+function buildMarkdownCell(
+	markdown: string,
+	entryIndex: number,
+	editMode: 'visual' | 'source' = 'visual'
+): Cell {
 	return {
 		id: `md-${entryIndex}`,
 		cellType: 'markdown',
@@ -930,6 +938,7 @@ function buildMarkdownCell(markdown: string, entryIndex: number): Cell {
 		code: '',
 		markdown,
 		markdownPreview: false,
+		markdownEditMode: editMode,
 		udfBody: '',
 		status: 'idle',
 		result: null,
@@ -984,6 +993,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		code: entry.lang === 'prql' ? stripRefs(entry.code) : entry.code,
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody: '',
 		status: 'idle',
 		result: null,
@@ -1073,6 +1083,7 @@ async function readCellFile(
 		code: parsed.code,
 		markdown: parsed.markdown,
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody: '',
 		status: 'idle',
 		result: null,

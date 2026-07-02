@@ -185,7 +185,14 @@ export const WIDGET_SNIPPETS = {
 	mermaid: '{% mermaid %}\ngraph TD\n    A --> B\n{% /mermaid %}',
 	badge: '{% badge value=$cell.status color="info" /%}',
 	progress: '{% progress value=$cell.completed max=$cell.total label="Label" /%}',
-	grid: '{% grid cols=3 %}\nContent.\n{% /grid %}'
+	grid: '{% grid cols=3 %}\nContent.\n{% /grid %}',
+	conditional: '{% if gt($cell.count, 0) %}\nContent.\n{% else /%}\nFallback.\n{% /if %}',
+	pivotTable:
+		'{% datatable data=$cell.rows index=["group_col"] pivotBy="pivot_col" valueCol="value_col" agg="sum" valueFormatKind="number" /%}',
+	summaryTable:
+		'{% datatable data=$cell.rows index=["group_col"] valueCol="value_col" agg="sum" valueFormatKind="number" /%}',
+	mermaidLoop:
+		'{% mermaid %}\nkanban\n  {% group data=$cell.rows by="status" %}\n  $keyId[$key]\n    {% each data=$items %}\n    task_$id[$title]\n    {% /each %}\n  {% /group %}\n{% /mermaid %}'
 } as const;
 
 export interface SlashCommand {
@@ -269,6 +276,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		group: 'widget'
 	},
 	{
+		id: 'summary-table',
+		label: 'Summary table',
+		description: 'Grouped aggregate table',
+		snippet: WIDGET_SNIPPETS.summaryTable,
+		group: 'widget'
+	},
+	{
+		id: 'pivot-table',
+		label: 'Pivot table',
+		description: 'Crosstab table from cell data',
+		snippet: WIDGET_SNIPPETS.pivotTable,
+		group: 'widget'
+	},
+	{
 		id: 'columns',
 		label: 'Columns',
 		description: 'Multi-column layout',
@@ -294,6 +315,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Filter',
 		description: 'Interactive filter widget',
 		snippet: WIDGET_SNIPPETS.filter,
+		group: 'widget'
+	},
+	{
+		id: 'conditional',
+		label: 'Conditional',
+		description: 'Show content only when a condition matches',
+		snippet: WIDGET_SNIPPETS.conditional,
 		group: 'widget'
 	},
 	{
@@ -323,5 +351,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		description: 'Flowchart, sequence, pie, ER, gantt, git…',
 		snippet: '```mermaid\ngraph TD\n    A --> B\n```',
 		group: 'structure'
+	},
+	{
+		id: 'mermaid-loop',
+		label: 'Dynamic Mermaid loop',
+		description: 'Mermaid template with group/each blocks',
+		snippet: WIDGET_SNIPPETS.mermaidLoop,
+		group: 'widget'
 	}
 ];

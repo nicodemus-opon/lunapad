@@ -75,13 +75,38 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		}
 	},
 	datatable: {
-		detail: 'Table from cell data',
+		detail: 'Advanced table from cell data (raw, summary, or pivot)',
 		snippet: WIDGET_SNIPPETS.datatable,
 		selfClosing: true,
 		attributes: {
 			data: { detail: 'Row data ($cell.rows)', required: true },
 			cols: { detail: 'Columns to show' },
-			limit: { detail: 'Max rows' }
+			limit: { detail: 'Max rows before expand' },
+			linkedFilter: { detail: 'Highlight when filter param is active' },
+			pageSize: { detail: 'Rows per page' },
+			headerInsights: { detail: 'Header density', enum: ['full', 'compact'] },
+			index: { detail: 'Group-by / pivot index columns' },
+			pivotBy: { detail: 'Column whose values become pivot columns' },
+			valueCol: { detail: 'Column to aggregate' },
+			agg: { detail: 'Aggregation', enum: ['sum', 'avg', 'min', 'max', 'count'] },
+			round: { detail: 'Decimal places for numeric output' },
+			valueFormatKind: {
+				detail: 'Format for aggregated/pivot values',
+				enum: [
+					'boolean',
+					'id',
+					'email',
+					'url',
+					'datetime',
+					'date',
+					'percentage',
+					'currency',
+					'number',
+					'category',
+					'text'
+				]
+			},
+			valueCurrencySymbol: { detail: 'Currency symbol when valueFormatKind=currency' }
 		}
 	},
 	badge: {
@@ -164,13 +189,26 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		attributes: {
 			kind: {
 				detail: 'Filter control type',
-				enum: ['dropdown', 'text-input', 'date-range', 'button-group']
+				enum: [
+					'dropdown',
+					'text-input',
+					'date-range',
+					'button-group',
+					'multi-select',
+					'relative-date',
+					'numeric-range',
+					'searchable-dropdown'
+				]
 			},
 			param: { detail: 'Parameter name for ${param} substitution', required: true },
 			label: { detail: 'Display label' },
 			options: { detail: 'Static option list' },
 			optionsColumn: { detail: 'Column to derive options from' },
-			default: { detail: 'Default value' }
+			default: { detail: 'Default value' },
+			startParam: { detail: 'Start parameter for date ranges' },
+			endParam: { detail: 'End parameter for date ranges' },
+			minParam: { detail: 'Minimum parameter for numeric ranges' },
+			maxParam: { detail: 'Maximum parameter for numeric ranges' }
 		}
 	},
 	mermaid: {

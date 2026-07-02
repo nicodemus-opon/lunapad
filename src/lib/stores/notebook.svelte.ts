@@ -79,6 +79,7 @@ import {
 	recordCellExecutionMetadata,
 	recordUploadedTableMetadata
 } from '$lib/services/intelligence-db';
+import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
 import { guiToPreql } from '$lib/services/gui-prql';
 import {
 	BUILTIN_DUCKDB_CONNECTION,
@@ -117,6 +118,7 @@ import { getDashboardTemplate } from '$lib/demo/dashboard-templates';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
+export type MarkdownEditMode = 'visual' | 'source';
 // 'plot' cells are never promotable to dbt models — getPromotionChain already
 // guards on `cellType !== 'query'`, so this is automatic, not something to "fix".
 export type CellType = 'query' | 'markdown' | 'udf' | 'plot' | 'python';
@@ -147,6 +149,7 @@ export interface Cell {
 	code: string;
 	markdown: string;
 	markdownPreview: boolean;
+	markdownEditMode: MarkdownEditMode;
 	// Python source for cellType 'udf'. Name/params/return type are parsed from
 	// type hints (see services/udf.ts), not stored separately.
 	udfBody: string;
@@ -164,6 +167,7 @@ export interface Cell {
 	editMode: CellEditMode;
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
+	columnFormatRules: ColumnConditionalRules;
 	display: CellDisplay;
 	stageResultsCollapsed: boolean[];
 	materializeMode: CellMaterializationMode;
@@ -532,6 +536,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		code,
 		markdown: '',
 		markdownPreview: false,
+		markdownEditMode: 'source',
 		udfBody: '',
 		language,
 		status: 'idle',
@@ -545,6 +550,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		editMode: language === 'sql' ? 'prql' : 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		columnFormatRules: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -584,6 +590,7 @@ function makeMarkdownCell(markdown = ''): Cell {
 		cellType: 'markdown',
 		markdown,
 		markdownPreview: false,
+		markdownEditMode: 'visual',
 		editMode: 'prql'
 	};
 }
@@ -1238,6 +1245,9 @@ function deserializeCell(c: Cell, i: number): Cell {
 			? ((c as Partial<Cell>).markdown as string)
 			: '';
 	const markdownPreview = Boolean((c as Partial<Cell>).markdownPreview);
+	const rawMarkdownEditMode = (c as Partial<Cell>).markdownEditMode;
+	const markdownEditMode: MarkdownEditMode =
+		rawMarkdownEditMode === 'source' ? 'source' : cellType === 'markdown' ? 'visual' : 'source';
 	const udfBody =
 		typeof (c as Partial<Cell>).udfBody === 'string'
 			? ((c as Partial<Cell>).udfBody as string)
@@ -1254,12 +1264,18 @@ function deserializeCell(c: Cell, i: number): Cell {
 		outputName: c.outputName || `result${i + 1}`,
 		markdown,
 		markdownPreview,
+		markdownEditMode,
 		udfBody,
 		language,
 		guiStages,
 		editMode,
 		resultViewMode,
 		resultChartConfig: (c as Partial<Cell>).resultChartConfig ?? null,
+		columnFormatRules:
+			(c as Partial<Cell>).columnFormatRules &&
+			typeof (c as Partial<Cell>).columnFormatRules === 'object'
+				? ((c as Partial<Cell>).columnFormatRules as ColumnConditionalRules)
+				: {},
 		// Restore persisted (capped) result so output survives reload/HMR.
 		result: (c as Partial<Cell>).result ?? null,
 		status: (c as Partial<Cell>).result ? 'success' : 'idle',
@@ -1268,7 +1284,13 @@ function deserializeCell(c: Cell, i: number): Cell {
 				? ((c as Partial<Cell>).executionMs as number)
 				: null,
 		needsRun: (c as Partial<Cell>).result ? false : Boolean((c as Partial<Cell>).needsRun),
-		display: normalizeCellDisplay(c),
+		// Legacy `markdownPreview: true` predates the display-state model; migrate it to
+		// `display: 'output'` so those cells still render their dashboard instead of the
+		// editor (which now owns the 'full' display state).
+		display:
+			cellType === 'markdown' && markdownPreview && normalizeCellDisplay(c) === 'full'
+				? 'output'
+				: normalizeCellDisplay(c),
 		stageResultsCollapsed: Array.isArray((c as Partial<Cell>).stageResultsCollapsed)
 			? ((c as Partial<Cell>).stageResultsCollapsed as boolean[])
 			: [],
@@ -1991,10 +2013,7 @@ async function loadConnectionsFromServer(): Promise<void> {
 			if (!connection || connection.type === 'duckdb-wasm') continue;
 			byId.set(connection.id, connection);
 		}
-		state.connections = [
-			BUILTIN_DUCKDB_CONNECTION,
-			...Array.from(byId.values()).filter((connection) => connection.type !== 'duckdb-wasm')
-		];
+		state.connections = [BUILTIN_DUCKDB_CONNECTION, ...Array.from(byId.values())];
 	} catch {
 		/* ignore */
 	}
@@ -3921,6 +3940,16 @@ export function setCellResultChartConfig(cellId: string, config: ChartConfig | n
 	}
 }
 
+export function updateCellColumnFormatRules(cellId: string, rules: ColumnConditionalRules): void {
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (!cell) continue;
+		cell.columnFormatRules = rules;
+		scheduleSave();
+		return;
+	}
+}
+
 export function setTabChartConfig(tabId: string, config: ChartConfig | null): void {
 	const rt = state.openResultTabs.find((t) => t.id === tabId);
 	if (rt) {
@@ -4446,6 +4475,7 @@ export interface CellSnapshot {
 	status?: Cell['status'];
 	resultViewMode?: Cell['resultViewMode'];
 	resultChartConfig?: Cell['resultChartConfig'];
+	columnFormatRules?: Cell['columnFormatRules'];
 	executionMs?: Cell['executionMs'];
 	errors?: Cell['errors'];
 }
@@ -4476,6 +4506,7 @@ function cellToSnapshot(cell: Cell): CellSnapshot {
 		status: cell.status,
 		resultViewMode: cell.resultViewMode,
 		resultChartConfig: cell.resultChartConfig,
+		columnFormatRules: cell.columnFormatRules,
 		executionMs: cell.executionMs,
 		errors: cell.errors
 	};
@@ -4511,6 +4542,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 				materializeTarget: snap.materializeTarget,
 				description: snap.description,
 				dbtTags: snap.dbtTags,
+				columnFormatRules: snap.columnFormatRules ?? live.columnFormatRules,
 				scheduleEnabled: snap.scheduleEnabled,
 				scheduleIntervalMinutes: snap.scheduleIntervalMinutes,
 				scheduleScope: snap.scheduleScope
@@ -4542,6 +4574,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			...(snap.status !== undefined && { status: snap.status }),
 			...(snap.resultViewMode !== undefined && { resultViewMode: snap.resultViewMode }),
 			...(snap.resultChartConfig !== undefined && { resultChartConfig: snap.resultChartConfig }),
+			...(snap.columnFormatRules !== undefined && { columnFormatRules: snap.columnFormatRules }),
 			...(snap.executionMs !== undefined && { executionMs: snap.executionMs }),
 			...(snap.errors !== undefined && { errors: snap.errors })
 		} satisfies Cell;
@@ -4897,6 +4930,17 @@ export function setCellMarkdownPreview(id: string, preview: boolean): void {
 	if (!cell || cell.cellType !== 'markdown') return;
 	cell.markdownPreview = preview;
 	scheduleSave();
+}
+
+export function setMarkdownEditMode(id: string, mode: MarkdownEditMode): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || cell.cellType !== 'markdown') return;
+	pushHistoryCheckpoint(nb.id);
+	cell.markdownEditMode = mode;
+	if (mode === 'visual') cell.markdownPreview = false;
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
 }
 
 export function updateCellName(

@@ -317,7 +317,8 @@ const datatableTag: Schema = {
 			type: String,
 			matches: ['boolean', 'id', 'email', 'url', 'datetime', 'date', 'percentage', 'currency', 'number', 'category', 'text']
 		},
-		valueCurrencySymbol: { type: String }
+		valueCurrencySymbol: { type: String },
+		conditionalFormats: { type: Array }
 	}
 };
 

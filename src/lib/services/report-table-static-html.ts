@@ -1,6 +1,11 @@
 import { buildReportTableModel, type ReportTableModel } from '$lib/services/report-table-model';
 import { formatCellForDisplay } from '$lib/services/report-table-format';
 import type { ColumnFormat } from '$lib/services/column-format';
+import {
+	conditionalToneToCssVar,
+	evaluateConditionalCellStyle,
+	type ColumnConditionalRules
+} from '$lib/services/report-table-conditional-format';
 
 function escapeHtml(s: string): string {
 	return s
@@ -62,15 +67,18 @@ export function renderReportTableToStaticHtml(
 		maxRows?: number;
 		truncated?: boolean;
 		columnFormatOverrides?: Record<string, ColumnFormat>;
+		columnFormatRules?: ColumnConditionalRules;
 	} = {}
 ): string {
-	const { name, maxRows = 500, truncated = false, columnFormatOverrides } = options;
+	const { name, maxRows = 500, truncated = false, columnFormatOverrides, columnFormatRules = {} } =
+		options;
 	const model: ReportTableModel = buildReportTableModel(rows, columns, {
 		name,
 		formatOverrides: columnFormatOverrides
 	});
 
 	const visibleRows = rows.slice(0, maxRows);
+	const domainCache = new Map<string, { min: number; max: number } | null>();
 
 	const headerHtml = model.columns
 		.map((c) => `<th class="${c.align === 'right' ? 'num' : ''}">${escapeHtml(c.label)}</th>`)
@@ -82,11 +90,33 @@ export function renderReportTableToStaticHtml(
 				.map((c) => {
 					const v = r[c.id];
 					if (isNullish(v)) return `<td class="${c.align === 'right' ? 'num' : ''} muted">—</td>`;
-					return `<td class="${c.align === 'right' ? 'num' : ''}">${formatCellHtml(
-						v,
-						c.format,
-						c.id
-					)}</td>`;
+					const conditional = evaluateConditionalCellStyle(v, columnFormatRules[c.id], {
+						rows,
+						columnId: c.id,
+						domainCache
+					});
+					const tone = conditional?.tone ?? conditional?.textTone;
+					const alpha = conditional?.backgroundAlpha ?? 0.14;
+					const bg = tone
+						? `background-color: color-mix(in oklab, ${conditionalToneToCssVar(tone)} ${Math.round(
+								alpha * 100
+							)}%, transparent);`
+						: '';
+					const icon =
+						conditional?.icon === 'up'
+							? '▲ '
+							: conditional?.icon === 'down'
+								? '▼ '
+								: conditional?.icon === 'flat'
+									? '• '
+									: conditional?.icon === 'check'
+										? '✓ '
+										: conditional?.icon === 'alert'
+											? '! '
+											: '';
+					const tdClass = c.align === 'right' ? 'num' : '';
+					const tdStyle = bg ? ` style="${escapeHtmlAttr(bg)}"` : '';
+					return `<td class="${tdClass}"${tdStyle}>${icon}${formatCellHtml(v, c.format, c.id)}</td>`;
 				})
 				.join('');
 			return `<tr>${tds}</tr>`;

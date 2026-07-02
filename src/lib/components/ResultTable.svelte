@@ -21,8 +21,8 @@
 		Check,
 		ArrowUp,
 		ArrowDown,
-		ArrowUpDown,
 		Filter,
+		MoreHorizontal,
 		Search,
 		MessageSquare,
 		Hash,
@@ -39,12 +39,16 @@
 	} from '@lucide/svelte';
 	import FormattedCell from '$lib/components/FormattedCell.svelte';
 	import { buildReportTableModel } from '$lib/services/report-table-model';
-	import {
-		type ColumnFormat,
-		type ColumnFormatKind
-	} from '$lib/services/column-format';
+	import { type ColumnFormat, type ColumnFormatKind } from '$lib/services/column-format';
 	import { formatCellPlainText, formatFullValueText } from '$lib/services/report-table-format';
 	import { computeTableHeaderStats } from '$lib/services/column-profile';
+	import {
+		conditionalToneToCssVar,
+		defaultConditionalRulesForColumn,
+		evaluateConditionalCellStyle,
+		type CellConditionalStyle,
+		type ColumnConditionalRules
+	} from '$lib/services/report-table-conditional-format';
 
 	interface Props {
 		rows: Record<string, unknown>[];
@@ -55,6 +59,8 @@
 		columnDescriptions?: Record<string, string>;
 		/** Optional formatting override for specific columns (used by pivot/summary outputs). */
 		columnFormatOverrides?: Record<string, ColumnFormat>;
+		columnFormatRules?: ColumnConditionalRules;
+		onColumnFormatRulesChange?: (rules: ColumnConditionalRules) => void;
 		/** Optional externally controlled global table search. */
 		searchValue?: string;
 		onSearchValueChange?: (value: string) => void;
@@ -77,6 +83,8 @@
 		headerInsights = 'full',
 		columnDescriptions = {},
 		columnFormatOverrides = {},
+		columnFormatRules = {},
+		onColumnFormatRulesChange,
 		searchValue,
 		onSearchValueChange,
 		showSearch = true,
@@ -120,6 +128,9 @@
 	let filterPopoverValue = $state('');
 	let filterPopoverTop = $state(0);
 	let filterPopoverLeft = $state(0);
+	let columnMenuCol = $state<string | null>(null);
+	let columnMenuTop = $state(0);
+	let columnMenuLeft = $state(0);
 
 	function resetPaginationToFirstPage() {
 		pagination = { pageIndex: 0, pageSize: pagination.pageSize };
@@ -129,6 +140,17 @@
 		if (searchValue !== undefined) onSearchValueChange?.(value);
 		else internalSearch = value;
 		resetPaginationToFirstPage();
+	}
+
+	function openColumnMenu(col: string, anchorEl: HTMLElement) {
+		const r = anchorEl.getBoundingClientRect();
+		columnMenuTop = r.bottom + 4;
+		columnMenuLeft = r.left;
+		columnMenuCol = col;
+	}
+
+	function closeColumnMenu() {
+		columnMenuCol = null;
 	}
 
 	function setSort(col: string, dir: 'asc' | 'desc') {
@@ -162,6 +184,10 @@
 		return columnFilters.some((f) => f.id === col && String(f.value ?? '').trim() !== '');
 	}
 
+	function hasRulesFor(col: string): boolean {
+		return Array.isArray(columnFormatRules[col]) && columnFormatRules[col].length > 0;
+	}
+
 	function openFilterPopover(col: string, anchorEl: HTMLElement) {
 		const r = anchorEl.getBoundingClientRect();
 		filterPopoverTop = r.bottom + 4;
@@ -184,6 +210,19 @@
 		else columnFilters = [{ id: filterPopoverCol, value: term }];
 		closeFilterPopover();
 		resetPaginationToFirstPage();
+	}
+
+	function setColumnRules(col: string, next: ColumnConditionalRules[string]) {
+		onColumnFormatRulesChange?.({
+			...columnFormatRules,
+			[col]: next
+		});
+	}
+
+	function clearColumnRules(col: string) {
+		const copy: ColumnConditionalRules = { ...columnFormatRules };
+		delete copy[col];
+		onColumnFormatRulesChange?.(copy);
 	}
 
 	const pageSizeOptions = [10, 25, 50, 100, 250];
@@ -263,7 +302,8 @@
 			sortingFn: (rowA, rowB, columnId) => {
 				const aRaw = rowA.getValue(columnId);
 				const bRaw = rowB.getValue(columnId);
-				if (aRaw === null || aRaw === undefined) return bRaw === null || bRaw === undefined ? 0 : -1;
+				if (aRaw === null || aRaw === undefined)
+					return bRaw === null || bRaw === undefined ? 0 : -1;
 				if (bRaw === null || bRaw === undefined) return 1;
 
 				const aNum = coerceNumber(aRaw);
@@ -276,7 +316,9 @@
 			},
 			// Filtering: case-insensitive substring match on the stringified cell value.
 			filterFn: (row, columnId, filterValue) => {
-				const term = String(filterValue ?? '').trim().toLowerCase();
+				const term = String(filterValue ?? '')
+					.trim()
+					.toLowerCase();
 				if (!term) return true;
 				const v = row.getValue(columnId);
 				if (v === null || v === undefined) return false;
@@ -353,6 +395,33 @@
 		resetPaginationToFirstPage();
 	});
 
+	const conditionalDomainCache = $derived.by(
+		() => new Map<string, { min: number; max: number } | null>()
+	);
+
+	function styleForCell(value: unknown, colId: string): CellConditionalStyle | null {
+		return evaluateConditionalCellStyle(value, columnFormatRules[colId], {
+			rows,
+			columnId: colId,
+			domainCache: conditionalDomainCache
+		});
+	}
+
+	function styleAttrForCell(style: CellConditionalStyle | null, sticky = false): string {
+		if (!style) return sticky ? 'background-color: var(--background);' : '';
+		const tone = conditionalToneToCssVar(style.tone ?? style.textTone ?? 'neutral');
+		const alpha = style.backgroundAlpha ?? 0.14;
+		const bg = `color-mix(in oklab, ${tone} ${Math.round(alpha * 100)}%, transparent)`;
+		let css = `--cf-tone:${tone};--cf-bg:${bg};background-color:${bg};`;
+		if (style.dataBar) {
+			const pct = Math.max(0, Math.min(100, Math.round(style.dataBar.percent * 100)));
+			const dir = style.dataBar.direction === 'negative' ? 'to left' : 'to right';
+			css += `background-image:linear-gradient(${dir}, color-mix(in oklab, ${tone} 26%, transparent) ${pct}%, transparent ${pct}%);`;
+		}
+		if (sticky) css += 'position: sticky; left:0;';
+		return css;
+	}
+
 	// ── Cell detail panel ────────────────────────────────────────────────
 	interface SelectedCell {
 		col: string;
@@ -413,38 +482,30 @@
 {#snippet headerControls(col: string)}
 	{@const dir = sortDirFor(col)}
 	{@const filtered = hasFilterFor(col)}
-	<div class="flex shrink-0 items-center gap-0.5">
+	{@const hasRules = hasRulesFor(col)}
+	<div class="flex shrink-0 items-center gap-1">
+		{#if dir || filtered || hasRules}
+			<span
+				class="h-1.5 w-1.5 rounded-full {hasRules
+					? 'bg-primary'
+					: filtered
+						? 'bg-warning'
+						: 'bg-muted-foreground'}"
+				aria-hidden="true"
+			></span>
+		{/if}
 		<button
 			type="button"
-			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary {dir
+			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:outline-none {dir ||
+			filtered ||
+			hasRules
 				? 'text-primary'
 				: 'text-muted-foreground/40 group-hover/col:text-muted-foreground'}"
-			onclick={() => toggleSort(col)}
-			aria-label="Sort by {col}"
-			title={dir === 'asc'
-				? 'Sorted ascending — click for descending'
-				: dir === 'desc'
-					? 'Sorted descending — click to clear'
-					: 'Sort'}
+			onclick={(e) => openColumnMenu(col, e.currentTarget as HTMLElement)}
+			aria-label="Column actions for {col}"
+			title="Column actions"
 		>
-			{#if dir === 'asc'}
-				<ArrowUp class="h-3 w-3" />
-			{:else if dir === 'desc'}
-				<ArrowDown class="h-3 w-3" />
-			{:else}
-				<ArrowUpDown class="h-3 w-3" />
-			{/if}
-		</button>
-		<button
-			type="button"
-			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary {filtered
-				? 'text-primary'
-				: 'text-muted-foreground/40 group-hover/col:text-muted-foreground'}"
-			onclick={(e) => openFilterPopover(col, e.currentTarget as HTMLElement)}
-			aria-label="Filter {col}"
-			title={filtered ? 'Filtered — click to edit or clear' : 'Filter'}
-		>
-			<Filter class="h-3 w-3" />
+			<MoreHorizontal class="h-3 w-3" />
 		</button>
 	</div>
 {/snippet}
@@ -517,59 +578,8 @@
 													}}
 													onclick={() => toggleSort(s.col)}>{s.col}</span
 												>
-												{#if onColumnDescriptionChange || columnDescriptions[s.col]}
-													<div class="relative">
-														<button
-															class="rounded p-0.5 transition-colors {columnDescriptions[s.col]
-																? 'text-primary/60'
-																: 'text-muted-foreground/0 group-hover/col:text-muted-foreground/50'} hover:text-primary"
-															onclick={(e) =>
-																openDescPopover(s.col, e.currentTarget as HTMLElement)}
-															title={columnDescriptions[s.col]
-																? columnDescriptions[s.col]
-																: 'Add column description'}
-														>
-															<MessageSquare class="h-3 w-3" />
-														</button>
-														{#if descPopoverCol === s.col}
-															<div
-																style="position: fixed; top: {descPopoverTop}px; left: {descPopoverLeft}px; z-index: 200;"
-																class="w-48 rounded border border-border bg-popover p-2 shadow-md"
-															>
-																<p class="mb-1 text-[10px] font-medium text-muted-foreground">
-																	{s.col}
-																</p>
-																<textarea
-																	class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none"
-																	rows={3}
-																	placeholder="Column description…"
-																	bind:value={descPopoverValue}
-																	onkeydown={(e) => {
-																		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey))
-																			saveDescPopover();
-																		if (e.key === 'Escape') {
-																			descPopoverCol = null;
-																		}
-																	}}
-																></textarea>
-																<div class="mt-1 flex justify-end gap-1">
-																	<button
-																		class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
-																		onclick={() => {
-																			descPopoverCol = null;
-																		}}>Cancel</button
-																	>
-																	<button
-																		class="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground"
-																		onclick={saveDescPopover}>Save</button
-																	>
-																</div>
-															</div>
-												{/if}
+												{@render headerControls(s.col)}
 											</div>
-										{/if}
-											{@render headerControls(s.col)}
-										</div>
 											<!-- Histogram for numeric columns -->
 											{#if s.histBuckets}
 												{@const maxBucket = Math.max(...s.histBuckets, 1)}
@@ -624,8 +634,7 @@
 														toggleSort(header.id);
 													}
 												}}
-												onclick={() => toggleSort(header.id)}
-												>{header.id}</span
+												onclick={() => toggleSort(header.id)}>{header.id}</span
 											>
 											{@render headerControls(header.id)}
 										</div>
@@ -642,12 +651,14 @@
 								{@const value = row.original[cell.column.id]}
 								{@const isNull = value === null || value === undefined}
 								{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
+								{@const conditional = styleForCell(value, cell.column.id)}
 								<Table.Cell
 									class="max-w-70 cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
 									{ci === 0 ? 'sticky left-0 z-10 bg-background' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage')
 										? 'text-right'
 										: ''}"
+									style={styleAttrForCell(conditional, ci === 0)}
 									onclick={() => {
 										selectedCell = { col: cell.column.id, value };
 										copied = false;
@@ -656,7 +667,26 @@
 									{#if isNull}
 										<span class="font-mono text-xs text-muted-foreground">—</span>
 									{:else}
-										<FormattedCell {value} format={fmt} plainText={formatCellPlainText(value)} />
+										<span class="inline-flex items-center gap-1">
+											{#if conditional?.icon}
+												<span
+													class="shrink-0 text-[10px] font-semibold"
+													style="color: {conditionalToneToCssVar(
+														conditional.textTone ?? conditional.tone ?? 'neutral'
+													)}"
+													>{conditional.icon === 'up'
+														? '▲'
+														: conditional.icon === 'down'
+															? '▼'
+															: conditional.icon === 'flat'
+																? '•'
+																: conditional.icon === 'check'
+																	? '✓'
+																	: '!'}</span
+												>
+											{/if}
+											<FormattedCell {value} format={fmt} plainText={formatCellPlainText(value)} />
+										</span>
 									{/if}
 								</Table.Cell>
 							{/each}
@@ -674,6 +704,211 @@
 				</Table.Body>
 			</Table.Root>
 		</div>
+
+		{#if columnMenuCol}
+			{@const menuCol = columnMenuCol}
+			<button
+				type="button"
+				class="fixed inset-0 z-[209] cursor-default"
+				aria-label="Dismiss column actions"
+				tabindex={-1}
+				onclick={closeColumnMenu}
+			></button>
+			<div
+				style="position: fixed; top: {columnMenuTop}px; left: {columnMenuLeft}px; z-index: 220;"
+				class="column-menu w-60 rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/15 backdrop-blur-sm"
+			>
+				<div class="flex items-start justify-between gap-2 px-2 py-1.5">
+					<div class="min-w-0">
+						<p class="truncate font-mono text-[11px] leading-none font-semibold text-foreground">
+							{menuCol}
+						</p>
+						<p class="mt-1 text-[10px] leading-none text-muted-foreground">Column actions</p>
+					</div>
+					<div class="flex shrink-0 items-center gap-1 pt-0.5">
+						{#if sortDirFor(menuCol)}
+							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-[9px] text-primary">sort</span>
+						{/if}
+						{#if hasFilterFor(menuCol)}
+							<span class="rounded bg-warning/12 px-1.5 py-0.5 text-[9px] text-warning">filter</span
+							>
+						{/if}
+						{#if hasRulesFor(menuCol)}
+							<span class="rounded bg-primary/12 px-1.5 py-0.5 text-[9px] text-primary">format</span
+							>
+						{/if}
+					</div>
+				</div>
+
+				<div class="grid gap-1">
+					<div class="rounded-md bg-muted/20 p-1">
+						<p class="px-1 pb-1 text-[10px] font-medium text-muted-foreground">Sort</p>
+						<div class="grid grid-cols-3 gap-1">
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {sortDirFor(
+									menuCol
+								) === 'asc'
+									? 'bg-primary/12 text-primary'
+									: ''}"
+								onclick={() => {
+									setSort(menuCol, 'asc');
+									onAddSort?.(menuCol, 'asc');
+									closeColumnMenu();
+								}}
+							>
+								<ArrowUp class="h-3 w-3" />
+								Asc
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {sortDirFor(
+									menuCol
+								) === 'desc'
+									? 'bg-primary/12 text-primary'
+									: ''}"
+								onclick={() => {
+									setSort(menuCol, 'desc');
+									onAddSort?.(menuCol, 'desc');
+									closeColumnMenu();
+								}}
+							>
+								<ArrowDown class="h-3 w-3" />
+								Desc
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-center px-1.5 text-2xs text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={() => {
+									sorting = sorting.filter((s) => s.id !== menuCol);
+									resetPaginationToFirstPage();
+									closeColumnMenu();
+								}}
+							>
+								Clear
+							</Button>
+						</div>
+					</div>
+
+					<div class="grid gap-0.5 py-0.5">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {hasFilterFor(
+								menuCol
+							)
+								? 'text-warning'
+								: ''}"
+							onclick={(e) => {
+								openFilterPopover(menuCol, e.currentTarget as HTMLElement);
+								closeColumnMenu();
+							}}
+						>
+							<Filter class="h-3 w-3" />
+							<span class="flex-1 text-left">Filter values</span>
+							{#if hasFilterFor(menuCol)}
+								<span class="text-[9px] text-muted-foreground">active</span>
+							{/if}
+						</Button>
+						{#if onColumnDescriptionChange}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={(e) => {
+									openDescPopover(menuCol, e.currentTarget as HTMLElement);
+									closeColumnMenu();
+								}}
+							>
+								<MessageSquare class="h-3 w-3" />
+								<span class="flex-1 text-left">Column description</span>
+							</Button>
+						{/if}
+					</div>
+
+					<div class="rounded-md bg-muted/20 p-1">
+						<div class="flex items-center justify-between px-1 pb-1">
+							<p class="text-[10px] font-medium text-muted-foreground">Conditional format</p>
+							{#if hasRulesFor(menuCol)}
+								<span class="text-[9px] text-primary">active</span>
+							{/if}
+						</div>
+						<div class="grid grid-cols-2 gap-1">
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={() => {
+									setColumnRules(menuCol, defaultConditionalRulesForColumn(menuCol));
+									closeColumnMenu();
+								}}
+							>
+								Quick preset
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={() => {
+									setColumnRules(menuCol, [
+										{
+											id: `${menuCol}:scale`,
+											type: 'colorScale',
+											minColor: 'negative',
+											midColor: 'warning',
+											maxColor: 'positive'
+										}
+									]);
+									closeColumnMenu();
+								}}
+							>
+								Heatmap
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={() => {
+									setColumnRules(menuCol, [
+										{ id: `${menuCol}:bar`, type: 'dataBar', tone: 'info' }
+									]);
+									closeColumnMenu();
+								}}
+							>
+								Data bars
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								onclick={() => {
+									setColumnRules(menuCol, [{ id: `${menuCol}:icons`, type: 'iconSet' }]);
+									closeColumnMenu();
+								}}
+							>
+								Icon set
+							</Button>
+						</div>
+						{#if hasRulesFor(menuCol)}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="mt-1 h-7 w-full justify-start px-2 text-2xs text-destructive hover:text-destructive focus-visible:ring-1 focus-visible:ring-destructive/50"
+								onclick={() => {
+									clearColumnRules(menuCol);
+									closeColumnMenu();
+								}}
+							>
+								Clear conditional formatting
+							</Button>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if filterPopoverCol}
 			<!-- Click-away backdrop so the popover dismisses seamlessly. -->
@@ -716,6 +951,42 @@
 						onclick={applyFilterPopover}
 					>
 						Apply
+					</button>
+				</div>
+			</div>
+		{/if}
+
+		{#if descPopoverCol}
+			<button
+				type="button"
+				class="fixed inset-0 z-[209] cursor-default"
+				aria-label="Dismiss description editor"
+				tabindex={-1}
+				onclick={() => (descPopoverCol = null)}
+			></button>
+			<div
+				style="position: fixed; top: {descPopoverTop}px; left: {descPopoverLeft}px; z-index: 220;"
+				class="w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+			>
+				<p class="mb-1 text-[10px] font-medium text-muted-foreground">{descPopoverCol}</p>
+				<textarea
+					class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					rows={3}
+					placeholder="Column description…"
+					bind:value={descPopoverValue}
+				></textarea>
+				<div class="mt-1 flex justify-end gap-1">
+					<button
+						class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+						onclick={() => (descPopoverCol = null)}
+					>
+						Cancel
+					</button>
+					<button
+						class="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground"
+						onclick={saveDescPopover}
+					>
+						Save
 					</button>
 				</div>
 			</div>
@@ -829,3 +1100,27 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.column-menu {
+		transform-origin: top left;
+		animation: column-menu-in 120ms cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	@keyframes column-menu-in {
+		from {
+			opacity: 0;
+			transform: translateY(-2px) scale(0.985);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.column-menu {
+			animation: none;
+		}
+	}
+</style>

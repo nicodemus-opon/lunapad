@@ -6,6 +6,10 @@
 	import type { ColumnFormatKind } from '$lib/services/column-format';
 	import { pivotTable } from '$lib/services/report-table-pivot';
 	import { summarizeTable, type TableAggKind } from '$lib/services/report-table-summary';
+	import type {
+		ColumnConditionalRules,
+		ReportTableConditionalRule
+	} from '$lib/services/report-table-conditional-format';
 
 	interface Props {
 		data?: Record<string, unknown>[];
@@ -26,6 +30,7 @@
 		round?: number;
 		valueFormatKind?: ColumnFormatKind;
 		valueCurrencySymbol?: string;
+		conditionalFormats?: Array<{ column: string; rules: ReportTableConditionalRule[] }>;
 	}
 
 	const {
@@ -41,7 +46,8 @@
 		agg = 'sum',
 		round,
 		valueFormatKind,
-		valueCurrencySymbol
+		valueCurrencySymbol,
+		conditionalFormats = []
 	}: Props = $props();
 
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
@@ -50,13 +56,12 @@
 	);
 
 	const columns = $derived(cols && cols.length ? cols : Object.keys(data[0] ?? {}));
-	const rows = $derived(data.slice(0, limit));
+	// `limit` is treated as rows-per-page; the table paginates the full set.
+	const effectivePageSize = $derived((limit && limit > 0 ? limit : pageSize) || 10);
 	let fullscreen = $state(false);
 
-	const sourceRows = $derived.by(() => (fullscreen ? data : rows));
-
 	const transformed = $derived.by(() => {
-		const src = sourceRows;
+		const src = data;
 		const baseCols = columns;
 
 		const resolvedIndex =
@@ -95,36 +100,45 @@
 			formatOverrides: undefined
 		};
 	});
+
+	const conditionalRuleMap = $derived.by(() => {
+		const out: ColumnConditionalRules = {};
+		for (const item of conditionalFormats) {
+			if (!item || typeof item !== 'object') continue;
+			const col = typeof item.column === 'string' ? item.column : '';
+			if (!col || !Array.isArray(item.rules)) continue;
+			out[col] = item.rules as ReportTableConditionalRule[];
+		}
+		return out;
+	});
 </script>
 
-{#if rows.length}
+{#if transformed.rows.length}
 	<div class="md-datatable-wrap" class:linked-active={isLinkedActive}>
 		<ResultTable
 			rows={transformed.rows}
 			columns={transformed.columns}
 			name="datatable"
-			pageSize={pageSize}
+			pageSize={effectivePageSize}
 			headerInsights={headerInsights}
-			truncated={!fullscreen && data.length > limit}
+			truncated={false}
 			columnFormatOverrides={transformed.formatOverrides}
+			columnFormatRules={conditionalRuleMap}
 			fillHeight={false}
 		/>
 		<div class="md-datatable-actions">
-			{#if data.length > limit}
+			{#if transformed.rows.length > effectivePageSize}
 				<button
 					class="md-datatable-expand"
 					onclick={() => (fullscreen = true)}
-					title="Show all rows"
-					aria-label="Show all rows"
+					title="Expand table"
+					aria-label="Expand table"
 				>
 					<Maximize2 class="h-3 w-3" />
 				</button>
 			{/if}
 		</div>
 	</div>
-	{#if data.length > limit}
-		<div class="md-datatable-truncated">showing {limit} of {data.length} rows</div>
-	{/if}
 {:else}
 	<div class="md-datatable-empty">No rows</div>
 {/if}
@@ -142,11 +156,12 @@
 				rows={transformed.rows}
 				columns={transformed.columns}
 				name="datatable"
-				pageSize={pageSize}
+				pageSize={effectivePageSize}
 				headerInsights={headerInsights}
 				fillHeight={true}
 				truncated={false}
 				columnFormatOverrides={transformed.formatOverrides}
+				columnFormatRules={conditionalRuleMap}
 			/>
 		</div>
 	</div>
@@ -162,7 +177,6 @@
 	.md-datatable-wrap {
 		position: relative;
 	}
-	.md-datatable-truncated,
 	.md-datatable-empty {
 		font-size: 0.72rem;
 		opacity: 0.6;

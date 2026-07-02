@@ -228,4 +228,49 @@ describe('serializeLunaFile', () => {
 		const query = doc.entries[0] as { kind: 'query'; code: string };
 		expect(query.code).toBe(cell.code);
 	});
+
+	it('leaves visual (default) markdown cells unmarked for backward compatibility', () => {
+		const content = serializeLunaFile([{ ...markdownCell('# Hi'), markdownEditMode: 'visual' }]);
+		expect(content).not.toContain('lunapad:md');
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([{ kind: 'markdown', markdown: '# Hi' }]);
+	});
+
+	it('persists and round-trips a source-mode markdown cell', () => {
+		const content = serializeLunaFile([{ ...markdownCell('# Hi'), markdownEditMode: 'source' }]);
+		expect(content).toContain('<!--lunapad:md source-->');
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([{ kind: 'markdown', markdown: '# Hi', editMode: 'source' }]);
+	});
+
+	it('unmarked prose parses as visual (implicit default)', () => {
+		const doc = parseLunaFile('# Just prose\n\nNo marker here.');
+		expect(doc.entries).toEqual([
+			{ kind: 'markdown', markdown: '# Just prose\n\nNo marker here.' }
+		]);
+	});
+
+	it('round-trips mixed markdown modes across adjacent cells', () => {
+		const content = serializeLunaFile([
+			{ ...markdownCell('First'), markdownEditMode: 'source' },
+			{ ...markdownCell('Second'), markdownEditMode: 'visual' }
+		]);
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([
+			{ kind: 'markdown', markdown: 'First', editMode: 'source' },
+			{ kind: 'markdown', markdown: 'Second' }
+		]);
+	});
+
+	it('persists source mode on an emptied markdown cell', () => {
+		const content = serializeLunaFile([
+			{ ...markdownCell('Body'), markdownEditMode: 'visual' },
+			{ ...markdownCell(''), markdownEditMode: 'source' }
+		]);
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([
+			{ kind: 'markdown', markdown: 'Body' },
+			{ kind: 'markdown', markdown: '', editMode: 'source' }
+		]);
+	});
 });

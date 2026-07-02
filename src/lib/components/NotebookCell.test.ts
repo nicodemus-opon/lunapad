@@ -49,16 +49,13 @@ describe('NotebookCell anatomy', () => {
 		expect(source).toContain('!cell.hideResult && cell.result');
 	});
 
-	it('renders markdown read-only in report view and guards interactive widget clicks', () => {
-		expect(source).toContain('isMarkdownRendered');
-		expect(source).toContain('isMarkdownClickToEdit');
-		expect(source).toContain('handleMarkdownPreviewClick');
+	it('renders markdown read-only in report view and supports visual dashboard editor', () => {
+		expect(source).toContain('isMarkdownOutputOnly');
+		expect(source).toContain('VisualDashboardEditor');
+		expect(source).toContain('setMarkdownEditMode');
 		expect(source).toContain('MARKDOWN_INTERACTIVE_SELECTOR');
-		expect(source).toContain(
-			'onclick={isMarkdownClickToEdit ? handleMarkdownPreviewClick : undefined}'
-		);
-		expect(source).toContain('{#if isMarkdownClickToEdit}');
-		expect(source).not.toContain('class="markdown-body prose cursor-text"');
+		expect(source).toContain('handleMarkdownPreviewClick');
+		expect(source).toContain('markdown-editor-stack');
 	});
 
 	it('shows execution time only on the status line, not inside the result toolbar', () => {
@@ -108,5 +105,11 @@ describe('CellHeader', () => {
 	it('exposes worksheet view entry point', () => {
 		expect(source).toContain('Maximize2');
 		expect(source).toContain('onOpenWorksheet');
+	});
+
+	it('exposes markdown visual/source mode toggle', () => {
+		expect(source).toContain('onMarkdownModeChange');
+		expect(source).toContain('isMarkdownCell');
+		expect(source).toContain('Visual dashboard editor');
 	});
 });

@@ -55,4 +55,18 @@ describe('renderMarkdocCellToStaticHtml', () => {
 		expect(html).toContain('Q1');
 		expect(html).toContain('Q2');
 	});
+
+	it('renders conditional formats in datatable static html', () => {
+		const cells = [
+			makeCell('orders', [
+				{ amount: -10 },
+				{ amount: 20 }
+			])
+		];
+		const md =
+			'{% datatable data=$orders.rows cols=["amount"] conditionalFormats=[{"column":"amount","rules":[{"id":"r1","type":"threshold","op":"<","value":0,"tone":"negative"}]}] /%}';
+		const html = renderMarkdocCellToStaticHtml(md, cells);
+		expect(html).toContain('<table class="report-table">');
+		expect(html).toContain('color-mix');
+	});
 });

@@ -8,6 +8,10 @@ import type { TableAggKind } from '$lib/services/report-table-summary';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
 import { pivotTable } from '$lib/services/report-table-pivot';
 import { summarizeTable } from '$lib/services/report-table-summary';
+import type {
+	ColumnConditionalRules,
+	ReportTableConditionalRule
+} from '$lib/services/report-table-conditional-format';
 
 const TagImpl = Markdoc.Tag;
 
@@ -75,6 +79,15 @@ function datatableTagToStaticTable(tag: Tag): string {
 	const valueCurrencySymbol = typeof attrs.valueCurrencySymbol === 'string' ? attrs.valueCurrencySymbol : undefined;
 	const valueFormatKind = typeof attrs.valueFormatKind === 'string' ? (attrs.valueFormatKind as ColumnFormatKind) : undefined;
 	const index = Array.isArray(attrs.index) ? (attrs.index as string[]) : undefined;
+	const conditionalFormats = Array.isArray(attrs.conditionalFormats)
+		? (attrs.conditionalFormats as Array<{ column: string; rules: ReportTableConditionalRule[] }>)
+		: [];
+	const conditionalRuleMap: ColumnConditionalRules = {};
+	for (const item of conditionalFormats) {
+		if (!item || typeof item !== 'object') continue;
+		if (typeof item.column !== 'string' || !Array.isArray(item.rules)) continue;
+		conditionalRuleMap[item.column] = item.rules;
+	}
 
 	const columns =
 		cols.length > 0
@@ -106,7 +119,8 @@ function datatableTagToStaticTable(tag: Tag): string {
 		return renderReportTableToStaticHtml(pivot.rows, pivot.columns, {
 			maxRows: pivot.rows.length,
 			truncated: data.length > limit,
-			columnFormatOverrides: pivot.formatOverrides
+			columnFormatOverrides: pivot.formatOverrides,
+			columnFormatRules: conditionalRuleMap
 		});
 	}
 
@@ -123,13 +137,15 @@ function datatableTagToStaticTable(tag: Tag): string {
 		return renderReportTableToStaticHtml(summary.rows, summary.columns, {
 			maxRows: summary.rows.length,
 			truncated: data.length > limit,
-			columnFormatOverrides: summary.formatOverrides
+			columnFormatOverrides: summary.formatOverrides,
+			columnFormatRules: conditionalRuleMap
 		});
 	}
 
 	return renderReportTableToStaticHtml(src, columns, {
 		maxRows: src.length,
-		truncated: data.length > limit
+		truncated: data.length > limit,
+		columnFormatRules: conditionalRuleMap
 	});
 }
 

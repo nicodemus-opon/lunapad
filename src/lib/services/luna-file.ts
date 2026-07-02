@@ -53,6 +53,12 @@ const PYTHON_CLOSE_RE = /^\{%\s*\/python\s*%\}\s*$/;
 // indistinguishable from ordinary blank-line spacing between blocks and vanish).
 const CELL_BREAK_RE = /^<!--\s*lunapad:cell\s*-->\s*$/;
 const CELL_BREAK = '<!--lunapad:cell-->';
+// Persists a markdown cell's editor mode (Visual dashboard builder vs raw Markdoc
+// source). Emitted only for `source` — `visual` is the default, so unmarked prose loads
+// in the visual editor and pre-existing files stay backward-compatible. The marker
+// applies to the markdown cell that immediately follows it.
+const MD_MODE_RE = /^<!--\s*lunapad:md\s+(visual|source)\s*-->\s*$/;
+const mdModeMarker = (mode: 'visual' | 'source') => `<!--lunapad:md ${mode}-->`;
 
 const MATERIALIZE_MODES: CellMaterializationMode[] = ['table', 'view', 'incremental', 'ephemeral'];
 
@@ -83,7 +89,7 @@ export interface LunaQueryEntry {
 }
 
 export type LunaEntry =
-	| { kind: 'markdown'; markdown: string }
+	| { kind: 'markdown'; markdown: string; editMode?: 'visual' | 'source' }
 	| LunaQueryEntry
 	| { kind: 'modelRef'; ref: string }
 	| { kind: 'udf'; udfBody: string }
@@ -140,12 +146,20 @@ export function parseLunaFile(content: string): LunaDocument {
 	const lines = content.split('\n');
 	const entries: LunaEntry[] = [];
 	let prose: string[] = [];
+	// Set by a `<!--lunapad:md source-->` marker; consumed by the next markdown entry.
+	let pendingMdMode: 'visual' | 'source' | undefined;
+
+	function takeMdMode(): { editMode?: 'visual' | 'source' } {
+		const mode = pendingMdMode;
+		pendingMdMode = undefined;
+		return mode ? { editMode: mode } : {};
+	}
 
 	function flushProse(): boolean {
 		const text = prose.join('\n').replace(/^\n+|\n+$/g, '');
 		prose = [];
 		if (text.trim() === '') return false;
-		entries.push({ kind: 'markdown', markdown: text });
+		entries.push({ kind: 'markdown', markdown: text, ...takeMdMode() });
 		return true;
 	}
 
@@ -158,10 +172,20 @@ export function parseLunaFile(content: string): LunaDocument {
 		const plotOpenMatch = line.match(PLOT_OPEN_RE);
 		const pythonOpenMatch = line.match(PYTHON_OPEN_RE);
 
+		const mdModeMatch = line.match(MD_MODE_RE);
+		if (mdModeMatch) {
+			// Flush any prose belonging to the previous cell first, then arm the mode for
+			// the markdown cell that follows this marker.
+			flushProse();
+			pendingMdMode = mdModeMatch[1] as 'visual' | 'source';
+			i++;
+			continue;
+		}
+
 		if (CELL_BREAK_RE.test(line)) {
 			// If there was no real prose to flush, this break marker stands for an
 			// explicit empty markdown cell in its own right — record it as such.
-			if (!flushProse()) entries.push({ kind: 'markdown', markdown: '' });
+			if (!flushProse()) entries.push({ kind: 'markdown', markdown: '', ...takeMdMode() });
 			i++;
 			continue;
 		}
@@ -260,6 +284,7 @@ export function parseLunaFile(content: string): LunaDocument {
 export interface SerializableCell {
 	cellType: 'query' | 'markdown' | 'udf' | 'plot' | 'python';
 	markdown: string;
+	markdownEditMode?: 'visual' | 'source';
 	udfBody: string;
 	outputName: string;
 	language: CellLanguage;
@@ -361,7 +386,11 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			// Two markdown cells back-to-back would otherwise merge into one prose
 			// blob on the next parse — force a boundary between them.
 			if (cells[i - 1]?.cellType === 'markdown') blocks.push(CELL_BREAK);
-			blocks.push(cell.markdown.trim() === '' ? CELL_BREAK : cell.markdown.trim());
+			const parts: string[] = [];
+			// Persist a non-default (source) editor mode; visual stays implicit.
+			if (cell.markdownEditMode === 'source') parts.push(mdModeMarker('source'));
+			parts.push(cell.markdown.trim() === '' ? CELL_BREAK : cell.markdown.trim());
+			blocks.push(parts.join('\n'));
 		} else if (cell.cellType === 'udf') {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
 		} else if (cell.cellType === 'plot') {
