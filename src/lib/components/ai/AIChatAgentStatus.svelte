@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, Loader } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, Loader2 } from '@lucide/svelte';
 	import SprintBoard from './SprintBoard.svelte';
 	import PipelinePhaseStepper from './PipelinePhaseStepper.svelte';
 	import {
@@ -69,7 +69,7 @@
 					<ChevronRight size={12} class="shrink-0 text-muted-foreground" />
 				{/if}
 				{#if isGenerating && !allDone}
-					<Loader size={12} class="shrink-0 animate-spin text-primary" />
+					<Loader2 size={12} class="shrink-0 animate-spin text-primary" />
 				{/if}
 				<span class="flex-1 truncate text-xs text-muted-foreground">{summary}</span>
 			</button>
@@ -87,7 +87,7 @@
 				class="flex items-center gap-1.5 px-1.5 py-1 text-xs text-muted-foreground"
 				data-testid="ai-activity-bar"
 			>
-				<Loader size={12} class="shrink-0 animate-spin text-primary" />
+				<Loader2 size={12} class="shrink-0 animate-spin text-primary" />
 				<span class="truncate">{activityLabel}</span>
 			</div>
 		{/if}

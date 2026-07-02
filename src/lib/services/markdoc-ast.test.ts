@@ -122,6 +122,46 @@ describe('markdoc-ast', () => {
 		expect(updated.source).toContain('Now has more rows');
 	});
 
+	it('does not swallow the closing tag into a container body', () => {
+		const [block] = parseVisualBlocks('{% callout %}\nline one\nline two\n{% /callout %}');
+		const parsed = parseBlockWidget(block);
+		expect(parsed?.bodySource).toBe('line one\nline two');
+		expect(parsed?.bodySource).not.toContain('/callout');
+	});
+
+	it('does not duplicate the closing tag when a container body is edited', () => {
+		const [block] = parseVisualBlocks('{% callout %}\noriginal\n{% /callout %}');
+		const updated = updateBlockWidgetSource(block, { body: 'edited body' });
+		expect(updated.source).toBe('{% callout %}\nedited body\n{% /callout %}');
+		// Exactly one opening and one closing tag — no unbalanced "Node 'tag' is missing opening".
+		expect(updated.source.match(/\{% \/callout %\}/g)?.length).toBe(1);
+	});
+
+	it('does not duplicate the closing tag when a container attr is edited', () => {
+		const [block] = parseVisualBlocks(
+			'{% callout type="info" %}\nsome body text\n{% /callout %}'
+		);
+		const updated = updateBlockWidgetSource(block, { attrs: { type: 'warning' } });
+		expect(updated.source).toContain('type="warning"');
+		expect(updated.source).toContain('some body text');
+		expect(updated.source.match(/\{% \/callout %\}/g)?.length).toBe(1);
+	});
+
+	it('does not duplicate the closing tag when an if body is edited', () => {
+		const [block] = parseVisualBlocks('{% if $x %}\nHas rows\n{% /if %}');
+		const updated = updateBlockWidgetSource(block, { body: 'Now has more rows' });
+		expect(updated.source.match(/\{% \/if %\}/g)?.length).toBe(1);
+		expect(updated.source).not.toContain('Has rows');
+	});
+
+	it('preserves a multi-paragraph container body across edits', () => {
+		const [block] = parseVisualBlocks('{% callout %}\npara one\n\npara two\n{% /callout %}');
+		const parsed = parseBlockWidget(block);
+		expect(parsed?.bodySource).toBe('para one\n\npara two');
+		const updated = updateBlockWidgetSource(block, { attrs: { type: 'note' } });
+		expect(updated.source.match(/\{% \/callout %\}/g)?.length).toBe(1);
+	});
+
 	it('assigns stable ids so re-parsing identical markdown is idempotent', () => {
 		const a = parseVisualBlocks(SAMPLE).map((b) => b.id);
 		const b = parseVisualBlocks(SAMPLE).map((b) => b.id);

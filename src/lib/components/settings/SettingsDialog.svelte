@@ -357,7 +357,7 @@
 									reuse the model above.
 								</p>
 								{#if ghostReasoningModelWarning}
-									<p class="text-xs text-amber-600 dark:text-amber-500">
+									<p class="text-xs text-warning">
 										Your chat model looks like a reasoning model — ghost text will likely stay empty
 										until you set a small coder model above.
 									</p>

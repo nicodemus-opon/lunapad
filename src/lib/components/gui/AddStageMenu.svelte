@@ -46,6 +46,7 @@
 		Hash,
 		Link2,
 		Plus,
+		Loader2,
 		Search,
 		Sparkles,
 		WandSparkles
@@ -996,7 +997,7 @@
 									promptPlanMessage = null;
 								}}
 							>
-								<Sparkles class="mr-1 h-3 w-3 animate-spin" />
+								<Loader2 class="mr-1 h-3 w-3 animate-spin" />
 								Cancel
 							</Button>
 						{:else}

@@ -1192,8 +1192,8 @@
 						{@const positive = d.comp >= 0}
 						<p
 							class="text-sm font-medium {positive
-								? 'text-green-500'
-								: 'text-red-500'} flex items-center gap-0.5"
+								? 'text-success'
+								: 'text-destructive'} flex items-center gap-0.5"
 						>
 							<span>{positive ? '▲' : '▼'}</span>
 							<span>{numericFormatter.format(Math.abs(d.comp))}</span>
@@ -1263,8 +1263,8 @@
 							class="flex items-center gap-2 text-4xl font-bold tabular-nums {neutral
 								? 'text-muted-foreground'
 								: positive
-									? 'text-green-500'
-									: 'text-red-500'}"
+									? 'text-success'
+									: 'text-destructive'}"
 						>
 							<span class="text-2xl">{neutral ? '—' : positive ? '▲' : '▼'}</span>
 							<span>{numericFormatter.format(Math.abs(deltaData))}</span>

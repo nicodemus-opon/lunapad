@@ -259,6 +259,17 @@
 		stroke: currentColor;
 	}
 
+	/* Lucide icons have a 24-unit viewBox with a 2u stroke. At the small sizes this app
+	   renders them (~10–14px) that stroke scales down to sub-pixel width and Chromium
+	   anti-aliases it across two pixel rows — the faint, uneven "two-tone" look. Pin the
+	   stroke to a crisp device-space width so icons stay sharp at every size. */
+	.lucide-icon {
+		stroke-width: 1.5px;
+	}
+	.lucide-icon * {
+		vector-effect: non-scaling-stroke;
+	}
+
 	.lc-axis-label,
 	.lc-axis-tick-label {
 		stroke: none !important;

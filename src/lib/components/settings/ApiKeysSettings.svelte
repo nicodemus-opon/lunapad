@@ -100,7 +100,7 @@
 	</div>
 
 	{#if revealedKey}
-		<div class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+		<div class="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3">
 			<p class="text-xs font-medium">Copy this key now — it won't be shown again.</p>
 			<div class="flex gap-1.5">
 				<Input readonly class="h-8 flex-1 font-mono text-xs" value={revealedKey} />

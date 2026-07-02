@@ -15,6 +15,7 @@
 		CornerDownLeft,
 		Database,
 		LayoutGrid,
+		Loader2,
 		RefreshCw,
 		Table2
 	} from '@lucide/svelte';
@@ -183,7 +184,7 @@
 				{/snippet}
 				{#snippet trailing()}
 					{#if refreshing}
-						<RefreshCw class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+						<Loader2 class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
 					{:else if meta}
 						<span class="shrink-0 text-2xs text-muted-foreground">{meta}</span>
 					{/if}

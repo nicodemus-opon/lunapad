@@ -22,21 +22,21 @@
 
 {#if degraded && !dismissed && health}
 	<div
-		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-900 dark:text-amber-200"
+		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-warning"
 		role="status"
 	>
 		<AlertTriangle size={12} class="mt-0.5 shrink-0 opacity-70" />
 		<div class="min-w-0 flex-1">
 			<span class="font-medium">Limited context</span>
 			{#if (health.issues?.length ?? 0) > 0}
-				<span class="text-amber-800/80 dark:text-amber-300/80">
+				<span class="text-warning/80">
 					— {health.issues![0]}
 				</span>
 			{/if}
 		</div>
 		<button
 			type="button"
-			class="shrink-0 text-amber-700/60 hover:text-amber-900 dark:text-amber-300/60 dark:hover:text-amber-100"
+			class="shrink-0 text-warning/60 hover:text-warning"
 			onclick={() => (dismissed = true)}
 			aria-label="Dismiss context health notice"
 		>

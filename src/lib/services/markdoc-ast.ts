@@ -130,7 +130,12 @@ export function parseBlockWidget(block: VisualBlock): ParsedWidgetBlock | null {
 	if (!selfClosing && tagNode.lines) {
 		const lines = block.source.split('\n');
 		const openEnd = tagNode.lines[1] ?? tagNode.lines[0] + 1;
-		const closeStart = tagNode.close?.lines?.[0] ?? lines.length;
+		// Markdoc doesn't populate `close` on parsed container/`if` nodes — it folds the
+		// closing tag's line map into `tagNode.lines` as [openStart, openEnd, closeStart,
+		// closeEnd]. Falling back to `lines.length` would swallow the `{% /tag %}` line into
+		// the body, and re-serializing then emits a second closing tag ("Node 'tag' is
+		// missing opening"). Use the recorded close-start line instead.
+		const closeStart = tagNode.close?.lines?.[0] ?? tagNode.lines[2] ?? lines.length;
 		bodySource = lines.slice(openEnd, closeStart).join('\n');
 	}
 
@@ -229,6 +234,10 @@ export function serializeMarkdocTag(
 	const parts = Object.entries(attrs)
 		.filter(([k]) => !(tagName === 'if' && k === 'condition'))
 		.filter(([, v]) => v !== undefined && v !== null && v !== '')
+		// Number inputs in the inspector emit `Number(value)`, which is NaN while the field
+		// is empty or mid-edit (e.g. "-", "1e"). Serializing `attr=NaN` is invalid Markdoc
+		// ("Expected \"(\"") and breaks the whole block, so drop NaN attrs entirely.
+		.filter(([, v]) => !(typeof v === 'number' && Number.isNaN(v)))
 		.map(([k, v]) => `${k}=${formatAttrValue(v)}`);
 	const attrStr = parts.length ? ` ${parts.join(' ')}` : '';
 	if (selfClosing) return `{% ${tagName}${attrStr} /%}`;

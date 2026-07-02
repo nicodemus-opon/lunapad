@@ -154,7 +154,7 @@
 			{#if result}
 				<div class="space-y-1">
 					{#if result.promoted.length > 0}
-						<p class="flex items-center gap-1.5 text-[11px] text-chart-1">
+						<p class="flex items-center gap-1.5 text-[11px] text-success">
 							<CheckCircle2 class="h-3.5 w-3.5" /> Promoted: {result.promoted.join(', ')}
 						</p>
 					{/if}

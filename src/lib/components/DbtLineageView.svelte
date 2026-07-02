@@ -283,7 +283,7 @@
 
 	// ── Status helpers ────────────────────────────────────────────────────────
 	const statusMeta = {
-		pass: { icon: CheckCircle2, class: 'text-chart-1', dot: 'bg-chart-1' },
+		pass: { icon: CheckCircle2, class: 'text-success', dot: 'bg-success' },
 		error: { icon: XCircle, class: 'text-destructive', dot: 'bg-destructive' },
 		unknown: { icon: Minus, class: 'text-muted-foreground/40', dot: 'bg-muted-foreground/30' }
 	} as const;
@@ -302,7 +302,7 @@
 	// Cell-node-only status mapping — cell.status is a different union
 	// ('idle'|'running'|'success'|'error') from dbt's run-status one.
 	const cellStatusMeta = {
-		success: { icon: CheckCircle2, class: 'text-chart-1' },
+		success: { icon: CheckCircle2, class: 'text-success' },
 		error: { icon: XCircle, class: 'text-destructive' },
 		running: { icon: Loader2, class: 'text-muted-foreground animate-spin' },
 		idle: { icon: Minus, class: 'text-muted-foreground/40' }
@@ -439,7 +439,7 @@
 											<span
 												class="inline-flex items-center rounded border px-1.5 py-px text-[9px] font-medium
 												{model.lastRunStatus === 'pass'
-													? 'border-chart-1/20 bg-chart-1/10 text-chart-1'
+													? 'border-success/20 bg-success/10 text-success'
 													: 'border-destructive/20 bg-destructive/10 text-destructive'}"
 											>
 												{model.lastRunStatus}
@@ -558,7 +558,7 @@
 			</p>
 			<div class="flex flex-col gap-1">
 				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-					<CheckCircle2 class="h-3 w-3 text-chart-1" /> Passing
+					<CheckCircle2 class="h-3 w-3 text-success" /> Passing
 				</div>
 				<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
 					<XCircle class="h-3 w-3 text-destructive" /> Error

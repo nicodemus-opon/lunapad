@@ -291,7 +291,7 @@
 					{#if materializing}
 						<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 					{:else if cell.materializeStatus === 'success'}
-						<CheckCircle2 class="h-3.5 w-3.5 shrink-0 text-chart-1" />
+						<CheckCircle2 class="h-3.5 w-3.5 shrink-0 text-success" />
 					{:else}
 						<Database class="h-3.5 w-3.5 shrink-0" />
 					{/if}
@@ -314,7 +314,7 @@
 							{#if dbtExitCode !== null}
 								<span
 									class="flex items-center gap-1 text-[10px] font-medium {dbtExitCode === 0
-										? 'text-chart-1'
+										? 'text-success'
 										: 'text-destructive'}"
 								>
 									{#if dbtExitCode === 0}

@@ -45,7 +45,7 @@
 
 	function logLineClass(line: string): string {
 		if (/error|failed/i.test(line)) return 'text-destructive';
-		if (/warn/i.test(line)) return 'text-yellow-500';
+		if (/warn/i.test(line)) return 'text-warning';
 		if (/ready|localhost|✓|compiled/i.test(line)) return 'text-success';
 		return 'text-muted-foreground';
 	}

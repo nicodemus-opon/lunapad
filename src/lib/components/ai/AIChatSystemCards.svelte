@@ -139,10 +139,10 @@
 
 		{#if confirmationRequest}
 			<div
-				class="flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2 shadow-sm backdrop-blur-sm"
+				class="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 shadow-sm backdrop-blur-sm"
 				data-testid="ai-confirm-bar"
 			>
-				<span class="text-xs text-amber-600 dark:text-amber-400">
+				<span class="text-xs text-warning">
 					{confirmationRequest.cellCount} cells created — run them?
 				</span>
 				<div class="flex items-center gap-2">

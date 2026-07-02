@@ -3,7 +3,6 @@
 	import {
 		Zap,
 		Play,
-		CheckCircle,
 		RefreshCcw,
 		ChevronDown,
 		ChevronRight,
@@ -115,8 +114,8 @@
 
 	function logLineClass(line: string): string {
 		if (/\[ERROR\]|ERROR|FAIL|failed/i.test(line)) return 'text-destructive';
-		if (/\[OK\]|PASS|success|Completed/i.test(line)) return 'text-chart-1';
-		if (/WARN|warning/i.test(line)) return 'text-yellow-500';
+		if (/\[OK\]|PASS|success|Completed/i.test(line)) return 'text-success';
+		if (/WARN|warning/i.test(line)) return 'text-warning';
 		return 'text-muted-foreground';
 	}
 
@@ -154,7 +153,7 @@
 	}
 
 	function modelStatusIcon(model: DbtModel) {
-		if (model.lastRunStatus === 'pass') return { icon: CheckCircle2, class: 'text-chart-1' };
+		if (model.lastRunStatus === 'pass') return { icon: CheckCircle2, class: 'text-success' };
 		if (model.lastRunStatus === 'error') return { icon: XCircle, class: 'text-destructive' };
 		return { icon: Minus, class: 'text-muted-foreground/40' };
 	}
@@ -552,7 +551,7 @@
 								{#if runningScheduleId === schedule.id}
 									<Loader2 class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
 								{:else if schedule.lastRunStatus === 'pass'}
-									<CheckCircle2 class="h-3 w-3 shrink-0 text-chart-1" />
+									<CheckCircle2 class="h-3 w-3 shrink-0 text-success" />
 								{:else if schedule.lastRunStatus === 'error'}
 									<XCircle class="h-3 w-3 shrink-0 text-destructive" />
 								{:else}

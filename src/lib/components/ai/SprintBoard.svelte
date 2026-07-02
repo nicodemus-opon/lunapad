@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CheckCircle, Circle, XCircle, Loader } from '@lucide/svelte';
+	import { CheckCircle2, Circle, XCircle, Loader2 } from '@lucide/svelte';
 	import type { SprintTask } from '$lib/types/ai-chat.js';
 	import { SPRINT_TASK_STYLE } from './sprint-task-style.js';
 	import { getCurrentActivityLabel } from '$lib/stores/ai-chat.svelte.js';
@@ -46,9 +46,9 @@
 
 					<span class="mt-0.5 shrink-0">
 						{#if task.status === 'done'}
-							<CheckCircle size={13} class="text-green-500" />
+							<CheckCircle2 size={13} class="text-success" />
 						{:else if task.status === 'active'}
-							<Loader size={13} class="animate-spin text-primary" />
+							<Loader2 size={13} class="animate-spin text-primary" />
 						{:else if task.status === 'failed'}
 							<XCircle size={13} class="text-destructive" />
 						{:else}

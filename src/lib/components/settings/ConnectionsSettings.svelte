@@ -677,7 +677,7 @@
 						: ''}"
 					onclick={() => editConnection(connection)}
 				>
-					<CheckCircle2 class="h-2.5 w-2.5 text-chart-1" />
+					<CheckCircle2 class="h-2.5 w-2.5 text-success" />
 					<span class="font-mono">{connection.name}</span>
 				</button>
 			{/each}

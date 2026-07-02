@@ -64,7 +64,7 @@
 			{/if}
 
 			{#if succeeded}
-				<p class="flex items-center gap-1.5 text-[11px] text-chart-1">
+				<p class="flex items-center gap-1.5 text-[11px] text-success">
 					<CheckCircle2 class="h-3.5 w-3.5" /> Exported to {relPath}
 				</p>
 			{/if}

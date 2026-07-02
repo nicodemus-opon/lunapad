@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CheckCircle, Circle, Loader } from '@lucide/svelte';
+	import { CheckCircle2, Circle, Loader2 } from '@lucide/svelte';
 	import type { PipelinePhase } from '$lib/types/ai-chat.js';
 	import { getCurrentActivityLabel } from '$lib/stores/ai-chat.svelte.js';
 
@@ -22,9 +22,9 @@
 		{#each phases as phase, i (phase.id)}
 			<li class="flex items-center gap-1">
 				{#if phase.status === 'done'}
-					<CheckCircle size={11} class="text-green-500" />
+					<CheckCircle2 size={11} class="text-success" />
 				{:else if phase.status === 'active'}
-					<Loader size={11} class="animate-spin text-primary" />
+					<Loader2 size={11} class="animate-spin text-primary" />
 				{:else}
 					<Circle size={11} class="text-muted-foreground/40" />
 				{/if}
