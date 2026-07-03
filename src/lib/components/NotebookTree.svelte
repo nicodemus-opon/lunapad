@@ -28,10 +28,14 @@
 		renameNotebook,
 		setFolderExpanded,
 		loadDemoNotebook,
+		navigateToOutlineEntry,
+		toggleFavoriteNotebook,
+		getFavoriteNotebookIds,
 		type Cell,
 		type Notebook,
 		type NotebookFolder
 	} from '$lib/stores/notebook.svelte';
+	import { buildNotebookOutline } from '$lib/services/notebook-outline';
 	import { toast } from 'svelte-sonner';
 	import { fade } from 'svelte/transition';
 	import {
@@ -47,7 +51,9 @@
 		Pencil,
 		Plus,
 		Trash2,
-		Type
+		Type,
+		Hash,
+		Star
 	} from '@lucide/svelte';
 
 	let { pendingRenameFolderId = $bindable<string | null>(null), filterQuery = '' } = $props();
@@ -55,6 +61,7 @@
 	type TreeRowItem =
 		| { kind: 'folder'; depth: number; folder: NotebookFolder }
 		| { kind: 'notebook'; depth: number; notebook: Notebook; folderName?: string }
+		| { kind: 'outline'; depth: number; entry: import('$lib/services/notebook-outline').OutlineEntry; notebook: Notebook }
 		| { kind: 'cell'; depth: number; cell: Cell; notebook: Notebook };
 
 	type MenuAction =
@@ -78,6 +85,7 @@
 	const expandedFolderIds = $derived(getExpandedNotebookFolderIds());
 	const expandedNotebookIds = $derived(getExpandedNotebookIds());
 	const openTabIds = $derived(getOpenNotebookTabIds());
+	const favoriteIds = $derived(getFavoriteNotebookIds());
 
 	let renamingNotebookId = $state<string | null>(null);
 	let renamingFolderId = $state<string | null>(null);
@@ -134,8 +142,8 @@
 			for (const notebook of childNotebooks) {
 				rows.push({ kind: 'notebook', depth, notebook });
 				if (expandedNotebookIds.includes(notebook.id)) {
-					for (const cell of notebook.cells) {
-						rows.push({ kind: 'cell', depth: depth + 1, cell, notebook });
+					for (const entry of buildNotebookOutline(notebook.cells)) {
+						rows.push({ kind: 'outline', depth: depth + 1, entry, notebook });
 					}
 				}
 			}
@@ -362,7 +370,7 @@
 				</EmptyState>
 			{/if}
 		{:else}
-			{#each treeRows as row (row.kind === 'folder' ? `f:${row.folder.id}` : row.kind === 'notebook' ? `n:${row.notebook.id}` : `c:${row.cell.id}`)}
+			{#each treeRows as row (row.kind === 'folder' ? `f:${row.folder.id}` : row.kind === 'notebook' ? `n:${row.notebook.id}` : row.kind === 'outline' ? `o:${row.notebook.id}:${row.entry.id}` : `c:${row.cell.id}`)}
 				{#if row.kind === 'folder'}
 					{@const isExpanded = expandedFolderIds.includes(row.folder.id)}
 					<div in:fade={{ duration: fadeMs }}>
@@ -514,7 +522,7 @@
 													e.stopPropagation();
 													toggleNotebookExpanded(row.notebook.id);
 												}}
-												aria-label={isExpanded ? 'Collapse cells' : 'Expand cells'}
+												aria-label={isExpanded ? 'Collapse outline' : 'Expand outline'}
 											>
 												<ChevronRight
 													class="h-3 w-3 transition-transform duration-150 {isExpanded
@@ -523,6 +531,24 @@
 												/>
 											</button>
 										{/if}
+										<button
+											type="button"
+											class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-opacity hover:bg-sidebar-accent {favoriteIds.includes(
+												row.notebook.id
+											)
+												? 'text-primary opacity-100'
+												: 'text-muted-foreground opacity-0 group-hover/row:opacity-100'}"
+											title={favoriteIds.includes(row.notebook.id)
+												? 'Remove from favorites'
+												: 'Add to favorites'}
+											aria-label="Toggle favorite"
+											onclick={(e) => {
+												e.stopPropagation();
+												toggleFavoriteNotebook(row.notebook.id);
+											}}
+										>
+											<Star class="h-3 w-3 {favoriteIds.includes(row.notebook.id) ? 'fill-current' : ''}" />
+										</button>
 										{@render rowMenu(
 											`notebook:${row.notebook.id}`,
 											notebookActions(row.notebook),
@@ -535,6 +561,27 @@
 								{@render contextItems(notebookActions(row.notebook))}
 							</ContextMenu.Content>
 						</ContextMenu.Root>
+					</div>
+				{:else if row.kind === 'outline'}
+					<div in:fade={{ duration: fadeMs }}>
+						<TreeRow
+							depth={row.depth}
+							selected={activeTabId === row.notebook.id}
+							onActivate={() => navigateToOutlineEntry(row.notebook.id, row.entry)}
+						>
+							{#snippet icon()}
+								{#if row.entry.kind === 'heading'}
+									<Hash class="h-3 w-3 shrink-0 text-muted-foreground" />
+								{:else}
+									<Code2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								{/if}
+							{/snippet}
+							{#snippet label()}
+								<span class="min-w-0 flex-1 truncate text-xs text-foreground/75">
+									{row.entry.label}
+								</span>
+							{/snippet}
+						</TreeRow>
 					</div>
 				{:else if row.kind === 'cell'}
 					<div in:fade={{ duration: fadeMs }}>

@@ -15,7 +15,7 @@
 	let isOpen = $state(open);
 </script>
 
-<div class="md-details">
+<div class="md-details" class:is-open={isOpen}>
 	<button
 		type="button"
 		class="md-details-summary"
@@ -37,34 +37,8 @@
 </div>
 
 <style>
-	.md-details {
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		border-radius: 0.395rem;
-		margin: 0.5rem 0;
-		overflow: hidden;
-	}
-	.md-details-summary {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		width: 100%;
-		padding: 0.5rem 0.7rem;
-		background: none;
-		border: none;
-		font-size: 0.85em;
-		font-weight: 600;
-		text-align: left;
-		cursor: pointer;
-		transition: background-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
-	}
-	.md-details-summary:hover {
-		background: color-mix(in oklch, currentColor 4%, transparent);
-	}
 	:global(.md-details-chevron) {
 		flex-shrink: 0;
 		transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
-	}
-	.md-details-body {
-		padding: 0 0.7rem 0.7rem;
 	}
 </style>

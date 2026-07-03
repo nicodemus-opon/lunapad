@@ -38,21 +38,4 @@
 	});
 </script>
 
-<span class="md-badge" style="--md-badge-token: {token}">{value}</span>
-
-<style>
-	.md-badge {
-		display: inline-flex;
-		align-items: center;
-		padding: 0.15rem 0.55rem;
-		border-radius: var(--radius);
-		font-size: var(--text-xs);
-		font-weight: 600;
-		line-height: 1.4;
-		background: color-mix(in oklab, var(--md-badge-token) 8%, transparent);
-		border: 1px solid color-mix(in oklab, var(--md-badge-token) 25%, transparent);
-		color: var(--md-badge-token);
-		margin: 0.1rem 0.15rem;
-		vertical-align: middle;
-	}
-</style>
+<span class="md-badge" style="--md-badge-token: {token}">{value ?? ''}</span>

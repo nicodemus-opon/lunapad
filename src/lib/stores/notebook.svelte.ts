@@ -24,6 +24,9 @@ import { deconflictName } from '$lib/utils/deconflict';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
 import type { OutlineEntry } from '$lib/services/notebook-outline';
+import { buildNotebookOutline } from '$lib/services/notebook-outline';
+import { pmDocumentToBlocks, type NotebookPmBlock } from '$lib/services/notebook-pm';
+import type { PMDocJSON } from '$lib/services/markdoc-pm';
 import {
 	openProject as openProjectAPI,
 	listProjectNotebooks,
@@ -358,6 +361,13 @@ interface NotebookState {
 	focusedCellId: string | null;
 	focusedTarget: FocusTarget | null;
 	sidebarNotebookView: SidebarNotebookView;
+	/** Recently opened notebook tab ids (most recent first). */
+	recentNotebookIds: string[];
+	/** Pinned notebook ids for sidebar quick access. */
+	favoriteNotebookIds: string[];
+	/** In-notebook outline navigation history (session-only). */
+	pageNavHistory: Array<{ notebookId: string; entryId: string; cellId: string; anchorId?: string }>;
+	pageNavHistoryIndex: number;
 	openResultTabs: ResultTabInfo[];
 	openExtraTabs: ExtraTab[];
 	tables: UploadedTable[];
@@ -710,6 +720,10 @@ let state = $state<NotebookState>({
 	focusedCellId: null,
 	focusedTarget: null,
 	sidebarNotebookView: 'browse',
+	recentNotebookIds: [],
+	favoriteNotebookIds: [],
+	pageNavHistory: [],
+	pageNavHistoryIndex: -1,
 	openResultTabs: [],
 	openExtraTabs: [],
 	tables: [],
@@ -856,6 +870,8 @@ function serialize(persistResults = true): string {
 		sidebarSectionsExpanded: state.sidebarSectionsExpanded,
 		activeTabId: state.activeTabId,
 		sidebarNotebookView: state.sidebarNotebookView,
+		recentNotebookIds: state.recentNotebookIds,
+		favoriteNotebookIds: state.favoriteNotebookIds,
 		openResultTabs: state.openResultTabs,
 		tables: state.tables,
 		theme: state.theme,
@@ -1796,6 +1812,16 @@ function deserialize(raw: string): void {
 		if (typeof data.ghostTextEnabled === 'boolean') state.ghostTextEnabled = data.ghostTextEnabled;
 		if (data.sidebarNotebookView === 'outline' || data.sidebarNotebookView === 'browse') {
 			state.sidebarNotebookView = data.sidebarNotebookView;
+		}
+		if (Array.isArray(data.recentNotebookIds)) {
+			state.recentNotebookIds = (data.recentNotebookIds as string[]).filter((id) =>
+				state.notebooks.some((n) => n.id === id)
+			);
+		}
+		if (Array.isArray(data.favoriteNotebookIds)) {
+			state.favoriteNotebookIds = (data.favoriteNotebookIds as string[]).filter((id) =>
+				state.notebooks.some((n) => n.id === id)
+			);
 		}
 		const legacyLlmConfig = parseLegacyLlmConfig(data);
 		if (!useServerWorkspace && legacyLlmConfig) {
@@ -3338,16 +3364,199 @@ export function openNotebookTabAtCell(notebookId: string, cellId: string, anchor
 	scheduleSave();
 }
 
-export function navigateToOutlineEntry(notebookId: string, entry: OutlineEntry): void {
+export function navigateToOutlineEntry(
+	notebookId: string,
+	entry: OutlineEntry,
+	opts?: { skipHistory?: boolean }
+): void {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
 	if (!nb) return;
 	const cell = nb.cells.find((c) => c.id === entry.cellId);
 	if (!cell) return;
+
+	if (!opts?.skipHistory) {
+		const frame = {
+			notebookId,
+			entryId: entry.id,
+			cellId: entry.cellId,
+			anchorId: entry.anchorId ?? (entry.kind === 'heading' ? entry.id : undefined)
+		};
+		const tail = state.pageNavHistory.slice(0, state.pageNavHistoryIndex + 1);
+		const last = tail[tail.length - 1];
+		if (
+			!last ||
+			last.notebookId !== frame.notebookId ||
+			last.entryId !== frame.entryId
+		) {
+			state.pageNavHistory = [...tail, frame].slice(-50);
+			state.pageNavHistoryIndex = state.pageNavHistory.length - 1;
+		}
+	}
+
 	if (cell.display === 'collapsed') {
 		setCellDisplay(cell.id, 'full');
 	}
 	const anchorId = entry.anchorId ?? (entry.kind === 'heading' ? entry.id : undefined);
 	openNotebookTabAtCell(notebookId, entry.cellId, anchorId);
+}
+
+export function canGoBackPageNav(): boolean {
+	return state.pageNavHistoryIndex > 0;
+}
+
+export function canGoForwardPageNav(): boolean {
+	return state.pageNavHistoryIndex >= 0 && state.pageNavHistoryIndex < state.pageNavHistory.length - 1;
+}
+
+export function goBackPageNav(): boolean {
+	if (!canGoBackPageNav()) return false;
+	state.pageNavHistoryIndex -= 1;
+	const frame = state.pageNavHistory[state.pageNavHistoryIndex];
+	const nb = state.notebooks.find((n) => n.id === frame.notebookId);
+	const entry = nb ? buildNotebookOutline(nb.cells).find((e) => e.id === frame.entryId) : undefined;
+	if (entry) navigateToOutlineEntry(frame.notebookId, entry, { skipHistory: true });
+	else openNotebookTabAtCell(frame.notebookId, frame.cellId, frame.anchorId);
+	return true;
+}
+
+export function goForwardPageNav(): boolean {
+	if (!canGoForwardPageNav()) return false;
+	state.pageNavHistoryIndex += 1;
+	const frame = state.pageNavHistory[state.pageNavHistoryIndex];
+	const nb = state.notebooks.find((n) => n.id === frame.notebookId);
+	const entry = nb ? buildNotebookOutline(nb.cells).find((e) => e.id === frame.entryId) : undefined;
+	if (entry) navigateToOutlineEntry(frame.notebookId, entry, { skipHistory: true });
+	else openNotebookTabAtCell(frame.notebookId, frame.cellId, frame.anchorId);
+	return true;
+}
+
+function rebuildCellsFromBlocks(notebook: Notebook, blocks: NotebookPmBlock[]): Cell[] {
+	const cellMap = new Map(notebook.cells.map((c) => [c.id, c]));
+	const next: Cell[] = [];
+
+	for (const block of blocks) {
+		if (block.kind === 'page') continue;
+		if (block.kind === 'query') {
+			const cell = cellMap.get(block.cellId);
+			if (cell) next.push({ ...cell });
+			continue;
+		}
+		if (block.kind === 'markdown') {
+			if (block.cellId && cellMap.has(block.cellId)) {
+				const existing = cellMap.get(block.cellId)!;
+				if (existing.cellType === 'markdown') {
+					next.push({ ...existing, markdown: block.markdown });
+					continue;
+				}
+			}
+			const md = makeMarkdownCell(block.markdown);
+			if (block.cellId) md.id = block.cellId;
+			next.push(md);
+		}
+	}
+	return next;
+}
+
+function cellsStructureEqual(a: Cell[], b: Cell[]): boolean {
+	if (a.length !== b.length) return false;
+	return a.every((cell, i) => cell.id === b[i]?.id && cell.cellType === b[i]?.cellType);
+}
+
+/** Apply a ProseMirror document back to notebook cells (document-order sync). */
+export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): void {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return;
+
+	const blocks = pmDocumentToBlocks(doc);
+	const nextCells = rebuildCellsFromBlocks(nb, blocks);
+	if (!nextCells.length && nb.cells.length) return;
+
+	const markdownChanged = nextCells.some((c, i) => {
+		const prev = nb.cells[i];
+		return c.cellType === 'markdown' && prev?.cellType === 'markdown' && c.markdown !== prev.markdown;
+	});
+	const structureChanged = !cellsStructureEqual(nb.cells, nextCells);
+
+	if (!markdownChanged && !structureChanged) return;
+
+	pushHistoryCheckpoint(notebookId);
+	state.notebooks = state.notebooks.map((n) =>
+		n.id === notebookId ? { ...n, cells: nextCells } : n
+	);
+	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder && nb.format === 'luna') {
+		scheduleLunaNotebookSave(notebookId);
+	}
+}
+
+/** Insert an executable block cell for inline document insertion (/sql, /prql, /python). */
+export function insertQueryBlockCell(
+	afterCellId: string | null,
+	lang: 'sql' | 'prql' | 'python'
+): string {
+	const nb = getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
+
+	let newCell: Cell;
+	if (lang === 'python') {
+		newCell = makePythonCell('');
+	} else {
+		newCell = makeCell('', deconflictOutputName('query'), lang);
+	}
+	newCell.display = 'output';
+
+	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
+	if (inFsMode) {
+		newCell.id = deconflictOutputName(newCell.outputName || 'query');
+		newCell.outputName = newCell.id;
+	}
+
+	const cells = [...nb.cells];
+	if (afterCellId) {
+		const idx = cells.findIndex((c) => c.id === afterCellId);
+		if (idx >= 0) cells.splice(idx + 1, 0, newCell);
+		else cells.push(newCell);
+	} else {
+		cells.unshift(newCell);
+	}
+
+	state.notebooks = state.notebooks.map((n) =>
+		n.id === nb.id ? { ...n, cells } : n
+	);
+	scheduleSave();
+	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
+	else if (nb.format === 'luna') scheduleLunaNotebookSave(nb.id);
+
+	state.focusedCellId = newCell.id;
+	state.focusedTarget = { cellId: newCell.id };
+	return newCell.id;
+}
+
+export function removeQueryBlockCell(cellId: string): void {
+	removeCell(cellId);
+}
+
+export function touchRecentNotebook(notebookId: string): void {
+	const filtered = state.recentNotebookIds.filter((id) => id !== notebookId);
+	state.recentNotebookIds = [notebookId, ...filtered].slice(0, 12);
+	scheduleSave();
+}
+
+export function getRecentNotebookIds(): string[] {
+	return state.recentNotebookIds;
+}
+
+export function getFavoriteNotebookIds(): string[] {
+	return state.favoriteNotebookIds;
+}
+
+export function toggleFavoriteNotebook(notebookId: string): void {
+	if (state.favoriteNotebookIds.includes(notebookId)) {
+		state.favoriteNotebookIds = state.favoriteNotebookIds.filter((id) => id !== notebookId);
+	} else {
+		state.favoriteNotebookIds = [...state.favoriteNotebookIds, notebookId];
+	}
+	scheduleSave();
 }
 
 export function clearFocusedCell(): void {
@@ -3764,6 +3973,9 @@ export function setSidebarSectionExpanded(section: SidebarSection, expanded: boo
 
 export function setActiveTab(tabId: string): void {
 	state.activeTabId = tabId;
+	if (state.notebooks.some((n) => n.id === tabId)) {
+		touchRecentNotebook(tabId);
+	}
 	scheduleSave();
 }
 
@@ -6600,11 +6812,15 @@ export function __resetStateForTests(): void {
 			tables: true
 		},
 		activeTabId: initial.id,
-		focusedCellId: null,
-		focusedTarget: null,
-		sidebarNotebookView: 'browse',
-		openResultTabs: [],
-		openExtraTabs: [],
+	focusedCellId: null,
+	focusedTarget: null,
+	sidebarNotebookView: 'browse',
+	recentNotebookIds: [],
+	favoriteNotebookIds: [],
+	pageNavHistory: [],
+	pageNavHistoryIndex: -1,
+	openResultTabs: [],
+	openExtraTabs: [],
 		tables: [],
 		theme: 'system',
 		autoRun: false,
@@ -6680,4 +6896,33 @@ export function exportJSON(): string {
 
 export function importJSON(json: string): void {
 	deserialize(json);
+}
+
+// ── Dev-only test bridge ─────────────────────────────────────────────────────
+// Automated browser tooling in the embedded webview can't drive Monaco or native
+// <input> text entry — Svelte 5's delegated `input` listener ignores the synthetic
+// events the tooling emits, and CDP Input.* is unavailable. Trusted mouse clicks do
+// work, so this bridge exposes only the store mutations that keystroke-driven UI
+// (rename field, code editors, GUI stage edits, filter inputs) would trigger, letting
+// automated end-to-end checks exercise the real logic. DEV-gated — never shipped.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+	(window as unknown as { __lunapad?: Record<string, unknown> }).__lunapad = {
+		updateCellCode,
+		updateCellMarkdown,
+		updateCellName,
+		setCellLanguage,
+		setEditMode,
+		setCellResultViewMode,
+		setCellResultChartConfig,
+		updateGuiStages,
+		setCellDisplay,
+		insertQueryBlockCell,
+		removeQueryBlockCell,
+		addCell,
+		setNotebookFilterValue,
+		runCell,
+		runAll,
+		getCells,
+		state
+	};
 }

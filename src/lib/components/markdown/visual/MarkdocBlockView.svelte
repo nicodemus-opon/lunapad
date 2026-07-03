@@ -3,6 +3,8 @@
 	import { renderMarkdocCell } from '$lib/services/markdoc-interp';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { Trash2 } from '@lucide/svelte';
+	import MermaidFenceView from './MermaidFenceView.svelte';
+	import { isMermaidFenceSource } from './mermaid-code';
 
 	interface Props {
 		source: string;
@@ -23,11 +25,15 @@
 	}: Props = $props();
 
 	const rendered = $derived(renderMarkdocCell(source, cells));
+	const isMermaid = $derived(isMermaidFenceSource(source));
 </script>
 
+{#if isMermaid}
+	<MermaidFenceView {source} {selected} {onSelect} {onDelete} />
+{:else}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="markdoc-block-view group/mdb relative rounded-md border transition-colors duration-(--motion-fast) {selected
+	class="markdoc-block-view group/mdb relative rounded-sm border transition-colors duration-(--motion-fast) {selected
 		? 'border-ring/70 bg-muted/10'
 		: 'border-transparent hover:border-border/60 hover:bg-muted/15'}"
 	role="button"
@@ -49,7 +55,7 @@
 	>
 		<button
 			type="button"
-			class="rounded p-0.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+			class="md-action md-action--danger"
 			title="Delete widget"
 			onclick={(e) => {
 				e.stopPropagation();
@@ -68,6 +74,7 @@
 		/>
 	</div>
 </div>
+{/if}
 
 <style>
 	.markdoc-block-view {

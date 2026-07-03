@@ -200,10 +200,38 @@ export interface SlashCommand {
 	label: string;
 	description: string;
 	snippet: string;
-	group: 'heading' | 'structure' | 'widget';
+	group: 'heading' | 'structure' | 'widget' | 'query';
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
+	{
+		id: 'sql',
+		label: 'SQL query',
+		description: 'Inline SQL query block',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'prql',
+		label: 'PRQL query',
+		description: 'Inline PRQL query block',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'python',
+		label: 'Python block',
+		description: 'Inline Python cell',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'page',
+		label: 'Sub-page',
+		description: 'Nested page section',
+		snippet: '',
+		group: 'query'
+	},
 	{
 		id: 'h1',
 		label: 'Heading 1',
@@ -230,6 +258,41 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Divider',
 		description: 'Horizontal rule',
 		snippet: '\n---\n',
+		group: 'structure'
+	},
+	{
+		id: 'bullet',
+		label: 'Bullet list',
+		description: 'Unordered list',
+		snippet: '- ',
+		group: 'structure'
+	},
+	{
+		id: 'numbered',
+		label: 'Numbered list',
+		description: 'Ordered list',
+		snippet: '1. ',
+		group: 'structure'
+	},
+	{
+		id: 'task',
+		label: 'To-do list',
+		description: 'Task list with checkboxes',
+		snippet: '- [ ] ',
+		group: 'structure'
+	},
+	{
+		id: 'table',
+		label: 'Table',
+		description: '3×3 table with header row',
+		snippet: '| Col | Col |\n| --- | --- |\n| | |',
+		group: 'structure'
+	},
+	{
+		id: 'image',
+		label: 'Image',
+		description: 'Embed an image by URL',
+		snippet: '![](https://)',
 		group: 'structure'
 	},
 	{ id: 'quote', label: 'Quote', description: 'Blockquote', snippet: '> ', group: 'structure' },
@@ -344,6 +407,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		description: 'Responsive grid layout',
 		snippet: WIDGET_SNIPPETS.grid,
 		group: 'widget'
+	},
+	{
+		id: 'emoji',
+		label: 'Emoji',
+		description: 'Insert an emoji',
+		snippet: '😀',
+		group: 'structure'
 	},
 	{
 		id: 'mermaid',

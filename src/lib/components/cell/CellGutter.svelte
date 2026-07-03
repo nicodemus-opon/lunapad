@@ -64,12 +64,12 @@
 	);
 </script>
 
-<div class="flex flex-col items-end gap-px pr-1 select-none">
+<div class="notebook-gutter-controls flex flex-col items-center gap-0.5 select-none">
 	{#if isQueryCell}
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
+					class="flex h-5 w-5 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {runAlwaysVisible ||
 					revealed
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {justSucceeded
@@ -111,7 +111,7 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="relative flex h-6 w-6 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showChrome
+					class="relative flex h-5 w-5 items-center justify-center rounded border transition-[opacity,background-color,color,border-color] duration-(--motion-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showChrome
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {commentBtnClass}"
 					aria-label={commentCount > 0 ? `${commentCount} open threads` : 'Add comment'}
@@ -138,7 +138,7 @@
 	{/if}
 
 	<div
-		class="transition-opacity duration-(--motion-fast) {revealed
+		class="flex h-5 w-5 items-center justify-center transition-opacity duration-(--motion-fast) [&>button]:h-5 [&>button]:w-5 {revealed
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'}"
 	>

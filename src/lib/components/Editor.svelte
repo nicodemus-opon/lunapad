@@ -60,6 +60,8 @@
 		pythonSchemas?: PythonUpstreamSchema[];
 		/** `auto` grows to content height; `fill` fills the parent with internal scroll */
 		layout?: 'auto' | 'fill';
+		/** Notebook-inline styling — no border, themed code background */
+		embeddedNotebook?: boolean;
 	}
 
 	let {
@@ -78,7 +80,8 @@
 		plotGlobalsDts,
 		pythonContext,
 		pythonSchemas = [],
-		layout = 'auto'
+		layout = 'auto',
+		embeddedNotebook = false
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -487,9 +490,10 @@
 
 <div
 	bind:this={container}
-	class="editor-container code-editor relative rounded-md border text-sm"
+	class="editor-container code-editor relative rounded-md text-sm"
 	class:dark-editor={dark}
 	class:editor-fill={layout === 'fill'}
+	class:notebook-embedded={embeddedNotebook}
 ></div>
 
 {#if errors.length > 0 && !errors[0].span}
@@ -499,8 +503,18 @@
 <style>
 	.editor-container {
 		min-height: 80px;
-
+		border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
 		overflow: hidden;
+	}
+	.editor-container.notebook-embedded {
+		border: none;
+		border-radius: 0;
+		background: transparent;
+		min-height: 72px;
+	}
+	.editor-container.notebook-embedded :global(.monaco-editor),
+	.editor-container.notebook-embedded :global(.monaco-editor .overflow-guard) {
+		border-radius: 0;
 	}
 	.editor-container.editor-fill {
 		min-height: 0;

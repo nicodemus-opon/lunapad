@@ -6,7 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import MarkdownEditor from './markdown/MarkdownEditor.svelte';
 	import type { MarkdownEditorHandle } from './markdown/MarkdownEditor.svelte';
-	import type TyporaEditorComponent from './markdown/visual/TyporaEditor.svelte';
+	import TyporaEditor from './markdown/visual/TyporaEditor.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import Editor from './Editor.svelte';
 	import MarkdocRenderer from './markdown/MarkdocRenderer.svelte';
@@ -82,7 +82,7 @@
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
-	import { Loader2, ExternalLink } from '@lucide/svelte';
+	import { Loader2, ExternalLink, GripVertical } from '@lucide/svelte';
 	import CellGutter from './cell/CellGutter.svelte';
 	import CellHeader from './cell/CellHeader.svelte';
 	import CellMenu from './cell/CellMenu.svelte';
@@ -105,6 +105,7 @@
 	import { markdocPmRoundTripLossy } from '$lib/services/markdoc-pm';
 	import { shouldHideCellInReportView } from '$lib/services/filter-frozen';
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
+	import MarkdownModeBar from './markdown/MarkdownModeBar.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
 
 	interface Props {
@@ -414,14 +415,6 @@
 		}))
 	);
 	const markdownValidationCells = $derived(getAllCellsAcrossNotebooks());
-	let TyporaEditor = $state<typeof TyporaEditorComponent | null>(null);
-
-	$effect(() => {
-		if (!isMarkdownVisualEditing || TyporaEditor) return;
-		void import('./markdown/visual/TyporaEditor.svelte').then((m) => {
-			TyporaEditor = m.default;
-		});
-	});
 
 	function insertMarkdownSnippet(snippet: string) {
 		markdownHandle?.insertText(snippet);
@@ -449,11 +442,22 @@
 
 	function setMarkdownMode(mode: 'visual' | 'source') {
 		if (!isMarkdownCell) return;
+		if (effectiveDisplay !== 'full') setCellDisplay(cell.id, 'full');
+		if (cell.markdownPreview) setCellMarkdownPreview(cell.id, false);
 		if (mode === 'visual') {
 			requestVisualMarkdownMode();
 			return;
 		}
 		setMarkdownEditMode(cell.id, 'source');
+	}
+
+	function setMarkdownPreviewMode(preview: boolean) {
+		if (!isMarkdownCell) return;
+		if (preview) {
+			setCellDisplay(cell.id, 'output');
+			return;
+		}
+		setCellDisplay(cell.id, 'full');
 	}
 
 	function doSwitchToVisualMarkdown() {
@@ -993,25 +997,16 @@
 <div
 	bind:this={cellContainerEl}
 	class="notebook-cell group relative text-foreground outline-none {worksheet
-		? 'flex min-h-0 flex-1 flex-col border-l-0 p-0'
-		: 'border-l-4 p-4'} {entering ? 'is-entering' : ''} {worksheet
-		? ''
-		: !reportView && cellFocused
-			? 'border-primary/30'
-			: 'border-transparent'} {worksheet || reportView
+		? 'flex min-h-0 flex-1 flex-col p-0'
+		: 'py-[var(--notebook-cell-gap)]'} {entering ? 'is-entering' : ''} {worksheet || reportView
 		? ''
 		: running
-			? 'bg-muted/30'
-			: cellFocused
-				? ''
-				: 'hover:border-l-4 hover:border-border hover:bg-muted/10  '} {isGhost
-		? 'cell-ai-ghost bg-primary/5 ring-1 ring-primary/30'
-		: ''} {!reportView && reviewMode && hasOpenComments && !cellFocused
-		? 'border-l-primary/35 bg-primary/[0.03]'
-		: ''}"
+			? ''
+			: ''} {isGhost ? 'rounded-md ring-1 ring-primary/25' : ''}"
 	hidden={hiddenInReportView}
 	data-focused={cellFocused}
 	data-cell-id={cell.id}
+	data-cell-type={cell.cellType}
 	data-worksheet={worksheet ? true : undefined}
 	tabindex="0"
 	onfocusin={onCellFocusIn}
@@ -1045,16 +1040,19 @@
 			/>
 		{/if}
 		{#if isUdfCell}
-			<Editor
-				bind:this={editorRef}
-				code={cell.udfBody}
-				errors={cell.errors}
-				language="python"
-				pythonContext={{ kind: 'udf' }}
-				{dark}
-				layout={editorLayout}
-				onchange={(c) => updateCellUdfBody(cell.id, c)}
-			/>
+			<div class="notebook-code-block">
+				<Editor
+					bind:this={editorRef}
+					code={cell.udfBody}
+					errors={cell.errors}
+					language="python"
+					pythonContext={{ kind: 'udf' }}
+					{dark}
+					layout={editorLayout}
+					embeddedNotebook
+					onchange={(c) => updateCellUdfBody(cell.id, c)}
+				/>
+			</div>
 		{:else if isPlotCell}
 			<div class="mb-1 flex justify-end">
 				<select
@@ -1073,16 +1071,19 @@
 					{/each}
 				</select>
 			</div>
-			<Editor
-				bind:this={editorRef}
-				code={cell.code}
-				errors={cell.errors}
-				language="javascript"
-				plotGlobalsDts={plotCellGlobalsDts}
-				{dark}
-				layout={editorLayout}
-				onchange={(c) => updatePlotCellCode(cell.id, c)}
-			/>
+			<div class="notebook-code-block">
+				<Editor
+					bind:this={editorRef}
+					code={cell.code}
+					errors={cell.errors}
+					language="javascript"
+					plotGlobalsDts={plotCellGlobalsDts}
+					{dark}
+					layout={editorLayout}
+					embeddedNotebook
+					onchange={(c) => updatePlotCellCode(cell.id, c)}
+				/>
+			</div>
 			{#if !worksheet}
 				<p class="mt-1 text-2xs text-muted-foreground">
 					Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
@@ -1090,17 +1091,20 @@
 				</p>
 			{/if}
 		{:else if isPythonCell}
-			<Editor
-				bind:this={editorRef}
-				code={cell.code}
-				errors={cell.errors}
-				language="python"
-				pythonContext={{ kind: 'data', notebookId }}
-				pythonSchemas={prevCellSources}
-				{dark}
-				layout={editorLayout}
-				onchange={(c) => updatePythonCellCode(cell.id, c)}
-			/>
+			<div class="notebook-code-block">
+				<Editor
+					bind:this={editorRef}
+					code={cell.code}
+					errors={cell.errors}
+					language="python"
+					pythonContext={{ kind: 'data', notebookId }}
+					pythonSchemas={prevCellSources}
+					{dark}
+					layout={editorLayout}
+					embeddedNotebook
+					onchange={(c) => updatePythonCellCode(cell.id, c)}
+				/>
+			</div>
 			{#if !worksheet}
 				<p class="mt-1 text-2xs text-muted-foreground">
 					Reference upstream cells by name — they're already DataFrames. End the cell with a bare
@@ -1109,9 +1113,17 @@
 				</p>
 			{/if}
 		{:else if !isQueryCell}
-			<div class="group/markdown relative min-h-32" bind:this={markdownEditContainerEl}>
+			<div class="group/markdown relative" bind:this={markdownEditContainerEl}>
+				{#if !worksheet && !reportView && !collapsed}
+					<MarkdownModeBar
+						mode={markdownMode}
+						preview={isMarkdownOutputOnly}
+						onModeChange={setMarkdownMode}
+						onPreviewChange={setMarkdownPreviewMode}
+					/>
+				{/if}
 				{#if isMarkdownOutputOnly}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 					<div
 						class="markdown-body prose"
 						class:cursor-text={!reportView}
@@ -1127,7 +1139,7 @@
 						{/if}
 					</div>
 				{:else}
-					<div class="markdown-editor-stack relative min-h-32">
+					<div class="markdown-editor-stack relative min-h-24">
 						<div
 							class="transition-opacity duration-(--motion-fast) {isMarkdownVisualEditing
 								? 'pointer-events-auto relative opacity-100'
@@ -1142,7 +1154,7 @@
 									refEntries={markdownRefEntries}
 								/>
 							{:else}
-								<div class="min-h-28 rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground">
+								<div class="min-h-28 rounded-sm bg-muted/15 p-3 text-xs text-muted-foreground">
 									Loading visual editor…
 								</div>
 							{/if}
@@ -1157,7 +1169,6 @@
 								onFormat={handleToolbarFormat}
 								onInsertSnippet={insertMarkdownSnippet}
 								onInsertRef={insertMarkdownRef}
-								onTogglePreview={() => setCellDisplay(cell.id, 'output')}
 							/>
 							<MarkdownEditor
 								bind:handle={markdownHandle}
@@ -1194,21 +1205,24 @@
 				/>
 			</div>
 		{:else}
-			<Editor
-				bind:this={editorRef}
-				code={cell.code}
-				errors={cell.errors}
-				completions={editorCompletions}
-				language={cell.language}
-				sqlDialect={cellSqlDialect}
-				{connectionType}
-				connectionId={connectionValue}
-				externalSchema={cellExternalSchema}
-				{udfFunctionNames}
-				{dark}
-				layout={editorLayout}
-				onchange={(c) => updateCellCode(cell.id, c)}
-			/>
+			<div class="notebook-code-block">
+				<Editor
+					bind:this={editorRef}
+					code={cell.code}
+					errors={cell.errors}
+					completions={editorCompletions}
+					language={cell.language}
+					sqlDialect={cellSqlDialect}
+					{connectionType}
+					connectionId={connectionValue}
+					externalSchema={cellExternalSchema}
+					{udfFunctionNames}
+					{dark}
+					layout={editorLayout}
+					embeddedNotebook
+					onchange={(c) => updateCellCode(cell.id, c)}
+				/>
+			</div>
 		{/if}
 	{/snippet}
 
@@ -1280,7 +1294,8 @@
 				{#if cell.result.rows.length === 0}
 					<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
 				{:else}
-					<InlineResultView
+					<div class="notebook-output-block">
+						<InlineResultView
 						rows={cell.result.rows}
 						columns={cell.result.columns}
 						truncated={cell.result.truncated ?? false}
@@ -1328,6 +1343,7 @@
 							{/if}
 						{/snippet}
 					</InlineResultView>
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -1409,18 +1425,108 @@
 			data-worksheet="true"
 			class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3"
 		>
+			{#if !(reportView && !isQueryCell) && !(isMarkdownCell && isMarkdownPreviewMode)}
+				<div class="shrink-0 pt-2 pb-1">
+					<CellHeader
+						{cell}
+						{isQueryCell}
+						{isMarkdownCell}
+						collapsed={false}
+						codeHidden={false}
+						revealed={true}
+						{reportView}
+						hidden={false}
+						{prevCellNames}
+						downstreamCount={sameNotebookUsageCount}
+						{crossNotebookUsageCount}
+						{cellMode}
+						onModeChange={setCellMode}
+						onOverlayChange={handleOverlayChange}
+						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+					/>
+				</div>
+			{/if}
 			{@render cellMain()}
 		</div>
 	{:else}
-		<div class="grid grid-cols-[var(--cell-gutter)_minmax(0,1fr)] overflow-visible">
+		<div
+			class="grid grid-cols-[var(--notebook-gutter-width)_minmax(0,1fr)] gap-x-2 overflow-visible"
+		>
 			{#if reportView}
-				<div></div>
+				<div class="notebook-cell-gutter" aria-hidden="true"></div>
 			{:else}
-				<div aria-hidden="true"></div>
+				<aside
+					class="notebook-cell-gutter flex flex-col items-center gap-0.5 self-start pt-0.5"
+					aria-label="Cell controls"
+				>
+					{#if isQueryCell || isPythonCell}
+						<span
+							class="pointer-events-none font-mono text-2xs leading-none font-medium text-muted-foreground/45 tabular-nums transition-opacity duration-(--motion-fast) {showCellIndex
+								? 'opacity-100'
+								: 'opacity-0'}"
+							aria-hidden="true"
+						>
+							{index + 1}
+						</span>
+					{/if}
+					<button
+						type="button"
+						class="flex h-5 w-5 cursor-grab items-center justify-center rounded text-muted-foreground/35 transition-[opacity,color,background-color] duration-(--motion-fast) outline-none hover:bg-muted/50 hover:text-muted-foreground active:cursor-grabbing {revealed
+							? 'opacity-100'
+							: 'pointer-events-none opacity-0'}"
+						data-drag-handle
+						tabindex="-1"
+						aria-label="Drag to reorder cell"
+						title="Drag to reorder"
+					>
+						<GripVertical class="h-3.5 w-3.5" />
+					</button>
+					<CellGutter
+						isQueryCell={isQueryCell || isPythonCell || isPlotCell}
+						{revealed}
+						status={cell.status}
+						needsRun={cell.needsRun}
+						{running}
+						runTooltip={runTooltipText}
+						onRun={() =>
+							isPythonCell
+								? runPythonCell(cell.id)
+								: isPlotCell
+									? runPlotCell(cell.id)
+									: runCell(cell.id)}
+						onCancel={() => cancelCell(cell.id)}
+						commentCount={collabEnabled ? commentCount : 0}
+						onComments={collabEnabled && !reportView ? openCellComments : undefined}
+					>
+						{#snippet menu()}
+							<CellMenu
+								{cell}
+								{notebookId}
+								{isQueryCell}
+								{isPythonCell}
+								{isFirst}
+								{isLast}
+								{isDbtProject}
+								{connections}
+								{connectionValue}
+								bind:sqlExpanded
+								bind:open={menuOpen}
+								onOpenMaterialize={() => (materializeDialogOpen = true)}
+								onOpenPromote={() => (promoteDialogOpen = true)}
+								onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
+								onRunTests={() => void testCell(cell.id)}
+								onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
+								onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
+								{onShareWithAI}
+								{isPlotCell}
+							/>
+						{/snippet}
+					</CellGutter>
+				</aside>
 			{/if}
 
-			{#if !(reportView && !isQueryCell)}
-				<div class="min-w-0 overflow-visible pt-1 pr-2 pb-1.5">
+			<div class="notebook-cell-body min-w-0 flex flex-col gap-1">
+				{#if !(reportView && !isQueryCell) && !(isMarkdownCell && isMarkdownPreviewMode)}
 					<CellHeader
 						{cell}
 						{isQueryCell}
@@ -1430,70 +1536,15 @@
 						{revealed}
 						{reportView}
 						hidden={isMarkdownPreviewMode}
-						cellNumber={!reportView && (isQueryCell || isPythonCell) ? index + 1 : undefined}
-						showCellNumber={showCellIndex}
 						{prevCellNames}
 						downstreamCount={sameNotebookUsageCount}
 						{crossNotebookUsageCount}
 						{cellMode}
-						{markdownMode}
 						onModeChange={setCellMode}
-						onMarkdownModeChange={setMarkdownMode}
 						onOverlayChange={handleOverlayChange}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
 					/>
-				</div>
-			{:else}
-				<div></div>
-			{/if}
-
-			{#if reportView}
-				<div></div>
-			{:else}
-				<CellGutter
-					isQueryCell={isQueryCell || isPythonCell || isPlotCell}
-					{revealed}
-					status={cell.status}
-					needsRun={cell.needsRun}
-					{running}
-					runTooltip={runTooltipText}
-					onRun={() =>
-						isPythonCell
-							? runPythonCell(cell.id)
-							: isPlotCell
-								? runPlotCell(cell.id)
-								: runCell(cell.id)}
-					onCancel={() => cancelCell(cell.id)}
-					commentCount={collabEnabled ? commentCount : 0}
-					onComments={collabEnabled && !reportView ? openCellComments : undefined}
-				>
-					{#snippet menu()}
-						<CellMenu
-							{cell}
-							{notebookId}
-							{isQueryCell}
-							{isPythonCell}
-							{isFirst}
-							{isLast}
-							{isDbtProject}
-							{connections}
-							{connectionValue}
-							bind:sqlExpanded
-							bind:open={menuOpen}
-							onOpenMaterialize={() => (materializeDialogOpen = true)}
-							onOpenPromote={() => (promoteDialogOpen = true)}
-							onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
-							onRunTests={() => void testCell(cell.id)}
-							onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
-							onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
-							{onShareWithAI}
-							{isPlotCell}
-						/>
-					{/snippet}
-				</CellGutter>
-			{/if}
-
-			<div class="flex min-w-0 flex-col gap-1 pr-2 pb-1">
+				{/if}
 				{@render cellMain()}
 			</div>
 		</div>

@@ -167,6 +167,22 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	if (authDisabled) {
+		// DISABLE_AUTH (dev/e2e) means "act as a fully-authorized user". Without a synthetic
+		// user, endpoints that internally enforce can(user, ...) — e.g. /api/workspace/save —
+		// see locals.user === null and 403, which surfaces as a perpetual "Couldn't save
+		// changes — retrying…" banner for any non-demo notebook. DEMO_MODE deliberately leaves
+		// user null so its server-side features stay locked even here.
+		if (testAuthDisabled) {
+			event.locals.user = {
+				id: 'local-dev',
+				role: 'admin',
+				name: 'Local Dev',
+				email: 'local-dev@localhost'
+			} as unknown as typeof event.locals.user;
+			event.locals.session = null;
+			event.locals.apiKeyId = null;
+			event.locals.apiKeyScopes = null;
+		}
 		return resolve(event);
 	}
 

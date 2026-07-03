@@ -45,7 +45,7 @@
 		refPickerEntries: RefEntry[];
 		onInsertSnippet: (snippet: string) => void;
 		onInsertRef: (cellName: string, column: string) => void;
-		onTogglePreview: () => void;
+		onTogglePreview?: () => void;
 	}
 
 	const { onFormat, refPickerEntries, onInsertSnippet, onInsertRef, onTogglePreview }: Props =
@@ -234,21 +234,23 @@
 		<RefPickerMenu entries={refPickerEntries} onSelect={onInsertRef} />
 	</div>
 
-	<!-- Preview button pushed to right -->
-	<div class="md-toolbar-spacer"></div>
-	<button
-		type="button"
-		class="md-toolbar-btn md-toolbar-preview-btn"
-		title="Preview (⌘⇧P)"
-		aria-label="Preview"
-		onmousedown={(e) => {
-			e.preventDefault();
-			onTogglePreview();
-		}}
-	>
-		<Eye size={13} />
-		<span>Preview</span>
-	</button>
+	<!-- Preview (optional — prefer MarkdownModeBar when present) -->
+	{#if onTogglePreview}
+		<div class="md-toolbar-spacer"></div>
+		<button
+			type="button"
+			class="md-toolbar-btn md-toolbar-preview-btn"
+			title="Preview (⌘⇧P)"
+			aria-label="Preview"
+			onmousedown={(e) => {
+				e.preventDefault();
+				onTogglePreview();
+			}}
+		>
+			<Eye size={13} />
+			<span>Preview</span>
+		</button>
+	{/if}
 </div>
 
 <style>

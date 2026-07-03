@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=IBM+Plex+Serif:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap');
 @import 'tailwindcss';
+@import '../lib/components/markdown/markdown-surface.css';
 
 @custom-variant dark (&:is(.dark *));
 :root {
@@ -90,8 +91,14 @@
 	--z-toast: 70;
 	--z-tooltip: 80;
 
-	/* Notebook cell geometry */
-	--cell-gutter: 2.5rem;
+	/* Notebook document geometry */
+	--notebook-page-width: 52rem;
+	--notebook-page-padding: 1.25rem;
+	--notebook-gutter-width: 2.75rem;
+	--notebook-cell-gap: 0.625rem;
+	--notebook-code-bg: color-mix(in oklch, var(--muted) 55%, transparent);
+	--notebook-output-bg: color-mix(in oklch, var(--muted) 28%, transparent);
+	--cell-gutter: var(--notebook-gutter-width);
 
 	/* Sidebar layout */
 	--sidebar-rail-width: 36px;
@@ -125,6 +132,8 @@
 }
 
 .dark {
+	--notebook-code-bg: color-mix(in oklch, var(--muted) 80%, transparent);
+	--notebook-output-bg: color-mix(in oklch, var(--muted) 45%, transparent);
 	--background: oklch(0.2679 0.0036 106.6427);
 	--foreground: oklch(0.8074 0.0142 93.0137);
 	--card: oklch(0.2679 0.0036 106.6427);
@@ -337,11 +346,51 @@
 	.notebook-cell:not([data-focused='true']) {
 	opacity: 0.94;
 }
+.notebook-page {
+	width: 100%;
+}
+
 .notebook-cell {
 	transition:
 		opacity var(--motion-medium) var(--motion-ease-out),
-		background-color var(--motion-fast) var(--motion-ease-out),
-		border-color var(--motion-fast) var(--motion-ease-out);
+		background-color var(--motion-fast) var(--motion-ease-out);
+}
+
+.notebook-cell-gutter {
+	width: var(--notebook-gutter-width);
+	min-height: 1.5rem;
+}
+
+.notebook-cell-body {
+	border-radius: var(--radius);
+	transition:
+		box-shadow var(--motion-fast) var(--motion-ease-out),
+		background-color var(--motion-fast) var(--motion-ease-out);
+}
+
+.notebook-cell[data-focused='true'] .notebook-cell-body {
+	background: color-mix(in oklch, var(--muted) 8%, transparent);
+	box-shadow: none;
+}
+
+.notebook-cell[data-cell-type='markdown'][data-focused='true'] .notebook-cell-body {
+	background: transparent;
+}
+
+.notebook-code-block {
+	background: var(--notebook-code-bg);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+
+.notebook-output-block {
+	background: var(--notebook-output-bg);
+	border-radius: var(--radius);
+	padding: 0.35rem 0.45rem;
+}
+
+.notebook-add-divider {
+	min-height: 1.25rem;
 }
 
 /* ─── Run button state animations ────────────────────────────────────────── */

@@ -85,27 +85,26 @@
 		addPythonCell,
 		insertPythonCellBefore,
 		canAddPythonCell,
-		reorderCell,
+		goBackPageNav,
+		goForwardPageNav,
+		openNotebookTabAtCell,
 		setAllCellsDisplay,
 		setNotebookReportView,
-		setCellResultViewMode,
-		setNotebookFilterValue,
-		undo,
-		redo,
 		getFocusedCellId,
 		getSidebarNotebookView,
 		setSidebarNotebookView,
 		toggleSidebarNotebookView,
+		getRecentNotebookIds,
+		getFavoriteNotebookIds,
 		runCellsAbove,
 		runCellsBelow,
 		closeWorksheetView,
-		openNotebookTabAtCell
+		getAllCellsAcrossNotebooks,
+		setCellResultViewMode,
+		setNotebookFilterValue
 	} from '$lib/stores/notebook.svelte';
-	import Sortable from 'sortablejs';
-	import AddCellDivider from '$lib/components/AddCellDivider.svelte';
 	import { isDesktop, platformOS } from '$lib/services/platform.svelte';
 	import WindowControls from '$lib/components/WindowControls.svelte';
-	import NotebookCell from '$lib/components/NotebookCell.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -118,6 +117,10 @@
 	import NotebookStatusBar from '$lib/components/notebook/NotebookStatusBar.svelte';
 	import CellWorksheetView from '$lib/components/notebook/CellWorksheetView.svelte';
 	import ReportViewShell from '$lib/components/markdown/ReportViewShell.svelte';
+	import NotebookDocumentEditor from '$lib/components/markdown/visual/NotebookDocumentEditor.svelte';
+	import MarkdocPreviewProvider from '$lib/components/markdown/MarkdocPreviewProvider.svelte';
+	import NotebookBreadcrumbs from '$lib/components/notebook/NotebookBreadcrumbs.svelte';
+	import NotebookBacklinks from '$lib/components/notebook/NotebookBacklinks.svelte';
 	import MetricsPanel from '$lib/components/notebook/MetricsPanel.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
@@ -228,6 +231,7 @@
 		markWelcomeSeen,
 		shouldShowWelcome
 	} from '$lib/demo/bootstrap';
+	import { DEMO_NOTEBOOK_NAME } from '$lib/demo/sales-analytics-demo';
 	import type { PageProps } from './$types';
 
 	const SHORTCUT_GROUPS: { key: string; title: string }[] = [
@@ -299,6 +303,16 @@
 		if (cell) openResultTab(cell.id, activeTabId, outputName, 'table');
 	}
 	const sidebarNotebookView = $derived(getSidebarNotebookView());
+	const recentNotebookIds = $derived(getRecentNotebookIds());
+	const favoriteNotebookIds = $derived(getFavoriteNotebookIds());
+	const markdownRefEntries = $derived(
+		getAllCellsAcrossNotebooks()
+			.filter((c) => c.cellType === 'query' && c.result)
+			.map((c) => ({
+				cellName: c.outputName,
+				columns: c.result!.columns.map((name) => ({ name }))
+			}))
+	);
 	let notebookScrollEl: HTMLElement | undefined = $state();
 	const showDemoCta = $derived(
 		!data.demoMode && isDefaultEmptyNotebook(activeNotebook?.name, cells)
@@ -318,78 +332,6 @@
 	const ghostCellIds = $derived(getGhostCellIds());
 
 	// ── Cell list: insert dividers + drag reorder ─────────────────────────────
-	function focusCellAt(index: number) {
-		tick().then(() => {
-			const all = document.querySelectorAll<HTMLElement>('.notebook-cell[tabindex]');
-			(all[index] ?? all[all.length - 1])?.focus();
-		});
-	}
-
-	// Divider above the cell at `index`: insert before it.
-	function insertBeforeCell(
-		kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python',
-		index: number
-	) {
-		const target = cells[index];
-		if (!target) return;
-		if (kind === 'markdown') {
-			insertMarkdownCellBefore(target.id);
-		} else if (kind === 'udf') {
-			insertUdfCellBefore(target.id);
-		} else if (kind === 'plot') {
-			insertPlotCellBefore(target.id);
-		} else if (kind === 'python') {
-			insertPythonCellBefore(target.id);
-		} else {
-			const lang = kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind;
-			insertCellBefore(target.id, {
-				outputName: '',
-				code: '',
-				guiStages: [{ type: 'from', table: '' }],
-				editMode: lang === 'sql' ? 'prql' : 'gui',
-				language: lang
-			});
-		}
-		focusCellAt(index);
-	}
-
-	function appendCell(kind: 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python') {
-		if (kind === 'markdown') {
-			addMarkdownCell();
-		} else if (kind === 'udf') {
-			addUdfCell();
-		} else if (kind === 'plot') {
-			addPlotCell();
-		} else if (kind === 'python') {
-			addPythonCell();
-		} else {
-			addCellWithLanguage(
-				kind === 'default' ? (activeNotebook?.defaultCellLanguage ?? 'sql') : kind
-			);
-		}
-		focusCellAt(cells.length);
-	}
-
-	let cellListEl: HTMLElement | undefined = $state();
-	$effect(() => {
-		// Re-init when cells are added/removed — Sortable otherwise fights Svelte's {#each}.
-		const cellKey = cells.map((c) => c.id).join('\0');
-		if (!cellListEl || !cellKey) return;
-		const sortable = Sortable.create(cellListEl, {
-			handle: '[data-drag-handle]',
-			animation: 150,
-			ghostClass: 'cell-sort-ghost',
-			onEnd(evt) {
-				const id = (evt.item as HTMLElement).dataset.cellId;
-				const oldIdx = evt.oldIndex ?? 0;
-				const newIdx = evt.newIndex ?? 0;
-				if (!id || oldIdx === newIdx) return;
-				reorderCell(id, newIdx);
-			}
-		});
-		return () => sortable.destroy();
-	});
-
 	// ── Init ─────────────────────────────────────────────────────────────────
 	let dbReady = $state(false);
 	let dbError = $state<string | null>(null);
@@ -441,8 +383,10 @@
 
 	const SIDEBAR_WIDTH_KEY = 'lunapad.sidebar.width';
 	const SIDEBAR_COLLAPSED_KEY = 'lunapad.sidebar.collapsed';
+	const NOTEBOOK_TABS_COLLAPSED_KEY = 'lunapad.notebookTabs.collapsed';
 	let sidebarWidth = $state(260);
 	let sidebarCollapsed = $state(false);
+	let notebookTabsCollapsed = $state(false);
 	let isDraggingSidebar = $state(false);
 	let layoutRoot: HTMLDivElement | null = null;
 
@@ -620,7 +564,13 @@
 				}
 			},
 			isWorksheetView: () => Boolean(activeNotebook?.worksheetCellId),
-			closeWorksheetView: handleExitWorksheet
+			closeWorksheetView: handleExitWorksheet,
+			goBackPageNav: () => {
+				goBackPageNav();
+			},
+			goForwardPageNav: () => {
+				goForwardPageNav();
+			}
 		});
 		return () => {
 			unmountKeyboard();
@@ -637,6 +587,7 @@
 			}
 		}
 		sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+		notebookTabsCollapsed = localStorage.getItem(NOTEBOOK_TABS_COLLAPSED_KEY) === 'true';
 		window.addEventListener('pointermove', onSidebarPointerMove);
 		window.addEventListener('pointerup', onSidebarPointerUp);
 		window.addEventListener('pointermove', onAIPanelPointerMove);
@@ -709,6 +660,13 @@
 	// and retry automatically (see scheduleSave/loadFromServer in notebook.svelte.ts).
 	let workspaceSyncToastId: string | number | undefined;
 	$effect(() => {
+		if (data.demoMode || activeNotebook?.name === DEMO_NOTEBOOK_NAME) {
+			if (workspaceSyncToastId !== undefined) {
+				toast.dismiss(workspaceSyncToastId);
+				workspaceSyncToastId = undefined;
+			}
+			return;
+		}
 		const status = getWorkspaceSyncStatus();
 		if (status === 'offline') {
 			workspaceSyncToastId = toast.warning(
@@ -1485,6 +1443,52 @@
 								</div>
 
 								{#if sidebarNotebookView === 'browse'}
+									{#if favoriteNotebookIds.length > 0}
+										<div class="px-2 pb-1">
+											<p class="px-1 py-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+												Favorites
+											</p>
+											{#each favoriteNotebookIds as favId (favId)}
+												{@const fav = allNotebooks.find((n) => n.id === favId)}
+												{#if fav}
+													<button
+														type="button"
+														class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent/60 {activeTabId ===
+														fav.id
+															? 'bg-sidebar-accent text-sidebar-accent-foreground'
+															: 'text-foreground/80'}"
+														onclick={() => setActiveTab(fav.id)}
+													>
+														<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<span class="truncate">{fav.name}</span>
+													</button>
+												{/if}
+											{/each}
+										</div>
+									{/if}
+									{#if recentNotebookIds.length > 0}
+										<div class="px-2 pb-1">
+											<p class="px-1 py-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+												Recent
+											</p>
+											{#each recentNotebookIds.slice(0, 6) as recentId (recentId)}
+												{@const recent = allNotebooks.find((n) => n.id === recentId)}
+												{#if recent}
+													<button
+														type="button"
+														class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent/60 {activeTabId ===
+														recent.id
+															? 'bg-sidebar-accent text-sidebar-accent-foreground'
+															: 'text-foreground/80'}"
+														onclick={() => setActiveTab(recent.id)}
+													>
+														<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<span class="truncate">{recent.name}</span>
+													</button>
+												{/if}
+											{/each}
+										</div>
+									{/if}
 									{#if showNotebookSearch || sidebarSearch}
 										<div
 											class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
@@ -1518,11 +1522,19 @@
 										</div>
 									{/if}
 
-									<div class="flex-1 overflow-hidden">
-										<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+										<div class="min-h-0 flex-1 overflow-hidden">
+											<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+										</div>
+										{#if isNotebookTab && activeTabId}
+											<NotebookBacklinks notebookId={activeTabId} />
+										{/if}
 									</div>
 								{:else if isNotebookTab && activeNotebook}
-									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+									<div class="flex min-h-0 flex-1 flex-col overflow-hidden px-2 pb-1">
+										<p class="px-1 py-2 text-2xs text-muted-foreground">
+											Expand a notebook in Browse to see its outline here, or use the page chips above the document.
+										</p>
 										<NotebookOutline
 											notebookId={activeNotebook.id}
 											notebookName={activeNotebook.name}
@@ -1530,6 +1542,7 @@
 											scrollContainer={notebookScrollEl ?? null}
 											showHeader={false}
 										/>
+										<NotebookBacklinks notebookId={activeNotebook.id} />
 									</div>
 								{:else}
 									<div class="flex flex-1 items-center justify-center px-4 py-8 text-center">
@@ -1708,6 +1721,25 @@
 					class="flex shrink-0 items-center gap-0.5 overflow-x-auto scroll-smooth border-b border-border/60 bg-background px-2"
 					role="tablist"
 				>
+					<button
+						type="button"
+						class="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+						title={notebookTabsCollapsed ? 'Show notebook tabs' : 'Hide notebook tabs'}
+						aria-label={notebookTabsCollapsed ? 'Show notebook tabs' : 'Hide notebook tabs'}
+						aria-expanded={!notebookTabsCollapsed}
+						onclick={() => {
+							notebookTabsCollapsed = !notebookTabsCollapsed;
+							localStorage.setItem(
+								NOTEBOOK_TABS_COLLAPSED_KEY,
+								notebookTabsCollapsed ? 'true' : 'false'
+							);
+						}}
+					>
+						<ChevronDown
+							class="h-3.5 w-3.5 transition-transform {notebookTabsCollapsed ? '-rotate-90' : ''}"
+						/>
+					</button>
+					{#if !notebookTabsCollapsed}
 					{#each notebooks as nb (nb.id)}
 						{@const staleCount = nb.cells.filter(
 							(c) => c.cellType === 'query' && c.needsRun
@@ -1736,6 +1768,7 @@
 							</ContextMenu.Content>
 						</ContextMenu.Root>
 					{/each}
+					{/if}
 
 					{#each openResultTabs as rt (rt.id)}
 						<ContextMenu.Root>
@@ -1838,8 +1871,10 @@
 									bind:this={notebookScrollEl}
 									class="notebook-scroll flex-1 overflow-y-auto bg-background"
 								>
-									<div class=" mx-auto px-10 pt-8 pb-32">
-										<div class="mb-6 flex items-center gap-3 pl-(--cell-gutter)">
+									<div
+										class="notebook-page mx-auto w-full max-w-[var(--notebook-page-width)] px-[var(--notebook-page-padding)] pt-10 pb-32"
+									>
+										<div class="mb-6 flex items-center gap-3">
 											<input
 												class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
 												placeholder="Untitled notebook"
@@ -2003,6 +2038,12 @@
 													</Button>
 												</div>
 											{/if}
+											<NotebookBreadcrumbs
+												notebookId={activeTabId}
+												notebookName={activeNotebook?.name ?? 'Untitled'}
+												folderId={activeNotebook?.folderId ?? null}
+												{cells}
+											/>
 											{#if reportView}
 												<ReportViewShell
 													notebookId={activeTabId}
@@ -2010,107 +2051,33 @@
 													onDrill={handleDrillToCell}
 												>
 													{#snippet children()}
-														<div bind:this={cellListEl}>
-															{#each cells as cell, idx (cell.id)}
-																<div data-cell-id={cell.id}>
-																	<NotebookCell
-																		{cell}
-																		index={idx}
-																		isFirst={idx === 0}
-																		isLast={idx === cells.length - 1}
-																		dark={isDark}
-																		prevCellSources={prevSourcesForCell(idx)}
-																		notebookId={activeTabId}
-																		{autoRun}
-																		reportView={true}
-																		isGhost={ghostCellIds.has(cell.id)}
-																		onShareWithAI={() => {
-																			setAIChatOpen(true);
-																			addContextCell(cell.id);
-																		}}
-																		onFixWithAI={aiChatOpen
-																			? (errorMsg) => {
-																					addContextCell(cell.id);
-																					setAIChatOpen(true);
-																					void submitAIMessage(
-																						`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
-																					);
-																				}
-																			: undefined}
-																		onContinueWithAI={(instruction) => {
-																			addContextCell(cell.id);
-																			setAIChatOpen(true);
-																			setPendingSuggestion(instruction);
-																		}}
-																		onOpenResultTab={handleOpenResultTab}
-																		{collabEnabled}
-																	/>
-																</div>
-															{/each}
-														</div>
+														<MarkdocPreviewProvider
+															notebookId={activeTabId}
+															onDrill={handleDrillToCell}
+														>
+															<NotebookDocumentEditor
+																notebookId={activeTabId}
+																{cells}
+																dark={isDark}
+																reportView={true}
+																refEntries={markdownRefEntries}
+															/>
+														</MarkdocPreviewProvider>
 													{/snippet}
 												</ReportViewShell>
 											{:else}
-												<div bind:this={cellListEl}>
-													{#each cells as cell, idx (cell.id)}
-														<div data-cell-id={cell.id}>
-															{#if !reportView}
-																<div class="pl-(--cell-gutter)">
-																	<AddCellDivider
-																		onAdd={(kind) => insertBeforeCell(kind, idx)}
-																		showUdf={canAddUdfCell()}
-																		showPlot={canAddPlotCell()}
-																		showPython={canAddPythonCell()}
-																	/>
-																</div>
-															{/if}
-															<NotebookCell
-																{cell}
-																index={idx}
-																isFirst={idx === 0}
-																isLast={idx === cells.length - 1}
-																dark={isDark}
-																prevCellSources={prevSourcesForCell(idx)}
-																notebookId={activeTabId}
-																{autoRun}
-																{reportView}
-																isGhost={ghostCellIds.has(cell.id)}
-																onShareWithAI={() => {
-																	setAIChatOpen(true);
-																	addContextCell(cell.id);
-																}}
-																onFixWithAI={aiChatOpen
-																	? (errorMsg) => {
-																			addContextCell(cell.id);
-																			setAIChatOpen(true);
-																			void submitAIMessage(
-																				`Fix this SQL error in \`${cell.outputName}\`: ${errorMsg}`
-																			);
-																		}
-																	: undefined}
-																onContinueWithAI={(instruction) => {
-																	addContextCell(cell.id);
-																	setAIChatOpen(true);
-																	setPendingSuggestion(instruction);
-																}}
-																onOpenResultTab={handleOpenResultTab}
-																{collabEnabled}
-															/>
-														</div>
-													{/each}
-												</div>
-											{/if}
-
-											{#if !reportView}
-												<div class="mt-2 pl-(--cell-gutter)">
-													<AddCellDivider
-														persistent
-														onAdd={appendCell}
-														showUdf={canAddUdfCell()}
-														showPlot={canAddPlotCell()}
-														showPython={canAddPythonCell()}
+												<MarkdocPreviewProvider
+													notebookId={activeTabId}
+													onDrill={handleDrillToCell}
+												>
+													<NotebookDocumentEditor
+														notebookId={activeTabId}
+														{cells}
+														dark={isDark}
+														reportView={false}
+														refEntries={markdownRefEntries}
 													/>
-												</div>
+												</MarkdocPreviewProvider>
 											{/if}
 										{/if}
 									</div>

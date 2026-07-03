@@ -194,7 +194,7 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Head>
 {:else if tag?.name === 'td'}
-	<Table.Cell class="p-2 align-middle font-mono text-xs" {...tag.attributes}>
+	<Table.Cell class="p-2 align-middle font-mono text-xs tabular-nums" {...tag.attributes}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</Table.Cell>
 {:else if isHeading && tag}
@@ -206,56 +206,3 @@
 		{#each tag?.children ?? [] as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</svelte:element>
 {/if}
-
-<style>
-	.md-columns {
-		display: flex;
-		gap: 1rem;
-		margin: 0.5rem 0;
-	}
-	.md-column {
-		flex: 1 1 0%;
-		min-width: 0;
-	}
-	.md-grid {
-		display: grid;
-		grid-template-columns: repeat(var(--md-grid-cols), minmax(0, 1fr));
-		gap: 0.5rem;
-		margin: 0.5rem 0;
-	}
-	.md-callout {
-		padding: 0.6rem 0.8rem;
-		border-radius: var(--radius);
-		border: 1px solid;
-		margin: 0.5rem 0;
-		font-size: 0.9em;
-	}
-	.md-callout--info {
-		background: color-mix(in oklab, var(--chart-1) 8%, transparent);
-		border-color: color-mix(in oklab, var(--chart-1) 25%, transparent);
-	}
-	.md-callout--success {
-		background: color-mix(in oklab, var(--success) 8%, transparent);
-		border-color: color-mix(in oklab, var(--success) 25%, transparent);
-	}
-	.md-callout--warning {
-		background: color-mix(in oklab, var(--warning) 8%, transparent);
-		border-color: color-mix(in oklab, var(--warning) 25%, transparent);
-	}
-	.md-callout--error {
-		background: color-mix(in oklab, var(--destructive) 8%, transparent);
-		border-color: color-mix(in oklab, var(--destructive) 25%, transparent);
-	}
-	.md-card {
-		border: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
-		border-radius: var(--radius);
-		padding: 0.6rem 0.8rem;
-		margin: 0.5rem 0;
-	}
-	.md-card-title {
-		font-weight: 600;
-		font-size: 0.85em;
-		margin-bottom: 0.3rem;
-		opacity: 0.8;
-	}
-</style>

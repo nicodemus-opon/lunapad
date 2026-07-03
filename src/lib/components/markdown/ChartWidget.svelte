@@ -89,6 +89,14 @@
 
 	const columns = $derived(data[0] ? Object.keys(data[0]) : []);
 	const effectiveHeight = $derived(compact ? 60 : height);
+
+	const chartState = $derived.by((): 'ready' | 'empty' | 'missing-axis' => {
+		if (!data.length) return 'empty';
+		if (config.code?.trim()) return 'ready';
+		if (!config.xColumn) return 'missing-axis';
+		return 'ready';
+	});
+
 	let fullscreen = $state(false);
 	let chartRef: ChartView | undefined = $state();
 
@@ -117,7 +125,7 @@
 </script>
 
 <div class="md-chart" style="height: {effectiveHeight}px">
-	{#if data.length && (config.xColumn || config.chartType === 'custom')}
+	{#if chartState === 'ready'}
 		<ChartView
 			bind:this={chartRef}
 			rows={data}
@@ -129,7 +137,7 @@
 		<div class="md-chart-actions">
 			{#if drillCell}
 				<button
-					class="md-chart-action"
+					class="md-chart-action md-action"
 					onclick={openDrill}
 					title="View detail rows"
 					aria-label="View detail"
@@ -138,7 +146,7 @@
 				</button>
 			{/if}
 			<button
-				class="md-chart-action"
+				class="md-chart-action md-action"
 				onclick={exportPng}
 				title="Download PNG"
 				aria-label="Download PNG"
@@ -146,7 +154,7 @@
 				<Download class="h-3.5 w-3.5" />
 			</button>
 			<button
-				class="md-chart-action"
+				class="md-chart-action md-action"
 				onclick={() => (fullscreen = true)}
 				title="Fullscreen"
 				aria-label="Fullscreen"
@@ -154,8 +162,17 @@
 				<Maximize2 class="h-3.5 w-3.5" />
 			</button>
 		</div>
+	{:else if chartState === 'missing-axis'}
+		<div class="md-chart-empty">Set x and y columns to preview chart</div>
 	{:else}
-		<div class="md-chart-empty md-chart-skeleton">Loading chart…</div>
+		<div class="md-chart-empty">
+			<p>Run query to preview chart</p>
+			<div class="md-chart-ghost-bars" aria-hidden="true">
+				{#each [42, 68, 55, 80, 48, 72, 60] as h (h)}
+					<div class="md-chart-ghost-bar" style="height: {h}%"></div>
+				{/each}
+			</div>
+		</div>
 	{/if}
 </div>
 
@@ -186,49 +203,6 @@
 />
 
 <style>
-	.md-chart {
-		width: 100%;
-		margin: 0.5rem 0;
-		position: relative;
-	}
-	.md-chart-empty {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 100%;
-		font-size: 0.8rem;
-		opacity: 0.6;
-	}
-	.md-chart-skeleton {
-		animation: chart-pulse 1.5s ease-in-out infinite;
-	}
-	@keyframes chart-pulse {
-		0%,
-		100% {
-			opacity: 0.35;
-		}
-		50% {
-			opacity: 0.85;
-		}
-	}
-	.md-chart-actions {
-		position: absolute;
-		top: 0.4rem;
-		right: 0.4rem;
-		display: flex;
-		gap: 0.25rem;
-		opacity: 0;
-		transition: opacity 0.15s;
-	}
-	.md-chart:hover .md-chart-actions {
-		opacity: 1;
-	}
-	.md-chart-action {
-		background: color-mix(in oklch, var(--background, white) 80%, transparent);
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
-		border-radius: 0.3rem;
-		padding: 0.25rem;
-	}
 	.md-chart-overlay {
 		position: fixed;
 		inset: 0;

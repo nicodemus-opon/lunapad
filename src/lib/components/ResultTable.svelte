@@ -520,7 +520,7 @@
 				</div>
 			{/if}
 			<Table.Root
-				containerClass="overflow-auto rounded-md border {fillHeight
+				containerClass="overflow-auto rounded-sm border border-border/40 {fillHeight
 					? 'h-full max-h-full'
 					: 'max-h-96'}"
 			>

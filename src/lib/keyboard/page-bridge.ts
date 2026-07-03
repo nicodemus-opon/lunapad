@@ -15,6 +15,8 @@ export interface PageBridge {
 	toggleNotebookOutline: () => void;
 	isWorksheetView: () => boolean;
 	closeWorksheetView: () => void;
+	goBackPageNav: () => void;
+	goForwardPageNav: () => void;
 }
 
 let pageBridge: PageBridge | null = null;

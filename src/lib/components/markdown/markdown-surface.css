@@ -1,0 +1,875 @@
+/* Shared Markdoc report + visual-editor surface styles */
+
+/* ── Layout containers ───────────────────────────────────────────────────── */
+
+.md-columns {
+	display: flex;
+	gap: 1rem;
+	margin: 0.5rem 0;
+}
+
+.md-column {
+	flex: 1 1 0%;
+	min-width: 0;
+}
+
+.md-grid {
+	display: grid;
+	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
+	gap: 0.75rem;
+	margin: 0.55rem 0;
+}
+
+/* ── Callouts & cards ──────────────────────────────────────────────────── */
+
+.md-callout {
+	padding: 0.6rem 0.8rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid;
+	margin: 0.5rem 0;
+	font-size: 0.9em;
+}
+
+.md-callout--info {
+	background: color-mix(in oklab, var(--chart-1) 8%, transparent);
+	border-color: color-mix(in oklab, var(--chart-1) 25%, transparent);
+}
+
+.md-callout--success {
+	background: color-mix(in oklab, var(--success) 8%, transparent);
+	border-color: color-mix(in oklab, var(--success) 25%, transparent);
+}
+
+.md-callout--warning {
+	background: color-mix(in oklab, var(--warning) 8%, transparent);
+	border-color: color-mix(in oklab, var(--warning) 25%, transparent);
+}
+
+.md-callout--error {
+	background: color-mix(in oklab, var(--destructive) 8%, transparent);
+	border-color: color-mix(in oklab, var(--destructive) 25%, transparent);
+}
+
+.md-card {
+	border: 1px solid color-mix(in oklab, var(--border) 35%, transparent);
+	border-radius: var(--radius-sm);
+	padding: 0.65rem 0.8rem;
+	margin: 0.75rem 0;
+}
+
+.md-card-title,
+.md-card-title-editor {
+	font-weight: 600;
+	font-size: 0.85em;
+	margin-bottom: 0.3rem;
+	opacity: 0.8;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+
+.md-tabs {
+	margin: 0.5rem 0;
+}
+
+.md-tabs-strip {
+	display: flex;
+	gap: 0.2rem;
+	border-bottom: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.md-tab-btn {
+	padding: 0.4rem 0.75rem;
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	font-size: var(--text-2xs);
+	font-weight: 600;
+	color: var(--foreground);
+	opacity: 0.6;
+	cursor: pointer;
+	transition:
+		opacity 130ms cubic-bezier(0.16, 1, 0.3, 1),
+		border-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-tab-btn:hover {
+	opacity: 0.85;
+}
+
+.md-tab-btn.active {
+	opacity: 1;
+	border-bottom-color: var(--chart-1);
+}
+
+.md-tabs-panel,
+.md-tab-panel-content {
+	padding: 0.45rem 0 0;
+}
+
+.md-tabs-body > .markdoc-container-node[data-tag='tab']:not(.md-tab-active) {
+	display: none;
+}
+
+.md-tabs-body > .markdoc-container-node[data-tag='tab'].md-tab-active {
+	display: block;
+}
+
+.md-tabs-body:not(:has(> .markdoc-container-node[data-tag='tab'].md-tab-active))
+	> .markdoc-container-node[data-tag='tab']:first-child {
+	display: block;
+}
+
+/* ── Details ───────────────────────────────────────────────────────────── */
+
+.md-details {
+	border: 1px solid color-mix(in oklch, var(--foreground) 15%, transparent);
+	border-radius: var(--radius-sm);
+	margin: 0.5rem 0;
+	overflow: hidden;
+}
+
+.md-details-summary {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	width: 100%;
+	padding: 0.5rem 0.7rem;
+	background: none;
+	border: none;
+	font-size: 0.85em;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+	color: var(--foreground);
+	transition: background-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-details-summary:hover {
+	background: color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+.md-details:not(.is-open) .md-details-body,
+.md-details:not(.is-open) .markdoc-container-content {
+	display: none;
+}
+
+.md-details-body {
+	padding: 0 0.7rem 0.7rem;
+}
+
+/* ── Metrics ───────────────────────────────────────────────────────────── */
+
+.md-metric {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.1rem;
+	min-width: 7.5rem;
+	padding: 0.55rem 0.65rem;
+	background: color-mix(in oklab, var(--muted) 14%, transparent);
+	border: 1px solid color-mix(in oklab, var(--border) 32%, transparent);
+	border-radius: var(--radius-sm);
+	margin: 0;
+	vertical-align: top;
+}
+
+.md-metric-row {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+}
+
+.md-metric-copy {
+	opacity: 0;
+	border: none;
+	background: none;
+	padding: 0;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	transition: opacity 0.12s ease;
+}
+
+.md-metric:hover .md-metric-copy {
+	opacity: 0.65;
+}
+
+.md-metric-value {
+	font-size: 1.15rem;
+	font-weight: 700;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+}
+
+.md-metric-label {
+	font-size: var(--text-2xs);
+	color: var(--muted-foreground);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.md-metric-delta {
+	font-size: var(--text-2xs);
+	font-weight: 600;
+}
+
+.md-metric-delta--up {
+	color: var(--success);
+}
+
+.md-metric-delta--down {
+	color: var(--destructive);
+}
+
+/* ── Filters ───────────────────────────────────────────────────────────── */
+
+.md-filter {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	margin: 0.2rem 0.3rem 0.2rem 0;
+	vertical-align: middle;
+}
+
+.md-filter-label {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--muted-foreground);
+}
+
+.md-filter-control {
+	height: 1.65rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+	background: var(--background);
+	color: var(--foreground);
+	padding: 0 0.45rem;
+	font-size: 0.78rem;
+	transition:
+		border-color 0.12s ease,
+		box-shadow 0.12s ease;
+}
+
+.md-filter-control:hover {
+	border-color: color-mix(in oklab, var(--foreground) 28%, transparent);
+}
+
+.md-filter-control:focus-visible {
+	outline: none;
+	border-color: var(--primary);
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+.md-filter-search {
+	width: 6rem;
+}
+
+.md-filter-num {
+	width: 4.5rem;
+}
+
+.md-filter-daterange {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-size: 0.75rem;
+	color: var(--muted-foreground);
+}
+
+.md-filter-buttons,
+.md-filter-multiselect {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.md-filter-btn {
+	height: 1.65rem;
+	padding: 0 0.55rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+	font-size: 0.75rem;
+	font-weight: 500;
+	color: var(--foreground);
+	background: var(--background);
+	cursor: pointer;
+	transition:
+		border-color 0.12s ease,
+		background 0.12s ease;
+}
+
+.md-filter-btn:hover {
+	border-color: color-mix(in oklab, var(--primary) 38%, transparent);
+	background: color-mix(in oklab, var(--primary) 6%, transparent);
+}
+
+.md-filter-btn:focus-visible {
+	outline: none;
+	border-color: var(--primary);
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+.md-filter-btn.active {
+	background: var(--primary);
+	color: var(--primary-foreground);
+	border-color: transparent;
+}
+
+/* ── Badges & progress ─────────────────────────────────────────────────── */
+
+.md-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.12rem 0.5rem;
+	border-radius: var(--radius-sm);
+	font-size: var(--text-xs);
+	font-weight: 600;
+	line-height: 1.4;
+	background: color-mix(in oklab, var(--md-badge-token) 8%, transparent);
+	border: 1px solid color-mix(in oklab, var(--md-badge-token) 25%, transparent);
+	color: var(--md-badge-token);
+	margin: 0.1rem 0.15rem;
+	vertical-align: middle;
+}
+
+.md-progress {
+	margin: 0.35rem 0;
+}
+
+.md-progress-label {
+	font-size: var(--text-2xs);
+	opacity: 0.7;
+	margin-bottom: 0.25rem;
+}
+
+.md-progress-track {
+	width: 100%;
+	height: 0.4rem;
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--muted-foreground) 15%, transparent);
+	overflow: hidden;
+}
+
+.md-progress-fill {
+	height: 100%;
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--md-progress-token) 70%, transparent);
+	transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Charts & tables ───────────────────────────────────────────────────── */
+
+.md-chart {
+	width: 100%;
+	margin: 0.5rem 0;
+	position: relative;
+}
+
+.md-chart-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	font-size: 0.8rem;
+	opacity: 0.6;
+}
+
+.md-chart-skeleton {
+	animation: md-chart-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes md-chart-pulse {
+	0%,
+	100% {
+		opacity: 0.35;
+	}
+	50% {
+		opacity: 0.85;
+	}
+}
+
+.md-chart-actions,
+.md-datatable-actions {
+	position: absolute;
+	top: 0.4rem;
+	right: 0.4rem;
+	display: flex;
+	gap: 0.25rem;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+
+.md-datatable-actions {
+	top: 2.25rem;
+}
+
+.md-chart:hover .md-chart-actions,
+.md-datatable-wrap:hover .md-datatable-actions {
+	opacity: 1;
+}
+
+.md-chart-action,
+.md-datatable-expand {
+	background: color-mix(in oklab, var(--background) 88%, transparent);
+	border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+	border-radius: var(--radius-sm);
+	padding: 0.2rem;
+	color: var(--foreground);
+	cursor: pointer;
+}
+
+.md-datatable-wrap {
+	position: relative;
+}
+
+.md-datatable-empty {
+	font-size: var(--text-2xs);
+	opacity: 0.6;
+	margin: 0.2rem 0 0.5rem;
+}
+
+.md-datatable-wrap.linked-active {
+	outline: 2px solid color-mix(in oklab, var(--chart-1) 50%, transparent);
+	border-radius: var(--radius-sm);
+}
+
+/* ── Inline Markdoc expressions ────────────────────────────────────────── */
+
+.md-expr {
+	display: inline;
+	padding: 0.05rem 0.25rem;
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--primary) 8%, transparent);
+	color: var(--foreground);
+	font-variant-numeric: tabular-nums;
+	font-weight: 500;
+	cursor: default;
+}
+
+.md-expr.is-error {
+	background: color-mix(in oklab, var(--destructive) 10%, transparent);
+	color: var(--destructive);
+}
+
+.md-expr.is-raw {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 0.85em;
+	opacity: 0.75;
+}
+
+/* ── Shared editor/report controls ─────────────────────────────────────── */
+
+.md-control,
+.md-control-sm {
+	height: 1.65rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+	background: var(--background);
+	color: var(--foreground);
+	padding: 0 0.45rem;
+	font-size: var(--text-2xs);
+	transition:
+		border-color 0.12s ease,
+		box-shadow 0.12s ease;
+}
+
+.md-control-sm {
+	height: 1.45rem;
+	padding: 0 0.35rem;
+	font-size: 0.65rem;
+}
+
+.md-control:focus-visible,
+.md-control-sm:focus-visible,
+textarea.md-control {
+	outline: none;
+	border-color: var(--primary);
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+textarea.md-control {
+	height: auto;
+	min-height: 4.5rem;
+	padding: 0.35rem 0.45rem;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	resize: vertical;
+}
+
+.md-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+	background: var(--popover);
+	padding: 0.15rem;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	transition:
+		background 0.12s ease,
+		color 0.12s ease;
+}
+
+.md-action:hover {
+	background: var(--muted);
+	color: var(--foreground);
+}
+
+.md-action--danger:hover {
+	background: color-mix(in oklab, var(--destructive) 12%, transparent);
+	color: var(--destructive);
+}
+
+.md-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	background: color-mix(in oklab, var(--muted) 35%, transparent);
+	padding: 0.1rem 0.4rem;
+	font-size: var(--text-2xs);
+}
+
+.md-panel {
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+	background: color-mix(in oklab, var(--muted) 18%, transparent);
+	padding: 0.4rem 0.5rem;
+}
+
+.md-error-banner {
+	font-size: var(--text-xs);
+	color: var(--destructive);
+	background: color-mix(in oklab, var(--destructive) 8%, transparent);
+	border: 1px solid color-mix(in oklab, var(--destructive) 25%, transparent);
+	border-radius: var(--radius-sm);
+	padding: 0.4rem 0.6rem;
+	margin-bottom: 0.5rem;
+}
+
+/* ── Visual editor chrome (selection only) ─────────────────────────────── */
+
+.markdown-surface .inline-widget-view {
+	margin: 0.35rem 0;
+}
+
+.markdown-surface .inline-widget-view.is-selected {
+	outline: 1px solid color-mix(in oklab, var(--ring) 45%, transparent);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
+}
+
+.markdown-surface .markdoc-container-node {
+	margin: 0.35rem 0;
+	position: relative;
+}
+
+.markdown-surface .markdoc-container-node:not(.is-wysiwyg) {
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+}
+
+.markdown-surface .markdoc-container-node:not(.is-wysiwyg):hover {
+	border-color: color-mix(in oklab, var(--border) 22%, transparent);
+}
+
+.markdown-surface .markdoc-container-content {
+	min-height: 0;
+}
+
+.markdown-surface .markdoc-container-node.is-tabs {
+	margin: 0.4rem 0 0.55rem;
+}
+
+.markdown-surface .markdoc-container-node.is-tab {
+	margin: 0;
+}
+
+.markdown-surface .markdoc-container-content.md-tabs-body {
+	min-height: 0;
+}
+
+.markdown-surface .markdoc-container-content.md-tab-panel-content {
+	padding: 0.45rem 0 0;
+}
+
+.markdown-surface .markdoc-container-content.md-tab-panel-content > :first-child,
+.markdown-surface .markdoc-container-content.md-grid > :first-child {
+	margin-top: 0;
+}
+
+.markdown-surface .markdoc-container-content.md-tab-panel-content > :last-child,
+.markdown-surface .markdoc-container-content.md-grid > :last-child {
+	margin-bottom: 0;
+}
+
+.markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg {
+	outline: 1px solid color-mix(in oklab, var(--ring) 45%, transparent);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
+}
+
+/* Re-use container semantics inside editor */
+.markdown-surface .markdoc-container-content.md-grid {
+	display: grid;
+	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
+	gap: 0.75rem;
+	margin: 0.55rem 0 0;
+}
+
+/* Widgets nested in a grid cell go through node-view wrapper divs
+   (.markdoc-widget-node → .inline-widget-view → .iw-preview) that would
+   otherwise shrink to content. Stretch the whole chain so the rendered widget
+   fills its grid cell exactly like the report renderer, where the widget is a
+   direct grid child. */
+.markdown-surface .markdoc-container-content.md-grid > .markdoc-widget-node,
+.markdown-surface .markdoc-container-content.md-grid > .markdoc-widget-node > .inline-widget-view,
+.markdown-surface .markdoc-container-content.md-grid > .markdoc-widget-node .iw-preview,
+.markdown-surface .markdoc-container-content.md-grid > .markdoc-widget-node .iw-preview > * {
+	height: 100%;
+	width: 100%;
+	margin: 0;
+}
+
+.markdown-surface .markdoc-container-content.md-grid .md-metric {
+	display: flex;
+	width: 100%;
+	height: 100%;
+}
+
+.markdown-surface .markdoc-container-content.md-columns {
+	display: flex;
+	gap: 1rem;
+}
+
+.markdown-surface .markdoc-container-node.is-column .markdoc-container-content.md-column {
+	flex: 1 1 0%;
+	min-width: 0;
+}
+
+.markdown-surface .markdoc-container-content.md-callout {
+	padding: 0.6rem 0.8rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid;
+	font-size: 0.9em;
+}
+
+.markdown-surface .markdoc-container-node.md-callout--info .markdoc-container-content.md-callout {
+	background: color-mix(in oklab, var(--chart-1) 8%, transparent);
+	border-color: color-mix(in oklab, var(--chart-1) 25%, transparent);
+}
+
+.markdown-surface .markdoc-container-node.md-callout--success .markdoc-container-content.md-callout {
+	background: color-mix(in oklab, var(--success) 8%, transparent);
+	border-color: color-mix(in oklab, var(--success) 25%, transparent);
+}
+
+.markdown-surface .markdoc-container-node.md-callout--warning .markdoc-container-content.md-callout {
+	background: color-mix(in oklab, var(--warning) 8%, transparent);
+	border-color: color-mix(in oklab, var(--warning) 25%, transparent);
+}
+
+.markdown-surface .markdoc-container-node.md-callout--error .markdoc-container-content.md-callout {
+	background: color-mix(in oklab, var(--destructive) 8%, transparent);
+	border-color: color-mix(in oklab, var(--destructive) 25%, transparent);
+}
+
+.markdown-surface .markdoc-container-content.md-card {
+	border: 1px solid color-mix(in oklab, var(--border) 35%, transparent);
+	border-radius: var(--radius-sm);
+	padding: 0.65rem 0.8rem;
+}
+
+/* ── Mermaid (visual editor) ───────────────────────────────────────────── */
+
+.markdown-surface .markdoc-container-node.md-mermaid {
+	margin: 0.5rem 0;
+}
+
+.markdown-surface .markdoc-container-node.md-mermaid .mermaid-container-host {
+	margin: 0;
+}
+
+.markdown-surface .markdoc-container-node.is-mermaid-source .markdoc-container-content {
+	margin-top: 0;
+}
+
+.markdown-surface .markdoc-container-node.is-mermaid-source .markdoc-container-content pre {
+	margin: 0;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+	background: color-mix(in oklab, var(--muted) 35%, transparent);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: var(--text-2xs);
+}
+
+/* ── Prose lists (visual editor + report) ───────────────────────────────── */
+
+.markdown-surface ul:not([data-type='taskList']),
+.markdown-surface .markdown-body ul:not([data-type='taskList']),
+.notion-surface ul:not([data-type='taskList']) {
+	list-style-type: disc;
+	padding-left: 1.35rem;
+	margin: 0.35rem 0;
+}
+
+.markdown-surface ol,
+.markdown-surface .markdown-body ol,
+.notion-surface ol {
+	list-style-type: decimal;
+	padding-left: 1.35rem;
+	margin: 0.35rem 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.markdown-surface li,
+.markdown-surface .markdown-body li,
+.notion-surface li {
+	margin: 0.125rem 0;
+}
+
+.markdown-surface ul[data-type='taskList'],
+.markdown-surface .markdown-body ul[data-type='taskList'],
+.notion-surface ul[data-type='taskList'] {
+	list-style: none;
+	padding-left: 0;
+	margin: 0.35rem 0;
+}
+
+.markdown-surface li[data-type='taskItem'],
+.markdown-surface .markdown-body li[data-type='taskItem'],
+.notion-surface li[data-type='taskItem'] {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.45rem;
+	list-style: none;
+}
+
+.markdown-surface li[data-type='taskItem'] > label,
+.markdown-surface .markdown-body li[data-type='taskItem'] > label,
+.notion-surface li[data-type='taskItem'] > label {
+	position: relative;
+	flex: 0 0 auto;
+	margin-top: 0.2rem;
+	cursor: pointer;
+}
+
+.markdown-surface li[data-type='taskItem'] > label::before,
+.markdown-surface .markdown-body li[data-type='taskItem'] > label::before,
+.notion-surface li[data-type='taskItem'] > label::before {
+	content: '';
+	position: absolute;
+	inset: -0.35rem;
+}
+
+.markdown-surface li[data-type='taskItem'] input[type='checkbox'],
+.markdown-surface .markdown-body li[data-type='taskItem'] input[type='checkbox'],
+.notion-surface li[data-type='taskItem'] input[type='checkbox'] {
+	width: 0.9rem;
+	height: 0.9rem;
+	margin: 0;
+	accent-color: var(--primary);
+	cursor: pointer;
+}
+
+.markdown-surface li[data-type='taskItem'] > div,
+.markdown-surface .markdown-body li[data-type='taskItem'] > div,
+.notion-surface li[data-type='taskItem'] > div {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* ── Shared widget shell ───────────────────────────────────────────────── */
+
+.md-widget-shell {
+	border: 1px solid color-mix(in oklab, var(--border) var(--tint-border, 30%), transparent);
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--muted) var(--tint-surface, 10%), transparent);
+	padding: 0.55rem 0.65rem;
+	margin: 0.35rem 0;
+	transition:
+		border-color var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+		background var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* ── Widget empty / ghost states ───────────────────────────────────────── */
+
+.md-datatable-empty,
+.md-chart-empty {
+	font-size: var(--text-2xs);
+	color: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
+	border: 1px dashed color-mix(in oklab, var(--border) var(--tint-border, 30%), transparent);
+	border-radius: var(--radius-sm);
+	padding: 0.65rem 0.75rem;
+	margin: 0.35rem 0;
+}
+
+.md-datatable-ghost {
+	display: grid;
+	gap: 0.35rem;
+}
+
+.md-datatable-ghost-row {
+	display: grid;
+	grid-template-columns: repeat(var(--md-ghost-cols, 4), minmax(0, 1fr));
+	gap: 0.45rem;
+}
+
+.md-datatable-ghost-cell {
+	height: 0.55rem;
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--muted-foreground) 12%, transparent);
+}
+
+.md-chart-empty--loading {
+	animation: md-chart-pulse 1.5s ease-in-out infinite;
+}
+
+.md-chart-ghost-bars {
+	display: flex;
+	align-items: flex-end;
+	gap: 0.35rem;
+	height: 4.5rem;
+	padding: 0.35rem 0;
+}
+
+.md-chart-ghost-bar {
+	flex: 1 1 0;
+	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+	background: color-mix(in oklab, var(--muted-foreground) 14%, transparent);
+}
+
+.md-badge:empty {
+	display: none;
+}
+
+.md-progress-value {
+	font-variant-numeric: tabular-nums;
+	font-size: var(--text-2xs);
+	opacity: 0.75;
+}
+
+/* ── Menu / toolbar focus ──────────────────────────────────────────────── */
+
+.slash-menu button:focus-visible,
+.mention-menu-item:focus-visible,
+.bubble-btn:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 55%, transparent);
+}
+
+/* ── Adjacent block selection radii ────────────────────────────────────── */
+
+.markdown-surface .ProseMirror-selectednode + .ProseMirror-selectednode .inline-widget-view,
+.markdown-surface .ProseMirror-selectednode + .ProseMirror-selectednode.markdoc-container-node {
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
+.markdown-surface .ProseMirror-selectednode:has(+ .ProseMirror-selectednode) .inline-widget-view,
+.markdown-surface .ProseMirror-selectednode:has(+ .ProseMirror-selectednode).markdoc-container-node {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+}
+

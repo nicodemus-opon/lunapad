@@ -218,6 +218,24 @@ export const SHORTCUTS: ShortcutDef[] = [
 		handler: () => page()?.toggleNotebookOutline()
 	},
 	{
+		id: 'notebook.page-nav-back',
+		chord: { key: '[', mod: true },
+		contexts: ['global', 'command-mode'],
+		group: 'global',
+		label: 'Back in page history',
+		when: (ctx) => !ctx.isTypingTarget && (page()?.isNotebookTab() ?? false),
+		handler: () => page()?.goBackPageNav()
+	},
+	{
+		id: 'notebook.page-nav-forward',
+		chord: { key: ']', mod: true },
+		contexts: ['global', 'command-mode'],
+		group: 'global',
+		label: 'Forward in page history',
+		when: (ctx) => !ctx.isTypingTarget && (page()?.isNotebookTab() ?? false),
+		handler: () => page()?.goForwardPageNav()
+	},
+	{
 		id: 'notebook.undo',
 		chord: { key: 'z', mod: true },
 		contexts: ['global', 'command-mode'],

@@ -26,28 +26,5 @@
 	<div class="md-progress-track">
 		<div class="md-progress-fill" style="width: {pct}%"></div>
 	</div>
+	<div class="md-progress-value">{pct.toFixed(0)}%</div>
 </div>
-
-<style>
-	.md-progress {
-		margin: 0.35rem 0;
-	}
-	.md-progress-label {
-		font-size: var(--text-2xs);
-		opacity: 0.7;
-		margin-bottom: 0.25rem;
-	}
-	.md-progress-track {
-		width: 100%;
-		height: 0.45rem;
-		border-radius: var(--radius);
-		background: color-mix(in oklab, var(--muted-foreground) 15%, transparent);
-		overflow: hidden;
-	}
-	.md-progress-fill {
-		height: 100%;
-		border-radius: var(--radius);
-		background: color-mix(in oklab, var(--md-progress-token) 70%, transparent);
-		transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1);
-	}
-</style>

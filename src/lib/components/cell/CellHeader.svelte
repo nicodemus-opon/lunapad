@@ -14,16 +14,12 @@
 		revealed,
 		hidden = false,
 		reportView = false,
-		cellNumber,
-		showCellNumber = false,
 		prevCellNames,
 		downstreamCount,
 		crossNotebookUsageCount,
 		cellMode,
-		markdownMode,
 		isMarkdownCell = false,
 		onModeChange,
-		onMarkdownModeChange,
 		onOverlayChange,
 		onFixWithAI
 	}: {
@@ -35,17 +31,12 @@
 		/** Markdown preview mode hides the header until the cell is hovered/focused. */
 		hidden?: boolean;
 		reportView?: boolean;
-		/** Query/python cell index, rendered in the gutter via negative margin. */
-		cellNumber?: number;
-		showCellNumber?: boolean;
 		prevCellNames: string[];
 		downstreamCount: number;
 		crossNotebookUsageCount: number;
 		cellMode: 'prql' | 'visual' | 'sql';
-		markdownMode?: 'visual' | 'source';
 		isMarkdownCell?: boolean;
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
-		onMarkdownModeChange?: (mode: 'visual' | 'source') => void;
 		onOverlayChange?: (open: boolean) => void;
 		onFixWithAI?: (errorMsg: string) => void;
 	} = $props();
@@ -60,6 +51,10 @@
 
 	const downstreamTotal = $derived(downstreamCount + crossNotebookUsageCount);
 	const errorCount = $derived(cell.errors.length + (cell.materializeError ? 1 : 0));
+	const markdownDefaultName = $derived(isMarkdownCell && /^result\d+$/.test(cell.outputName));
+	const visibleNameInputValue = $derived(
+		markdownDefaultName && !nameInputFocused ? '' : nameInputValue
+	);
 
 	function fmtMs(ms: number): string {
 		return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
@@ -77,29 +72,19 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div
-	class="flex h-7 w-full items-center gap-2 transition-opacity duration-(--motion-fast) select-none {hidden
+	class="notebook-cell-header flex h-6 w-full items-center gap-2 transition-opacity duration-(--motion-fast) select-none {hidden
 		? revealed
 			? 'opacity-100'
-			: 'opacity-0'
+			: 'pointer-events-none opacity-0'
 		: ''} {collapsed ? 'cursor-pointer' : ''}"
 	onclick={onRowClick}
 >
-	{#if cellNumber != null}
-		<span
-			class="pointer-events-none -ml-(--cell-gutter) w-(--cell-gutter) shrink-0 pr-1 text-right font-mono text-xs leading-none font-medium text-muted-foreground/50 tabular-nums transition-opacity duration-(--motion-fast) {showCellNumber
-				? 'opacity-100'
-				: 'opacity-0'}"
-			aria-hidden="true"
-		>
-			{cellNumber}
-		</span>
-	{/if}
 	<div class="flex min-w-0 flex-1 items-center gap-1.5">
 		{#if !codeHidden}
 			<Tooltip.Root>
 				<Tooltip.Trigger class="min-w-0 {collapsed ? 'flex-none' : 'flex-1'}">
 					<input
-						class="cell-name-input h-6 min-w-0 text-inherit {collapsed
+						class="cell-name-input h-5 min-w-0 text-inherit {collapsed
 							? 'w-auto max-w-48'
 							: 'w-full'} font-mono text-sm font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground/50"
 						placeholder={cell.cellType === 'udf'
@@ -107,7 +92,7 @@
 							: isQueryCell
 								? 'model name…'
 								: 'note title…'}
-						value={nameInputValue}
+						value={visibleNameInputValue}
 						disabled={cell.cellType === 'udf'}
 						onfocus={() => {
 							nameInputFocused = true;
@@ -117,6 +102,7 @@
 						}}
 						onblur={() => {
 							nameInputFocused = false;
+							if (markdownDefaultName && !nameInputValue.trim()) return;
 							const result = updateCellName(cell.id, nameInputValue);
 							if (!result.ok) {
 								toast.error(result.error);
@@ -150,6 +136,18 @@
 					{/if}
 				</Tooltip.Content>
 			</Tooltip.Root>
+		{/if}
+		{#if !collapsed && isQueryCell && revealed}
+			{#if cell.result && cell.status !== 'idle'}
+				<span class="shrink-0 font-mono text-2xs text-muted-foreground/80 tabular-nums">
+					{cell.result.rows.length.toLocaleString()} rows{#if cell.executionMs != null}
+						· {fmtMs(cell.executionMs)}{/if}
+				</span>
+			{:else if cell.status === 'running'}
+				<span class="shrink-0 text-2xs text-muted-foreground">running…</span>
+			{:else if cell.needsRun}
+				<span class="shrink-0 text-2xs text-warning">stale</span>
+			{/if}
 		{/if}
 		{#if !codeHidden && isQueryCell && downstreamTotal > 0}
 			<Popover.Root onOpenChange={onOverlayChange}>
@@ -236,7 +234,8 @@
 	</div>
 
 	<div
-		class="flex shrink-0 items-center gap-1 transition-opacity duration-(--motion-fast) {revealed
+		class="flex shrink-0 items-center gap-1 transition-opacity duration-(--motion-fast) {isMarkdownCell ||
+		revealed
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'}"
 	>
@@ -251,75 +250,33 @@
 					code hidden
 				</button>
 			{/if}
-			<div
-				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
-				role="tablist"
-			>
+			<div class="mode-tabs" role="tablist">
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
-					'prql'
-						? 'bg-secondary text-secondary-foreground  '
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+					type="button"
+					class="mode-tab"
+					class:is-active={cellMode === 'prql'}
 					onclick={() => onModeChange('prql')}
 					title="PRQL code mode"
 					role="tab"
 					aria-selected={cellMode === 'prql'}>PRQL</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
-					'visual'
-						? 'bg-secondary text-secondary-foreground  '
-						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+					type="button"
+					class="mode-tab"
+					class:is-active={cellMode === 'visual'}
 					onclick={() => onModeChange('visual')}
 					title="Visual pipeline editor"
 					role="tab"
 					aria-selected={cellMode === 'visual'}>Visual</button
 				>
 				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {cellMode ===
-					'sql'
-						? 'bg-secondary text-secondary-foreground  '
-						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+					type="button"
+					class="mode-tab"
+					class:is-active={cellMode === 'sql'}
 					onclick={() => onModeChange('sql')}
 					title="SQL mode"
 					role="tab"
 					aria-selected={cellMode === 'sql'}>SQL</button
-				>
-			</div>
-		{:else if isMarkdownCell && !collapsed && onMarkdownModeChange}
-			{#if codeHidden}
-				<button
-					class="inline-flex h-5 items-center gap-1 rounded px-1.5 text-2xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-					title="Show editor"
-					onclick={() => setCellDisplay(cell.id, 'full')}
-				>
-					<EyeOff class="h-2.5 w-2.5" />
-					editor hidden
-				</button>
-			{/if}
-			<div
-				class="inline-flex items-center gap-px rounded-md border border-border/60 bg-muted/30 p-0.5"
-				role="tablist"
-			>
-				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {(markdownMode ??
-						'visual') === 'visual'
-						? 'bg-secondary text-secondary-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-					onclick={() => onMarkdownModeChange?.('visual')}
-					title="Visual dashboard editor"
-					role="tab"
-					aria-selected={(markdownMode ?? 'visual') === 'visual'}>Visual</button
-				>
-				<button
-					class="h-5 rounded-sm px-1.5 text-2xs font-semibold transition-[background-color,color] duration-(--motion-fast) {(markdownMode ??
-						'visual') === 'source'
-						? 'bg-secondary text-secondary-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-					onclick={() => onMarkdownModeChange?.('source')}
-					title="Markdoc source"
-					role="tab"
-					aria-selected={(markdownMode ?? 'visual') === 'source'}>Source</button
 				>
 			</div>
 		{/if}
@@ -327,6 +284,46 @@
 </div>
 
 <style>
+	.mode-tabs {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0 0.125rem;
+	}
+	.mode-tab {
+		position: relative;
+		height: 1.25rem;
+		padding: 0;
+		border: none;
+		background: transparent;
+		font-size: var(--text-2xs);
+		font-weight: 600;
+		color: var(--muted-foreground);
+		cursor: pointer;
+		transition: color 0.12s ease;
+	}
+	.mode-tab:hover {
+		color: var(--foreground);
+	}
+	.mode-tab.is-active {
+		color: var(--foreground);
+	}
+	.mode-tab.is-active::after {
+		position: absolute;
+		right: 0;
+		bottom: -0.18rem;
+		left: 0;
+		height: 2px;
+		border-radius: 999px;
+		background: var(--secondary);
+		content: '';
+	}
+	.mode-tab:focus-visible {
+		outline: none;
+		border-radius: var(--radius-sm);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 35%, transparent);
+	}
+
 	.cell-name-input {
 		border: 1px solid transparent;
 		background: transparent;

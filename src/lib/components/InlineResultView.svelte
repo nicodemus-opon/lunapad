@@ -124,19 +124,25 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
-	<!-- Toolbar -->
+<div class="notebook-result flex flex-col gap-1.5 {fillHeight ? 'min-h-0 flex-1' : ''}">
+	<!-- Observable-style caption row -->
 	<div
 		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-(--motion-fast) ease-(--motion-ease-out) {showControls
-			? 'h-7 opacity-100'
+			? 'h-6 opacity-100'
 			: toolbarReserveSpace
-				? 'pointer-events-none h-7 opacity-0'
+				? 'pointer-events-none h-6 opacity-0'
 				: 'pointer-events-none h-0 opacity-0'}"
 		aria-hidden={!showControls}
 	>
-		<ResultViewModeSwitcher {viewMode} onSwitch={switchView} />
+		<div class="flex min-w-0 items-center gap-2">
+			<span class="truncate font-mono text-2xs text-muted-foreground/80">{name}</span>
+			<span class="hidden text-2xs text-muted-foreground/60 tabular-nums sm:inline">
+				{rows.length.toLocaleString()} rows
+			</span>
+		</div>
 
-		<div class="flex h-7 min-w-0 shrink-0 items-center justify-end gap-1">
+		<div class="flex h-6 min-w-0 shrink-0 items-center justify-end gap-1">
+			<ResultViewModeSwitcher {viewMode} onSwitch={switchView} />
 			{#if viewMode === 'table'}
 				<label class="group/search relative hidden items-center sm:flex">
 					<Search
@@ -169,7 +175,7 @@
 			{/if}
 			{#if viewMode === 'chart' && activeConfig && !compact}
 				<button
-					class="flex h-7 w-7 items-center justify-center rounded transition-colors {showConfigPanel
+					class="flex h-6 w-6 items-center justify-center rounded transition-colors {showConfigPanel
 						? 'bg-primary/15 text-primary'
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
@@ -208,7 +214,7 @@
 			</div>
 		{:else}
 			<!-- Full cell view: left config panel + chart (matches ResultView layout) -->
-			<div class="flex overflow-hidden rounded-md">
+			<div class="flex overflow-hidden rounded-sm">
 				{#if showConfigPanel}
 					<div
 						class="w-52 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/10 px-3 py-3"

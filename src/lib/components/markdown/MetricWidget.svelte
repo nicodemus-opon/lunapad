@@ -43,7 +43,7 @@
 	}
 </script>
 
-<span class="md-metric rounded p-4" data-trend={trend ?? undefined}>
+<span class="md-metric" data-trend={trend ?? undefined}>
 	<span class="md-metric-row">
 		<span class="md-metric-value">{displayValue}</span>
 		<button
@@ -64,50 +64,3 @@
 		</span>
 	{/if}
 </span>
-
-<style>
-	.md-metric {
-		display: inline-flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.1rem;
-
-		background: transparent;
-		border: 1px var(--border) solid;
-		margin: 0.15rem 0.2rem 0.15rem 0;
-		vertical-align: top;
-	}
-	.md-metric-row {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-	}
-	.md-metric-copy {
-		opacity: 0;
-		transition: opacity 0.15s;
-	}
-	.md-metric:hover .md-metric-copy {
-		opacity: 0.65;
-	}
-	.md-metric-value {
-		font-size: 1.15rem;
-		font-weight: 700;
-		line-height: 1.1;
-	}
-	.md-metric-label {
-		font-size: var(--text-2xs);
-		opacity: 0.65;
-		text-transform: uppercase;
-		letter-spacing: 0.02em;
-	}
-	.md-metric-delta {
-		font-size: var(--text-2xs);
-		font-weight: 600;
-	}
-	.md-metric-delta--up {
-		color: var(--success);
-	}
-	.md-metric-delta--down {
-		color: var(--destructive);
-	}
-</style>

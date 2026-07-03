@@ -95,7 +95,7 @@
 	<div class="inspector-fence space-y-2">
 		<p class="text-xs font-semibold text-muted-foreground">Code block</p>
 		<textarea
-			class="min-h-28 w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
+			class="md-control min-h-28 w-full font-mono"
 			value={block.source}
 			oninput={(e) => onPatch({ source: e.currentTarget.value })}
 		></textarea>
@@ -512,7 +512,7 @@
 					/>
 				</label>
 			{/if}
-			<div class="rounded-md border border-border/50 bg-muted/20 p-2 text-2xs">
+			<div class="md-panel text-2xs">
 				<p class="font-medium text-muted-foreground">Query wiring</p>
 				{#if param && filterUsages[param]?.length}
 					<ul class="mt-1 space-y-0.5">
@@ -750,18 +750,28 @@
 	.field input,
 	.field select,
 	.field textarea {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
+		width: 100%;
+		height: 1.65rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
 		background: var(--background);
-		padding: 0.3rem 0.45rem;
+		color: var(--foreground);
+		padding: 0 0.45rem;
 		font-size: var(--text-2xs);
+	}
+	.field textarea {
+		height: auto;
+		min-height: 4.5rem;
+		padding: 0.35rem 0.45rem;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		resize: vertical;
 	}
 	.field input:focus-visible,
 	.field select:focus-visible,
 	.field textarea:focus-visible {
 		outline: none;
-		border-color: color-mix(in oklab, var(--ring) 60%, transparent);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 25%, transparent);
+		border-color: var(--primary);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
 	}
 	.inline-field {
 		display: flex;

@@ -111,6 +111,7 @@
 		}
 		return out;
 	});
+	const ghostCols = $derived(Math.min(Math.max(columns.length || 4, 3), 6));
 </script>
 
 {#if transformed.rows.length}
@@ -129,7 +130,7 @@
 		<div class="md-datatable-actions">
 			{#if transformed.rows.length > effectivePageSize}
 				<button
-					class="md-datatable-expand"
+					class="md-datatable-expand md-action"
 					onclick={() => (fullscreen = true)}
 					title="Expand table"
 					aria-label="Expand table"
@@ -140,7 +141,18 @@
 		</div>
 	</div>
 {:else}
-	<div class="md-datatable-empty">No rows</div>
+	<div class="md-datatable-empty">
+		<p>{data.length ? 'No rows after filter' : 'Run query to preview table'}</p>
+		<div class="md-datatable-ghost" style="--md-ghost-cols: {ghostCols}">
+			{#each [1, 2, 3, 4] as row (row)}
+				<div class="md-datatable-ghost-row">
+					{#each Array(ghostCols) as _, col (col)}
+						<div class="md-datatable-ghost-cell"></div>
+					{/each}
+				</div>
+			{/each}
+		</div>
+	</div>
 {/if}
 
 {#if fullscreen}
@@ -174,37 +186,6 @@
 />
 
 <style>
-	.md-datatable-wrap {
-		position: relative;
-	}
-	.md-datatable-empty {
-		font-size: var(--text-2xs);
-		opacity: 0.6;
-		margin: 0.2rem 0 0.5rem;
-	}
-	.md-datatable-wrap.linked-active {
-		outline: 2px solid color-mix(in oklab, var(--chart-1) 50%, transparent);
-		border-radius: var(--radius);
-	}
-	.md-datatable-actions {
-		position: absolute;
-		/* Place actions below `ResultTable`'s global search input. */
-		top: 2.25rem;
-		right: 0.4rem;
-		display: flex;
-		gap: 0.25rem;
-		opacity: 0;
-		transition: opacity 0.15s;
-	}
-	.md-datatable-expand {
-		background: color-mix(in oklab, var(--background) 80%, transparent);
-		border: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
-		border-radius: var(--radius);
-		padding: 0.25rem;
-	}
-	.md-datatable-wrap:hover .md-datatable-actions {
-		opacity: 1;
-	}
 	.md-datatable-overlay {
 		position: fixed;
 		inset: 0;

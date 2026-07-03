@@ -19,7 +19,8 @@ describe('NotebookCell anatomy', () => {
 	});
 
 	it('lays out as gutter + content grid, flat cell (no bordered card)', () => {
-		expect(source).toContain('grid-cols-[var(--cell-gutter)_minmax(0,1fr)]');
+		expect(source).toContain('grid-cols-[var(--notebook-gutter-width)_minmax(0,1fr)]');
+		expect(source).not.toContain('border-l-4 p-4');
 		expect(source).not.toContain('border bg-accent/20');
 		expect(source).not.toContain('shadow-[0_0_0_1px_hsl(var(--primary))]');
 	});
@@ -56,6 +57,8 @@ describe('NotebookCell anatomy', () => {
 		expect(source).toContain('MARKDOWN_INTERACTIVE_SELECTOR');
 		expect(source).toContain('handleMarkdownPreviewClick');
 		expect(source).toContain('markdown-editor-stack');
+		expect(source).toContain('MarkdownModeBar');
+		expect(source).toContain('setMarkdownMode');
 	});
 
 	it('shows execution time only on the status line, not inside the result toolbar', () => {
@@ -108,9 +111,12 @@ describe('CellHeader', () => {
 		expect(cellMenuSource).toContain('onOpenWorksheet');
 	});
 
-	it('exposes markdown visual/source mode toggle', () => {
-		expect(source).toContain('onMarkdownModeChange');
-		expect(source).toContain('isMarkdownCell');
-		expect(source).toContain('Visual dashboard editor');
+	it('keeps markdown preview chrome in the dedicated mode bar', () => {
+		const notebookSource = read('./NotebookCell.svelte');
+		expect(notebookSource).toContain('isMarkdownCell');
+		expect(notebookSource).toContain('isMarkdownPreviewMode');
+		expect(notebookSource).toContain('MarkdownModeBar');
+		const cellHeaderSource = read('./cell/CellHeader.svelte');
+		expect(cellHeaderSource).not.toContain('editor hidden');
 	});
 });
