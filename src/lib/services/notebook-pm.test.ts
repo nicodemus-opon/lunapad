@@ -76,6 +76,20 @@ describe('notebook-pm', () => {
 		expect(content[content.length - 1]?.type).toBe('paragraph');
 	});
 
+	it('prepends a leading paragraph before a document starting with a query block', () => {
+		const doc = cellsToPmDocument([makeQueryCell('q1')]);
+		const content = doc.content ?? [];
+		expect(content[0]?.type).toBe('paragraph');
+		expect(content.some((n) => n.type === 'queryBlock')).toBe(true);
+	});
+
+	it('does not persist the leading affordance paragraph as a cell', () => {
+		const doc = cellsToPmDocument([makeQueryCell('q1')]);
+		const blocks = pmDocumentToBlocks(doc);
+		expect(blocks).toHaveLength(1);
+		expect(blocks[0]?.kind).toBe('query');
+	});
+
 	it('does not persist the trailing affordance paragraph as a cell', () => {
 		const doc = cellsToPmDocument([makeQueryCell('q1')]);
 		const blocks = pmDocumentToBlocks(doc);
@@ -115,5 +129,38 @@ describe('notebook-pm', () => {
 		const md = blocks.find((b) => b.kind === 'markdown');
 		expect(md?.markdown).toContain('Nested Page');
 		expect(md?.markdown).toContain('After page');
+	});
+
+	it('does not persist a lone slash from a dismissed slash menu as a cell', () => {
+		const doc: import('./markdoc-pm').PMDocJSON = {
+			type: 'doc',
+			content: [
+				{ type: 'paragraph', content: [{ type: 'text', text: '/' }] },
+				{ type: 'queryBlock', attrs: { cellId: 'q1', cellType: 'query' } },
+				{ type: 'paragraph' }
+			]
+		};
+		const blocks = pmDocumentToBlocks(doc);
+		expect(blocks).toHaveLength(1);
+		expect(blocks[0]?.kind).toBe('query');
+	});
+
+	it('does not persist trailing slash affordance inside a narrative run', () => {
+		const doc: import('./markdoc-pm').PMDocJSON = {
+			type: 'doc',
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'Hello world.' }]
+				},
+				{ type: 'paragraph', content: [{ type: 'text', text: '/' }] },
+				{ type: 'queryBlock', attrs: { cellId: 'q1', cellType: 'query' } },
+				{ type: 'paragraph' }
+			]
+		};
+		const blocks = pmDocumentToBlocks(doc);
+		const md = blocks.find((b) => b.kind === 'markdown');
+		expect(md?.markdown).toBe('Hello world.');
+		expect(md?.markdown).not.toContain('/');
 	});
 });

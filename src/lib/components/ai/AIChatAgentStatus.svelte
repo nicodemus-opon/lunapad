@@ -55,7 +55,7 @@
 
 {#if visible}
 	<div
-		class="shrink-0 border-t border-border/40 bg-sidebar px-2 py-1"
+		class="shrink-0 border-t border-border bg-sidebar px-2 py-1"
 		data-testid="ai-agent-status"
 	>
 		{#if pipelinePhases.length > 0 || sprintTasks.length > 0}
@@ -74,7 +74,7 @@
 				<span class="flex-1 truncate text-xs text-muted-foreground">{summary}</span>
 			</button>
 			{#if expanded}
-				<div class="mt-0.5 overflow-hidden rounded-md border border-border/30 bg-muted/20">
+				<div class="mt-0.5 overflow-hidden rounded-md border border-border bg-muted/20">
 					{#if pipelinePhases.length > 0}
 						<PipelinePhaseStepper phases={pipelinePhases} embedded />
 					{:else if sprintTasks.length > 0}

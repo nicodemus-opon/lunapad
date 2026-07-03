@@ -39,6 +39,6 @@
 <style>
 	:global(.md-details-chevron) {
 		flex-shrink: 0;
-		transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+		transition: transform var(--motion-medium) var(--motion-ease-out);
 	}
 </style>

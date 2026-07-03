@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
+	import CellStatusChip from '$lib/components/cell/CellStatusChip.svelte';
 	import { Clock, XCircle, EyeOff, BrainCircuit } from '@lucide/svelte';
 	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
 
@@ -187,48 +188,51 @@
 				</span>
 			{/if}
 			{#if cell.needsRun && cell.status !== 'running'}
-				<span
-					class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-warning/30 bg-warning/10 px-1.5 text-2xs font-semibold text-warning shadow-2xs"
-				>
-					<Clock class="h-2.5 w-2.5" />
-					stale
-				</span>
+				<CellStatusChip tone="warning">
+					{#snippet label()}
+						<Clock />
+						stale
+					{/snippet}
+				</CellStatusChip>
 			{/if}
 			{#if errorCount > 0}
-				<Popover.Root onOpenChange={onOverlayChange}>
-					<Popover.Trigger
-						class="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-destructive/30 bg-destructive/10 px-1.5 text-2xs font-semibold text-destructive shadow-2xs transition-colors outline-none hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50"
-						aria-label="Show errors"
-					>
-						<XCircle class="h-2.5 w-2.5" />
+				<CellStatusChip
+					tone="destructive"
+					ariaLabel="Show errors"
+					onOpenChange={onOverlayChange}
+				>
+					{#snippet label()}
+						<XCircle />
 						{errorCount === 1 ? 'error' : `${errorCount} errors`}
-					</Popover.Trigger>
-					<Popover.Content class="w-auto max-w-96 space-y-2 p-3">
-						{#each cell.errors as error (error.display ?? error.reason)}
-							<pre class="font-mono text-xs whitespace-pre-wrap text-destructive">{error.display ??
-									error.reason}</pre>
-						{/each}
-						{#if cell.materializeError}
-							<pre
-								class="font-mono text-xs whitespace-pre-wrap text-destructive">{cell.materializeError}</pre>
-						{/if}
-						{#if onFixWithAI}
-							<button
-								class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/20"
-								onclick={() =>
-									onFixWithAI!(
-										cell.errors[0]?.display ??
-											cell.errors[0]?.reason ??
-											cell.materializeError ??
-											'unknown error'
-									)}
-							>
-								<BrainCircuit class="h-3 w-3" />
-								Fix with AI
-							</button>
-						{/if}
-					</Popover.Content>
-				</Popover.Root>
+					{/snippet}
+					{#snippet content()}
+						<div class="w-auto max-w-96 space-y-2">
+							{#each cell.errors as error (error.display ?? error.reason)}
+								<pre class="font-mono text-xs whitespace-pre-wrap text-destructive">{error.display ??
+										error.reason}</pre>
+							{/each}
+							{#if cell.materializeError}
+								<pre
+									class="font-mono text-xs whitespace-pre-wrap text-destructive">{cell.materializeError}</pre>
+							{/if}
+							{#if onFixWithAI}
+								<button
+									class="mt-1 flex w-full items-center justify-center gap-1 rounded border border-primary bg-primary/10 px-2 py-1 text-2xs font-medium text-primary transition-colors hover:bg-primary/20"
+									onclick={() =>
+										onFixWithAI!(
+											cell.errors[0]?.display ??
+												cell.errors[0]?.reason ??
+												cell.materializeError ??
+												'unknown error'
+										)}
+								>
+									<BrainCircuit class="h-3 w-3" />
+									Fix with AI
+								</button>
+							{/if}
+						</div>
+					{/snippet}
+				</CellStatusChip>
 			{/if}
 		{/if}
 	</div>
@@ -300,7 +304,7 @@
 		font-weight: 600;
 		color: var(--muted-foreground);
 		cursor: pointer;
-		transition: color 0.12s ease;
+		transition: color var(--motion-fast) var(--motion-ease-out);
 	}
 	.mode-tab:hover {
 		color: var(--foreground);

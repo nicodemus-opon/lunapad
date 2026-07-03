@@ -42,6 +42,14 @@
 	let lastEmitted: PMDocJSON | null = null;
 	let emitTimer: ReturnType<typeof setTimeout> | null = null;
 	let initError = $state<string | null>(null);
+	// While the user is actively editing prose we must never call setContent():
+	// it rebuilds the whole document and resets the caret to the top, which
+	// splits text mid-typing (e.g. a markdown "# " heading followed by its title
+	// landing in a separate paragraph). Defer any store→document reconciliation
+	// until the editor loses focus.
+	let editorFocused = false;
+	let pendingReconcile = false;
+	let latestCells: Cell[] = cells;
 
 	let slashOpen = $state(false);
 	let slashItems = $state<SlashCommand[]>([]);
@@ -173,6 +181,32 @@
 		emitTimer = setTimeout(() => emitNow(ed), 150);
 	}
 
+	/** Rebuild the editor document from the given cells when it has genuinely
+	 * diverged from what we last emitted. Preserves the caret where possible so
+	 * a reconciliation never yanks the cursor to the top of the document. */
+	function reconcileFromCells(c: Cell[]) {
+		const ed = editor;
+		if (!ed) return;
+		const pmDoc = cellsToPmDocument(c);
+		const serialized = JSON.stringify(pmDoc);
+		if (lastEmitted && JSON.stringify(lastEmitted) === serialized) return;
+		lastEmitted = pmDoc;
+		const prevAnchor = ed.state.selection.anchor;
+		const hadFocus = ed.view.hasFocus();
+		ed.commands.setContent(pmDoc, { emitUpdate: false });
+		// Restore the caret to (approximately) where it was; setContent otherwise
+		// collapses the selection to the document start.
+		const size = ed.state.doc.content.size;
+		const pos = Math.max(0, Math.min(prevAnchor, size));
+		try {
+			ed.chain().setTextSelection(pos).run();
+			if (hadFocus) ed.commands.focus();
+		} catch {
+			/* position no longer resolvable — leave default selection */
+		}
+		bubbleVisible = false;
+	}
+
 	function positionSlashMenu(ed: TipTapEditor) {
 		const coords = ed.view.coordsAtPos(ed.state.selection.from);
 		slashMenuPos = clampMenuPosition(
@@ -284,7 +318,26 @@
 							'notion-surface notebook-document-surface markdown-surface prose markdown-body min-h-28 w-full px-0 pt-1 pb-24 focus:outline-none'
 					}
 				},
-				onUpdate: ({ editor: e }) => scheduleEmit(e)
+				onUpdate: ({ editor: e }) => scheduleEmit(e),
+				onFocus: () => {
+					editorFocused = true;
+				},
+				onBlur: ({ editor: e }) => {
+					editorFocused = false;
+					// Flush any debounced edit BEFORE reconciling so blurring quickly
+					// (e.g. clicking a button right after typing) never reverts the
+					// last keystrokes to the pre-debounce store snapshot.
+					if (emitTimer) {
+						clearTimeout(emitTimer);
+						emitTimer = null;
+						emitNow(e);
+					}
+					if (pendingReconcile) {
+						pendingReconcile = false;
+						const current = getNotebooks().find((n) => n.id === notebookId)?.cells ?? latestCells;
+						reconcileFromCells(current);
+					}
+				}
 			});
 
 			dragGutter.querySelector('.notion-plus-btn')?.addEventListener('mousedown', (e) => {
@@ -394,12 +447,15 @@
 		void notebookId;
 		untrack(() => {
 			if (!editor) return;
-			const pmDoc = cellsToPmDocument(c);
-			const serialized = JSON.stringify(pmDoc);
-			if (lastEmitted && JSON.stringify(lastEmitted) === serialized) return;
-			lastEmitted = pmDoc;
-			editor.commands.setContent(pmDoc, { emitUpdate: false });
-			bubbleVisible = false;
+			latestCells = c;
+			// Never rebuild the document out from under an active editing session —
+			// that resets the caret and splits text the user is in the middle of
+			// typing. Defer until blur (see onBlur handler above).
+			if (editorFocused) {
+				pendingReconcile = true;
+				return;
+			}
+			reconcileFromCells(c);
 		});
 	});
 </script>
@@ -410,7 +466,7 @@
 	onpointerdown={onContainerPointerDown}
 >
 	{#if initError}
-		<div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+		<div class="rounded-md border border-destructive bg-destructive/10 p-3 text-xs text-destructive">
 			Document editor failed: {initError}
 		</div>
 	{/if}

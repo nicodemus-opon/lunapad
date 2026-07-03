@@ -136,7 +136,7 @@
 	>
 		<div class="flex min-w-0 items-center gap-2">
 			<span class="truncate font-mono text-2xs text-muted-foreground/80">{name}</span>
-			<span class="hidden text-2xs text-muted-foreground/60 tabular-nums sm:inline">
+			<span class="hidden font-mono text-2xs text-muted-foreground/60 tabular-nums sm:inline">
 				{rows.length.toLocaleString()} rows
 			</span>
 		</div>
@@ -149,7 +149,7 @@
 						class="pointer-events-none absolute left-2 h-3 w-3 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
 					/>
 					<input
-						class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-150 ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border/70 focus:bg-background motion-reduce:transition-none"
+						class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border focus:bg-background motion-reduce:transition-none"
 						type="text"
 						placeholder="Search"
 						aria-label="Search table"
@@ -158,7 +158,7 @@
 					{#if tableSearch.trim()}
 						<button
 							type="button"
-							class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+							class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
 							onclick={() => (tableSearch = '')}
 							aria-label="Clear search"
 							title="Clear search"
@@ -169,13 +169,13 @@
 				</label>
 			{/if}
 			{#if executionMs != null}
-				<span class="text-2xs text-muted-foreground tabular-nums" title="Query execution time"
+				<span class="font-mono text-2xs text-muted-foreground tabular-nums" title="Query execution time"
 					>{fmtMs(executionMs)}</span
 				>
 			{/if}
 			{#if viewMode === 'chart' && activeConfig && !compact}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-colors {showConfigPanel
+					class="flex h-6 w-6 items-center justify-center rounded transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showConfigPanel
 						? 'bg-primary/15 text-primary'
 						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 					title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
@@ -203,7 +203,7 @@
 			<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
 				{#if showConfigPanel}
 					<div
-						class="w-52 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/10 px-3 py-3"
+						class="w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 					</div>
@@ -217,7 +217,7 @@
 			<div class="flex overflow-hidden rounded-sm">
 				{#if showConfigPanel}
 					<div
-						class="w-52 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/10 px-3 py-3"
+						class="w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 					</div>

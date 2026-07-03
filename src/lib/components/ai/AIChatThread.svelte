@@ -67,7 +67,7 @@
 			<div class="mt-1 flex flex-wrap justify-center gap-2">
 				{#each suggestions as suggestion}
 					<button
-						class="rounded-full border border-border/50 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+						class="rounded-full border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 						onclick={() => setPendingSuggestion(suggestion)}
 						data-testid="ai-empty-suggestion"
 					>

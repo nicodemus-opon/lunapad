@@ -123,7 +123,7 @@
 		background: color-mix(in oklab, var(--card) 88%, transparent);
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
-		border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		box-shadow: var(--shadow-sm);
 		padding: 0.3rem 0.4rem 0.3rem 0.6rem;
@@ -194,11 +194,11 @@
 		color: var(--destructive);
 	}
 	.preset-chip {
-		border-color: color-mix(in oklab, var(--border) 70%, transparent);
+		border-color: var(--border);
 	}
 	.preset-chip:hover {
 		background: color-mix(in oklab, var(--primary) 10%, transparent);
-		border-color: color-mix(in oklab, var(--primary) 30%, transparent);
+		border-color: var(--primary);
 		color: var(--foreground);
 	}
 	.active-chips {
@@ -217,7 +217,7 @@
 		padding: 0.22rem 0.3rem 0.22rem 0.45rem;
 		border-radius: var(--radius-sm);
 		background: color-mix(in oklab, var(--primary) 10%, transparent);
-		border: 1px solid color-mix(in oklab, var(--primary) 30%, transparent);
+		border: 1px solid var(--primary);
 		color: var(--foreground);
 	}
 	.active-chip-label {

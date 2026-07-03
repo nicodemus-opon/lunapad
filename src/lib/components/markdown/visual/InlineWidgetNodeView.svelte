@@ -39,12 +39,14 @@
 		serializeMarkdocTag(tagName, attrs, { selfClosing, body: '' })
 	);
 
+	const isElseDivider = $derived(tagName === 'else');
+
 	// Resolve against live store cells so widget data tracks upstream results and
 	// filter changes exactly like the report renderer (the node view mounts us
 	// once, so a static `cells` snapshot would go stale).
 	const liveCells = $derived(getAllCellsAcrossNotebooks());
-	const rendered = $derived(renderMarkdocCell(source, liveCells));
-	const hasErrors = $derived(rendered.errors.length > 0);
+	const rendered = $derived(isElseDivider ? null : renderMarkdocCell(source, liveCells));
+	const hasErrors = $derived((rendered?.errors.length ?? 0) > 0);
 
 	function setAttr(key: string, value: unknown) {
 		onPatch({ attrs: { [key]: value } });
@@ -120,18 +122,26 @@
 
 	{#if hasErrors}
 		<div class="md-panel mb-1 text-2xs text-warning">
-			{rendered.errors[0]}
+			{rendered?.errors[0]}
 		</div>
 	{/if}
 
-	<div class="iw-preview">
-		<MarkdocRenderer
-			content={rendered.tree}
-			errors={[]}
-			{notebookId}
-			headingSlugPrefix=""
-		/>
-	</div>
+	{#if isElseDivider}
+		<div class="md-else-divider flex items-center gap-2 py-1 text-2xs text-muted-foreground">
+			<span class="h-px flex-1 bg-border/70"></span>
+			<span class="font-medium uppercase tracking-wide">Otherwise</span>
+			<span class="h-px flex-1 bg-border/70"></span>
+		</div>
+	{:else}
+		<div class="iw-preview">
+			<MarkdocRenderer
+				content={rendered!.tree}
+				errors={[]}
+				{notebookId}
+				headingSlugPrefix=""
+			/>
+		</div>
+	{/if}
 
 	{#if selected && chips.length}
 		<div class="iw-chips mt-1 flex flex-wrap gap-1 px-1 pb-1">

@@ -14,6 +14,7 @@
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
 	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
 	import { Loader2, Minimize2, Play, X } from '@lucide/svelte';
+	import CellStatusChip from '$lib/components/cell/CellStatusChip.svelte';
 
 	let {
 		cell,
@@ -72,19 +73,23 @@
 			{cell.outputName || `cell ${index + 1}`}
 		</span>
 		{#if connectionName}
-			<span class="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
-				{connectionName}
-			</span>
+			<CellStatusChip tone="neutral" class="font-mono" ariaLabel="Connection: {connectionName}">
+				{#snippet label()}
+					{connectionName}
+				{/snippet}
+			</CellStatusChip>
 		{:else if isQueryCell}
-			<span class="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
-				DuckDB
-			</span>
+			<CellStatusChip tone="neutral" class="font-mono" ariaLabel="Connection: DuckDB">
+				{#snippet label()}
+					DuckDB
+				{/snippet}
+			</CellStatusChip>
 		{/if}
 		<div class="flex-1"></div>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="flex h-7 w-7 items-center justify-center rounded border border-border/60 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+					class="flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					onclick={run}
 					disabled={running}
 					aria-label="Run cell"
@@ -100,7 +105,7 @@
 		</Tooltip.Root>
 		{#if running}
 			<button
-				class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+				class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 				onclick={() => cancelCell(cell.id)}
 				aria-label="Cancel run"
 			>
@@ -110,7 +115,7 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<button
-					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					onclick={exitWorksheet}
 					aria-label="Exit worksheet view"
 				>
@@ -121,21 +126,23 @@
 		</Tooltip.Root>
 	</div>
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-		<NotebookCell
-			worksheet
-			{cell}
-			{index}
-			isFirst={true}
-			isLast={true}
-			{dark}
-			{prevCellSources}
-			{notebookId}
-			{autoRun}
-			{onShareWithAI}
-			{onFixWithAI}
-			{onContinueWithAI}
-			{onOpenResultTab}
-			{collabEnabled}
-		/>
+		{#key cell.id}
+			<NotebookCell
+				worksheet
+				{cell}
+				{index}
+				isFirst={true}
+				isLast={true}
+				{dark}
+				{prevCellSources}
+				{notebookId}
+				{autoRun}
+				{onShareWithAI}
+				{onFixWithAI}
+				{onContinueWithAI}
+				{onOpenResultTab}
+				{collabEnabled}
+			/>
+		{/key}
 	</div>
 </div>

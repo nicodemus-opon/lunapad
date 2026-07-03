@@ -59,8 +59,8 @@
 
 	const commentBtnClass = $derived(
 		commentsAlwaysVisible
-			? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
-			: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'
+			? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
+			: 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground'
 	);
 </script>
 
@@ -73,14 +73,14 @@
 					revealed
 						? 'opacity-100'
 						: 'pointer-events-none opacity-0'} {justSucceeded
-						? 'run-btn-success-pulse border-success/30 bg-success/10 text-success'
+						? 'run-btn-success-pulse border-success bg-success/10 text-success'
 						: stalePulsing
-							? 'run-btn-stale-pulse border-warning/30 bg-warning/10 text-warning'
+							? 'run-btn-stale-pulse border-warning bg-warning/10 text-warning'
 							: needsRun && !running
-								? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/20'
+								? 'border-warning bg-warning/10 text-warning hover:bg-warning/20'
 								: status === 'error' && !running
-									? 'border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
-									: 'border-transparent text-muted-foreground hover:border-border/40 hover:bg-muted/60 hover:text-foreground'}"
+									? 'border-destructive bg-destructive/10 text-destructive hover:bg-destructive/20'
+									: 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground'}"
 					aria-label={running ? 'Cancel run' : 'Run cell'}
 					onclick={() => (running ? onCancel() : onRun())}
 					onmouseenter={() => (runHovered = true)}
@@ -95,7 +95,7 @@
 					{:else if status === 'error' && !runHovered}
 						<XCircle class="h-3.5 w-3.5" />
 					{:else}
-						<Play class="h-3 w-3 fill-current" />
+						<Play class="h-3.5 w-3.5 fill-current" />
 					{/if}
 				</button>
 			</Tooltip.Trigger>
@@ -117,7 +117,7 @@
 					aria-label={commentCount > 0 ? `${commentCount} open threads` : 'Add comment'}
 					onclick={() => onComments()}
 				>
-					<MessageSquare class="h-3 w-3" />
+					<MessageSquare class="h-3.5 w-3.5" />
 					{#if commentCount > 0}
 						<span
 							class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar"

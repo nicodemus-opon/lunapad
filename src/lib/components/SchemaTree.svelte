@@ -92,7 +92,7 @@
 <aside class="flex h-full flex-col overflow-hidden border-r bg-sidebar">
 	<!-- Header -->
 	{#if showHeader}
-		<div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-border/30 px-2">
+		<div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
 			<Table2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			<span class="text-2xs font-medium text-muted-foreground">Tables</span>
 		</div>
@@ -186,7 +186,7 @@
 
 	<!-- Footer hint -->
 	{#if showFooter}
-		<div class="shrink-0 border-t border-border/30 px-3 py-2">
+		<div class="shrink-0 border-t border-border px-3 py-2">
 			<p class="text-2xs leading-relaxed text-muted-foreground/60">Right-click for options</p>
 		</div>
 	{/if}

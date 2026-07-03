@@ -106,10 +106,10 @@
   Schema column only shown when multiple schemas are available.
 -->
 <div
-	class="stage-chip group/from inline-flex h-6 shrink-0 items-center overflow-visible rounded border font-mono text-xs transition-colors duration-150
+	class="stage-chip group/from inline-flex h-6 shrink-0 items-center overflow-visible rounded border font-mono text-xs transition-colors duration-(--motion-fast)
 		{stage.table
-		? 'border-border/60 bg-background'
-		: 'border-dashed border-border/70 text-muted-foreground'}"
+		? 'border-border bg-background'
+		: 'border-dashed border-border text-muted-foreground'}"
 >
 	{#if stage.alias}
 		<ChipInput
@@ -148,7 +148,7 @@
 	<!-- Alias toggle (hover-only, for when alias isn't set) -->
 	{#if !stage.alias}
 		<button
-			class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/from:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
+			class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-(--motion-fast) group-hover/from:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 			onclick={() => onUpdate({ ...stage, alias: stage.table?.slice(0, 1) || 't' })}
 			title="Add alias">≡</button
 		>

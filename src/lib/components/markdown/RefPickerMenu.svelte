@@ -78,11 +78,11 @@
 		font-size: 0.7rem;
 		color: var(--muted-foreground);
 		background: color-mix(in oklch, currentColor 5%, transparent);
-		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		border: 1px solid var(--border);
 		cursor: pointer;
 		transition:
-			color 130ms cubic-bezier(0.16, 1, 0.3, 1),
-			background-color 130ms cubic-bezier(0.16, 1, 0.3, 1);
+			color var(--motion-fast) var(--motion-ease-out),
+			background-color var(--motion-fast) var(--motion-ease-out);
 	}
 	:global(.md-refpicker-trigger:hover) {
 		color: var(--foreground);

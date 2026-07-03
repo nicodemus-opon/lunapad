@@ -24,7 +24,7 @@
 		type="search"
 		placeholder="Search columns…"
 		bind:value={query}
-		class="h-7 w-full rounded-md border border-border/60 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+		class="h-7 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 	/>
 	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
 		{#each filtered as profile (profile.column)}

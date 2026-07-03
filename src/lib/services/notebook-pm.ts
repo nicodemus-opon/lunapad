@@ -81,6 +81,17 @@ export function cellsToPmDocument(cells: Cell[]): PMDocJSON {
 		content.push({ type: 'paragraph' });
 	}
 
+	// Symmetric leading affordance: if the document *starts* with an atom block
+	// (e.g. a fresh notebook whose first cell is a query block), there is no prose
+	// line above it, so the caret has nowhere to land and the user cannot add a
+	// title/intro above the first block. Prepend an editable paragraph. Like the
+	// trailing line, pmDocumentToBlocks strips boundary empty paragraphs so it
+	// never persists as a spurious leading cell.
+	const first = content[0];
+	if (first && ATOM_TYPES.has(first.type)) {
+		content.unshift({ type: 'paragraph' });
+	}
+
 	return { type: 'doc', content };
 }
 
@@ -137,10 +148,15 @@ export function pmDocumentToBlocks(doc: PMDocJSON): NotebookPmBlock[] {
 	// Drop leading/trailing empty markdown runs. These are almost always the
 	// view-only affordance line(s) (see cellsToPmDocument), not content the user
 	// authored; persisting them as empty cells would grow the notebook on every sync.
-	const isEmptyMd = (b: NotebookPmBlock | undefined) =>
-		!!b && b.kind === 'markdown' && !b.markdown.trim();
-	while (isEmptyMd(blocks[0])) blocks.shift();
-	while (isEmptyMd(blocks[blocks.length - 1])) blocks.pop();
+	const isAffordanceMd = (b: NotebookPmBlock | undefined) => {
+		if (!b || b.kind !== 'markdown') return false;
+		const t = b.markdown.trim();
+		// Leading/trailing view affordance lines, or a lone "/" left when a slash
+		// menu was opened then dismissed without picking a command.
+		return !t || t === '/';
+	};
+	while (isAffordanceMd(blocks[0])) blocks.shift();
+	while (isAffordanceMd(blocks[blocks.length - 1])) blocks.pop();
 
 	return blocks;
 }

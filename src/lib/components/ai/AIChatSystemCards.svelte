@@ -34,7 +34,7 @@
 	>
 		{#if planProposal}
 			<div
-				class="rounded-lg border border-primary/30 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm"
+				class="rounded-lg border border-primary bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm"
 				data-testid="ai-plan-proposal"
 			>
 				<div class="mb-1.5 text-xs font-medium text-primary">Build this?</div>
@@ -71,7 +71,7 @@
 
 		{#if sprintPlanPending}
 			<div
-				class="rounded-lg border border-primary/30 bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm"
+				class="rounded-lg border border-primary bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm"
 				data-testid="ai-sprint-plan-gate"
 			>
 				<div class="mb-2 text-xs font-medium text-foreground">
@@ -82,7 +82,7 @@
 						{@const style = SPRINT_TASK_STYLE[task.type]}
 						{@const TypeIcon = style.icon}
 						<li
-							class="flex items-start gap-2 rounded border border-border/40 bg-muted/30 px-2 py-1.5"
+							class="flex items-start gap-2 rounded border border-border bg-muted/30 px-2 py-1.5"
 							data-testid="ai-sprint-plan-task"
 						>
 							<span
@@ -113,7 +113,7 @@
 					bind:value={sprintFeedback}
 					placeholder="Request changes to the plan… or click Start Building"
 					rows={2}
-					class="mb-2 w-full resize-none rounded border border-border/50 bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/60"
+					class="mb-2 w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary"
 				></textarea>
 				<div class="flex items-center justify-end gap-2">
 					<button
@@ -139,7 +139,7 @@
 
 		{#if confirmationRequest}
 			<div
-				class="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 shadow-sm backdrop-blur-sm"
+				class="flex items-center justify-between rounded-lg border border-warning bg-warning/10 px-3 py-2 shadow-sm backdrop-blur-sm"
 				data-testid="ai-confirm-bar"
 			>
 				<span class="text-xs text-warning">
@@ -164,7 +164,7 @@
 
 		{#if undoAvailable}
 			<div
-				class="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 shadow-sm backdrop-blur-sm"
+				class="flex items-center justify-between rounded-lg border border-primary bg-primary/10 px-3 py-2 shadow-sm backdrop-blur-sm"
 				data-testid="ai-undo-bar"
 			>
 				<span class="text-xs text-primary/80">AI changes applied</span>

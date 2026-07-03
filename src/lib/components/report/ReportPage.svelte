@@ -368,14 +368,14 @@
 		padding: 0;
 	}
 	.report-markdown :global(blockquote) {
-		border-left: 2px solid color-mix(in oklch, currentColor 30%, transparent);
+		border-left: 2px solid var(--border);
 		margin: 0 0 0.75rem;
 		padding-left: 1rem;
 		opacity: 0.8;
 	}
 	.report-markdown :global(hr) {
 		border: none;
-		border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
+		border-top: 1px solid var(--border);
 		margin: 1.25rem 0;
 	}
 	.report-markdown :global(a) {
@@ -395,7 +395,7 @@
 	.report-markdown :global(th),
 	.report-markdown :global(td) {
 		padding: 0.4rem 0.7rem;
-		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
+		border: 1px solid var(--border);
 		text-align: left;
 	}
 	.report-markdown :global(th) {

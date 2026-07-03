@@ -673,7 +673,7 @@
 				<button
 					class="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-2xs hover:bg-accent {editingId ===
 					connection.id
-						? 'border-primary/60 bg-accent'
+						? 'border-primary bg-accent'
 						: ''}"
 					onclick={() => editConnection(connection)}
 				>

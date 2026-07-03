@@ -172,7 +172,7 @@
 						{/if}
 					</p>
 					<button
-						class="inline-flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
+						class="inline-flex items-center gap-1 rounded border border-warning bg-warning/10 px-2 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
 						onclick={() => runCell(cell.id)}
 					>
 						<Play class="h-2.5 w-2.5 fill-current" />
@@ -316,12 +316,15 @@
 	{/if}
 
 	{#if connectionName}
-		<span
-			class="inline-flex h-5 shrink-0 items-center rounded border border-border/70 px-1.5 font-mono text-2xs text-muted-foreground"
-			title="This cell runs on {connectionName}"
+		<CellStatusChip
+			tone="neutral"
+			class="font-mono"
+			ariaLabel="This cell runs on {connectionName}"
 		>
-			{connectionName}
-		</span>
+			{#snippet label()}
+				{connectionName}
+			{/snippet}
+		</CellStatusChip>
 	{/if}
 
 	{#if onOpenFull}

@@ -46,10 +46,11 @@ export function buildMarkdocVariables(cells: Cell[]): Record<string, unknown> {
 	const vars: Record<string, unknown> = {};
 	for (const cell of cells) {
 		if (cell.cellType !== 'query' || !cell.result) continue;
-		const { rows, columns } = cell.result;
+		const { rows, columns, totalRowCount, truncated } = cell.result;
+		const count = totalRowCount ?? rows.length;
 		vars[cell.outputName] = {
-			count: rows.length,
-			rowCount: rows.length,
+			count,
+			rowCount: count,
 			columns: columns.join(', '),
 			rows,
 			chartConfig: cell.resultChartConfig ?? null,

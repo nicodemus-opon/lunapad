@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSalesAnalyticsDemo } from '../demo/sales-analytics-demo';
+import { WIDGET_SNIPPETS } from './markdown-format';
+import { pmContentFromSnippet } from '../components/markdown/visual/slash-command-extension';
 import {
 	markdownToPmDocument,
 	pmDocumentToMarkdown,
@@ -13,6 +15,33 @@ function collectNodeTypes(node: PMNodeJSON): string[] {
 	const types = [node.type];
 	for (const child of node.content ?? []) types.push(...collectNodeTypes(child));
 	return types;
+}
+
+function findContainer(node: PMNodeJSON | undefined, tagName: string): PMNodeJSON | null {
+	if (!node) return null;
+	if (node.type === 'markdocContainer' && node.attrs?.tagName === tagName) return node;
+	for (const child of node.content ?? []) {
+		const found = findContainer(child, tagName);
+		if (found) return found;
+	}
+	return null;
+}
+
+function hasRawMarkdocInParagraphs(node: PMNodeJSON): boolean {
+	if (node.type === 'paragraph') {
+		const text = (node.content ?? []).map((c) => c.text ?? '').join('');
+		if (text.includes('{%')) return true;
+	}
+	return (node.content ?? []).some(hasRawMarkdocInParagraphs);
+}
+
+function parseAttrsJson(raw: unknown): Record<string, unknown> {
+	if (typeof raw !== 'string' || !raw.trim()) return {};
+	try {
+		return JSON.parse(raw) as Record<string, unknown>;
+	} catch {
+		return {};
+	}
 }
 
 const SAMPLE = `## Revenue dashboard
@@ -168,7 +197,8 @@ describe('markdoc-pm', () => {
 	});
 
 	it('preserves surrounding whitespace around inline expressions', () => {
-		const md = 'The dataset contains {% $orders.count %} orders totaling {% currency($rev.total) %} now.';
+		const md =
+			'The dataset contains {% $orders.count %} orders totaling {% currency($rev.total) %} now.';
 		const rt = roundTrip(md);
 		expect(rt).toContain('contains {% $orders.count %} orders');
 		expect(rt).toContain('totaling {% currency($rev.total) %} now.');
@@ -179,6 +209,23 @@ describe('markdoc-pm', () => {
 		const rt = roundTrip(md);
 		expect(rt).toContain('**{% $orders.count %}**');
 		expect(rt).toContain('contains **{% $orders.count %}** orders');
+	});
+
+	it('does not leak a slash after bold-wrapped currency expressions', () => {
+		const md =
+			'The dataset contains **{% $orders.count %}** orders totaling **{% currency($monthly_revenue.total_revenue) %}** in the latest month.';
+		const rt = roundTrip(md);
+		expect(rt).not.toContain('month./');
+		expect(rt).toContain('in the latest month.');
+	});
+
+	it('does not leak slash from self-closing widget into following prose', () => {
+		const md = `{% badge value="Live dashboard" color="success" /%}
+
+The dataset contains **{% $orders.count %}** orders totaling **{% currency($monthly_revenue.total_revenue) %}** in the latest month.`;
+		const rt = roundTrip(md);
+		expect(rt).not.toContain('month./');
+		expect(rt).toContain('in the latest month.');
 	});
 
 	it('round-trips details containers', () => {
@@ -198,6 +245,30 @@ describe('markdoc-pm', () => {
 	it('round-trips grid with cols attribute', () => {
 		const md = '{% grid cols=4 %}\n{% metric value=1 label="KPI" /%}\n{% /grid %}';
 		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips a plain GFM table into table nodes', () => {
+		const md = '| Name | Age |\n| --- | --- |\n| Bob | 30 |\n| Sue | 25 |';
+		const { doc } = markdownToPmDocument(md);
+		expect(collectNodeTypes(doc as unknown as PMNodeJSON)).toContain('table');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips a table nested inside a container', () => {
+		const md = '{% callout type="info" %}\n| A | B |\n| --- | --- |\n| 1 | 2 |\n{% /callout %}';
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('preserves inline marks and expressions inside table cells', () => {
+		const md = '| Metric | Value |\n| --- | --- |\n| **Total** | {% $cell.total %} |';
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('does not mistake a horizontal rule for a table delimiter', () => {
+		const md = 'Above.\n\n---\n\nBelow.';
+		const types = collectNodeTypes(markdownToPmDocument(md).doc as unknown as PMNodeJSON);
+		expect(types).toContain('horizontalRule');
+		expect(types).not.toContain('table');
 	});
 
 	it('serializes bubble-toolbar marks without throwing', () => {
@@ -226,5 +297,186 @@ describe('markdoc-pm', () => {
 		const { doc } = markdownToPmDocument('');
 		expect(doc.type).toBe('doc');
 		expect(doc.content?.length).toBeGreaterThan(0);
+	});
+
+	it('preserves if condition in container attrsJson on load', () => {
+		const md = '{% if gt($o.count, 0) %}\nHas rows\n{% /if %}';
+		const { doc } = markdownToPmDocument(md);
+		const container = findContainer({ type: 'doc', content: doc.content }, 'if');
+		expect(container).not.toBeNull();
+		const attrs = parseAttrsJson(container!.attrs?.attrsJson);
+		expect(attrs.condition).toBe('gt($o.count, 0)');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips if with variable condition and else branch', () => {
+		const md = '{% if $x %}\nyes\n{% else /%}\nno\n{% /if %}';
+		const { doc } = markdownToPmDocument(md);
+		const container = findContainer({ type: 'doc', content: doc.content }, 'if');
+		expect(parseAttrsJson(container!.attrs?.attrsJson).condition).toBe('$x');
+		const types = (container!.content ?? []).map((n) => n.type);
+		expect(types).toContain('markdocWidget');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips grid with multiple metric children', () => {
+		const md = `{% grid cols=3 %}
+{% metric value=1 label="A" /%}
+{% metric value=2 label="B" /%}
+{% metric value=3 label="C" /%}
+{% /grid %}`;
+		const { doc } = markdownToPmDocument(md);
+		const grid = findContainer({ type: 'doc', content: doc.content }, 'grid');
+		const widgets = (grid?.content ?? []).filter((n) => n.type === 'markdocWidget');
+		expect(widgets.length).toBe(3);
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips columns with multiple column children', () => {
+		const md = `{% columns %}
+{% column %}
+Left
+{% /column %}
+{% column width="40%" %}
+Right
+{% /column %}
+{% /columns %}`;
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+		const { doc } = markdownToPmDocument(md);
+		const columns = findContainer({ type: 'doc', content: doc.content }, 'columns');
+		const columnNodes = (columns?.content ?? []).filter(
+			(n) => n.type === 'markdocContainer' && n.attrs?.tagName === 'column'
+		);
+		expect(columnNodes.length).toBe(2);
+	});
+
+	it('round-trips each and group containers', () => {
+		const eachMd = '{% each data=$items %}\nItem\n{% /each %}';
+		const groupMd =
+			'{% group data=$o.rows by="region" order=["North","South"] %}\nBody\n{% /group %}';
+		expect(normalizeMarkdocMarkdown(roundTrip(eachMd))).toBe(normalizeMarkdocMarkdown(eachMd));
+		expect(normalizeMarkdocMarkdown(roundTrip(groupMd))).toBe(normalizeMarkdocMarkdown(groupMd));
+	});
+
+	it('round-trips nested containers', () => {
+		const md = `{% grid cols=2 %}
+{% card title="KPI" %}
+Intro text
+{% /card %}
+{% /grid %}`;
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('round-trips all leaf widgets', () => {
+		const widgets = [
+			'{% metric value=1 label="One" /%}',
+			'{% chart type="bar" data=$o.rows x="a" y="b" /%}',
+			'{% datatable data=$o.rows limit=10 /%}',
+			'{% badge value="ok" color="success" /%}',
+			'{% progress value=50 max=100 label="Half" color="warning" /%}',
+			'{% filter param="region" kind="dropdown" label="Region" /%}'
+		];
+		for (const w of widgets) {
+			expect(normalizeMarkdocMarkdown(roundTrip(w))).toBe(normalizeMarkdocMarkdown(w));
+		}
+	});
+
+	it('pmContentFromSnippet builds structured nodes for container snippets (no raw markdoc text)', () => {
+		const snippets = [
+			WIDGET_SNIPPETS.grid,
+			WIDGET_SNIPPETS.columns,
+			WIDGET_SNIPPETS.tabs,
+			WIDGET_SNIPPETS.details,
+			WIDGET_SNIPPETS.conditional,
+			WIDGET_SNIPPETS.callout,
+			WIDGET_SNIPPETS.card
+		];
+		for (const snippet of snippets) {
+			const fromSnippet = pmContentFromSnippet(snippet);
+			const fromLoad = markdownToPmDocument(snippet.trim()).doc.content ?? [];
+			expect(fromSnippet).toEqual(fromLoad);
+			const root = fromSnippet[0];
+			expect(root).toBeDefined();
+			expect(hasRawMarkdocInParagraphs(root!)).toBe(false);
+		}
+	});
+
+	it('strips trailing slash affordance paragraphs when serializing PM state', () => {
+		const md = pmDocumentToMarkdown({
+			frontmatter: '',
+			doc: {
+				type: 'doc',
+				content: [
+					{
+						type: 'paragraph',
+						content: [{ type: 'text', text: 'in the latest month.' }]
+					},
+					{ type: 'paragraph', content: [{ type: 'text', text: '/' }] }
+				]
+			}
+		});
+		expect(md).toBe('in the latest month.');
+		expect(md).not.toContain('/');
+	});
+
+	it('strips inline trailing slash from paragraph text when serializing PM state', () => {
+		const md = pmDocumentToMarkdown({
+			frontmatter: '',
+			doc: {
+				type: 'doc',
+				content: [
+					{
+						type: 'paragraph',
+						content: [{ type: 'text', text: 'in the latest month./' }]
+					}
+				]
+			}
+		});
+		expect(md).toBe('in the latest month.');
+	});
+
+	it('strips a lone slash affordance paragraph in the middle of the document', () => {
+		const md = pmDocumentToMarkdown({
+			frontmatter: '',
+			doc: {
+				type: 'doc',
+				content: [
+					{ type: 'paragraph', content: [{ type: 'text', text: 'Before.' }] },
+					{ type: 'paragraph', content: [{ type: 'text', text: '/' }] },
+					{ type: 'paragraph', content: [{ type: 'text', text: 'After.' }] }
+				]
+			}
+		});
+		expect(md).toBe('Before.\n\nAfter.');
+	});
+
+	it('strips leading slash from slash-menu filter text in list items', () => {
+		const md = pmDocumentToMarkdown({
+			frontmatter: '',
+			doc: {
+				type: 'doc',
+				content: [
+					{
+						type: 'bulletList',
+						content: [
+							{
+								type: 'listItem',
+								content: [
+									{
+										type: 'paragraph',
+										content: [{ type: 'text', text: '/item one' }]
+									}
+								]
+							},
+							{
+								type: 'listItem',
+								content: [{ type: 'paragraph' }]
+							}
+						]
+					}
+				]
+			}
+		});
+		expect(md).toBe('* item one');
 	});
 });

@@ -249,8 +249,8 @@
 					{dragOver
 					? 'border-primary bg-primary/10 text-foreground shadow-[inset_0_0_0_3px_oklch(from_var(--primary)_l_c_h/0.08)]'
 					: file
-						? 'border-border/70 bg-muted/15 text-foreground hover:border-primary/50'
-						: 'surface-inset border-border/50 text-muted-foreground hover:border-primary/40 hover:bg-muted/15'}"
+						? 'border-border bg-muted/15 text-foreground hover:border-primary'
+						: 'surface-inset border-border text-muted-foreground hover:border-primary hover:bg-muted/15'}"
 				ondragover={(e) => {
 					e.preventDefault();
 					dragOver = true;
@@ -379,7 +379,7 @@
 					</div>
 				{:else if parseError}
 					<div
-						class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+						class="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
 					>
 						<AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						{parseError}
@@ -394,9 +394,9 @@
 								>{rowCount.toLocaleString()} rows · {previewColumns.length} columns</span
 							>
 						</div>
-						<div class="overflow-x-auto rounded-md border border-border/60">
+						<div class="overflow-x-auto rounded-md border border-border">
 							<table class="w-full text-2xs">
-								<thead class="border-b border-border/60 bg-muted/40">
+								<thead class="border-b border-border bg-muted/40">
 									<tr>
 										{#each previewColumns as col}
 											<th
@@ -427,7 +427,7 @@
 				<!-- Upload error -->
 				{#if uploadError}
 					<div
-						class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+						class="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
 					>
 						<AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						{uploadError}

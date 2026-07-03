@@ -76,8 +76,8 @@
 		color: var(--muted-foreground);
 		cursor: pointer;
 		transition:
-			background-color 0.12s ease,
-			color 0.12s ease;
+			background-color var(--motion-fast) var(--motion-ease-out),
+			color var(--motion-fast) var(--motion-ease-out);
 	}
 	.markdown-mode-btn:hover {
 		color: var(--foreground);

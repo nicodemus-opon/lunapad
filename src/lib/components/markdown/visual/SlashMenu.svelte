@@ -130,7 +130,7 @@
 					class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {idx ===
 					selectedIndex
 						? 'bg-accent text-accent-foreground'
-						: 'hover:bg-muted'}"
+						: 'hover:bg-muted/60'}"
 					onmousedown={(e) => {
 						e.preventDefault();
 						onSelect(cmd);

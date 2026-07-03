@@ -161,7 +161,7 @@
 
 	<!-- Palette panel -->
 	<div
-		class="surface-raised fixed top-[20vh] left-1/2 z-(--z-modal) w-full max-w-md -translate-x-1/2 overflow-hidden rounded-xl border border-border/70 bg-popover text-popover-foreground shadow-xl outline-none"
+		class="surface-raised fixed top-[20vh] left-1/2 z-(--z-modal) w-full max-w-md -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl outline-none"
 		transition:fly={{ y: -8, duration: 220 }}
 		role="dialog"
 		aria-label="Command palette"
@@ -169,7 +169,7 @@
 		onkeydown={onKeydown}
 	>
 		<!-- Search input -->
-		<div class="flex items-center gap-2.5 border-b border-border/40 px-3.5 py-3">
+		<div class="flex items-center gap-2.5 border-b border-border px-3.5 py-3">
 			<Search class="h-4 w-4 shrink-0 text-muted-foreground" />
 			<input
 				bind:this={inputEl}
@@ -178,7 +178,7 @@
 				class="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
 			/>
 			<kbd
-				class="rounded border border-border/40 px-1 py-0.5 font-mono text-2xs text-muted-foreground/50"
+				class="rounded border border-border px-1 py-0.5 font-mono text-2xs text-muted-foreground/50"
 				>esc</kbd
 			>
 		</div>

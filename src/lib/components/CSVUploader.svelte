@@ -96,7 +96,7 @@
 		class="relative flex cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2 transition-colors
 			{dragOver
 			? 'border-primary bg-primary/5'
-			: 'border-border hover:border-primary/60 hover:bg-muted/30'}"
+			: 'border-border hover:border-primary hover:bg-muted/30'}"
 		ondragover={(e) => {
 			e.preventDefault();
 			dragOver = true;

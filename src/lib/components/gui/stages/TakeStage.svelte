@@ -98,7 +98,7 @@
 	{:else}
 		<!-- Limit mode: inline ±  stepper -->
 		<button
-			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
+			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-(--motion-fast) select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={decrement}
 			aria-label="Decrease by 10">−</button
 		>
@@ -130,7 +130,7 @@
 		<span class="pr-1 text-muted-foreground/60 select-none">rows</span>
 
 		<button
-			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
+			class="flex h-full items-center px-1.5 text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-(--motion-fast) select-none group-hover/take:opacity-100 hover:bg-muted/60 hover:text-foreground"
 			onclick={increment}
 			aria-label="Increase by 10">+</button
 		>
@@ -138,7 +138,7 @@
 		<!-- ⋯ opens range/limit toggle -->
 		<Popover.Root>
 			<Popover.Trigger
-				class="flex h-full items-center px-1.5 text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/take:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
+				class="flex h-full items-center px-1.5 text-muted-foreground/50 opacity-0 transition-[opacity,color,background-color] duration-(--motion-fast) group-hover/take:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 				title="Switch to range mode">⋯</Popover.Trigger
 			>
 			<Popover.Content class="w-44 p-3">

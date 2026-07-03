@@ -3,6 +3,7 @@ import { mount, unmount } from 'svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { parseAttrsJson } from './widget-registry';
 import InlineWidgetNodeView from './InlineWidgetNodeView.svelte';
+import { reactiveProps } from './reactive-props.svelte';
 
 export interface MarkdocWidgetExtensionContext {
 	getCells: () => Cell[];
@@ -39,96 +40,82 @@ export const MarkdocWidgetExtension = Node.create({
 			dom.className = 'markdoc-widget-node';
 			dom.contentEditable = 'false';
 
-			let component: ReturnType<typeof mount> | null = null;
-			let tagName = String(node.attrs.tagName ?? 'metric');
-			let attrsJson = String(node.attrs.attrsJson ?? '{}');
-			let selfClosing = Boolean(node.attrs.selfClosing);
-			let isSelected = false;
-
-			const render = () => {
-				if (component) unmount(component);
-				component = mount(InlineWidgetNodeView, {
-					target: dom,
-					props: {
-						tagName,
-						attrs: parseAttrsJson(attrsJson),
-						selfClosing,
-						cells: ctx?.getCells() ?? [],
-						notebookId: ctx?.getNotebookId() ?? '',
-						selected: isSelected,
-						onSelect: () => {
-							const pos = getPos();
-							if (typeof pos === 'number') {
-								editor.chain().focus().setNodeSelection(pos).run();
-							}
-						},
-						onOpenInspector: () => {
-							const pos = getPos();
-							if (typeof pos === 'number') {
-								editor.chain().focus().setNodeSelection(pos).run();
-							}
-						},
-						onDelete: () => {
-							editor.chain().focus().deleteSelection().run();
-						},
-						onPatch: (patch: {
-							tagName?: string;
-							attrs?: Record<string, unknown>;
-							body?: string;
-							source?: string;
-							attrsJson?: string;
-						}) => {
-							const pos = getPos();
-							if (typeof pos !== 'number') return;
-							if (patch.tagName) tagName = patch.tagName;
-							if (patch.attrsJson !== undefined) attrsJson = patch.attrsJson;
-							else if (patch.attrs)
-								attrsJson = JSON.stringify({
-									...parseAttrsJson(attrsJson),
-									...patch.attrs
-								});
-							editor
-								.chain()
-								.focus()
-								.command(({ tr }) => {
-									tr.setNodeMarkup(pos, undefined, {
-										tagName,
-										attrsJson,
-										selfClosing
-									});
-									return true;
-								})
-								.run();
-							render();
-						}
+			// Mounted once with reactive props (mutated in place). Remounting on every
+			// update/select destroys open dropdowns/filter controls mid-interaction.
+			const props = reactiveProps({
+				tagName: String(node.attrs.tagName ?? 'metric'),
+				attrs: parseAttrsJson(String(node.attrs.attrsJson ?? '{}')),
+				selfClosing: Boolean(node.attrs.selfClosing),
+				cells: ctx?.getCells() ?? [],
+				notebookId: ctx?.getNotebookId() ?? '',
+				selected: false,
+				onSelect: () => {
+					const pos = getPos();
+					if (typeof pos === 'number') {
+						editor.chain().focus().setNodeSelection(pos).run();
 					}
-				});
-			};
+				},
+				onOpenInspector: () => {
+					const pos = getPos();
+					if (typeof pos === 'number') {
+						editor.chain().focus().setNodeSelection(pos).run();
+					}
+				},
+				onDelete: () => {
+					editor.chain().focus().deleteSelection().run();
+				},
+				onPatch: (patch: {
+					tagName?: string;
+					attrs?: Record<string, unknown>;
+					body?: string;
+					source?: string;
+					attrsJson?: string;
+				}) => {
+					const pos = getPos();
+					if (typeof pos !== 'number') return;
+					if (patch.tagName) props.tagName = patch.tagName;
+					let attrsJson: string;
+					if (patch.attrsJson !== undefined) attrsJson = patch.attrsJson;
+					else if (patch.attrs) attrsJson = JSON.stringify({ ...props.attrs, ...patch.attrs });
+					else attrsJson = JSON.stringify(props.attrs);
+					props.attrs = parseAttrsJson(attrsJson);
+					editor
+						.chain()
+						.focus()
+						.command(({ tr }) => {
+							tr.setNodeMarkup(pos, undefined, {
+								tagName: props.tagName,
+								attrsJson,
+								selfClosing: props.selfClosing
+							});
+							return true;
+						})
+						.run();
+				}
+			});
 
-			render();
+			const component = mount(InlineWidgetNodeView, { target: dom, props });
 
 			return {
 				dom,
 				update(updatedNode) {
 					if (updatedNode.type.name !== 'markdocWidget') return false;
-					tagName = String(updatedNode.attrs.tagName ?? tagName);
-					attrsJson = String(updatedNode.attrs.attrsJson ?? attrsJson);
-					selfClosing = Boolean(updatedNode.attrs.selfClosing);
-					render();
+					props.tagName = String(updatedNode.attrs.tagName ?? props.tagName);
+					props.attrs = parseAttrsJson(String(updatedNode.attrs.attrsJson ?? '{}'));
+					props.selfClosing = Boolean(updatedNode.attrs.selfClosing);
+					props.cells = ctx?.getCells() ?? [];
 					return true;
 				},
 				destroy() {
-					if (component) unmount(component);
+					unmount(component);
 				},
 				selectNode() {
-					isSelected = true;
+					props.selected = true;
 					dom.classList.add('ProseMirror-selectednode');
-					render();
 				},
 				deselectNode() {
-					isSelected = false;
+					props.selected = false;
 					dom.classList.remove('ProseMirror-selectednode');
-					render();
 				},
 				stopEvent(event) {
 					const target = event.target as HTMLElement;

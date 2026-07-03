@@ -287,19 +287,24 @@ function tiptapNodeJsonToPm(node: PMNodeJSON): PMNodeJSON {
 
 const MARKDOC_EXPR_RE = /\{%\s*[^%]+?\s*%\}/g;
 
-function splitTextWithExpressions(
-	text: string,
-	marks?: PMMarkJSON[]
-): PMNodeJSON[] {
+function splitTextWithExpressions(text: string, marks?: PMMarkJSON[]): PMNodeJSON[] {
 	const nodes: PMNodeJSON[] = [];
 	let last = 0;
 	let match: RegExpExecArray | null;
 	const re = new RegExp(MARKDOC_EXPR_RE.source, 'g');
 	while ((match = re.exec(text)) !== null) {
 		if (match.index > last) {
-			nodes.push({ type: 'text', text: text.slice(last, match.index), ...(marks ? { marks } : {}) });
+			nodes.push({
+				type: 'text',
+				text: text.slice(last, match.index),
+				...(marks ? { marks } : {})
+			});
 		}
-		nodes.push({ type: 'markdocExpression', attrs: { source: match[0] }, ...(marks ? { marks } : {}) });
+		nodes.push({
+			type: 'markdocExpression',
+			attrs: { source: match[0] },
+			...(marks ? { marks } : {})
+		});
 		last = match.index + match[0].length;
 	}
 	if (last < text.length) {
@@ -325,7 +330,9 @@ function injectExpressionsInNodes(nodes: PMNodeJSON[]): PMNodeJSON[] {
 
 const TASK_ITEM_PREFIX_RE = /^\[([ xX])\]\s?(.*)$/s;
 
-function getTaskItemFromListItem(listItem: PMNodeJSON): { checked: boolean; content: PMNodeJSON[] } | null {
+function getTaskItemFromListItem(
+	listItem: PMNodeJSON
+): { checked: boolean; content: PMNodeJSON[] } | null {
 	const para = listItem.content?.[0];
 	if (para?.type !== 'paragraph') return null;
 	const first = para.content?.[0];
@@ -372,14 +379,138 @@ function convertTaskListsInPmNode(node: PMNodeJSON): PMNodeJSON {
 	return { ...node, ...(content ? { content } : {}) };
 }
 
+/** GFM table delimiter row, e.g. `| --- | :--: |`. Requires a pipe so we never
+ * mistake a setext underline or horizontal rule (`---`) for a table. */
+function isTableDelimiterRow(line: string): boolean {
+	const t = line.trim();
+	if (!t.includes('|') || !t.includes('-')) return false;
+	return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(t);
+}
+
+function looksLikeTableRow(line: string): boolean {
+	return line.includes('|');
+}
+
+/** Split a GFM table row into trimmed cell strings, honoring escaped pipes (`\|`)
+ * and optional leading/trailing pipes. */
+function splitTableRow(line: string): string[] {
+	let t = line.trim();
+	if (t.startsWith('|')) t = t.slice(1);
+	if (t.endsWith('|') && !t.endsWith('\\|')) t = t.slice(0, -1);
+	const cells: string[] = [];
+	let cur = '';
+	for (let i = 0; i < t.length; i++) {
+		if (t[i] === '\\' && t[i + 1] === '|') {
+			cur += '|';
+			i++;
+			continue;
+		}
+		if (t[i] === '|') {
+			cells.push(cur);
+			cur = '';
+			continue;
+		}
+		cur += t[i];
+	}
+	cells.push(cur);
+	return cells.map((c) => c.trim());
+}
+
+/** Parse a single line of inline markdown into TipTap inline nodes (keeps marks
+ * like bold/italic/links inside table cells). */
+function parseInlineToNodes(text: string): PMNodeJSON[] {
+	const trimmed = text.trim();
+	if (!trimmed) return [];
+	const parsed = defaultMarkdownParser.parse(trimmed);
+	const first = parsed.content.content[0];
+	if (!first) return [];
+	const json = pmNodeJsonToTiptap(first.toJSON() as PMNodeJSON);
+	return json.content ?? [];
+}
+
+/** Build a TipTap `table` node from GFM table source lines (header, delimiter,
+ * body rows). The first row is emitted as header cells so it round-trips through
+ * the custom table serializer (which always re-adds the delimiter after row 0). */
+function buildTableNode(lines: string[]): PMNodeJSON | null {
+	if (lines.length < 2) return null;
+	const header = splitTableRow(lines[0]!);
+	const width = header.length;
+	const makeCell = (text: string, isHeader: boolean): PMNodeJSON => {
+		const inline = parseInlineToNodes(text);
+		return {
+			type: isHeader ? 'tableHeader' : 'tableCell',
+			attrs: { colspan: 1, rowspan: 1, colwidth: null },
+			content: [inline.length ? { type: 'paragraph', content: inline } : { type: 'paragraph' }]
+		};
+	};
+	const rows: PMNodeJSON[] = [{ type: 'tableRow', content: header.map((c) => makeCell(c, true)) }];
+	for (const line of lines.slice(2)) {
+		const cells = splitTableRow(line);
+		const rowContent: PMNodeJSON[] = [];
+		for (let i = 0; i < width; i++) rowContent.push(makeCell(cells[i] ?? '', false));
+		rows.push({ type: 'tableRow', content: rowContent });
+	}
+	return { type: 'table', content: rows };
+}
+
+type NarrativeSegment = { kind: 'text' | 'table'; lines: string[] };
+
+/** Split narrative source into contiguous prose runs and GFM table blocks so we
+ * can hand tables to a dedicated builder (prosemirror-markdown has no table
+ * support) while leaving everything else to the default markdown parser. */
+function splitNarrativeSegments(source: string): NarrativeSegment[] {
+	const lines = source.split('\n');
+	const segments: NarrativeSegment[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i]!;
+		const next = lines[i + 1];
+		if (
+			looksLikeTableRow(line) &&
+			!isTableDelimiterRow(line) &&
+			next !== undefined &&
+			isTableDelimiterRow(next)
+		) {
+			const tableLines = [line, next];
+			let j = i + 2;
+			while (j < lines.length && lines[j]!.trim() !== '' && looksLikeTableRow(lines[j]!)) {
+				tableLines.push(lines[j]!);
+				j++;
+			}
+			segments.push({ kind: 'table', lines: tableLines });
+			i = j;
+			continue;
+		}
+		const lastSeg = segments[segments.length - 1];
+		if (lastSeg && lastSeg.kind === 'text') {
+			lastSeg.lines.push(line);
+		} else {
+			segments.push({ kind: 'text', lines: [line] });
+		}
+		i++;
+	}
+	return segments;
+}
+
 function narrativeNodesFromSource(source: string, schema: Schema): PMNodeJSON[] {
 	const trimmed = source.trimEnd();
 	if (!trimmed) return [];
-	const parsed = defaultMarkdownParser.parse(trimmed);
-	const nodes = parsed.content.content.map((child) => {
-		const json = convertTaskListsInPmNode(child.toJSON() as PMNodeJSON);
-		return pmNodeJsonToTiptap(json);
-	});
+	const segments = splitNarrativeSegments(trimmed);
+	const nodes: PMNodeJSON[] = [];
+	for (const segment of segments) {
+		if (segment.kind === 'table') {
+			const table = buildTableNode(segment.lines);
+			if (table) nodes.push(table);
+			continue;
+		}
+		const text = segment.lines.join('\n').trim();
+		if (!text) continue;
+		const parsed = defaultMarkdownParser.parse(text);
+		for (const child of parsed.content.content) {
+			const json = convertTaskListsInPmNode(child.toJSON() as PMNodeJSON);
+			nodes.push(pmNodeJsonToTiptap(json));
+		}
+	}
 	return injectExpressionsInNodes(nodes);
 }
 
@@ -447,12 +578,17 @@ function blockToPmNodes(block: VisualBlock, schema: Schema): PMNodeJSON[] {
 		if (!content.length) content.push({ type: 'paragraph' });
 	}
 
+	const containerAttrs =
+		parsed.tagName === 'if' && parsed.condition !== undefined
+			? { ...parsed.attrs, condition: parsed.condition }
+			: parsed.attrs;
+
 	return [
 		{
 			type: 'markdocContainer',
 			attrs: {
 				tagName: parsed.tagName,
-				attrsJson: JSON.stringify(parsed.attrs)
+				attrsJson: JSON.stringify(containerAttrs)
 			},
 			content
 		}
@@ -519,6 +655,152 @@ function nodeHasMarkdocExpressions(node: PMNodeJSON): boolean {
 	return (node.content ?? []).some(nodeHasMarkdocExpressions);
 }
 
+/** Concatenated plain text from a paragraph node's text children. */
+function paragraphPlainText(node: PMNodeJSON): string {
+	if (node.type !== 'paragraph') return '';
+	return (node.content ?? [])
+		.filter((c) => c.type === 'text')
+		.map((c) => c.text ?? '')
+		.join('');
+}
+
+/** View-only empty line or lone "/" from an opened-then-dismissed slash menu. */
+export function isAffordanceParagraph(node: PMNodeJSON): boolean {
+	if (node.type !== 'paragraph') return false;
+	const t = paragraphPlainText(node).trim();
+	return t === '' || t === '/';
+}
+
+function listItemPlainText(item: PMNodeJSON): string {
+	if (item.type !== 'listItem') return '';
+	return (item.content ?? [])
+		.filter((c) => c.type === 'paragraph')
+		.map((c) => paragraphPlainText(c))
+		.join('');
+}
+
+function isEmptyListItem(item: PMNodeJSON): boolean {
+	return item.type === 'listItem' && !listItemPlainText(item).trim();
+}
+
+/** Remove a trailing "/" typed at the end of the last inline text segment. */
+function stripTrailingSlashFromParagraph(node: PMNodeJSON): PMNodeJSON {
+	if (node.type !== 'paragraph') return node;
+	const content = [...(node.content ?? [])];
+	for (let i = content.length - 1; i >= 0; i--) {
+		const child = content[i]!;
+		if (child.type !== 'text' || !child.text) continue;
+		if (!child.text.endsWith('/')) return node;
+		const trimmed = child.text.slice(0, -1);
+		if (trimmed) content[i] = { ...child, text: trimmed };
+		else content.splice(i, 1);
+		return content.length ? { ...node, content } : { type: 'paragraph' };
+	}
+	return node;
+}
+
+/** Remove a leading "/" left from slash-menu filter text (not markdoc). */
+function stripLeadingSlashFromParagraph(node: PMNodeJSON): PMNodeJSON {
+	if (node.type !== 'paragraph') return node;
+	const content = [...(node.content ?? [])];
+	const first = content[0];
+	if (first?.type !== 'text' || !first.text?.startsWith('/')) return node;
+	if (first.text.startsWith('{%') || first.text.startsWith('/%')) return node;
+	const rest = first.text.slice(1);
+	if (!rest) return node;
+	content[0] = { ...first, text: rest };
+	return { ...node, content };
+}
+
+function stripSlashResidueFromListItem(item: PMNodeJSON): PMNodeJSON {
+	if (item.type !== 'listItem') return item;
+	let content = (item.content ?? []).map((p) =>
+		p.type === 'paragraph' ? stripLeadingSlashFromParagraph(stripTrailingSlashFromParagraph(p)) : p
+	);
+	content = content.filter((p) => !(p.type === 'paragraph' && isAffordanceParagraph(p)));
+	return content.length ? { ...item, content } : item;
+}
+
+function stripSlashResidueFromList(node: PMNodeJSON): PMNodeJSON {
+	if (node.type !== 'bulletList' && node.type !== 'orderedList' && node.type !== 'taskList') {
+		return node;
+	}
+	let items = (node.content ?? []).map(stripSlashResidueFromListItem);
+	while (items.length && isEmptyListItem(items[items.length - 1]!)) {
+		items = items.slice(0, -1);
+	}
+	return { ...node, content: items };
+}
+
+/** A paragraph whose entire text is a lone "/" — the drag-gutter "+" affordance or
+ * an opened-then-dismissed slash menu on an empty line. Never legitimate content. */
+function isLoneSlashParagraph(node: PMNodeJSON): boolean {
+	return node.type === 'paragraph' && paragraphPlainText(node).trim() === '/';
+}
+
+/** Strip view-only slash affordance nodes before persisting editor state to markdown. */
+export function stripEditorAffordanceNodes(nodes: PMNodeJSON[]): PMNodeJSON[] {
+	// Lone "/" paragraphs are junk wherever they appear (not just at boundaries):
+	// the "+" gutter drops one after the current block, which can be mid-document.
+	let result = nodes.filter((n) => !isLoneSlashParagraph(n));
+
+	while (result.length && isAffordanceParagraph(result[result.length - 1]!)) {
+		result.pop();
+	}
+	while (result.length && isAffordanceParagraph(result[0]!)) {
+		result.shift();
+	}
+
+	if (result.length) {
+		const lastIdx = result.length - 1;
+		let last = result[lastIdx]!;
+		if (last.type === 'paragraph') {
+			last = stripTrailingSlashFromParagraph(last);
+			if (isAffordanceParagraph(last)) {
+				result.pop();
+			} else {
+				result[lastIdx] = last;
+			}
+		} else if (
+			last.type === 'bulletList' ||
+			last.type === 'orderedList' ||
+			last.type === 'taskList'
+		) {
+			last = stripSlashResidueFromList(last);
+			const items = last.content ?? [];
+			if (!items.length) result.pop();
+			else result[lastIdx] = last;
+		}
+	}
+
+	return result;
+}
+
+const PROSE_BLOCK_TYPES = new Set([
+	'paragraph',
+	'heading',
+	'blockquote',
+	'bulletList',
+	'orderedList',
+	'taskList',
+	'codeBlock',
+	'table'
+]);
+
+function joinContainerBody(children: PMNodeJSON[], schema: Schema): string {
+	const parts = children.map((child) => serializeTiptapNode(child, schema)).filter(Boolean);
+	if (parts.length <= 1) return parts.join('');
+	let body = parts[0]!;
+	for (let i = 1; i < parts.length; i++) {
+		const prev = children[i - 1]!;
+		const next = children[i]!;
+		const sep =
+			PROSE_BLOCK_TYPES.has(prev.type) && PROSE_BLOCK_TYPES.has(next.type) ? '\n\n' : '\n';
+		body += `${sep}${parts[i]}`;
+	}
+	return body;
+}
+
 function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 	if (node.type === 'markdocExpression') {
 		return String(node.attrs?.source ?? '');
@@ -544,15 +826,14 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 		const tagName = String(node.attrs?.tagName ?? 'callout');
 		const attrs = parseAttrsJson(node.attrs?.attrsJson);
 		let body: string;
-		if (tagName === 'mermaid' && node.content?.length === 1 && node.content[0].type === 'codeBlock') {
-			body = (node.content[0].content ?? [])
-				.map((c) => c.text ?? '')
-				.join('');
+		if (
+			tagName === 'mermaid' &&
+			node.content?.length === 1 &&
+			node.content[0].type === 'codeBlock'
+		) {
+			body = (node.content[0].content ?? []).map((c) => c.text ?? '').join('');
 		} else {
-			body = (node.content ?? [])
-				.map((child) => serializeTiptapNode(child, schema))
-				.filter(Boolean)
-				.join('\n\n');
+			body = joinContainerBody(node.content ?? [], schema);
 		}
 		return serializeMarkdocTag(tagName, attrs, { body });
 	}
@@ -629,8 +910,9 @@ export function markdownToPmDocument(markdown: string): MarkdocPmDocument {
 export function pmDocumentToMarkdown(pm: MarkdocPmDocument): string {
 	const schema = getMarkdocPmSchema();
 	const parts: string[] = [];
+	const content = stripEditorAffordanceNodes(pm.doc.content ?? []);
 
-	for (const nodeJson of pm.doc.content ?? []) {
+	for (const nodeJson of content) {
 		const part = serializeTiptapNode(nodeJson, schema);
 		if (part) parts.push(part);
 	}

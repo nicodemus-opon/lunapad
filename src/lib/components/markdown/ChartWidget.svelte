@@ -217,7 +217,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 1rem 1.5rem;
-		border-bottom: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		border-bottom: 1px solid var(--border);
 		font-weight: 600;
 	}
 	.md-chart-overlay-body {

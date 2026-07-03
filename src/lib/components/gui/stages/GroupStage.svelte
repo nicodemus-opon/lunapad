@@ -485,7 +485,7 @@
 
 							<!-- Confirm -->
 							<button
-								class="px-1 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+								class="px-1 text-xs text-muted-foreground transition-colors duration-(--motion-fast) hover:text-foreground"
 								onclick={() => (expandedAggIdx = null)}
 								aria-label="Done editing">✓</button
 							>
@@ -507,12 +507,12 @@
 									<div class="space-y-2">
 										<div class="flex items-center gap-2">
 											<button
-												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-150 {isRawAggStructured(
+												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-(--motion-fast) {isRawAggStructured(
 													idx,
 													agg
 												)
-													? 'border-primary/40 bg-primary/10 text-primary'
-													: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-50"
+													? 'border-primary bg-primary/10 text-primary'
+													: 'border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-50"
 												disabled={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)}
 												title={!canUseStructuredRawAgg(agg) && !isRawAggStructured(idx, agg)
 													? 'Structured mode requires a parseable aggregate expression'
@@ -520,12 +520,12 @@
 												onclick={() => setRawAggMode(idx, agg, true)}>structured</button
 											>
 											<button
-												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-150 {!isRawAggStructured(
+												class="h-7 rounded border px-2 font-mono text-xs transition-colors duration-(--motion-fast) {!isRawAggStructured(
 													idx,
 													agg
 												)
-													? 'border-primary/40 bg-primary/10 text-primary'
-													: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
+													? 'border-primary bg-primary/10 text-primary'
+													: 'border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 												onclick={() => setRawAggMode(idx, agg, false)}>raw</button
 											>
 										</div>
@@ -696,7 +696,7 @@
 
 		<!-- Pending new by-column (inline, no popover) -->
 		{#if pendingNewBy}
-			<div class="{CHIP} border-ring/60">
+			<div class="{CHIP} border-ring">
 				<InlineChipLabel
 					value={pendingNewByValue}
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c))}

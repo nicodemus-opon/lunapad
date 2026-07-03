@@ -16,7 +16,7 @@
 	let activityLabel = $derived(getCurrentActivityLabel());
 </script>
 
-<div class={embedded ? '' : 'border-b border-border/40 bg-muted/20'} data-testid="sprint-board">
+<div class={embedded ? '' : 'border-b border-border bg-muted/20'} data-testid="sprint-board">
 	{#if !embedded}
 		<button
 			class="flex w-full items-center justify-between px-3 py-1.5 text-left"

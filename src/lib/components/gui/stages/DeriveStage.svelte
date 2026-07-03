@@ -381,14 +381,14 @@
 			<!-- Drag handle — only spot dragging can start from -->
 			<span
 				data-drag-handle
-				class="flex h-full shrink-0 cursor-grab items-center pr-0.5 pl-1 text-muted-foreground/20 transition-colors duration-150 hover:text-muted-foreground/50 active:cursor-grabbing"
+				class="flex h-full shrink-0 cursor-grab items-center pr-0.5 pl-1 text-muted-foreground/20 transition-colors duration-(--motion-fast) hover:text-muted-foreground/50 active:cursor-grabbing"
 				title="Drag to reorder"><GripVertical class="h-3 w-3" /></span
 			>
 
 			<!-- Mode selector — click to switch expression type -->
 			<select
 				value={col.expr.mode}
-				class="h-full shrink-0 cursor-pointer bg-transparent px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 outline-none hover:text-foreground"
+				class="h-full shrink-0 cursor-pointer bg-transparent px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-(--motion-fast) outline-none hover:text-foreground"
 				title="Expression type"
 				onchange={(e) => setMode(idx, (e.target as HTMLSelectElement).value as ExprMode)}
 			>
@@ -410,7 +410,7 @@
 				<span class="{CHIP_META} px-0.5">=</span>
 				<!-- Left operand -->
 				<button
-					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 select-none hover:text-foreground"
+					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-(--motion-fast) select-none hover:text-foreground"
 					onclick={() => toggleBinaryLeftKind(idx)}
 					title="Toggle column / literal">{bexpr.left.kind === 'column' ? 'col' : 'lit'}</button
 				>
@@ -433,7 +433,7 @@
 				<!-- Op dropdown -->
 				<select
 					value={bexpr.op}
-					class="h-full cursor-pointer bg-transparent px-0.5 font-mono text-xs text-muted-foreground transition-colors duration-150 outline-none hover:text-foreground"
+					class="h-full cursor-pointer bg-transparent px-0.5 font-mono text-xs text-muted-foreground transition-colors duration-(--motion-fast) outline-none hover:text-foreground"
 					onchange={(e) => setBinaryOp(idx, (e.target as HTMLSelectElement).value as ExprOp)}
 				>
 					{#each BINARY_OPS as op (op.value)}
@@ -442,7 +442,7 @@
 				</select>
 				<!-- Right operand -->
 				<button
-					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 select-none hover:text-foreground"
+					class="px-1 font-mono text-2xs text-muted-foreground/60 transition-colors duration-(--motion-fast) select-none hover:text-foreground"
 					onclick={() => toggleBinaryRightKind(idx)}
 					title="Toggle column / literal">{bexpr.right.kind === 'column' ? 'col' : 'lit'}</button
 				>
@@ -473,7 +473,7 @@
 				<span class="{CHIP_META} px-0.5">=</span>
 				<Popover.Root>
 					<Popover.Trigger
-						class="inline-flex h-full items-center px-1.5 font-mono text-muted-foreground/80 transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+						class="inline-flex h-full items-center px-1.5 font-mono text-muted-foreground/80 transition-colors duration-(--motion-fast) hover:bg-muted/60 hover:text-foreground"
 					>
 						{humanizeExpr(col.expr)}
 					</Popover.Trigger>
@@ -487,7 +487,7 @@
 									{#each MODE_BUTTONS as btn (btn.value)}
 										<button
 											type="button"
-											class="flex-1 border-r py-1 font-mono text-xs transition-colors duration-150 last:border-r-0
+											class="flex-1 border-r py-1 font-mono text-xs transition-colors duration-(--motion-fast) last:border-r-0
 											{col.expr.mode === btn.value
 												? 'bg-primary text-primary-foreground'
 												: 'bg-background text-muted-foreground hover:bg-muted/50'}"
@@ -512,7 +512,7 @@
 											{#each FUNC_CATEGORIES as category (category.value)}
 												<button
 													type="button"
-													class="border-r py-1 font-mono text-xs transition-colors duration-150 last:border-r-0
+													class="border-r py-1 font-mono text-xs transition-colors duration-(--motion-fast) last:border-r-0
 													{activeCategory === category.value
 														? 'bg-primary text-primary-foreground'
 														: 'bg-background text-muted-foreground hover:bg-muted/50'}"
@@ -544,7 +544,7 @@
 									</div>
 									{#if activeFunction.args.length === 0}
 										<div
-											class="rounded-md border border-dashed border-border/70 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground"
+											class="rounded-md border border-dashed border-border bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground"
 										>
 											This function inserts a value directly, no inputs required.
 										</div>
@@ -557,10 +557,10 @@
 												</p>
 												<div class="flex items-center gap-1.5">
 													<button
-														class="shrink-0 rounded border px-1.5 py-0.5 text-2xs transition-colors duration-150
+														class="shrink-0 rounded border px-1.5 py-0.5 text-2xs transition-colors duration-(--motion-fast)
 														{arg.kind === 'column'
-															? 'border-primary/30 bg-primary/10 text-primary'
-															: 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
+															? 'border-primary bg-primary/10 text-primary'
+															: 'border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 														onclick={() => toggleFuncArgKind(idx, argIdx)}
 														title="Toggle column / literal"
 														>{arg.kind === 'column' ? 'col' : 'lit'}</button

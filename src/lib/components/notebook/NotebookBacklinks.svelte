@@ -13,7 +13,7 @@
 </script>
 
 {#if backlinks.length > 0}
-	<div class="border-t border-border/40 px-2 py-2">
+	<div class="border-t border-border px-2 py-2">
 		<p class="flex items-center gap-1.5 px-1 py-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
 			<Link2 class="h-3 w-3" />
 			Backlinks

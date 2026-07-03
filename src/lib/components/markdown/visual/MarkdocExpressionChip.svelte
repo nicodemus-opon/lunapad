@@ -6,10 +6,16 @@
 
 	interface Props {
 		source: string;
-		cells?: Cell[];
+		selected?: boolean;
+		onPatch?: (source: string) => void;
+		onSelect?: () => void;
 	}
 
-	const { source }: Props = $props();
+	const { source, selected = false, onPatch, onSelect }: Props = $props();
+
+	let editing = $state(false);
+	let draft = $state('');
+	let inputEl = $state<HTMLInputElement | null>(null);
 
 	// Resolve against live store cells so inline values track upstream cell
 	// results and filter changes exactly like the report renderer. The node view
@@ -17,10 +23,6 @@
 	const liveCells = $derived(getAllCellsAcrossNotebooks());
 
 	function resolveBareVariable(inner: string, cells: Cell[]): string | null {
-		// A bare `$foo.bar.baz` variable. Markdoc only interpolates these when they
-		// sit inline within surrounding content; parsed in isolation they annotate
-		// nothing and render empty. Resolve the path directly so the visual chip
-		// matches the report renderer (which renders the whole paragraph inline).
 		if (!/^\$[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(inner)) return null;
 		const path = inner.slice(1).split('.');
 		let cur: unknown = buildMarkdocVariables(cells);
@@ -63,14 +65,68 @@
 		}
 		return { text: String(node), error: false, raw: false };
 	});
+
+	function startEdit() {
+		if (!onPatch) return;
+		onSelect?.();
+		draft = source;
+		editing = true;
+		queueMicrotask(() => {
+			inputEl?.focus();
+			inputEl?.select();
+		});
+	}
+
+	function commit() {
+		if (!editing) return;
+		const next = draft.trim();
+		editing = false;
+		if (next && next !== source) onPatch?.(next);
+	}
+
+	function cancel() {
+		editing = false;
+		draft = source;
+	}
 </script>
 
-<span
-	class="md-expr"
-	class:is-error={resolved.error}
-	class:is-raw={resolved.raw}
-	title={source}
-	data-source={source}
->
-	{resolved.text}
-</span>
+{#if editing}
+	<input
+		bind:this={inputEl}
+		class="md-expr md-expr-input"
+		class:is-error={resolved.error}
+		type="text"
+		bind:value={draft}
+		size={Math.max(8, draft.length + 1)}
+		onclick={(e) => e.stopPropagation()}
+		onmousedown={(e) => e.stopPropagation()}
+		onkeydown={(e) => {
+			e.stopPropagation();
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				commit();
+			} else if (e.key === 'Escape') {
+				e.preventDefault();
+				cancel();
+			}
+		}}
+		onblur={commit}
+	/>
+{:else}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<span
+		class="md-expr"
+		class:is-error={resolved.error}
+		class:is-raw={resolved.raw}
+		class:is-selected={selected}
+		title={onPatch ? `${source} — click to edit` : source}
+		data-source={source}
+		onclick={(e) => {
+			e.stopPropagation();
+			startEdit();
+		}}
+	>
+		{resolved.text}
+	</span>
+{/if}

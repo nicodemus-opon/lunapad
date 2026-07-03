@@ -114,7 +114,7 @@
 				</thead>
 				<tbody>
 					{#each users as user (user.id)}
-						<tr class="border-b border-border/50">
+						<tr class="border-b border-border">
 							<td class="py-1.5">{user.name}</td>
 							<td class="py-1.5 font-mono">{user.email}</td>
 							<td class="py-1.5">{user.role ?? 'user'}</td>

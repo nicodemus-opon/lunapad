@@ -143,7 +143,7 @@
 		width: 100%;
 		height: 1.75rem;
 		border-radius: 0.35rem;
-		border: 1px solid color-mix(in oklch, currentColor 20%, transparent);
+		border: 1px solid var(--border);
 		background: color-mix(in oklch, currentColor 3%, transparent);
 		padding: 0 0.4rem;
 		font-size: 0.78rem;
@@ -156,7 +156,7 @@
 		cursor: pointer;
 	}
 	.md-filterpicker-tab-active {
-		border-color: color-mix(in oklch, currentColor 20%, transparent);
+		border-color: var(--border);
 		color: var(--foreground);
 	}
 </style>

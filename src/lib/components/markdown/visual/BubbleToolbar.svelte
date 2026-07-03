@@ -166,7 +166,7 @@
 				/>
 				<button
 					type="button"
-					class="rounded px-2 py-1 text-xs hover:bg-muted"
+					class="rounded px-2 py-1 text-xs hover:bg-muted/60"
 					onmousedown={(e) => {
 						e.preventDefault();
 						applyLink();
@@ -215,7 +215,7 @@
 				{#each turnIntoOptions as opt (opt.label)}
 					<button
 						type="button"
-						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						onmousedown={(e) => {
 							e.preventDefault();
 							opt.action();
@@ -244,5 +244,9 @@
 	.bubble-btn:hover,
 	.bubble-btn.is-active {
 		background: color-mix(in oklab, var(--accent) 80%, transparent);
+	}
+	.bubble-btn:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 50%, transparent);
 	}
 </style>

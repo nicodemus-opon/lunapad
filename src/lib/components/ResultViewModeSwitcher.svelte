@@ -59,7 +59,7 @@
 		font-weight: 600;
 		color: var(--muted-foreground);
 		cursor: pointer;
-		transition: color 0.12s ease;
+		transition: color var(--motion-fast) var(--motion-ease-out);
 	}
 	.result-mode-tabs.is-md .result-mode-tab {
 		height: 1.5rem;

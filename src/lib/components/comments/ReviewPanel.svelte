@@ -148,11 +148,11 @@
 </div>
 
 <div
-	class="flex shrink-0 flex-col border-l border-border/40 bg-sidebar"
+	class="flex shrink-0 flex-col border-l border-border bg-sidebar"
 	style="width: {width}px;"
 	data-testid="review-panel"
 >
-	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border/40 px-2.5">
+	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border px-2.5">
 		<div class="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
 			<MessageSquare size={14} class="shrink-0 text-primary" />
 			<span>Review</span>
@@ -194,7 +194,7 @@
 		</div>
 	</div>
 
-	<div class="flex shrink-0 gap-1 border-b border-border/40 px-2 py-1.5">
+	<div class="flex shrink-0 gap-1 border-b border-border px-2 py-1.5">
 		<button
 			type="button"
 			class="flex-1 rounded-md px-2 py-1 text-2xs font-medium transition-colors {panelTab ===
@@ -262,12 +262,12 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="flex shrink-0 items-center gap-2 border-b border-border/30 px-3 py-2">
+		<div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
 			<span class="truncate font-mono text-2xs text-muted-foreground">{contextLabel}</span>
 		</div>
 
 		{#if threads.length > 1}
-			<div class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/30 px-2 py-1.5">
+			<div class="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-2 py-1.5">
 				{#each threads as thread (thread.id)}
 					<button
 						type="button"
@@ -296,7 +296,7 @@
 							{#each THREAD_TEMPLATES as tpl}
 								<button
 									type="button"
-									class="rounded-full border border-border/50 bg-background/60 px-2.5 py-1 text-2xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-foreground"
+									class="rounded-full border border-border bg-background/60 px-2.5 py-1 text-2xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-foreground"
 									onclick={() => void startThread(tpl.body)}
 								>
 									{tpl.label}
@@ -331,7 +331,7 @@
 			</div>
 
 			{#if selectedThread}
-				<div class="shrink-0 border-t border-border/40 bg-background/40 px-3 py-2.5">
+				<div class="shrink-0 border-t border-border bg-background/40 px-3 py-2.5">
 					{#if selectedThread.status === 'open'}
 						<button
 							type="button"
@@ -343,7 +343,7 @@
 						</button>
 					{/if}
 					<Textarea
-						class="min-h-[64px] resize-none border-border/50 bg-background text-xs"
+						class="min-h-[64px] resize-none border-border bg-background text-xs"
 						placeholder="Reply… @{teamUsers[0]?.mention ?? 'name'} to mention"
 						bind:value={composer}
 						onkeydown={(e) => {

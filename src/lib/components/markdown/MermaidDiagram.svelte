@@ -113,7 +113,7 @@
 		font-size: 0.75rem;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		background: color-mix(in oklch, var(--destructive, #dc2626) 8%, transparent);
-		border-color: color-mix(in oklch, var(--destructive, #dc2626) 25%, transparent);
+		border-color: var(--destructive, #dc2626);
 		color: var(--destructive, #dc2626);
 		white-space: pre-wrap;
 		word-break: break-word;

@@ -55,6 +55,18 @@ describe('buildMarkdocVariables', () => {
 		const vars = buildMarkdocVariables([queryNoResult, markdownCell]);
 		expect(vars).toEqual({});
 	});
+
+	it('uses totalRowCount when the displayed rows are truncated', () => {
+		const cell = makeCell('orders', [{ id: 1 }, { id: 2 }]);
+		cell.result = {
+			rows: cell.result!.rows,
+			columns: cell.result!.columns,
+			truncated: true,
+			totalRowCount: 2000
+		};
+		const vars = buildMarkdocVariables([cell]);
+		expect(vars.orders).toMatchObject({ count: 2000, rowCount: 2000 });
+	});
 });
 
 describe('renderMarkdocCell', () => {

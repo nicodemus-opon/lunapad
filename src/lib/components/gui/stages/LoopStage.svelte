@@ -138,9 +138,9 @@
 				? ''
 				: 's'})
 		</span>
-		<div class="inline-flex items-center rounded border border-border/60 bg-muted/20 p-0.5">
+		<div class="inline-flex items-center rounded border border-border bg-muted/20 p-0.5">
 			<button
-				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode ===
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-(--motion-fast) {effectiveMode ===
 				'structured'
 					? 'bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
@@ -149,7 +149,7 @@
 				structured
 			</button>
 			<button
-				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-150 {effectiveMode ===
+				class="h-5 rounded-sm px-1.5 font-mono text-2xs transition-colors duration-(--motion-fast) {effectiveMode ===
 				'raw'
 					? 'bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
@@ -204,7 +204,7 @@
 			{/if}
 
 			{#each structuredBody as mini, idx}
-				<div class="space-y-2 border-l border-border/50 py-1 pl-3">
+				<div class="space-y-2 border-l border-border py-1 pl-3">
 					<div class="flex items-center gap-2">
 						<Select.Root
 							type="single"
@@ -219,7 +219,7 @@
 							</Select.Content>
 						</Select.Root>
 						<button
-							class="inline-flex h-7 items-center gap-1 rounded px-2 font-mono text-xs text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+							class="inline-flex h-7 items-center gap-1 rounded px-2 font-mono text-xs text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-destructive/10 hover:text-destructive"
 							onclick={() => removeMiniStage(idx)}
 						>
 							<X class="h-3 w-3" /> remove

@@ -101,15 +101,15 @@
 	});
 </script>
 
-<div class="ai-chat-input shrink-0 border-t border-border/50 p-2.5">
+<div class="ai-chat-input shrink-0 border-t border-border p-2.5">
 	<div
-		class="rounded-xl border border-border/60 bg-muted/30 focus-within:border-primary/50 focus-within:bg-background"
+		class="rounded-xl border border-border bg-muted/30 focus-within:border-primary focus-within:bg-background"
 	>
 		{#if contextCellIds.length > 0}
-			<div class="flex flex-wrap gap-1 border-b border-border/30 px-2.5 pt-2 pb-1.5">
+			<div class="flex flex-wrap gap-1 border-b border-border px-2.5 pt-2 pb-1.5">
 				{#each contextPills() as pill}
 					<span
-						class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-xs text-primary"
+						class="inline-flex items-center gap-1 rounded-full border border-primary bg-primary/8 px-2 py-0.5 text-xs text-primary"
 					>
 						<span class="font-mono">{pill.name}</span>
 						<button

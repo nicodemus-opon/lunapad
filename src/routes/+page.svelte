@@ -803,6 +803,26 @@
 	// ── Tab rename state ──────────────────────────────────────────────────────
 	let renamingTabId = $state<string | null>(null);
 	let renameValue = $state('');
+	let notebookTitleDrafts = $state<Record<string, string>>({});
+
+	function notebookDisplayName(notebookId: string, fallback: string): string {
+		return notebookTitleDrafts[notebookId] ?? fallback;
+	}
+
+	function updateNotebookTitleDraft(notebookId: string, value: string) {
+		notebookTitleDrafts = { ...notebookTitleDrafts, [notebookId]: value };
+	}
+
+	function clearNotebookTitleDraft(notebookId: string) {
+		const { [notebookId]: _removed, ...rest } = notebookTitleDrafts;
+		notebookTitleDrafts = rest;
+	}
+
+	function commitNotebookTitle(notebookId: string, currentName: string) {
+		const next = (notebookTitleDrafts[notebookId] ?? currentName).trim();
+		if (next && next !== currentName) renameNotebook(notebookId, next);
+		clearNotebookTitleDraft(notebookId);
+	}
 
 	function startRename(id: string, currentName: string) {
 		renamingTabId = id;
@@ -885,7 +905,7 @@
 {:else}
 	<div class="flex h-screen flex-col overflow-hidden">
 		<header
-			class="sticky top-0 z-(--z-sticky) border-b border-border/60 bg-background"
+			class="sticky top-0 z-(--z-sticky) border-b border-border bg-background"
 			data-tauri-drag-region={isDesktop ? '' : undefined}
 		>
 			<div
@@ -1275,7 +1295,7 @@
 
 		{#if data.demoMode}
 			<div
-				class="border-b border-border/60 bg-muted/50 px-4 py-2 text-center text-sm text-muted-foreground"
+				class="border-b border-border bg-muted/50 px-4 py-2 text-center text-sm text-muted-foreground"
 			>
 				<strong class="font-medium text-foreground">Demo mode</strong> — read-only, sample data
 				only.
@@ -1296,7 +1316,7 @@
 				<Tooltip.Trigger
 					class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {activeSidebarPanel ===
 					panel
-						? 'border border-sidebar-border/50 bg-sidebar-accent text-sidebar-accent-foreground'
+						? 'border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground'
 						: 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'}"
 					onclick={() => selectSidebarPanel(panel)}
 					aria-label={tooltipLabel}
@@ -1330,14 +1350,14 @@
 
 		<div id="layout-root" class="flex flex-1 overflow-hidden">
 			<div
-				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground {isDraggingSidebar
+				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground {isDraggingSidebar
 					? 'transition-none'
 					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
 				style={sidebarCollapsed ? 'width: var(--sidebar-rail-width)' : `width: ${sidebarWidth}px`}
 			>
 				<!-- Icon rail (width tracks --sidebar-rail-width — w-9 disagrees with --spacing scale) -->
 				<div
-					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border/40 bg-sidebar px-1 pt-1 pb-1.5"
+					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border bg-sidebar px-1 pt-1 pb-1.5"
 					style="width: var(--sidebar-rail-width)"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
@@ -1391,7 +1411,7 @@
 						>
 							{#if activeSidebarPanel === 'notebooks'}
 								<!-- Notebooks panel -->
-								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Notebooks</span>
 									<div class="flex items-center gap-0.5">
 										{@render headerAction(
@@ -1411,7 +1431,7 @@
 								</div>
 
 								<div
-									class="mx-2 mb-1 flex h-7 shrink-0 items-center rounded-md border border-border/50 bg-muted/30 p-0.5"
+									class="mx-2 mb-1 flex h-7 shrink-0 items-center rounded-md border border-border bg-muted/30 p-0.5"
 									role="tablist"
 									aria-label="Notebook sidebar view"
 								>
@@ -1491,7 +1511,7 @@
 									{/if}
 									{#if showNotebookSearch || sidebarSearch}
 										<div
-											class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
+											class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30"
 										>
 											<Search class="h-3 w-3 shrink-0 text-muted-foreground/60" />
 											<!-- svelte-ignore a11y_autofocus -->
@@ -1552,7 +1572,7 @@
 									</div>
 								{/if}
 							{:else if activeSidebarPanel === 'metrics' && isNotebookTab}
-								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Metrics</span>
 								</div>
 								<MetricsPanel
@@ -1567,7 +1587,7 @@
 								/>
 							{:else if activeSidebarPanel === 'tables'}
 								<!-- Databases & tables panel -->
-								<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Databases</span>
 									<Button
 										variant="outline"
@@ -1718,7 +1738,7 @@
 				{/snippet}
 
 				<div
-					class="flex shrink-0 items-center gap-0.5 overflow-x-auto scroll-smooth border-b border-border/60 bg-background px-2"
+					class="flex shrink-0 items-center gap-0.5 overflow-x-auto scroll-smooth border-b border-border bg-background px-2"
 					role="tablist"
 				>
 					<button
@@ -1748,7 +1768,7 @@
 							<ContextMenu.Trigger>
 								{@render appTab({
 									id: nb.id,
-									name: nb.name,
+									name: notebookDisplayName(nb.id, nb.name),
 									dirty: isNotebookDirty(nb.id),
 									staleCount,
 									renamable: true,
@@ -1878,11 +1898,23 @@
 											<input
 												class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
 												placeholder="Untitled notebook"
-												value={activeNotebook?.name ?? ''}
+												value={activeNotebook
+													? notebookDisplayName(activeNotebook.id, activeNotebook.name)
+													: ''}
+												oninput={(e) => {
+													if (!activeNotebook) return;
+													updateNotebookTitleDraft(
+														activeNotebook.id,
+														(e.target as HTMLInputElement).value
+													);
+												}}
 												onblur={(e) => {
-													const next = (e.target as HTMLInputElement).value.trim();
-													if (activeNotebook && next && next !== activeNotebook.name)
-														renameNotebook(activeNotebook.id, next);
+													if (!activeNotebook) return;
+													updateNotebookTitleDraft(
+														activeNotebook.id,
+														(e.target as HTMLInputElement).value
+													);
+													commitNotebookTitle(activeNotebook.id, activeNotebook.name);
 												}}
 												onkeydown={(e) => {
 													if (e.key === 'Enter') {
@@ -2019,7 +2051,7 @@
 										{:else}
 											{#if showDemoCta}
 												<div
-													class="mb-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+													class="mb-4 flex flex-col gap-3 rounded-lg border border-primary bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
 												>
 													<div>
 														<p class="text-sm font-medium text-foreground">New here?</p>
@@ -2210,7 +2242,7 @@
 							</p>
 						{/if}
 						<table class="w-full">
-							<tbody class="divide-y divide-border/40">
+							<tbody class="divide-y divide-border">
 								{#each rows as row}
 									<tr>
 										<td class="py-1 pr-4 font-mono whitespace-nowrap text-foreground"

@@ -123,7 +123,7 @@
 								<button
 									class="rounded border px-2 py-0.5 text-3xs font-medium transition-colors {row.materialized ===
 									mode
-										? 'border-primary/30 bg-primary/10 text-primary'
+										? 'border-primary bg-primary/10 text-primary'
 										: 'border-border text-muted-foreground hover:bg-accent'}"
 									onclick={() => updateRow(c.id, { materialized: mode })}
 								>

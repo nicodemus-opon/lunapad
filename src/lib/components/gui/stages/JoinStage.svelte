@@ -65,10 +65,10 @@
 	<!-- Main join chip: join type segmented + table reference -->
 	<div class={CHIP} data-testid="join-main-pill">
 		<!-- Join type segmented control (inner/left/right/full) — no popover needed -->
-		<div class="flex h-full border-r border-border/50">
+		<div class="flex h-full border-r border-border">
 			{#each JOIN_TYPES as jt}
 				<button
-					class="flex h-full items-center px-1.5 font-mono text-2xs transition-colors duration-150
+					class="flex h-full items-center px-1.5 font-mono text-2xs transition-colors duration-(--motion-fast)
 						{stage.joinType === jt.value
 						? 'bg-muted font-medium text-foreground'
 						: 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
@@ -107,7 +107,7 @@
 		<!-- Add alias button (if no alias yet) -->
 		{#if stage.alias === undefined && stage.table}
 			<button
-				class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 transition-colors duration-150 hover:bg-muted/60 hover:text-muted-foreground"
+				class="flex h-full items-center px-1.5 text-2xs text-muted-foreground/50 transition-colors duration-(--motion-fast) hover:bg-muted/60 hover:text-muted-foreground"
 				onclick={() => onUpdate({ ...stage, alias: stage.table.slice(0, 1) })}
 				title="Add alias">≡</button
 			>
@@ -176,7 +176,7 @@
 						{/if}
 						<!-- shorthand toggle -->
 						<button
-							class="ml-0.5 rounded border border-border/60 px-1 py-0.5 font-mono text-2xs text-muted-foreground/60 transition-colors duration-150 hover:text-foreground"
+							class="ml-0.5 rounded border border-border px-1 py-0.5 font-mono text-2xs text-muted-foreground/60 transition-colors duration-(--motion-fast) hover:text-foreground"
 							onclick={() =>
 								updateCond(idx, {
 									shorthand: !cond.shorthand,
@@ -185,7 +185,7 @@
 							title="Toggle shorthand / full">{cond.shorthand ? '==' : 'l==r'}</button
 						>
 						<button
-							class="px-1 text-muted-foreground transition-colors duration-150 hover:text-foreground"
+							class="px-1 text-muted-foreground transition-colors duration-(--motion-fast) hover:text-foreground"
 							onclick={() => (expandedCondIdx = null)}>✓</button
 						>
 					</div>

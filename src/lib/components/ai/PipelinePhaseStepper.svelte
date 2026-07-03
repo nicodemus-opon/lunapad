@@ -15,7 +15,7 @@
 </script>
 
 <div
-	class={embedded ? 'px-2 py-1.5' : 'border-b border-border/40 bg-muted/20 px-3 py-1.5'}
+	class={embedded ? 'px-2 py-1.5' : 'border-b border-border bg-muted/20 px-3 py-1.5'}
 	data-testid="ai-pipeline-stepper"
 >
 	<ul class="flex flex-wrap items-center gap-x-1 gap-y-1">

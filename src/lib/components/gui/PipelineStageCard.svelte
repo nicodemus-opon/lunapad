@@ -124,7 +124,7 @@
 </script>
 
 <div
-	class="stage-block group/card relative rounded-md transition-colors duration-150 outline-none hover:bg-muted/20 focus-visible:ring-1 focus-visible:ring-ring/40 focus-visible:ring-inset {active
+	class="stage-block group/card relative rounded-md transition-colors duration-(--motion-fast) outline-none hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset {active
 		? 'bg-muted/40'
 		: ''} {stage?.disabled ? 'opacity-60' : ''}"
 	data-testid="stage-card"
@@ -153,7 +153,7 @@
 			{#if draggable}
 				<button
 					data-drag-handle
-					class="flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity duration-150 group-hover/card:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
+					class="flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity duration-(--motion-fast) group-hover/card:opacity-100 hover:bg-muted/60 hover:text-muted-foreground"
 					aria-label="Drag to reorder"
 					tabindex="-1"
 				>
@@ -164,7 +164,7 @@
 
 		<!-- keyword: lowercase mono, click to collapse -->
 		<button
-			class="flex h-6 min-w-14 shrink-0 items-center gap-1.5 font-mono text-xs lowercase transition-colors duration-150 {hasErrors
+			class="flex h-6 min-w-14 shrink-0 items-center gap-1.5 font-mono text-xs lowercase transition-colors duration-(--motion-fast) {hasErrors
 				? 'text-destructive'
 				: stage?.disabled
 					? 'text-muted-foreground/50 line-through'
@@ -210,7 +210,7 @@
 		<div class="flex shrink-0 items-center gap-0.5">
 			{#if onRun}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 disabled:opacity-30
+					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-(--motion-fast) disabled:opacity-30
 						{preview.kind === 'loading'
 						? 'text-muted-foreground'
 						: 'text-muted-foreground/60 opacity-0 group-hover/card:opacity-100 hover:bg-muted/60 hover:text-foreground'}"
@@ -230,7 +230,7 @@
 
 			{#if onToggleDisabled}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-150 {stage?.disabled
+					class="flex h-6 w-6 items-center justify-center rounded transition-[opacity,color,background-color] duration-(--motion-fast) {stage?.disabled
 						? 'bg-muted/60 text-muted-foreground opacity-100!'
 						: 'text-muted-foreground/60 opacity-0 group-hover/card:opacity-100 hover:bg-muted/60 hover:text-foreground'}"
 					onclick={onToggleDisabled}
@@ -248,7 +248,7 @@
 
 			{#if onRemove}
 				<button
-					class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-150 group-hover/card:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+					class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-[opacity,color,background-color] duration-(--motion-fast) group-hover/card:opacity-100 hover:bg-destructive/10 hover:text-destructive"
 					onclick={onRemove}
 					aria-label="Remove stage"
 				>
@@ -260,7 +260,7 @@
 
 	<!-- Compile errors from cell-level PRQL compilation -->
 	{#if hasErrors}
-		<div class="mx-2 mb-1 ml-9 space-y-0.5 border-l border-destructive/40 py-0.5 pl-3">
+		<div class="mx-2 mb-1 ml-9 space-y-0.5 border-l border-destructive py-0.5 pl-3">
 			{#each presentedStageErrors as err, errIdx (`${err.reason}-${err.hint ?? ''}-${errIdx}`)}
 				<p class="text-xs leading-snug text-destructive">
 					{#if err.lineLabel}<span class="font-medium text-destructive/90"
@@ -275,7 +275,7 @@
 
 	<!-- Stage evidence panel (loading, error, or result) -->
 	{#if hasEvidence}
-		<div class="mx-2 mb-1.5 ml-9 border-l border-border/50 pl-3" data-testid="stage-evidence-panel">
+		<div class="mx-2 mb-1.5 ml-9 border-l border-border pl-3" data-testid="stage-evidence-panel">
 			<div class="flex items-center justify-between gap-2 py-0.5">
 				<div class="flex min-w-0 items-center gap-2">
 					<span class="{SECTION_LABEL} text-muted-foreground/70">evidence</span>
@@ -283,7 +283,7 @@
 				</div>
 				{#if preview.kind !== 'loading'}
 					<button
-						class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+						class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors duration-(--motion-fast) hover:bg-muted/60 hover:text-foreground"
 						onclick={() => onResultCollapsedChange?.(!resultCollapsed)}
 						aria-label={resultCollapsed ? 'Expand evidence panel' : 'Collapse evidence panel'}
 					>
@@ -310,7 +310,7 @@
 							<span class={SECTION_LABEL}>next</span>
 							{#each nextStageRecommendations as suggestion (`${suggestion.type}-${suggestion.reason}`)}
 								<button
-									class="inline-flex items-center gap-1 rounded border border-border/60 bg-background px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-150 hover:bg-muted/40 hover:text-foreground"
+									class="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-muted/40 hover:text-foreground"
 									onclick={() => onAddSuggestedStage?.(suggestion.stage)}
 									title={suggestion.reason}
 								>
@@ -344,7 +344,7 @@
 
 	/* Tint value chips inside an errored stage (stage-chip marker from chip-styles.ts) */
 	.err-chips :global(.stage-chip:not(.border-dashed)) {
-		border-color: color-mix(in oklab, var(--destructive) 40%, transparent) !important;
+		border-color: var(--destructive) !important;
 		background-color: color-mix(in oklab, var(--destructive) 8%, transparent) !important;
 		color: var(--destructive) !important;
 	}

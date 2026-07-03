@@ -80,7 +80,7 @@
 </script>
 
 <!-- Project bar (always visible at top of sidebar) -->
-<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border/30 px-2">
+<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
 	{#if projectFolder}
 		<FolderCode class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
 		<span
@@ -185,7 +185,7 @@
 			</Dialog.Footer>
 
 			<!-- Switch to New -->
-			<div class="border-t border-border/40 px-4 py-3">
+			<div class="border-t border-border px-4 py-3">
 				<button
 					class="flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					onclick={() => {
@@ -242,7 +242,7 @@
 
 				<!-- Structure preview -->
 				<div
-					class="rounded-lg border border-border/50 bg-muted/30 p-3 font-mono text-2xs leading-5 text-muted-foreground"
+					class="rounded-lg border border-border bg-muted/30 p-3 font-mono text-2xs leading-5 text-muted-foreground"
 				>
 					<div class="mb-1 font-semibold text-foreground/60">{newName || 'project'}/</div>
 					<div class="pl-3">
@@ -274,7 +274,7 @@
 			</Dialog.Footer>
 
 			<!-- Switch to Open -->
-			<div class="border-t border-border/40 px-4 py-3">
+			<div class="border-t border-border px-4 py-3">
 				<button
 					class="flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					onclick={() => {

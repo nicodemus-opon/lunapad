@@ -87,7 +87,7 @@
 </script>
 
 {#if showHeader}
-	<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 		<span
 			class="min-w-0 flex-1 truncate text-2xs font-medium text-muted-foreground"
 			title={notebookName}

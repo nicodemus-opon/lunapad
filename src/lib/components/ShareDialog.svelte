@@ -326,7 +326,7 @@
 
 			{#if !loading && (unboundTokens.length > 0 || orphanedWidgets.length > 0 || uncollapsedData.length > 0 || emptyResults.length > 0 || duckdbFilterWarn)}
 				<div
-					class="space-y-0.5 rounded border border-warning/30 bg-warning/10 p-2 text-2xs text-warning"
+					class="space-y-0.5 rounded border border-warning bg-warning/10 p-2 text-2xs text-warning"
 				>
 					<p class="font-medium">Pre-publish checklist</p>
 					{#if unboundTokens.length > 0}

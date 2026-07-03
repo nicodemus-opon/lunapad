@@ -106,10 +106,10 @@
 					{#each availableColumns as col}
 						{@const selected = stage.columns.includes(col)}
 						<button
-							class="flex items-center gap-1 rounded border px-2 py-0.5 text-xs transition-colors duration-150
+							class="flex items-center gap-1 rounded border px-2 py-0.5 text-xs transition-colors duration-(--motion-fast)
 								{selected
 								? 'border-primary bg-primary text-primary-foreground'
-								: 'border-border/70 bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
+								: 'border-border bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground'}"
 							onclick={() => toggle(col)}
 						>
 							{#if selected}<CheckSquare class="h-3 w-3" />{:else}<Square class="h-3 w-3" />{/if}
@@ -158,7 +158,7 @@
 
 	<!-- Pending new chip (in edit mode immediately) -->
 	{#if pendingNew && !showSummary}
-		<div class="{CHIP} border-ring/60">
+		<div class="{CHIP} border-ring">
 			<InlineChipLabel
 				value={pendingNewValue}
 				suggestions={unselected}

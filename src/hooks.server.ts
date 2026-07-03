@@ -167,6 +167,30 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	if (authDisabled) {
+		// DISABLE_AUTH / DEMO_MODE skip svelteKitHandler, so better-auth routes never
+		// register — stub get-session so useSession() doesn't 404-spam the dev console.
+		if (event.url.pathname === '/api/auth/get-session') {
+			if (testAuthDisabled) {
+				const user = {
+					id: 'local-dev',
+					role: 'admin',
+					name: 'Local Dev',
+					email: 'local-dev@localhost'
+				};
+				return json({
+					user,
+					session: {
+						id: 'local-dev-session',
+						userId: user.id,
+						expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+						createdAt: new Date().toISOString(),
+						updatedAt: new Date().toISOString()
+					}
+				});
+			}
+			return json({ user: null, session: null });
+		}
+
 		// DISABLE_AUTH (dev/e2e) means "act as a fully-authorized user". Without a synthetic
 		// user, endpoints that internally enforce can(user, ...) — e.g. /api/workspace/save —
 		// see locals.user === null and 403, which surfaces as a perpetual "Couldn't save

@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { mount, unmount } from 'svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import MarkdocBlockView from './MarkdocBlockView.svelte';
+import { reactiveProps } from './reactive-props.svelte';
 
 export interface MarkdocBlockExtensionContext {
 	getCells: () => Cell[];
@@ -36,56 +37,45 @@ export const MarkdocBlockExtension = Node.create({
 			dom.className = 'markdoc-block-node';
 			dom.contentEditable = 'false';
 
-			let component: ReturnType<typeof mount> | null = null;
-			let currentSource = String(node.attrs.source ?? '');
-			let isSelected = false;
-
-			const render = () => {
-				if (component) unmount(component);
-				component = mount(MarkdocBlockView, {
-					target: dom,
-					props: {
-						source: currentSource,
-						cells: ctx?.getCells() ?? [],
-						notebookId: ctx?.getNotebookId() ?? '',
-						selected: isSelected,
-						onSelect: () => {
-							const pos = getPos();
-							if (typeof pos === 'number') {
-								editor.chain().focus().setNodeSelection(pos).run();
-							}
-						},
-						onDelete: () => {
-							editor.chain().focus().deleteSelection().run();
-						}
+			// Mounted once with reactive props — no remount on update/select (a remount
+			// destroys any open dropdowns/inputs inside the rendered Markdoc content).
+			const props = reactiveProps({
+				source: String(node.attrs.source ?? ''),
+				cells: ctx?.getCells() ?? [],
+				notebookId: ctx?.getNotebookId() ?? '',
+				selected: false,
+				onSelect: () => {
+					const pos = getPos();
+					if (typeof pos === 'number') {
+						editor.chain().focus().setNodeSelection(pos).run();
 					}
-				});
-			};
+				},
+				onDelete: () => {
+					editor.chain().focus().deleteSelection().run();
+				}
+			});
 
-			render();
+			const component = mount(MarkdocBlockView, { target: dom, props });
 
 			return {
 				dom,
 				update(updatedNode) {
 					if (updatedNode.type.name !== 'markdocBlock') return false;
 					const next = String(updatedNode.attrs.source ?? '');
-					if (next === currentSource) return true;
-					currentSource = next;
-					render();
+					if (next !== props.source) props.source = next;
+					props.cells = ctx?.getCells() ?? [];
 					return true;
 				},
 				destroy() {
-					if (component) unmount(component);
+					unmount(component);
 				},
 				selectNode() {
-					isSelected = true;
+					props.selected = true;
 					dom.classList.add('ProseMirror-selectednode');
-					render();
 				},
 				deselectNode() {
-					isSelected = false;
+					props.selected = false;
 					dom.classList.remove('ProseMirror-selectednode');
-					render();
 				},
 				stopEvent() {
 					return true;

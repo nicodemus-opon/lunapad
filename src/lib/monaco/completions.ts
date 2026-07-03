@@ -214,7 +214,10 @@ export function registerCompletions(monaco: typeof Monaco): void {
 	for (const languageId of ['prql', 'sql', 'trinosql', 'genericsql'] as const) {
 		const isSql = languageId === 'sql' || languageId === 'trinosql' || languageId === 'genericsql';
 		monaco.languages.registerCompletionItemProvider(languageId, {
-			triggerCharacters: isSql ? ['.', '(', ',', ' '] : ['.'],
+			// Dot completion is helpful for aliases/table refs. Comma/space triggers are
+			// too eager in SQL SELECT lists: while typing normally, Monaco can accept the
+			// currently selected function suggestion (often `abs`) as the next token.
+			triggerCharacters: ['.'],
 			provideCompletionItems(model, position) {
 				try {
 					return provideSqlLikeCompletions(monaco, languageId, isSql, model, position);

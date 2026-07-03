@@ -215,7 +215,7 @@
 							>
 								{item}
 								<button
-									class="text-muted-foreground/60 transition-colors duration-150 hover:text-destructive"
+									class="text-muted-foreground/60 transition-colors duration-(--motion-fast) hover:text-destructive"
 									onclick={() => onChange(serializeMultiValue(selected.filter((s) => s !== item)))}
 									aria-label="Remove {item}"
 								>
@@ -226,7 +226,7 @@
 					</div>
 				{/if}
 				{#if distinctVals.length > 0}
-					<div class="max-h-36 divide-y overflow-y-auto rounded-md border border-border/60 text-xs">
+					<div class="max-h-36 divide-y overflow-y-auto rounded-md border border-border text-xs">
 						{#each distinctVals as val (val)}
 							{@const checked = selected.includes(val)}
 							<label class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-muted/50">
@@ -279,7 +279,7 @@
 					<div class="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
 						{#each distinctVals.slice(0, 12) as val (val)}
 							<button
-								class="max-w-full truncate rounded bg-muted/50 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+								class="max-w-full truncate rounded bg-muted/50 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-muted hover:text-foreground"
 								onclick={() => onChange(val)}
 								title={val}
 							>
@@ -302,7 +302,7 @@
 		{#if idx > 0}
 			<!-- AND / OR logic toggle badge -->
 			<button
-				class="inline-flex h-5 shrink-0 items-center rounded bg-muted/50 px-1.5 font-mono text-2xs text-muted-foreground lowercase transition-colors duration-150 hover:bg-muted hover:text-foreground"
+				class="inline-flex h-5 shrink-0 items-center rounded bg-muted/50 px-1.5 font-mono text-2xs text-muted-foreground lowercase transition-colors duration-(--motion-fast) hover:bg-muted hover:text-foreground"
 				onclick={toggleLogic}
 				title="Click to toggle AND / OR"
 			>
@@ -399,7 +399,7 @@
 
 					<!-- Confirm -->
 					<button
-						class="px-1 text-muted-foreground transition-colors duration-150 hover:text-foreground"
+						class="px-1 text-muted-foreground transition-colors duration-(--motion-fast) hover:text-foreground"
 						onclick={collapseCond}
 						aria-label="Done editing"
 					>

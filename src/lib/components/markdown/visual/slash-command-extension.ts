@@ -2,11 +2,31 @@ import { Extension } from '@tiptap/core';
 import { PluginKey, TextSelection } from '@tiptap/pm/state';
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion';
 import { SLASH_COMMANDS, type SlashCommand } from '$lib/services/markdown-format';
-import { parseVisualBlocks, parseBlockWidget } from '$lib/services/markdoc-ast';
-import { isMarkdocContainerTag } from './widget-registry';
+import { markdownToPmDocument } from '$lib/services/markdoc-pm';
 
 export const slashCommandPluginKey = new PluginKey('slashCommand');
 const ENTER_EXITS_TO_FOLLOWING_PARAGRAPH = new Set(['heading', 'blockquote']);
+
+/** Remove the "/" trigger left behind when the slash menu is dismissed without
+ * picking a command. Deletes only the single trigger character at range.from
+ * (preserving any query text the user typed), so it never eats real content.
+ * Deferred to the next tick so we don't dispatch inside the suggestion apply. */
+function removeAbandonedSlash(
+	editor: import('@tiptap/core').Editor,
+	range: { from: number }
+): void {
+	setTimeout(() => {
+		if (editor.isDestroyed) return;
+		const from = range.from;
+		const to = from + 1;
+		if (to > editor.state.doc.content.size) return;
+		if (editor.state.doc.textBetween(from, to) !== '/') return;
+		editor.chain().command(({ tr }) => {
+			tr.delete(from, to);
+			return true;
+		}).run();
+	}, 0);
+}
 
 export interface SlashCommandHandler {
 	onStart: (props: { items: SlashCommand[]; command: (item: SlashCommand) => void }) => void;
@@ -29,15 +49,15 @@ export interface SlashCommandExtensionOptions {
 
 function filterCommands(query: string): SlashCommand[] {
 	const q = query.toLowerCase().trim();
+	if (!q) return SLASH_COMMANDS.slice(0, 16);
+
 	const scored = SLASH_COMMANDS.map((cmd) => {
 		let score = 0;
-		if (!q) score = 1;
 		if (cmd.id.toLowerCase() === q) score += 100;
 		else if (cmd.label.toLowerCase().startsWith(q)) score += 60;
 		else if (cmd.id.toLowerCase().startsWith(q)) score += 50;
 		else if (cmd.label.toLowerCase().includes(q)) score += 30;
 		else if (cmd.description.toLowerCase().includes(q)) score += 15;
-		else if (!q) score += 1;
 		else if (
 			!cmd.id.toLowerCase().includes(q) &&
 			!cmd.label.toLowerCase().includes(q) &&
@@ -53,50 +73,22 @@ function filterCommands(query: string): SlashCommand[] {
 	return scored.slice(0, 16).map((x) => x.cmd);
 }
 
+/** Build TipTap-ready nodes from a markdoc snippet (same path as loading markdown). */
+export function pmContentFromSnippet(snippet: string) {
+	return markdownToPmDocument(snippet.trim()).doc.content ?? [];
+}
+
 function insertWidgetFromSnippet(editor: import('@tiptap/core').Editor, snippet: string): void {
-	const trimmed = snippet.trim();
-	const blocks = parseVisualBlocks(trimmed);
-	const block = blocks[0];
-	if (!block) {
-		editor.chain().focus().insertContent({ type: 'markdocBlock', attrs: { source: trimmed } }).run();
-		return;
-	}
-	const parsed = parseBlockWidget(block);
-	if (!parsed) {
-		editor.chain().focus().insertContent({ type: 'markdocBlock', attrs: { source: trimmed } }).run();
-		return;
-	}
-	if (parsed.selfClosing || !isMarkdocContainerTag(parsed.tagName)) {
+	const content = pmContentFromSnippet(snippet);
+	if (!content.length) {
 		editor
 			.chain()
 			.focus()
-			.insertContent({
-				type: 'markdocWidget',
-				attrs: {
-					tagName: parsed.tagName,
-					attrsJson: JSON.stringify(parsed.attrs),
-					selfClosing: parsed.selfClosing
-				}
-			})
+			.insertContent({ type: 'markdocBlock', attrs: { source: snippet.trim() } })
 			.run();
 		return;
 	}
-	const bodyText = (parsed.bodySource ?? '').trim();
-	const innerContent = bodyText
-		? [{ type: 'paragraph', content: [{ type: 'text', text: bodyText }] }]
-		: [{ type: 'paragraph' }];
-	editor
-		.chain()
-		.focus()
-		.insertContent({
-			type: 'markdocContainer',
-			attrs: {
-				tagName: parsed.tagName,
-				attrsJson: JSON.stringify(parsed.attrs)
-			},
-			content: innerContent
-		})
-		.run();
+	editor.chain().focus().insertContent(content).run();
 }
 
 function insertSlashItem(
@@ -247,6 +239,9 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 		const insertQueryBlock = this.options.insertQueryBlock;
 		const insertPage = this.options.insertPage;
 		const slashOpts = { insertQueryBlock, insertPage };
+		// Guards the onExit cleanup: when a command runs it already deleteRange()s the
+		// trigger, so onExit must NOT delete again (that would eat real content).
+		let commandExecuted = false;
 		const suggestion: Omit<SuggestionOptions<SlashCommand>, 'editor'> = {
 			char: '/',
 			pluginKey: slashCommandPluginKey,
@@ -258,6 +253,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 			},
 			items: ({ query }) => filterCommands(query),
 			command: ({ editor, range, props }) => {
+				commandExecuted = true;
 				editor.chain().focus().deleteRange(range).run();
 				insertSlashItem(editor, props, slashOpts);
 			},
@@ -266,6 +262,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 				return {
 					onStart: (props) => {
 						active = true;
+						commandExecuted = false;
 						handler.onStart({
 							items: props.items,
 							command: (item) => props.command(item)
@@ -281,9 +278,16 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 						if (!active) return false;
 						return handler.onKeyDown?.(props.event) ?? false;
 					},
-					onExit: () => {
+					onExit: (props) => {
 						if (!active) return;
 						active = false;
+						// Dismissed (Escape / click-away / caret moved) without picking a
+						// command: the "/" trigger was never consumed by deleteRange, so it
+						// lingers in the doc — glued to prose ("…month./") or as a lone
+						// paragraph from the drag-gutter "+" affordance. Both leak into the
+						// serialized markdown. Remove the abandoned trigger char (keeping any
+						// filter text the user typed). Defer so we don't mutate mid-apply.
+						if (!commandExecuted) removeAbandonedSlash(props.editor, props.range);
 						handler.onExit();
 					}
 				};

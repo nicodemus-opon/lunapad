@@ -190,7 +190,7 @@
 				<button
 					class="relative flex flex-col items-center gap-0.5 rounded-md px-1 py-1.5 text-2xs transition-colors
 						{config.chartType === ct.type
-						? 'border border-primary/30 bg-primary/15 text-primary'
+						? 'border border-primary bg-primary/15 text-primary'
 						: 'border border-transparent text-muted-foreground hover:bg-muted'}"
 					onclick={() => setChartTypeSmart(ct.type)}
 					title={ct.type === recommendedChartType

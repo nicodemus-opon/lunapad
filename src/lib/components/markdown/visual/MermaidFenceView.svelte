@@ -20,8 +20,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 		class="mermaid-fence-view group/mdf relative rounded-sm border transition-colors duration-(--motion-fast) {selected
-			? 'border-ring/70 bg-muted/10'
-			: 'border-transparent hover:border-border/60 hover:bg-muted/15'}"
+			? 'border-ring bg-muted/10'
+			: 'border-transparent hover:border-border hover:bg-muted/15'}"
 		role="button"
 		tabindex="0"
 		onclick={(e) => {
@@ -69,7 +69,7 @@
 		margin: 0.35rem 0 0;
 		padding: 0.55rem 0.65rem;
 		border-radius: var(--radius-sm);
-		border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+		border: 1px solid var(--border);
 		background: color-mix(in oklab, var(--muted) 35%, transparent);
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: var(--text-2xs);

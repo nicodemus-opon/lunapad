@@ -8,6 +8,7 @@
 		onSelect?: () => void;
 		onDelete?: () => void;
 		onPatchAttrs?: (patch: Record<string, unknown>) => void;
+		onAddChild?: () => void;
 	}
 
 	const {
@@ -16,7 +17,8 @@
 		selected = false,
 		onSelect,
 		onDelete,
-		onPatchAttrs
+		onPatchAttrs,
+		onAddChild
 	}: Props = $props();
 
 	const label = $derived.by(() => {
@@ -85,6 +87,20 @@
 				<Plus class="h-3 w-3" />
 			</button>
 		</div>
+	{/if}
+
+	{#if (tagName === 'columns' || tagName === 'tabs') && onAddChild}
+		<button
+			type="button"
+			class="md-action rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium"
+			title={tagName === 'columns' ? 'Add column' : 'Add tab'}
+			onclick={(e) => {
+				e.stopPropagation();
+				onAddChild();
+			}}
+		>
+			{tagName === 'columns' ? 'Add column' : 'Add tab'}
+		</button>
 	{/if}
 
 	<span class="flex-1"></span>

@@ -474,7 +474,7 @@
 		{/if}
 		<button
 			type="button"
-			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:outline-none {dir ||
+			class="rounded p-0.5 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {dir ||
 			filtered ||
 			hasRules
 				? 'text-primary'
@@ -508,7 +508,7 @@
 						{#if globalSearch.trim()}
 							<button
 								type="button"
-								class="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+								class="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
 								onclick={() => setGlobalSearch('')}
 								aria-label="Clear search"
 								title="Clear search"
@@ -520,7 +520,7 @@
 				</div>
 			{/if}
 			<Table.Root
-				containerClass="overflow-auto rounded-sm border border-border/40 {fillHeight
+				containerClass="overflow-auto rounded-sm border border-border {fillHeight
 					? 'h-full max-h-full'
 					: 'max-h-96'}"
 			>
@@ -698,7 +698,7 @@
 			>
 				<div class="flex items-start justify-between gap-2 px-2 py-1.5">
 					<div class="min-w-0">
-						<p class="truncate font-mono text-2xs leading-none font-semibold text-foreground">
+						<p class="truncate font-mono text-2xs leading-none font-medium text-foreground">
 							{menuCol}
 						</p>
 						<p class="mt-1 text-2xs leading-none text-muted-foreground">Column actions</p>
@@ -723,7 +723,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {sortDirFor(
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {sortDirFor(
 									menuCol
 								) === 'asc'
 									? 'bg-primary/12 text-primary'
@@ -740,7 +740,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {sortDirFor(
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {sortDirFor(
 									menuCol
 								) === 'desc'
 									? 'bg-primary/12 text-primary'
@@ -757,7 +757,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center px-1.5 text-2xs text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-center px-1.5 text-2xs text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									sorting = sorting.filter((s) => s.id !== menuCol);
 									resetPaginationToFirstPage();
@@ -769,11 +769,11 @@
 						</div>
 					</div>
 
-					<div class="grid gap-0.5 border-t border-border/60 px-1 py-1.5">
+					<div class="grid gap-0.5 border-t border-border px-1 py-1.5">
 						<Button
 							variant="ghost"
 							size="sm"
-							class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50 {hasFilterFor(
+							class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {hasFilterFor(
 								menuCol
 							)
 								? 'text-warning'
@@ -793,7 +793,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={(e) => {
 									openDescPopover(menuCol, e.currentTarget as HTMLElement);
 									closeColumnMenu();
@@ -805,7 +805,7 @@
 						{/if}
 					</div>
 
-					<div class="border-t border-border/60 px-1 py-1.5">
+					<div class="border-t border-border px-1 py-1.5">
 						<div class="flex items-center justify-between px-1 pb-1">
 							<p class="text-2xs font-medium text-muted-foreground">Conditional format</p>
 							{#if hasRulesFor(menuCol)}
@@ -816,7 +816,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									setColumnRules(menuCol, defaultConditionalRulesForColumn(menuCol));
 									closeColumnMenu();
@@ -827,7 +827,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									setColumnRules(menuCol, [
 										{
@@ -846,7 +846,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									setColumnRules(menuCol, [
 										{ id: `${menuCol}:bar`, type: 'dataBar', tone: 'info' }
@@ -859,7 +859,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-1 focus-visible:ring-primary/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									setColumnRules(menuCol, [{ id: `${menuCol}:icons`, type: 'iconSet' }]);
 									closeColumnMenu();
@@ -872,7 +872,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="mt-1 h-7 w-full justify-start px-2 text-2xs text-destructive hover:text-destructive focus-visible:ring-1 focus-visible:ring-destructive/50"
+								class="mt-1 h-7 w-full justify-start px-2 text-2xs text-destructive hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50"
 								onclick={() => {
 									clearColumnRules(menuCol);
 									closeColumnMenu();
@@ -905,7 +905,7 @@
 				</p>
 				<!-- svelte-ignore a11y_autofocus -->
 				<input
-					class="w-full rounded border border-input bg-background px-2 py-1 text-2xs focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					class="w-full rounded border border-input bg-background px-2 py-1 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					type="text"
 					placeholder="Type to match…"
 					autofocus
@@ -917,7 +917,7 @@
 				/>
 				<div class="mt-1.5 flex justify-end gap-1">
 					<button
-						class="rounded px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted"
+						class="rounded px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted/60"
 						onclick={closeFilterPopover}
 					>
 						Cancel
@@ -946,14 +946,14 @@
 			>
 				<p class="mb-1 text-2xs font-medium text-muted-foreground">{descPopoverCol}</p>
 				<textarea
-					class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-2xs focus:ring-1 focus:ring-primary/40 focus:outline-none"
+					class="w-full resize-none rounded border border-input bg-background px-2 py-1 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					rows={3}
 					placeholder="Column description…"
 					bind:value={descPopoverValue}
 				></textarea>
 				<div class="mt-1 flex justify-end gap-1">
 					<button
-						class="rounded px-2 py-0.5 text-2xs text-muted-foreground hover:bg-muted"
+						class="rounded px-2 py-0.5 text-2xs text-muted-foreground hover:bg-muted/60"
 						onclick={() => (descPopoverCol = null)}
 					>
 						Cancel

@@ -294,7 +294,7 @@
 
 	const materializeColors: Record<string, string> = {
 		table: 'bg-chart-3/10 text-chart-3 border-chart-3/20',
-		view: 'bg-primary/10 text-primary border-primary/20',
+		view: 'bg-primary/10 text-primary border-primary',
 		incremental: 'bg-chart-2/10 text-chart-2 border-chart-2/20',
 		ephemeral: 'bg-muted text-muted-foreground border-border'
 	};
@@ -405,7 +405,7 @@
 									class="w-full rounded-lg border bg-accent/30 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-(--motion-fast)
 										{isFocused
 										? 'border-primary bg-background shadow-sm'
-										: 'border-border hover:border-primary/50 hover:shadow-sm'}"
+										: 'border-border hover:border-primary hover:shadow-sm'}"
 									onclick={() => openEntry(node.entry)}
 								>
 									<!-- Top row: status icon + name -->
@@ -439,8 +439,8 @@
 											<span
 												class="inline-flex items-center rounded border px-1.5 py-px text-3xs font-medium
 												{model.lastRunStatus === 'pass'
-													? 'border-success/20 bg-success/10 text-success'
-													: 'border-destructive/20 bg-destructive/10 text-destructive'}"
+													? 'border-success bg-success/10 text-success'
+													: 'border-destructive bg-destructive/10 text-destructive'}"
 											>
 												{model.lastRunStatus}
 											</span>
@@ -481,7 +481,7 @@
 									class="w-full rounded-lg border border-dashed bg-accent/10 px-3 py-2.5 text-left backdrop-blur-sm transition-all duration-(--motion-fast)
 										{isFocused
 										? 'border-primary bg-background shadow-sm'
-										: 'border-border hover:border-primary/50 hover:shadow-sm'}"
+										: 'border-border hover:border-primary hover:shadow-sm'}"
 									onclick={() => openEntry(node.entry)}
 								>
 									<div class="flex items-start gap-2">
@@ -570,7 +570,7 @@
 					<BookOpen class="h-3 w-3 text-muted-foreground/50" /> Has docs
 				</div>
 				<div class="flex items-center gap-1.5 text-2xs text-muted-foreground">
-					<span class="h-3 w-3 rounded border border-dashed border-muted-foreground/50"></span> Live cell
+					<span class="h-3 w-3 rounded border border-dashed border-muted-foreground"></span> Live cell
 					(not promoted)
 				</div>
 			</div>

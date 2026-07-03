@@ -158,7 +158,11 @@ export interface Cell {
 	udfBody: string;
 	language: CellLanguage;
 	status: CellStatus;
-	result: { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } | null;
+	result: {
+		rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean;
+		/** Full result size when `truncated` — from COUNT(*) OVER() on auto-limited queries. */
+		totalRowCount?: number;
+	} | null;
 	// Ephemeral output for cellType 'python' — stdout text, captured Plotly figure
 	// JSON specs (one per fig.show() call), and a traceback on failure. Not
 	// persisted (see SerializedCell), regenerated on each run like `errors`.
@@ -1634,17 +1638,50 @@ export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean 
 		return { sql, wrapped: false };
 	}
 	return {
-		sql: `SELECT * FROM (${body}) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+		sql: `SELECT _lunapad_sub.*, COUNT(*) OVER () AS __lunapad_total_rows FROM (${body}) AS _lunapad_sub LIMIT ${AUTO_LIMIT + 1}`,
 		wrapped: true
+	};
+}
+
+const LUNAPAD_TOTAL_ROW_COL = '__lunapad_total_rows';
+
+function stripTotalRowCountColumn(result: {
+	rows: Record<string, unknown>[];
+	columns: string[];
+}): { rows: Record<string, unknown>[]; columns: string[]; totalRowCount?: number } {
+	if (!result.rows.length || !result.columns.includes(LUNAPAD_TOTAL_ROW_COL)) return result;
+	const totalRowCount = Number(result.rows[0]?.[LUNAPAD_TOTAL_ROW_COL]);
+	return {
+		columns: result.columns.filter((c) => c !== LUNAPAD_TOTAL_ROW_COL),
+		rows: result.rows.map((row) => {
+			const { [LUNAPAD_TOTAL_ROW_COL]: _total, ...rest } = row;
+			return rest;
+		}),
+		totalRowCount: Number.isFinite(totalRowCount) ? totalRowCount : undefined
 	};
 }
 
 function applyAutoLimit(
 	result: { rows: Record<string, unknown>[]; columns: string[] },
 	wrapped: boolean
-): { rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean } {
-	if (!wrapped || result.rows.length <= AUTO_LIMIT) return result;
-	return { columns: result.columns, rows: result.rows.slice(0, AUTO_LIMIT), truncated: true };
+): {
+	rows: Record<string, unknown>[];
+	columns: string[];
+	truncated?: boolean;
+	totalRowCount?: number;
+} {
+	if (!wrapped) return result;
+	const withTotal = stripTotalRowCountColumn(result);
+	const totalRowCount = withTotal.totalRowCount ?? withTotal.rows.length;
+	if (withTotal.rows.length <= AUTO_LIMIT) {
+		return { columns: withTotal.columns, rows: withTotal.rows, totalRowCount };
+	}
+	return {
+		columns: withTotal.columns,
+		rows: withTotal.rows.slice(0, AUTO_LIMIT),
+		truncated: true,
+		totalRowCount
+	};
 }
 
 function normalizeQueryResult(result: { rows: Record<string, unknown>[]; columns: string[] }): {

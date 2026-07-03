@@ -681,14 +681,14 @@
 	<div class="notion-canvas relative min-w-0 flex-1">
 		{#if initError}
 			<div
-				class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+				class="rounded-md border border-destructive bg-destructive/10 p-3 text-xs text-destructive"
 			>
 				Visual editor failed to load: {initError}
 			</div>
 		{/if}
 
 		{#if isEmpty}
-			<div class="rounded-lg border border-dashed border-border/70 bg-muted/20 p-4">
+			<div class="rounded-lg border border-dashed border-border bg-muted/20 p-4">
 				<p class="text-sm font-semibold">Start writing</p>
 				<p class="mt-1 text-xs text-muted-foreground">
 					Type <kbd class="rounded bg-muted px-1 font-mono text-2xs">/</kbd> for blocks and widgets,
@@ -765,7 +765,7 @@
 			>
 				<button
 					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 					onclick={() => {
 						moveBlockAt(ctxMenu!.pos, 'up');
 						ctxMenu = null;
@@ -775,7 +775,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 					onclick={() => {
 						moveBlockAt(ctxMenu!.pos, 'down');
 						ctxMenu = null;
@@ -785,7 +785,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 					onclick={() => {
 						duplicateBlockAt(ctxMenu!.pos);
 						ctxMenu = null;
@@ -795,7 +795,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 					onclick={() => {
 						insertBlockBelow(ctxMenu!.pos);
 						ctxMenu = null;
@@ -818,14 +818,14 @@
 	</div>
 
 	{#if selectedNodeInfo}
-		<aside class="visual-inspector w-64 shrink-0 rounded-sm border border-border/50 bg-popover/95">
+		<aside class="visual-inspector w-64 shrink-0 rounded-sm border border-border bg-popover/95">
 			<div class="flex items-center justify-between border-b px-2.5 py-1.5">
 				<span class="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
 					{selectedNodeInfo.type === 'block' ? 'Block' : selectedNodeInfo.tagName ?? 'Properties'}
 				</span>
 				<button
 					type="button"
-					class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 					title="Close"
 					aria-label="Close inspector"
 					onclick={() => {
@@ -886,7 +886,7 @@
 		align-items: center;
 		gap: 1px;
 		opacity: 0;
-		transition: opacity 0.15s ease-out;
+		transition: opacity var(--motion-fast) var(--motion-ease-out);
 	}
 	.notebook-markdown-editor:focus-within :global(.notion-drag-gutter),
 	:global(.notion-drag-gutter:hover) {
@@ -926,7 +926,7 @@
 	}
 	:global(.ProseMirror-selectednode .inline-widget-view),
 	:global(.ProseMirror-selectednode .markdoc-block-view) {
-		border-color: color-mix(in oklab, var(--ring) 70%, transparent);
+		border-color: var(--ring);
 	}
 	.bubble-host {
 		position: absolute;

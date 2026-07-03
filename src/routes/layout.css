@@ -570,6 +570,6 @@ select {
 }
 .monaco-editor .rendered-markdown hr {
 	border: none;
-	border-top: 1px solid color-mix(in oklab, currentColor 15%, transparent);
+	border-top: 1px solid var(--border);
 	margin: 0.45em 0;
 }

@@ -22,7 +22,7 @@
 
 {#if degraded && !dismissed && health}
 	<div
-		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-2xs text-warning"
+		class="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-warning bg-warning/10 px-2 py-1.5 text-2xs text-warning"
 		role="status"
 	>
 		<AlertTriangle class="mt-0.5 h-3 w-3 shrink-0 opacity-70" />

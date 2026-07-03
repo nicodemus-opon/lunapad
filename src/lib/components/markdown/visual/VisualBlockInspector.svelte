@@ -190,6 +190,21 @@
 					{/each}
 				</select>
 			</label>
+			{#if String(parsed.attrs.type ?? 'bar') === 'histogram'}
+				<label class="field">
+					<span>Histogram bins</span>
+					<input
+						type="number"
+						min="1"
+						value={parsed.attrs.histogramBins != null ? Number(parsed.attrs.histogramBins) : ''}
+						placeholder="auto"
+						oninput={(e) => {
+							const raw = e.currentTarget.value.trim();
+							setAttr('histogramBins', raw ? Number(raw) : undefined);
+						}}
+					/>
+				</label>
+			{/if}
 			<label class="field">
 				<span>X column</span>
 				<input
@@ -356,7 +371,7 @@
 					oninput={(e) => setAttr('linkedFilter', e.currentTarget.value)}
 				/>
 			</label>
-			<hr class="border-border/50" />
+			<hr class="border-border" />
 			<p class="text-2xs font-medium text-muted-foreground">Summary / pivot</p>
 			<label class="field">
 				<span>Index / group-by (JSON array)</span>
@@ -570,6 +585,17 @@
 					oninput={(e) => setAttr('label', e.currentTarget.value)}
 				/>
 			</label>
+			<label class="field">
+				<span>Color</span>
+				<select
+					value={String(parsed.attrs.color ?? 'info')}
+					onchange={(e) => setAttr('color', e.currentTarget.value)}
+				>
+					{#each ['info', 'success', 'warning', 'error'] as c (c)}
+						<option value={c}>{c}</option>
+					{/each}
+				</select>
+			</label>
 		{:else if parsed.tagName === 'grid' || parsed.tagName === 'columns' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
 			{#if parsed.tagName === 'grid'}
 				<label class="field">
@@ -680,15 +706,10 @@
 						{/each}
 					</select>
 				</label>
+				<p class="text-2xs text-muted-foreground">
+					Edit diagram source in the canvas (toggle Visual / Source on the block).
+				</p>
 			{/if}
-			<label class="field">
-				<span>{parsed.tagName === 'mermaid' ? 'Diagram / template source' : 'Body'}</span>
-				<textarea
-					class="min-h-24 font-mono"
-					value={parsed.bodySource}
-					oninput={(e) => onPatch({ body: e.currentTarget.value })}
-				></textarea>
-			</label>
 		{:else if parsed.tagName === 'card' || parsed.tagName === 'callout'}
 			{#if parsed.tagName === 'card'}
 				<label class="field">
@@ -711,14 +732,6 @@
 					</select>
 				</label>
 			{/if}
-			<label class="field">
-				<span>Body</span>
-				<textarea
-					class="min-h-24 font-mono"
-					value={parsed.bodySource}
-					oninput={(e) => onPatch({ body: e.currentTarget.value })}
-				></textarea>
-			</label>
 		{:else}
 			<label class="field">
 				<span>Source</span>
@@ -753,7 +766,7 @@
 		width: 100%;
 		height: 1.65rem;
 		border-radius: var(--radius-sm);
-		border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+		border: 1px solid var(--border);
 		background: var(--background);
 		color: var(--foreground);
 		padding: 0 0.45rem;

@@ -113,7 +113,7 @@
 	{:else if packages.length === 0}
 		<p class="text-xs text-muted-foreground">No packages found yet — run a Python cell first.</p>
 	{:else}
-		<div class="divide-y divide-border/60 rounded-md border border-border/60">
+		<div class="divide-y divide-border rounded-md border border-border">
 			{#each packages as pkg (pkg.name)}
 				<div class="flex items-center justify-between gap-2 px-3 py-2">
 					<div class="flex items-center gap-2 text-xs">

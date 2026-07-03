@@ -966,11 +966,11 @@
 			</Dialog.Trigger>
 
 			<Dialog.Content
-				class="max-w-180 overflow-hidden border-border/70 bg-background/98 p-0 shadow-2xl"
+				class="max-w-180 overflow-hidden border-border bg-background/98 p-0 shadow-2xl"
 				data-keyboard-scope="stage-menu"
 			>
 				<div
-					class="sticky top-0 z-10 border-b border-border/60 bg-background/96 px-3 pt-2.5 pb-2 backdrop-blur-sm"
+					class="sticky top-0 z-10 border-b border-border bg-background/96 px-3 pt-2.5 pb-2 backdrop-blur-sm"
 				>
 					<div class="flex items-center gap-2">
 						<div class="relative flex-1">
@@ -982,7 +982,7 @@
 								bind:value={query}
 								autofocus
 								placeholder="Prompt or search stages, templates, and columns..."
-								class="h-8 border-border/60 bg-muted/15 pl-8 text-xs placeholder:text-muted-foreground/50"
+								class="h-8 border-border bg-muted/15 pl-8 text-xs placeholder:text-muted-foreground/50"
 								oninput={onQueryInput}
 							/>
 						</div>
@@ -1021,7 +1021,7 @@
 						{#each [['/', 'open'], ['1–9', 'pick'], ['↵', 'AI generate'], ['⌘↵', 'AI + apply']] as [key, hint]}
 							<span class="inline-flex items-center gap-1 text-3xs text-muted-foreground/50">
 								<kbd
-									class="rounded border border-border/50 bg-muted/40 px-1 py-0.5 font-mono text-3xs leading-none"
+									class="rounded border border-border bg-muted/40 px-1 py-0.5 font-mono text-3xs leading-none"
 									>{key}</kbd
 								>
 								{hint}
@@ -1033,20 +1033,20 @@
 				<div class="max-h-[70vh] overflow-auto px-3 pt-2 pb-3">
 					{#if normalizedQuery.length > 0}
 						{#if llmFullQuery}
-							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2">
+							<div class="mb-2 rounded-lg border border-primary bg-primary/5 px-2.5 py-2">
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<p class="flex items-center gap-1.5 text-2xs font-medium text-primary">
 										<Sparkles class="h-3 w-3" />
 										AI full query — window / join / analytics
 									</p>
 									<div class="flex items-center gap-2">
-										<span class="add-stage-badge border-primary/30 bg-primary/15 text-primary"
+										<span class="add-stage-badge border-primary bg-primary/15 text-primary"
 											>AI</span
 										>
 										<Button
 											variant="outline"
 											size="sm"
-											class="h-7 border-primary/30 px-2 text-2xs hover:bg-primary/10"
+											class="h-7 border-primary px-2 text-2xs hover:bg-primary/10"
 											onclick={applyLLMFullQuery}
 										>
 											Apply
@@ -1059,7 +1059,7 @@
 						{/if}
 
 						{#if promptPlan}
-							<div class="mb-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-2">
+							<div class="mb-2 rounded-lg border border-primary bg-primary/[0.07] px-2.5 py-2">
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<p class="text-2xs text-primary/95">
 										Generated block: {promptPlan.suggestion.label}
@@ -1098,7 +1098,7 @@
 
 						{#if promptPlanMessage}
 							<p
-								class="mb-2 rounded-md border border-border/65 bg-muted/15 px-2.5 py-1.5 text-2xs text-muted-foreground"
+								class="mb-2 rounded-md border border-border bg-muted/15 px-2.5 py-1.5 text-2xs text-muted-foreground"
 							>
 								{promptPlanMessage}
 							</p>
@@ -1106,7 +1106,7 @@
 
 						{#if matchedColumn}
 							<div
-								class="mb-2 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/[0.07] px-2.5 py-1.5"
+								class="mb-2 flex items-center justify-between rounded-lg border border-primary bg-primary/[0.07] px-2.5 py-1.5"
 							>
 								<p class="text-2xs text-primary/95">Semantic column match detected</p>
 								<span class="add-stage-badge">Adapted for {matchedColumn}</span>
@@ -1127,7 +1127,7 @@
 										</div>
 										{#each lane.results as result, idx (`${lane.key}-${idx}`)}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/70 hover:bg-accent"
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border hover:bg-accent"
 												onclick={() => chooseCommand(result)}
 											>
 												<div class="flex items-center gap-2">
@@ -1186,7 +1186,7 @@
 										{#each quickChips as chip, idx (chip.id)}
 											{@const ItemIcon = ICONS[chip.icon]}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/80 hover:bg-accent"
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border hover:bg-accent"
 												onclick={() => chooseQuickChip(idx)}
 												title={chip.label}
 											>
@@ -1219,7 +1219,7 @@
 									{#each stageResults as item, idx (item.type)}
 										{@const ItemIcon = ICONS[item.type]}
 										<button
-											class="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2 text-left transition-[background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) hover:border-border/80 hover:bg-accent"
+											class="flex items-center gap-2 rounded-lg border border-border bg-muted/10 px-2.5 py-2 text-left transition-[background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) hover:border-border hover:bg-accent"
 											onclick={() => choose(item.type)}
 											title={item.description}
 										>
@@ -1268,7 +1268,7 @@
 												matchedColumn
 											)}
 											<button
-												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-(--motion-fast) hover:border-border/80 hover:bg-accent {matchedColumn &&
+												class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color,opacity] duration-(--motion-fast) hover:border-border hover:bg-accent {matchedColumn &&
 												!referencesMatchedColumn
 													? 'opacity-55'
 													: ''}"
@@ -1301,7 +1301,7 @@
 										<div class="space-y-0.5">
 											{#each analysisResults as suggestion, idx (suggestion.id)}
 												<button
-													class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border/80 hover:bg-accent"
+													class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border hover:bg-accent"
 													onclick={() => chooseCommand({ kind: 'analysis', suggestion })}
 													title={suggestion.prompt}
 												>
@@ -1342,7 +1342,7 @@
 	}
 
 	.add-stage-trigger:hover :global(button) {
-		border-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+		border-color: var(--muted-foreground);
 	}
 
 	.add-stage-badge {
@@ -1369,7 +1369,7 @@
 	}
 
 	.add-stage-kind--preset {
-		border-color: color-mix(in oklab, var(--primary) 30%, transparent);
+		border-color: var(--primary);
 		color: var(--primary);
 		background: color-mix(in oklab, var(--primary) 10%, transparent);
 	}

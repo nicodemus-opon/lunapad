@@ -115,19 +115,19 @@
 					{#each standards.namingRules as rule, i}
 						<div class="flex items-center gap-1.5">
 							<input
-								class="w-20 shrink-0 rounded border border-border/50 bg-background px-1.5 py-0.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+								class="w-20 shrink-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
 								placeholder="dim_"
 								value={rule.prefix}
 								oninput={(e) => updateRule(i, 'prefix', (e.target as HTMLInputElement).value)}
 							/>
 							<input
-								class="min-w-0 flex-1 rounded border border-border/50 bg-background px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+								class="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
 								placeholder="description"
 								value={rule.description}
 								oninput={(e) => updateRule(i, 'description', (e.target as HTMLInputElement).value)}
 							/>
 							<select
-								class="w-24 shrink-0 rounded border border-border/50 bg-background px-1 py-0.5 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+								class="w-24 shrink-0 rounded border border-border bg-background px-1 py-0.5 text-xs text-foreground focus:border-primary focus:outline-none"
 								value={rule.materialization}
 								onchange={(e) =>
 									updateRule(i, 'materialization', (e.target as HTMLSelectElement).value)}
@@ -153,7 +153,7 @@
 			{/if}
 
 			<textarea
-				class="min-h-[52px] w-full resize-none rounded border border-border/50 bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+				class="min-h-[52px] w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
 				placeholder="Custom instructions (e.g. always use UTC timestamps, surrogate keys for dimensions…)"
 				value={standards.customInstructions}
 				oninput={(e) => updateInstructions((e.target as HTMLTextAreaElement).value)}

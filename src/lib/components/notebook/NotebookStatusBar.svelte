@@ -8,6 +8,7 @@
 	import type { Connection } from '$lib/types/connection';
 	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
 	import { Loader2 } from '@lucide/svelte';
+	import CellStatusChip from '$lib/components/cell/CellStatusChip.svelte';
 
 	let {
 		connections,
@@ -29,13 +30,13 @@
 </script>
 
 <div
-	class="flex h-7 shrink-0 items-center gap-3 border-t border-border/40 bg-muted/20 px-3 text-2xs text-muted-foreground select-none"
+	class="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-muted/20 px-3 text-2xs text-muted-foreground select-none"
 	role="status"
 	aria-live="polite"
 >
 	<span class="min-w-0 truncate font-mono" title="Default connection">{connectionLabel}</span>
 
-	<span class="mx-auto shrink-0 tabular-nums">
+	<span class="mx-auto shrink-0 font-mono tabular-nums">
 		{#if runningCount > 0}
 			<span class="inline-flex items-center gap-1 text-foreground">
 				<Loader2 class="h-3 w-3 animate-spin" />
@@ -46,17 +47,19 @@
 		{/if}
 	</span>
 
-	<span class="flex shrink-0 items-center gap-1.5 tabular-nums">
+	<span class="flex shrink-0 items-center gap-1.5 font-mono tabular-nums">
 		{cells.length} cell{cells.length === 1 ? '' : 's'}
 		{#if staleCount > 0 && !reportView}
 			<span class="text-muted-foreground/50">·</span>
-			<button
-				type="button"
-				class="rounded-full bg-warning/15 px-1.5 py-0.5 font-medium text-warning transition-colors hover:bg-warning/25 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+			<CellStatusChip
+				tone="warning"
+				ariaLabel="Run all stale cells"
 				onclick={() => void runAllStale()}
 			>
-				{staleCount} stale
-			</button>
+				{#snippet label()}
+					{staleCount} stale
+				{/snippet}
+			</CellStatusChip>
 		{/if}
 	</span>
 </div>

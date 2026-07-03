@@ -47,12 +47,12 @@
 
 <!-- Panel -->
 <div
-	class="flex shrink-0 flex-col border-l border-border/40 bg-sidebar"
+	class="flex shrink-0 flex-col border-l border-border bg-sidebar"
 	style="width: {width}px;"
 	data-testid="ai-panel"
 >
 	<!-- Header -->
-	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border/40 px-2.5">
+	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border px-2.5">
 		<div class="flex items-center gap-1.5 text-sm font-medium text-foreground">
 			<Sparkles class="h-3.5 w-3.5 text-primary" />
 			<span>Assistant</span>

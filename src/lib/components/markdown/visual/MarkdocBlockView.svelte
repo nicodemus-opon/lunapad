@@ -34,8 +34,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="markdoc-block-view group/mdb relative rounded-sm border transition-colors duration-(--motion-fast) {selected
-		? 'border-ring/70 bg-muted/10'
-		: 'border-transparent hover:border-border/60 hover:bg-muted/15'}"
+		? 'border-ring bg-muted/10'
+		: 'border-transparent hover:border-border hover:bg-muted/15'}"
 	role="button"
 	tabindex="0"
 	onclick={(e) => {

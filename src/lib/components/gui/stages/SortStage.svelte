@@ -84,7 +84,7 @@
 		>
 			<!-- Direction toggle -->
 			<button
-				class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground transition-colors duration-150 hover:bg-muted/60 hover:text-foreground"
+				class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-muted/60 hover:text-foreground"
 				onclick={() => updateKey(idx, { dir: key.dir === 'asc' ? 'desc' : 'asc' })}
 				title="Click to toggle direction"
 			>
@@ -113,7 +113,7 @@
 
 	<!-- Pending new key (opens in edit mode immediately) -->
 	{#if pendingNew}
-		<div class="{CHIP} border-ring/60">
+		<div class="{CHIP} border-ring">
 			<span class="flex h-full items-center pr-0.5 pl-1.5 text-muted-foreground"
 				><ArrowUp class="h-3 w-3" /></span
 			>

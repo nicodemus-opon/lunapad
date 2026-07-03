@@ -124,7 +124,7 @@
 		class="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 transition-colors select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none
 			{dragOver
 			? 'border-primary bg-primary/8 text-foreground'
-			: 'border-border/50 text-muted-foreground hover:border-primary/50 hover:bg-muted/30 hover:text-foreground'}"
+			: 'border-border text-muted-foreground hover:border-primary hover:bg-muted/30 hover:text-foreground'}"
 		ondragover={onDragOver}
 		ondragleave={() => {
 			dragOver = false;
@@ -175,7 +175,7 @@
 	{#if showUrl && !loading}
 		<div class="mt-1 flex gap-1">
 			<input
-				class="min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2 py-1 font-mono text-2xs transition-colors placeholder:text-muted-foreground/60 focus:border-ring/60 focus:ring-2 focus:ring-ring/30 focus:outline-none"
+				class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-2xs transition-colors placeholder:text-muted-foreground/60 focus:border-ring focus:ring-2 focus:ring-ring/30 focus:outline-none"
 				placeholder="https://…/data.parquet"
 				bind:value={urlInput}
 				onkeydown={(e) => {
@@ -187,7 +187,7 @@
 				}}
 			/>
 			<button
-				class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-40"
+				class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-40"
 				onclick={() => void handleURL()}
 				disabled={!urlInput.trim()}
 				title="Fetch and import"
@@ -195,7 +195,7 @@
 				<Link class="h-3 w-3" />
 			</button>
 			<button
-				class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+				class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 				onclick={() => {
 					showUrl = false;
 					urlInput = '';

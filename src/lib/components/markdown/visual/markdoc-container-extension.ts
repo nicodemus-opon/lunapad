@@ -6,6 +6,8 @@ import { parseAttrsJson } from './widget-registry';
 import ContainerChrome from './ContainerChrome.svelte';
 import MermaidContainerView from './MermaidContainerView.svelte';
 import { mermaidCodeFromContainerNode } from './mermaid-code';
+import { reactiveProps } from './reactive-props.svelte';
+import { markdownToPmDocument } from '$lib/services/markdoc-pm';
 
 export interface MarkdocContainerExtensionContext {
 	getCells: () => Cell[];
@@ -171,11 +173,7 @@ export const MarkdocContainerExtension = Node.create({
 	},
 
 	renderHTML({ HTMLAttributes }) {
-		return [
-			'div',
-			mergeAttributes(HTMLAttributes, { 'data-markdoc-container': 'true' }),
-			0
-		];
+		return ['div', mergeAttributes(HTMLAttributes, { 'data-markdoc-container': 'true' }), 0];
 	},
 
 	addNodeView() {
@@ -309,11 +307,50 @@ export const MarkdocContainerExtension = Node.create({
 				renderChrome();
 			};
 
-			const renderChrome = () => {
-				if (component) unmount(component);
-				if (chromeHost) chromeHost.remove();
-				chromeHost = null;
+			const addChild = () => {
+				const pos = getPos();
+				if (typeof pos !== 'number') return;
+				const containerNode = editor.state.doc.nodeAt(pos);
+				if (!containerNode) return;
+				let snippet: string | null = null;
+				if (tagName === 'columns') {
+					snippet = '{% column %}\n\n{% /column %}';
+				} else if (tagName === 'tabs') {
+					const tabCount = containerNode.content.childCount + 1;
+					snippet = `{% tab label="Tab ${tabCount}" %}\n\n{% /tab %}`;
+				}
+				if (!snippet) return;
+				const child = markdownToPmDocument(snippet).doc.content?.[0];
+				if (!child) return;
+				const insertPos = pos + 1 + containerNode.content.size;
+				editor.chain().focus().insertContentAt(insertPos, child).run();
+				if (tagName === 'tabs') {
+					activeTabIndex = containerNode.content.childCount;
+					requestAnimationFrame(() => applyAll());
+				}
+			};
 
+			// Chrome is mounted lazily but only ONCE; afterwards its reactive props are
+			// mutated in place and visibility is toggled via CSS. Remounting on every
+			// select/update destroyed any open dropdown inside the chrome mid-click.
+			const chromeProps = reactiveProps({
+				tagName,
+				attrs: parseAttrsJson(attrsJson),
+				selected: false,
+				onSelect: () => {
+					const pos = getPos();
+					if (typeof pos === 'number') {
+						editor.chain().focus().setNodeSelection(pos).run();
+					}
+				},
+				onDelete: () => {
+					editor.chain().focus().deleteSelection().run();
+				},
+				onPatchAttrs: (patch: Record<string, unknown>) => patchAttrs(patch),
+				onAddChild: () => addChild()
+			});
+
+			const renderChrome = () => {
 				const minimalChrome =
 					tagName === 'tabs' ||
 					tagName === 'grid' ||
@@ -325,29 +362,18 @@ export const MarkdocContainerExtension = Node.create({
 					tagName === 'details' ||
 					tagName === 'mermaid';
 				const showChrome = !minimalChrome || isSelected;
-				if (showChrome) {
+
+				chromeProps.tagName = tagName;
+				chromeProps.attrs = parseAttrsJson(attrsJson);
+				chromeProps.selected = isSelected;
+
+				if (showChrome && !chromeHost) {
 					chromeHost = document.createElement('div');
 					chromeHost.className = 'markdoc-container-chrome';
 					dom.insertBefore(chromeHost, contentDOM);
-					component = mount(ContainerChrome, {
-						target: chromeHost,
-						props: {
-							tagName,
-							attrs: parseAttrsJson(attrsJson),
-							selected: isSelected,
-							onSelect: () => {
-								const pos = getPos();
-								if (typeof pos === 'number') {
-									editor.chain().focus().setNodeSelection(pos).run();
-								}
-							},
-							onDelete: () => {
-								editor.chain().focus().deleteSelection().run();
-							},
-							onPatchAttrs: patchAttrs
-						}
-					});
+					component = mount(ContainerChrome, { target: chromeHost, props: chromeProps });
 				}
+				if (chromeHost) chromeHost.style.display = showChrome ? '' : 'none';
 			};
 
 			const applyAll = () => {
@@ -385,8 +411,7 @@ export const MarkdocContainerExtension = Node.create({
 					':scope > .markdoc-container-node[data-tag="tab"], :scope > .markdoc-container-node.is-tab'
 				).length;
 				if (tabCount === 0) return false;
-				const stripCount =
-					dom.querySelector(':scope > .md-tabs-strip')?.children.length ?? 0;
+				const stripCount = dom.querySelector(':scope > .md-tabs-strip')?.children.length ?? 0;
 				if (stripCount === tabCount) return true;
 				applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
 					activeIndex: activeTabIndex,
@@ -475,7 +500,9 @@ export const MarkdocContainerExtension = Node.create({
 				stopEvent(event) {
 					const target = event.target as HTMLElement;
 					if (target.closest('.md-tabs-strip, .md-details-summary, .md-tab-btn')) return true;
-					if (target.closest('.markdoc-container-chrome, .mermaid-container-host, .markdown-mode-bar'))
+					if (
+						target.closest('.markdoc-container-chrome, .mermaid-container-host, .markdown-mode-bar')
+					)
 						return true;
 					return false;
 				},

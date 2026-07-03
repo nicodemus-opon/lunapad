@@ -131,7 +131,7 @@
 	<Dialog.Content class="max-w-3xl gap-0 overflow-hidden p-0">
 		<Dialog.Close class="absolute top-3 right-3 z-10" />
 		<div class="flex h-[560px]">
-			<div class="flex w-44 shrink-0 flex-col border-r border-border/60 bg-muted/20 p-2">
+			<div class="flex w-44 shrink-0 flex-col border-r border-border bg-muted/20 p-2">
 				<p class="px-2 py-1.5 text-xs font-semibold">Settings</p>
 				<nav class="mt-1 space-y-0.5">
 					{#each navItems as item (item.id)}
@@ -259,7 +259,7 @@
 							</Button>
 						</div>
 
-						<div class="border-t border-border/60 pt-4">
+						<div class="border-t border-border pt-4">
 							<Button variant="destructive" size="sm" class="gap-1.5 text-xs" onclick={onLogout}>
 								<LogOut class="h-3.5 w-3.5" /> Log out
 							</Button>
@@ -327,7 +327,7 @@
 								Used by the AI chat panel. For Ollama: <span class="font-mono">qwen3:1.7b</span>
 								(fast) or <span class="font-mono">qwen3:4b</span> (better quality).
 							</p>
-							<div class="space-y-1 border-t border-border/40 pt-3">
+							<div class="space-y-1 border-t border-border pt-3">
 								<label class="flex items-center gap-2 text-xs text-muted-foreground">
 									<input
 										type="checkbox"

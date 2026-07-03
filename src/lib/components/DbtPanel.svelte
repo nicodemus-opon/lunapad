@@ -290,9 +290,9 @@
 	}
 </script>
 
-<div class="border-t border-border/40">
+<div class="border-t border-border">
 	<!-- Section header -->
-	<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 		<button
 			class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 			onclick={() => (expanded = !expanded)}
@@ -478,8 +478,8 @@
 
 	<!-- Schedules sub-section -->
 	{#if projectFolder}
-		<div class="border-t border-border/40">
-			<div class="flex h-9 shrink-0 items-center border-b border-border/30 px-2">
+		<div class="border-t border-border">
+			<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
 				<button
 					class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 					onclick={() => (schedulesExpanded = !schedulesExpanded)}
@@ -547,7 +547,7 @@
 								{#snippet trailing()}
 									{#if schedule.select}
 										<span
-											class="shrink-0 rounded-sm border border-border/50 px-1 font-mono text-3xs text-muted-foreground/50"
+											class="shrink-0 rounded-sm border border-border px-1 font-mono text-3xs text-muted-foreground/50"
 											>{schedule.select}</span
 										>
 									{/if}
@@ -592,7 +592,7 @@
 		<div
 			class="fixed bottom-0 left-0 z-(--z-overlay) w-72 rounded-tr-lg border border-border bg-background shadow-xl"
 		>
-			<div class="flex items-center justify-between border-b border-border/40 px-2 py-1">
+			<div class="flex items-center justify-between border-b border-border px-2 py-1">
 				<span class="truncate text-2xs font-medium text-muted-foreground">
 					{runningJobId
 						? `${logHeader}…`

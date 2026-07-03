@@ -63,7 +63,8 @@
 		onOpenInlinePrompt,
 		onOpenWorksheet,
 		onShareWithAI,
-		isPlotCell = false
+		isPlotCell = false,
+		dragHandle = true
 	}: {
 		cell: Cell;
 		notebookId?: string;
@@ -84,6 +85,10 @@
 		onOpenWorksheet?: () => void;
 		onShareWithAI?: () => void;
 		isPlotCell?: boolean;
+		/** When true (classic notebook), the trigger doubles as the SortableJS drag
+		 * handle. Disable inside the visual document editor, where dragging is owned
+		 * by the ProseMirror drag gutter and a second handle conflicts. */
+		dragHandle?: boolean;
 	} = $props();
 
 	const codeHidden = $derived(cell.display === 'output');
@@ -93,10 +98,12 @@
 
 <DropdownMenu.Root bind:open>
 	<DropdownMenu.Trigger
-		data-drag-handle
-		class="flex h-6 w-5 cursor-grab items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
-		aria-label="Cell actions — drag to reorder"
-		title="Click for actions, drag to reorder"
+		data-drag-handle={dragHandle ? '' : undefined}
+		class="flex h-6 w-5 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {dragHandle
+			? 'cursor-grab active:cursor-grabbing'
+			: 'cursor-pointer'}"
+		aria-label={dragHandle ? 'Cell actions — drag to reorder' : 'Cell actions'}
+		title={dragHandle ? 'Click for actions, drag to reorder' : 'Cell actions'}
 	>
 		<GripVertical class="h-3.5 w-3.5" />
 	</DropdownMenu.Trigger>

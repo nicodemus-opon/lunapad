@@ -113,6 +113,11 @@
 	let suppressUpdate = false;
 	let previewLocked = false;
 	let destroyed = false;
+	let layoutFrame: number | null = null;
+	// focus() can be called before Monaco has finished its async import/create
+	// (e.g. right after a query block expands from "click to edit"). Remember the
+	// request and honor it once the editor exists so the caret actually lands.
+	let focusRequested = false;
 
 	function themeName(isDark: boolean): string {
 		return isDark ? 'lunapad-dark' : 'lunapad-light';
@@ -199,6 +204,25 @@
 		return true;
 	}
 
+	function scheduleEditorLayoutPass(): void {
+		if (!editor || !container || typeof requestAnimationFrame === 'undefined') return;
+		if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
+		layoutFrame = requestAnimationFrame(() => {
+			layoutFrame = null;
+			if (!editor || !container || destroyed) return;
+			if (model && model.getValue() !== code) {
+				suppressUpdate = true;
+				applyFullReplace(code, false);
+				suppressUpdate = false;
+			}
+			const { width, height } = container.getBoundingClientRect();
+			if (width > 0 && height > 0) {
+				editor.layout({ width: Math.round(width), height: Math.round(height) });
+				editor.render(true);
+			}
+		});
+	}
+
 	onMount(async () => {
 		const mod = await import('$lib/monaco');
 		if (destroyed) return;
@@ -272,6 +296,7 @@
 			fixedOverflowWidgets: true,
 			quickSuggestions: { other: true, comments: false, strings: false },
 			suggestOnTriggerCharacters: true,
+			acceptSuggestionOnCommitCharacter: false,
 			// Word-based suggestions query the editor worker async and can leave the
 			// suggest widget stuck on "Loading…" while our sync schema provider runs.
 			wordBasedSuggestions: language === 'sql' ? 'off' : 'currentDocument',
@@ -282,6 +307,11 @@
 		});
 		editor = ed;
 
+		if (focusRequested) {
+			focusRequested = false;
+			ed.focus();
+		}
+
 		ed.onDidChangeModelContent(() => {
 			if (!suppressUpdate && model) onchange(model.getValue());
 		});
@@ -289,11 +319,13 @@
 		if (layout === 'auto') {
 			ed.onDidContentSizeChange(() => {
 				container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
+				scheduleEditorLayoutPass();
 			});
 			container.style.height = `${Math.max(80, ed.getContentHeight())}px`;
 		} else {
 			container.style.height = '100%';
 		}
+		scheduleEditorLayoutPass();
 
 		ed.onDidBlurEditorWidget(() => {
 			formatCurrentSQL();
@@ -330,6 +362,7 @@
 
 	onDestroy(() => {
 		destroyed = true;
+		if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
 		if (model && clearModelCompletions) clearModelCompletions(model);
 		if (model && clearModelDialect) clearModelDialect(model);
 		if (model && clearModelPythonContext) clearModelPythonContext(model);
@@ -379,6 +412,7 @@
 		} else {
 			container.style.height = `${Math.max(80, editor.getContentHeight())}px`;
 		}
+		scheduleEditorLayoutPass();
 	});
 
 	// Sync language + SQL dialect (cells convert PRQL ↔ SQL)
@@ -452,7 +486,8 @@
 	});
 
 	export function focus(): void {
-		editor?.focus();
+		if (editor) editor.focus();
+		else focusRequested = true;
 	}
 
 	export function format(): void {
@@ -503,7 +538,7 @@
 <style>
 	.editor-container {
 		min-height: 80px;
-		border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+		border: 1px solid var(--border);
 		overflow: hidden;
 	}
 	.editor-container.notebook-embedded {
@@ -519,6 +554,9 @@
 	.editor-container.editor-fill {
 		min-height: 0;
 		height: 100%;
+		/* When the wrapper is a flex column (worksheet), grow to fill it even if
+		   height:100% can't resolve — otherwise Monaco collapses to a sliver. */
+		flex: 1 1 auto;
 	}
 	.editor-container :global(.monaco-editor),
 	.editor-container :global(.monaco-editor .overflow-guard) {

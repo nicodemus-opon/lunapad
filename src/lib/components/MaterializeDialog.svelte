@@ -183,9 +183,9 @@
 	const modes = $derived(isDbtProject ? dbtModes : localModes);
 
 	const modeColors: Record<string, string> = {
-		table: 'bg-chart-3/10 text-chart-3 border-chart-3/30',
-		view: 'bg-chart-1/10 text-chart-1 border-chart-1/30',
-		incremental: 'bg-chart-2/10 text-chart-2 border-chart-2/30',
+		table: 'bg-chart-3/10 text-chart-3 border-chart-3',
+		view: 'bg-chart-1/10 text-chart-1 border-chart-1',
+		incremental: 'bg-chart-2/10 text-chart-2 border-chart-2',
 		ephemeral: 'bg-muted/50 text-muted-foreground border-muted'
 	};
 </script>
@@ -212,7 +212,7 @@
 							<button
 								class="rounded border px-2.5 py-1 text-2xs font-medium transition-colors {cell.materializeMode ===
 								mode
-									? (modeColors[mode] ?? 'border-primary/30 bg-primary/10 text-primary')
+									? (modeColors[mode] ?? 'border-primary bg-primary/10 text-primary')
 									: 'border-border text-muted-foreground hover:bg-accent'}"
 								onclick={() =>
 									isDbtProject
@@ -233,7 +233,7 @@
 						dbt settings
 					</p>
 					<textarea
-						class="w-full resize-none rounded border border-input bg-background px-2.5 py-1.5 text-2xs placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
+						class="w-full resize-none rounded border border-input bg-background px-2.5 py-1.5 text-2xs placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 						placeholder="Describe this model…"
 						rows={2}
 						value={cell.description ?? ''}
@@ -385,7 +385,7 @@
 						<span class="text-2xs text-muted-foreground">Enable schedule</span>
 						<button
 							class="rounded border px-2 py-0.5 text-2xs font-medium transition-colors {cell.scheduleEnabled
-								? 'border-primary/30 bg-primary/10 text-primary'
+								? 'border-primary bg-primary/10 text-primary'
 								: 'border-border text-muted-foreground hover:bg-accent'}"
 							onclick={() => setCellScheduleEnabled(cell.id, !cell.scheduleEnabled)}
 						>

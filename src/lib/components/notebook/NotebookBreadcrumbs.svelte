@@ -88,7 +88,7 @@
 		<div class="mr-1 flex items-center gap-0.5">
 			<button
 				type="button"
-				class="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted disabled:opacity-30"
+				class="inline-flex h-6 w-6 items-center justify-center rounded transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-30"
 				disabled={!canGoBackPageNav()}
 				title="Back (⌘[)"
 				aria-label="Back in page history"
@@ -98,7 +98,7 @@
 			</button>
 			<button
 				type="button"
-				class="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted disabled:opacity-30"
+				class="inline-flex h-6 w-6 items-center justify-center rounded transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-30"
 				disabled={!canGoForwardPageNav()}
 				title="Forward (⌘])"
 				aria-label="Forward in page history"
@@ -114,7 +114,7 @@
 			{#if crumb.onclick}
 				<button
 					type="button"
-					class="max-w-[12rem] truncate rounded px-0.5 hover:text-foreground"
+					class="max-w-[12rem] truncate rounded px-0.5 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					onclick={crumb.onclick}
 				>
 					{crumb.label}
@@ -134,9 +134,9 @@
 			<button
 				type="button"
 				role="listitem"
-				class="rounded-full border px-2 py-0.5 text-2xs transition-colors {activePageId === page.id
-					? 'border-primary/40 bg-primary/10 text-foreground'
-					: 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'}"
+				class="rounded-full border px-2 py-0.5 text-2xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {activePageId === page.id
+					? 'border-primary bg-primary/10 text-foreground'
+					: 'border-border text-muted-foreground hover:border-border hover:text-foreground'}"
 				onclick={() => {
 					const entry = buildNotebookOutline(cells).find((e) => e.id === page.id);
 					if (entry) navigateToOutlineEntry(notebookId, entry);

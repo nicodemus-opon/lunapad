@@ -224,7 +224,7 @@
 </script>
 
 {#if open}
-	<div class="mb-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2">
+	<div class="mb-1.5 rounded-lg border border-primary bg-primary/5 p-2">
 		<div class="flex items-center gap-1.5">
 			<Sparkles class="h-3.5 w-3.5 shrink-0 text-primary" />
 			<input
@@ -259,7 +259,7 @@
 		{/if}
 
 		{#if result}
-			<div class="mt-2 rounded-md border border-primary/20 bg-background/60 p-2">
+			<div class="mt-2 rounded-md border border-primary bg-background/60 p-2">
 				{#if result.reasoning}
 					<p class="text-2xs text-muted-foreground">{result.reasoning}</p>
 				{/if}
@@ -271,7 +271,7 @@
 				<div class="mt-2 flex items-center gap-2">
 					<button
 						data-testid="inline-prompt-accept"
-						class="h-6 rounded border border-primary/30 px-2 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
+						class="h-6 rounded border border-primary px-2 text-2xs font-medium text-primary transition-colors hover:bg-primary/15"
 						onclick={apply}
 					>
 						Accept
@@ -285,7 +285,7 @@
 					</button>
 					{#if onContinueInChat}
 						<button
-							class="ml-auto h-6 rounded px-2 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+							class="ml-auto h-6 rounded px-2 text-2xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 							onclick={continueInChat}
 						>
 							Continue in AI chat →
@@ -294,9 +294,9 @@
 				</div>
 				{#if result.suggestedAlternative && (result.suggestedAlternative.cellType !== 'python' || pythonAvailable)}
 					<div
-						class="mt-2 flex items-center gap-1.5 border-t border-primary/15 pt-1.5 text-2xs text-muted-foreground"
+						class="mt-2 flex items-center gap-1.5 border-t border-primary pt-1.5 text-2xs text-muted-foreground"
 					>
-						<Sparkles class="h-3 w-3 shrink-0 text-primary/70" />
+						<Sparkles class="h-3.5 w-3.5 shrink-0 text-primary/70" />
 						<span class="min-w-0 flex-1 truncate">
 							This might work better as a {result.suggestedAlternative.cellType === 'python'
 								? 'Python'

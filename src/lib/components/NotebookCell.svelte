@@ -1040,7 +1040,7 @@
 			/>
 		{/if}
 		{#if isUdfCell}
-			<div class="notebook-code-block">
+			<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
 				<Editor
 					bind:this={editorRef}
 					code={cell.udfBody}
@@ -1071,7 +1071,7 @@
 					{/each}
 				</select>
 			</div>
-			<div class="notebook-code-block">
+			<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
 				<Editor
 					bind:this={editorRef}
 					code={cell.code}
@@ -1091,7 +1091,7 @@
 				</p>
 			{/if}
 		{:else if isPythonCell}
-			<div class="notebook-code-block">
+			<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
 				<Editor
 					bind:this={editorRef}
 					code={cell.code}
@@ -1205,7 +1205,7 @@
 				/>
 			</div>
 		{:else}
-			<div class="notebook-code-block">
+			<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
 				<Editor
 					bind:this={editorRef}
 					code={cell.code}
@@ -1240,7 +1240,7 @@
 				in:fly={{ y: -4, duration: 130 }}
 			>
 				{#each cell.errors as error, errorIdx (errorIdx)}
-					<div class="rounded-r-sm border-destructive/80 py-2">
+					<div class="rounded-r-sm border-destructive py-2">
 						<p class="font-mono text-xs leading-snug whitespace-pre-wrap text-destructive/90">
 							{error.display ?? error.reason}
 						</p>
@@ -1285,7 +1285,7 @@
 			>
 				{#if running}
 					<div
-						class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
+						class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
 					>
 						<Loader2 class="h-3 w-3 animate-spin" />
 						<span>Updating</span>
@@ -1619,7 +1619,7 @@
 		font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
 		font-size: 0.85em;
 		background: color-mix(in oklch, var(--primary) 10%, transparent);
-		border: 1px solid color-mix(in oklch, var(--primary) 15%, transparent);
+		border: 1px solid var(--primary);
 		border-radius: 0.25rem;
 		padding: 0.1em 0.35em;
 		color: var(--primary);
@@ -1636,7 +1636,7 @@
 	}
 	.markdown-body :global(hr) {
 		border: none;
-		border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
+		border-top: 1px solid var(--border);
 		margin: 0.75rem 0;
 	}
 	.markdown-body :global(a) {
@@ -1651,7 +1651,7 @@
 		opacity: 0.6;
 	}
 	.markdown-body :global(h1) {
-		border-bottom: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		border-bottom: 1px solid var(--border);
 		padding-bottom: 0.3rem;
 		margin-bottom: 0.75rem;
 	}

@@ -137,7 +137,7 @@
 			<div class="flex flex-wrap gap-1">
 				{#each message.contextPills as pill (pill.cellId)}
 					<span
-						class="inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
+						class="inline-flex items-center rounded-full border border-border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
 					>
 						{pill.cellName}
 					</span>
@@ -166,7 +166,7 @@
 				</div>
 			{:else}
 				<div
-					class="ai-prose max-w-full border-l-2 border-border/25 pl-3 text-sm wrap-break-word text-foreground"
+					class="ai-prose max-w-full border-l-2 border-border pl-3 text-sm wrap-break-word text-foreground"
 					data-testid="ai-message-text"
 				>
 					{#if renderedMessage}
@@ -191,7 +191,7 @@
 
 		{#if message.actionEvents.length > 0}
 			<div
-				class="w-full overflow-hidden rounded-lg border border-border/35 bg-muted/25 text-xs text-muted-foreground"
+				class="w-full overflow-hidden rounded-lg border border-border bg-muted/25 text-xs text-muted-foreground"
 				data-testid="ai-activity"
 			>
 				<button
@@ -214,7 +214,7 @@
 				</button>
 
 				{#if activityExpanded}
-					<div class="flex flex-col border-t border-border/25">
+					<div class="flex flex-col border-t border-border">
 						{#each message.actionEvents as ev (ev.id)}
 							{@const Icon = toolIcons[ev.tool] ?? SquarePlay}
 							{@const hasDiff =
@@ -222,7 +222,7 @@
 							{@const hasPreview = DATA_TOOLS.has(ev.tool) && ev.preview}
 							{@const isExpandable = hasPreview || hasDiff}
 							{@const isExpanded = expandedChips.has(ev.id ?? '')}
-							<div class="border-b border-border/20 last:border-b-0">
+							<div class="border-b border-border last:border-b-0">
 								{#if isExpandable}
 									<button
 										class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/50"
@@ -249,13 +249,13 @@
 								{#if isExpandable && isExpanded}
 									{#if hasDiff}
 										<DiffView
-											class="border-t border-border/20"
+											class="border-t border-border"
 											oldCode={ev.oldCode!}
 											newCode={ev.newCode!}
 										/>
 									{:else if hasPreview}
 										<div
-											class="overflow-x-auto border-t border-border/20 px-2.5 py-1.5 font-mono text-xs whitespace-pre text-foreground/60"
+											class="overflow-x-auto border-t border-border px-2.5 py-1.5 font-mono text-xs whitespace-pre text-foreground/60"
 										>
 											{ev.preview}
 										</div>
@@ -273,7 +273,7 @@
 				{#each message.suggestions as s (s)}
 					<button
 						onclick={() => onSuggestion?.(s)}
-						class="rounded-full border border-primary/25 bg-primary/6 px-2.5 py-1 text-xs text-primary/75 transition-colors hover:bg-primary/12 hover:text-primary/90"
+						class="rounded-full border border-primary bg-primary/6 px-2.5 py-1 text-xs text-primary/75 transition-colors hover:bg-primary/12 hover:text-primary/90"
 						data-testid="ai-suggestion"
 					>
 						{s}
@@ -379,7 +379,7 @@
 	}
 	:global(.ai-prose pre) {
 		background: color-mix(in oklab, var(--foreground) 7%, transparent);
-		border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		padding: 0.65em 0.85em;
 		overflow-x: auto;
@@ -398,7 +398,7 @@
 		font-style: italic;
 	}
 	:global(.ai-prose blockquote) {
-		border-left: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
+		border-left: 2px solid var(--primary);
 		padding-left: 0.75em;
 		margin: 0.35em 0;
 		opacity: 0.85;
@@ -406,7 +406,7 @@
 	}
 	:global(.ai-prose hr) {
 		border: none;
-		border-top: 1px solid color-mix(in oklab, currentColor 15%, transparent);
+		border-top: 1px solid var(--border);
 		margin: 0.45em 0;
 	}
 	:global(.ai-prose a) {

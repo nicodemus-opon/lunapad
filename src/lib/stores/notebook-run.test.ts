@@ -63,6 +63,10 @@ import {
 	upsertConnection
 } from '$lib/stores/notebook.svelte';
 
+function autoLimitSql(inner: string): string {
+	return `SELECT _lunapad_sub.*, COUNT(*) OVER () AS __lunapad_total_rows FROM (${inner}) AS _lunapad_sub LIMIT ${AUTO_LIMIT + 1}`;
+}
+
 function deferred<T>() {
 	let resolve!: (value: T | PromiseLike<T>) => void;
 	let reject!: (reason?: unknown) => void;
@@ -135,7 +139,8 @@ describe('notebook cell execution', () => {
 		expect(compilePRQLMock).toHaveBeenCalledWith('from employees', 'sql.duckdb');
 		expect(cell.result).toEqual({
 			rows: [{ name: 'Grace' }],
-			columns: ['name']
+			columns: ['name'],
+			totalRowCount: 1
 		});
 		expect(createViewMock).toHaveBeenCalledWith(
 			cell.outputName || `_cell_${cell.id}`,
@@ -226,7 +231,7 @@ describe('notebook cell execution', () => {
 		expect(compilePRQLMock).toHaveBeenCalledWith('from employees', 'sql.trino');
 		expect(queryConnectionSQLMock).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
-			`SELECT * FROM (SELECT * FROM employees) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+			autoLimitSql('SELECT * FROM employees'),
 			expect.anything(), // AbortSignal
 			expect.any(String) // runId
 		);
@@ -398,17 +403,19 @@ describe('notebook cell execution', () => {
 		const cell = getNotebooks()[0].cells[0];
 		cell.code = 'from employees';
 		executeSQLMock.mockResolvedValue({
-			rows: Array.from({ length: AUTO_LIMIT + 1 }, (_, i) => ({ id: i })),
-			columns: ['id']
+			rows: Array.from({ length: AUTO_LIMIT + 1 }, (_, i) => ({
+				id: i,
+				__lunapad_total_rows: 5000
+			})),
+			columns: ['id', '__lunapad_total_rows']
 		});
 
 		await runCell(cell.id);
 
-		expect(executeSQLMock).toHaveBeenCalledWith(
-			`SELECT * FROM (SELECT * FROM employees) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`
-		);
+		expect(executeSQLMock).toHaveBeenCalledWith(autoLimitSql('SELECT * FROM employees'));
 		expect(cell.result?.rows).toHaveLength(AUTO_LIMIT);
 		expect(cell.result?.truncated).toBe(true);
+		expect(cell.result?.totalRowCount).toBe(5000);
 		expect(cell.compiledSQL).toBe('SELECT * FROM employees');
 		expect(createViewMock).toHaveBeenCalledWith(expect.any(String), 'SELECT * FROM employees');
 	});
@@ -431,7 +438,7 @@ describe('notebook cell execution', () => {
 describe('wrapWithAutoLimit', () => {
 	it('wraps SELECT statements', () => {
 		expect(wrapWithAutoLimit('SELECT * FROM t')).toEqual({
-			sql: `SELECT * FROM (SELECT * FROM t) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+			sql: autoLimitSql('SELECT * FROM t'),
 			wrapped: true
 		});
 	});
@@ -442,7 +449,7 @@ describe('wrapWithAutoLimit', () => {
 
 	it('strips a trailing semicolon before wrapping', () => {
 		expect(wrapWithAutoLimit('select 1;')).toEqual({
-			sql: `SELECT * FROM (select 1) AS _lunapad_limited LIMIT ${AUTO_LIMIT + 1}`,
+			sql: autoLimitSql('select 1'),
 			wrapped: true
 		});
 	});

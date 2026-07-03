@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-slot="dialog-header"
 	class={cn(
-		'flex shrink-0 items-start justify-between gap-3 border-b border-border/60 px-4 py-3',
+		'flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3',
 		className
 	)}
 	{...restProps}

@@ -260,7 +260,7 @@
 		flex-wrap: wrap;
 		gap: 0.15rem;
 		padding: 0.25rem 0;
-		border-bottom: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		border-bottom: 1px solid var(--border);
 		margin-bottom: 0.4rem;
 	}
 	.md-toolbar-group {
@@ -305,11 +305,11 @@
 	.md-toolbar-preview-btn {
 		font-size: 0.7rem;
 		padding: 0.2rem 0.5rem;
-		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		border: 1px solid var(--border);
 		background: color-mix(in oklch, currentColor 4%, transparent) !important;
 	}
 	.md-toolbar-preview-btn:hover {
 		color: var(--foreground) !important;
-		border-color: color-mix(in oklch, currentColor 20%, transparent);
+		border-color: var(--border);
 	}
 </style>

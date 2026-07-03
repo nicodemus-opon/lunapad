@@ -1136,7 +1136,7 @@
 						<tr>
 							{#each displayCols as col (col)}
 								<th
-									class="border-b border-border/60 px-2 py-1.5 text-left font-medium whitespace-nowrap text-muted-foreground first:pl-3 last:pr-3"
+									class="border-b border-border px-2 py-1.5 text-left font-medium whitespace-nowrap text-muted-foreground first:pl-3 last:pr-3"
 								>
 									{col}
 								</th>
@@ -1145,7 +1145,7 @@
 					</thead>
 					<tbody>
 						{#each rows.slice(0, 200) as row, i (i)}
-							<tr class="border-b border-border/30 transition-colors hover:bg-muted/30">
+							<tr class="border-b border-border transition-colors hover:bg-muted/30">
 								{#each displayCols as col (col)}
 									<td
 										class="max-w-48 truncate px-2 py-1 whitespace-nowrap text-foreground/90 first:pl-3 last:pr-3"
