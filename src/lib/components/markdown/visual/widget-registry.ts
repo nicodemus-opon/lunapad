@@ -1,3 +1,5 @@
+import { normalizeMarkdocAttrs } from '$lib/services/markdoc-ast';
+
 /** Markdoc container tags that accept nested block content in visual mode. */
 export const MARKDOC_CONTAINER_TAGS = new Set([
 	'columns',
@@ -36,9 +38,8 @@ export function parseAttrsJson(raw: unknown): Record<string, unknown> {
 	if (typeof raw !== 'string' || !raw.trim()) return {};
 	try {
 		const parsed = JSON.parse(raw) as unknown;
-		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+		return normalizeMarkdocAttrs(parsed as Record<string, unknown>);
 	} catch {
 		return {};
 	}

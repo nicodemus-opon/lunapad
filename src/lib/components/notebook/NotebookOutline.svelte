@@ -87,7 +87,7 @@
 </script>
 
 {#if showHeader}
-	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+	<div class="sidebar-panel-header">
 		<span
 			class="min-w-0 flex-1 truncate text-2xs font-medium text-muted-foreground"
 			title={notebookName}
@@ -100,7 +100,7 @@
 	</div>
 {/if}
 
-<div class="flex-1 overflow-y-auto py-1" role="tree" aria-label="Notebook outline">
+<div class="sidebar-tree-scroll" role="tree" aria-label="Notebook outline">
 	{#if outline.length === 0}
 		<EmptyState
 			description="Add markdown headings (# Title) or name your query cells to build an outline."

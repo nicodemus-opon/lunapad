@@ -292,7 +292,7 @@
 
 <div class="border-t border-border">
 	<!-- Section header -->
-	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+	<div class="sidebar-panel-header">
 		<button
 			class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 			onclick={() => (expanded = !expanded)}
@@ -479,7 +479,7 @@
 	<!-- Schedules sub-section -->
 	{#if projectFolder}
 		<div class="border-t border-border">
-			<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+			<div class="sidebar-panel-header">
 				<button
 					class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 					onclick={() => (schedulesExpanded = !schedulesExpanded)}

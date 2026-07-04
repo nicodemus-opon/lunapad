@@ -96,12 +96,14 @@ export const NATIVE_TOOLS = [
 									'box-plot',
 									'calendar-heatmap',
 									'sankey',
+									'map',
+									'choropleth',
 									'custom'
 								]
 							},
 							xColumn: {
 								type: 'string',
-								description: 'Dimension / date / category / value column'
+								description: 'Dimension / date / category / value / location column'
 							},
 							yColumns: {
 								type: 'array',
@@ -120,6 +122,19 @@ export const NATIVE_TOOLS = [
 							},
 							sortOrder: { type: 'string', enum: ['none', 'asc', 'desc'] },
 							title: { type: 'string' },
+							latColumn: {
+								type: 'string',
+								description: 'Latitude column for chartType "map"'
+							},
+							lonColumn: {
+								type: 'string',
+								description: 'Longitude column for chartType "map"'
+							},
+							geoScope: {
+								type: 'string',
+								enum: ['world', 'usa-states'],
+								description: 'Choropleth scope: ISO-3 countries or US state codes'
+							},
 							code: {
 								type: 'string',
 								description:

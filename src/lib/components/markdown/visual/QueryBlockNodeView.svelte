@@ -1,27 +1,47 @@
 <script lang="ts">
 	import {
 		runCell,
+		runPythonCell,
 		cancelCell,
 		updateCellCode,
+		updatePythonCellCode,
 		updateCellName,
+		updateGuiStages,
+		runGuiStagePreview,
+		setStageResultCollapsed,
+		getPrecedingCodeForCell,
 		setCellResultViewMode,
 		setCellResultChartConfig,
 		openWorksheetView,
 		getCells,
 		getConnections,
+		getTables,
+		getExternalSchemaTables,
 		getIsDbtProject,
 		testCell,
 		type Cell
 	} from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
 	import Editor from '$lib/components/Editor.svelte';
+	import GUIEditor from '$lib/components/gui/GUIEditor.svelte';
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
+	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
 	import CellMenu from '$lib/components/cell/CellMenu.svelte';
+	import CellModeSwitchDialogs from '$lib/components/cell/CellModeSwitchDialogs.svelte';
 	import MaterializeDialog from '$lib/components/MaterializeDialog.svelte';
 	import PromoteDialog from '$lib/components/PromoteDialog.svelte';
 	import PromoteSeedDialog from '$lib/components/PromoteSeedDialog.svelte';
-	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
-	import { Loader2, Pin, PinOff, Play, Maximize2 } from '@lucide/svelte';
+	import {
+		BUILTIN_DUCKDB_CONNECTION_ID,
+		getPRQLTargetForConnection,
+		resolveConnection
+	} from '$lib/types/connection';
+	import { createCellModeSwitch, cellModeOf } from '$lib/services/cell-mode-switch.svelte';
+	import { registerCellMeta } from '$lib/keyboard/cell-bridge.svelte';
+	import { mapErrorsToStages } from '$lib/services/gui-prql';
+	import type { PRQLStageError } from '$lib/services/gui-prql';
+	import type { GUISourceSchema } from '$lib/types/gui-pipeline';
+	import { Loader2, Pin, PinOff, Play, Maximize2, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
 
 	interface Props {
 		cellId: string;
@@ -33,6 +53,7 @@
 		onFocus: () => void;
 		onBlur: () => void;
 		onTogglePin: () => void;
+		onSetDisplay: (display: 'full' | 'output' | 'collapsed') => void;
 		onDelete: () => void;
 	}
 
@@ -46,6 +67,7 @@
 		onFocus,
 		onBlur,
 		onTogglePin,
+		onSetDisplay,
 		onDelete
 	}: Props = $props();
 
@@ -70,13 +92,106 @@
 	let promoteDialogOpen = $state(false);
 	let promoteSeedDialogOpen = $state(false);
 
-	const showCode = $derived(
-		focused || pinned || selected || (reportView === false && cell?.display === 'full')
+	const collapsed = $derived(cell?.display === 'collapsed');
+	const codeExpanded = $derived(
+		!reportView && !collapsed && (focused || pinned || cell?.display === 'full')
 	);
-	const codeExpanded = $derived(!reportView && (focused || pinned || cell?.display === 'full'));
 	const running = $derived(cell?.status === 'running');
-	const hasResult = $derived(Boolean(cell?.result && cell.status === 'success'));
-	const showResult = $derived(hasResult && !cell?.hideResult);
+	const showResult = $derived(
+		!collapsed &&
+			!cell?.hideResult &&
+			Boolean(cell?.result) &&
+			(cell?.status === 'success' || cell?.status === 'running')
+	);
+	const showPythonOutput = $derived(
+		!collapsed && !cell?.hideResult && isPythonCell && Boolean(cell?.pythonOutput)
+	);
+	const hasVisibleOutput = $derived(showResult || showPythonOutput);
+
+	// ── PRQL / Visual / SQL toggle ────────────────────────────────────────────
+	const tables = $derived(getTables());
+	const externalSchemaTables = $derived(getExternalSchemaTables());
+	const cellSqlDialect = $derived(
+		getPRQLTargetForConnection(resolveConnection(connections, cell?.connectionId))
+	);
+	const cellMode = $derived(cell ? cellModeOf(cell) : 'prql');
+	const isGuiMode = $derived(isQueryCell && cell?.editMode === 'gui');
+
+	const modeSwitch = createCellModeSwitch(
+		() => cell,
+		() => cellSqlDialect
+	);
+
+	const connectionType = $derived(
+		connections.find((entry) => entry.id === connectionValue)?.type ?? 'duckdb-wasm'
+	);
+	const cellCatalogName = $derived.by(() => {
+		if (connectionType === 'duckdb-wasm') return undefined;
+		const conn = connections.find((c) => c.id === connectionValue);
+		return (conn as { catalogName?: string } | undefined)?.catalogName;
+	});
+	const guiTables = $derived.by(() => {
+		if (connectionValue === BUILTIN_DUCKDB_CONNECTION_ID) return tables;
+		const merged: typeof tables = [];
+		const seen = new Set<string>();
+		for (const table of externalSchemaTables) {
+			if (table.connectionId !== connectionValue) continue;
+			const qualifiedName =
+				cellCatalogName && table.schema
+					? `${cellCatalogName}.${table.schema}.${table.name}`
+					: table.schema
+						? `${table.schema}.${table.name}`
+						: table.name;
+			if (seen.has(qualifiedName)) continue;
+			seen.add(qualifiedName);
+			merged.push({
+				name: qualifiedName,
+				fileName: qualifiedName,
+				rowCount: 0,
+				columns: table.columns,
+				columnTypes: table.columnTypes
+			});
+		}
+		return merged;
+	});
+	// Preceding query/python cells (with output names) become upstream schemas.
+	const prevCellSources = $derived<GUISourceSchema[]>(
+		cells
+			.slice(0, cellIndex < 0 ? 0 : cellIndex)
+			.filter(
+				(c) => (c.cellType === 'query' || c.cellType === 'python') && c.outputName
+			)
+			.map((c) => ({ name: c.outputName || `_cell_${c.id}`, columns: c.result?.columns ?? [] }))
+	);
+	const stageErrorMap = $derived(
+		cell && cell.editMode === 'gui' && cell.errors.length > 0
+			? mapErrorsToStages(
+					cell.guiStages,
+					cell.errors,
+					(() => {
+						const p = getPrecedingCodeForCell(cell.id);
+						return p ? p.split('\n').length : 0;
+					})()
+				)
+			: new Map<number, PRQLStageError[]>()
+	);
+
+	// Register with the global keyboard dispatcher so ⌘↵ / ⇧↵ run the cell
+	// (same as classic NotebookCell) instead of falling through to TipTap.
+	$effect(() => {
+		if (!cell || reportView) return;
+		return registerCellMeta({
+			cellId: cell.id,
+			canInlinePrompt: isQueryCell && cell.editMode !== 'gui',
+			isQueryCell,
+			isGuiCell: isQueryCell && cell.editMode === 'gui',
+			isDbtProject,
+			worksheetEligible: isQueryCell || isPythonCell || isPlotCell,
+			collapsed: cell.display === 'collapsed',
+			display: cell.display,
+			outputName: cell.outputName ?? ''
+		});
+	});
 
 	function handleGutterClick(e: MouseEvent) {
 		e.preventDefault();
@@ -102,7 +217,13 @@
 	function handleRun() {
 		if (!cell) return;
 		if (running) cancelCell(cellId);
+		else if (isPythonCell) void runPythonCell(cellId);
 		else void runCell(cellId);
+	}
+
+	function handleCodeChange(code: string) {
+		if (isPythonCell) updatePythonCellCode(cellId, code);
+		else updateCellCode(cellId, code);
 	}
 
 	function handleEditorBlur() {
@@ -131,19 +252,38 @@
 			nameDraft = cell.outputName;
 		}
 	}
+
+	function expandCollapsed() {
+		onSetDisplay('full');
+		focused = true;
+		onFocus();
+	}
+
+	function toggleCollapsed() {
+		onSetDisplay(collapsed ? 'full' : 'collapsed');
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="query-block-view group/qb relative my-2 rounded-md border border-transparent transition-colors {selected
 		? 'border-ring bg-muted/10'
-		: 'hover:border-border'}"
+		: collapsed
+			? 'cursor-pointer border-border/60 bg-muted/10 hover:border-border'
+			: 'hover:border-border'}"
 	data-cell-id={cellId}
+	onclick={(e) => {
+		if (!collapsed) return;
+		if ((e.target as Element).closest('button, input, [data-no-expand], .qb-gutter')) return;
+		expandCollapsed();
+	}}
 	onfocusin={() => {
+		if (collapsed) return;
 		focused = true;
 		onFocus();
 	}}
 	onfocusout={(e) => {
+		if (collapsed) return;
 		const related = e.relatedTarget as Node | null;
 		if (related && e.currentTarget.contains(related)) return;
 		handleEditorBlur();
@@ -180,8 +320,9 @@
 						onOpenWorksheet={() => {
 							if (notebookId) openWorksheetView(notebookId, cell.id);
 						}}
-						isPlotCell={isPlotCell}
+						{isPlotCell}
 						dragHandle={false}
+						onDisplayChange={onSetDisplay}
 					/>
 				</div>
 			{/if}
@@ -209,6 +350,24 @@
 				<button
 					type="button"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+					title={collapsed ? 'Expand cell' : 'Collapse cell'}
+					aria-label={collapsed ? 'Expand cell' : 'Collapse cell'}
+					onclick={(e) => {
+						e.stopPropagation();
+						toggleCollapsed();
+					}}
+				>
+					{#if collapsed}
+						<ChevronsUpDown class="h-3.5 w-3.5" />
+					{:else}
+						<ChevronsDownUp class="h-3.5 w-3.5" />
+					{/if}
+				</button>
+			{/if}
+			{#if !reportView && !collapsed}
+				<button
+					type="button"
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					title="Open in worksheet (rename, language, GUI editor)"
 					aria-label="Open in worksheet"
 					onmousedown={(e) => {
@@ -220,28 +379,53 @@
 					<Maximize2 class="h-3.5 w-3.5" />
 				</button>
 			{/if}
-			<button
-				type="button"
-				class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {pinned
-					? 'text-primary'
-					: ''}"
-				title={pinned ? 'Unpin code' : 'Pin code visible'}
-				aria-label={pinned ? 'Unpin code' : 'Pin code'}
-				onclick={(e) => {
-					e.stopPropagation();
-					onTogglePin();
-				}}
-			>
-				{#if pinned}
-					<PinOff class="h-3.5 w-3.5" />
-				{:else}
-					<Pin class="h-3.5 w-3.5" />
-				{/if}
-			</button>
+			{#if !reportView && !collapsed}
+				<button
+					type="button"
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {pinned
+						? 'text-primary'
+						: ''}"
+					title={pinned ? 'Unpin code' : 'Pin code visible'}
+					aria-label={pinned ? 'Unpin code' : 'Pin code'}
+					onclick={(e) => {
+						e.stopPropagation();
+						onTogglePin();
+					}}
+				>
+					{#if pinned}
+						<PinOff class="h-3.5 w-3.5" />
+					{:else}
+						<Pin class="h-3.5 w-3.5" />
+					{/if}
+				</button>
+			{/if}
 		</div>
 
 		<div class="min-w-0 flex-1">
 			{#if cell}
+				{#if collapsed}
+					<div class="flex min-h-7 items-center gap-2 px-1 py-1">
+						<span class="truncate font-mono text-sm font-medium text-foreground">
+							{cell.outputName || 'Query'}
+						</span>
+						{#if cell.result && cell.status !== 'idle'}
+							<span class="shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
+								{cell.result.rows.length.toLocaleString()} rows{cell.executionMs != null
+									? ` · ${fmtMs(cell.executionMs)}`
+									: ''}
+							</span>
+						{:else if isPythonCell && cell.pythonOutput && cell.status === 'success'}
+							<span class="shrink-0 text-2xs text-muted-foreground">Python output</span>
+						{:else if cell.status === 'running'}
+							<span class="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+								<Loader2 class="h-3 w-3 animate-spin" />
+								Running…
+							</span>
+						{:else if cell.status === 'error'}
+							<span class="text-2xs text-destructive">Error</span>
+						{/if}
+					</div>
+				{:else}
 				<!-- Code comes FIRST (like any notebook); output renders below it. -->
 				{#if codeExpanded && (cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot')}
 					<div
@@ -276,33 +460,101 @@
 									}
 								}}
 							/>
+							{#if isQueryCell}
+								<!-- svelte-ignore a11y_interactive_supports_focus -->
+								<div class="mode-tabs" role="tablist" onmousedown={(e) => e.stopPropagation()}>
+									<button
+										type="button"
+										class="mode-tab"
+										class:is-active={cellMode === 'prql'}
+										onclick={(e) => {
+											e.stopPropagation();
+											modeSwitch.setMode('prql');
+										}}
+										title="PRQL code mode"
+										role="tab"
+										aria-selected={cellMode === 'prql'}>PRQL</button
+									>
+									<button
+										type="button"
+										class="mode-tab"
+										class:is-active={cellMode === 'visual'}
+										onclick={(e) => {
+											e.stopPropagation();
+											modeSwitch.setMode('visual');
+										}}
+										title="Visual pipeline editor"
+										role="tab"
+										aria-selected={cellMode === 'visual'}>Visual</button
+									>
+									<button
+										type="button"
+										class="mode-tab"
+										class:is-active={cellMode === 'sql'}
+										onclick={(e) => {
+											e.stopPropagation();
+											modeSwitch.setMode('sql');
+										}}
+										title="SQL mode"
+										role="tab"
+										aria-selected={cellMode === 'sql'}>SQL</button
+									>
+								</div>
+							{/if}
 							{#if cell.executionMs != null}
-								<span class="text-2xs text-muted-foreground">{fmtMs(cell.executionMs)}</span>
+								<span class="ml-2 text-2xs text-muted-foreground">{fmtMs(cell.executionMs)}</span>
 							{/if}
 						</div>
-						<Editor
-							bind:this={editorRef}
-							code={cell.code}
-							errors={cell.errors}
-							language={cell.cellType === 'python'
-								? 'python'
-								: cell.language === 'sql'
-									? 'sql'
-									: 'prql'}
-							{dark}
-							layout="auto"
-							embeddedNotebook
-							onchange={(c) => updateCellCode(cellId, c)}
-						/>
+						{#if isGuiMode}
+							<div class="qb-gui px-1 py-1">
+								<GUIEditor
+									stages={cell.guiStages}
+									tables={guiTables}
+									{prevCellSources}
+									{dark}
+									connectionId={connectionValue}
+									{connectionType}
+									stageResultsCollapsed={cell.stageResultsCollapsed}
+									{stageErrorMap}
+									onStagesChange={(stages) => updateGuiStages(cellId, stages)}
+									onRunStage={(upToStageIdx) => runGuiStagePreview(cellId, upToStageIdx)}
+									onStageResultCollapsedChange={(stageIdx, c) =>
+										setStageResultCollapsed(cellId, stageIdx, c)}
+								/>
+							</div>
+						{:else}
+							<Editor
+								bind:this={editorRef}
+								code={cell.code}
+								errors={cell.errors}
+								language={cell.cellType === 'python'
+									? 'python'
+									: cell.language === 'sql'
+										? 'sql'
+										: 'prql'}
+								pythonContext={isPythonCell ? { kind: 'data', notebookId } : undefined}
+								pythonSchemas={isPythonCell ? prevCellSources : []}
+								{dark}
+								layout="auto"
+								embeddedNotebook
+								onchange={handleCodeChange}
+							/>
+						{/if}
 					</div>
-				{:else if !showResult && cell.status !== 'running' && cell.status !== 'error' && !codeExpanded}
+				{:else if !hasVisibleOutput && cell.status !== 'running' && cell.status !== 'error' && !codeExpanded}
 					<button
 						type="button"
 						class="w-full rounded-md border border-dashed border-border px-3 py-2 text-left text-xs text-muted-foreground hover:border-border hover:bg-muted/30"
 						onclick={handleGutterClick}
 					>
-						{cell.outputName || 'Query'} — click to edit
+						{cell.outputName || (isPythonCell ? 'Python' : 'Query')} — click to edit
 					</button>
+				{/if}
+
+				{#if showPythonOutput && cell.pythonOutput}
+					<div class="qb-python-output {codeExpanded ? 'mt-1' : ''}">
+						<PythonCellOutput output={cell.pythonOutput} />
+					</div>
 				{/if}
 
 				{#if showResult && cell.result}
@@ -326,12 +578,13 @@
 						<Loader2 class="h-3.5 w-3.5 animate-spin" />
 						Running…
 					</div>
-				{:else if cell.status === 'error'}
+				{:else if cell.status === 'error' && !isPythonCell}
 					<div
 						class="rounded-md border border-destructive bg-destructive/5 px-3 py-2 text-xs text-destructive"
 					>
 						{cell.errors[0]?.reason ?? cell.errors[0]?.display ?? 'Query failed'}
 					</div>
+				{/if}
 				{/if}
 			{:else}
 				<div class="px-3 py-2 text-xs text-muted-foreground">Missing cell</div>
@@ -346,8 +599,60 @@
 	<PromoteSeedDialog bind:open={promoteSeedDialogOpen} {cell} />
 {/if}
 
+{#if isQueryCell}
+	<CellModeSwitchDialogs
+		bind:confirmSwitchToGui={modeSwitch.confirmSwitchToGui}
+		bind:confirmSwitchToSql={modeSwitch.confirmSwitchToSql}
+		bind:confirmSwitchToPrql={modeSwitch.confirmSwitchToPrql}
+		onSwitchToGui={modeSwitch.doSwitchToGui}
+		onSwitchToSql={modeSwitch.doSwitchToSql}
+		onSwitchToPrql={modeSwitch.doSwitchToPrql}
+	/>
+{/if}
+
 <style>
 	.query-block-view :global(.notebook-code-block .monaco-editor) {
 		min-height: 4rem;
+	}
+
+	.mode-tabs {
+		display: inline-flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0 0.125rem;
+	}
+	.mode-tab {
+		position: relative;
+		height: 1.25rem;
+		padding: 0;
+		border: none;
+		background: transparent;
+		font-size: var(--text-2xs);
+		font-weight: 600;
+		color: var(--muted-foreground);
+		cursor: pointer;
+		transition: color var(--motion-fast) var(--motion-ease-out);
+	}
+	.mode-tab:hover {
+		color: var(--foreground);
+	}
+	.mode-tab.is-active {
+		color: var(--foreground);
+	}
+	.mode-tab.is-active::after {
+		position: absolute;
+		right: 0;
+		bottom: -0.18rem;
+		left: 0;
+		height: 2px;
+		border-radius: 999px;
+		background: var(--secondary);
+		content: '';
+	}
+	.mode-tab:focus-visible {
+		outline: none;
+		border-radius: var(--radius-sm);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 35%, transparent);
 	}
 </style>

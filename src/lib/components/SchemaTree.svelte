@@ -92,14 +92,14 @@
 <aside class="flex h-full flex-col overflow-hidden border-r bg-sidebar">
 	<!-- Header -->
 	{#if showHeader}
-		<div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
+		<div class="sidebar-panel-header gap-1.5">
 			<Table2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 			<span class="text-2xs font-medium text-muted-foreground">Tables</span>
 		</div>
 	{/if}
 
 	<!-- Tree body -->
-	<div class="flex-1 overflow-y-auto py-1" role="tree" aria-label="Tables">
+	<div class="sidebar-tree-scroll" role="tree" aria-label="Tables">
 		{#if tables.length === 0}
 			<EmptyState description="No tables loaded. Upload a CSV to get started.">
 				{#snippet icon()}

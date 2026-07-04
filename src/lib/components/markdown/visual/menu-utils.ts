@@ -12,26 +12,121 @@ export interface MenuAnchorRect {
 	right?: number;
 }
 
+export interface ClampMenuOptions {
+	gap?: number;
+	margin?: number;
+	/** `below` for slash/mention menus; `beside` for block property popovers. */
+	placement?: 'below' | 'beside';
+}
+
+/** Viewport anchor for a ProseMirror node — prefers live DOM over coordsAtPos. */
+export function editorNodeAnchorRect(
+	editor: import('@tiptap/core').Editor,
+	pos: number
+): MenuAnchorRect | null {
+	const dom = editor.view.nodeDOM(pos);
+	if (dom instanceof HTMLElement) {
+		const rect = dom.getBoundingClientRect();
+		return { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right };
+	}
+	try {
+		const coords = editor.view.coordsAtPos(pos);
+		return {
+			top: coords.top,
+			left: coords.left,
+			bottom: coords.bottom,
+			right: coords.right
+		};
+	} catch {
+		return null;
+	}
+}
+
+function viewportSize(): { width: number; height: number } {
+	if (typeof window === 'undefined') return { width: 1024, height: 768 };
+	return { width: window.innerWidth, height: window.innerHeight };
+}
+
+function clampToViewport(
+	pos: MenuPosition,
+	size: { width: number; height: number },
+	margin: number,
+	vw: number,
+	vh: number
+): MenuPosition {
+	return {
+		left: Math.max(margin, Math.min(pos.left, vw - size.width - margin)),
+		top: Math.max(margin, Math.min(pos.top, vh - size.height - margin))
+	};
+}
+
+function fitsViewport(
+	pos: MenuPosition,
+	size: { width: number; height: number },
+	margin: number,
+	vw: number,
+	vh: number
+): boolean {
+	return (
+		pos.left >= margin &&
+		pos.top >= margin &&
+		pos.left + size.width <= vw - margin &&
+		pos.top + size.height <= vh - margin
+	);
+}
+
+/** Pick the first placement that fits; otherwise return the best clamped fallback. */
+function pickPlacement(
+	candidates: MenuPosition[],
+	size: { width: number; height: number },
+	margin: number
+): MenuPosition {
+	const { width: vw, height: vh } = viewportSize();
+	for (const pos of candidates) {
+		const clamped = clampToViewport(pos, size, margin, vw, vh);
+		if (fitsViewport(clamped, size, margin, vw, vh)) return clamped;
+	}
+	return clampToViewport(candidates[0] ?? { top: margin, left: margin }, size, margin, vw, vh);
+}
+
 export function clampMenuPosition(
 	anchor: MenuAnchorRect,
 	size: { width: number; height: number },
-	gap = 6,
-	margin = 8
+	options: ClampMenuOptions = {}
 ): MenuPosition {
-	let left = anchor.left;
-	let top = anchor.bottom + gap;
+	const gap = options.gap ?? 6;
+	const margin = options.margin ?? 8;
+	const anchorRight = anchor.right ?? anchor.left;
+	const anchorLeft = anchor.left;
+	const anchorTop = anchor.top;
+	const anchorBottom = anchor.bottom;
+	const anchorMidY = anchorTop + (anchorBottom - anchorTop) / 2;
 
-	if (left + size.width > window.innerWidth - margin) {
-		left = window.innerWidth - size.width - margin;
+	if (options.placement === 'beside') {
+		return pickPlacement(
+			[
+				{ left: anchorRight + gap, top: anchorTop },
+				{ left: anchorLeft - size.width - gap, top: anchorTop },
+				{ left: anchorRight + gap, top: anchorMidY - size.height / 2 },
+				{ left: anchorLeft - size.width - gap, top: anchorMidY - size.height / 2 },
+				{ left: anchorLeft, top: anchorBottom + gap },
+				{ left: anchorLeft, top: anchorTop - size.height - gap }
+			],
+			size,
+			margin
+		);
 	}
-	if (left < margin) left = margin;
 
-	if (top + size.height > window.innerHeight - margin) {
-		top = anchor.top - size.height - gap;
-	}
-	if (top < margin) top = margin;
-
-	return { top, left };
+	return pickPlacement(
+		[
+			{ left: anchorLeft, top: anchorBottom + gap },
+			{ left: anchorLeft, top: anchorTop - size.height - gap },
+			{ left: anchorRight + gap, top: anchorTop },
+			{ left: anchorLeft - size.width - gap, top: anchorTop }
+		],
+		size,
+		margin
+	);
 }
 
 export function clampContextMenuPosition(
@@ -40,20 +135,17 @@ export function clampContextMenuPosition(
 	size: { width: number; height: number },
 	margin = 8
 ): MenuPosition {
-	let left = clientX;
-	let top = clientY;
-
-	if (left + size.width > window.innerWidth - margin) {
-		left = window.innerWidth - size.width - margin;
-	}
-	if (left < margin) left = margin;
-
-	if (top + size.height > window.innerHeight - margin) {
-		top = window.innerHeight - size.height - margin;
-	}
-	if (top < margin) top = margin;
-
-	return { top, left };
+	const { width: vw, height: vh } = viewportSize();
+	return pickPlacement(
+		[
+			{ left: clientX, top: clientY },
+			{ left: clientX - size.width, top: clientY },
+			{ left: clientX, top: clientY - size.height },
+			{ left: clientX - size.width, top: clientY - size.height }
+		],
+		size,
+		margin
+	);
 }
 
 /** Scroll a menu item into view with padding at top/bottom of the scroll container. */

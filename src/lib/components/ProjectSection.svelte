@@ -80,7 +80,7 @@
 </script>
 
 <!-- Project bar (always visible at top of sidebar) -->
-<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
+<div class="sidebar-panel-header gap-1">
 	{#if projectFolder}
 		<FolderCode class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
 		<span

@@ -23,7 +23,9 @@
 		ArrowUp,
 		ArrowDown,
 		Eraser,
-		Maximize2
+		Maximize2,
+		ChevronsDownUp,
+		ChevronsUpDown
 	} from '@lucide/svelte';
 	import {
 		moveCell,
@@ -40,7 +42,8 @@
 		copyCellToClipboard,
 		pasteCellAfter,
 		hasClipboardCell,
-		type Cell
+		type Cell,
+		type CellDisplay
 	} from '$lib/stores/notebook.svelte';
 	import { BUILTIN_DUCKDB_CONNECTION_ID, type Connection } from '$lib/types/connection';
 
@@ -64,7 +67,8 @@
 		onOpenWorksheet,
 		onShareWithAI,
 		isPlotCell = false,
-		dragHandle = true
+		dragHandle = true,
+		onDisplayChange
 	}: {
 		cell: Cell;
 		notebookId?: string;
@@ -89,7 +93,14 @@
 		 * handle. Disable inside the visual document editor, where dragging is owned
 		 * by the ProseMirror drag gutter and a second handle conflicts. */
 		dragHandle?: boolean;
+		/** Optional hook for inline query blocks (syncs PM attrs like pin state). */
+		onDisplayChange?: (display: CellDisplay) => void;
 	} = $props();
+
+	function setDisplay(display: CellDisplay) {
+		if (onDisplayChange) onDisplayChange(display);
+		else setCellDisplay(cell.id, display);
+	}
 
 	const codeHidden = $derived(cell.display === 'output');
 	const hasOutput = $derived(Boolean(cell.result || cell.pythonOutput));
@@ -130,8 +141,17 @@
 			<DropdownMenu.Separator />
 		{/if}
 		{#if isQueryCell}
+			{#if cell.display === 'collapsed'}
+				<DropdownMenu.Item onclick={() => setDisplay('full')}>
+					<ChevronsUpDown class="h-3.5 w-3.5" /> Expand cell
+				</DropdownMenu.Item>
+			{:else}
+				<DropdownMenu.Item onclick={() => setDisplay('collapsed')}>
+					<ChevronsDownUp class="h-3.5 w-3.5" /> Collapse cell
+				</DropdownMenu.Item>
+			{/if}
 			{#if cell.display !== 'collapsed'}
-				<DropdownMenu.Item onclick={() => setCellDisplay(cell.id, codeHidden ? 'full' : 'output')}>
+				<DropdownMenu.Item onclick={() => setDisplay(codeHidden ? 'full' : 'output')}>
 					{#if codeHidden}
 						<Eye class="h-3.5 w-3.5" /> Show code
 					{:else}

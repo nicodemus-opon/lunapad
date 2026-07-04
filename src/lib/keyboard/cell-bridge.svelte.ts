@@ -58,6 +58,10 @@ export function getFocusedCellEl(active: Element | null): HTMLElement | null {
 	if (!active) return null;
 	const cell = active.closest<HTMLElement>('.notebook-cell[tabindex]');
 	if (cell) return cell;
+	// WYSIWYG notebook: inline query blocks are not `.notebook-cell` wrappers but
+	// still need cell-scoped shortcuts (⌘↵ run, etc.).
+	const queryBlock = active.closest<HTMLElement>('.query-block-view[data-cell-id]');
+	if (queryBlock) return queryBlock;
 	return document.querySelector<HTMLElement>('.notebook-cell[tabindex]:focus');
 }
 

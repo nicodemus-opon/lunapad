@@ -286,7 +286,11 @@ export type ChartType =
 	| 'funnel'
 	| 'box-plot'
 	| 'sankey'
+	| 'map'
+	| 'choropleth'
 	| 'custom';
+
+export type GeoScope = 'world' | 'usa-states';
 
 export type ChartSeriesMode = 'auto' | 'grouped' | 'stacked';
 
@@ -322,6 +326,11 @@ export interface ChartConfig {
 	// table / DataTable: rows per page, search enabled
 	tableRows?: number;
 	tableSearch?: boolean;
+	// map: latColumn + lonColumn; optional yColumns[0] for marker color scale
+	latColumn?: string | null;
+	lonColumn?: string | null;
+	// choropleth: xColumn=location, yColumns[0]=metric; geoScope sets Plotly locationmode
+	geoScope?: GeoScope;
 }
 
 export type ResultViewMode = 'table' | 'chart' | 'stats';

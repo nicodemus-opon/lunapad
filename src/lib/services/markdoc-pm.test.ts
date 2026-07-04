@@ -271,6 +271,22 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		expect(types).not.toContain('table');
 	});
 
+	it('round-trips tables split by blank lines (Markdoc prose block boundaries)', () => {
+		const md = '| Name | Age |\n| --- | --- |\n\n| Bob | 30 |';
+		const { doc } = markdownToPmDocument(md);
+		expect(collectNodeTypes(doc as unknown as PMNodeJSON)).toContain('table');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(
+			normalizeMarkdocMarkdown('| Name | Age |\n| --- | --- |\n| Bob | 30 |')
+		);
+	});
+
+	it('does not merge prose containing pipes with a following table', () => {
+		const md = 'Options: foo | bar\n\n| Name | Age |\n| --- | --- |\n| Bob | 30 |';
+		const { doc } = markdownToPmDocument(md);
+		expect(collectNodeTypes(doc as unknown as PMNodeJSON)).toContain('table');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
 	it('serializes bubble-toolbar marks without throwing', () => {
 		const doc: PMDocJSON = {
 			type: 'doc',

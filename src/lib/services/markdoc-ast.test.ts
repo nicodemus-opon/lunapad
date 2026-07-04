@@ -6,7 +6,9 @@ import {
 	parseBlockWidget,
 	updateBlockWidgetSource,
 	visualBlocksRoundTripLossy,
-	serializeMarkdocTag
+	serializeMarkdocTag,
+	markdocAttrToDisplay,
+	markdocAttrsToJson
 } from './markdoc-ast';
 
 describe('splitFrontmatter', () => {
@@ -113,6 +115,25 @@ describe('markdoc-ast', () => {
 		expect(updated.source).toContain('data=$orders.rows');
 		expect(updated.source).toContain('title="By region"');
 		expect(updated.source).not.toContain('[object Object]');
+	});
+
+	it('displays Markdoc variable refs for inspector inputs', () => {
+		const [block] = parseVisualBlocks(
+			'{% metric value=$orders.total label="Revenue" format="currency" /%}'
+		);
+		const parsed = parseBlockWidget(block);
+		expect(markdocAttrToDisplay(parsed!.attrs.value)).toBe('$orders.total');
+		expect(markdocAttrToDisplay(parsed!.attrs.label)).toBe('Revenue');
+	});
+
+	it('normalizes Markdoc refs to plain strings in attrsJson', () => {
+		const [block] = parseVisualBlocks(
+			'{% metric value=$category_breakdown.total_revenue label="Top Category Revenue" /%}'
+		);
+		const parsed = parseBlockWidget(block);
+		const json = markdocAttrsToJson(parsed!.attrs);
+		const attrs = JSON.parse(json) as Record<string, unknown>;
+		expect(attrs.value).toBe('$category_breakdown.total_revenue');
 	});
 
 	it('preserves the condition function when an if body is edited', () => {

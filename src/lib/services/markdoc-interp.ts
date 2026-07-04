@@ -200,6 +200,8 @@ export const CHART_TYPES = [
 	'funnel',
 	'box-plot',
 	'sankey',
+	'map',
+	'choropleth',
 	'custom'
 ];
 
@@ -221,6 +223,9 @@ const chartTag: Schema = {
 		yColumnsSecondary: { type: Array },
 		colorColumn: { type: String },
 		sizeColumn: { type: String },
+		lat: { type: String },
+		lon: { type: String },
+		geoScope: { type: String, matches: ['world', 'usa-states'] },
 		seriesMode: { type: String, matches: ['auto', 'grouped', 'stacked'] },
 		sortOrder: { type: String, matches: ['none', 'asc', 'desc'] },
 		histogramBins: { type: Number },
@@ -242,6 +247,9 @@ const chartTag: Schema = {
 			yColumnsSecondary?: string[];
 			colorColumn?: string;
 			sizeColumn?: string;
+			lat?: string;
+			lon?: string;
+			geoScope?: string;
 			seriesMode?: string;
 			sortOrder?: string;
 			histogramBins?: number;
@@ -266,6 +274,9 @@ const chartTag: Schema = {
 		if (attrs.yColumnsSecondary) merged.yColumnsSecondary = attrs.yColumnsSecondary;
 		if (attrs.colorColumn) merged.colorColumn = attrs.colorColumn;
 		if (attrs.sizeColumn) merged.sizeColumn = attrs.sizeColumn;
+		if (attrs.lat) merged.latColumn = attrs.lat;
+		if (attrs.lon) merged.lonColumn = attrs.lon;
+		if (attrs.geoScope) merged.geoScope = attrs.geoScope;
 		if (attrs.seriesMode) merged.seriesMode = attrs.seriesMode;
 		if (attrs.sortOrder) merged.sortOrder = attrs.sortOrder;
 		if (attrs.histogramBins) merged.histogramBins = attrs.histogramBins;

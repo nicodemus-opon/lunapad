@@ -25,6 +25,7 @@
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import { buildNotionEditorExtensions } from './notion-editor-extensions';
 	import { clampContextMenuPosition, clampMenuPosition, handleMenuKeyDown } from './menu-utils';
+	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import { Plus, Copy, Trash2, X, ArrowUp, ArrowDown } from '@lucide/svelte';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
@@ -713,119 +714,126 @@
 		<div bind:this={editorMount} class="notion-editor-host"></div>
 
 		{#if slashOpen && slashItems.length}
-			<div
-				class="slash-menu-anchor fixed z-50"
-				style="top: {slashMenuPos.top}px; left: {slashMenuPos.left}px;"
-			>
-				<SlashMenu
-					items={slashItems}
-					selectedIndex={slashSelected}
-					onSelect={(cmd) => {
-						if (slashCommandFn) slashCommandFn(cmd);
-						slashOpen = false;
-					}}
-					onHoverIndex={(i) => {
-						slashSelected = i;
-					}}
-				/>
-			</div>
+			<BodyPortal>
+				<div
+					class="slash-menu-anchor fixed z-50"
+					style="top: {slashMenuPos.top}px; left: {slashMenuPos.left}px;"
+				>
+					<SlashMenu
+						items={slashItems}
+						selectedIndex={slashSelected}
+						onSelect={(cmd) => {
+							if (slashCommandFn) slashCommandFn(cmd);
+							slashOpen = false;
+						}}
+						onHoverIndex={(i) => {
+							slashSelected = i;
+						}}
+					/>
+				</div>
+			</BodyPortal>
 		{/if}
 
 		{#if mentionOpen}
-			<div
-				class="mention-menu-anchor fixed z-50"
-				style="top: {mentionMenuPos.top}px; left: {mentionMenuPos.left}px;"
-			>
-				<MentionMenu
-					items={mentionItems}
-					moreCount={mentionMoreCount}
-					query={mentionQuery}
-					selectedIndex={mentionSelected}
-					onSelect={(item) => {
-						if (mentionCommandFn) mentionCommandFn(item);
-						mentionOpen = false;
-					}}
-					onHoverIndex={(i) => {
-						mentionSelected = i;
-					}}
-				/>
-			</div>
+			<BodyPortal>
+				<div
+					class="mention-menu-anchor fixed z-50"
+					style="top: {mentionMenuPos.top}px; left: {mentionMenuPos.left}px;"
+				>
+					<MentionMenu
+						items={mentionItems}
+						moreCount={mentionMoreCount}
+						query={mentionQuery}
+						selectedIndex={mentionSelected}
+						onSelect={(item) => {
+							if (mentionCommandFn) mentionCommandFn(item);
+							mentionOpen = false;
+						}}
+						onHoverIndex={(i) => {
+							mentionSelected = i;
+						}}
+					/>
+				</div>
+			</BodyPortal>
 		{/if}
 
 		{#if ctxMenu && ctxMenuPos}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="fixed inset-0 z-40"
-				onclick={() => (ctxMenu = null)}
-				onkeydown={() => {}}
-			></div>
-			<div
-				class="fixed z-50 min-w-40 rounded-md border bg-popover p-1 shadow-lg"
-				style="top: {ctxMenuPos.top}px; left: {ctxMenuPos.left}px;"
-			>
-				<button
-					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
-					onclick={() => {
-						moveBlockAt(ctxMenu!.pos, 'up');
-						ctxMenu = null;
-					}}
+			<BodyPortal>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="fixed inset-0 z-40"
+					onclick={() => (ctxMenu = null)}
+					onkeydown={() => {}}
+				></div>
+				<div
+					class="fixed z-50 min-w-40 rounded-md border bg-popover p-1 shadow-lg"
+					style="top: {ctxMenuPos.top}px; left: {ctxMenuPos.left}px;"
 				>
-					<ArrowUp class="h-3.5 w-3.5" /> Move up
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
-					onclick={() => {
-						moveBlockAt(ctxMenu!.pos, 'down');
-						ctxMenu = null;
-					}}
-				>
-					<ArrowDown class="h-3.5 w-3.5" /> Move down
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
-					onclick={() => {
-						duplicateBlockAt(ctxMenu!.pos);
-						ctxMenu = null;
-					}}
-				>
-					<Copy class="h-3.5 w-3.5" /> Duplicate
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
-					onclick={() => {
-						insertBlockBelow(ctxMenu!.pos);
-						ctxMenu = null;
-					}}
-				>
-					<Plus class="h-3.5 w-3.5" /> Add below
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
-					onclick={() => {
-						deleteBlockAt(ctxMenu!.pos);
-						ctxMenu = null;
-					}}
-				>
-					<Trash2 class="h-3.5 w-3.5" /> Delete
-				</button>
-			</div>
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
+						onclick={() => {
+							moveBlockAt(ctxMenu!.pos, 'up');
+							ctxMenu = null;
+						}}
+					>
+						<ArrowUp class="h-3.5 w-3.5" /> Move up
+					</button>
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
+						onclick={() => {
+							moveBlockAt(ctxMenu!.pos, 'down');
+							ctxMenu = null;
+						}}
+					>
+						<ArrowDown class="h-3.5 w-3.5" /> Move down
+					</button>
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
+						onclick={() => {
+							duplicateBlockAt(ctxMenu!.pos);
+							ctxMenu = null;
+						}}
+					>
+						<Copy class="h-3.5 w-3.5" /> Duplicate
+					</button>
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
+						onclick={() => {
+							insertBlockBelow(ctxMenu!.pos);
+							ctxMenu = null;
+						}}
+					>
+						<Plus class="h-3.5 w-3.5" /> Add below
+					</button>
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+						onclick={() => {
+							deleteBlockAt(ctxMenu!.pos);
+							ctxMenu = null;
+						}}
+					>
+						<Trash2 class="h-3.5 w-3.5" /> Delete
+					</button>
+				</div>
+			</BodyPortal>
 		{/if}
 	</div>
 
 	{#if selectedNodeInfo}
-		<aside class="visual-inspector w-64 shrink-0 rounded-sm border border-border bg-popover/95">
-			<div class="flex items-center justify-between border-b px-2.5 py-1.5">
-				<span class="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-					{selectedNodeInfo.type === 'block' ? 'Block' : selectedNodeInfo.tagName ?? 'Properties'}
-				</span>
+		<aside class="visual-inspector w-72 shrink-0 overflow-hidden rounded-lg border border-border bg-popover shadow-sm">
+			<div class="flex items-center justify-between border-b border-border/80 px-3 py-2.5">
+				<div>
+					<span class="text-sm font-medium text-foreground">Properties</span>
+					<p class="text-2xs text-muted-foreground">Block settings</p>
+				</div>
 				<button
 					type="button"
-					class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+					class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 					title="Close"
 					aria-label="Close inspector"
 					onclick={() => {
@@ -836,12 +844,15 @@
 					<X class="h-3.5 w-3.5" />
 				</button>
 			</div>
-			<VisualBlockInspector
-				block={selectedBlock}
-				{refEntries}
-				{filterUsages}
-				onPatch={patchSelected}
-			/>
+			<div class="max-h-[calc(100vh-12rem)] overflow-y-auto py-2">
+				<VisualBlockInspector
+					block={selectedBlock}
+					{refEntries}
+					{filterUsages}
+					onPatch={patchSelected}
+					variant="sidebar"
+				/>
+			</div>
 		</aside>
 	{/if}
 </div>

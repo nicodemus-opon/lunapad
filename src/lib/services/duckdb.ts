@@ -538,6 +538,13 @@ export async function registerPythonResultTable(
 	);
 }
 
+/** Drop a Python cell's registered DuckDB table when a run no longer yields a DataFrame. */
+export async function clearPythonResultTable(name: string): Promise<void> {
+	const c = assertConn();
+	const safeName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+	await c.query(`DROP TABLE IF EXISTS "${safeName}"`);
+}
+
 /** Drop a temp profiling table created by loadRowsForProfiling. */
 export async function dropProfileTable(tempName: string): Promise<void> {
 	try {

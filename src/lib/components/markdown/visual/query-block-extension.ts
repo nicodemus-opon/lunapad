@@ -1,10 +1,19 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { mount, unmount } from 'svelte';
-import type { Cell } from '$lib/stores/notebook.svelte';
+import type { Cell, CellDisplay } from '$lib/stores/notebook.svelte';
 import { setCellDisplay } from '$lib/stores/notebook.svelte';
 import QueryBlockNodeView from './QueryBlockNodeView.svelte';
 import { reactiveProps } from './reactive-props.svelte';
+
+/** Nearest element for a DOM event (handles text-node targets). */
+function eventTargetElement(event: Event): Element | null {
+	let node = event.target as globalThis.Node | null;
+	while (node && node.nodeType !== globalThis.Node.ELEMENT_NODE) {
+		node = node.parentNode;
+	}
+	return node as Element | null;
+}
 
 export interface QueryBlockExtensionContext {
 	getCells: () => Cell[];
@@ -49,6 +58,19 @@ export const QueryBlockExtension = Node.create({
 
 			const getCell = (id: string) => ctx?.getCells().find((c) => c.id === id) ?? null;
 
+			const syncPinnedAttr = (pinned: boolean) => {
+				props.pinned = pinned;
+				editor
+					.chain()
+					.command(({ tr }) => {
+						const pos = getPos();
+						if (typeof pos !== 'number') return false;
+						tr.setNodeAttribute(pos, 'pinned', pinned);
+						return true;
+					})
+					.run();
+			};
+
 			// Mount ONCE with reactive props and mutate them in place. Remounting on
 			// every update/select destroys the embedded Monaco editor and any open
 			// dropdown the moment the user interacts with the block, which makes
@@ -78,18 +100,13 @@ export const QueryBlockExtension = Node.create({
 				onBlur: () => {},
 				onTogglePin: () => {
 					const next = !props.pinned;
-					props.pinned = next;
+					syncPinnedAttr(next);
 					const cell = getCell(props.cellId);
 					if (cell) setCellDisplay(props.cellId, next ? 'full' : 'output');
-					editor
-						.chain()
-						.command(({ tr }) => {
-							const pos = getPos();
-							if (typeof pos !== 'number') return false;
-							tr.setNodeAttribute(pos, 'pinned', next);
-							return true;
-						})
-						.run();
+				},
+				onSetDisplay: (display: CellDisplay) => {
+					setCellDisplay(props.cellId, display);
+					if (display !== 'full') syncPinnedAttr(false);
 				},
 				onDelete: () => {
 					ctx?.onDeleteCell?.(props.cellId);
@@ -120,15 +137,10 @@ export const QueryBlockExtension = Node.create({
 					dom.classList.remove('ProseMirror-selectednode');
 				},
 				stopEvent(event) {
-					const target = event.target as HTMLElement;
-					if (
-						target.closest(
-							'.monaco-editor, .qb-gutter, button, select, input, textarea, a, .result-table, .chart-view'
-						)
-					) {
-						return true;
-					}
-					return false;
+					const el = eventTargetElement(event);
+					// The query block is a non-editable atom — PM must not handle any
+					// events inside it or chart/result/GUI controls stop responding.
+					return Boolean(el?.closest('.query-block-node'));
 				},
 				ignoreMutation() {
 					return true;

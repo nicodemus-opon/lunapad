@@ -61,7 +61,12 @@
 	type TreeRowItem =
 		| { kind: 'folder'; depth: number; folder: NotebookFolder }
 		| { kind: 'notebook'; depth: number; notebook: Notebook; folderName?: string }
-		| { kind: 'outline'; depth: number; entry: import('$lib/services/notebook-outline').OutlineEntry; notebook: Notebook }
+		| {
+				kind: 'outline';
+				depth: number;
+				entry: import('$lib/services/notebook-outline').OutlineEntry;
+				notebook: Notebook;
+		  }
 		| { kind: 'cell'; depth: number; cell: Cell; notebook: Notebook };
 
 	type MenuAction =
@@ -334,7 +339,7 @@
 <div class="flex h-full flex-col overflow-hidden">
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex-1 overflow-y-auto py-1 {dragOverRoot && draggingNotebookId
+		class="sidebar-tree-scroll {dragOverRoot && draggingNotebookId
 			? 'ring-1 ring-primary/30 ring-inset'
 			: ''}"
 		ondragover={(e) => {
@@ -547,7 +552,11 @@
 												toggleFavoriteNotebook(row.notebook.id);
 											}}
 										>
-											<Star class="h-3 w-3 {favoriteIds.includes(row.notebook.id) ? 'fill-current' : ''}" />
+											<Star
+												class="h-3 w-3 {favoriteIds.includes(row.notebook.id)
+													? 'fill-current'
+													: ''}"
+											/>
 										</button>
 										{@render rowMenu(
 											`notebook:${row.notebook.id}`,

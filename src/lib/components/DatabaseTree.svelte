@@ -340,7 +340,7 @@
 {/snippet}
 
 <div class="flex h-full flex-col overflow-hidden">
-	<div class="flex-1 overflow-y-auto py-1">
+	<div class="sidebar-tree-scroll">
 		{#if loading}
 			{#each [80, 60, 72, 48, 64] as width, i (i)}
 				<div class="mx-1 flex h-7 items-center gap-1.5 px-2">

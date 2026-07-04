@@ -38,6 +38,13 @@ import {
 	writeAIConventions
 } from '$lib/services/project-client.js';
 import {
+	detectLatLonColumns,
+	detectLocationColumn,
+	hasChoroplethData,
+	hasGeoPointData,
+	inferGeoScope
+} from '$lib/utils/geo-columns';
+import {
 	getMessages,
 	appendMessage,
 	updateMessageText,
@@ -2093,12 +2100,43 @@ let _updatedCellIds = new Set<string>();
 let _madeNotebookChanges = false;
 
 type InferredChartConfig = {
-	chartType: 'bar' | 'bar-horizontal' | 'line' | 'area' | 'pie' | 'big-value';
+	chartType:
+		| 'bar'
+		| 'bar-horizontal'
+		| 'line'
+		| 'area'
+		| 'pie'
+		| 'big-value'
+		| 'map'
+		| 'choropleth';
 	xColumn: string;
 	yColumns: string[];
-	colorColumn: null;
+	colorColumn: string | null;
+	latColumn?: string | null;
+	lonColumn?: string | null;
+	geoScope?: 'world' | 'usa-states';
 	seriesMode?: 'grouped';
 };
+
+function chartConfigColumnsValid(cols: string[], chart: InferredChartConfig): boolean {
+	if (chart.chartType === 'map') {
+		return (
+			!!chart.latColumn &&
+			!!chart.lonColumn &&
+			cols.includes(chart.latColumn) &&
+			cols.includes(chart.lonColumn)
+		);
+	}
+	if (chart.chartType === 'choropleth') {
+		return (
+			!!chart.xColumn &&
+			chart.yColumns.length > 0 &&
+			cols.includes(chart.xColumn) &&
+			chart.yColumns.every((y) => cols.includes(y))
+		);
+	}
+	return cols.includes(chart.xColumn) && chart.yColumns.every((y) => cols.includes(y));
+}
 
 // Patterns that indicate a date/time column name
 const TIME_RE = /month|week|day|date|year|quarter|period|time|hour|minute|created|updated|ts$/i;
@@ -2112,6 +2150,38 @@ const MEASURE_NAME_RE =
  */
 function inferChartFromColumns(columns: string[], rows: unknown[]): InferredChartConfig | null {
 	if (columns.length === 0) return null;
+	const typedRows = rows as Record<string, unknown>[];
+
+	if (hasGeoPointData(columns, typedRows)) {
+		const { latColumn, lonColumn } = detectLatLonColumns(columns, typedRows);
+		const numCols = columns.filter((c) =>
+			typedRows.slice(0, 10).some((r) => typeof r[c] === 'number')
+		);
+		const valueCol = numCols.find((c) => c !== latColumn && c !== lonColumn);
+		return {
+			chartType: 'map',
+			xColumn: '',
+			yColumns: valueCol ? [valueCol] : [],
+			colorColumn: null,
+			latColumn,
+			lonColumn
+		};
+	}
+
+	const numCols = columns.filter((c) =>
+		typedRows.slice(0, 10).some((r) => typeof r[c] === 'number')
+	);
+	if (hasChoroplethData(columns, typedRows, numCols)) {
+		const locationCol = detectLocationColumn(columns, typedRows)!;
+		const metricCol = numCols.find((c) => c !== locationCol) ?? numCols[0];
+		return {
+			chartType: 'choropleth',
+			xColumn: locationCol,
+			yColumns: metricCol ? [metricCol] : [],
+			colorColumn: null,
+			geoScope: inferGeoScope(locationCol, typedRows)
+		};
+	}
 
 	// Single row with multiple columns → KPI / big-value
 	if (rows.length === 1 && columns.length >= 1) {
@@ -3931,7 +4001,7 @@ export async function submitAIMessage(
 			const cols = cell.result?.columns;
 			if (!cols || cols.length === 0) continue;
 			const chart = inferChartFromColumns(cols, cell.result?.rows ?? []);
-			if (chart && cols.includes(chart.xColumn) && chart.yColumns.every((y) => cols.includes(y))) {
+			if (chart && chartConfigColumnsValid(cols, chart)) {
 				setCellResultChartConfig(cellId, chart);
 				setCellResultViewMode(cellId, 'chart');
 				_madeNotebookChanges = true;

@@ -794,6 +794,80 @@ textarea.md-control {
 	min-width: 0;
 }
 
+/* ── GFM tables (TipTap / ProseMirror visual editor) ─────────────────────── */
+
+.markdown-surface .ProseMirror table,
+.markdown-surface .markdown-body table,
+.notion-surface .ProseMirror table,
+.notebook-document-surface .ProseMirror table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 0.5rem 0;
+	table-layout: fixed;
+}
+
+.markdown-surface .ProseMirror td,
+.markdown-surface .ProseMirror th,
+.markdown-surface .markdown-body td,
+.markdown-surface .markdown-body th,
+.notion-surface .ProseMirror td,
+.notion-surface .ProseMirror th,
+.notebook-document-surface .ProseMirror td,
+.notebook-document-surface .ProseMirror th {
+	border: 1px solid var(--border);
+	padding: 0.35rem 0.5rem;
+	vertical-align: top;
+	min-width: 3rem;
+}
+
+.markdown-surface .ProseMirror th,
+.markdown-surface .markdown-body th,
+.notion-surface .ProseMirror th,
+.notebook-document-surface .ProseMirror th {
+	background: color-mix(in oklab, var(--muted) 45%, transparent);
+	font-weight: 600;
+	text-align: left;
+}
+
+.markdown-surface .ProseMirror .tableWrapper,
+.notion-surface .ProseMirror .tableWrapper,
+.notebook-document-surface .ProseMirror .tableWrapper {
+	overflow-x: auto;
+	margin: 0.5rem 0;
+}
+
+.markdown-surface .ProseMirror .column-resize-handle,
+.notion-surface .ProseMirror .column-resize-handle,
+.notebook-document-surface .ProseMirror .column-resize-handle {
+	background-color: var(--primary);
+	bottom: -2px;
+	pointer-events: none;
+	position: absolute;
+	right: -2px;
+	top: 0;
+	width: 4px;
+}
+
+.markdown-surface .ProseMirror .selectedCell::after,
+.notion-surface .ProseMirror .selectedCell::after,
+.notebook-document-surface .ProseMirror .selectedCell::after {
+	background: color-mix(in oklab, var(--primary) 18%, transparent);
+	content: '';
+	inset: 0;
+	pointer-events: none;
+	position: absolute;
+	z-index: 2;
+}
+
+.markdown-surface .ProseMirror td > p,
+.markdown-surface .ProseMirror th > p,
+.notion-surface .ProseMirror td > p,
+.notion-surface .ProseMirror th > p,
+.notebook-document-surface .ProseMirror td > p,
+.notebook-document-surface .ProseMirror th > p {
+	margin: 0;
+}
+
 /* ── Shared widget shell ───────────────────────────────────────────────── */
 
 .md-widget-shell {

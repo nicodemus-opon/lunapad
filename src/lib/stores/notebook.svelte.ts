@@ -62,6 +62,7 @@ import {
 	materializeRelation,
 	listMainSchemaRelations,
 	registerPythonResultTable,
+	clearPythonResultTable,
 	deletePersistedFile,
 	type MaterializationMode as DBMaterializationMode,
 	type RelationType
@@ -766,7 +767,7 @@ type SerializedCell = Omit<
 	needsRun: boolean;
 	staleReason: null;
 	staleSources: [];
-	pythonOutput: null;
+	pythonOutput: Cell['pythonOutput'];
 };
 
 // Caps for persisting query results to localStorage. Results are kept so output survives
@@ -774,9 +775,28 @@ type SerializedCell = Omit<
 // avoid blowing the ~5MB localStorage quota — the cell is marked needsRun so the UI offers a re-run.
 const PERSIST_RESULT_ROW_CAP = 2000;
 const PERSIST_RESULT_BYTE_CAP = 256 * 1024;
+const PERSIST_PYTHON_STDOUT_CAP = 50_000;
+const PERSIST_PYTHON_FIGURE_CAP = 3;
+const PERSIST_PYTHON_FIGURE_BYTE_CAP = 128 * 1024;
+
+function capPythonOutput(output: NonNullable<Cell['pythonOutput']>): Cell['pythonOutput'] {
+	const stdout =
+		output.stdout.length > PERSIST_PYTHON_STDOUT_CAP
+			? output.stdout.slice(0, PERSIST_PYTHON_STDOUT_CAP) + '\n…[truncated]'
+			: output.stdout;
+	const figures: string[] = [];
+	let figureBytes = 0;
+	for (const fig of output.figures.slice(0, PERSIST_PYTHON_FIGURE_CAP)) {
+		if (figureBytes + fig.length > PERSIST_PYTHON_FIGURE_BYTE_CAP) break;
+		figures.push(fig);
+		figureBytes += fig.length;
+	}
+	return { stdout, figures, error: output.error };
+}
 
 function serializeCell(c: Cell, persistResults = true): SerializedCell {
 	let result: Cell['result'] = null;
+	let pythonOutput: Cell['pythonOutput'] = null;
 	let status: Cell['status'] = 'idle';
 	let needsRun = Boolean(c.needsRun);
 	if (persistResults && c.status === 'success' && c.result) {
@@ -797,6 +817,20 @@ function serializeCell(c: Cell, persistResults = true): SerializedCell {
 			needsRun = true; // result too big to persist — prompt a re-run on reload
 		}
 	}
+	if (persistResults && c.cellType === 'python' && c.pythonOutput) {
+		pythonOutput = capPythonOutput(c.pythonOutput);
+		if (status !== 'success') {
+			if (c.status === 'success' && (result || pythonOutput)) {
+				status = 'success';
+				needsRun = false;
+			} else if (c.status === 'error' && pythonOutput?.error) {
+				status = 'error';
+			} else if (c.status === 'running') {
+				status = 'idle';
+				needsRun = true;
+			}
+		}
+	}
 	return {
 		...c,
 		status,
@@ -805,7 +839,7 @@ function serializeCell(c: Cell, persistResults = true): SerializedCell {
 		needsRun,
 		staleReason: null,
 		staleSources: [],
-		pythonOutput: null
+		pythonOutput
 	};
 }
 
@@ -1257,7 +1291,8 @@ function deserializeCell(c: Cell, i: number): Cell {
 	const cellType: CellType =
 		persistedCellType === 'markdown' ||
 		persistedCellType === 'udf' ||
-		persistedCellType === 'python'
+		persistedCellType === 'python' ||
+		persistedCellType === 'plot'
 			? persistedCellType
 			: 'query';
 	const markdown =
@@ -1298,12 +1333,21 @@ function deserializeCell(c: Cell, i: number): Cell {
 				: {},
 		// Restore persisted (capped) result so output survives reload/HMR.
 		result: (c as Partial<Cell>).result ?? null,
-		status: (c as Partial<Cell>).result ? 'success' : 'idle',
+		pythonOutput: (c as Partial<Cell>).pythonOutput ?? null,
+		status:
+			(c as Partial<Cell>).status === 'error'
+				? 'error'
+				: (c as Partial<Cell>).result || (c as Partial<Cell>).pythonOutput
+					? 'success'
+					: 'idle',
 		executionMs:
 			typeof (c as Partial<Cell>).executionMs === 'number'
 				? ((c as Partial<Cell>).executionMs as number)
 				: null,
-		needsRun: (c as Partial<Cell>).result ? false : Boolean((c as Partial<Cell>).needsRun),
+		needsRun:
+			(c as Partial<Cell>).result || (c as Partial<Cell>).pythonOutput
+				? false
+				: Boolean((c as Partial<Cell>).needsRun),
 		// Legacy `markdownPreview: true` predates the display-state model; migrate it to
 		// `display: 'output'` so those cells still render their dashboard instead of the
 		// editor (which now owns the 'full' display state).
@@ -2268,6 +2312,15 @@ export function isNotebookDirty(id: string): boolean {
 	return dirtyNotebookIds.has(id);
 }
 
+/** True while a notebook's first/ongoing disk write is debounced or in flight. */
+function isNotebookPendingDiskSync(notebookId: string): boolean {
+	if (lunaSaveTimers.has(notebookId) || dirtyNotebookIds.has(notebookId)) return true;
+	for (const key of fileSaveTimers.keys()) {
+		if (key.startsWith(`${notebookId}:`)) return true;
+	}
+	return false;
+}
+
 /** Debounced save of an entire `.luna`-backed notebook (one file, many cells,
  *  document order = cell order). */
 function scheduleLunaNotebookSave(notebookId: string): void {
@@ -2430,7 +2483,7 @@ export async function loadProjectNotebooks(): Promise<void> {
 		// Merge fresh disk data with transient in-memory state so that cells
 		// currently running (or with results) are not reset by a background reload.
 		const prevMap = new Map(state.notebooks.map((nb) => [nb.id, nb]));
-		state.notebooks = notebooks.map((freshNb) => {
+		const mergedFromDisk = notebooks.map((freshNb) => {
 			const prevNb = prevMap.get(freshNb.id);
 			if (!prevNb) return freshNb;
 			// A pending whole-notebook .luna save means every in-memory cell is
@@ -2483,8 +2536,25 @@ export async function loadProjectNotebooks(): Promise<void> {
 			return { ...freshNb, cells: [...mergedCells, ...pendingCells] };
 		});
 
+		// Newly created notebooks only exist in memory until their `.luna` file is
+		// written. A watcher reload during that window (or right after, before the
+		// listing catches up) must not drop them — that looked like "can't create".
+		const memoryOnlyNotebooks = [...prevMap.values()].filter(
+			(nb) =>
+				!newIds.has(nb.id) &&
+				(isNotebookPendingDiskSync(nb.id) || state.openNotebookTabIds.includes(nb.id))
+		);
+		state.notebooks =
+			memoryOnlyNotebooks.length > 0
+				? [...mergedFromDisk, ...memoryOnlyNotebooks]
+				: mergedFromDisk;
+
+		const keepTabIds = new Set([
+			...newIds,
+			...memoryOnlyNotebooks.map((nb) => nb.id)
+		]);
 		state.folders = folders;
-		state.openNotebookTabIds = state.openNotebookTabIds.filter((id) => newIds.has(id));
+		state.openNotebookTabIds = state.openNotebookTabIds.filter((id) => keepTabIds.has(id));
 		if (state.openNotebookTabIds.length === 0 && notebooks.length > 0) {
 			state.openNotebookTabIds = [notebooks[0].id];
 			state.activeTabId = notebooks[0].id;
@@ -3269,7 +3339,11 @@ function _createNotebook(folderId: string | null): Notebook {
 		// too — check all notebooks (any directory), not just the current folder.
 		let name = 'new_model';
 		let counter = 1;
-		while (state.notebooks.some((nb) => nb.cells.some((c) => c.outputName === name))) {
+		while (
+			state.notebooks.some(
+				(nb) => nb.id === `${dir}/${name}` || nb.cells.some((c) => c.outputName === name)
+			)
+		) {
 			name = `new_model_${counter++}`;
 		}
 		n.name = name;
@@ -3475,7 +3549,21 @@ function rebuildCellsFromBlocks(notebook: Notebook, blocks: NotebookPmBlock[]): 
 		if (block.kind === 'page') continue;
 		if (block.kind === 'query') {
 			const cell = cellMap.get(block.cellId);
-			if (cell) next.push({ ...cell });
+			if (cell) {
+				next.push({ ...cell });
+				continue;
+			}
+			if (block.cellId) {
+				const stub =
+					block.cellType === 'python'
+						? makePythonCell('')
+						: block.cellType === 'plot'
+							? makePlotCell('')
+							: makeCell('', block.cellId, 'sql');
+				stub.id = block.cellId;
+				if (!stub.outputName) stub.outputName = block.cellId;
+				next.push(stub);
+			}
 			continue;
 		}
 		if (block.kind === 'markdown') {
@@ -3508,6 +3596,17 @@ export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): 
 	const nextCells = rebuildCellsFromBlocks(nb, blocks);
 	if (!nextCells.length && nb.cells.length) return;
 
+	// Reject stale editor emits after a tab switch: the PM doc still describes the
+	// previous notebook's query blocks, none of whose cell ids exist here.
+	const queryBlockIds = blocks
+		.filter((b): b is Extract<NotebookPmBlock, { kind: 'query' }> => b.kind === 'query')
+		.map((b) => b.cellId)
+		.filter(Boolean);
+	if (queryBlockIds.length > 0 && nb.cells.length > 0) {
+		const ownIds = new Set(nb.cells.map((c) => c.id));
+		if (!queryBlockIds.some((id) => ownIds.has(id))) return;
+	}
+
 	const markdownChanged = nextCells.some((c, i) => {
 		const prev = nb.cells[i];
 		return c.cellType === 'markdown' && prev?.cellType === 'markdown' && c.markdown !== prev.markdown;
@@ -3529,9 +3628,12 @@ export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): 
 /** Insert an executable block cell for inline document insertion (/sql, /prql, /python). */
 export function insertQueryBlockCell(
 	afterCellId: string | null,
-	lang: 'sql' | 'prql' | 'python'
+	lang: 'sql' | 'prql' | 'python',
+	notebookId?: string
 ): string {
-	const nb = getActiveNotebook();
+	const nb = notebookId
+		? (state.notebooks.find((n) => n.id === notebookId) ?? getActiveNotebook())
+		: getActiveNotebook();
 	pushHistoryCheckpoint(nb.id);
 
 	let newCell: Cell;
@@ -6401,6 +6503,16 @@ export async function runPythonCell(id: string): Promise<void> {
 									await refreshTablesFromCatalog();
 								} catch {
 									// non-fatal — the cell's own result still rendered fine
+								}
+							}
+						} else {
+							cell.result = null;
+							if (cell.outputName) {
+								try {
+									await clearPythonResultTable(cell.outputName);
+									await refreshTablesFromCatalog();
+								} catch {
+									// non-fatal
 								}
 							}
 						}

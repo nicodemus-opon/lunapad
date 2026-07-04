@@ -55,6 +55,13 @@ export type WithElementRef<T, U extends HTMLElement = HTMLElement> = T & { ref?:
 // ── Chart config inference ───────────────────────────────────────────────────
 import type { ChartConfig, ChartType } from '$lib/types/gui-pipeline';
 import { recommendIntelligentChartTypes } from '$lib/services/intelligence-db';
+import {
+	detectLatLonColumns,
+	detectLocationColumn,
+	hasChoroplethData,
+	hasGeoPointData,
+	inferGeoScope
+} from '$lib/utils/geo-columns';
 
 export interface ChartRecommendation {
 	chartType: ChartType;
@@ -110,6 +117,31 @@ export function inferChartConfig(columns: string[], rows: Record<string, unknown
 	const dateCols = columns.filter((c) => kinds[c] === 'date');
 	const numCols = columns.filter((c) => kinds[c] === 'numeric');
 	const textCols = columns.filter((c) => kinds[c] === 'text');
+
+	// ── Geo patterns ──────────────────────────────────────────────────────────
+	if (rows.length > 0 && hasGeoPointData(columns, rows)) {
+		const { latColumn, lonColumn } = detectLatLonColumns(columns, rows);
+		const valueCol = numCols.find((c) => c !== latColumn && c !== lonColumn);
+		const labelCol = textCols.find((c) => c !== latColumn && c !== lonColumn);
+		return makeConfig({
+			chartType: 'map',
+			latColumn,
+			lonColumn,
+			yColumns: valueCol ? [valueCol] : [],
+			colorColumn: labelCol ?? null
+		});
+	}
+
+	if (rows.length > 0 && hasChoroplethData(columns, rows, numCols)) {
+		const locationCol = detectLocationColumn(columns, rows)!;
+		const metricCol = numCols.find((c) => c !== locationCol) ?? numCols[0];
+		return makeConfig({
+			chartType: 'choropleth',
+			xColumn: locationCol,
+			yColumns: metricCol ? [metricCol] : [],
+			geoScope: inferGeoScope(locationCol, rows)
+		});
+	}
 
 	function cardinality(col: string): number {
 		return new Set(rows.map((r) => r[col])).size;
@@ -186,7 +218,10 @@ export function normalizeChartConfig(config: ChartConfig): ChartConfig {
 		...(config.valueRow !== undefined && { valueRow: config.valueRow }),
 		...(config.tableRows !== undefined && { tableRows: config.tableRows }),
 		...(config.tableSearch !== undefined && { tableSearch: config.tableSearch }),
-		...(config.code !== undefined && { code: config.code })
+		...(config.code !== undefined && { code: config.code }),
+		...(config.latColumn !== undefined && { latColumn: config.latColumn }),
+		...(config.lonColumn !== undefined && { lonColumn: config.lonColumn }),
+		...(config.geoScope !== undefined && { geoScope: config.geoScope })
 	};
 }
 
@@ -247,9 +282,45 @@ export function inferSmartChartConfigForType(
 	);
 	let colorColumn = sanitizeColumn(base.colorColumn ?? null, columns);
 	let sizeColumn = sanitizeColumn(base.sizeColumn ?? null, columns);
+	let latColumn = sanitizeColumn(base.latColumn ?? null, columns);
+	let lonColumn = sanitizeColumn(base.lonColumn ?? null, columns);
+	let geoScope = base.geoScope;
 	let seriesMode = base.seriesMode ?? 'auto';
 
-	if (chartType === 'scatter' || chartType === 'bubble') {
+	if (chartType === 'map') {
+		const detected = detectLatLonColumns(columns, rows);
+		latColumn = latColumn ?? detected.latColumn;
+		lonColumn = lonColumn ?? detected.lonColumn;
+		xColumn = '';
+		const filteredY = yColumns.filter((col) => col !== latColumn && col !== lonColumn);
+		yColumns =
+			filteredY.length > 0
+				? filteredY
+				: numCols.filter((col) => col !== latColumn && col !== lonColumn).slice(0, 1);
+		yColumnsSecondary = [];
+		colorColumn =
+			textCols.find(
+				(col) => /name|label|title/i.test(col) && col !== latColumn && col !== lonColumn
+			) ??
+			textCols.find((col) => col !== latColumn && col !== lonColumn) ??
+			null;
+		sizeColumn = sizeColumn ?? numCols.find((col) => !yColumns.includes(col) && col !== latColumn && col !== lonColumn) ?? null;
+		seriesMode = 'auto';
+	} else if (chartType === 'choropleth') {
+		const locationCol = detectLocationColumn(columns, rows);
+		xColumn = locationCol ?? sanitizeColumn(base.xColumn, columns) ?? xColumn;
+		yColumns =
+			yColumns.length > 0
+				? yColumns.slice(0, 1)
+				: [numCols.find((col) => col !== xColumn) ?? numCols[0]].filter(Boolean);
+		latColumn = null;
+		lonColumn = null;
+		yColumnsSecondary = [];
+		sizeColumn = null;
+		colorColumn = null;
+		geoScope = geoScope ?? (xColumn ? inferGeoScope(xColumn, rows) : 'world');
+		seriesMode = 'auto';
+	} else if (chartType === 'scatter' || chartType === 'bubble') {
 		xColumn = numCols[0] ?? xColumn;
 		yColumns = [numCols.find((col) => col !== xColumn) ?? numCols[1] ?? numCols[0]].filter(Boolean);
 		yColumnsSecondary = [];
@@ -298,9 +369,13 @@ export function inferSmartChartConfigForType(
 		}
 	}
 
-	if (!colorColumn) {
+	if (!colorColumn && chartType !== 'choropleth' && chartType !== 'map') {
 		const candidate = textCols.find(
-			(col) => col !== xColumn && cardinality(rows, col) <= Math.min(20, rows.length / 2)
+			(col) =>
+				col !== xColumn &&
+				col !== latColumn &&
+				col !== lonColumn &&
+				cardinality(rows, col) <= Math.min(20, rows.length / 2)
 		);
 		colorColumn = candidate ?? null;
 	}
@@ -313,6 +388,9 @@ export function inferSmartChartConfigForType(
 		yColumnsSecondary,
 		colorColumn,
 		sizeColumn,
+		latColumn,
+		lonColumn,
+		geoScope,
 		seriesMode
 	});
 }
@@ -488,6 +566,12 @@ export function recommendChartTypes(
 		if (cardinality <= 8) {
 			add('pie', 'Show part-to-whole split for low-cardinality categories', 0.68);
 		}
+	}
+
+	if (hasGeoPointData(columns, rows)) {
+		add('map', 'Plot geographic points from latitude/longitude columns', 0.92);
+	} else if (hasChoroplethData(columns, rows, numCols)) {
+		add('choropleth', 'Color regions by metric using location codes', 0.9);
 	}
 
 	const fallback = inferChartConfig(columns, rows).chartType;

@@ -40,6 +40,24 @@ function makeQueryCell(id: string, code = 'from x'): Cell {
 	} as unknown as Cell;
 }
 
+function makePythonCell(id: string, code = 'print("ok")'): Cell {
+	return {
+		id,
+		cellType: 'python',
+		markdown: '',
+		outputName: id,
+		code,
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		language: 'prql',
+		status: 'idle',
+		errors: [],
+		display: 'output',
+		hideResult: false,
+		pythonOutput: null
+	} as unknown as Cell;
+}
+
 describe('notebook-pm', () => {
 	it('maps markdown + query cells to a single PM document', () => {
 		const cells = [
@@ -60,6 +78,21 @@ describe('notebook-pm', () => {
 		const blocks = pmDocumentToBlocks(doc);
 		expect(blocks.some((b) => b.kind === 'query' && b.cellId === 'q1')).toBe(true);
 		expect(blocks.some((b) => b.kind === 'markdown' && b.markdown.includes('Hello'))).toBe(true);
+	});
+
+	it('round-trips python cells with cellType preserved', () => {
+		const cells = [makeMarkdownCell('md1', 'Intro'), makePythonCell('py1', 'orders.head()')];
+		const doc = cellsToPmDocument(cells);
+		const qb = (doc.content ?? []).find((n) => n.type === 'queryBlock');
+		expect(qb?.attrs?.cellId).toBe('py1');
+		expect(qb?.attrs?.cellType).toBe('python');
+		const blocks = pmDocumentToBlocks(doc);
+		expect(blocks).toEqual(
+			expect.arrayContaining([
+				{ kind: 'query', cellId: 'py1', cellType: 'python' },
+				expect.objectContaining({ kind: 'markdown', markdown: expect.stringContaining('Intro') })
+			])
+		);
 	});
 
 	it('extracts H1 pages from the document', () => {
@@ -162,5 +195,15 @@ describe('notebook-pm', () => {
 		const md = blocks.find((b) => b.kind === 'markdown');
 		expect(md?.markdown).toBe('Hello world.');
 		expect(md?.markdown).not.toContain('/');
+	});
+
+	it('round-trips GFM tables through cellsToPmDocument → pmDocumentToBlocks', () => {
+		const md = 'Intro\n\n| Name | Age |\n| --- | --- |\n\n| Bob | 30 |';
+		const cells = [makeMarkdownCell('m1', md)];
+		const doc = cellsToPmDocument(cells);
+		expect((doc.content ?? []).some((n) => n.type === 'table')).toBe(true);
+		const blocks = pmDocumentToBlocks(doc);
+		const out = blocks.find((b) => b.kind === 'markdown')?.markdown ?? '';
+		expect(out).toContain('| Bob | 30 |');
 	});
 });

@@ -17,7 +17,9 @@
 		Hash,
 		TrendingDown,
 		Minus,
-		Code2
+		Code2,
+		MapPin,
+		Globe
 	} from '@lucide/svelte';
 	import type { ChartConfig, ChartType, ChartSortOrder } from '$lib/types/gui-pipeline';
 	import {
@@ -65,6 +67,8 @@
 		{ type: 'funnel', label: 'Funnel', Icon: Filter },
 		{ type: 'box-plot', label: 'Box', Icon: BoxSelect },
 		{ type: 'sankey', label: 'Sankey', Icon: GitFork },
+		{ type: 'map', label: 'Map', Icon: MapPin },
+		{ type: 'choropleth', label: 'Choropleth', Icon: Globe },
 		{ type: 'custom', label: 'Custom', Icon: Code2 }
 	];
 
@@ -117,7 +121,7 @@
 	}
 
 	const supportsSeriesMode = $derived(['bar', 'line', 'area'].includes(config.chartType));
-	const supportsSizeColumn = $derived(['scatter', 'bubble'].includes(config.chartType));
+	const supportsSizeColumn = $derived(['scatter', 'bubble', 'map'].includes(config.chartType));
 	const supportsSecondaryAxis = $derived(['line', 'area'].includes(config.chartType));
 	const supportsSortOrder = $derived(
 		['bar', 'bar-horizontal', 'pie', 'funnel'].includes(config.chartType)
@@ -128,6 +132,8 @@
 	const isFunnel = $derived(config.chartType === 'funnel');
 	const isBoxPlot = $derived(config.chartType === 'box-plot');
 	const isSankey = $derived(config.chartType === 'sankey');
+	const isMap = $derived(config.chartType === 'map');
+	const isChoropleth = $derived(config.chartType === 'choropleth');
 	const isTable = $derived(config.chartType === 'table');
 	const isCustom = $derived(config.chartType === 'custom');
 	const isBigValue = $derived(config.chartType === 'big-value');
@@ -447,6 +453,93 @@
 				onchange={(e) => update({ yColumns: [(e.target as HTMLSelectElement).value] })}
 			>
 				{#each numericCandidates as col (col)}<option value={col}>{col}</option>{/each}
+			</select>
+		</div>
+	{:else if isMap}
+		<div class="space-y-1">
+			<p class={label}>Latitude</p>
+			<select
+				class={sel}
+				value={config.latColumn ?? ''}
+				onchange={(e) => update({ latColumn: (e.target as HTMLSelectElement).value || null })}
+			>
+				<option value="">— select —</option>
+				{#each numericCandidates as col (col)}<option value={col}>{col}</option>{/each}
+			</select>
+		</div>
+		<div class="space-y-1">
+			<p class={label}>Longitude</p>
+			<select
+				class={sel}
+				value={config.lonColumn ?? ''}
+				onchange={(e) => update({ lonColumn: (e.target as HTMLSelectElement).value || null })}
+			>
+				<option value="">— select —</option>
+				{#each numericCandidates as col (col)}<option value={col}>{col}</option>{/each}
+			</select>
+		</div>
+		<div class="space-y-1">
+			<p class={label}>Value (optional, colors markers)</p>
+			<select
+				class={sel}
+				value={config.yColumns[0] ?? ''}
+				onchange={(e) => {
+					const v = (e.target as HTMLSelectElement).value;
+					update({ yColumns: v ? [v] : [] });
+				}}
+			>
+				<option value="">None</option>
+				{#each numericCandidates.filter((c) => c !== config.latColumn && c !== config.lonColumn) as col (col)}<option
+						value={col}>{col}</option
+					>{/each}
+			</select>
+		</div>
+		<div class="space-y-1">
+			<p class={label}>Label (optional)</p>
+			<select
+				class={sel}
+				value={config.colorColumn ?? ''}
+				onchange={(e) => update({ colorColumn: (e.target as HTMLSelectElement).value || null })}
+			>
+				<option value="">None</option>
+				{#each columns.filter((c) => c !== config.latColumn && c !== config.lonColumn) as col (col)}<option
+						value={col}>{col}</option
+					>{/each}
+			</select>
+		</div>
+	{:else if isChoropleth}
+		<div class="space-y-1">
+			<p class={label}>Location</p>
+			<select
+				class={sel}
+				value={config.xColumn}
+				onchange={(e) => update({ xColumn: (e.target as HTMLSelectElement).value })}
+			>
+				{#each columns as col (col)}<option value={col}>{col}</option>{/each}
+			</select>
+		</div>
+		<div class="space-y-1">
+			<p class={label}>Value</p>
+			<select
+				class={sel}
+				value={config.yColumns[0] ?? ''}
+				onchange={(e) => update({ yColumns: [(e.target as HTMLSelectElement).value] })}
+			>
+				{#each numericCandidates.filter((c) => c !== config.xColumn) as col (col)}<option
+						value={col}>{col}</option
+					>{/each}
+			</select>
+		</div>
+		<div class="space-y-1">
+			<p class={label}>Scope</p>
+			<select
+				class={sel}
+				value={config.geoScope ?? 'world'}
+				onchange={(e) =>
+					update({ geoScope: (e.target as HTMLSelectElement).value as 'world' | 'usa-states' })}
+			>
+				<option value="world">World (ISO-3 codes)</option>
+				<option value="usa-states">US states (2-letter codes)</option>
 			</select>
 		</div>
 	{:else}

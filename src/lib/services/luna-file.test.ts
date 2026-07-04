@@ -38,6 +38,10 @@ function udfCell(udfBody: string): SerializableCell {
 	return { ...queryCell(), cellType: 'udf', udfBody, code: '' };
 }
 
+function pythonCell(code: string, outputName = 'py_analysis'): SerializableCell {
+	return { ...queryCell(), cellType: 'python', code, outputName };
+}
+
 describe('parseLunaFile', () => {
 	it('parses a single query cell', () => {
 		const doc = parseLunaFile(
@@ -90,6 +94,25 @@ describe('parseLunaFile', () => {
 		);
 		expect(doc.entries).toEqual([
 			{ kind: 'udf', udfBody: 'def my_udf(x: int) -> float:\n    return x * 1.5' }
+		]);
+	});
+
+	it('parses a python block with name and multiline code', () => {
+		const doc = parseLunaFile(
+			[
+				'{% python name="py_analysis" %}',
+				'import pandas as pd',
+				'print("hello")',
+				'orders.head()',
+				'{% /python %}'
+			].join('\n')
+		);
+		expect(doc.entries).toEqual([
+			{
+				kind: 'python',
+				name: 'py_analysis',
+				code: 'import pandas as pd\nprint("hello")\norders.head()'
+			}
 		]);
 	});
 
@@ -178,6 +201,24 @@ describe('serializeLunaFile', () => {
 		const content = serializeLunaFile([udfCell(body)]);
 		const doc = parseLunaFile(content);
 		expect(doc.entries).toEqual([{ kind: 'udf', udfBody: body }]);
+	});
+
+	it('round-trips a python cell preserving name and code', () => {
+		const code = 'print("hi")\norders.groupby("status").size()';
+		const content = serializeLunaFile([pythonCell(code, 'py_analysis')]);
+		expect(content).toContain('{% python name="py_analysis" %}');
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toEqual([{ kind: 'python', name: 'py_analysis', code }]);
+	});
+
+	it('round-trips markdown + python + query cells in document order', () => {
+		const content = serializeLunaFile([
+			markdownCell('# Analysis'),
+			pythonCell('orders.describe()', 'summary_stats'),
+			queryCell({ outputName: 'stg_orders' })
+		]);
+		const doc = parseLunaFile(content);
+		expect(doc.entries.map((e) => e.kind)).toEqual(['markdown', 'python', 'query']);
 	});
 
 	it('serializes a promoted cell as a model ref placeholder', () => {

@@ -113,6 +113,7 @@
 	import FileImporter from '$lib/components/FileImporter.svelte';
 	import SettingsDialog from '$lib/components/settings/SettingsDialog.svelte';
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import NotebookOutline from '$lib/components/notebook/NotebookOutline.svelte';
 	import NotebookStatusBar from '$lib/components/notebook/NotebookStatusBar.svelte';
 	import CellWorksheetView from '$lib/components/notebook/CellWorksheetView.svelte';
@@ -1411,108 +1412,100 @@
 						>
 							{#if activeSidebarPanel === 'notebooks'}
 								<!-- Notebooks panel -->
-								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
-									<span class="flex-1 text-2xs font-medium text-muted-foreground">Notebooks</span>
-									<div class="flex items-center gap-0.5">
-										{@render headerAction(
-											'Filter notebooks',
-											Search,
-											() => {
-												showNotebookSearch = !showNotebookSearch;
-												if (!showNotebookSearch) sidebarSearch = '';
-											},
-											Boolean(sidebarSearch)
-										)}
-										{@render headerAction('New folder', FolderPlus, () => {
-											pendingRenameFolderId = createFolder('New Folder', null);
-										})}
-										{@render headerAction('New notebook', Plus, () => addNotebook())}
+								<div class="sidebar-notebooks-chrome">
+									<div class="sidebar-panel-header sidebar-panel-header--embedded">
+										<span class="flex-1 text-2xs font-medium text-muted-foreground">Notebooks</span>
+										<div class="flex items-center gap-0.5">
+											{@render headerAction(
+												'Filter notebooks',
+												Search,
+												() => {
+													showNotebookSearch = !showNotebookSearch;
+													if (!showNotebookSearch) sidebarSearch = '';
+												},
+												Boolean(sidebarSearch)
+											)}
+											{@render headerAction('New folder', FolderPlus, () => {
+												pendingRenameFolderId = createFolder('New Folder', null);
+											})}
+											{@render headerAction('New notebook', Plus, () => addNotebook())}
+										</div>
 									</div>
-								</div>
 
-								<div
-									class="mx-2 mb-1 flex h-7 shrink-0 items-center rounded-md border border-border bg-muted/30 p-0.5"
-									role="tablist"
-									aria-label="Notebook sidebar view"
-								>
-									<button
-										type="button"
-										role="tab"
-										aria-selected={sidebarNotebookView === 'browse'}
-										class="flex h-full flex-1 items-center justify-center rounded-sm text-2xs font-medium transition-colors {sidebarNotebookView ===
-										'browse'
-											? 'bg-background text-foreground shadow-sm'
-											: 'text-muted-foreground hover:text-foreground'}"
-										onclick={() => setSidebarNotebookView('browse')}
+									<div
+										class="sidebar-segmented-tabs"
+										role="tablist"
+										aria-label="Notebook sidebar view"
 									>
-										Browse
-									</button>
-									<button
-										type="button"
-										role="tab"
-										aria-selected={sidebarNotebookView === 'outline'}
-										class="flex h-full flex-1 items-center justify-center gap-1 rounded-sm text-2xs font-medium transition-colors {sidebarNotebookView ===
-										'outline'
-											? 'bg-background text-foreground shadow-sm'
-											: 'text-muted-foreground hover:text-foreground'}"
-										onclick={() => setSidebarNotebookView('outline')}
-									>
-										<ListTree class="h-3 w-3" />
-										Outline
-									</button>
+										<button
+											type="button"
+											role="tab"
+											aria-selected={sidebarNotebookView === 'browse'}
+											class="sidebar-segmented-tab"
+											onclick={() => setSidebarNotebookView('browse')}
+										>
+											Browse
+										</button>
+										<button
+											type="button"
+											role="tab"
+											aria-selected={sidebarNotebookView === 'outline'}
+											class="sidebar-segmented-tab"
+											onclick={() => setSidebarNotebookView('outline')}
+										>
+											<ListTree class="h-3 w-3" />
+											Outline
+										</button>
+									</div>
 								</div>
 
 								{#if sidebarNotebookView === 'browse'}
 									{#if favoriteNotebookIds.length > 0}
-										<div class="px-2 pb-1">
-											<p class="px-1 py-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-												Favorites
-											</p>
+										<div class="pb-1">
+											<p class="sidebar-section-label">Favorites</p>
 											{#each favoriteNotebookIds as favId (favId)}
 												{@const fav = allNotebooks.find((n) => n.id === favId)}
 												{#if fav}
-													<button
-														type="button"
-														class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent/60 {activeTabId ===
-														fav.id
-															? 'bg-sidebar-accent text-sidebar-accent-foreground'
-															: 'text-foreground/80'}"
-														onclick={() => setActiveTab(fav.id)}
+													<TreeRow
+														depth={0}
+														selected={activeTabId === fav.id}
+														onActivate={() => setActiveTab(fav.id)}
 													>
-														<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-														<span class="truncate">{fav.name}</span>
-													</button>
+														{#snippet icon()}
+															<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														{/snippet}
+														{#snippet label()}
+															<span class="truncate text-xs">{fav.name}</span>
+														{/snippet}
+													</TreeRow>
 												{/if}
 											{/each}
 										</div>
 									{/if}
 									{#if recentNotebookIds.length > 0}
-										<div class="px-2 pb-1">
-											<p class="px-1 py-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-												Recent
-											</p>
+										<div class="pb-1">
+											<p class="sidebar-section-label">Recent</p>
 											{#each recentNotebookIds.slice(0, 6) as recentId (recentId)}
 												{@const recent = allNotebooks.find((n) => n.id === recentId)}
 												{#if recent}
-													<button
-														type="button"
-														class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent/60 {activeTabId ===
-														recent.id
-															? 'bg-sidebar-accent text-sidebar-accent-foreground'
-															: 'text-foreground/80'}"
-														onclick={() => setActiveTab(recent.id)}
+													<TreeRow
+														depth={0}
+														selected={activeTabId === recent.id}
+														onActivate={() => setActiveTab(recent.id)}
 													>
-														<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-														<span class="truncate">{recent.name}</span>
-													</button>
+														{#snippet icon()}
+															<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														{/snippet}
+														{#snippet label()}
+															<span class="truncate text-xs">{recent.name}</span>
+														{/snippet}
+													</TreeRow>
 												{/if}
 											{/each}
 										</div>
 									{/if}
 									{#if showNotebookSearch || sidebarSearch}
-										<div
-											class="mx-2 my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30"
-										>
+										<div class="sidebar-inline-search">
 											<Search class="h-3 w-3 shrink-0 text-muted-foreground/60" />
 											<!-- svelte-ignore a11y_autofocus -->
 											<input
@@ -1551,9 +1544,12 @@
 										{/if}
 									</div>
 								{:else if isNotebookTab && activeNotebook}
-									<div class="flex min-h-0 flex-1 flex-col overflow-hidden px-2 pb-1">
-										<p class="px-1 py-2 text-2xs text-muted-foreground">
-											Expand a notebook in Browse to see its outline here, or use the page chips above the document.
+									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+										<p
+											class="mx-[var(--sidebar-row-inset)] px-[calc(var(--sidebar-panel-x)-var(--sidebar-row-inset))] py-2 text-2xs leading-relaxed text-muted-foreground"
+										>
+											Expand a notebook in Browse to see its outline here, or use the page chips
+											above the document.
 										</p>
 										<NotebookOutline
 											notebookId={activeNotebook.id}
@@ -1572,7 +1568,7 @@
 									</div>
 								{/if}
 							{:else if activeSidebarPanel === 'metrics' && isNotebookTab}
-								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+								<div class="sidebar-panel-header">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Metrics</span>
 								</div>
 								<MetricsPanel
@@ -1587,7 +1583,7 @@
 								/>
 							{:else if activeSidebarPanel === 'tables'}
 								<!-- Databases & tables panel -->
-								<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+								<div class="sidebar-panel-header">
 									<span class="flex-1 text-2xs font-medium text-muted-foreground">Databases</span>
 									<Button
 										variant="outline"
@@ -1760,34 +1756,34 @@
 						/>
 					</button>
 					{#if !notebookTabsCollapsed}
-					{#each notebooks as nb (nb.id)}
-						{@const staleCount = nb.cells.filter(
-							(c) => c.cellType === 'query' && c.needsRun
-						).length}
-						<ContextMenu.Root>
-							<ContextMenu.Trigger>
-								{@render appTab({
-									id: nb.id,
-									name: notebookDisplayName(nb.id, nb.name),
-									dirty: isNotebookDirty(nb.id),
-									staleCount,
-									renamable: true,
-									closable: notebooks.length > 1,
-									closeLabel: 'Close notebook',
-									onClose: () => closeNotebookTab(nb.id)
-								})}
-							</ContextMenu.Trigger>
-							<ContextMenu.Content>
-								{@render tabMenu(
-									() => closeNotebookTab(nb.id),
-									() => closeOtherNotebookTabs(nb.id),
-									closeAllNotebookTabs,
-									notebooks.length <= 1,
-									notebooks.length <= 1
-								)}
-							</ContextMenu.Content>
-						</ContextMenu.Root>
-					{/each}
+						{#each notebooks as nb (nb.id)}
+							{@const staleCount = nb.cells.filter(
+								(c) => c.cellType === 'query' && c.needsRun
+							).length}
+							<ContextMenu.Root>
+								<ContextMenu.Trigger>
+									{@render appTab({
+										id: nb.id,
+										name: notebookDisplayName(nb.id, nb.name),
+										dirty: isNotebookDirty(nb.id),
+										staleCount,
+										renamable: true,
+										closable: notebooks.length > 1,
+										closeLabel: 'Close notebook',
+										onClose: () => closeNotebookTab(nb.id)
+									})}
+								</ContextMenu.Trigger>
+								<ContextMenu.Content>
+									{@render tabMenu(
+										() => closeNotebookTab(nb.id),
+										() => closeOtherNotebookTabs(nb.id),
+										closeAllNotebookTabs,
+										notebooks.length <= 1,
+										notebooks.length <= 1
+									)}
+								</ContextMenu.Content>
+							</ContextMenu.Root>
+						{/each}
 					{/if}
 
 					{#each openResultTabs as rt (rt.id)}

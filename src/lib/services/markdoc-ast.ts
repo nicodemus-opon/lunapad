@@ -207,6 +207,39 @@ function functionArgToSource(value: unknown): string {
 	return JSON.stringify(value);
 }
 
+/** Human-readable attr value for inspector inputs (Markdoc refs, not "[object Object]"). */
+export function markdocAttrToDisplay(value: unknown, fallback = ''): string {
+	if (value === null || value === undefined) return fallback;
+	const mdSource = markdocValueToSource(value);
+	if (mdSource !== null) return mdSource;
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	if (Array.isArray(value)) return JSON.stringify(value);
+	if (typeof value === 'object') return JSON.stringify(value);
+	return String(value);
+}
+
+/** Coerce Markdoc Variable/Function AST nodes to plain source strings for JSON storage. */
+export function normalizeMarkdocAttrValue(value: unknown): unknown {
+	if (value === null || value === undefined) return value;
+	const mdSource = markdocValueToSource(value);
+	if (mdSource !== null) return mdSource;
+	if (Array.isArray(value)) return value.map(normalizeMarkdocAttrValue);
+	return value;
+}
+
+export function normalizeMarkdocAttrs(attrs: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(attrs)) {
+		out[k] = normalizeMarkdocAttrValue(v);
+	}
+	return out;
+}
+
+export function markdocAttrsToJson(attrs: Record<string, unknown>): string {
+	return JSON.stringify(normalizeMarkdocAttrs(attrs));
+}
+
 function formatAttrValue(value: unknown): string {
 	if (value === null || value === undefined) return '""';
 	const mdSource = markdocValueToSource(value);

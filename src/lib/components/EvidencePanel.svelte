@@ -161,7 +161,7 @@
 {#if isEvidence}
 	<div class="flex flex-col text-sm">
 		<!-- Header -->
-		<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+		<div class="sidebar-panel-header">
 			<button
 				class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
 				onclick={() => (expanded = !expanded)}
@@ -253,7 +253,7 @@
 			{/if}
 
 			<!-- Pages list -->
-			<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+			<div class="sidebar-panel-header">
 				<span class="flex-1 text-2xs font-medium text-muted-foreground">Pages</span>
 				<button
 					class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"

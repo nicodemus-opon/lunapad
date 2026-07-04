@@ -1,6 +1,10 @@
 <script lang="ts">
+	import NodeConfigField from './NodeConfigField.svelte';
+	import Editor from '$lib/components/Editor.svelte';
+	import { CUSTOM_CHART_GLOBALS_DTS } from '$lib/services/plot-cell';
+	import { DEFAULT_CUSTOM_CHART_CODE } from '$lib/utils';
 	import type { VisualBlock } from '$lib/services/markdoc-ast';
-	import { parseBlockWidget } from '$lib/services/markdoc-ast';
+	import { markdocAttrToDisplay as attr, parseBlockWidget } from '$lib/services/markdoc-ast';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import { MARKDOC_TAG_CATALOG } from '$lib/services/markdoc-catalog';
 	import type { TableAggKind } from '$lib/services/report-table-summary';
@@ -15,9 +19,12 @@
 		refEntries?: MarkdownRefEntry[];
 		filterUsages?: Record<string, FilterUsage[]>;
 		onPatch: (patch: { attrs?: Record<string, unknown>; body?: string; source?: string }) => void;
+		variant?: 'sidebar' | 'popover';
 	}
 
-	const { block, refEntries = [], filterUsages = {}, onPatch }: Props = $props();
+	const { block, refEntries = [], filterUsages = {}, onPatch, variant = 'popover' }: Props = $props();
+
+	let showAdvanced = $state(false);
 
 	const parsed = $derived(block ? parseBlockWidget(block) : null);
 	const catalog = $derived(parsed ? MARKDOC_TAG_CATALOG[parsed.tagName] : null);
@@ -41,9 +48,12 @@
 		'funnel',
 		'box-plot',
 		'sankey',
+		'map',
+		'choropleth',
 		'custom',
 		'sparkline'
 	] as const;
+	const quickChartTypes = ['line', 'bar', 'area', 'pie', 'table', 'sparkline'] as const;
 	const formatKinds = [
 		'number',
 		'currency',
@@ -55,6 +65,27 @@
 		'category',
 		'boolean'
 	] as const;
+	const metricFormats = ['number', 'currency', 'compact', 'percent'] as const;
+	const filterKinds = [
+		'dropdown',
+		'text-input',
+		'date-range',
+		'button-group',
+		'multi-select',
+		'relative-date',
+		'numeric-range',
+		'searchable-dropdown'
+	] as const;
+	const quickFilterKinds = ['dropdown', 'text-input', 'date-range', 'button-group'] as const;
+	const BOX_LABELS = ['Min', 'Q1 (25th)', 'Median', 'Q3 (75th)', 'Max'] as const;
+
+	function setBoxPlotCol(idx: number, col: string) {
+		if (!parsed) return;
+		const next = [...((parsed.attrs.yColumns as string[] | undefined) ?? [])];
+		next[idx] = col;
+		while (next.length < 5) next.push('');
+		setAttr('yColumns', next.filter(Boolean));
+	}
 
 	function setAttr(key: string, value: unknown) {
 		onPatch({ attrs: { [key]: value } });
@@ -75,7 +106,7 @@
 			const trimmed = value.trim();
 			setAttr(key, trimmed ? JSON.parse(trimmed) : undefined);
 		} catch {
-			// Leave partially typed JSON alone until it becomes valid.
+			/* wait for valid JSON */
 		}
 	}
 
@@ -85,712 +116,1052 @@
 		if (parsed.attrs.valueCol && parsed.attrs.index) return 'summary';
 		return 'raw';
 	});
+
+	function setDatatableMode(mode: 'raw' | 'summary' | 'pivot') {
+		if (!parsed) return;
+		if (mode === 'raw') {
+			onPatch({
+				attrs: { pivotBy: undefined, valueCol: undefined, index: undefined }
+			});
+		} else if (mode === 'summary') {
+			onPatch({
+				attrs: {
+					pivotBy: undefined,
+					valueCol: parsed.attrs.valueCol ?? '',
+					index: parsed.attrs.index ?? []
+				}
+			});
+		} else {
+			onPatch({
+				attrs: {
+					index: undefined,
+					pivotBy: parsed.attrs.pivotBy ?? '',
+					valueCol: parsed.attrs.valueCol ?? ''
+				}
+			});
+		}
+	}
+
+	function humanize(value: string): string {
+		return value
+			.replace(/-/g, ' ')
+			.replace(/\b\w/g, (c) => c.toUpperCase());
+	}
 </script>
 
 {#if !block}
-	<div class="inspector-empty text-xs text-muted-foreground">
-		Select a block to edit properties.
+	<div class="nc-empty">
+		<p class="nc-empty-title">Nothing selected</p>
+		<p class="nc-empty-copy">Choose a block in the document to edit its properties.</p>
 	</div>
 {:else if block.kind === 'fence'}
-	<div class="inspector-fence space-y-2">
-		<p class="text-xs font-semibold text-muted-foreground">Code block</p>
+	<div class="nc-stack">
+		<p class="nc-section-label">Source</p>
 		<textarea
-			class="md-control min-h-28 w-full font-mono"
+			class="nc-textarea font-mono"
 			value={block.source}
 			oninput={(e) => onPatch({ source: e.currentTarget.value })}
 		></textarea>
 	</div>
 {:else if !parsed}
-	<div class="inspector-empty text-xs text-muted-foreground">
-		Edit text inline in the document. Select a widget to configure it here.
+	<div class="nc-empty">
+		<p class="nc-empty-title">Edit in place</p>
+		<p class="nc-empty-copy">This text block is edited directly in the canvas.</p>
 	</div>
 {:else}
-	<div class="inspector-widget space-y-3">
+	<div class="nc-panel" class:nc-panel--sidebar={variant === 'sidebar'}>
+		{#if catalog?.detail}
+			<p class="nc-lead">{catalog.detail}</p>
+		{/if}
+
+		{#if parsed.tagName === 'metric'}
+			<div class="nc-stack">
+				<NodeConfigField label="Value">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.value)}
+							placeholder="$cell.value"
+							oninput={(e) => setAttr('value', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Label">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.label)}
+							oninput={(e) => setAttr('label', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Compare to" hint="Optional trend">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.vs)}
+							placeholder="$prev.value"
+							oninput={(e) => setAttr('vs', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Format">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each metricFormats as fmt (fmt)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.format, 'number') === fmt}
+									onclick={() => setAttr('format', fmt)}
+								>
+									{fmt}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+			</div>
+
+		{:else if parsed.tagName === 'chart'}
+			<div class="nc-stack">
+				<NodeConfigField label="Chart type">
+					{#snippet control()}
+						<div class="nc-segments nc-segments--wrap">
+							{#each quickChartTypes as type (type)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.type, 'bar') === type}
+									onclick={() => setAttr('type', type)}
+								>
+									{humanize(type)}
+								</button>
+							{/each}
+						</div>
+						<select
+							class="nc-select mt-1.5"
+							value={attr(parsed.attrs.type, 'bar')}
+							onchange={(e) => setAttr('type', e.currentTarget.value)}
+						>
+							{#each chartTypes as type (type)}
+								<option value={type}>{humanize(type)}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Data">
+					{#snippet control()}
+						<select
+							class="nc-select"
+							value={attr(parsed.attrs.data)}
+							onchange={(e) => setAttr('data', e.currentTarget.value)}
+						>
+							<option value="">Pick a result…</option>
+							{#each rowRefOptions as r (r)}
+								<option value={r}>{r}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Inherit from cell" hint="Reuse saved chart settings">
+					{#snippet control()}
+						<select
+							class="nc-select"
+							value={attr(parsed.attrs.ref)}
+							onchange={(e) => {
+								const ref = e.currentTarget.value || undefined;
+								onPatch({ attrs: { ref, data: ref ? undefined : parsed.attrs.data } });
+							}}
+						>
+							<option value="">Configure here</option>
+							{#each cellRefOptions as r (r)}
+								<option value={r}>{r}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="X axis">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							list="visual-columns"
+							value={attr(parsed.attrs.x)}
+							oninput={(e) => setAttr('x', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Y axis">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							list="visual-columns"
+							value={attr(parsed.attrs.y)}
+							oninput={(e) => setAttr('y', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Title">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.title)}
+							oninput={(e) => setAttr('title', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+
+				<details class="nc-advanced" bind:open={showAdvanced}>
+					<summary class="nc-advanced-toggle">Advanced</summary>
+					<div class="nc-stack nc-stack--nested">
+						{#if attr(parsed.attrs.type, 'bar') === 'custom'}
+							<p class="nc-lead">Custom Plotly spec</p>
+							<div class="h-48 overflow-hidden rounded-md border border-border">
+								<Editor
+									code={attr(parsed.attrs.code, DEFAULT_CUSTOM_CHART_CODE)}
+									language="javascript"
+									plotGlobalsDts={CUSTOM_CHART_GLOBALS_DTS}
+									onchange={(code) => setAttr('code', code)}
+								/>
+							</div>
+						{/if}
+						{#if attr(parsed.attrs.type, 'bar') === 'box-plot'}
+							{#each BOX_LABELS as blabel, idx (blabel)}
+								<NodeConfigField label={blabel}>
+									{#snippet control()}
+										<select
+											class="nc-select"
+											value={((parsed.attrs.yColumns as string[] | undefined) ?? [])[idx] ?? ''}
+											onchange={(e) => setBoxPlotCol(idx, e.currentTarget.value)}
+										>
+											<option value="">Column…</option>
+											{#each availableColumns as col (col)}
+												<option value={col}>{col}</option>
+											{/each}
+										</select>
+									{/snippet}
+								</NodeConfigField>
+							{/each}
+						{/if}
+						{#if attr(parsed.attrs.type, 'bar') === 'histogram'}
+							<NodeConfigField label="Histogram bins">
+								{#snippet control()}
+									<input
+										class="nc-input"
+										type="number"
+										min="1"
+										value={parsed.attrs.histogramBins != null
+											? Number(parsed.attrs.histogramBins)
+											: ''}
+										placeholder="auto"
+										oninput={(e) => {
+											const raw = e.currentTarget.value.trim();
+											setAttr('histogramBins', raw ? Number(raw) : undefined);
+										}}
+									/>
+								{/snippet}
+							</NodeConfigField>
+						{/if}
+						<NodeConfigField label="Y columns (JSON)">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={parsed.attrs.yColumns ? JSON.stringify(parsed.attrs.yColumns) : ''}
+									oninput={(e) => setJsonArrayAttr('yColumns', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Secondary Y (JSON)">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={parsed.attrs.yColumnsSecondary
+										? JSON.stringify(parsed.attrs.yColumnsSecondary)
+										: ''}
+									oninput={(e) => setJsonArrayAttr('yColumnsSecondary', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Color column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.colorColumn)}
+									oninput={(e) => setAttr('colorColumn', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Size column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.sizeColumn)}
+									oninput={(e) => setAttr('sizeColumn', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Series mode">
+							{#snippet control()}
+								<select
+									class="nc-select"
+									value={attr(parsed.attrs.seriesMode, 'auto')}
+									onchange={(e) => setAttr('seriesMode', e.currentTarget.value)}
+								>
+									{#each ['auto', 'grouped', 'stacked'] as mode (mode)}
+										<option value={mode}>{mode}</option>
+									{/each}
+								</select>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Sort">
+							{#snippet control()}
+								<select
+									class="nc-select"
+									value={attr(parsed.attrs.sortOrder, 'none')}
+									onchange={(e) => setAttr('sortOrder', e.currentTarget.value)}
+								>
+									{#each ['none', 'asc', 'desc'] as order (order)}
+										<option value={order}>{order === 'none' ? 'Data order' : order}</option>
+									{/each}
+								</select>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Click filter param">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									value={attr(parsed.attrs.filterParam)}
+									oninput={(e) => setAttr('filterParam', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Filter column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.filterColumn)}
+									oninput={(e) => setAttr('filterColumn', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Drill cell">
+							{#snippet control()}
+								<select
+									class="nc-select"
+									value={attr(parsed.attrs.drillCell)}
+									onchange={(e) => setAttr('drillCell', e.currentTarget.value || undefined)}
+								>
+									<option value="">None</option>
+									{#each cellRefOptions as r (r)}
+										<option value={r.replace('$', '')}>{r.replace('$', '')}</option>
+									{/each}
+								</select>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Height">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									type="number"
+									value={Number(parsed.attrs.height ?? 280)}
+									oninput={(e) => setAttr('height', Number(e.currentTarget.value))}
+								/>
+							{/snippet}
+						</NodeConfigField>
+					</div>
+				</details>
+			</div>
+
+		{:else if parsed.tagName === 'datatable'}
+			<div class="nc-stack">
+				<NodeConfigField label="View">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each ['raw', 'summary', 'pivot'] as mode (mode)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={tableMode === mode}
+									onclick={() => setDatatableMode(mode as 'raw' | 'summary' | 'pivot')}
+								>
+									{mode}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Data">
+					{#snippet control()}
+						<select
+							class="nc-select"
+							value={attr(parsed.attrs.data)}
+							onchange={(e) => setAttr('data', e.currentTarget.value)}
+						>
+							<option value="">Pick a result…</option>
+							{#each rowRefOptions as r (r)}
+								<option value={r}>{r}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Rows shown">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							type="number"
+							value={Number(parsed.attrs.limit ?? 10)}
+							oninput={(e) => setAttr('limit', Number(e.currentTarget.value))}
+						/>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Page size">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							type="number"
+							value={Number(parsed.attrs.pageSize ?? 10)}
+							oninput={(e) => setAttr('pageSize', Number(e.currentTarget.value))}
+						/>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Header style">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each ['compact', 'full'] as style (style)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.headerInsights, 'compact') === style}
+									onclick={() => setAttr('headerInsights', style)}
+								>
+									{style}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+
+				<details class="nc-advanced">
+					<summary class="nc-advanced-toggle">Pivot & formatting</summary>
+					<div class="nc-stack nc-stack--nested">
+						<NodeConfigField label="Columns (JSON)">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={parsed.attrs.cols ? JSON.stringify(parsed.attrs.cols) : ''}
+									oninput={(e) => setJsonArrayAttr('cols', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Group by (JSON)">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={parsed.attrs.index ? JSON.stringify(parsed.attrs.index) : ''}
+									oninput={(e) => setJsonArrayAttr('index', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Pivot column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.pivotBy)}
+									oninput={(e) => setAttr('pivotBy', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Value column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.valueCol)}
+									oninput={(e) => setAttr('valueCol', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Aggregation">
+							{#snippet control()}
+								<select
+									class="nc-select"
+									value={attr(parsed.attrs.agg, 'sum')}
+									onchange={(e) => setAttr('agg', e.currentTarget.value)}
+								>
+									{#each aggOptions as a (a)}
+										<option value={a}>{a}</option>
+									{/each}
+								</select>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Linked filter">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									value={attr(parsed.attrs.linkedFilter)}
+									oninput={(e) => setAttr('linkedFilter', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+					</div>
+				</details>
+			</div>
+
+		{:else if parsed.tagName === 'filter'}
+			{@const param = attr(parsed.attrs.param)}
+			<div class="nc-stack">
+				<NodeConfigField label="Param" hint="Used in ${param || 'name'}">
+					{#snippet control()}
+						<input
+							class="nc-input font-mono"
+							value={attr(parsed.attrs.param)}
+							oninput={(e) => setAttr('param', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Label">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.label)}
+							oninput={(e) => setAttr('label', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Control">
+					{#snippet control()}
+						<div class="nc-segments nc-segments--wrap">
+							{#each quickFilterKinds as kind (kind)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.kind, 'dropdown') === kind}
+									onclick={() => setAttr('kind', kind)}
+								>
+									{humanize(kind)}
+								</button>
+							{/each}
+						</div>
+						<select
+							class="nc-select mt-1.5"
+							value={attr(parsed.attrs.kind, 'dropdown')}
+							onchange={(e) => setAttr('kind', e.currentTarget.value)}
+						>
+							{#each filterKinds as k (k)}
+								<option value={k}>{humanize(k)}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Default">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.default ?? parsed.attrs.defaultValue)}
+							oninput={(e) => setAttr('default', e.currentTarget.value || undefined)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+
+				<details class="nc-advanced">
+					<summary class="nc-advanced-toggle">Options & wiring</summary>
+					<div class="nc-stack nc-stack--nested">
+						<NodeConfigField label="Options">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={Array.isArray(parsed.attrs.options)
+										? JSON.stringify(parsed.attrs.options)
+										: attr(parsed.attrs.options)}
+									placeholder="$cell.rows or JSON array"
+									oninput={(e) => {
+										const raw = e.currentTarget.value.trim();
+										if (raw.startsWith('$')) setAttr('options', raw);
+										else setJsonArrayAttr('options', raw);
+									}}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Options column">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									list="visual-columns"
+									value={attr(parsed.attrs.optionsColumn)}
+									oninput={(e) => setAttr('optionsColumn', e.currentTarget.value || undefined)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+					</div>
+				</details>
+
+				{#if parsed.attrs.kind === 'relative-date' || parsed.attrs.kind === 'date-range'}
+					<NodeConfigField label="Start param">
+						{#snippet control()}
+							<input
+								class="nc-input font-mono"
+								value={attr(parsed.attrs.startParam)}
+								oninput={(e) => setAttr('startParam', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+					<NodeConfigField label="End param">
+						{#snippet control()}
+							<input
+								class="nc-input font-mono"
+								value={attr(parsed.attrs.endParam)}
+								oninput={(e) => setAttr('endParam', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{/if}
+				{#if parsed.attrs.kind === 'numeric-range'}
+					<NodeConfigField label="Min param">
+						{#snippet control()}
+							<input
+								class="nc-input font-mono"
+								value={attr(parsed.attrs.minParam)}
+								oninput={(e) => setAttr('minParam', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+					<NodeConfigField label="Max param">
+						{#snippet control()}
+							<input
+								class="nc-input font-mono"
+								value={attr(parsed.attrs.maxParam)}
+								oninput={(e) => setAttr('maxParam', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{/if}
+
+				<div class="nc-callout">
+					<p class="nc-callout-title">Query wiring</p>
+					{#if param && filterUsages[param]?.length}
+						<ul class="nc-callout-list">
+							{#each filterUsages[param] as usage (usage.cellId)}
+								<li><code>{usage.outputName}</code> uses <code>{'${' + param + '}'}</code></li>
+							{/each}
+						</ul>
+					{:else if param}
+						<p class="nc-callout-warn">No query references <code>{'${' + param + '}'}</code> yet.</p>
+					{:else}
+						<p class="nc-callout-copy">Set a param to see linked cells.</p>
+					{/if}
+				</div>
+			</div>
+
+		{:else if parsed.tagName === 'badge'}
+			<div class="nc-stack">
+				<NodeConfigField label="Value">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.value)}
+							oninput={(e) => setAttr('value', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Color">
+					{#snippet control()}
+						<div class="nc-segments nc-segments--wrap">
+							{#each ['info', 'success', 'warning', 'error', 'neutral'] as c (c)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.color, 'info') === c}
+									onclick={() => setAttr('color', c)}
+								>
+									{c}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+			</div>
+
+		{:else if parsed.tagName === 'progress'}
+			<div class="nc-stack">
+				<NodeConfigField label="Value">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.value)}
+							oninput={(e) => setAttr('value', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Max">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							type="number"
+							value={Number(parsed.attrs.max ?? 100)}
+							oninput={(e) => setAttr('max', Number(e.currentTarget.value))}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Label">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.label)}
+							oninput={(e) => setAttr('label', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+			</div>
+
+		{:else if parsed.tagName === 'grid' || parsed.tagName === 'columns' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
+			<div class="nc-stack">
+				{#if parsed.tagName === 'grid'}
+					<NodeConfigField label="Columns">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								type="number"
+								min="1"
+								max="6"
+								value={Number(parsed.attrs.cols ?? 3)}
+								oninput={(e) => setAttr('cols', Number(e.currentTarget.value))}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'column'}
+					<NodeConfigField label="Width">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								value={attr(parsed.attrs.width)}
+								placeholder="300px, 40%, 1fr"
+								oninput={(e) => setAttr('width', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'tab'}
+					<NodeConfigField label="Tab label">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								value={attr(parsed.attrs.label)}
+								oninput={(e) => setAttr('label', e.currentTarget.value)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'details'}
+					<NodeConfigField label="Summary">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								value={attr(parsed.attrs.summary)}
+								oninput={(e) => setAttr('summary', e.currentTarget.value)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+					<label class="nc-check">
+						<input
+							type="checkbox"
+							checked={Boolean(parsed.attrs.open)}
+							onchange={(e) => setAttr('open', e.currentTarget.checked)}
+						/>
+						<span>Open by default</span>
+					</label>
+				{:else if parsed.tagName === 'if'}
+					<NodeConfigField label="Condition">
+						{#snippet control()}
+							<input
+								class="nc-input font-mono"
+								value={attr(parsed.attrs.condition, parsed.condition ?? '')}
+								placeholder="gt($orders.count, 0)"
+								oninput={(e) => setAttr('condition', e.currentTarget.value)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'group'}
+					<NodeConfigField label="Data">
+						{#snippet control()}
+							<select
+								class="nc-select"
+								value={attr(parsed.attrs.data)}
+								onchange={(e) => setAttr('data', e.currentTarget.value)}
+							>
+								<option value="">Pick a result…</option>
+								{#each rowRefOptions as r (r)}
+									<option value={r}>{r}</option>
+								{/each}
+							</select>
+						{/snippet}
+					</NodeConfigField>
+					<NodeConfigField label="Group by">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								list="visual-columns"
+								value={attr(parsed.attrs.by)}
+								oninput={(e) => setAttr('by', e.currentTarget.value)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'each'}
+					<NodeConfigField label="Data">
+						{#snippet control()}
+							<select
+								class="nc-select"
+								value={attr(parsed.attrs.data, '$items')}
+								onchange={(e) => setAttr('data', e.currentTarget.value)}
+							>
+								<option value="$items">$items</option>
+								{#each rowRefOptions as r (r)}
+									<option value={r}>{r}</option>
+								{/each}
+							</select>
+						{/snippet}
+					</NodeConfigField>
+				{:else if parsed.tagName === 'mermaid'}
+					<p class="nc-lead">Edit the diagram in the canvas, or pick a code reference.</p>
+					<NodeConfigField label="Code ref">
+						{#snippet control()}
+							<select
+								class="nc-select"
+								value={attr(parsed.attrs.code)}
+								onchange={(e) => setAttr('code', e.currentTarget.value || undefined)}
+							>
+								<option value="">Body source</option>
+								{#each refOptions() as r (r)}
+									<option value={r}>{r}</option>
+								{/each}
+							</select>
+						{/snippet}
+					</NodeConfigField>
+				{:else}
+					<p class="nc-lead">Layout blocks are edited directly in the document.</p>
+				{/if}
+			</div>
+
+		{:else if parsed.tagName === 'card' || parsed.tagName === 'callout'}
+			<div class="nc-stack">
+				{#if parsed.tagName === 'card'}
+					<NodeConfigField label="Title">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								value={attr(parsed.attrs.title)}
+								oninput={(e) => setAttr('title', e.currentTarget.value)}
+							/>
+						{/snippet}
+					</NodeConfigField>
+				{:else}
+					<NodeConfigField label="Type">
+						{#snippet control()}
+							<div class="nc-segments">
+								{#each ['info', 'success', 'warning', 'error'] as t (t)}
+									<button
+										type="button"
+										class="nc-segment"
+										class:is-active={attr(parsed.attrs.type, 'info') === t}
+										onclick={() => setAttr('type', t)}
+									>
+										{t}
+									</button>
+								{/each}
+							</div>
+						{/snippet}
+					</NodeConfigField>
+				{/if}
+			</div>
+
+		{:else}
+			<div class="nc-stack">
+				<p class="nc-section-label">Source</p>
+				<textarea
+					class="nc-textarea font-mono"
+					value={block.source}
+					oninput={(e) => onPatch({ source: e.currentTarget.value })}
+				></textarea>
+			</div>
+		{/if}
+
 		<datalist id="visual-columns">
 			{#each availableColumns as col (col)}
 				<option value={col}></option>
 			{/each}
 		</datalist>
-		<div>
-			<p class="text-xs font-semibold">{parsed.tagName}</p>
-			{#if catalog?.detail}
-				<p class="text-2xs text-muted-foreground">{catalog.detail}</p>
-			{/if}
-		</div>
-
-		{#if parsed.tagName === 'metric'}
-			<label class="field">
-				<span>Value</span>
-				<input
-					value={String(parsed.attrs.value ?? '')}
-					oninput={(e) => setAttr('value', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Label</span>
-				<input
-					value={String(parsed.attrs.label ?? '')}
-					oninput={(e) => setAttr('label', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Compare (vs)</span>
-				<input
-					value={String(parsed.attrs.vs ?? '')}
-					oninput={(e) => setAttr('vs', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Format</span>
-				<select
-					value={String(parsed.attrs.format ?? 'number')}
-					onchange={(e) => setAttr('format', e.currentTarget.value)}
-				>
-					{#each ['number', 'currency', 'compact', 'percent'] as f (f)}
-						<option value={f}>{f}</option>
-					{/each}
-				</select>
-			</label>
-		{:else if parsed.tagName === 'chart'}
-			<label class="field">
-				<span>Inherit chart config</span>
-				<select
-					value={String(parsed.attrs.ref ?? '')}
-					onchange={(e) => {
-						const ref = e.currentTarget.value || undefined;
-						onPatch({ attrs: { ref, data: ref ? undefined : parsed.attrs.data } });
-					}}
-				>
-					<option value="">configure here</option>
-					{#each cellRefOptions as r (r)}
-						<option value={r}>{r}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Data ref</span>
-				<select
-					value={String(parsed.attrs.data ?? '')}
-					onchange={(e) => setAttr('data', e.currentTarget.value)}
-				>
-					<option value="">—</option>
-					{#each rowRefOptions as r (r)}
-						<option value={r}>{r}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Type</span>
-				<select
-					value={String(parsed.attrs.type ?? 'bar')}
-					onchange={(e) => setAttr('type', e.currentTarget.value)}
-				>
-					{#each chartTypes as type (type)}
-						<option value={type}>{type}</option>
-					{/each}
-				</select>
-			</label>
-			{#if String(parsed.attrs.type ?? 'bar') === 'histogram'}
-				<label class="field">
-					<span>Histogram bins</span>
-					<input
-						type="number"
-						min="1"
-						value={parsed.attrs.histogramBins != null ? Number(parsed.attrs.histogramBins) : ''}
-						placeholder="auto"
-						oninput={(e) => {
-							const raw = e.currentTarget.value.trim();
-							setAttr('histogramBins', raw ? Number(raw) : undefined);
-						}}
-					/>
-				</label>
-			{/if}
-			<label class="field">
-				<span>X column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.x ?? '')}
-					oninput={(e) => setAttr('x', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Y column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.y ?? '')}
-					oninput={(e) => setAttr('y', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Y columns (JSON array)</span>
-				<input
-					value={parsed.attrs.yColumns ? JSON.stringify(parsed.attrs.yColumns) : ''}
-					oninput={(e) => setJsonArrayAttr('yColumns', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Secondary Y columns (JSON array)</span>
-				<input
-					value={parsed.attrs.yColumnsSecondary
-						? JSON.stringify(parsed.attrs.yColumnsSecondary)
-						: ''}
-					oninput={(e) => setJsonArrayAttr('yColumnsSecondary', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Color column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.colorColumn ?? '')}
-					oninput={(e) => setAttr('colorColumn', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Size column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.sizeColumn ?? '')}
-					oninput={(e) => setAttr('sizeColumn', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Series mode</span>
-				<select
-					value={String(parsed.attrs.seriesMode ?? 'auto')}
-					onchange={(e) => setAttr('seriesMode', e.currentTarget.value)}
-				>
-					{#each ['auto', 'grouped', 'stacked'] as mode (mode)}
-						<option value={mode}>{mode}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Sort order</span>
-				<select
-					value={String(parsed.attrs.sortOrder ?? 'none')}
-					onchange={(e) => setAttr('sortOrder', e.currentTarget.value)}
-				>
-					{#each ['none', 'asc', 'desc'] as order (order)}
-						<option value={order}>{order}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Click-to-filter param</span>
-				<input
-					value={String(parsed.attrs.filterParam ?? '')}
-					oninput={(e) => setAttr('filterParam', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Filter column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.filterColumn ?? '')}
-					oninput={(e) => setAttr('filterColumn', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Drill cell</span>
-				<select
-					value={String(parsed.attrs.drillCell ?? '')}
-					onchange={(e) => setAttr('drillCell', e.currentTarget.value || undefined)}
-				>
-					<option value="">—</option>
-					{#each cellRefOptions as r (r)}
-						<option value={r.replace('$', '')}>{r.replace('$', '')}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Title</span>
-				<input
-					value={String(parsed.attrs.title ?? '')}
-					oninput={(e) => setAttr('title', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Height</span>
-				<input
-					type="number"
-					value={Number(parsed.attrs.height ?? 280)}
-					oninput={(e) => setAttr('height', Number(e.currentTarget.value))}
-				/>
-			</label>
-		{:else if parsed.tagName === 'datatable'}
-			<p class="text-2xs font-medium text-muted-foreground">Mode: {tableMode}</p>
-			<label class="field">
-				<span>Data</span>
-				<select
-					value={String(parsed.attrs.data ?? '')}
-					onchange={(e) => setAttr('data', e.currentTarget.value)}
-				>
-					<option value="">—</option>
-					{#each rowRefOptions as r (r)}
-						<option value={r}>{r}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Columns (JSON array)</span>
-				<input
-					value={parsed.attrs.cols ? JSON.stringify(parsed.attrs.cols) : ''}
-					oninput={(e) => setJsonArrayAttr('cols', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Limit</span>
-				<input
-					type="number"
-					value={Number(parsed.attrs.limit ?? 10)}
-					oninput={(e) => setAttr('limit', Number(e.currentTarget.value))}
-				/>
-			</label>
-			<label class="field">
-				<span>Page size</span>
-				<input
-					type="number"
-					value={Number(parsed.attrs.pageSize ?? 10)}
-					oninput={(e) => setAttr('pageSize', Number(e.currentTarget.value))}
-				/>
-			</label>
-			<label class="field">
-				<span>Header insights</span>
-				<select
-					value={String(parsed.attrs.headerInsights ?? 'compact')}
-					onchange={(e) => setAttr('headerInsights', e.currentTarget.value)}
-				>
-					<option value="compact">compact</option>
-					<option value="full">full</option>
-				</select>
-			</label>
-			<label class="field">
-				<span>Linked filter param</span>
-				<input
-					value={String(parsed.attrs.linkedFilter ?? '')}
-					oninput={(e) => setAttr('linkedFilter', e.currentTarget.value)}
-				/>
-			</label>
-			<hr class="border-border" />
-			<p class="text-2xs font-medium text-muted-foreground">Summary / pivot</p>
-			<label class="field">
-				<span>Index / group-by (JSON array)</span>
-				<input
-					value={parsed.attrs.index ? JSON.stringify(parsed.attrs.index) : ''}
-					oninput={(e) => setJsonArrayAttr('index', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Pivot by column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.pivotBy ?? '')}
-					oninput={(e) => setAttr('pivotBy', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Value column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.valueCol ?? '')}
-					oninput={(e) => setAttr('valueCol', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Aggregation</span>
-				<select
-					value={String(parsed.attrs.agg ?? 'sum')}
-					onchange={(e) => setAttr('agg', e.currentTarget.value)}
-				>
-					{#each aggOptions as a (a)}
-						<option value={a}>{a}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Round decimals</span>
-				<input
-					type="number"
-					value={parsed.attrs.round != null ? Number(parsed.attrs.round) : ''}
-					oninput={(e) =>
-						setAttr(
-							'round',
-							e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value)
-						)}
-				/>
-			</label>
-			<label class="field">
-				<span>Value format</span>
-				<select
-					value={String(parsed.attrs.valueFormatKind ?? '')}
-					onchange={(e) => setAttr('valueFormatKind', e.currentTarget.value || undefined)}
-				>
-					<option value="">auto</option>
-					{#each formatKinds as f (f)}
-						<option value={f}>{f}</option>
-					{/each}
-				</select>
-			</label>
-			{#if parsed.attrs.valueFormatKind === 'currency'}
-				<label class="field">
-					<span>Currency symbol</span>
-					<input
-						value={String(parsed.attrs.valueCurrencySymbol ?? '$')}
-						oninput={(e) => setAttr('valueCurrencySymbol', e.currentTarget.value)}
-					/>
-				</label>
-			{/if}
-		{:else if parsed.tagName === 'filter'}
-			{@const param = String(parsed.attrs.param ?? '')}
-			<label class="field">
-				<span>Param</span>
-				<input
-					value={String(parsed.attrs.param ?? '')}
-					oninput={(e) => setAttr('param', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Label</span>
-				<input
-					value={String(parsed.attrs.label ?? '')}
-					oninput={(e) => setAttr('label', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Kind</span>
-				<select
-					value={String(parsed.attrs.kind ?? 'dropdown')}
-					onchange={(e) => setAttr('kind', e.currentTarget.value)}
-				>
-					{#each ['dropdown', 'text-input', 'date-range', 'button-group', 'multi-select', 'relative-date', 'numeric-range', 'searchable-dropdown'] as k (k)}
-						<option value={k}>{k}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="field">
-				<span>Options (JSON array or $cell.rows)</span>
-				<input
-					value={Array.isArray(parsed.attrs.options)
-						? JSON.stringify(parsed.attrs.options)
-						: String(parsed.attrs.options ?? '')}
-					oninput={(e) => {
-						const raw = e.currentTarget.value.trim();
-						if (raw.startsWith('$')) setAttr('options', raw);
-						else setJsonArrayAttr('options', raw);
-					}}
-				/>
-			</label>
-			<label class="field">
-				<span>Options column</span>
-				<input
-					list="visual-columns"
-					value={String(parsed.attrs.optionsColumn ?? '')}
-					oninput={(e) => setAttr('optionsColumn', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			<label class="field">
-				<span>Default</span>
-				<input
-					value={String(parsed.attrs.default ?? parsed.attrs.defaultValue ?? '')}
-					oninput={(e) => setAttr('default', e.currentTarget.value || undefined)}
-				/>
-			</label>
-			{#if parsed.attrs.kind === 'relative-date' || parsed.attrs.kind === 'date-range'}
-				<label class="field">
-					<span>Start param</span>
-					<input
-						value={String(parsed.attrs.startParam ?? '')}
-						oninput={(e) => setAttr('startParam', e.currentTarget.value || undefined)}
-					/>
-				</label>
-				<label class="field">
-					<span>End param</span>
-					<input
-						value={String(parsed.attrs.endParam ?? '')}
-						oninput={(e) => setAttr('endParam', e.currentTarget.value || undefined)}
-					/>
-				</label>
-			{/if}
-			{#if parsed.attrs.kind === 'numeric-range'}
-				<label class="field">
-					<span>Min param</span>
-					<input
-						value={String(parsed.attrs.minParam ?? '')}
-						oninput={(e) => setAttr('minParam', e.currentTarget.value || undefined)}
-					/>
-				</label>
-				<label class="field">
-					<span>Max param</span>
-					<input
-						value={String(parsed.attrs.maxParam ?? '')}
-						oninput={(e) => setAttr('maxParam', e.currentTarget.value || undefined)}
-					/>
-				</label>
-			{/if}
-			<div class="md-panel text-2xs">
-				<p class="font-medium text-muted-foreground">Query wiring</p>
-				{#if param && filterUsages[param]?.length}
-					<ul class="mt-1 space-y-0.5">
-						{#each filterUsages[param] as usage (usage.cellId)}
-							<li><code>{usage.outputName}</code> uses <code>{'${' + param + '}'}</code></li>
-						{/each}
-					</ul>
-				{:else if param}
-					<p class="mt-1 text-warning">
-						No query cell references <code>{'${' + param + '}'}</code>.
-					</p>
-				{:else}
-					<p class="mt-1">Set a param to see linked query cells.</p>
-				{/if}
-			</div>
-		{:else if parsed.tagName === 'badge'}
-			<label class="field">
-				<span>Value</span>
-				<input
-					value={String(parsed.attrs.value ?? '')}
-					oninput={(e) => setAttr('value', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Color</span>
-				<select
-					value={String(parsed.attrs.color ?? 'info')}
-					onchange={(e) => setAttr('color', e.currentTarget.value)}
-				>
-					{#each ['info', 'success', 'warning', 'error', 'neutral'] as c (c)}
-						<option value={c}>{c}</option>
-					{/each}
-				</select>
-			</label>
-		{:else if parsed.tagName === 'progress'}
-			<label class="field">
-				<span>Value</span>
-				<input
-					value={String(parsed.attrs.value ?? '')}
-					oninput={(e) => setAttr('value', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Max</span>
-				<input
-					type="number"
-					value={Number(parsed.attrs.max ?? 100)}
-					oninput={(e) => setAttr('max', Number(e.currentTarget.value))}
-				/>
-			</label>
-			<label class="field">
-				<span>Label</span>
-				<input
-					value={String(parsed.attrs.label ?? '')}
-					oninput={(e) => setAttr('label', e.currentTarget.value)}
-				/>
-			</label>
-			<label class="field">
-				<span>Color</span>
-				<select
-					value={String(parsed.attrs.color ?? 'info')}
-					onchange={(e) => setAttr('color', e.currentTarget.value)}
-				>
-					{#each ['info', 'success', 'warning', 'error'] as c (c)}
-						<option value={c}>{c}</option>
-					{/each}
-				</select>
-			</label>
-		{:else if parsed.tagName === 'grid' || parsed.tagName === 'columns' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
-			{#if parsed.tagName === 'grid'}
-				<label class="field">
-					<span>Columns</span>
-					<input
-						type="number"
-						value={Number(parsed.attrs.cols ?? 3)}
-						oninput={(e) => setAttr('cols', Number(e.currentTarget.value))}
-					/>
-				</label>
-			{:else if parsed.tagName === 'column'}
-				<label class="field">
-					<span>Width</span>
-					<input
-						value={String(parsed.attrs.width ?? '')}
-						placeholder="300px, 40%, 1fr"
-						oninput={(e) => setAttr('width', e.currentTarget.value || undefined)}
-					/>
-				</label>
-			{:else if parsed.tagName === 'tab'}
-				<label class="field">
-					<span>Label</span>
-					<input
-						value={String(parsed.attrs.label ?? '')}
-						oninput={(e) => setAttr('label', e.currentTarget.value)}
-					/>
-				</label>
-			{:else if parsed.tagName === 'details'}
-				<label class="field">
-					<span>Summary</span>
-					<input
-						value={String(parsed.attrs.summary ?? '')}
-						oninput={(e) => setAttr('summary', e.currentTarget.value)}
-					/>
-				</label>
-				<label class="inline-field">
-					<input
-						type="checkbox"
-						checked={Boolean(parsed.attrs.open)}
-						onchange={(e) => setAttr('open', e.currentTarget.checked)}
-					/>
-					<span>Open by default</span>
-				</label>
-			{:else if parsed.tagName === 'if'}
-				<label class="field">
-					<span>Condition expression</span>
-					<input
-						value={String(parsed.condition ?? parsed.attrs.condition ?? '')}
-						placeholder="gt($orders.count, 0)"
-						oninput={(e) => setAttr('condition', e.currentTarget.value)}
-					/>
-				</label>
-				<p class="text-2xs text-muted-foreground">
-					Use comparison helpers like <code>gt($orders.count, 0)</code>. Keep else branches in the
-					body source.
-				</p>
-			{:else if parsed.tagName === 'group'}
-				<label class="field">
-					<span>Data</span>
-					<select
-						value={String(parsed.attrs.data ?? '')}
-						onchange={(e) => setAttr('data', e.currentTarget.value)}
-					>
-						<option value="">—</option>
-						{#each rowRefOptions as r (r)}
-							<option value={r}>{r}</option>
-						{/each}
-					</select>
-				</label>
-				<label class="field">
-					<span>Group by</span>
-					<input
-						list="visual-columns"
-						value={String(parsed.attrs.by ?? '')}
-						oninput={(e) => setAttr('by', e.currentTarget.value)}
-					/>
-				</label>
-				<label class="field">
-					<span>Order (JSON array)</span>
-					<input
-						value={parsed.attrs.order ? JSON.stringify(parsed.attrs.order) : ''}
-						oninput={(e) => setJsonArrayAttr('order', e.currentTarget.value)}
-					/>
-				</label>
-			{:else if parsed.tagName === 'each'}
-				<label class="field">
-					<span>Data</span>
-					<select
-						value={String(parsed.attrs.data ?? '$items')}
-						onchange={(e) => setAttr('data', e.currentTarget.value)}
-					>
-						<option value="$items">$items</option>
-						{#each rowRefOptions as r (r)}
-							<option value={r}>{r}</option>
-						{/each}
-					</select>
-				</label>
-			{:else if parsed.tagName === 'mermaid'}
-				<label class="field">
-					<span>Code ref</span>
-					<select
-						value={String(parsed.attrs.code ?? '')}
-						onchange={(e) => setAttr('code', e.currentTarget.value || undefined)}
-					>
-						<option value="">body source</option>
-						{#each refOptions() as r (r)}
-							<option value={r}>{r}</option>
-						{/each}
-					</select>
-				</label>
-				<p class="text-2xs text-muted-foreground">
-					Edit diagram source in the canvas (toggle Visual / Source on the block).
-				</p>
-			{/if}
-		{:else if parsed.tagName === 'card' || parsed.tagName === 'callout'}
-			{#if parsed.tagName === 'card'}
-				<label class="field">
-					<span>Title</span>
-					<input
-						value={String(parsed.attrs.title ?? '')}
-						oninput={(e) => setAttr('title', e.currentTarget.value)}
-					/>
-				</label>
-			{:else}
-				<label class="field">
-					<span>Type</span>
-					<select
-						value={String(parsed.attrs.type ?? 'info')}
-						onchange={(e) => setAttr('type', e.currentTarget.value)}
-					>
-						{#each ['info', 'success', 'warning', 'error'] as t (t)}
-							<option value={t}>{t}</option>
-						{/each}
-					</select>
-				</label>
-			{/if}
-		{:else}
-			<label class="field">
-				<span>Source</span>
-				<textarea
-					class="min-h-28 font-mono"
-					value={block.source}
-					oninput={(e) => onPatch({ source: e.currentTarget.value })}
-				></textarea>
-			</label>
-		{/if}
 	</div>
 {/if}
 
 <style>
-	.inspector-empty,
-	.inspector-fence,
-	.inspector-widget {
-		padding: 0.5rem;
+	.nc-panel {
+		padding: 0 0.35rem;
 	}
-	.field {
+	.nc-panel--sidebar {
+		padding: 0.35rem 0.5rem;
+	}
+	.nc-stack {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		font-size: var(--text-2xs);
+		gap: 0.35rem;
 	}
-	.field span {
+	.nc-stack--nested {
+		padding-top: 0.35rem;
+	}
+	.nc-lead {
+		margin: 0 0 0.5rem;
+		font-size: var(--text-2xs);
+		line-height: 1.45;
 		color: var(--muted-foreground);
 	}
-	.field input,
-	.field select,
-	.field textarea {
-		width: 100%;
-		height: 1.65rem;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--background);
-		color: var(--foreground);
-		padding: 0 0.45rem;
+	.nc-section-label {
+		margin: 0;
 		font-size: var(--text-2xs);
+		font-weight: 600;
+		color: var(--foreground);
 	}
-	.field textarea {
-		height: auto;
-		min-height: 4.5rem;
-		padding: 0.35rem 0.45rem;
-		font-family: var(--font-mono, ui-monospace, monospace);
+	.nc-empty {
+		padding: 0.75rem 0.5rem;
+		text-align: center;
+	}
+	.nc-empty-title {
+		margin: 0;
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.nc-empty-copy {
+		margin: 0.35rem 0 0;
+		font-size: var(--text-2xs);
+		color: var(--muted-foreground);
+	}
+	.nc-input,
+	.nc-select,
+	.nc-textarea {
+		width: 100%;
+		border-radius: var(--radius-sm);
+		border: 1px solid transparent;
+		background: color-mix(in oklab, var(--muted) 28%, transparent);
+		color: var(--foreground);
+		font-size: var(--text-2xs);
+		transition:
+			border-color var(--motion-fast) var(--motion-ease-out),
+			background var(--motion-fast) var(--motion-ease-out);
+	}
+	.nc-input,
+	.nc-select {
+		height: 1.65rem;
+		padding: 0 0.45rem;
+	}
+	.nc-textarea {
+		min-height: 5rem;
+		padding: 0.45rem;
 		resize: vertical;
 	}
-	.field input:focus-visible,
-	.field select:focus-visible,
-	.field textarea:focus-visible {
-		outline: none;
-		border-color: var(--primary);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
+	.nc-input:hover,
+	.nc-select:hover,
+	.nc-textarea:hover {
+		background: color-mix(in oklab, var(--muted) 42%, transparent);
 	}
-	.inline-field {
+	.nc-input:focus-visible,
+	.nc-select:focus-visible,
+	.nc-textarea:focus-visible {
+		outline: none;
+		border-color: color-mix(in oklab, var(--ring) 45%, transparent);
+		background: var(--background);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 18%, transparent);
+	}
+	.nc-segments {
+		display: flex;
+		flex-wrap: nowrap;
+		gap: 0.2rem;
+	}
+	.nc-segments--wrap {
+		flex-wrap: wrap;
+	}
+	.nc-segment {
+		flex: 1 1 auto;
+		min-width: 0;
+		height: 1.5rem;
+		padding: 0 0.4rem;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		font-size: var(--text-3xs);
+		font-weight: 500;
+		color: var(--muted-foreground);
+		cursor: pointer;
+		transition:
+			background var(--motion-fast) var(--motion-ease-out),
+			color var(--motion-fast) var(--motion-ease-out);
+	}
+	.nc-segment:hover {
+		background: color-mix(in oklab, var(--muted) 55%, transparent);
+		color: var(--foreground);
+	}
+	.nc-segment.is-active {
+		background: color-mix(in oklab, var(--secondary) 22%, transparent);
+		color: var(--foreground);
+		box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--secondary) 35%, transparent);
+	}
+	.nc-advanced {
+		margin-top: 0.15rem;
+		border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+		padding-top: 0.35rem;
+	}
+	.nc-advanced-toggle {
+		cursor: pointer;
+		font-size: var(--text-2xs);
+		font-weight: 500;
+		color: var(--muted-foreground);
+		user-select: none;
+		list-style: none;
+	}
+	.nc-advanced-toggle::-webkit-details-marker {
+		display: none;
+	}
+	.nc-advanced[open] .nc-advanced-toggle {
+		color: var(--foreground);
+	}
+	.nc-check {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.45rem;
+		padding: 0.15rem 0;
 		font-size: var(--text-2xs);
 		color: var(--muted-foreground);
+	}
+	.nc-callout {
+		margin-top: 0.35rem;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--muted) 22%, transparent);
+		padding: 0.45rem 0.55rem;
+	}
+	.nc-callout-title {
+		margin: 0;
+		font-size: var(--text-3xs);
+		font-weight: 600;
+		color: var(--muted-foreground);
+	}
+	.nc-callout-copy,
+	.nc-callout-warn,
+	.nc-callout-list {
+		margin: 0.25rem 0 0;
+		font-size: var(--text-3xs);
+		color: var(--muted-foreground);
+	}
+	.nc-callout-warn {
+		color: var(--warning);
+	}
+	.nc-callout-list {
+		padding-left: 1rem;
 	}
 </style>

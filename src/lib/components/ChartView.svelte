@@ -502,6 +502,8 @@
 		if (t === 'box-plot') return config.yColumns.length < 5;
 		if (t === 'sankey')
 			return !config.xColumn || !config.colorColumn || config.yColumns.length === 0;
+		if (t === 'map') return !config.latColumn || !config.lonColumn;
+		if (t === 'choropleth') return !config.xColumn || config.yColumns.length === 0;
 		return !config.xColumn || config.yColumns.length === 0;
 	});
 
@@ -1086,6 +1088,142 @@
 		};
 	});
 
+	function themedGeoLayout(scope: 'world' | 'usa'): Partial<Layout> {
+		void watchTheme();
+		const background = resolveCSSColor('--background');
+		const border = resolveCSSColor('--border');
+		const muted = resolveCSSColor('--muted');
+		return {
+			geo: {
+				scope,
+				bgcolor: background,
+				landcolor: muted,
+				showland: true,
+				showcountries: true,
+				countrycolor: border,
+				showlakes: true,
+				lakecolor: background
+			},
+			margin: { t: 10, r: 10, b: 10, l: 10 }
+		};
+	}
+
+	// ── Map (scattergeo) ─────────────────────────────────────────────────────
+	const mapFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'map') return null;
+		const latCol = config.latColumn;
+		const lonCol = config.lonColumn;
+		if (!latCol || !lonCol) return null;
+
+		const valueCol = config.yColumns[0];
+		const labelCol = config.colorColumn;
+		const sizeCol = config.sizeColumn;
+
+		const points = rows
+			.map((r) => ({
+				lat: coerceNumber(r[latCol]),
+				lon: coerceNumber(r[lonCol]),
+				value: valueCol ? coerceNumber(r[valueCol]) : null,
+				label: labelCol ? String(r[labelCol] ?? '') : '',
+				size: sizeCol ? coerceNumber(r[sizeCol]) : null
+			}))
+			.filter((p) => p.lat !== null && p.lon !== null);
+
+		if (points.length === 0) return null;
+
+		void watchTheme();
+		const colorLow = resolveCSSColor('--background');
+		const colorHigh = resolveCSSColor('--chart-1');
+
+		const hasNumericColor = valueCol && points.some((p) => p.value !== null);
+		const values = hasNumericColor ? points.map((p) => p.value ?? 0) : undefined;
+		const sizes = sizeCol
+			? points.map((p) => {
+					const raw = p.size ?? 8;
+					return Math.max(6, Math.min(24, raw));
+				})
+			: 10;
+
+		const customdata = points.map((p) => {
+			const parts = [
+				labelCol && p.label ? p.label : null,
+				`${fmtNum(p.lat)}°, ${fmtNum(p.lon)}°`,
+				valueCol && p.value !== null ? `${humanize(valueCol)}: ${fmtNum(p.value)}` : null
+			].filter(Boolean);
+			return parts.join('<br>');
+		});
+
+		return {
+			data: [
+				{
+					type: 'scattergeo',
+					lat: points.map((p) => p.lat),
+					lon: points.map((p) => p.lon),
+					text: labelCol ? points.map((p) => p.label) : undefined,
+					mode: 'markers',
+					marker: {
+						size: sizes,
+						...(hasNumericColor
+							? {
+									color: values,
+									colorscale: [
+										[0, colorLow],
+										[1, colorHigh]
+									],
+									showscale: true,
+									colorbar: { title: { text: humanize(valueCol!) } }
+								}
+							: { color: 'var(--chart-1)' })
+					},
+					customdata,
+					hovertemplate: '%{customdata}<extra></extra>'
+				} as unknown as Data
+			],
+			layout: themedGeoLayout('world')
+		};
+	});
+
+	// ── Choropleth ───────────────────────────────────────────────────────────
+	const choroplethFigure = $derived.by((): Figure | null => {
+		if (config.chartType !== 'choropleth') return null;
+		const locationCol = config.xColumn;
+		const valueCol = config.yColumns[0];
+		if (!locationCol || !valueCol) return null;
+
+		const geoScope = config.geoScope ?? 'world';
+		const entries = rows
+			.map((r) => ({
+				location: String(r[locationCol] ?? '').trim(),
+				value: coerceNumber(r[valueCol])
+			}))
+			.filter((e) => e.location && e.value !== null);
+
+		if (entries.length === 0) return null;
+
+		void watchTheme();
+		const colorLow = resolveCSSColor('--background');
+		const colorHigh = resolveCSSColor('--chart-1');
+		const plotScope = geoScope === 'usa-states' ? 'usa' : 'world';
+
+		return {
+			data: [
+				{
+					type: 'choropleth',
+					locationmode: geoScope === 'usa-states' ? 'USA-states' : 'ISO-3',
+					locations: entries.map((e) => e.location),
+					z: entries.map((e) => e.value as number),
+					colorscale: [
+						[0, colorLow],
+						[1, colorHigh]
+					],
+					colorbar: { title: { text: humanize(valueCol) } },
+					hovertemplate: `${locationCol}: %{location}<br>${humanize(valueCol)}: %{z}<extra></extra>`
+				} as unknown as Data
+			],
+			layout: themedGeoLayout(plotScope)
+		};
+	});
+
 	// ── Custom (user-written JS sandbox, same POJO contract as plot cells) ───
 	const customResult = $derived.by((): { figure: Figure | null; error: string | null } => {
 		if (config.chartType !== 'custom') return { figure: null, error: null };
@@ -1104,6 +1242,8 @@
 		if (t === 'pie') return pieFigure;
 		if (t === 'funnel') return funnelFigure;
 		if (t === 'sankey') return sankeyFigure;
+		if (t === 'map') return mapFigure;
+		if (t === 'choropleth') return choroplethFigure;
 		if (t === 'custom') return customResult.figure;
 		return null;
 	});
@@ -1120,7 +1260,7 @@
 	}
 </script>
 
-<div class="flex w-full flex-col rounded-md border bg-background p-4" style="height:{height}px">
+<div class="chart-view flex w-full flex-col rounded-md border bg-background p-4" style="height:{height}px">
 	{#if config.title}
 		<div class="mb-1 shrink-0 px-1">
 			<p class="text-sm leading-tight font-medium text-foreground">{config.title}</p>
@@ -1277,6 +1417,10 @@
 			<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
 				{#if config.chartType === 'box-plot'}
 					Box plot requires 5 Y columns: Min, Q1, Median, Q3, Max.
+				{:else if config.chartType === 'map'}
+					Map requires Latitude and Longitude columns.
+				{:else if config.chartType === 'choropleth'}
+					Choropleth requires a Location column and a Value column.
 				{:else}
 					Configure columns to render this chart.
 				{/if}

@@ -9,10 +9,11 @@ import {
 	parseBlockWidget,
 	serializeMarkdocTag,
 	splitFrontmatter,
+	markdocAttrsToJson,
 	type VisualBlock,
 	type VisualBlockKind
 } from './markdoc-ast';
-import { isMarkdocContainerTag } from '../components/markdown/visual/widget-registry';
+import { isMarkdocContainerTag, parseAttrsJson as parseWidgetAttrsJson } from '../components/markdown/visual/widget-registry';
 
 /** JSON shape compatible with TipTap `setContent` / `getJSON`. */
 export interface PMMarkJSON {
@@ -473,8 +474,20 @@ function splitNarrativeSegments(source: string): NarrativeSegment[] {
 		) {
 			const tableLines = [line, next];
 			let j = i + 2;
-			while (j < lines.length && lines[j]!.trim() !== '' && looksLikeTableRow(lines[j]!)) {
-				tableLines.push(lines[j]!);
+			while (j < lines.length) {
+				const rowLine = lines[j]!;
+				if (rowLine.trim() === '') {
+					// Markdoc often splits GFM tables at blank lines; skip gaps when more rows follow.
+					let k = j + 1;
+					while (k < lines.length && lines[k]!.trim() === '') k++;
+					if (k < lines.length && looksLikeTableRow(lines[k]!)) {
+						j = k;
+						continue;
+					}
+					break;
+				}
+				if (!looksLikeTableRow(rowLine)) break;
+				tableLines.push(rowLine);
 				j++;
 			}
 			segments.push({ kind: 'table', lines: tableLines });
@@ -490,6 +503,44 @@ function splitNarrativeSegments(source: string): NarrativeSegment[] {
 		i++;
 	}
 	return segments;
+}
+
+/** True when every non-empty line looks like a GFM table row (contains `|`). */
+function isTableOnlyProse(source: string): boolean {
+	const nonEmpty = source.split('\n').filter((l) => l.trim() !== '');
+	return nonEmpty.length > 0 && nonEmpty.every((l) => looksLikeTableRow(l));
+}
+
+/** Markdoc splits GFM tables at blank lines into separate prose blocks. Merge a header
+ * fragment (ending in a delimiter row) with following body-row fragments. */
+function coalesceTableProseBlocks(blocks: VisualBlock[]): VisualBlock[] {
+	const merged: VisualBlock[] = [];
+	for (const block of blocks) {
+		if (block.kind !== 'prose' || !merged.length) {
+			merged.push(block);
+			continue;
+		}
+		const prev = merged[merged.length - 1]!;
+		if (prev.kind !== 'prose') {
+			merged.push(block);
+			continue;
+		}
+		const prevLines = prev.source.split('\n').filter((l) => l.trim() !== '');
+		const prevHasDelimiter = prevLines.some((l) => isTableDelimiterRow(l));
+		if (
+			prevHasDelimiter &&
+			isTableOnlyProse(prev.source) &&
+			isTableOnlyProse(block.source)
+		) {
+			merged[merged.length - 1] = {
+				...prev,
+				source: `${prev.source}\n\n${block.source}`
+			};
+			continue;
+		}
+		merged.push(block);
+	}
+	return merged;
 }
 
 function narrativeNodesFromSource(source: string, schema: Schema): PMNodeJSON[] {
@@ -522,15 +573,7 @@ function narrativeNodesToMarkdown(nodes: PMNodeJSON[], schema: Schema): string {
 }
 
 function parseAttrsJson(raw: unknown): Record<string, unknown> {
-	if (typeof raw !== 'string' || !raw.trim()) return {};
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
-	} catch {
-		return {};
-	}
+	return parseWidgetAttrsJson(raw);
 }
 
 function blockToPmNodes(block: VisualBlock, schema: Schema): PMNodeJSON[] {
@@ -552,7 +595,7 @@ function blockToPmNodes(block: VisualBlock, schema: Schema): PMNodeJSON[] {
 				type: 'markdocWidget',
 				attrs: {
 					tagName: parsed.tagName,
-					attrsJson: JSON.stringify(parsed.attrs),
+					attrsJson: markdocAttrsToJson(parsed.attrs),
 					selfClosing: parsed.selfClosing
 				}
 			}
@@ -588,7 +631,7 @@ function blockToPmNodes(block: VisualBlock, schema: Schema): PMNodeJSON[] {
 			type: 'markdocContainer',
 			attrs: {
 				tagName: parsed.tagName,
-				attrsJson: JSON.stringify(containerAttrs)
+				attrsJson: markdocAttrsToJson(containerAttrs)
 			},
 			content
 		}
@@ -887,7 +930,7 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 /** Parse a markdown(Markdoc) cell into a ProseMirror JSON document + optional frontmatter. */
 export function markdownToPmDocument(markdown: string): MarkdocPmDocument {
 	const { frontmatter, body } = splitFrontmatter(markdown);
-	const blocks = parseVisualBlocks(body);
+	const blocks = coalesceTableProseBlocks(parseVisualBlocks(body));
 	const schema = getMarkdocPmSchema();
 	const content: PMNodeJSON[] = [];
 

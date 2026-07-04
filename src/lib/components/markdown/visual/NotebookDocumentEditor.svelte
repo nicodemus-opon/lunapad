@@ -18,8 +18,18 @@
 	} from '$lib/stores/notebook.svelte';
 	import { buildNotebookDocumentExtensions } from './notebook-document-extensions';
 	import { clampMenuPosition, handleMenuKeyDown } from './menu-utils';
+	import BodyPortal from '$lib/components/ui/body-portal.svelte';
+	import NodeConfigPopover from './NodeConfigPopover.svelte';
+	import {
+		syncMarkdocNodeSelection,
+		visualBlockFromSelection,
+		patchMarkdocNodeSelection,
+		type MarkdocSelectedNode
+	} from './markdoc-node-selection';
+	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
+	type NodeSelectionClass = typeof import('@tiptap/pm/state').NodeSelection;
 
 	interface Props {
 		notebookId: string;
@@ -50,6 +60,9 @@
 	let editorFocused = false;
 	let pendingReconcile = false;
 	let latestCells: Cell[] = cells;
+	/** Notebook id the editor content belongs to — guards blur/debounced emits after tab switches. */
+	let editingNotebookId: string | null = null;
+	let loadedNotebookId: string | null = null;
 
 	let slashOpen = $state(false);
 	let slashItems = $state<SlashCommand[]>([]);
@@ -69,10 +82,25 @@
 	let bubbleVisible = $state(false);
 	let bubbleToolbarMount: ReturnType<typeof mount> | null = null;
 
+	let selectedNodeInfo = $state<MarkdocSelectedNode | null>(null);
+	let nodeConfigOpen = $state(false);
+	let NodeSelectionCtor: NodeSelectionClass | null = null;
+
+	const selectedBlock = $derived(visualBlockFromSelection(selectedNodeInfo));
+	const filterUsages = $derived.by(() => {
+		const params = new Set<string>();
+		for (const cell of cells) {
+			for (const match of cell.code.matchAll(/\{%\s*filter\b[^%]*\bparam="([^"]+)"/g)) {
+				if (match[1]) params.add(match[1]);
+			}
+		}
+		return Object.fromEntries([...params].map((param) => [param, findFilterUsages(cells, param)]));
+	});
+
 	const bubbleGate = {
 		isSlashOpen: () => slashOpen,
 		isMentionOpen: () => mentionOpen,
-		isContextMenuOpen: () => false,
+		isContextMenuOpen: () => nodeConfigOpen,
 		onShow: () => {
 			bubbleVisible = true;
 		},
@@ -103,7 +131,7 @@
 			emitTimer = null;
 		}
 		const anchorId = findAnchorCellId(ed);
-		const cellId = insertQueryBlockCell(anchorId, lang);
+		const cellId = insertQueryBlockCell(anchorId, lang, notebookId);
 		ed
 			.chain()
 			.focus()
@@ -119,7 +147,7 @@
 			clearTimeout(emitTimer);
 			emitTimer = null;
 		}
-		emitNow(ed);
+		emitNow(ed, notebookId);
 	}
 
 	// The drag-gutter "+" (and empty-line trigger) opens the slash menu by dropping a
@@ -162,9 +190,10 @@
 			.run();
 	}
 
-	function emitNow(ed: TipTapEditor) {
+	function emitNow(ed: TipTapEditor, targetNotebookId: string) {
+		if (!getNotebooks().some((n) => n.id === targetNotebookId)) return;
 		const doc = ed.getJSON() as PMDocJSON;
-		syncNotebookFromPmDocument(notebookId, doc);
+		syncNotebookFromPmDocument(targetNotebookId, doc);
 		// Align lastEmitted with the doc the reactive cells→document effect will
 		// reconstruct (cellsToPmDocument), NOT the raw editor JSON. The markdown
 		// round-trip is lossy, so the two rarely match byte-for-byte; using the raw
@@ -172,13 +201,34 @@
 		// every keystroke — which resets the caret to the top and closes the slash /
 		// mention menus mid-typing. Reconstructing here keeps self-originated edits
 		// from triggering a spurious re-render.
-		const cellsNow = getNotebooks().find((n) => n.id === notebookId)?.cells ?? [];
+		const cellsNow = getNotebooks().find((n) => n.id === targetNotebookId)?.cells ?? [];
 		lastEmitted = cellsToPmDocument(cellsNow);
 	}
 
 	function scheduleEmit(ed: TipTapEditor) {
+		const targetNotebookId = editingNotebookId ?? notebookId;
 		if (emitTimer) clearTimeout(emitTimer);
-		emitTimer = setTimeout(() => emitNow(ed), 150);
+		emitTimer = setTimeout(() => {
+			emitTimer = null;
+			emitNow(ed, targetNotebookId);
+		}, 150);
+	}
+
+	function resetEditorForNotebookSwitch(nextCells: Cell[]) {
+		if (emitTimer) {
+			clearTimeout(emitTimer);
+			emitTimer = null;
+		}
+		editingNotebookId = null;
+		editorFocused = false;
+		pendingReconcile = false;
+		nodeConfigOpen = false;
+		selectedNodeInfo = null;
+		slashOpen = false;
+		mentionOpen = false;
+		loadedNotebookId = notebookId;
+		latestCells = nextCells;
+		reconcileFromCells(nextCells);
 	}
 
 	/** Rebuild the editor document from the given cells when it has genuinely
@@ -223,6 +273,29 @@
 		);
 	}
 
+	function syncSelection(ed: TipTapEditor) {
+		if (!NodeSelectionCtor) return;
+		const next = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
+		if (next) {
+			selectedNodeInfo = next;
+			nodeConfigOpen = true;
+		} else if (selectedNodeInfo) {
+			selectedNodeInfo = null;
+			nodeConfigOpen = false;
+		}
+	}
+
+	function patchSelected(patch: {
+		attrs?: Record<string, unknown>;
+		body?: string;
+		source?: string;
+	}) {
+		const ed = editor;
+		if (!ed || !selectedNodeInfo) return;
+		patchMarkdocNodeSelection(ed, selectedNodeInfo, selectedBlock, patch);
+		syncSelection(ed);
+	}
+
 	let booting = false;
 	let destroyed = false;
 
@@ -232,6 +305,8 @@
 		booting = true;
 		try {
 			const { Editor } = await import('@tiptap/core');
+			const { NodeSelection } = await import('@tiptap/pm/state');
+			NodeSelectionCtor = NodeSelection;
 			if (destroyed || !editorMount || !bubbleHost) return;
 
 			const dragGutter = document.createElement('div');
@@ -316,25 +391,54 @@
 					attributes: {
 						class:
 							'notion-surface notebook-document-surface markdown-surface prose markdown-body min-h-28 w-full px-0 pt-1 pb-24 focus:outline-none'
+					},
+					handleDOMEvents: {
+						// Portaled menus (bits-ui Select, Popover, etc.) render outside the
+						// query-block node view — stop PM from stealing their clicks.
+						mousedown: (_view, event) => {
+							const raw = event.target;
+							const el =
+								raw instanceof Element
+									? raw
+									: raw instanceof Text
+										? raw.parentElement
+										: null;
+							if (
+								el?.closest(
+									'[data-slot="select-content"], [data-slot="select-item"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], .column-menu, .node-config-popover, .node-config-backdrop'
+								)
+							) {
+								return true;
+							}
+							return false;
+						}
 					}
 				},
-				onUpdate: ({ editor: e }) => scheduleEmit(e),
+				onUpdate: ({ editor: e }) => {
+					syncSelection(e);
+					scheduleEmit(e);
+				},
+				onSelectionUpdate: ({ editor: e }) => syncSelection(e),
 				onFocus: () => {
 					editorFocused = true;
+					editingNotebookId = notebookId;
 				},
 				onBlur: ({ editor: e }) => {
 					editorFocused = false;
+					const targetNotebookId = editingNotebookId ?? notebookId;
+					editingNotebookId = null;
 					// Flush any debounced edit BEFORE reconciling so blurring quickly
 					// (e.g. clicking a button right after typing) never reverts the
 					// last keystrokes to the pre-debounce store snapshot.
 					if (emitTimer) {
 						clearTimeout(emitTimer);
 						emitTimer = null;
-						emitNow(e);
+						emitNow(e, targetNotebookId);
 					}
 					if (pendingReconcile) {
 						pendingReconcile = false;
-						const current = getNotebooks().find((n) => n.id === notebookId)?.cells ?? latestCells;
+						const current =
+							getNotebooks().find((n) => n.id === notebookId)?.cells ?? latestCells;
 						reconcileFromCells(current);
 					}
 				}
@@ -347,6 +451,7 @@
 			});
 
 			editor = ed;
+			loadedNotebookId = notebookId;
 			if (import.meta.env.DEV && typeof window !== 'undefined') {
 				(window as unknown as { __pmEditor?: unknown }).__pmEditor = ed;
 			}
@@ -442,11 +547,21 @@
 
 	$effect(() => {
 		const c = cells;
+		const id = notebookId;
 		const layoutKey = c.map((cell) => cell.id).join('\0');
 		void layoutKey;
-		void notebookId;
+
 		untrack(() => {
 			if (!editor) return;
+
+			// Tab switch (including "New notebook") — never defer reconciliation or
+			// flush stale editor JSON into the newly active notebook id.
+			if (loadedNotebookId !== null && loadedNotebookId !== id) {
+				resetEditorForNotebookSwitch(c);
+				return;
+			}
+
+			if (loadedNotebookId === null) loadedNotebookId = id;
 			latestCells = c;
 			// Never rebuild the document out from under an active editing session —
 			// that resets the caret and splits text the user is in the middle of
@@ -475,44 +590,62 @@
 	<div bind:this={editorMount} class="notebook-document-host"></div>
 
 	{#if slashOpen && slashItems.length}
-		<div
-			class="slash-menu-anchor fixed z-50"
-			style="top: {slashMenuPos.top}px; left: {slashMenuPos.left}px;"
-		>
-			<SlashMenu
-				items={slashItems}
-				selectedIndex={slashSelected}
-				onSelect={(cmd) => {
-					if (slashCommandFn) slashCommandFn(cmd);
-					slashOpen = false;
-				}}
-				onHoverIndex={(i) => {
-					slashSelected = i;
-				}}
-			/>
-		</div>
+		<BodyPortal>
+			<div
+				class="slash-menu-anchor fixed z-50"
+				style="top: {slashMenuPos.top}px; left: {slashMenuPos.left}px;"
+			>
+				<SlashMenu
+					items={slashItems}
+					selectedIndex={slashSelected}
+					onSelect={(cmd) => {
+						if (slashCommandFn) slashCommandFn(cmd);
+						slashOpen = false;
+					}}
+					onHoverIndex={(i) => {
+						slashSelected = i;
+					}}
+				/>
+			</div>
+		</BodyPortal>
 	{/if}
 
 	{#if mentionOpen}
-		<div
-			class="mention-menu-anchor fixed z-50"
-			style="top: {mentionMenuPos.top}px; left: {mentionMenuPos.left}px;"
-		>
-			<MentionMenu
-				items={mentionItems}
-				moreCount={mentionMoreCount}
-				query={mentionQuery}
-				selectedIndex={mentionSelected}
-				onSelect={(item) => {
-					if (mentionCommandFn) mentionCommandFn(item);
-					mentionOpen = false;
-				}}
-				onHoverIndex={(i) => {
-					mentionSelected = i;
-				}}
-			/>
-		</div>
+		<BodyPortal>
+			<div
+				class="mention-menu-anchor fixed z-50"
+				style="top: {mentionMenuPos.top}px; left: {mentionMenuPos.left}px;"
+			>
+				<MentionMenu
+					items={mentionItems}
+					moreCount={mentionMoreCount}
+					query={mentionQuery}
+					selectedIndex={mentionSelected}
+					onSelect={(item) => {
+						if (mentionCommandFn) mentionCommandFn(item);
+						mentionOpen = false;
+					}}
+					onHoverIndex={(i) => {
+						mentionSelected = i;
+					}}
+				/>
+			</div>
+		</BodyPortal>
 	{/if}
+
+	<NodeConfigPopover
+		open={nodeConfigOpen}
+		{editor}
+		selected={selectedNodeInfo}
+		block={selectedBlock}
+		{refEntries}
+		{filterUsages}
+		onPatch={patchSelected}
+		onClose={() => {
+			nodeConfigOpen = false;
+			editor?.commands.focus();
+		}}
+	/>
 </div>
 
 <style>

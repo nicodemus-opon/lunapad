@@ -34,14 +34,14 @@
 
 <div
 	class={cn(
-		'group/row mx-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md pr-1.5 transition-colors select-none',
+		'group/row mx-[var(--sidebar-row-inset)] flex h-[var(--sidebar-row-height)] cursor-pointer items-center gap-1.5 rounded-md pr-2 transition-colors select-none',
 		'hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
 		selected && 'bg-sidebar-accent text-sidebar-accent-foreground',
 		dragTarget && 'bg-sidebar-accent ring-1 ring-primary/40',
 		className
 	)}
 	style:--tree-depth={depth}
-	style:padding-left={`calc(0.5rem + var(--tree-depth) * 14px)`}
+	style:padding-left={`calc(var(--sidebar-panel-x) + var(--tree-depth) * var(--tree-indent))`}
 	role="treeitem"
 	aria-expanded={expandable ? expanded : undefined}
 	aria-selected={selected}

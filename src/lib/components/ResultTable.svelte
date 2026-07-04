@@ -386,7 +386,7 @@
 	}
 
 	function styleAttrForCell(style: CellConditionalStyle | null, sticky = false): string {
-		if (!style) return sticky ? 'background-color: var(--background);' : '';
+		if (!style) return sticky ? 'background-color: var(--card);' : '';
 		const tone = conditionalToneToCssVar(style.tone ?? style.textTone ?? 'neutral');
 		const alpha = style.backgroundAlpha ?? 0.14;
 		const bg = `color-mix(in oklab, ${tone} ${Math.round(alpha * 100)}%, transparent)`;
@@ -489,8 +489,8 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
-	<div class="flex min-h-0 min-w-0 gap-2 {fillHeight ? 'flex-1' : ''}">
-		<div class="min-h-0 min-w-0 flex-1">
+	<div class="flex min-h-0 min-w-0 gap-2 {fillHeight ? 'min-h-0 flex-1 overflow-hidden' : ''}">
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col {fillHeight ? 'overflow-hidden' : ''}">
 			{#if showSearch}
 				<div class="flex items-center px-1">
 					<label class="group/search relative ml-auto flex items-center">
@@ -520,17 +520,18 @@
 				</div>
 			{/if}
 			<Table.Root
-				containerClass="overflow-auto rounded-sm border border-border {fillHeight
-					? 'h-full max-h-full'
-					: 'max-h-96'}"
+				class="result-table"
+				containerClass="rounded-sm border border-border {fillHeight
+					? 'min-h-0 w-full max-w-full flex-1 overflow-auto'
+					: 'max-h-96 overflow-auto'}"
 			>
 				<Table.Header>
 					{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-						<Table.Row class="border-b-0">
+						<Table.Row class="border-b-0 hover:bg-transparent">
 							{#each headerGroup.headers as header, hi (header.id)}
 								{@const s = statsMap[header.id]}
 								<Table.Head
-									class="border-b bg-background p-2 align-top
+									class="result-table-head border-b border-border p-2 align-top
 								{hi === 0 ? 'sticky top-0 left-0 z-30' : 'sticky top-0 z-20'}"
 								>
 									{#if s && headerInsights === 'full'}
@@ -632,7 +633,7 @@
 								{@const conditional = styleForCell(value, cell.column.id)}
 								<Table.Cell
 									class="max-w-64 cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
-									{ci === 0 ? 'sticky left-0 z-10 bg-background' : ''}
+									{ci === 0 ? 'result-table-sticky-col sticky left-0 z-10' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage')
 										? 'text-right'
 										: ''}"
@@ -1078,6 +1079,24 @@
 </div>
 
 <style>
+	/* Sticky headers need an opaque surface — collapsed table borders otherwise let
+	   body text bleed through while scrolling (especially over tinted notebook output). */
+	.result-table :global(table) {
+		border-collapse: separate;
+		border-spacing: 0;
+	}
+
+	.result-table :global(.result-table-head) {
+		background-color: var(--card);
+		background-clip: padding-box;
+		box-shadow: 0 1px 0 var(--border);
+	}
+
+	.result-table :global(.result-table-sticky-col) {
+		background-color: var(--card);
+		background-clip: padding-box;
+	}
+
 	.column-menu {
 		transform-origin: top left;
 		animation: column-menu-in 120ms cubic-bezier(0.16, 1, 0.3, 1);

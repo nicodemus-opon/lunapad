@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { mount, unmount } from 'svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { parseAttrsJson } from './widget-registry';
+import { markdocAttrsToJson } from '$lib/services/markdoc-ast';
 import InlineWidgetNodeView from './InlineWidgetNodeView.svelte';
 import { reactiveProps } from './reactive-props.svelte';
 
@@ -76,8 +77,9 @@ export const MarkdocWidgetExtension = Node.create({
 					if (patch.tagName) props.tagName = patch.tagName;
 					let attrsJson: string;
 					if (patch.attrsJson !== undefined) attrsJson = patch.attrsJson;
-					else if (patch.attrs) attrsJson = JSON.stringify({ ...props.attrs, ...patch.attrs });
-					else attrsJson = JSON.stringify(props.attrs);
+					else if (patch.attrs)
+						attrsJson = markdocAttrsToJson({ ...props.attrs, ...patch.attrs });
+					else attrsJson = markdocAttrsToJson(props.attrs);
 					props.attrs = parseAttrsJson(attrsJson);
 					editor
 						.chain()
@@ -118,16 +120,9 @@ export const MarkdocWidgetExtension = Node.create({
 					dom.classList.remove('ProseMirror-selectednode');
 				},
 				stopEvent(event) {
-					const target = event.target as HTMLElement;
-					// Allow interactive widget controls (filters, charts, tabs, etc.)
-					if (
-						target.closest(
-							'.md-filter, .md-chart, .md-datatable, .md-tabs, .md-details, .md-metric-copy, select, input, button, textarea, a'
-						)
-					) {
-						return true;
-					}
-					if (target.closest('.iw-chrome')) return true;
+					const raw = event.target as globalThis.Node | null;
+					let el = raw instanceof Element ? raw : raw instanceof Text ? raw.parentElement : null;
+					if (el?.closest('.markdoc-widget-node')) return true;
 					return false;
 				},
 				// The widget DOM is fully owned by the mounted Svelte component (it

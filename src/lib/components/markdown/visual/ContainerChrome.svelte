@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Trash2, Minus, Plus, Copy } from '@lucide/svelte';
+	import { Trash2, Minus, Plus, SlidersHorizontal } from '@lucide/svelte';
 
 	interface Props {
 		tagName: string;
@@ -107,13 +107,13 @@
 	<button
 		type="button"
 		class="md-action"
-		title="Select"
+		title="Edit properties"
 		onclick={(e) => {
 			e.stopPropagation();
 			onSelect?.();
 		}}
 	>
-		<Copy class="h-3 w-3" />
+		<SlidersHorizontal class="h-3 w-3" />
 	</button>
 	<button
 		type="button"

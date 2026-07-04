@@ -15,13 +15,8 @@
 	import MaterializeDialog from './MaterializeDialog.svelte';
 	import PromoteDialog from './PromoteDialog.svelte';
 	import PromoteSeedDialog from './PromoteSeedDialog.svelte';
-	import {
-		prqlToGuiStages,
-		extractLetBindings,
-		mapErrorsToStages,
-		mergeParsedWithHiddenStages
-	} from '$lib/services/gui-prql';
-	import { compilePRQL } from '$lib/services/prql';
+	import { mapErrorsToStages } from '$lib/services/gui-prql';
+	import { createCellModeSwitch } from '$lib/services/cell-mode-switch.svelte';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import type { CompletionEntry } from '$lib/monaco/completions';
 	import {
@@ -35,7 +30,6 @@
 		setCellDisplay,
 		setStageResultCollapsed,
 		registerInsertCallback,
-		insertCellBefore,
 		getTables,
 		getExternalSchemaTables,
 		runGuiStagePreview,
@@ -349,10 +343,6 @@
 		})();
 	});
 
-	let confirmSwitchToGui = $state(false);
-	let confirmSwitchToSql = $state<false | 'with-code' | 'without-code'>(false);
-	let compiledSqlForSwitch = $state('');
-	let confirmSwitchToPrql = $state(false);
 	let confirmSwitchToVisualMarkdown = $state(false);
 	let markdownEditContainerEl: HTMLDivElement | null = $state(null);
 	let markdownHandle: MarkdownEditorHandle | null = $state(null);
@@ -758,63 +748,6 @@
 		}
 	});
 
-	function requestGuiMode() {
-		if (cell.editMode !== 'prql') {
-			setEditMode(cell.id, 'gui');
-			return;
-		}
-
-		const trimmed = cell.code.trim();
-		if (!trimmed) {
-			setEditMode(cell.id, 'gui');
-			return;
-		}
-
-		// If the PRQL has `let` bindings, split into separate cells
-		const { letBindings, mainPrql } = extractLetBindings(cell.code);
-		if (letBindings.length > 0) {
-			for (const binding of letBindings) {
-				const innerStages = prqlToGuiStages(binding.rawCode);
-				insertCellBefore(cell.id, {
-					outputName: binding.name,
-					code: binding.rawCode,
-					guiStages: innerStages ?? [{ type: 'from', table: '' }],
-					editMode: innerStages ? 'gui' : 'prql'
-				});
-			}
-			const mainStages = prqlToGuiStages(mainPrql);
-			if (mainStages) {
-				updateGuiStages(cell.id, mergeParsedWithHiddenStages(cell.guiStages, mainStages));
-				setEditMode(cell.id, 'gui');
-			} else {
-				updateCellCode(cell.id, mainPrql);
-				// keep prql mode — main pipeline couldn't be parsed
-			}
-			return;
-		}
-
-		const parsedStages = prqlToGuiStages(cell.code);
-		if (parsedStages) {
-			updateGuiStages(cell.id, mergeParsedWithHiddenStages(cell.guiStages, parsedStages));
-			setEditMode(cell.id, 'gui');
-			return;
-		}
-
-		confirmSwitchToGui = true;
-	}
-
-	function doSwitchToGui() {
-		confirmSwitchToGui = false;
-		// Reset stages to a blank pipeline and switch mode
-		updateGuiStages(cell.id, [{ type: 'from', table: '' }]);
-		setEditMode(cell.id, 'gui');
-	}
-
-	function switchToPrqlMode() {
-		if (!isQueryCell) return;
-		setEditMode(cell.id, 'prql');
-	}
-
 	function onCellFocusIn() {
 		cellFocused = true;
 	}
@@ -933,46 +866,12 @@
 		cell.language === 'sql' ? 'sql' : cell.editMode === 'gui' ? 'visual' : 'prql'
 	);
 
-	function setCellMode(mode: 'prql' | 'visual' | 'sql') {
-		if (mode === 'sql') {
-			if (cell.editMode === 'gui') switchToPrqlMode();
-			if (cell.language !== 'sql' && cell.code.trim()) {
-				const result = compilePRQL(cell.code, cellSqlDialect);
-				if (result.errors.length === 0 && result.sql) {
-					compiledSqlForSwitch = result.sql;
-					confirmSwitchToSql = 'with-code';
-				} else {
-					confirmSwitchToSql = 'without-code';
-				}
-			} else {
-				setCellLanguage(cell.id, 'sql');
-			}
-		} else if (mode === 'prql') {
-			if (cell.editMode === 'gui') switchToPrqlMode();
-			if (cell.language === 'sql' && cell.code.trim()) {
-				confirmSwitchToPrql = true;
-			} else {
-				setCellLanguage(cell.id, 'prql');
-			}
-		} else {
-			if (cell.language === 'sql') setCellLanguage(cell.id, 'prql');
-			requestGuiMode();
-		}
-	}
-
-	function doSwitchToSql(useCompiledCode: boolean) {
-		confirmSwitchToSql = false;
-		setCellLanguage(cell.id, 'sql');
-		if (useCompiledCode && compiledSqlForSwitch) {
-			updateCellCode(cell.id, compiledSqlForSwitch);
-		}
-		compiledSqlForSwitch = '';
-	}
-
-	function doSwitchToPrql() {
-		confirmSwitchToPrql = false;
-		setCellLanguage(cell.id, 'prql');
-	}
+	// PRQL / Visual / SQL switching + confirmation dialogs (shared with the
+	// WYSIWYG inline query blocks — see cell-mode-switch.svelte.ts).
+	const modeSwitch = createCellModeSwitch(
+		() => cell,
+		() => cellSqlDialect
+	);
 
 	// Connection name shown in the status line — only for non-default connections
 	const cellConnectionName = $derived(
@@ -1294,62 +1193,63 @@
 				{#if cell.result.rows.length === 0}
 					<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
 				{:else}
-					<div class="notebook-output-block">
+					<div class="notebook-output-block {worksheet ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : ''}">
 						<InlineResultView
-						rows={cell.result.rows}
-						columns={cell.result.columns}
-						truncated={cell.result.truncated ?? false}
-						name={cell.outputName || `result${index + 1}`}
-						initialViewMode={cell.resultViewMode}
-						initialChartConfig={cell.resultChartConfig}
-						controlsVisible={showResultControls}
-						toolbarReserveSpace={!codeHidden}
-						fillHeight={worksheet}
-						onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
-						onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
-						onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
-						onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
-						columnFormatRules={cell.columnFormatRules}
-						onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
-						columnDescriptions={isDbtProject ? columnDescriptions : undefined}
-						onColumnDescriptionChange={isDbtProject ? handleColumnDescriptionChange : undefined}
-					>
-						{#snippet toolbarActions()}
-							{#if onOpenResultTab}
-								<div
-									class="flex items-center gap-1 transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showResultControls
-										? 'opacity-100'
-										: 'pointer-events-none opacity-0'}"
-									aria-hidden={!showResultControls}
-								>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<Button
-												variant="ghost"
-												size="sm"
-												class="h-6 w-6 p-0"
-												onclick={() =>
-													onOpenResultTab!(
-														cell.id,
-														notebookId,
-														cell.outputName || `result${index + 1}`,
-														cell.resultViewMode
-													)}><ExternalLink class="h-3 w-3" /></Button
-											>
-										</Tooltip.Trigger>
-										<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
-									</Tooltip.Root>
-								</div>
-							{/if}
-						{/snippet}
-					</InlineResultView>
+							rows={cell.result.rows}
+							columns={cell.result.columns}
+							truncated={cell.result.truncated ?? false}
+							name={cell.outputName || `result${index + 1}`}
+							initialViewMode={cell.resultViewMode}
+							initialChartConfig={cell.resultChartConfig}
+							controlsVisible={showResultControls}
+							toolbarReserveSpace={!codeHidden}
+							fillHeight={worksheet}
+							onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
+							onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
+							onAddSort={cell.editMode === 'gui' ? addSortSuggestion : undefined}
+							onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
+							columnFormatRules={cell.columnFormatRules}
+							onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
+							columnDescriptions={isDbtProject ? columnDescriptions : undefined}
+							onColumnDescriptionChange={isDbtProject ? handleColumnDescriptionChange : undefined}
+						>
+							{#snippet toolbarActions()}
+								{#if onOpenResultTab}
+									<div
+										class="flex items-center gap-1 transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showResultControls
+											? 'opacity-100'
+											: 'pointer-events-none opacity-0'}"
+										aria-hidden={!showResultControls}
+									>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<Button
+													variant="ghost"
+													size="sm"
+													class="h-6 w-6 p-0"
+													onclick={() =>
+														onOpenResultTab!(
+															cell.id,
+															notebookId,
+															cell.outputName || `result${index + 1}`,
+															cell.resultViewMode
+														)}><ExternalLink class="h-3 w-3" /></Button
+												>
+											</Tooltip.Trigger>
+											<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
+										</Tooltip.Root>
+									</div>
+								{/if}
+							{/snippet}
+						</InlineResultView>
 					</div>
 				{/if}
 			</div>
 		{/if}
 
 		{#if hasStatusLine}
-			<CellStatusLine
+			<div class={worksheet ? 'shrink-0' : ''}>
+				<CellStatusLine
 				{cell}
 				{showResult}
 				{running}
@@ -1369,7 +1269,8 @@
 								'table'
 							)
 					: undefined}
-			/>
+				/>
+			</div>
 		{/if}
 	{/snippet}
 
@@ -1440,7 +1341,7 @@
 						downstreamCount={sameNotebookUsageCount}
 						{crossNotebookUsageCount}
 						{cellMode}
-						onModeChange={setCellMode}
+						onModeChange={modeSwitch.setMode}
 						onOverlayChange={handleOverlayChange}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
 					/>
@@ -1525,7 +1426,7 @@
 				</aside>
 			{/if}
 
-			<div class="notebook-cell-body min-w-0 flex flex-col gap-1">
+			<div class="notebook-cell-body flex min-w-0 flex-col gap-1">
 				{#if !(reportView && !isQueryCell) && !(isMarkdownCell && isMarkdownPreviewMode)}
 					<CellHeader
 						{cell}
@@ -1540,7 +1441,7 @@
 						downstreamCount={sameNotebookUsageCount}
 						{crossNotebookUsageCount}
 						{cellMode}
-						onModeChange={setCellMode}
+						onModeChange={modeSwitch.setMode}
 						onOverlayChange={handleOverlayChange}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
 					/>
@@ -1556,13 +1457,13 @@
 		<PromoteSeedDialog bind:open={promoteSeedDialogOpen} {cell} />
 	{/if}
 	<CellModeSwitchDialogs
-		bind:confirmSwitchToGui
-		bind:confirmSwitchToSql
-		bind:confirmSwitchToPrql
+		bind:confirmSwitchToGui={modeSwitch.confirmSwitchToGui}
+		bind:confirmSwitchToSql={modeSwitch.confirmSwitchToSql}
+		bind:confirmSwitchToPrql={modeSwitch.confirmSwitchToPrql}
 		bind:confirmSwitchToVisualMarkdown
-		onSwitchToGui={doSwitchToGui}
-		onSwitchToSql={doSwitchToSql}
-		onSwitchToPrql={doSwitchToPrql}
+		onSwitchToGui={modeSwitch.doSwitchToGui}
+		onSwitchToSql={modeSwitch.doSwitchToSql}
+		onSwitchToPrql={modeSwitch.doSwitchToPrql}
 		onSwitchToVisualMarkdown={doSwitchToVisualMarkdown}
 	/>
 </div>

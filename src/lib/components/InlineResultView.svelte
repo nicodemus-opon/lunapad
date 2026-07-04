@@ -66,7 +66,15 @@
 		fillHeight = false
 	}: Props = $props();
 
-	const showControls = $derived(controlsVisible || fillHeight);
+	let viewMode = $state<ResultViewMode>(untrack(() => initialViewMode ?? 'table'));
+	let chartConfig = $state<ChartConfig | null>(untrack(() => initialChartConfig ?? null));
+	let showConfigPanel = $state(
+		untrack(() => !compact && (initialViewMode ?? 'table') === 'chart')
+	);
+	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
+	let tableSearch = $state('');
+
+	const showControls = $derived(controlsVisible || fillHeight || showConfigPanel);
 
 	function fmtMs(ms: number): string {
 		return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
@@ -75,13 +83,6 @@
 	function computeShapeSignature(cols: string[], resultRows: Record<string, unknown>[]): string {
 		return `${cols.join('|')}::${resultRows.length}::${resultRows[0] ? Object.keys(resultRows[0]).join('|') : ''}`;
 	}
-
-	// Initialize directly from props so chart view is correct on first render (no flash)
-	let viewMode = $state<ResultViewMode>(untrack(() => initialViewMode ?? 'table'));
-	let chartConfig = $state<ChartConfig | null>(untrack(() => initialChartConfig ?? null));
-	let showConfigPanel = $state(false);
-	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
-	let tableSearch = $state('');
 
 	// Sync when the parent changes viewMode or chartConfig externally (e.g., AI setting chart view)
 	$effect(() => {
@@ -124,7 +125,11 @@
 	}
 </script>
 
-<div class="notebook-result flex flex-col gap-1.5 {fillHeight ? 'min-h-0 flex-1' : ''}">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="notebook-result flex flex-col gap-1.5 {fillHeight ? 'min-h-0 flex-1' : ''}"
+	onmousedown={(e) => e.stopPropagation()}
+>
 	<!-- Observable-style caption row -->
 	<div
 		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-(--motion-fast) ease-(--motion-ease-out) {showControls
@@ -203,7 +208,7 @@
 			<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
 				{#if showConfigPanel}
 					<div
-						class="w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
+						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 					</div>
@@ -217,7 +222,7 @@
 			<div class="flex overflow-hidden rounded-sm">
 				{#if showConfigPanel}
 					<div
-						class="w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
+						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 					</div>
@@ -237,7 +242,7 @@
 		</div>
 	{:else}
 		<div
-			class="{fillHeight ? 'flex min-h-0 flex-1 flex-col' : ''} {compact
+			class="{fillHeight ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : ''} {compact
 				? 'max-h-52 overflow-auto'
 				: ''}"
 		>

@@ -3,6 +3,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { mount, unmount } from 'svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { parseAttrsJson } from './widget-registry';
+import { markdocAttrsToJson } from '$lib/services/markdoc-ast';
 import ContainerChrome from './ContainerChrome.svelte';
 import MermaidContainerView from './MermaidContainerView.svelte';
 import { mermaidCodeFromContainerNode } from './mermaid-code';
@@ -279,7 +280,7 @@ export const MarkdocContainerExtension = Node.create({
 				const pos = getPos();
 				if (typeof pos !== 'number') return;
 				const next = { ...parseAttrsJson(attrsJson), ...patch };
-				attrsJson = JSON.stringify(next);
+				attrsJson = markdocAttrsToJson(next);
 				editor
 					.chain()
 					.focus()

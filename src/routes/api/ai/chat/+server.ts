@@ -465,7 +465,7 @@ ${buildMarkdocSyntaxBlock()}
   - Set materializeMode per workspace conventions (or omit for ephemeral/ad-hoc)
   - ⚠ NEVER put SQL code blocks inside a markdown cell's content — the \`markdown\` field must contain prose only. SQL belongs exclusively in the \`code\` field of query (cellType:"query") cells.
 - **pick_chart: {cellId:string}** — PREFERRED. Call after run_cells. Reads actual result and auto-selects the correct chart type. Use this for every query cell.
-- set_chart: {cellId:string, chartConfig:{chartType:"bar"|"bar-horizontal"|"line"|"area"|"scatter"|"bubble"|"pie"|"histogram"|"heatmap"|"big-value"|"value"|"delta"|"funnel"|"box-plot"|"calendar-heatmap"|"sankey", xColumn:string, yColumns:string[], colorColumn?:string, seriesMode?:"auto"|"grouped"|"stacked", sortOrder?:"none"|"asc"|"desc", title?:string}}
+- set_chart: {cellId:string, chartConfig:{chartType:"bar"|"bar-horizontal"|"line"|"area"|"scatter"|"bubble"|"pie"|"histogram"|"heatmap"|"big-value"|"value"|"delta"|"funnel"|"box-plot"|"calendar-heatmap"|"sankey"|"map"|"choropleth", xColumn:string, yColumns:string[], colorColumn?:string, latColumn?:string, lonColumn?:string, geoScope?:"world"|"usa-states", seriesMode?:"auto"|"grouped"|"stacked", sortOrder?:"none"|"asc"|"desc", title?:string}}
   - Use only when you need a specific non-default type: area for cumulative totals, pie for proportions, scatter with colorColumn, sankey, etc.
 - run_cells: {cellIds:string[]} — always run all created query cells
 - update_cell: {cellId:string, code?:string, outputName?:string}
