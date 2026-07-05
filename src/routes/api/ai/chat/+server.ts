@@ -9,6 +9,10 @@ import type {
 } from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
+import {
+	buildGeneratedDashboardPromptBlock,
+	compileGeneratedDashboard
+} from '$lib/services/generated-dashboard.js';
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
 import { selectSchemaForPrompt, resolveExternalSchema } from '$lib/server/ai-schema-context.js';
 import {
@@ -43,6 +47,62 @@ import { buildUserContent } from '$lib/server/ai-user-content.js';
 import { normalizeSafeLlmBaseUrl } from '$lib/server/safe-outbound-url';
 
 export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
+
+export function hasDashboardResultContextFromMessages(
+	messages: Array<{ role: 'user' | 'assistant'; content: string }>
+): boolean {
+	return messages.some(
+		(m) =>
+			/get_cell_result\([^)]+\):/i.test(m.content) ||
+			/run_cells result:/i.test(m.content)
+	);
+}
+
+export function compileStructuredMarkdownArgs(
+	tool: string,
+	args: Record<string, unknown>,
+	cells: AIChatCell[],
+	knownOutputNames?: Iterable<string>
+): { args: Record<string, unknown>; errors: string[] } {
+	if ((tool !== 'create_cell' && tool !== 'update_cell') || !args.dashboard) {
+		return { args, errors: [] };
+	}
+
+	if (typeof args.dashboard !== 'object' || Array.isArray(args.dashboard)) {
+		return { args, errors: ['dashboard payload must be an object'] };
+	}
+
+	const knownCells = knownOutputNames
+		? [...new Set(knownOutputNames)].map((outputName) => ({
+				id: outputName,
+				outputName,
+				language: 'sql' as const,
+				cellType: 'query' as const,
+				code: '',
+				resultColumns: [],
+				status: 'success'
+			}))
+		: cells;
+
+	const compiled = compileGeneratedDashboard(
+		args.dashboard as Parameters<typeof compileGeneratedDashboard>[0],
+		{
+			knownCells
+		}
+	);
+	if (compiled.errors.length > 0) {
+		return { args, errors: compiled.errors };
+	}
+
+	return {
+		args: {
+			...args,
+			cellType: 'markdown',
+			markdown: compiled.markdown
+		},
+		errors: []
+	};
+}
 
 function isMeaningfulTextDelta(delta: string): boolean {
 	return delta.replace(/[\s;.,:`'"_\-]+/g, '').length >= 2;
@@ -270,7 +330,8 @@ RULES:
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
 16. DOCUMENT YOUR WORK: after cells run clean, always write a markdown findings cell (cellType:"markdown", outputName:"findings") summarising what was built, data quality notes, and key decisions.
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
-17. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
+18. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
+19. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
 
 You MAY write 1–2 sentences of explanation before tool calls.
 
@@ -434,6 +495,8 @@ Set \`materializeMode\` on new cells per workspace conventions.
 Write a markdown cell (\`cellType: "markdown"\`, \`outputName: "findings"\` or \`"summary"\`) leading with **findings** — what the data actually reveals, not just what was built. Format: "**Finding**: 23% of orders have null customer_id — likely guest checkout." Then cover: grain of each model, key decisions (layer, materialization, join logic, dedup), data quality observations (NULLs, duplicates, unexpected values, date range). An analyst reading this notebook should immediately understand what the data *means*, not just what was built.
 
 ${buildMarkdocSyntaxBlock()}
+
+${buildGeneratedDashboardPromptBlock()}
 
 **Step 6 — Done**: output the \`<done>\` signal.
 
@@ -826,7 +889,7 @@ ${schemaList}`;
 		}
 
 		case 'dashboard':
-			return `You are a visual summary builder. Your job is to compose a single Markdoc markdown cell that lays out existing query cells as a grid of KPI/chart widgets — there is no separate "dashboard" object anymore, just a richly-templated markdown cell.
+			return `You are a notebook UI builder. Your job is to compose one or more rich markdown cells that turn existing SQL/Python result cells into a readable notebook narrative.
 
 ${toolFmt}
 Available tools:
@@ -835,10 +898,11 @@ Available tools:
 - get_lineage: {"outputName": "..."}
 - pick_chart: {"cellId": "..."}
 - set_chart: {"cellId": "...", "chartConfig": {...}}
-- create_cell: {"outputName": "overview", "cellType": "markdown", "markdown": "..."}
-- update_cell: {"cellId": "...", "markdown": "..."}
+- create_cell: {"outputName": "overview", "cellType": "markdown", "dashboard": {...}}
+- update_cell: {"cellId": "...", "dashboard": {...}}
 
 ${buildMarkdocSyntaxBlock()}
+${buildGeneratedDashboardPromptBlock()}
 
 Workflow:
 1. Call list_cells. Identify cells by dbt layer and prioritise for the summary:
@@ -846,25 +910,23 @@ Workflow:
    - fct_ and dim_ cells are acceptable when no mart_ exists for the topic.
    - Do NOT include stg_ or ephemeral intermediate cells — they are not reporting-ready.
    If the topic has no mart_ or fct_ cells, include a suggestion in <done> that a mart model should be created first.
-2. For each selected cell, call get_cell_result to understand its shape (columns, row count).
-3. Write ONE markdown cell (cellType: "markdown") using {% grid cols=N %} of {% metric %} widgets for top-line KPIs and {% chart %} tags for trends — reference cells via $outputName, never hardcoded values (numbers, dates, or text).
-4. Use {% columns %}/{% column %} to lay out multiple charts side by side when there are several cells to cover.
-5. For executive dashboards, prefer rich layout widgets:
-   - {% tabs %}{% tab label="..." %}...{% /tab %}{% /tabs %} for multi-section reports
-   - {% filter kind="dropdown" param="region" label="Region" options=[...] /%} to wire interactive filters (pairs with cells using \${region} in SQL)
-   - {% progress value=$quota_attainment.attainment_pct max=100 label="Quota %" color="success" /%} for goal/quota tracking
-   - {% datatable data=$top_products.rows cols=["product","total_revenue"] limit=10 /%} for drill-down tables
-   - {% callout type="warning" %}...{% /callout %} for data-quality flags
-   - {% if gt($monthly_revenue.count, 0) %}...{% else /%}...{% /if %} for empty-result states
-   NEVER use placeholder names like $cell — always use real outputName refs from list_cells (e.g. $region_performance.total_revenue).
-6. Example skeleton (adapt cell names to the notebook):
-   ## Summary
-   {% badge value="Live" color="success" /%}
-   {% grid cols=3 %}{% metric value=$region_performance.total_revenue label="Revenue" format="currency" /%}{% /grid %}
-   {% tabs %}{% tab label="Trend" %}{% chart type="bar" data=$region_performance.rows x="region" y="total_revenue" /%}{% /tab %}{% /tabs %}
+2. For each selected result cell, call get_cell_result to understand its shape (columns, row count). SQL and Python cells are both valid sources if they expose result rows/columns.
+3. Build notebook UI with typed dashboard blocks, not raw markdown. The server compiles the typed payload into canonical Markdoc.
+4. You may create multiple markdown cells when the notebook needs structure:
+   - intro / overview for framing
+   - findings / insights for KPI + chart sections
+   - appendix / methodology for drill-down tables or caveats
+5. Prefer rich layout blocks:
+   - grid for KPI rows
+   - tabs or columns for multiple chart sections
+   - datatable for drill-downs
+   - progress for quota/goal tracking
+   - callout for warnings
+   - conditional for empty states
+6. Reference existing result cells via $outputName or $outputName.field only. Never hardcode numbers/dates/categories from results, never use $cell, and never reference stg_ cells.
 7. Call <done>.
 
-Do NOT write SQL or create query cells — only compose the summary cell from existing ones.
+Do NOT write SQL or Python. Only compose notebook markdown cells around existing result cells.
 
 <done>{"suggestions":["Follow-up ideas for the summary"]}</done>
 
@@ -872,22 +934,23 @@ Notebook:
 ${cellList}${contractNote}`;
 
 		case 'documentation':
-			return `You are a documentation agent. Your only job is to read existing cell results and write ONE well-structured Markdoc markdown cell summarizing them. Do NOT write or modify SQL, and do NOT create or edit query cells.
+			return `You are a documentation agent. Your only job is to read existing cell results and write one or more well-structured markdown cells summarizing them. Do NOT write or modify SQL/Python result cells.
 
 ${toolFmt}
 Available tools:
 - list_cells: {}
 - get_cell_result: {"cellId": "...", "limit": 50}
-- create_cell: {"outputName": "findings", "cellType": "markdown", "markdown": "..."}
-- update_cell: {"cellId": "...", "markdown": "..."}
+- create_cell: {"outputName": "findings", "cellType": "markdown", "dashboard": {...}}
+- update_cell: {"cellId": "...", "dashboard": {...}}
 - record_decision: {"decision": "..."}
 
 ${buildMarkdocSyntaxBlock()}
+${buildGeneratedDashboardPromptBlock()}
 
 Workflow:
-1. Call list_cells, then get_cell_result on the cells relevant to this task to see actual values, row counts, and column names.
-2. Write one markdown cell (cellType: "markdown") leading with the finding, not just a description of what was built.
-3. Use {% grid %} of {% metric %} widgets for top-line KPIs, {% chart %} for trends, {% callout type="warning" %} to flag data-quality issues (nulls, duplicates, unexpected values), and {% if gt($monthly_revenue.count, 0) %}...{% else /%}...{% /if %} to handle empty-result states gracefully. Use real outputName refs from list_cells — never $cell placeholders.
+1. Call list_cells, then get_cell_result on the cells relevant to this task to see actual values, row counts, and column names. SQL and Python result cells are both valid sources.
+2. Write one or more markdown cells leading with the finding, not just a description of what was built.
+3. Use structured dashboard blocks for KPI rows, charts, callouts, datatables, and empty states. Use real outputName refs from list_cells — never $cell placeholders.
 4. Never hard-code a value — number, date, or text — that comes from a query result; every such value must be a live ref.
 5. Call <done>.
 
@@ -1171,15 +1234,21 @@ export const POST: RequestHandler = async ({ request }) => {
 				cellOutputNames: new Set(cells.map((c) => c.outputName.toLowerCase())),
 				latestUserMessage
 			};
+			const turnKnownOutputNames = new Set(cells.map((c) => c.outputName));
 			const hasDashboardResultContext = () =>
-				req.subagentType !== 'dashboard' ||
-				req.messages.some((m) => /get_cell_result\([^)]+\):/i.test(m.content));
+				req.subagentType !== 'dashboard' || hasDashboardResultContextFromMessages(req.messages);
 
 			const emitPolicyToolCall = (
 				tool: string,
 				args: Record<string, unknown>,
 				callId?: string
 			): boolean => {
+				const compiled = compileStructuredMarkdownArgs(tool, args, cells, turnKnownOutputNames);
+				if (compiled.errors.length > 0) {
+					pendingPolicyFallback ??= `Structured notebook UI validation failed: ${compiled.errors.slice(0, 3).join('; ')}.`;
+					return false;
+				}
+				args = compiled.args;
 				if (isSchemaListingQuestion) return false;
 				if (
 					req.subagentType === 'dashboard' &&
@@ -1205,6 +1274,10 @@ export const POST: RequestHandler = async ({ request }) => {
 					tool: tool as AIChatToolName,
 					args: args as unknown as AIChatToolCall['args']
 				};
+				if ((tool === 'create_cell' || tool === 'update_cell') && typeof args.outputName === 'string') {
+					turnKnownOutputNames.add(args.outputName);
+					toolPolicyCtx.cellOutputNames.add(args.outputName.toLowerCase());
+				}
 				send(ctrl, { type: 'tool_call', call: toolCall });
 				return true;
 			};

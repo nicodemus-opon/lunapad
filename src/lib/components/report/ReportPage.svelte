@@ -84,6 +84,10 @@
 		return { rows, columns };
 	}
 
+	function pythonOutputForCell(cell: PublicShareCell) {
+		return cell.pythonOutput ?? null;
+	}
+
 	const markdocCells = $derived.by((): Cell[] => {
 		return data.cells.map((cell) => {
 			let result = cell.isLive ? (liveResults[cell.id] ?? null) : frozenResultForCell(cell);
@@ -253,7 +257,7 @@
 						<MarkdocRenderer content={result.tree} errors={result.errors} notebookId="" />
 					</div>
 				{/if}
-			{:else if cell.cellType === 'query' && !shouldHideQueryCell(cell)}
+			{:else if (cell.cellType === 'query' && !shouldHideQueryCell(cell)) || cell.cellType === 'python'}
 				<div class="report-section">
 					<ReportCell
 						{cell}
@@ -263,6 +267,7 @@
 						columns={cell.isLive
 							? (liveResults[cell.id]?.columns ?? null)
 							: (frozenResultForCell(cell)?.columns ?? null)}
+						pythonOutput={cell.cellType === 'python' ? pythonOutputForCell(cell) : null}
 						loading={loadingCellIds.has(cell.id)}
 						error={liveErrors[cell.id] ?? null}
 						exportEnabled={true}

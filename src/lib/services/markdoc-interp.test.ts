@@ -7,6 +7,7 @@ import {
 	renderMarkdocCell,
 	extractMarkdocRefs,
 	validateMarkdocMarkdown,
+	normalizeMarkdocFirstRowRefs,
 	normalizeMermaidCode
 } from './markdoc-interp.js';
 import { WIDGET_SNIPPETS } from './markdoc-snippets';
@@ -70,6 +71,15 @@ describe('buildMarkdocVariables', () => {
 		expect(vars).toEqual({});
 	});
 
+	it('includes python cells with dataframe results', () => {
+		const pyCell = {
+			...makeCell('py_result', [{ People: 2, Share: 50 }]),
+			cellType: 'python'
+		} as Cell;
+		const vars = buildMarkdocVariables([pyCell]);
+		expect(vars.py_result).toMatchObject({ People: 2, Share: 50, count: 1 });
+	});
+
 	it('uses totalRowCount when the displayed rows are truncated', () => {
 		const cell = makeCell('orders', [{ id: 1 }, { id: 2 }]);
 		cell.result = {
@@ -80,6 +90,11 @@ describe('buildMarkdocVariables', () => {
 		};
 		const vars = buildMarkdocVariables([cell]);
 		expect(vars.orders).toMatchObject({ count: 2000, rowCount: 2000 });
+	});
+
+	it('normalizes rows.0 first-row refs', () => {
+		expect(normalizeMarkdocFirstRowRefs('$orders.rows.0.total')).toBe('$orders.total');
+		expect(normalizeMarkdocFirstRowRefs('$orders.rows[0].total')).toBe('$orders.total');
 	});
 });
 

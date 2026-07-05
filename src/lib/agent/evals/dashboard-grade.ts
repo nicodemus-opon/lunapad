@@ -2,6 +2,7 @@ import type { Cell } from '$lib/stores/notebook.svelte';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
 import {
 	extractBareMarkdocRefRoots,
+	normalizeMarkdocFirstRowRefs,
 	renderMarkdocCell,
 	validateMarkdocMarkdown
 } from '$lib/services/markdoc-interp.js';
@@ -101,11 +102,11 @@ export function stubCellsForRefs(outputNames: Iterable<string>): Cell[] {
 
 function cellsWithResults(cells: Cell[]): Cell[] {
 	const names = cells
-		.filter((c) => c.cellType === 'query' && c.outputName)
+		.filter((c) => (c.cellType === 'query' || c.cellType === 'python') && c.outputName)
 		.map((c) => c.outputName);
 	const stubs = new Map(stubCellsForRefs(names).map((c) => [c.outputName, c]));
 	return cells.map((c) => {
-		if (c.cellType !== 'query' || !c.outputName) return c;
+		if ((c.cellType !== 'query' && c.cellType !== 'python') || !c.outputName) return c;
 		if (c.result?.rows?.length) return c;
 		return stubs.get(c.outputName) ?? c;
 	});
@@ -117,34 +118,35 @@ export function getCriticalMarkdownFailures(
 	knownOutputNames: Set<string>
 ): string[] {
 	if (!markdown.trim()) return ['empty markdown'];
+	const normalizedMarkdown = normalizeMarkdocFirstRowRefs(markdown);
 	const failures: string[] = [];
 	const stubs = stubCellsForRefs(knownOutputNames);
 
-	for (const d of validateMarkdocMarkdown(markdown, stubs)) {
+	for (const d of validateMarkdocMarkdown(normalizedMarkdown, stubs)) {
 		failures.push(d.message);
 	}
 
-	for (const ref of extractBareMarkdocRefRoots(markdown)) {
+	for (const ref of extractBareMarkdocRefRoots(normalizedMarkdown)) {
 		if (!knownOutputNames.has(ref)) {
 			failures.push(`Undefined variable: '${ref}'`);
 		}
 	}
 
-	if (/\{%\s*\w+[^%]*\|[^%]*%\}/.test(markdown)) {
+	if (/\{%\s*\w+[^%]*\|[^%]*%\}/.test(normalizedMarkdown)) {
 		failures.push('Pipe operator inside Markdoc tag (not supported)');
 	}
-	if (/\bSELECT\b/i.test(markdown.replace(/\{%[^%]*%\}/g, ''))) {
+	if (/\bSELECT\b/i.test(normalizedMarkdown.replace(/\{%[^%]*%\}/g, ''))) {
 		failures.push('Raw SQL in markdown body');
 	}
-	if (/create_dashboard|add_dashboard_block/i.test(markdown)) {
+	if (/create_dashboard|add_dashboard_block/i.test(normalizedMarkdown)) {
 		failures.push('Obsolete create_dashboard API referenced');
 	}
-	if (/\$cell\b/.test(markdown)) {
+	if (/\$cell\b/.test(normalizedMarkdown)) {
 		failures.push(
 			'Placeholder $cell ref — use real outputName (e.g. $region_performance.total_revenue)'
 		);
 	}
-	if (/\$stg_[a-z0-9_]+/i.test(markdown)) {
+	if (/\$stg_[a-z0-9_]+/i.test(normalizedMarkdown)) {
 		failures.push('stg_ cells are not reporting-ready — build a mart model first');
 	}
 

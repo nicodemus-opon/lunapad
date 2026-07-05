@@ -32,6 +32,7 @@ export interface ShareCellSnapshot {
 	isLive: boolean;
 	connectionId: string | null;
 	frozenResult: Cell['result'] | null;
+	pythonOutput: Cell['pythonOutput'];
 	sqlTemplate: string | null;
 	resultChartConfig: ChartConfig | null;
 	resultViewMode: ResultViewMode;
@@ -110,7 +111,14 @@ function buildShareSnapshotInternal(
 		};
 
 		if (cell.cellType !== 'query') {
-			return { ...base, isLive: false, connectionId: null, frozenResult: null, sqlTemplate: null };
+			return {
+				...base,
+				isLive: false,
+				connectionId: null,
+				frozenResult: cell.cellType === 'python' ? cell.result : null,
+				pythonOutput: cell.cellType === 'python' ? cell.pythonOutput : null,
+				sqlTemplate: null
+			};
 		}
 
 		const connection = connectionForCell(cell, connections);
@@ -122,6 +130,7 @@ function buildShareSnapshotInternal(
 				isLive: false,
 				connectionId: cell.connectionId,
 				frozenResult: cell.result,
+				pythonOutput: null,
 				sqlTemplate: null
 			};
 		}
@@ -144,6 +153,7 @@ function buildShareSnapshotInternal(
 			isLive: true,
 			connectionId: cell.connectionId,
 			frozenResult: null,
+			pythonOutput: null,
 			sqlTemplate
 		};
 	});

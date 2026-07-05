@@ -201,6 +201,8 @@ export function flushPlanBlocks(buffer: string, onPlan: (raw: string) => void): 
 export function flushToolCalls(buffer: string, onToolCall: (raw: string) => void): string {
 	const TAG_OPEN = '<tool_call>';
 	const TAG_CLOSE = '</tool_call>';
+	const ALT_OPEN = '<calltool';
+	const ALT_CLOSE = '</calltool>';
 	let remaining = buffer;
 	let searchFrom = 0;
 
@@ -213,6 +215,19 @@ export function flushToolCalls(buffer: string, onToolCall: (raw: string) => void
 		const raw = remaining.slice(start + TAG_OPEN.length, end).trim();
 		onToolCall(raw);
 		remaining = remaining.slice(0, start) + remaining.slice(end + TAG_CLOSE.length);
+		searchFrom = start;
+	}
+
+	searchFrom = 0;
+	while (true) {
+		const start = remaining.indexOf(ALT_OPEN, searchFrom);
+		if (start === -1) break;
+		const end = remaining.indexOf(ALT_CLOSE, start + ALT_OPEN.length);
+		if (end === -1) break;
+
+		const raw = remaining.slice(start + ALT_OPEN.length, end).trim();
+		onToolCall(raw);
+		remaining = remaining.slice(0, start) + remaining.slice(end + ALT_CLOSE.length);
 		searchFrom = start;
 	}
 
@@ -365,11 +380,16 @@ export function stripThinkBlocks(text: string): string {
  */
 export function stripOpenTag(text: string): string {
 	const TAG = '<tool_call>';
+	const ALT_TAG = '<calltool';
 
 	// Remove complete open tag that has no matching close
 	const idx = text.lastIndexOf('<tool_call>');
 	if (idx !== -1 && text.indexOf('</tool_call>', idx) === -1) {
 		return text.slice(0, idx);
+	}
+	const altIdx = text.lastIndexOf(ALT_TAG);
+	if (altIdx !== -1 && text.indexOf('</calltool>', altIdx) === -1) {
+		return text.slice(0, altIdx);
 	}
 
 	// Hold back incomplete <done> blocks (streaming in)
@@ -401,7 +421,15 @@ export function stripOpenTag(text: string): string {
 	}
 
 	// Remove partial tag at end (e.g. "<tool_ca", "<t", "<", "<sprint", "<sp")
-	const PARTIAL_WATCH = [TAG, '<done>', '<sprint>', '<sprint_update>', '<plan>', '<plan_proposal>'];
+	const PARTIAL_WATCH = [
+		TAG,
+		ALT_TAG,
+		'<done>',
+		'<sprint>',
+		'<sprint_update>',
+		'<plan>',
+		'<plan_proposal>'
+	];
 	const maxPartial = Math.max(...PARTIAL_WATCH.map((t) => t.length)) - 1;
 	const start = Math.max(0, text.length - maxPartial);
 	for (let i = start; i < text.length; i++) {

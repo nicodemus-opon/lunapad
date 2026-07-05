@@ -33,6 +33,29 @@ export const NATIVE_TOOLS = [
 						description:
 							'GFM markdown content for markdown cells. Use headers (# ## ###), **bold**, bullet lists, `code` spans. Embed live query refs with $outputName.field (e.g. $orders.count, $top_month.revenue) for simple values, or use Markdoc tags for KPI cards/charts/layout: {% metric value=$orders.revenue label="Revenue" vs=$prev.revenue /%}, {% chart type="bar" data=$orders.rows x="month" y="revenue" /%}, {% grid cols=3 %}...{% /grid %}, {% callout type="warning" %}...{% /callout %}. Values update automatically when cells re-run.'
 					},
+					dashboard: {
+						type: 'object',
+						description:
+							'Preferred for AI-authored notebook/report/dashboard markdown. A typed block tree compiled server-side into canonical Markdoc. Use this instead of hand-writing markdown when composing rich notebook UI around existing SQL/Python result cells.',
+						properties: {
+							title: { type: 'string' },
+							statusBadge: {
+								type: 'object',
+								properties: {
+									value: { type: ['string', 'number'] },
+									color: { type: 'string' }
+								}
+							},
+							blocks: {
+								type: 'array',
+								items: {
+									type: 'object',
+									description:
+										'One typed notebook block. Supported types: text, grid, columns, metric, chart, datatable, badge, progress, callout, details, tabs, filter, mermaid, conditional.'
+								}
+							}
+						}
+					},
 					language: { type: 'string', enum: ['sql'], description: 'Always "sql" for query cells.' },
 					materializeMode: {
 						type: 'string',
@@ -178,6 +201,11 @@ export const NATIVE_TOOLS = [
 						type: 'string',
 						description:
 							'Replacement GFM/Markdoc markdown for markdown dashboard or findings cells.'
+					},
+					dashboard: {
+						type: 'object',
+						description:
+							'Preferred structured replacement for AI-authored notebook/report/dashboard markdown. Compiled server-side into canonical Markdoc before the tool call reaches the client.'
 					}
 				},
 				required: ['cellId']

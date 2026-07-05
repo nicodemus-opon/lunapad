@@ -3232,6 +3232,12 @@ function buildFocusedReq(
 	return req;
 }
 
+export function wantsNotebookRendering(userText: string): boolean {
+	return /\b(dashboard|chart|kpi|graph|plot|visuali[sz]e|report|docs?|document|notebook|summary|findings|insights)\b/i.test(
+		userText
+	);
+}
+
 async function runDebugLoop(
 	userText: string,
 	aiMsgId: string,
@@ -3305,8 +3311,7 @@ async function runDebugLoop(
 	}
 }
 
-// Composes a Markdoc grid/columns layout of metric/chart widgets in one markdown cell —
-// the replacement for the old "assemble a Dashboard object" loop.
+// Composes notebook markdown cells from existing SQL/Python result cells.
 async function runDashboardLoop(
 	userText: string,
 	aiMsgId: string,
@@ -3318,9 +3323,7 @@ async function runDashboardLoop(
 	let depth = 0;
 	let injection: { role: 'user'; content: string } | null = null;
 	let stallRetries = 0;
-	// Track the created summary cell across turns so the model updates it instead of
-	// creating a second one.
-	let knownCellName: string | null = null;
+	const knownMarkdownCellNames = new Set<string>();
 	let inspectedResult = false;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
@@ -3346,27 +3349,29 @@ async function runDashboardLoop(
 
 		if (allToolResults.length > 0) {
 			stallRetries = 0;
-			if (allToolResults.some((r) => r.startsWith('get_cell_result('))) {
+			if (
+				allToolResults.some(
+					(r) => r.startsWith('get_cell_result(') || r.startsWith('run_cells result:')
+				)
+			) {
 				inspectedResult = true;
 			}
 
-			if (!knownCellName) {
-				for (const r of allToolResults) {
-					const m = r.match(/Cell '(.+?)' (?:created|updated)/);
-					if (m) {
-						knownCellName = m[1];
-						break;
-					}
-				}
+			for (const r of allToolResults) {
+				const m = r.match(/Cell '(.+?)' (?:created|updated)/);
+				if (!m) continue;
+				const name = m[1];
+				const current = getCells().find((cell) => cell.outputName === name);
+				if (current?.cellType === 'markdown') knownMarkdownCellNames.add(name);
 			}
 
-			if (signalledDone && inspectedResult && knownCellName) break;
+			if (signalledDone && inspectedResult && knownMarkdownCellNames.size > 0) break;
 
 			const directive = !inspectedResult
-				? 'Call get_cell_result on at least one relevant reporting cell before writing dashboard markdown.'
-				: knownCellName
-					? `The summary cell '${knownCellName}' already exists. Use update_cell to revise it rather than creating a new one. Then call <done>.`
-					: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags for the relevant cells, then call <done>.';
+				? 'Inspect at least one relevant reporting result before writing dashboard markdown. You can use get_cell_result on an existing cell, or run_cells on newly created SQL/Python cells first.'
+				: knownMarkdownCellNames.size > 0
+					? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section. Then call <done>.`
+					: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>.';
 
 			injection = {
 				role: 'user',
@@ -3376,15 +3381,15 @@ async function runDashboardLoop(
 			continue;
 		}
 
-		if (signalledDone && inspectedResult && knownCellName) break;
+		if (signalledDone && inspectedResult && knownMarkdownCellNames.size > 0) break;
 
 		if (stallRetries < 2) {
 			stallRetries++;
 			const directive = !inspectedResult
-				? 'Call list_cells, then get_cell_result on the relevant reporting cells before writing dashboard markdown. Do NOT respond with prose only.'
-				: knownCellName
-					? `The summary cell '${knownCellName}' already exists — use update_cell to revise it, then call <done>.`
-					: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags, then call <done>. Do NOT respond with prose only.';
+				? 'Call list_cells, then inspect relevant reporting results before writing dashboard markdown. Use get_cell_result for existing cells, or run_cells if you just created SQL/Python cells. Do NOT respond with prose only.'
+				: knownMarkdownCellNames.size > 0
+					? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section, then call <done>. Do NOT respond with prose only.`
+					: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>. Do NOT respond with prose only.';
 			injection = { role: 'user', content: directive };
 			depth++;
 			continue;
@@ -3559,10 +3564,7 @@ export async function submitAIMessage(
 				);
 			}
 			// If the request asked for a dashboard/chart/kpi, build it from the newly created cells.
-			if (
-				/\b(dashboard|chart|kpi|graph|plot|visuali[sz]e)\b/i.test(userText) &&
-				!abortController.signal.aborted
-			) {
+			if (wantsNotebookRendering(userText) && !abortController.signal.aborted) {
 				await runDashboardLoop(
 					userText,
 					aiMsg.id,

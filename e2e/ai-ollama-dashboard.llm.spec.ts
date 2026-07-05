@@ -17,6 +17,13 @@ async function hasOllamaModel(): Promise<boolean> {
 }
 
 async function openFreshWorkspace(page: Page) {
+	await page.route('**/api/setup', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ needsSetup: false })
+		});
+	});
 	await page.route('**/api/workspace/load', async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -68,6 +75,23 @@ async function openFreshWorkspace(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Sales Analytics Demo' })).toBeVisible({
 		timeout: 60_000
 	});
+}
+
+async function createPythonResultCell(
+	page: Page,
+	input: { outputName: string; rows: Array<Record<string, unknown>> }
+): Promise<void> {
+	await page.evaluate(({ outputName, rows }) => {
+		const helpers = (window as unknown as {
+			__testHelpers: {
+				injectTestPythonResultCell: (input: {
+					outputName: string;
+					rows: Array<Record<string, unknown>>;
+				}) => string;
+			};
+		}).__testHelpers;
+		helpers.injectTestPythonResultCell({ outputName, rows });
+	}, input);
 }
 
 test.describe('Ollama AI dashboard smoke', () => {
@@ -124,5 +148,47 @@ test.describe('Ollama AI dashboard smoke', () => {
 		expect(dashboardMarkdown).toMatch(/\{%\s*(grid|metric|chart|tabs|progress)\b/i);
 		expect(dashboardMarkdown).not.toMatch(/\$cell\b|\$unicorn_revenue\b|create_dashboard/i);
 		await expect(page.getByTestId('ai-panel')).not.toContainText(/Model returned an empty response/i);
+	});
+
+	test('creates visible docs in the document editor from a Python result cell', async ({ page }) => {
+		test.skip(
+			!(await hasOllamaModel()),
+			`Ollama model unavailable at ${OLLAMA_BASE_URL}: ${OLLAMA_MODEL}`
+		);
+
+		await openFreshWorkspace(page);
+		await createPythonResultCell(page, {
+			outputName: 'py_result',
+			rows: [
+				{ People: 2, Share: 33.3 },
+				{ People: 4, Share: 66.7 }
+			]
+		});
+
+		await page.getByTestId('ai-toggle').click();
+		await page.getByTestId('ai-input').fill(
+			'/dashboard Create dynamic docs/dashboard about the rent data from py_result. Title it Rent. Use live refs only and include at least one metric widget.'
+		);
+		await page.getByTestId('ai-send').click();
+
+		await page.waitForFunction(
+			() => {
+				const helpers = (window as unknown as {
+					__testHelpers: {
+						getCells: () => Array<{ cellType: string; markdown?: string; outputName?: string }>;
+					};
+				}).__testHelpers;
+				return helpers.getCells().some((cell) => {
+					if (cell.cellType !== 'markdown') return false;
+					const md = cell.markdown ?? '';
+					return /\bRent\b/.test(md) && /\$py_result\b/.test(md) && /\{%\s*metric\b/i.test(md);
+				});
+			},
+			undefined,
+			{ timeout: 300_000 }
+		);
+
+		await expect(page.getByText('Rent', { exact: true })).toBeVisible({ timeout: 120_000 });
+		await expect(page.getByText(/People|Share/)).toBeVisible({ timeout: 120_000 });
 	});
 });

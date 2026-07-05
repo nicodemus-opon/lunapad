@@ -1,4 +1,5 @@
 import type { ChartConfig } from './gui-pipeline.js';
+import type { GeneratedDashboardDefinition } from '$lib/services/generated-dashboard.js';
 
 /** 'dashboard' composes a Markdoc grid/columns layout of metric/chart widgets in one markdown cell. */
 export type SprintTaskType = 'investigate' | 'build' | 'visualize' | 'document' | 'dashboard';
@@ -143,6 +144,8 @@ export interface CreateCellArgs {
 	editMode?: 'prql' | 'gui';
 	code?: string;
 	markdown?: string;
+	/** Structured notebook/report/dashboard content compiled into canonical Markdoc server-side. */
+	dashboard?: GeneratedDashboardDefinition;
 	materializeMode?: string;
 }
 
@@ -152,6 +155,8 @@ export interface UpdateCellArgs {
 	outputName?: string;
 	language?: 'sql' | 'prql';
 	markdown?: string;
+	/** Structured notebook/report/dashboard content compiled into canonical Markdoc server-side. */
+	dashboard?: GeneratedDashboardDefinition;
 }
 
 export interface SetChartArgs {

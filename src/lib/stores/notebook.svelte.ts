@@ -4572,6 +4572,32 @@ export function addPythonCell(): string | null {
 	return cell.id;
 }
 
+/** Dev/test-only helper used by browser automation to exercise AI + document-editor
+ * flows against a real python-typed result cell without requiring filesystem mode. */
+export function injectTestPythonResultCell(input: {
+	outputName: string;
+	rows: Record<string, unknown>[];
+	columns?: string[];
+	notebookId?: string;
+}): string {
+	const nb = input.notebookId
+		? (state.notebooks.find((n) => n.id === input.notebookId) ?? getActiveNotebook())
+		: getActiveNotebook();
+	pushHistoryCheckpoint(nb.id);
+	const cell = makePythonCell('');
+	cell.outputName = deconflictOutputName(input.outputName);
+	cell.status = 'success';
+	cell.result = {
+		rows: input.rows,
+		columns:
+			input.columns ??
+			(input.rows[0] ? Object.keys(input.rows[0] as Record<string, unknown>) : [])
+	};
+	nb.cells = [...nb.cells, cell];
+	scheduleSave();
+	return cell.id;
+}
+
 export function insertPythonCellAfter(id: string): string | null {
 	if (!canAddPythonCell()) return null;
 	const nb = getActiveNotebook();

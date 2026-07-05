@@ -46,7 +46,7 @@ import type { ChartConfig } from '$lib/types/gui-pipeline';
 export function buildMarkdocVariables(cells: Cell[]): Record<string, unknown> {
 	const vars: Record<string, unknown> = {};
 	for (const cell of cells) {
-		if (cell.cellType !== 'query' || !cell.result) continue;
+		if ((cell.cellType !== 'query' && cell.cellType !== 'python') || !cell.result) continue;
 		const { rows, columns, totalRowCount, truncated } = cell.result;
 		const count = totalRowCount ?? rows.length;
 		vars[cell.outputName] = {
@@ -59,6 +59,15 @@ export function buildMarkdocVariables(cells: Cell[]): Record<string, unknown> {
 		};
 	}
 	return vars;
+}
+
+/** AI often emits explicit first-row indexing (`$cell.rows.0.metric` or `$cell.rows[0].metric`)
+ * even though Markdoc exposes first-row fields directly as `$cell.metric`. Normalize those
+ * patterns up-front so validation/rendering accept the intended ref shape. */
+export function normalizeMarkdocFirstRowRefs(markdown: string): string {
+	return markdown
+		.replace(/\$([A-Za-z_]\w*)\.rows\.0\.([A-Za-z_]\w*)/g, '$$$1.$2')
+		.replace(/\$([A-Za-z_]\w*)\.rows\[\s*0\s*\]\.([A-Za-z_]\w*)/g, '$$$1.$2');
 }
 
 // ── Format functions ────────────────────────────────────────────────────────
@@ -1010,11 +1019,12 @@ function buildMarkdocConfig(markdown: string, cells: Cell[]): MarkdocConfig {
 /** Validate markdown and return positioned diagnostics for Monaco markers. */
 export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): MarkdocDiagnostic[] {
 	if (!markdown.includes('{%') && !markdown.includes('$')) return [];
+	const normalizedMarkdown = normalizeMarkdocFirstRowRefs(markdown);
 
-	const config = buildMarkdocConfig(markdown, cells);
-	const effectiveMarkdown = sourceHasLoopTags(markdown)
-		? expandLoopBlocksInDocument(markdown, config, {})
-		: markdown;
+	const config = buildMarkdocConfig(normalizedMarkdown, cells);
+	const effectiveMarkdown = sourceHasLoopTags(normalizedMarkdown)
+		? expandLoopBlocksInDocument(normalizedMarkdown, config, {})
+		: normalizedMarkdown;
 	const ast = Markdoc.parse(effectiveMarkdown);
 	const diagnostics: MarkdocDiagnostic[] = [];
 
@@ -1064,10 +1074,11 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 }
 
 export function renderMarkdocCell(markdown: string, cells: Cell[]): MarkdocRenderResult {
-	const initialConfig = buildMarkdocConfig(markdown, cells);
-	const effectiveMarkdown = sourceHasLoopTags(markdown)
-		? expandLoopBlocksInDocument(markdown, initialConfig, {})
-		: markdown;
+	const normalizedMarkdown = normalizeMarkdocFirstRowRefs(markdown);
+	const initialConfig = buildMarkdocConfig(normalizedMarkdown, cells);
+	const effectiveMarkdown = sourceHasLoopTags(normalizedMarkdown)
+		? expandLoopBlocksInDocument(normalizedMarkdown, initialConfig, {})
+		: normalizedMarkdown;
 	const ast = Markdoc.parse(effectiveMarkdown);
 	const config = buildMarkdocConfig(effectiveMarkdown, cells);
 	const validationErrors = Markdoc.validate(ast, config)

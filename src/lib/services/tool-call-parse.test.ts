@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseToolCallObject, escapeControlCharsInStrings } from './tool-call-parse.js';
+import {
+	parseToolCallObject,
+	escapeControlCharsInStrings,
+	parseMalformedCalltoolPayload
+} from './tool-call-parse.js';
 
 describe('parseToolCallObject', () => {
 	it('parses well-formed tool calls unchanged', () => {
@@ -44,6 +48,16 @@ describe('parseToolCallObject', () => {
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		expect(parseToolCallObject('{not json at all')).toBeNull();
 		spy.mockRestore();
+	});
+
+	it('recovers malformed compact calltool syntax from local models', () => {
+		const obj = parseMalformedCalltoolPayload('namelistcells{}');
+		expect(obj).toEqual({ tool: 'list_cells', args: {} });
+	});
+
+	it('parseToolCallObject falls back to malformed compact calltool syntax', () => {
+		const obj = parseToolCallObject('namelistcells{}');
+		expect(obj).toEqual({ tool: 'list_cells', args: {} });
 	});
 });
 

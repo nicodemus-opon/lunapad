@@ -24,8 +24,15 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 			return str(args.query);
 		case 'create_cell': {
 			if (!str(args.outputName)) return false;
-			if (args.cellType === 'markdown' || args.markdown !== undefined) {
-				return str(args.markdown ?? args.code);
+			if (
+				args.cellType === 'markdown' ||
+				args.markdown !== undefined ||
+				args.dashboard !== undefined
+			) {
+				return (
+					str(args.markdown ?? args.code) ||
+					(!!args.dashboard && typeof args.dashboard === 'object')
+				);
 			}
 			return str(args.code);
 		}

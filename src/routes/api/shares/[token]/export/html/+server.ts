@@ -19,7 +19,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	// Markdoc uses `$outputName` variables backed by query results. The shared export
 	// needs to provide those variables so `{% datatable %}` and other widgets render.
 	const markdocCells = view.cells.map((c) => {
-		if (c.cellType !== 'query') return { cellType: c.cellType } as unknown as Cell;
+		if (c.cellType !== 'query' && c.cellType !== 'python') {
+			return { cellType: c.cellType } as unknown as Cell;
+		}
 		return {
 			cellType: c.cellType,
 			outputName: c.outputName,
@@ -31,7 +33,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const frozenById = new Map(
 		view.cells
-			.filter((c) => c.cellType === 'query' && c.frozenResult)
+			.filter((c) => (c.cellType === 'query' || c.cellType === 'python') && c.frozenResult)
 			.map((c) => [c.id, c.frozenResult])
 	);
 
@@ -45,9 +47,15 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				return `<div class="cell"><div class="report-markdown">${mdHtml}</div></div>`;
 			}
 
-			if (cell.cellType === 'query') {
+			if (cell.cellType === 'query' || cell.cellType === 'python') {
 				const snap = frozenById.get(cell.id);
-				if (!snap) return `<div class="cell"><em>No static result available.</em></div>`;
+				const pythonOutput = cell.cellType === 'python' ? cell.pythonOutput : null;
+				const pythonHtml = pythonOutput ? renderPythonOutputToStaticHtml(pythonOutput) : '';
+				if (!snap) {
+					return pythonHtml
+						? `<div class="cell">${pythonHtml}</div>`
+						: `<div class="cell"><em>No static result available.</em></div>`;
+				}
 				const truncated = snap.rows.length > 500;
 				const tableHtml = renderReportTableToStaticHtml(snap.rows, snap.columns, {
 					name: cell.outputName || 'result',
@@ -55,7 +63,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 					truncated,
 					columnFormatRules: cell.columnFormatRules ?? {}
 				});
-				return `<div class="cell">${tableHtml}</div>`;
+				return `<div class="cell">${pythonHtml}${tableHtml}</div>`;
 			}
 
 			return `<div class="cell"></div>`;
@@ -88,6 +96,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     .report-markdown p { margin: 0 0 0.75rem; }
     .report-markdown h1, .report-markdown h2, .report-markdown h3, .report-markdown h4, .report-markdown h5, .report-markdown h6 { margin: 1.25rem 0 0.5rem; font-weight: 700; }
     .report-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.85em; }
+    .python-block { margin: 0 0 0.75rem; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #e5e7eb; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto; }
+    .python-block-muted { background: #f8fafc; color: #475569; }
+    .python-block-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .python-note { margin: 0 0 0.75rem; font-size: 0.8rem; color: #6b7280; }
     .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: auto; }
     .report-table th, .report-table td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; vertical-align: top; text-align: left; }
     .report-table th { background: #f5f5f5; font-weight: 600; }
@@ -126,4 +138,24 @@ function escapeHtml(s: string): string {
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;');
+}
+
+function renderPythonOutputToStaticHtml(
+	output: NonNullable<ReturnType<typeof toPublicShareView>['cells'][number]['pythonOutput']>
+): string {
+	const chunks: string[] = [];
+	if (output.error) {
+		chunks.push(`<pre class="python-block python-block-error">${escapeHtml(output.error)}</pre>`);
+	}
+	if (output.stdout.trim()) {
+		chunks.push(
+			`<pre class="python-block python-block-muted">${escapeHtml(output.stdout)}</pre>`
+		);
+	}
+	if (output.figures.length > 0) {
+		chunks.push(
+			`<p class="python-note">Interactive Python figures are available in the live report view only.</p>`
+		);
+	}
+	return chunks.join('');
 }

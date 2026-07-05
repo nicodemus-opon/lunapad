@@ -100,6 +100,24 @@ describe('chat-tool-policy', () => {
 		).toBe(true);
 	});
 
+	it('accepts structured dashboard payloads once compiled markdown is present', () => {
+		expect(
+			isChatToolCallAllowed(
+				'create_cell',
+				{
+					outputName: 'overview',
+					cellType: 'markdown',
+					dashboard: {
+						title: 'Notebook',
+						blocks: [{ type: 'metric', value: '$orders.count', label: 'Orders' }]
+					},
+					markdown: '{% metric value=$orders.count label="Orders" /%}'
+				},
+				{ ...ctx, latestUserMessage: 'document notebook', cellOutputNames: new Set(['orders']) }
+			)
+		).toBe(true);
+	});
+
 	it('blocks markdown with phantom refs', () => {
 		expect(
 			isChatToolCallAllowed(

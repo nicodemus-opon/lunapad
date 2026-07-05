@@ -51,4 +51,12 @@ describe('dashboard-grade', () => {
 		const grade = gradeDashboard('## Just prose\nSome text about revenue.', demoCells());
 		expect(grade.failures.some((f) => /widget|metric|chart|datatable/i.test(f))).toBe(true);
 	});
+
+	it('accepts first-row refs written with rows.0 syntax after normalization', () => {
+		const failures = getCriticalMarkdownFailures(
+			'{% metric value=$orders.rows.0.total_revenue label="Revenue" /%}',
+			new Set(['orders'])
+		);
+		expect(failures).toEqual([]);
+	});
 });

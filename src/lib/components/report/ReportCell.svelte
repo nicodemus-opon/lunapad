@@ -1,5 +1,6 @@
 <script lang="ts">
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
+	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Download, MessageSquare } from '@lucide/svelte';
 	import type { PublicShareCell } from '$lib/server/shared-reports';
@@ -8,6 +9,7 @@
 		cell: PublicShareCell;
 		rows: Record<string, unknown>[] | null;
 		columns: string[] | null;
+		pythonOutput?: PublicShareCell['pythonOutput'];
 		loading?: boolean;
 		error?: string | null;
 		exportEnabled?: boolean;
@@ -18,11 +20,20 @@
 		cell,
 		rows,
 		columns,
+		pythonOutput = null,
 		loading = false,
 		error = null,
 		exportEnabled = false,
 		oncomment
 	}: Props = $props();
+
+	const hasTabularData = $derived(Boolean(rows && columns));
+	const hasPythonOutput = $derived(
+		Boolean(
+			pythonOutput &&
+				(pythonOutput.error || pythonOutput.stdout.trim() || pythonOutput.figures.length > 0)
+		)
+	);
 
 	function downloadCsv(): void {
 		if (!rows || !columns) return;
@@ -42,10 +53,8 @@
 
 {#if error}
 	<p class="report-cell-error">{error}</p>
-{:else if rows && columns}
-	{#if rows.length === 0}
-		<p class="report-cell-empty">Query returned 0 rows.</p>
-	{:else}
+{:else if hasTabularData || hasPythonOutput}
+	{#if hasTabularData}
 		<div class="report-cell-toolbar no-print">
 			{#if exportEnabled}
 				<Button variant="outline" size="sm" class="h-7 text-[11px]" onclick={downloadCsv}>
@@ -58,18 +67,29 @@
 				</Button>
 			{/if}
 		</div>
-		<div class="report-cell-result" class:is-loading={loading}>
-			<InlineResultView
-				{rows}
-				{columns}
-				name={cell.outputName || 'result'}
-				initialViewMode={cell.resultViewMode}
-				initialChartConfig={cell.resultChartConfig}
-				columnFormatRules={cell.columnFormatRules}
-				controlsVisible={exportEnabled}
-				toolbarReserveSpace={false}
-			/>
+	{/if}
+	{#if hasPythonOutput}
+		<div class="report-python-output">
+			<PythonCellOutput output={pythonOutput!} />
 		</div>
+	{/if}
+	{#if hasTabularData}
+		{#if rows!.length === 0}
+			<p class="report-cell-empty">Query returned 0 rows.</p>
+		{:else}
+			<div class="report-cell-result" class:is-loading={loading}>
+				<InlineResultView
+					rows={rows!}
+					columns={columns!}
+					name={cell.outputName || 'result'}
+					initialViewMode={cell.resultViewMode}
+					initialChartConfig={cell.resultChartConfig}
+					columnFormatRules={cell.columnFormatRules}
+					controlsVisible={exportEnabled}
+					toolbarReserveSpace={false}
+				/>
+			</div>
+		{/if}
 	{/if}
 {:else if loading}
 	<p class="report-cell-empty report-cell-skeleton">Loading…</p>
@@ -98,6 +118,9 @@
 	}
 	.report-cell-result {
 		transition: opacity 0.2s ease;
+	}
+	.report-python-output {
+		margin-bottom: 0.75rem;
 	}
 	.report-cell-result.is-loading {
 		opacity: 0.6;

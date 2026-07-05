@@ -63,6 +63,7 @@ export interface PublicShareCell {
 	markdown: string;
 	isLive: boolean;
 	frozenResult: ShareCellSnapshot['frozenResult'];
+	pythonOutput: ShareCellSnapshot['pythonOutput'];
 	resultChartConfig: ShareCellSnapshot['resultChartConfig'];
 	resultViewMode: ShareCellSnapshot['resultViewMode'];
 	columnFormatRules?: ShareCellSnapshot['columnFormatRules'];
@@ -97,6 +98,7 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 			markdown: cell.markdown,
 			isLive: cell.isLive,
 			frozenResult: cell.isLive ? null : cell.frozenResult,
+			pythonOutput: cell.isLive ? null : cell.pythonOutput,
 			resultChartConfig: cell.resultChartConfig,
 			resultViewMode: cell.resultViewMode,
 			columnFormatRules: cell.columnFormatRules

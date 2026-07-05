@@ -63,4 +63,32 @@ describe('buildShareSnapshot', () => {
 		const orders = snapshot.cells.find((c) => c.outputName === 'orders');
 		expect(orders?.columnFormatRules?.n?.length).toBe(1);
 	});
+
+	it('preserves python cell output and dataframe snapshots', () => {
+		const notebook = makeNotebook([
+			{
+				id: 'py1',
+				cellType: 'python',
+				outputName: 'python_sales',
+				display: 'full',
+				language: 'sql',
+				code: 'print("hi")',
+				connectionId: null,
+				result: { rows: [{ region: 'US', total: 42 }], columns: ['region', 'total'] },
+				pythonOutput: {
+					stdout: 'hi\n',
+					figures: ['{"data":[]}'],
+					error: null
+				}
+			} as unknown as Notebook['cells'][number]
+		]);
+
+		const snapshot = buildShareSnapshot(notebook);
+		const pythonCell = snapshot.cells.find((c) => c.id === 'py1');
+
+		expect(pythonCell?.isLive).toBe(false);
+		expect(pythonCell?.frozenResult?.rows).toEqual([{ region: 'US', total: 42 }]);
+		expect(pythonCell?.pythonOutput?.stdout).toBe('hi\n');
+		expect(pythonCell?.pythonOutput?.figures).toHaveLength(1);
+	});
 });
