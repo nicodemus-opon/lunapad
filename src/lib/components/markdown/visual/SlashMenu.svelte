@@ -27,6 +27,8 @@
 		PanelTop,
 		Workflow,
 		Braces,
+		Repeat2,
+		GitBranch,
 		Code2,
 		FileCode2
 	} from '@lucide/svelte';
@@ -42,6 +44,7 @@
 	const { items, selectedIndex, onSelect, onHoverIndex }: Props = $props();
 
 	const groupLabel: Record<string, string> = {
+		report: 'Reports',
 		heading: 'Headings',
 		structure: 'Basic blocks',
 		widget: 'Widgets & layouts',
@@ -76,6 +79,14 @@
 		tabs: PanelTop,
 		details: PanelTop,
 		mermaid: Workflow,
+		'report-summary': LayoutGrid,
+		'report-filtered': Filter,
+		'report-grouped': GitBranch,
+		'report-tabs': PanelTop,
+		each: Repeat2,
+		group: GitBranch,
+		if: Braces,
+		else: Braces,
 		conditional: Braces,
 		sql: Code2,
 		prql: FileCode2,
@@ -116,7 +127,7 @@
 	{:else}
 		{#each grouped as [group, cmds] (group)}
 			<p
-				class="px-2 pt-1.5 pb-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground"
+				class="px-2 pt-1.5 pb-0.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
 			>
 				{groupLabel[group] ?? group}
 			</p>
@@ -127,7 +138,7 @@
 					type="button"
 					role="option"
 					aria-selected={idx === selectedIndex}
-					class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {idx ===
+					class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {idx ===
 					selectedIndex
 						? 'bg-accent text-accent-foreground'
 						: 'hover:bg-muted/60'}"

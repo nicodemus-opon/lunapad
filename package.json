@@ -12,6 +12,7 @@
 		"test:e2e": "playwright test --project=mocked",
 		"test:e2e:mock": "playwright test --project=mocked",
 		"test:e2e:llm": "playwright test --project=llm",
+		"test:ai:ollama": "LLM_PROVIDER=ollama LLM_BASE_URL=http://127.0.0.1:11434 LLM_MODEL=gemma4:12b-mlx node scripts/ai-dashboard-adversarial.mjs",
 		"record:demo:fast": "node scripts/demo-video/record-real-app.mjs",
 		"record:demo:full": "DEMO_VIDEO_PORT=5898 node scripts/demo-video/record-real-app.mjs full",
 		"record:demo": "node scripts/demo-video/record-real-app.mjs && DEMO_VIDEO_PORT=5898 node scripts/demo-video/record-real-app.mjs full",

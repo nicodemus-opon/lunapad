@@ -58,7 +58,7 @@ function diskNotebook(id: string, name: string): Notebook {
 				errors: [],
 				display: 'full',
 				hideResult: false
-			} as Notebook['cells'][0]
+			} as unknown as Notebook['cells'][0]
 		],
 		defaultCellLanguage: 'sql',
 		filters: {}

@@ -3,7 +3,6 @@
 	import { renderMarkdocCell } from '$lib/services/markdoc-interp';
 	import { markdocAttrToDisplay as attr, serializeMarkdocTag } from '$lib/services/markdoc-ast';
 	import type { Cell } from '$lib/stores/notebook.svelte';
-	import { getAllCellsAcrossNotebooks } from '$lib/stores/notebook.svelte';
 	import { Trash2, SlidersHorizontal } from '@lucide/svelte';
 
 	interface Props {
@@ -27,6 +26,7 @@
 		tagName,
 		attrs,
 		selfClosing = true,
+		cells = [],
 		notebookId = '',
 		selected = false,
 		onSelect,
@@ -40,8 +40,7 @@
 
 	const isElseDivider = $derived(tagName === 'else');
 
-	const liveCells = $derived(getAllCellsAcrossNotebooks());
-	const rendered = $derived(isElseDivider ? null : renderMarkdocCell(source, liveCells));
+	const rendered = $derived(isElseDivider ? null : renderMarkdocCell(source, cells ?? []));
 	const hasErrors = $derived((rendered?.errors.length ?? 0) > 0);
 
 	const summary = $derived.by(() => {

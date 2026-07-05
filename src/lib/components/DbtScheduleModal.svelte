@@ -11,14 +11,15 @@
 
 	const { initial = {}, onSave, onClose }: Props = $props();
 
-	let label = $state(initial?.label ?? '');
-	let cron = $state(initial?.cron ?? '0 8 * * *');
-	let select = $state(initial?.select ?? '');
-	let enabled = $state(initial?.enabled ?? true);
+	let label = $state('');
+	let cron = $state('0 8 * * *');
+	let select = $state('');
+	let enabled = $state(true);
 
 	let nextRuns = $state<string[]>([]);
 	let cronError = $state('');
 	let cronCheckTimer: ReturnType<typeof setTimeout> | null = null;
+	let loadedInitialKey = '';
 
 	function makeId(): string {
 		return Math.random().toString(36).slice(2, 10);
@@ -60,13 +61,21 @@
 	}
 
 	$effect(() => {
-		if (cronCheckTimer) clearTimeout(cronCheckTimer);
-		cronCheckTimer = setTimeout(() => void fetchNextRuns(cron), 400);
+		const key = initial.id ?? `new:${initial.createdAt ?? ''}:${initial.label ?? ''}`;
+		if (key === loadedInitialKey) return;
+		loadedInitialKey = key;
+		label = initial.label ?? '';
+		cron = initial.cron ?? '0 8 * * *';
+		select = initial.select ?? '';
+		enabled = initial.enabled ?? true;
 	});
 
-	// Trigger once on mount
 	$effect(() => {
-		void fetchNextRuns(cron);
+		if (cronCheckTimer) clearTimeout(cronCheckTimer);
+		cronCheckTimer = setTimeout(() => void fetchNextRuns(cron), 400);
+		return () => {
+			if (cronCheckTimer) clearTimeout(cronCheckTimer);
+		};
 	});
 
 	const isValid = $derived(label.trim().length > 0 && cron.trim().length > 0 && !cronError);
@@ -151,6 +160,7 @@
 					type="button"
 					role="switch"
 					aria-checked={enabled}
+					aria-label="Enable schedule on save"
 					class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:ring-2 focus:ring-primary/40 focus:outline-none {enabled
 						? 'bg-primary'
 						: 'bg-muted-foreground/30'}"

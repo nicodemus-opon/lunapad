@@ -43,6 +43,8 @@ export interface AIChatCell {
 	/** 'query'|'markdown' cells use `language` for dialect; 'python' cells ignore it. */
 	cellType?: 'query' | 'markdown' | 'python';
 	code: string;
+	/** Markdown source for document/prose/dashboard cells. */
+	markdown?: string;
 	resultColumns: string[];
 	status: string;
 	upstream?: string[];

@@ -71,6 +71,10 @@
 	let showConfigPanel = $state(
 		untrack(() => !compact && (initialViewMode ?? 'table') === 'chart')
 	);
+	let lastInitialViewMode = $state<ResultViewMode | undefined>(untrack(() => initialViewMode));
+	let lastInitialChartConfig = $state<ChartConfig | null | undefined>(
+		untrack(() => initialChartConfig)
+	);
 	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
 	let tableSearch = $state('');
 
@@ -87,10 +91,17 @@
 	// Sync when the parent changes viewMode or chartConfig externally (e.g., AI setting chart view)
 	$effect(() => {
 		const incoming = initialViewMode;
-		if (incoming != null) viewMode = incoming;
+		if (incoming === lastInitialViewMode) return;
+		lastInitialViewMode = incoming;
+		if (incoming != null) {
+			viewMode = incoming;
+			if (incoming === 'chart' && !compact) showConfigPanel = true;
+		}
 	});
 	$effect(() => {
 		const incoming = initialChartConfig;
+		if (incoming === lastInitialChartConfig) return;
+		lastInitialChartConfig = incoming;
 		if (incoming != null) chartConfig = incoming;
 	});
 
@@ -116,11 +127,13 @@
 			if (!compact) showConfigPanel = true;
 		}
 		viewMode = mode;
+		lastInitialViewMode = mode;
 		onViewModeChange?.(mode);
 	}
 
 	function onConfigUpdate(cfg: ChartConfig) {
 		chartConfig = cfg;
+		lastInitialChartConfig = cfg;
 		onChartConfigChange?.(cfg);
 	}
 </script>

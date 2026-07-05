@@ -1,5 +1,6 @@
-import { CHART_TYPES, CUSTOM_MARKDOC_TAGS } from '$lib/services/markdoc-interp';
-import { WIDGET_SNIPPETS } from '$lib/services/markdown-format';
+import { CHART_TYPES } from '$lib/services/markdoc-interp';
+import { CUSTOM_MARKDOC_TAGS, isSelfClosingMarkdocTag } from '$lib/services/markdoc-tag-registry';
+import { WIDGET_SNIPPETS } from '$lib/services/markdoc-snippets';
 
 export interface MarkdownRefColumn {
 	name: string;
@@ -9,6 +10,7 @@ export interface MarkdownRefColumn {
 export interface MarkdownRefEntry {
 	cellName: string;
 	columns: MarkdownRefColumn[];
+	rowCount?: number;
 }
 
 export interface MarkdocAttrCatalog {
@@ -20,6 +22,7 @@ export interface MarkdocAttrCatalog {
 export interface MarkdocTagCatalogEntry {
 	detail: string;
 	snippet: string;
+	slashSnippet: string;
 	selfClosing?: boolean;
 	attributes?: Record<string, MarkdocAttrCatalog>;
 }
@@ -44,6 +47,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	metric: {
 		detail: 'KPI metric widget',
 		snippet: 'metric value=${1:\\$cell.value} label="${2:Label}" vs=${3:\\$prev.value} /%}',
+		slashSnippet: WIDGET_SNIPPETS.metric,
 		selfClosing: true,
 		attributes: {
 			value: { detail: 'Primary value ($cell.field or number)', required: true },
@@ -55,6 +59,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	chart: {
 		detail: 'Chart from cell data',
 		snippet: `chart type="\${1|${chartTypeEnum.join(',')}|}" data=\${2:\\$cell.rows} x="\${3:col_x}" y="\${4:col_y}" /%}`,
+		slashSnippet: WIDGET_SNIPPETS.chart,
 		selfClosing: true,
 		attributes: {
 			ref: { detail: 'Inherit chart config from a query cell ($cell)' },
@@ -80,6 +85,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	datatable: {
 		detail: 'Advanced table from cell data (raw, summary, or pivot)',
 		snippet: WIDGET_SNIPPETS.datatable,
+		slashSnippet: WIDGET_SNIPPETS.datatable,
 		selfClosing: true,
 		attributes: {
 			data: { detail: 'Row data ($cell.rows)', required: true },
@@ -115,6 +121,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	badge: {
 		detail: 'Colored status badge',
 		snippet: 'badge value=${1:\\$cell.status} color="${2|info,success,warning,error,neutral|}" /%}',
+		slashSnippet: WIDGET_SNIPPETS.badge,
 		selfClosing: true,
 		attributes: {
 			value: { detail: 'Badge text ($cell.field)', required: true },
@@ -124,6 +131,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	progress: {
 		detail: 'Progress bar',
 		snippet: 'progress value=${1:\\$cell.completed} max=${2:\\$cell.total} label="${3:Label}" /%}',
+		slashSnippet: WIDGET_SNIPPETS.progress,
 		selfClosing: true,
 		attributes: {
 			value: { detail: 'Current value', required: true },
@@ -135,11 +143,13 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	columns: {
 		detail: 'Multi-column layout',
 		snippet: WIDGET_SNIPPETS.columns,
+		slashSnippet: WIDGET_SNIPPETS.columns,
 		attributes: {}
 	},
 	column: {
 		detail: 'Single column inside {% columns %}',
 		snippet: 'column %}\n${1:Content.}\n{% /column %}',
+		slashSnippet: WIDGET_SNIPPETS.column,
 		attributes: {
 			width: { detail: 'Column width (number or CSS)' }
 		}
@@ -147,6 +157,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	grid: {
 		detail: 'Responsive grid layout',
 		snippet: 'grid cols=${1:3} %}\n${2:Content.}\n{% /grid %}',
+		slashSnippet: WIDGET_SNIPPETS.grid,
 		attributes: {
 			cols: { detail: 'Number of columns' }
 		}
@@ -154,6 +165,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	callout: {
 		detail: 'Info / warning box',
 		snippet: WIDGET_SNIPPETS.callout,
+		slashSnippet: WIDGET_SNIPPETS.callout,
 		attributes: {
 			type: { detail: 'Callout style', enum: ['info', 'success', 'warning', 'error'] }
 		}
@@ -161,6 +173,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	card: {
 		detail: 'Bordered card',
 		snippet: WIDGET_SNIPPETS.card,
+		slashSnippet: WIDGET_SNIPPETS.card,
 		attributes: {
 			title: { detail: 'Card title' }
 		}
@@ -168,6 +181,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	details: {
 		detail: 'Collapsible section',
 		snippet: WIDGET_SNIPPETS.details,
+		slashSnippet: WIDGET_SNIPPETS.details,
 		attributes: {
 			summary: { detail: 'Summary label', required: true },
 			open: { detail: 'Start expanded' }
@@ -176,11 +190,13 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	tabs: {
 		detail: 'Tabbed sections',
 		snippet: WIDGET_SNIPPETS.tabs,
+		slashSnippet: WIDGET_SNIPPETS.tabs,
 		attributes: {}
 	},
 	tab: {
 		detail: 'Single tab inside {% tabs %}',
 		snippet: 'tab label="${1:Tab 1}" %}\n${2:Content.}\n{% /tab %}',
+		slashSnippet: WIDGET_SNIPPETS.tab,
 		attributes: {
 			label: { detail: 'Tab label', required: true }
 		}
@@ -188,6 +204,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	filter: {
 		detail: 'Interactive filter widget',
 		snippet: WIDGET_SNIPPETS.filter,
+		slashSnippet: WIDGET_SNIPPETS.filter,
 		selfClosing: true,
 		attributes: {
 			kind: {
@@ -217,6 +234,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	mermaid: {
 		detail: 'Mermaid diagram (any diagram type)',
 		snippet: WIDGET_SNIPPETS.mermaid,
+		slashSnippet: WIDGET_SNIPPETS.mermaid,
 		attributes: {
 			code: { detail: 'Diagram source from $cell.field' }
 		}
@@ -225,6 +243,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Group rows for dynamic Mermaid/templates',
 		snippet:
 			'group data=${1:\\$cell.rows} by="${2:column}" order=[${3:"A","B"}] %}\n${4:Template body}\n{% /group %}',
+		slashSnippet: WIDGET_SNIPPETS.group,
 		attributes: {
 			data: { detail: 'Row array ($cell.rows)', required: true },
 			by: { detail: 'Grouping column', required: true },
@@ -232,8 +251,9 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		}
 	},
 	each: {
-		detail: 'Iterate items inside {% group %}',
+		detail: 'Iterate rows/items in a template',
 		snippet: 'each data=${1:\\$items} %}\n${2:Template body}\n{% /each %}',
+		slashSnippet: WIDGET_SNIPPETS.each,
 		attributes: {
 			data: { detail: 'Items array ($items)', required: true }
 		}
@@ -242,11 +262,13 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Conditional block',
 		snippet:
 			'if gt(${1:\\$cell.count}, 0) %}\n${2:Content.}\n{% else /%}\n${3:Fallback.}\n{% /if %}',
+		slashSnippet: WIDGET_SNIPPETS.conditional,
 		attributes: {}
 	},
 	else: {
 		detail: 'Else branch (must be self-closing)',
 		snippet: 'else /%}',
+		slashSnippet: WIDGET_SNIPPETS.else,
 		selfClosing: true,
 		attributes: {}
 	}
@@ -305,7 +327,7 @@ export function getMarkdocTagNames(): string[] {
 }
 
 export function isSelfClosingTag(tagName: string): boolean {
-	return MARKDOC_TAG_CATALOG[tagName]?.selfClosing === true;
+	return isSelfClosingMarkdocTag(tagName);
 }
 
 /** Ensures every custom runtime tag has a catalog entry (for tests). */

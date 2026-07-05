@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Markdoc, { Tag } from '@markdoc/markdoc';
+import { buildContextualMarkdocSnippet } from './markdoc-contextual-snippets';
+import { MARKDOC_TAG_CATALOG } from './markdoc-catalog';
 import {
 	buildMarkdocVariables,
 	renderMarkdocCell,
@@ -7,6 +9,7 @@ import {
 	validateMarkdocMarkdown,
 	normalizeMermaidCode
 } from './markdoc-interp.js';
+import { WIDGET_SNIPPETS } from './markdoc-snippets';
 import type { Cell } from '$lib/stores/notebook.svelte';
 
 function makeCell(outputName: string, rows: Record<string, unknown>[], columns?: string[]): Cell {
@@ -27,6 +30,17 @@ function findTag(nodes: unknown, name: string): Tag | undefined {
 		}
 	}
 	return undefined;
+}
+
+function findTags(nodes: unknown, name: string): Tag[] {
+	const out: Tag[] = [];
+	for (const node of Array.isArray(nodes) ? nodes : [nodes]) {
+		if (Tag.isTag(node)) {
+			if ((node as Tag).name === name) out.push(node as Tag);
+			out.push(...findTags((node as Tag).children, name));
+		}
+	}
+	return out;
 }
 
 function textOf(nodes: unknown): string {
@@ -606,6 +620,212 @@ sankey-beta
 		const text = textOf(tree);
 		expect(text).toContain('Todo: A');
 		expect(text).toContain('Done: B');
+	});
+
+	it('expands plain each loops even with blank lines in the body', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer_name: 'Alice', revenue: 120 },
+				{ customer_name: 'Bob', revenue: 80 }
+			])
+		];
+		const src = `{% each data=$orders.rows %}
+
+- $customer_name: $revenue
+
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Alice: 120');
+		expect(text).toContain('Bob: 80');
+		expect(text).not.toContain('$customer_name');
+	});
+
+	it('does not interpolate ordinary bare refs outside loop blocks during pre-expansion', () => {
+		const cells = [makeCell('orders', [{ customer_name: 'Alice', revenue: 120 }])];
+		const src = `Literal prose keeps $orders.revenue.
+
+{% each data=$orders.rows %}
+- $customer_name
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Literal prose keeps $orders.revenue.');
+		expect(text).toContain('Alice');
+	});
+
+	it('renders nested Markdoc widgets inside each loops', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer_name: 'Alice', revenue: 120, region: 'West' },
+				{ customer_name: 'Bob', revenue: 80, region: 'East' }
+			])
+		];
+		const src = `{% each data=$orders.rows %}
+{% card title="$customer_name" %}
+{% metric value=$revenue label="Revenue" /%}
+{% badge value="$region" /%}
+{% /card %}
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const cards = findTags(tree, 'card');
+		const metrics = findTags(tree, 'metric');
+		const badges = findTags(tree, 'badge');
+		expect(cards).toHaveLength(2);
+		expect(cards.map((card) => card.attributes.title)).toEqual(['Alice', 'Bob']);
+		expect(metrics.map((metric) => metric.attributes.value)).toEqual([120, 80]);
+		expect(badges.map((badge) => badge.attributes.value)).toEqual(['West', 'East']);
+	});
+
+	it('renders nested conditionals and widgets inside group loops', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer_name: 'Alice', revenue: 120, region: 'West' },
+				{ customer_name: 'Bob', revenue: 80, region: 'East' }
+			])
+		];
+		const src = `{% group data=$orders.rows by="region" %}
+{% card title="$key" %}
+{% each data=$items %}
+{% if gt($revenue, 100) %}
+{% metric value=$revenue label="$customer_name" /%}
+{% else /%}
+{% badge value="$customer_name" /%}
+{% /if %}
+{% /each %}
+{% /card %}
+{% /group %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const cards = findTags(tree, 'card');
+		const metrics = findTags(tree, 'metric');
+		const badges = findTags(tree, 'badge');
+		expect(cards.map((card) => card.attributes.title).sort()).toEqual(['East', 'West']);
+		expect(metrics.map((metric) => metric.attributes.value)).toEqual([120]);
+		expect(metrics.map((metric) => metric.attributes.label)).toEqual(['Alice']);
+		expect(badges.map((badge) => badge.attributes.value)).toEqual(['Bob']);
+	});
+
+	it('renders tabs with nested columns, metrics, charts, and prose', () => {
+		const cells = [
+			makeCell('orders', [
+				{ region: 'West', revenue: 120 },
+				{ region: 'East', revenue: 80 }
+			])
+		];
+		const src = `{% tabs %}
+{% tab label="Overview" %}
+Intro prose
+{% columns %}
+{% column %}
+{% metric value=$orders.count label="Rows" /%}
+{% /column %}
+{% column %}
+{% chart type="bar" data=$orders.rows x="region" y="revenue" /%}
+{% /column %}
+{% /columns %}
+{% /tab %}
+{% /tabs %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		expect(findTag(tree, 'tabs')).toBeDefined();
+		expect(findTag(tree, 'tab')?.attributes.label).toBe('Overview');
+		expect(findTag(tree, 'metric')?.attributes.value).toBe(2);
+		expect(findTag(tree, 'chart')?.attributes.data).toHaveLength(2);
+		expect(textOf(tree)).toContain('Intro prose');
+	});
+
+	it('renders contextual report recipes with nested widgets', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer_name: 'Alice', revenue: 120, region: 'West' },
+				{ customer_name: 'Bob', revenue: 80, region: 'East' }
+			])
+		];
+		const refs = [
+			{
+				cellName: 'orders',
+				columns: [
+					{ name: 'customer_name', type: 'varchar' },
+					{ name: 'revenue', type: 'double' },
+					{ name: 'region', type: 'varchar' }
+				]
+			}
+		];
+
+		for (const recipe of ['report-summary', 'report-filtered', 'report-grouped', 'report-tabs']) {
+			const source = buildContextualMarkdocSnippet(recipe, refs);
+			const { tree, errors } = renderMarkdocCell(source, cells);
+			expect(errors, recipe).toEqual([]);
+			expect(
+				findTag(tree, 'datatable') || findTag(tree, 'chart') || findTag(tree, 'card')
+			).toBeDefined();
+		}
+	});
+
+	it('renders every standalone fallback widget snippet without notebook refs', () => {
+		for (const [name, source] of Object.entries(WIDGET_SNIPPETS)) {
+			if (name === 'else') continue;
+			const { tree, errors } = renderMarkdocCell(source, []);
+			expect(errors, name).toEqual([]);
+			expect(tree, name).toBeDefined();
+			expect(validateMarkdocMarkdown(source, []), name).toEqual([]);
+		}
+	});
+
+	it('renders every contextual Markdoc tag snippet against a real result', () => {
+		const cells = [
+			makeCell(
+				'orders',
+				[
+					{ customer_name: 'Alice', revenue: 120, region: 'West' },
+					{ customer_name: 'Bob', revenue: 80, region: 'East' }
+				],
+				['customer_name', 'revenue', 'region']
+			)
+		];
+		const refs = [
+			{
+				cellName: 'orders',
+				rowCount: 2,
+				columns: [
+					{ name: 'customer_name', type: 'varchar' },
+					{ name: 'revenue', type: 'double' },
+					{ name: 'region', type: 'varchar' }
+				]
+			}
+		];
+
+		for (const tagName of Object.keys(MARKDOC_TAG_CATALOG)) {
+			if (tagName === 'else') continue;
+			const source = buildContextualMarkdocSnippet(tagName, refs);
+			expect(source.length, tagName).toBeGreaterThan(0);
+			const { tree, errors } = renderMarkdocCell(source, cells);
+			expect(errors, tagName).toEqual([]);
+			expect(tree, tagName).toBeDefined();
+		}
+	});
+
+	it('renders contextual callout prose expressions instead of literal refs', () => {
+		const cells = [makeCell('orders', [{ region: 'North', revenue: 120 }])];
+		const refs = [
+			{
+				cellName: 'orders',
+				rowCount: 1,
+				columns: [
+					{ name: 'region', type: 'varchar' },
+					{ name: 'revenue', type: 'double' }
+				]
+			}
+		];
+		const source = buildContextualMarkdocSnippet('callout', refs);
+		const { tree, errors } = renderMarkdocCell(source, cells);
+		expect(errors).toEqual([]);
+		expect(textOf(tree)).toContain('Review 1 rows before publishing.');
+		expect(textOf(tree)).not.toContain('$orders.count');
 	});
 });
 

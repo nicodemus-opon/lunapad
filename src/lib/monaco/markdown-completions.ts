@@ -1,5 +1,9 @@
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { LUNAPAD_MARKDOWN_LANG } from '$lib/monaco/lunapad-markdown';
+import {
+	buildContextualMarkdocSnippet,
+	getUsableMarkdocRefEntry
+} from '$lib/services/markdoc-contextual-snippets';
 import { SLASH_COMMANDS } from '$lib/services/markdown-format';
 import {
 	MARKDOC_FUNCTIONS,
@@ -350,23 +354,27 @@ function contextSuggestions(
 	const kinds = m.languages.CompletionItemKind;
 
 	switch (ctx.kind) {
-		case 'slash':
+		case 'slash': {
+			const commands = getUsableMarkdocRefEntry(refs)
+				? SLASH_COMMANDS
+				: SLASH_COMMANDS.filter((cmd) => cmd.group !== 'report');
 			return filterByPartial(
-				SLASH_COMMANDS.map((c) => c.id),
+				commands.map((c) => c.id),
 				ctx.partial
 			).map((id) => {
-				const cmd = SLASH_COMMANDS.find((c) => c.id === id)!;
+				const cmd = commands.find((c) => c.id === id)!;
 				return {
 					label: '/' + cmd.id,
 					detail: cmd.description,
 					documentation: cmd.label,
 					kind: kinds.Snippet,
-					insertText: cmd.snippet,
+					insertText: buildContextualMarkdocSnippet(cmd.id, refs) || cmd.snippet,
 					insertTextRules: m.languages.CompletionItemInsertTextRule.InsertAsSnippet,
 					range,
 					sortText: `0_${cmd.id}`
 				};
 			});
+		}
 
 		case 'tag-open':
 			return filterByPartial(Object.keys(MARKDOC_TAG_CATALOG), ctx.partial).map((name) => {

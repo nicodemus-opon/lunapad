@@ -1,26 +1,30 @@
 <script lang="ts">
 	import type { Cell } from '$lib/stores/notebook.svelte';
-	import { getAllCellsAcrossNotebooks } from '$lib/stores/notebook.svelte';
+	import { getNotebooks } from '$lib/stores/notebook.svelte';
 	import { renderMarkdocCell, buildMarkdocVariables } from '$lib/services/markdoc-interp';
 	import Markdoc from '@markdoc/markdoc';
 
 	interface Props {
 		source: string;
+		notebookId?: string;
+		cells?: Cell[];
 		selected?: boolean;
 		onPatch?: (source: string) => void;
 		onSelect?: () => void;
 	}
 
-	const { source, selected = false, onPatch, onSelect }: Props = $props();
+	const { source, notebookId = '', cells = [], selected = false, onPatch, onSelect }: Props = $props();
 
 	let editing = $state(false);
 	let draft = $state('');
 	let inputEl = $state<HTMLInputElement | null>(null);
 
-	// Resolve against live store cells so inline values track upstream cell
-	// results and filter changes exactly like the report renderer. The node view
-	// mounts us once, so relying on a static `cells` snapshot would go stale.
-	const liveCells = $derived(getAllCellsAcrossNotebooks());
+	// Resolve against the live cells for this notebook so inline values track
+	// upstream query runs and filter changes without leaking across notebooks.
+	const liveCells = $derived.by(() => {
+		if (!notebookId) return cells;
+		return getNotebooks().find((notebook) => notebook.id === notebookId)?.cells ?? cells;
+	});
 
 	function resolveBareVariable(inner: string, cells: Cell[]): string | null {
 		if (!/^\$[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(inner)) return null;

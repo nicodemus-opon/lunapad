@@ -109,8 +109,21 @@ export const QueryBlockExtension = Node.create({
 					if (display !== 'full') syncPinnedAttr(false);
 				},
 				onDelete: () => {
+					const pos = getPos();
+					if (typeof pos === 'number') {
+						const currentNode = editor.state.doc.nodeAt(pos);
+						if (currentNode) {
+							editor
+								.chain()
+								.focus()
+								.command(({ tr }) => {
+									tr.delete(pos, pos + currentNode.nodeSize);
+									return true;
+								})
+								.run();
+						}
+					}
 					ctx?.onDeleteCell?.(props.cellId);
-					editor.chain().focus().deleteSelection().run();
 				}
 			});
 

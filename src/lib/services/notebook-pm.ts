@@ -29,7 +29,11 @@ export function cellsToPmDocument(cells: Cell[]): PMDocJSON {
 			content.push({
 				type: 'markdocBlock',
 				attrs: {
-					source: serializeMarkdocTag('model', { ref: cell.promotedModelPath }, { selfClosing: true })
+					source: serializeMarkdocTag(
+						'model',
+						{ ref: cell.promotedModelPath },
+						{ selfClosing: true }
+					)
 				}
 			});
 			continue;
@@ -129,17 +133,6 @@ export function pmDocumentToBlocks(doc: PMDocJSON): NotebookPmBlock[] {
 			});
 			continue;
 		}
-		if (node.type === 'heading' && Number(node.attrs?.level ?? 0) === 1) {
-			flushNarrative();
-			const title =
-				(node.content ?? [])
-					.map((c) => c.text ?? '')
-					.join('')
-					.trim() || 'Untitled';
-			blocks.push({ kind: 'page', title, pageId: node.attrs?.pageId ? String(node.attrs.pageId) : undefined });
-			narrative.push(node);
-			continue;
-		}
 		narrative.push(node);
 	}
 
@@ -159,6 +152,75 @@ export function pmDocumentToBlocks(doc: PMDocJSON): NotebookPmBlock[] {
 	while (isAffordanceMd(blocks[blocks.length - 1])) blocks.pop();
 
 	return blocks;
+}
+
+function regionKey(prevQueryId: string | null, nextQueryId: string | null): string {
+	return `${prevQueryId ?? '__start__'}->${nextQueryId ?? '__end__'}`;
+}
+
+/** Reattach stable markdown cell ids by the query block region they belong to. */
+export function attachNotebookBlockIds(
+	cells: Cell[],
+	blocks: NotebookPmBlock[]
+): NotebookPmBlock[] {
+	const markdownIdsByRegion = new Map<string, string[]>();
+	const markdownBlockCountsByRegion = new Map<string, number>();
+	let prevQueryId: string | null = null;
+
+	for (let i = 0; i < cells.length; i++) {
+		const cell = cells[i]!;
+		if (isExecutableCell(cell)) {
+			prevQueryId = cell.id;
+			continue;
+		}
+		if (cell.cellType !== 'markdown') continue;
+		const nextQuery = cells.slice(i + 1).find(isExecutableCell);
+		const key = regionKey(prevQueryId, nextQuery?.id ?? null);
+		const ids = markdownIdsByRegion.get(key) ?? [];
+		ids.push(cell.id);
+		markdownIdsByRegion.set(key, ids);
+	}
+
+	let blockPrevQueryId: string | null = null;
+	for (let index = 0; index < blocks.length; index++) {
+		const block = blocks[index]!;
+		if (block.kind === 'query') {
+			blockPrevQueryId = block.cellId;
+			continue;
+		}
+		if (block.kind !== 'markdown') continue;
+		const nextQueryId =
+			blocks
+				.slice(index + 1)
+				.find(
+					(candidate): candidate is Extract<NotebookPmBlock, { kind: 'query' }> =>
+						candidate.kind === 'query'
+				)?.cellId ?? null;
+		const key = regionKey(blockPrevQueryId, nextQueryId);
+		markdownBlockCountsByRegion.set(key, (markdownBlockCountsByRegion.get(key) ?? 0) + 1);
+	}
+
+	blockPrevQueryId = null;
+	return blocks.map((block, index) => {
+		if (block.kind === 'query') {
+			blockPrevQueryId = block.cellId;
+			return block;
+		}
+		if (block.kind !== 'markdown' || block.cellId) return block;
+		const nextQueryId =
+			blocks
+				.slice(index + 1)
+				.find(
+					(candidate): candidate is Extract<NotebookPmBlock, { kind: 'query' }> =>
+						candidate.kind === 'query'
+				)?.cellId ?? null;
+		const key = regionKey(blockPrevQueryId, nextQueryId);
+		if ((markdownIdsByRegion.get(key)?.length ?? 0) !== 1) return block;
+		if ((markdownBlockCountsByRegion.get(key) ?? 0) !== 1) return block;
+		const ids = markdownIdsByRegion.get(key);
+		const cellId = ids?.shift();
+		return cellId ? { ...block, cellId } : block;
+	});
 }
 
 /** Extract H1 page titles from a notebook document (for sidebar navigation). */

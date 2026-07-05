@@ -101,6 +101,7 @@
 	import MarkdownToolbar from './markdown/MarkdownToolbar.svelte';
 	import MarkdownModeBar from './markdown/MarkdownModeBar.svelte';
 	import type { FormatAction } from './markdown/MarkdownToolbar.svelte';
+	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 
 	interface Props {
 		cell: Cell;
@@ -393,16 +394,42 @@
 	const hasLiveRefs = $derived(
 		isMarkdownCell && extractMarkdocRefs(cell.markdown ?? '').length > 0
 	);
-	const refPickerEntries = $derived(
-		getAllCellsAcrossNotebooks()
-			.filter((c) => c.cellType === 'query' && c.result)
-			.map((c) => ({ cellName: c.outputName, columns: c.result!.columns }))
-	);
-	const markdownRefEntries = $derived(
-		refPickerEntries.map((e) => ({
-			cellName: e.cellName,
-			columns: e.columns.map((name) => ({ name }))
-		}))
+
+	function inferMarkdocColumnType(rows: Record<string, unknown>[], column: string): string | undefined {
+		for (const row of rows.slice(0, 25)) {
+			const value = row[column];
+			if (value === null || value === undefined) continue;
+			if (typeof value === 'number') return 'number';
+			if (typeof value === 'boolean') return 'boolean';
+			if (value instanceof Date) return 'datetime';
+			if (typeof value === 'string') {
+				if (/^-?\d+(\.\d+)?$/.test(value.trim())) return 'number';
+				if (/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return 'date';
+				return 'text';
+			}
+			return 'text';
+		}
+		return undefined;
+	}
+
+	const markdownRefEntries = $derived<MarkdownRefEntry[]>(
+		getCells()
+			.filter(
+				(c) =>
+					c.cellType === 'query' &&
+					c.status === 'success' &&
+					c.result &&
+					c.result.columns.length > 0 &&
+					c.result.rows.length > 0
+			)
+			.map((c) => ({
+				cellName: c.outputName,
+				rowCount: c.result!.rows.length,
+				columns: c.result!.columns.map((name) => ({
+					name,
+					type: inferMarkdocColumnType(c.result!.rows, name)
+				}))
+			}))
 	);
 	const markdownValidationCells = $derived(getAllCellsAcrossNotebooks());
 
@@ -416,6 +443,14 @@
 
 	function handleMarkdownPreviewClick(e: MouseEvent) {
 		if ((e.target as HTMLElement).closest(MARKDOWN_INTERACTIVE_SELECTOR)) return;
+		setCellDisplay(cell.id, 'full');
+	}
+
+	function handleMarkdownPreviewKeydown(e: KeyboardEvent) {
+		if (reportView) return;
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		if ((e.target as HTMLElement).closest(MARKDOWN_INTERACTIVE_SELECTOR)) return;
+		e.preventDefault();
 		setCellDisplay(cell.id, 'full');
 	}
 
@@ -892,7 +927,6 @@
 	);
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={cellContainerEl}
 	class="notebook-cell group relative text-foreground outline-none {worksheet
@@ -907,7 +941,7 @@
 	data-cell-id={cell.id}
 	data-cell-type={cell.cellType}
 	data-worksheet={worksheet ? true : undefined}
-	tabindex="0"
+	tabindex="-1"
 	onfocusin={onCellFocusIn}
 	onfocusout={onCellFocusOut}
 	onmouseenter={() => (cellHovered = true)}
@@ -1022,21 +1056,36 @@
 					/>
 				{/if}
 				{#if isMarkdownOutputOnly}
-					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-					<div
-						class="markdown-body prose"
-						class:cursor-text={!reportView}
-						onclick={!reportView ? handleMarkdownPreviewClick : undefined}
-					>
-						{#if markdocResult}
-							<MarkdocRenderer
-								content={markdocResult.tree}
-								errors={markdocResult.errors}
-								{notebookId}
-								headingSlugPrefix={cell.id}
-							/>
-						{/if}
-					</div>
+					{#if reportView}
+						<div class="markdown-body prose">
+							{#if markdocResult}
+								<MarkdocRenderer
+									content={markdocResult.tree}
+									errors={markdocResult.errors}
+									{notebookId}
+									headingSlugPrefix={cell.id}
+								/>
+							{/if}
+						</div>
+					{:else}
+						<div
+							class="markdown-body prose cursor-text"
+							role="button"
+							tabindex="0"
+							aria-label="Edit markdown cell"
+							onclick={handleMarkdownPreviewClick}
+							onkeydown={handleMarkdownPreviewKeydown}
+						>
+							{#if markdocResult}
+								<MarkdocRenderer
+									content={markdocResult.tree}
+									errors={markdocResult.errors}
+									{notebookId}
+									headingSlugPrefix={cell.id}
+								/>
+							{/if}
+						</div>
+					{/if}
 				{:else}
 					<div class="markdown-editor-stack relative min-h-24">
 						<div
@@ -1064,7 +1113,7 @@
 								: 'pointer-events-none absolute inset-0 opacity-0'}"
 						>
 							<MarkdownToolbar
-								{refPickerEntries}
+								refPickerEntries={markdownRefEntries}
 								onFormat={handleToolbarFormat}
 								onInsertSnippet={insertMarkdownSnippet}
 								onInsertRef={insertMarkdownRef}

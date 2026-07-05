@@ -64,4 +64,45 @@ describe('renderMarkdocCellToStaticHtml', () => {
 		expect(html).toContain('<table class="report-table">');
 		expect(html).toContain('color-mix');
 	});
+
+	it('preserves nested layout wrappers in static html export', () => {
+		const cells = [
+			makeCell('orders', [
+				{ region: 'US', amount: 10 },
+				{ region: 'EU', amount: 20 }
+			])
+		];
+		const md = `{% tabs %}
+{% tab label="Overview" %}
+{% columns %}
+{% column %}
+{% grid cols=2 %}
+{% card title="Revenue" %}
+{% callout type="warning" %}
+{% datatable data=$orders.rows cols=["region","amount"] /%}
+{% /callout %}
+{% /card %}
+{% /grid %}
+{% /column %}
+{% /columns %}
+{% /tab %}
+{% /tabs %}`;
+		const html = renderMarkdocCellToStaticHtml(md, cells);
+		expect(html).toContain('data-markdoc-tag="tabs"');
+		expect(html).toContain('data-markdoc-tag="tab"');
+		expect(html).toContain('class="markdoc-columns"');
+		expect(html).toContain('class="markdoc-grid"');
+		expect(html).toContain('class="markdoc-card"');
+		expect(html).toContain('class="markdoc-callout markdoc-callout--warning"');
+	});
+
+	it('falls back to escaped mermaid source in static export', () => {
+		const html = renderMarkdocCellToStaticHtml(
+			'{% mermaid %}\ngraph TD\nA-->B\n{% /mermaid %}',
+			[]
+		);
+		expect(html).toContain('data-markdoc-tag="mermaid"');
+		expect(html).toContain('graph TD');
+		expect(html).toContain('A--&gt;B');
+	});
 });

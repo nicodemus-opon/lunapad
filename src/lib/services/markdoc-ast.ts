@@ -1,6 +1,7 @@
 import Markdoc from '@markdoc/markdoc';
 import { CUSTOM_MARKDOC_TAGS, type MarkdocDiagnostic } from './markdoc-interp';
 import { isSelfClosingTag } from './markdoc-catalog';
+import { isStructuredMarkdocContainerTag } from './markdoc-tag-registry';
 
 export type VisualBlockKind = 'prose' | 'widget' | 'container' | 'fence' | 'heading';
 
@@ -19,26 +20,11 @@ export interface ParsedWidgetBlock {
 	condition?: string;
 }
 
-const CONTAINER_TAGS = new Set([
-	'columns',
-	'column',
-	'grid',
-	'callout',
-	'card',
-	'details',
-	'tabs',
-	'tab',
-	'mermaid',
-	'each',
-	'group',
-	'if'
-]);
-
 function blockKindForNode(node: { type: string; tag?: string }): VisualBlockKind {
 	if (node.type === 'fence') return 'fence';
 	if (node.type === 'heading') return 'heading';
 	if (node.type === 'tag' && node.tag) {
-		if (CONTAINER_TAGS.has(node.tag) || node.tag === 'else') return 'container';
+		if (isStructuredMarkdocContainerTag(node.tag) || node.tag === 'else') return 'container';
 		if ((CUSTOM_MARKDOC_TAGS as readonly string[]).includes(node.tag)) return 'widget';
 		return 'container';
 	}
@@ -301,7 +287,9 @@ export function updateBlockWidgetSource(
 		...block,
 		source,
 		tagName,
-		kind: CONTAINER_TAGS.has(tagName) ? 'container' : 'widget'
+		kind: isStructuredMarkdocContainerTag(tagName, { selfClosing: parsed.selfClosing })
+			? 'container'
+			: 'widget'
 	};
 }
 

@@ -1081,18 +1081,18 @@
 <style>
 	/* Sticky headers need an opaque surface — collapsed table borders otherwise let
 	   body text bleed through while scrolling (especially over tinted notebook output). */
-	.result-table :global(table) {
+	:global(.result-table table) {
 		border-collapse: separate;
 		border-spacing: 0;
 	}
 
-	.result-table :global(.result-table-head) {
+	:global(.result-table .result-table-head) {
 		background-color: var(--card);
 		background-clip: padding-box;
 		box-shadow: 0 1px 0 var(--border);
 	}
 
-	.result-table :global(.result-table-sticky-col) {
+	:global(.result-table .result-table-sticky-col) {
 		background-color: var(--card);
 		background-clip: padding-box;
 	}

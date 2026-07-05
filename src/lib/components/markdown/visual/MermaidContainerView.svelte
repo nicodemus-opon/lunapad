@@ -13,7 +13,11 @@
 	// Own the active mode as plain local state. The node view mounts this component
 	// imperatively (mount()), where a `$bindable` prop does not reliably reflect
 	// local reassignments — so we seed from `mode` once and drive the UI from here.
-	let active = $state<'visual' | 'source'>(mode);
+	let active = $state<'visual' | 'source'>('visual');
+
+	$effect(() => {
+		active = mode;
+	});
 
 	function setMode(next: 'visual' | 'source') {
 		active = next;

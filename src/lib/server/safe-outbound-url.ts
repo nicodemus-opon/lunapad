@@ -25,7 +25,28 @@ function isPrivateIp(hostname: string): boolean {
 
 function isLocalHostname(hostname: string): boolean {
 	const h = hostname.toLowerCase().replace(/\.$/, '');
-	return h === 'localhost' || h.endsWith('.localhost') || h === 'local' || h.endsWith('.local');
+	return (
+		h === 'localhost' ||
+		h.endsWith('.localhost') ||
+		h === 'local' ||
+		h.endsWith('.local') ||
+		h === 'host.docker.internal'
+	);
+}
+
+function withDefaultLlmProtocol(raw: string): string {
+	if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw;
+
+	try {
+		const url = new URL(`http://${raw}`);
+		if (isLocalHostname(url.hostname) || isPrivateIp(url.hostname)) {
+			return url.toString().replace(/\/+$/, '');
+		}
+	} catch {
+		// Let the normal URL validation below produce the public error.
+	}
+
+	return raw;
 }
 
 export function assertSafeOutboundHttpUrl(
@@ -63,7 +84,9 @@ export function assertSafeOutboundHttpUrl(
 
 export function normalizeSafeLlmBaseUrl(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/\/+$/, '');
-	const url = assertSafeOutboundHttpUrl(trimmed, { allowLocalhostInDev: true });
+	const url = assertSafeOutboundHttpUrl(withDefaultLlmProtocol(trimmed), {
+		allowLocalhostInDev: true
+	});
 	const normalized = url.toString().replace(/\/+$/, '');
 	if (/\/v\d+$/i.test(normalized)) return normalized;
 	return `${normalized}/v1`;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import {
+	attachNotebookBlockIds,
 	cellsToPmDocument,
 	pmDocumentToBlocks,
 	extractPagesFromPmDocument
@@ -78,6 +79,21 @@ describe('notebook-pm', () => {
 		const blocks = pmDocumentToBlocks(doc);
 		expect(blocks.some((b) => b.kind === 'query' && b.cellId === 'q1')).toBe(true);
 		expect(blocks.some((b) => b.kind === 'markdown' && b.markdown.includes('Hello'))).toBe(true);
+	});
+
+	it('keeps plain H1 headings in markdown during document sync', () => {
+		const cells = [
+			makeMarkdownCell('md1', '# Sales Analytics Demo\n\nIntro prose.'),
+			makeQueryCell('q1')
+		];
+		const blocks = pmDocumentToBlocks(cellsToPmDocument(cells));
+
+		expect(blocks.some((b) => b.kind === 'page')).toBe(false);
+		expect(blocks[0]).toMatchObject({
+			kind: 'markdown',
+			markdown: expect.stringContaining('# Sales Analytics Demo')
+		});
+		expect(blocks.some((b) => b.kind === 'query' && b.cellId === 'q1')).toBe(true);
 	});
 
 	it('round-trips python cells with cellType preserved', () => {
@@ -205,5 +221,63 @@ describe('notebook-pm', () => {
 		const blocks = pmDocumentToBlocks(doc);
 		const out = blocks.find((b) => b.kind === 'markdown')?.markdown ?? '';
 		expect(out).toContain('| Bob | 30 |');
+	});
+
+	it('reattaches markdown ids around query blocks so sync does not churn cells', () => {
+		const cells = [
+			makeMarkdownCell('md-before', '{% tabs %}\n{% tab label="A" %}\nHi\n{% /tab %}\n{% /tabs %}'),
+			makeQueryCell('q1'),
+			makeMarkdownCell('md-after', '{% callout type="info" %}\nAfter\n{% /callout %}')
+		];
+		const doc = cellsToPmDocument(cells);
+		const attached = attachNotebookBlockIds(cells, pmDocumentToBlocks(doc));
+		expect(attached).toEqual([
+			expect.objectContaining({ kind: 'markdown', cellId: 'md-before' }),
+			{ kind: 'query', cellId: 'q1', cellType: 'query' },
+			expect.objectContaining({ kind: 'markdown', cellId: 'md-after' })
+		]);
+	});
+
+	it('keeps markdown/query/markdown regions stable across repeated round-trips', () => {
+		const cells = [
+			makeMarkdownCell(
+				'md-before',
+				'{% tabs %}\n{% tab label="Metrics" %}\n{% columns %}\n{% column %}\nLeft\n{% /column %}\n{% column %}\nRight\n{% /column %}\n{% /columns %}\n{% /tab %}\n{% /tabs %}'
+			),
+			makeQueryCell('q1'),
+			makeMarkdownCell(
+				'md-after',
+				'{% grid cols=2 %}\n{% card title="A" %}\nOne\n{% /card %}\n{% card title="B" %}\nTwo\n{% /card %}\n{% /grid %}'
+			)
+		];
+		let blocks = attachNotebookBlockIds(cells, pmDocumentToBlocks(cellsToPmDocument(cells)));
+		for (let i = 0; i < 3; i++) {
+			const doc = cellsToPmDocument(
+				blocks.flatMap((block) => {
+					if (block.kind === 'query') return [makeQueryCell(block.cellId)];
+					if (block.kind === 'markdown') {
+						return [makeMarkdownCell(block.cellId ?? `md-${i}`, block.markdown)];
+					}
+					return [];
+				})
+			);
+			blocks = attachNotebookBlockIds(cells, pmDocumentToBlocks(doc));
+		}
+		expect(blocks[0]).toMatchObject({ kind: 'markdown', cellId: 'md-before' });
+		expect(blocks[1]).toEqual({ kind: 'query', cellId: 'q1', cellType: 'query' });
+		expect(blocks[2]).toMatchObject({ kind: 'markdown', cellId: 'md-after' });
+	});
+
+	it('does not guess markdown ids when a region has multiple markdown cells', () => {
+		const cells = [
+			makeMarkdownCell('md-a', 'Alpha'),
+			makeMarkdownCell('md-b', 'Beta'),
+			makeQueryCell('q1')
+		];
+		const blocks = attachNotebookBlockIds(cells, pmDocumentToBlocks(cellsToPmDocument(cells)));
+		expect(blocks[0]).toMatchObject({ kind: 'markdown' });
+		if (blocks[0]?.kind === 'markdown') {
+			expect(blocks[0].cellId).toBeUndefined();
+		}
 	});
 });

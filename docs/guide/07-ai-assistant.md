@@ -56,9 +56,15 @@ API keys and model settings are stored in **your** account (`user_settings` in P
 | Provider | `Ollama` or `OpenAPI-compatible`                    |
 | Base URL | Your Ollama or API endpoint                         |
 | API key  | Optional; leave blank for local Ollama with no auth |
-| Model    | The model name, e.g. `qwen3:4b` for Ollama          |
+| Model    | The model name, e.g. `gemma4:12b-mlx` for Ollama    |
 
-For Ollama, `qwen3:1.7b` is fast and `qwen3:4b` is better quality but slower. Without a provider configured, the AI panel and inline prompts have nothing to call.
+For Ollama, `gemma4:12b-mlx` is the recommended local quality target for analytics-engineer workflows. Smaller models such as `qwen3:4b` are faster, but they are more likely to skip tool calls or produce thinner dashboard markdown. Without a provider configured, the AI panel and inline prompts have nothing to call.
+
+Live local verification target:
+
+```bash
+LLM_PROVIDER=ollama LLM_BASE_URL=http://127.0.0.1:11434 LLM_MODEL=gemma4:12b-mlx pnpm test:ai:ollama
+```
 
 Self-hosting with Docker Compose and Ollama on the host: point the base URL at `http://host.docker.internal:11434` (wired in the bundled `docker-compose.yml`, see [self-hosting](11-self-hosting.md)).
 

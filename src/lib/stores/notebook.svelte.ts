@@ -25,7 +25,11 @@ import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
 import type { OutlineEntry } from '$lib/services/notebook-outline';
 import { buildNotebookOutline } from '$lib/services/notebook-outline';
-import { pmDocumentToBlocks, type NotebookPmBlock } from '$lib/services/notebook-pm';
+import {
+	attachNotebookBlockIds,
+	pmDocumentToBlocks,
+	type NotebookPmBlock
+} from '$lib/services/notebook-pm';
 import type { PMDocJSON } from '$lib/services/markdoc-pm';
 import {
 	openProject as openProjectAPI,
@@ -160,7 +164,9 @@ export interface Cell {
 	language: CellLanguage;
 	status: CellStatus;
 	result: {
-		rows: Record<string, unknown>[]; columns: string[]; truncated?: boolean;
+		rows: Record<string, unknown>[];
+		columns: string[];
+		truncated?: boolean;
 		/** Full result size when `truncated` — from COUNT(*) OVER() on auto-limited queries. */
 		totalRowCount?: number;
 	} | null;
@@ -1689,10 +1695,11 @@ export function wrapWithAutoLimit(sql: string): { sql: string; wrapped: boolean 
 
 const LUNAPAD_TOTAL_ROW_COL = '__lunapad_total_rows';
 
-function stripTotalRowCountColumn(result: {
+function stripTotalRowCountColumn(result: { rows: Record<string, unknown>[]; columns: string[] }): {
 	rows: Record<string, unknown>[];
 	columns: string[];
-}): { rows: Record<string, unknown>[]; columns: string[]; totalRowCount?: number } {
+	totalRowCount?: number;
+} {
 	if (!result.rows.length || !result.columns.includes(LUNAPAD_TOTAL_ROW_COL)) return result;
 	const totalRowCount = Number(result.rows[0]?.[LUNAPAD_TOTAL_ROW_COL]);
 	return {
@@ -1979,6 +1986,7 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 	}
 	await loadUserLlmSettings(legacyLlmConfig);
 	await loadConnectionsFromServer();
+	void syncWorkspaceConnectionsToServer();
 	finishLoad(defaultProjectFolder);
 }
 
@@ -2129,6 +2137,15 @@ async function loadConnectionsFromServer(): Promise<void> {
 	} catch {
 		/* ignore */
 	}
+}
+
+async function syncWorkspaceConnectionsToServer(): Promise<void> {
+	if (!useServerWorkspace) return;
+	await Promise.all(
+		state.connections
+			.filter((connection) => connection.type !== 'duckdb-wasm')
+			.map((connection) => syncConnectionMetadata(connection))
+	);
 }
 
 export async function saveUserLlmSettings(): Promise<void> {
@@ -2545,14 +2562,9 @@ export async function loadProjectNotebooks(): Promise<void> {
 				(isNotebookPendingDiskSync(nb.id) || state.openNotebookTabIds.includes(nb.id))
 		);
 		state.notebooks =
-			memoryOnlyNotebooks.length > 0
-				? [...mergedFromDisk, ...memoryOnlyNotebooks]
-				: mergedFromDisk;
+			memoryOnlyNotebooks.length > 0 ? [...mergedFromDisk, ...memoryOnlyNotebooks] : mergedFromDisk;
 
-		const keepTabIds = new Set([
-			...newIds,
-			...memoryOnlyNotebooks.map((nb) => nb.id)
-		]);
+		const keepTabIds = new Set([...newIds, ...memoryOnlyNotebooks.map((nb) => nb.id)]);
 		state.folders = folders;
 		state.openNotebookTabIds = state.openNotebookTabIds.filter((id) => keepTabIds.has(id));
 		if (state.openNotebookTabIds.length === 0 && notebooks.length > 0) {
@@ -3494,11 +3506,7 @@ export function navigateToOutlineEntry(
 		};
 		const tail = state.pageNavHistory.slice(0, state.pageNavHistoryIndex + 1);
 		const last = tail[tail.length - 1];
-		if (
-			!last ||
-			last.notebookId !== frame.notebookId ||
-			last.entryId !== frame.entryId
-		) {
+		if (!last || last.notebookId !== frame.notebookId || last.entryId !== frame.entryId) {
 			state.pageNavHistory = [...tail, frame].slice(-50);
 			state.pageNavHistoryIndex = state.pageNavHistory.length - 1;
 		}
@@ -3516,7 +3524,9 @@ export function canGoBackPageNav(): boolean {
 }
 
 export function canGoForwardPageNav(): boolean {
-	return state.pageNavHistoryIndex >= 0 && state.pageNavHistoryIndex < state.pageNavHistory.length - 1;
+	return (
+		state.pageNavHistoryIndex >= 0 && state.pageNavHistoryIndex < state.pageNavHistory.length - 1
+	);
 }
 
 export function goBackPageNav(): boolean {
@@ -3592,7 +3602,7 @@ export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): 
 	const nb = state.notebooks.find((n) => n.id === notebookId);
 	if (!nb) return;
 
-	const blocks = pmDocumentToBlocks(doc);
+	const blocks = attachNotebookBlockIds(nb.cells, pmDocumentToBlocks(doc));
 	const nextCells = rebuildCellsFromBlocks(nb, blocks);
 	if (!nextCells.length && nb.cells.length) return;
 
@@ -3609,7 +3619,9 @@ export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): 
 
 	const markdownChanged = nextCells.some((c, i) => {
 		const prev = nb.cells[i];
-		return c.cellType === 'markdown' && prev?.cellType === 'markdown' && c.markdown !== prev.markdown;
+		return (
+			c.cellType === 'markdown' && prev?.cellType === 'markdown' && c.markdown !== prev.markdown
+		);
 	});
 	const structureChanged = !cellsStructureEqual(nb.cells, nextCells);
 
@@ -3659,9 +3671,7 @@ export function insertQueryBlockCell(
 		cells.unshift(newCell);
 	}
 
-	state.notebooks = state.notebooks.map((n) =>
-		n.id === nb.id ? { ...n, cells } : n
-	);
+	state.notebooks = state.notebooks.map((n) => (n.id === nb.id ? { ...n, cells } : n));
 	scheduleSave();
 	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
 	else if (nb.format === 'luna') scheduleLunaNotebookSave(nb.id);
@@ -4287,11 +4297,15 @@ export function setTabViewMode(tabId: string, mode: ResultViewMode): void {
 }
 
 export function setCellResultViewMode(cellId: string, mode: ResultViewMode): void {
-	const nb = getActiveNotebook();
-	const cell = nb.cells.find((c) => c.id === cellId);
-	if (!cell) return;
-	cell.resultViewMode = mode;
-	scheduleSave();
+	// Search all notebooks so embedded editors and background tabs persist mode changes reliably.
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (cell) {
+			cell.resultViewMode = mode;
+			scheduleSave();
+			return;
+		}
+	}
 }
 
 export function setCellResultChartConfig(cellId: string, config: ChartConfig | null): void {
@@ -6961,15 +6975,15 @@ export function __resetStateForTests(): void {
 			tables: true
 		},
 		activeTabId: initial.id,
-	focusedCellId: null,
-	focusedTarget: null,
-	sidebarNotebookView: 'browse',
-	recentNotebookIds: [],
-	favoriteNotebookIds: [],
-	pageNavHistory: [],
-	pageNavHistoryIndex: -1,
-	openResultTabs: [],
-	openExtraTabs: [],
+		focusedCellId: null,
+		focusedTarget: null,
+		sidebarNotebookView: 'browse',
+		recentNotebookIds: [],
+		favoriteNotebookIds: [],
+		pageNavHistory: [],
+		pageNavHistoryIndex: -1,
+		openResultTabs: [],
+		openExtraTabs: [],
 		tables: [],
 		theme: 'system',
 		autoRun: false,
@@ -7072,6 +7086,8 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 		runCell,
 		runAll,
 		getCells,
-		state
+		get state() {
+			return state;
+		}
 	};
 }

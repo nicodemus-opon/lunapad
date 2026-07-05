@@ -147,6 +147,7 @@
 			<div
 				class="link-popover absolute top-full left-0 z-50 mt-1 flex min-w-52 items-center gap-1 rounded-md border bg-popover p-1 shadow-lg"
 				role="menu"
+				tabindex="-1"
 				onmousedown={(e) => e.stopPropagation()}
 			>
 				<input
@@ -210,6 +211,7 @@
 			<div
 				class="absolute top-full left-0 z-50 mt-1 min-w-36 rounded-md border bg-popover p-1 shadow-lg"
 				role="menu"
+				tabindex="-1"
 				onmousedown={(e) => e.stopPropagation()}
 			>
 				{#each turnIntoOptions as opt (opt.label)}

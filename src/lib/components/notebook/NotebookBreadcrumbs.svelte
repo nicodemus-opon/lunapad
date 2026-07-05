@@ -129,11 +129,10 @@
 {/if}
 
 {#if pages.length > 0}
-	<div class="mb-3 flex flex-wrap gap-1" role="list" aria-label="Pages in this notebook">
+	<div class="mb-3 flex flex-wrap gap-1" aria-label="Pages in this notebook">
 		{#each pages as page (page.id)}
 			<button
 				type="button"
-				role="listitem"
 				class="rounded-full border px-2 py-0.5 text-2xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {activePageId === page.id
 					? 'border-primary bg-primary/10 text-foreground'
 					: 'border-border text-muted-foreground hover:border-border hover:text-foreground'}"

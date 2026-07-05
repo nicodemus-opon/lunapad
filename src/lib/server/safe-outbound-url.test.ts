@@ -37,4 +37,14 @@ describe('safe outbound URLs', () => {
 			'https://api.example.com/v2'
 		);
 	});
+
+	it('accepts local LLM base URL shorthand in development', () => {
+		vi.stubEnv('NODE_ENV', 'development');
+
+		expect(normalizeSafeLlmBaseUrl('localhost:11434')).toBe('http://localhost:11434/v1');
+		expect(normalizeSafeLlmBaseUrl('127.0.0.1:11434')).toBe('http://127.0.0.1:11434/v1');
+		expect(normalizeSafeLlmBaseUrl('host.docker.internal:11434/v1')).toBe(
+			'http://host.docker.internal:11434/v1'
+		);
+	});
 });

@@ -47,8 +47,8 @@ Use this after automated graders and E2E pass, or when reviewing a new AI-genera
 
 Run static graders: `pnpm vitest run src/lib/agent/evals/dashboard-adversarial.test.ts`
 
-Run live API suite: `NVAPI_KEY=... LUNAPAD_URL=http://localhost:5199 node scripts/ai-dashboard-adversarial.mjs`
+Run live API suite against local Ollama: `LLM_PROVIDER=ollama LLM_BASE_URL=http://127.0.0.1:11434 LLM_MODEL=gemma4:12b-mlx LUNAPAD_URL=http://localhost:5199 node scripts/ai-dashboard-adversarial.mjs`
 
 Run E2E mock: `pnpm test:e2e:mock`
 
-Run E2E LLM (optional): `NVAPI_KEY=... pnpm test:e2e:llm`
+Run E2E LLM (optional): `LLM_PROVIDER=ollama LLM_BASE_URL=http://127.0.0.1:11434 LLM_MODEL=gemma4:12b-mlx pnpm test:e2e:llm`

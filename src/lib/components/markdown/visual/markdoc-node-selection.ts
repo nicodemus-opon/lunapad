@@ -7,6 +7,7 @@ import {
 	markdocAttrsToJson,
 	type VisualBlock
 } from '$lib/services/markdoc-ast';
+import { markdownToPmDocument, serializePmNodeToMarkdown } from '$lib/services/markdoc-pm';
 import { parseAttrsJson } from './widget-registry';
 
 export type MarkdocSelectedNode =
@@ -60,7 +61,7 @@ export function syncMarkdocNodeSelection(
 	if (node.type.name === 'markdocContainer') {
 		const tagName = String(node.attrs.tagName ?? '');
 		const attrs = parseAttrsJson(node.attrs.attrsJson);
-		const source = serializeMarkdocTag(tagName, attrs, { body: '' });
+		const source = serializePmNodeToMarkdown(node);
 		return { type: 'container', tagName, attrs, source, pos };
 	}
 
@@ -110,24 +111,42 @@ export function patchMarkdocNodeSelection(
 	}
 
 	if (selected.type === 'container') {
-		const tagName = selected.tagName ?? 'callout';
-		let attrs = { ...selected.attrs, ...patch.attrs };
-		if (patch.source) {
-			const block: VisualBlock = {
+		if (patch.source === undefined && patch.body === undefined) {
+			const tagName = selected.tagName ?? 'callout';
+			const attrs = { ...selected.attrs, ...patch.attrs };
+			editor
+				.chain()
+				.focus()
+				.command(({ tr }) => {
+					tr.setNodeAttribute(pos, 'tagName', tagName);
+					tr.setNodeAttribute(pos, 'attrsJson', markdocAttrsToJson(attrs));
+					return true;
+				})
+				.run();
+			return;
+		}
+
+		const currentBlock = selectedBlock ??
+			parseVisualBlocks(selected.source)[0] ?? {
 				id: 'patch',
 				kind: 'container',
-				source: patch.source,
-				tagName
+				source: selected.source,
+				tagName: selected.tagName
 			};
-			const parsed = parseBlockWidget(block);
-			if (parsed) attrs = { ...parsed.attrs, ...patch.attrs };
-		}
+		const nextBlock =
+			patch.source !== undefined
+				? { ...currentBlock, source: patch.source }
+				: updateBlockWidgetSource(currentBlock, patch);
+		const pm = markdownToPmDocument(nextBlock.source);
+		const replacement = pm.doc.content?.[0];
+		if (!replacement || replacement.type !== 'markdocContainer') return;
 		editor
 			.chain()
 			.focus()
 			.command(({ tr }) => {
-				tr.setNodeAttribute(pos, 'tagName', tagName);
-				tr.setNodeAttribute(pos, 'attrsJson', markdocAttrsToJson(attrs));
+				const currentNode = tr.doc.nodeAt(pos);
+				if (!currentNode) return false;
+				tr.replaceWith(pos, pos + currentNode.nodeSize, editor.schema.nodeFromJSON(replacement));
 				return true;
 			})
 			.run();

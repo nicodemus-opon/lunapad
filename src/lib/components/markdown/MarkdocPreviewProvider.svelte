@@ -21,13 +21,22 @@
 	const { notebookId, children, onDrill }: Props = $props();
 
 	const filterCtx: FilterContextValue = {
-		getValue: (param) => getNotebookFilterValue(notebookId, param),
-		setValue: (param, value) => setNotebookFilterValue(notebookId, param, value),
-		setValues: (values) => setNotebookFilterValues(notebookId, values)
+		getValue: (param) => {
+			const currentNotebookId = notebookId;
+			return getNotebookFilterValue(currentNotebookId, param);
+		},
+		setValue: (param, value) => {
+			const currentNotebookId = notebookId;
+			setNotebookFilterValue(currentNotebookId, param, value);
+		},
+		setValues: (values) => {
+			const currentNotebookId = notebookId;
+			setNotebookFilterValues(currentNotebookId, values);
+		}
 	};
 
 	const drillCtx: DrillContextValue = {
-		openDetail: onDrill ? (outputName) => onDrill(outputName) : undefined
+		openDetail: (outputName) => onDrill?.(outputName)
 	};
 
 	setContext(FILTER_CONTEXT_KEY, filterCtx);

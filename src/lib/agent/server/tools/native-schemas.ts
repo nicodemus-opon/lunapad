@@ -166,12 +166,19 @@ export const NATIVE_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'update_cell',
-			description: 'Edit SQL code of an existing cell.',
+			description:
+				'Edit an existing cell. For SQL/Python cells, provide code. For markdown/dashboard cells, provide markdown. Use this instead of create_cell when revising an existing summary/dashboard cell.',
 			parameters: {
 				type: 'object',
 				properties: {
-					cellId: { type: 'string' },
-					code: { type: 'string' }
+					cellId: { type: 'string', description: 'Cell id or outputName to edit.' },
+					outputName: { type: 'string', description: 'Optional new outputName.' },
+					code: { type: 'string', description: 'Replacement SQL or Python source.' },
+					markdown: {
+						type: 'string',
+						description:
+							'Replacement GFM/Markdoc markdown for markdown dashboard or findings cells.'
+					}
 				},
 				required: ['cellId']
 			}
@@ -183,7 +190,7 @@ export const NATIVE_TOOLS = [
 		function: {
 			name: 'list_cells',
 			description:
-				'Lists all query cells with status and row counts. Use when you need a full inventory of existing cells.',
+				'Lists query, python, and markdown/dashboard cells with status, row counts, and markdown previews. Use when you need a full inventory of existing notebook content.',
 			parameters: { type: 'object', properties: {} }
 		}
 	},
@@ -223,6 +230,26 @@ export const NATIVE_TOOLS = [
 					toIndex: { type: 'number', description: 'Move to exact 0-based index position.' }
 				},
 				required: ['cellId']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'set_view_mode',
+			description:
+				'Switch a result cell between table, chart, and stats views. Prefer pick_chart after run_cells when creating visualizations.',
+			parameters: {
+				type: 'object',
+				properties: {
+					cellId: { type: 'string', description: 'Cell id or outputName.' },
+					mode: {
+						type: 'string',
+						enum: ['table', 'chart', 'stats'],
+						description: 'Result view mode to show.'
+					}
+				},
+				required: ['cellId', 'mode']
 			}
 		}
 	},

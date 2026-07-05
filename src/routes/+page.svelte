@@ -303,15 +303,44 @@
 		const cell = cells.find((c) => c.outputName === outputName && c.cellType === 'query');
 		if (cell) openResultTab(cell.id, activeTabId, outputName, 'table');
 	}
+
+	function inferMarkdocColumnType(rows: Record<string, unknown>[], column: string): string | undefined {
+		for (const row of rows.slice(0, 25)) {
+			const value = row[column];
+			if (value === null || value === undefined) continue;
+			if (typeof value === 'number') return 'number';
+			if (typeof value === 'boolean') return 'boolean';
+			if (value instanceof Date) return 'datetime';
+			if (typeof value === 'string') {
+				if (/^-?\d+(\.\d+)?$/.test(value.trim())) return 'number';
+				if (/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return 'date';
+				return 'text';
+			}
+			return 'text';
+		}
+		return undefined;
+	}
+
 	const sidebarNotebookView = $derived(getSidebarNotebookView());
 	const recentNotebookIds = $derived(getRecentNotebookIds());
 	const favoriteNotebookIds = $derived(getFavoriteNotebookIds());
 	const markdownRefEntries = $derived(
-		getAllCellsAcrossNotebooks()
-			.filter((c) => c.cellType === 'query' && c.result)
+		cells
+			.filter(
+				(c) =>
+					c.cellType === 'query' &&
+					c.status === 'success' &&
+					c.result &&
+					c.result.columns.length > 0 &&
+					c.result.rows.length > 0
+			)
 			.map((c) => ({
 				cellName: c.outputName,
-				columns: c.result!.columns.map((name) => ({ name }))
+				rowCount: c.result!.rows.length,
+				columns: c.result!.columns.map((name) => ({
+					name,
+					type: inferMarkdocColumnType(c.result!.rows, name)
+				}))
 			}))
 	);
 	let notebookScrollEl: HTMLElement | undefined = $state();
@@ -1351,14 +1380,14 @@
 
 		<div id="layout-root" class="flex flex-1 overflow-hidden">
 			<div
-				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground {isDraggingSidebar
+				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border bg-background text-foreground {isDraggingSidebar
 					? 'transition-none'
 					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
 				style={sidebarCollapsed ? 'width: var(--sidebar-rail-width)' : `width: ${sidebarWidth}px`}
 			>
 				<!-- Icon rail (width tracks --sidebar-rail-width — w-9 disagrees with --spacing scale) -->
 				<div
-					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border bg-sidebar px-1 pt-1 pb-1.5"
+					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border bg-background px-1 pt-1 pb-1.5"
 					style="width: var(--sidebar-rail-width)"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}

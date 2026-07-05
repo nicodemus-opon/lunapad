@@ -335,10 +335,10 @@
 					</div>
 
 					<div class="flex flex-col gap-1">
-						<label class="text-2xs font-medium tracking-wide text-muted-foreground uppercase"
-							>Mode</label
+						<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase"
+							>Mode</span
 						>
-						<div class="flex h-7 items-center gap-4">
+						<div class="flex h-7 items-center gap-4" role="radiogroup" aria-label="Upload mode">
 							<label class="flex cursor-pointer items-center gap-1.5 text-xs">
 								<input
 									type="radio"

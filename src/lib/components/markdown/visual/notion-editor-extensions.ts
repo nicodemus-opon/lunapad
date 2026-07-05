@@ -21,22 +21,29 @@ import { createMarkdocBlockExtension } from './markdoc-block-extension';
 import { createMarkdocWidgetExtension } from './markdoc-widget-extension';
 import { createMarkdocContainerExtension } from './markdoc-container-extension';
 import { createMarkdocExpressionExtension } from './markdoc-expression-extension';
-import {
-	createSlashCommandExtension,
-	type SlashCommandHandler
-} from './slash-command-extension';
+import { createSlashCommandExtension, type SlashCommandHandler } from './slash-command-extension';
 import { ListKeymapExtension } from './list-keymap-extension';
 import { rankRefEntries } from './mention-utils';
 
 export interface MentionCommandHandler {
 	onStart: (props: {
-		items: Array<{ id: string; label: string; meta?: string; group: 'notebook' | 'project' | 'other' }>;
+		items: Array<{
+			id: string;
+			label: string;
+			meta?: string;
+			group: 'notebook' | 'project' | 'other';
+		}>;
 		moreCount: number;
 		query: string;
 		command: (item: { id: string; label: string }) => void;
 	}) => void;
 	onUpdate: (props: {
-		items: Array<{ id: string; label: string; meta?: string; group: 'notebook' | 'project' | 'other' }>;
+		items: Array<{
+			id: string;
+			label: string;
+			meta?: string;
+			group: 'notebook' | 'project' | 'other';
+		}>;
 		moreCount: number;
 		query: string;
 		command: (item: { id: string; label: string }) => void;
@@ -69,17 +76,41 @@ export interface NotionEditorExtensionOptions {
 	dragHandleRender: () => HTMLElement;
 }
 
+export function expandExtensionNames(extensions: Extensions): string[] {
+	const names: string[] = [];
+	const walk = (exts: Extensions) => {
+		for (const ext of exts) {
+			if (!ext) continue;
+			names.push(ext.name);
+			const childExts = (
+				ext.config.addExtensions as ((this: typeof ext) => Extensions) | undefined
+			)?.call(ext);
+			if (Array.isArray(childExts) && childExts.length) walk(childExts);
+		}
+	};
+	walk(extensions);
+	return names;
+}
+
 export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions): Extensions {
 	const refEntries = opts.refEntries ?? (() => []);
 	const gate = opts.bubbleMenuGate;
 	const mentionHandler = opts.mentionHandler;
 	const notebookCellNames = () =>
-		new Set(opts.getCells().map((c) => c.outputName).filter(Boolean));
+		new Set(
+			opts
+				.getCells()
+				.map((c) => c.outputName)
+				.filter(Boolean)
+		);
 
 	return [
 		StarterKit.configure({
 			heading: { levels: [1, 2, 3, 4, 5, 6] },
-			dropcursor: { color: 'var(--ring)', width: 2 }
+			dropcursor: { color: 'var(--ring)', width: 2 },
+			link: false,
+			underline: false,
+			listKeymap: false
 		}),
 		ListKeymapExtension,
 		Placeholder.configure({
@@ -188,9 +219,11 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 			getCells: opts.getCells
 		}),
 		createMarkdocExpressionExtension({
-			getCells: opts.getCells
+			getCells: opts.getCells,
+			getNotebookId: opts.getNotebookId
 		}),
 		createSlashCommandExtension(opts.slashHandler, {
+			refEntries,
 			insertQueryBlock: opts.insertQueryBlock,
 			insertPage: opts.insertPage
 		}),

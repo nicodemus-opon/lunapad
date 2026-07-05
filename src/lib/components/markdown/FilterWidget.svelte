@@ -45,7 +45,14 @@
 		maxParam
 	}: Props = $props();
 
-	const suppressInline = getContext<boolean | undefined>(SUPPRESS_INLINE_FILTERS_KEY) ?? false;
+	const suppressInlineContext =
+		getContext<boolean | { readonly current: boolean } | undefined>(SUPPRESS_INLINE_FILTERS_KEY) ??
+		false;
+	const suppressInline = $derived(
+		typeof suppressInlineContext === 'boolean'
+			? suppressInlineContext
+			: suppressInlineContext.current
+	);
 
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
 	const ctx: FilterContextValue = filterCtx ?? {

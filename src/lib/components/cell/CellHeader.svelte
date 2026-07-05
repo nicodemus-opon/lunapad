@@ -69,16 +69,29 @@
 		if (target.closest('input, button, [role="combobox"], a')) return;
 		setCellDisplay(cell.id, 'full');
 	}
+
+	function onRowKeydown(e: KeyboardEvent) {
+		if (!collapsed) return;
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		const target = e.target as Element;
+		if (target.closest('input, button, [role="combobox"], a')) return;
+		e.preventDefault();
+		setCellDisplay(cell.id, 'full');
+	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="notebook-cell-header flex h-6 w-full items-center gap-2 transition-opacity duration-(--motion-fast) select-none {hidden
 		? revealed
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'
 		: ''} {collapsed ? 'cursor-pointer' : ''}"
+	role={collapsed ? 'button' : undefined}
+	tabindex={collapsed ? 0 : undefined}
+	aria-label={collapsed ? `Expand ${cell.outputName || 'cell'}` : undefined}
 	onclick={onRowClick}
+	onkeydown={onRowKeydown}
 >
 	<div class="flex min-w-0 flex-1 items-center gap-1.5">
 		{#if !codeHidden}

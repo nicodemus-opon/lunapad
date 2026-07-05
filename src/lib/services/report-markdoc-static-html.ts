@@ -201,6 +201,15 @@ function renderTagAttributes(name: string, attributes: Record<string, unknown>):
 	return parts.length ? ` ${parts.join(' ')}` : '';
 }
 
+function renderGenericMarkdocWrapper(
+	tagName: string,
+	childrenHtml: string,
+	extraAttrs: string[] = []
+): string {
+	const attrs = [`data-markdoc-tag="${escapeHtml(tagName)}"`, ...extraAttrs].join(' ');
+	return `<div ${attrs}>${childrenHtml}</div>`;
+}
+
 function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 	if (node === null || node === undefined || node === false || node === true) return '';
 	if (typeof node === 'string') return escapeHtml(node);
@@ -238,8 +247,52 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 			return `<${tag.name}${renderTagAttributes(tag.name, tag.attributes as Record<string, unknown>)}>${childrenHtml}</${tag.name}>`;
 		}
 
-		// Custom widgets and unknown containers: keep their content, drop the wrapper.
-		return childrenHtml;
+		const attrs = tag.attributes as Record<string, unknown>;
+		if (tag.name === 'columns') {
+			return renderGenericMarkdocWrapper(tag.name, childrenHtml, ['class="markdoc-columns"']);
+		}
+		if (tag.name === 'column') {
+			const width =
+				attrs.width !== undefined ? ` style="flex-basis:${escapeHtml(String(attrs.width))}"` : '';
+			return `<div data-markdoc-tag="column" class="markdoc-column"${width}>${childrenHtml}</div>`;
+		}
+		if (tag.name === 'grid') {
+			const cols = typeof attrs.cols === 'number' ? attrs.cols : 3;
+			return renderGenericMarkdocWrapper(tag.name, childrenHtml, [
+				'class="markdoc-grid"',
+				`style="--markdoc-grid-cols:${cols}"`
+			]);
+		}
+		if (tag.name === 'callout') {
+			const tone = escapeHtml(String(attrs.type ?? 'info'));
+			return `<aside data-markdoc-tag="callout" class="markdoc-callout markdoc-callout--${tone}">${childrenHtml}</aside>`;
+		}
+		if (tag.name === 'card') {
+			const title =
+				typeof attrs.title === 'string'
+					? `<div class="markdoc-card-title">${escapeHtml(attrs.title)}</div>`
+					: '';
+			return `<section data-markdoc-tag="card" class="markdoc-card">${title}${childrenHtml}</section>`;
+		}
+		if (tag.name === 'details') {
+			const summary = escapeHtml(String(attrs.summary ?? 'Details'));
+			const open = attrs.open ? ' open' : '';
+			return `<details data-markdoc-tag="details" class="markdoc-details"${open}><summary>${summary}</summary>${childrenHtml}</details>`;
+		}
+		if (tag.name === 'tabs') {
+			return renderGenericMarkdocWrapper(tag.name, childrenHtml, ['class="markdoc-tabs"']);
+		}
+		if (tag.name === 'tab') {
+			const label = escapeHtml(String(attrs.label ?? 'Tab'));
+			return `<section data-markdoc-tag="tab" data-tab-label="${label}" class="markdoc-tab"><h3>${label}</h3>${childrenHtml}</section>`;
+		}
+		if (tag.name === 'mermaid') {
+			const code = typeof attrs.code === 'string' ? attrs.code : childrenHtml;
+			return `<pre data-markdoc-tag="mermaid" class="markdoc-mermaid"><code>${escapeHtml(code)}</code></pre>`;
+		}
+
+		// Keep custom/unknown wrappers so exported HTML preserves layout semantics.
+		return renderGenericMarkdocWrapper(tag.name, childrenHtml);
 	}
 
 	return escapeHtml(String(node));

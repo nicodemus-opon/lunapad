@@ -58,6 +58,10 @@ function formatCellGraph(c: AIChatCell): string {
 	const lang = c.cellType === 'python' ? 'python' : c.language;
 	const attached = c.isContextCell ? '[ATTACHED] ' : '';
 	const parts: string[] = [`${attached}${c.outputName}(${lang},${c.status})`];
+	if (c.cellType === 'markdown') {
+		const markdownHint = (c.markdown ?? c.code).replace(/\s+/g, ' ').trim().slice(0, 120);
+		if (markdownHint) parts.push(`[markdown: ${markdownHint}]`);
+	}
 	if (c.upstream?.length) parts.push(`←[${c.upstream.join(',')}]`);
 	if (c.downstream?.length) parts.push(`→[${c.downstream.join(',')}]`);
 	if (c.criticalityScore && c.criticalityScore >= 3) {
@@ -1167,6 +1171,9 @@ export const POST: RequestHandler = async ({ request }) => {
 				cellOutputNames: new Set(cells.map((c) => c.outputName.toLowerCase())),
 				latestUserMessage
 			};
+			const hasDashboardResultContext = () =>
+				req.subagentType !== 'dashboard' ||
+				req.messages.some((m) => /get_cell_result\([^)]+\):/i.test(m.content));
 
 			const emitPolicyToolCall = (
 				tool: string,
@@ -1174,6 +1181,16 @@ export const POST: RequestHandler = async ({ request }) => {
 				callId?: string
 			): boolean => {
 				if (isSchemaListingQuestion) return false;
+				if (
+					req.subagentType === 'dashboard' &&
+					(tool === 'create_cell' || tool === 'update_cell') &&
+					String(args.markdown ?? (args.cellType === 'markdown' ? args.code : '') ?? '').trim() &&
+					!hasDashboardResultContext()
+				) {
+					pendingPolicyFallback ??=
+						'Inspect at least one relevant cell result with get_cell_result before creating or updating dashboard markdown.';
+					return false;
+				}
 				if (!isChatToolCallAllowed(tool, args, toolPolicyCtx)) {
 					pendingPolicyFallback ??= blockedToolFallbackText(tool, args, toolPolicyCtx, schema);
 					return false;

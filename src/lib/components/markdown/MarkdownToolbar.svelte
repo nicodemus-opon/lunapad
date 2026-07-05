@@ -22,12 +22,19 @@
 		AlertCircle,
 		Layers,
 		Workflow,
+		Filter,
+		GitBranch,
 		Plus,
 		ChevronDown
 	} from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import RefPickerMenu from './RefPickerMenu.svelte';
 	import FilterPickerMenu from './FilterPickerMenu.svelte';
+	import {
+		buildContextualMarkdocSnippet,
+		getUsableMarkdocRefEntry
+	} from '$lib/services/markdoc-contextual-snippets';
+	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import { WIDGET_SNIPPETS } from '$lib/services/markdown-format';
 
 	export type FormatAction =
@@ -35,14 +42,9 @@
 		| { type: 'line-prefix'; prefix: string }
 		| { type: 'snippet'; text: string };
 
-	interface RefEntry {
-		cellName: string;
-		columns: string[];
-	}
-
 	interface Props {
 		onFormat: (action: FormatAction) => void;
-		refPickerEntries: RefEntry[];
+		refPickerEntries: MarkdownRefEntry[];
 		onInsertSnippet: (snippet: string) => void;
 		onInsertRef: (cellName: string, column: string) => void;
 		onTogglePreview?: () => void;
@@ -50,6 +52,8 @@
 
 	const { onFormat, refPickerEntries, onInsertSnippet, onInsertRef, onTogglePreview }: Props =
 		$props();
+
+	const hasReportContext = $derived(Boolean(getUsableMarkdocRefEntry(refPickerEntries)));
 
 	function fmt(action: FormatAction) {
 		return (e: MouseEvent) => {
@@ -153,6 +157,13 @@
 		{ icon: Layers, title: 'Tabs', snippet: WIDGET_SNIPPETS.tabs },
 		{ icon: Workflow, title: 'Mermaid diagram', snippet: WIDGET_SNIPPETS.mermaid }
 	];
+
+	const reportButtons = [
+		{ icon: LayoutGrid, title: 'Summary report', id: 'report-summary' },
+		{ icon: Filter, title: 'Filtered report', id: 'report-filtered' },
+		{ icon: GitBranch, title: 'Grouped sections', id: 'report-grouped' },
+		{ icon: Layers, title: 'Tabbed drilldown', id: 'report-tabs' }
+	];
 </script>
 
 <div class="md-toolbar" role="toolbar" aria-label="Markdown formatting">
@@ -216,6 +227,18 @@
 				<ChevronDown size={11} class="opacity-50" />
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="start" class="min-w-40">
+				{#if hasReportContext}
+					{#each reportButtons as btn}
+						<DropdownMenu.Item
+							onclick={() =>
+								onInsertSnippet(buildContextualMarkdocSnippet(btn.id, refPickerEntries))}
+						>
+							<btn.icon class="h-3.5 w-3.5" />
+							{btn.title}
+						</DropdownMenu.Item>
+					{/each}
+					<DropdownMenu.Separator />
+				{/if}
 				{#each widgetButtons as btn}
 					<DropdownMenu.Item onclick={() => onInsertSnippet(btn.snippet)}>
 						<btn.icon class="h-3.5 w-3.5" />

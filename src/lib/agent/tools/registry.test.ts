@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { SUBAGENT_TOOLS } from '$lib/services/ai-subagents.js';
+import { NATIVE_TOOLS } from '$lib/agent/server/tools/native-schemas.js';
 import { getAgentTool, listAgentTools, isStopAfterTool } from './registry.js';
 
 describe('agent tool registry', () => {
@@ -22,5 +24,14 @@ describe('agent tool registry', () => {
 	it('maps stop-after tools', () => {
 		expect(isStopAfterTool('run_cells')).toBe(true);
 		expect(isStopAfterTool('create_cell')).toBe(false);
+	});
+
+	it('has native schemas for every subagent tool', () => {
+		const nativeNames = new Set(NATIVE_TOOLS.map((tool) => tool.function.name));
+		const missing = Object.entries(SUBAGENT_TOOLS).flatMap(([phase, tools]) =>
+			tools.filter((tool) => !nativeNames.has(tool)).map((tool) => `${phase}:${tool}`)
+		);
+
+		expect(missing).toEqual([]);
 	});
 });

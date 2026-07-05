@@ -1,7 +1,12 @@
 import { Extension } from '@tiptap/core';
 import { PluginKey, TextSelection } from '@tiptap/pm/state';
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion';
+import {
+	buildContextualMarkdocSnippet,
+	getUsableMarkdocRefEntry
+} from '$lib/services/markdoc-contextual-snippets';
 import { SLASH_COMMANDS, type SlashCommand } from '$lib/services/markdown-format';
+import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 import { markdownToPmDocument } from '$lib/services/markdoc-pm';
 
 export const slashCommandPluginKey = new PluginKey('slashCommand');
@@ -21,10 +26,13 @@ function removeAbandonedSlash(
 		const to = from + 1;
 		if (to > editor.state.doc.content.size) return;
 		if (editor.state.doc.textBetween(from, to) !== '/') return;
-		editor.chain().command(({ tr }) => {
-			tr.delete(from, to);
-			return true;
-		}).run();
+		editor
+			.chain()
+			.command(({ tr }) => {
+				tr.delete(from, to);
+				return true;
+			})
+			.run();
 	}, 0);
 }
 
@@ -40,6 +48,7 @@ export interface SlashCommandHandler {
 
 export interface SlashCommandExtensionOptions {
 	handler: SlashCommandHandler;
+	refEntries?: () => MarkdownRefEntry[];
 	insertQueryBlock?: (
 		lang: 'sql' | 'prql' | 'python',
 		editor: import('@tiptap/core').Editor
@@ -47,11 +56,19 @@ export interface SlashCommandExtensionOptions {
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
 }
 
-function filterCommands(query: string): SlashCommand[] {
-	const q = query.toLowerCase().trim();
-	if (!q) return SLASH_COMMANDS.slice(0, 16);
+export function contextualSnippet(item: SlashCommand, entries: MarkdownRefEntry[]): string {
+	return buildContextualMarkdocSnippet(item.id, entries) || item.snippet;
+}
 
-	const scored = SLASH_COMMANDS.map((cmd) => {
+function filterCommands(query: string, entries: MarkdownRefEntry[] = []): SlashCommand[] {
+	const q = query.toLowerCase().trim();
+	const hasUsableRef = Boolean(getUsableMarkdocRefEntry(entries));
+	const availableCommands = hasUsableRef
+		? SLASH_COMMANDS
+		: SLASH_COMMANDS.filter((cmd) => cmd.group !== 'report');
+	if (!q) return availableCommands.slice(0, 32);
+
+	const scored = availableCommands.map((cmd) => {
 		let score = 0;
 		if (cmd.id.toLowerCase() === q) score += 100;
 		else if (cmd.label.toLowerCase().startsWith(q)) score += 60;
@@ -70,7 +87,7 @@ function filterCommands(query: string): SlashCommand[] {
 		.filter((x): x is { cmd: SlashCommand; score: number } => x !== null)
 		.sort((a, b) => b.score - a.score || a.cmd.label.localeCompare(b.cmd.label));
 
-	return scored.slice(0, 16).map((x) => x.cmd);
+	return scored.slice(0, 32).map((x) => x.cmd);
 }
 
 /** Build TipTap-ready nodes from a markdoc snippet (same path as loading markdown). */
@@ -94,9 +111,10 @@ function insertWidgetFromSnippet(editor: import('@tiptap/core').Editor, snippet:
 function insertSlashItem(
 	editor: import('@tiptap/core').Editor,
 	item: SlashCommand,
-	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage'>
+	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage' | 'refEntries'>
 ): void {
-	const { snippet, id, group } = item;
+	const { id, group } = item;
+	const snippet = contextualSnippet(item, opts?.refEntries?.() ?? []);
 
 	if (id === 'sql' || id === 'prql' || id === 'python') {
 		opts?.insertQueryBlock?.(id, editor);
@@ -156,7 +174,11 @@ function insertSlashItem(
 		insertWidgetFromSnippet(editor, snippet);
 		return;
 	}
-	editor.chain().focus().insertContent({ type: 'markdocBlock', attrs: { source: trimmed } }).run();
+	editor
+		.chain()
+		.focus()
+		.insertContent({ type: 'markdocBlock', attrs: { source: trimmed } })
+		.run();
 }
 
 function moveToFollowingEmptyParagraph(editor: import('@tiptap/core').Editor): boolean {
@@ -238,7 +260,8 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 		const handler = this.options.handler;
 		const insertQueryBlock = this.options.insertQueryBlock;
 		const insertPage = this.options.insertPage;
-		const slashOpts = { insertQueryBlock, insertPage };
+		const refEntries = this.options.refEntries;
+		const slashOpts = { insertQueryBlock, insertPage, refEntries };
 		// Guards the onExit cleanup: when a command runs it already deleteRange()s the
 		// trigger, so onExit must NOT delete again (that would eat real content).
 		let commandExecuted = false;
@@ -248,10 +271,11 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 			allow: ({ state, range }) => {
 				const $from = state.doc.resolve(range.from);
 				const isParagraph = $from.parent.type.name === 'paragraph';
-				const isStart = $from.parent.textContent.slice(0, range.from - $from.start()).trim() === '/';
+				const isStart =
+					$from.parent.textContent.slice(0, range.from - $from.start()).trim() === '/';
 				return isParagraph || isStart;
 			},
-			items: ({ query }) => filterCommands(query),
+			items: ({ query }) => filterCommands(query, refEntries?.() ?? []),
 			command: ({ editor, range, props }) => {
 				commandExecuted = true;
 				editor.chain().focus().deleteRange(range).run();
@@ -300,7 +324,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 
 export function createSlashCommandExtension(
 	handler: SlashCommandHandler,
-	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage'>
+	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage' | 'refEntries'>
 ) {
 	return SlashCommandExtension.configure({ handler, ...opts });
 }

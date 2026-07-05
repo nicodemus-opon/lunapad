@@ -7,6 +7,7 @@ import { reactiveProps } from './reactive-props.svelte';
 
 export interface MarkdocExpressionExtensionContext {
 	getCells: () => Cell[];
+	getNotebookId: () => string;
 }
 
 export const MarkdocExpressionExtension = Node.create({
@@ -45,6 +46,7 @@ export const MarkdocExpressionExtension = Node.create({
 	},
 
 	addNodeView() {
+		const context = this.options.context as MarkdocExpressionExtensionContext;
 		return ({ node, editor, getPos }) => {
 			const dom = document.createElement('span');
 			dom.className = 'md-expr-host';
@@ -52,6 +54,8 @@ export const MarkdocExpressionExtension = Node.create({
 
 			const props = reactiveProps({
 				source: String(node.attrs.source ?? ''),
+				notebookId: context.getNotebookId(),
+				cells: context.getCells(),
 				selected: false,
 				onPatch: (nextSource: string) => {
 					const pos = getPos();
@@ -81,6 +85,8 @@ export const MarkdocExpressionExtension = Node.create({
 				update(updatedNode) {
 					if (updatedNode.type.name !== 'markdocExpression') return false;
 					props.source = String(updatedNode.attrs.source ?? props.source);
+					props.notebookId = context.getNotebookId();
+					props.cells = context.getCells();
 					return true;
 				},
 				destroy() {

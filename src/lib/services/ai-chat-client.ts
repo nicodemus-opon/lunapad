@@ -1077,6 +1077,8 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 	const nameRegexes = new Map<string, RegExp>(
 		outputNames.map((n) => [n, new RegExp(`\\b${escapeRegExp(n)}\\b`)])
 	);
+	const cellSourceForRefs = (cell: (typeof cells)[number]) =>
+		cell.cellType === 'markdown' ? cell.markdown : cell.code;
 
 	// Pre-compute downstream counts per outputName (needed for workspace contract)
 	const downstreamCounts = new Map<string, number>();
@@ -1085,7 +1087,7 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 		const re = nameRegexes.get(cell.outputName)!;
 		let count = 0;
 		for (const other of cells) {
-			if (other.outputName !== cell.outputName && re.test(other.code)) count++;
+			if (other.outputName !== cell.outputName && re.test(cellSourceForRefs(other))) count++;
 		}
 		if (count > 0) downstreamCounts.set(cell.outputName, count);
 	}
@@ -1098,7 +1100,9 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 	for (const c of cells) {
 		cellUpstreamNames.set(
 			c.id,
-			outputNames.filter((n) => n !== c.outputName && nameRegexes.get(n)!.test(c.code))
+			outputNames.filter(
+				(n) => n !== c.outputName && nameRegexes.get(n)!.test(cellSourceForRefs(c))
+			)
 		);
 	}
 	for (const c of cells) {
@@ -1108,7 +1112,7 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				? outputNames.filter((n) => {
 						if (n === c.outputName) return false;
 						const dc = cells.find((x) => x.outputName === n);
-						return dc ? nameRegexes.get(c.outputName)!.test(dc.code) : false;
+						return dc ? nameRegexes.get(c.outputName)!.test(cellSourceForRefs(dc)) : false;
 					})
 				: []
 		);
@@ -1160,12 +1164,13 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 				const isContext = contextCellIds.includes(c.id);
 				const isError = c.status === 'error';
 				const depth = depthMap.get(c.id);
+				const source = c.cellType === 'markdown' ? c.markdown : c.code;
 				const codeSnippet =
 					isContext || isError || depth === 1
-						? c.code
+						? source
 						: depth !== undefined
-							? c.code.slice(0, 200)
-							: c.code.slice(0, 80);
+							? source.slice(0, 200)
+							: source.slice(0, 80);
 
 				const errorMessage = isError
 					? (c.errors?.[0]?.display ?? c.errors?.[0]?.reason)?.slice(0, 200)
@@ -1185,6 +1190,7 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 					cellType:
 						c.cellType === 'python' ? 'python' : c.cellType === 'markdown' ? 'markdown' : 'query',
 					code: codeSnippet,
+					...(c.cellType === 'markdown' && { markdown: codeSnippet }),
 					// Only include result columns for context cells — non-context columns duplicate schema info
 					resultColumns: isContext ? (c.result?.columns ?? []) : [],
 					status: c.status,
@@ -1232,6 +1238,8 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 
 async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<string> {
 	const cells = getCells();
+	const cellSourceForRefs = (cell: (typeof cells)[number]) =>
+		cell.cellType === 'markdown' ? cell.markdown : cell.code;
 
 	switch (call.tool) {
 		case 'get_lineage': {
@@ -1246,14 +1254,14 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 							(c) =>
 								c.outputName !== outputName &&
 								c.outputName &&
-								new RegExp(`\\b${escapeRegExp(c.outputName)}\\b`).test(target.code)
+								new RegExp(`\\b${escapeRegExp(c.outputName)}\\b`).test(cellSourceForRefs(target))
 						)
 						.map((c) => c.outputName)
 				: [];
 
 			// Downstream: cells that reference this outputName
 			const downstream = cells
-				.filter((c) => c.outputName !== outputName && re.test(c.code))
+				.filter((c) => c.outputName !== outputName && re.test(cellSourceForRefs(c)))
 				.map((c) => c.outputName);
 
 			const result = target
@@ -1264,17 +1272,22 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 		}
 
 		case 'list_cells': {
-			const queryCells = cells.filter((c) => c.cellType === 'query' || c.cellType === 'python');
-			if (queryCells.length === 0) {
+			const visibleCells = cells.filter(
+				(c) => c.cellType === 'query' || c.cellType === 'python' || c.cellType === 'markdown'
+			);
+			if (visibleCells.length === 0) {
 				const text = '**Cells:** (none)';
 				updateMessageText(aiMsgId, `\n\n${text}\n\n`);
 				return text;
 			}
-			const summary = queryCells
-				.map(
-					(c) =>
-						`- \`${c.outputName}\` (${c.cellType === 'python' ? 'python' : c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`
-				)
+			const summary = visibleCells
+				.map((c) => {
+					if (c.cellType === 'markdown') {
+						const preview = c.markdown.replace(/\s+/g, ' ').trim().slice(0, 120);
+						return `- \`${c.outputName}\` (markdown${preview ? `: ${preview}` : ''})`;
+					}
+					return `- \`${c.outputName}\` (${c.cellType === 'python' ? 'python' : c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`;
+				})
 				.join('\n');
 			const text = `**Cells:**\n${summary}`;
 			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
@@ -3308,6 +3321,7 @@ async function runDashboardLoop(
 	// Track the created summary cell across turns so the model updates it instead of
 	// creating a second one.
 	let knownCellName: string | null = null;
+	let inspectedResult = false;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
 		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
@@ -3330,10 +3344,11 @@ async function runDashboardLoop(
 			continue;
 		}
 
-		if (signalledDone) break;
-
 		if (allToolResults.length > 0) {
 			stallRetries = 0;
+			if (allToolResults.some((r) => r.startsWith('get_cell_result('))) {
+				inspectedResult = true;
+			}
 
 			if (!knownCellName) {
 				for (const r of allToolResults) {
@@ -3345,9 +3360,13 @@ async function runDashboardLoop(
 				}
 			}
 
-			const directive = knownCellName
-				? `The summary cell '${knownCellName}' already exists. Use update_cell to revise it rather than creating a new one. Then call <done>.`
-				: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags for the relevant cells, then call <done>.';
+			if (signalledDone && inspectedResult && knownCellName) break;
+
+			const directive = !inspectedResult
+				? 'Call get_cell_result on at least one relevant reporting cell before writing dashboard markdown.'
+				: knownCellName
+					? `The summary cell '${knownCellName}' already exists. Use update_cell to revise it rather than creating a new one. Then call <done>.`
+					: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags for the relevant cells, then call <done>.';
 
 			injection = {
 				role: 'user',
@@ -3357,11 +3376,15 @@ async function runDashboardLoop(
 			continue;
 		}
 
+		if (signalledDone && inspectedResult && knownCellName) break;
+
 		if (stallRetries < 2) {
 			stallRetries++;
-			const directive = knownCellName
-				? `The summary cell '${knownCellName}' already exists — use update_cell to revise it, then call <done>.`
-				: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags, then call <done>. Do NOT respond with prose only.';
+			const directive = !inspectedResult
+				? 'Call list_cells, then get_cell_result on the relevant reporting cells before writing dashboard markdown. Do NOT respond with prose only.'
+				: knownCellName
+					? `The summary cell '${knownCellName}' already exists — use update_cell to revise it, then call <done>.`
+					: 'Write one markdown cell (create_cell, cellType:"markdown") using {% grid %} of {% metric %} widgets and {% chart %} tags, then call <done>. Do NOT respond with prose only.';
 			injection = { role: 'user', content: directive };
 			depth++;
 			continue;

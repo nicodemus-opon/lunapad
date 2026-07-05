@@ -3,14 +3,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { SlidersHorizontal } from '@lucide/svelte';
-
-	interface RefEntry {
-		cellName: string;
-		columns: string[];
-	}
+	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 
 	interface Props {
-		entries: RefEntry[];
+		entries: MarkdownRefEntry[];
 		onInsert: (snippet: string) => void;
 	}
 
@@ -119,8 +115,8 @@
 				{#if optionsCell}
 					<select bind:value={optionsColumn} class="md-filterpicker-select">
 						<option value="">Select column…</option>
-						{#each cellColumns as col (col)}
-							<option value={col}>{col}</option>
+						{#each cellColumns as col (col.name)}
+							<option value={col.name}>{col.name}</option>
 						{/each}
 					</select>
 				{/if}

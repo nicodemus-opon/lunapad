@@ -34,14 +34,13 @@
 
 	let liveResults = $state<
 		Record<string, { rows: Record<string, unknown>[]; columns: string[] } | null>
-	>({ ...initialLiveResults });
+	>({});
 	let liveErrors = $state<Record<string, string | null>>({});
 	let loadingCellIds = $state<Set<string>>(new Set());
 	let filters = $state<Record<string, string>>({});
-	let lastUpdatedAt = $state<number | null>(
-		Object.keys(initialLiveResults).length > 0 ? Date.now() : null
-	);
+	let lastUpdatedAt = $state<number | null>(null);
 	let reviewSidebar = $state<ShareReviewSidebar | undefined>();
+	let loadedLiveResultsKey = '';
 
 	const reportMarkdowns = $derived(
 		data.cells
@@ -49,6 +48,22 @@
 			.map((c) => c.markdown!)
 	);
 	const filterDefs = $derived(extractReportFilters(reportMarkdowns));
+
+	const suppressInlineFilters = {
+		get current() {
+			return filterDefs.length > 0;
+		}
+	};
+
+	$effect(() => {
+		const key = `${data.token}:${Object.keys(initialLiveResults).join('\0')}`;
+		if (key === loadedLiveResultsKey) return;
+		loadedLiveResultsKey = key;
+		liveResults = { ...initialLiveResults };
+		liveErrors = {};
+		loadingCellIds = new Set();
+		lastUpdatedAt = Object.keys(initialLiveResults).length > 0 ? Date.now() : null;
+	});
 
 	function postEmbedMessage(type: string, payload: Record<string, unknown> = {}): void {
 		if (!embed || typeof window === 'undefined') return;
@@ -137,7 +152,7 @@
 		}
 	};
 	setContext(FILTER_CONTEXT_KEY, filterCtx);
-	setContext(SUPPRESS_INLINE_FILTERS_KEY, filterDefs.length > 0);
+	setContext(SUPPRESS_INLINE_FILTERS_KEY, suppressInlineFilters);
 
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 

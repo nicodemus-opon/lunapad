@@ -13,7 +13,8 @@ import {
 	type VisualBlock,
 	type VisualBlockKind
 } from './markdoc-ast';
-import { isMarkdocContainerTag, parseAttrsJson as parseWidgetAttrsJson } from '../components/markdown/visual/widget-registry';
+import { isStructuredMarkdocContainerTag } from './markdoc-tag-registry';
+import { parseAttrsJson as parseWidgetAttrsJson } from '../components/markdown/visual/widget-registry';
 
 /** JSON shape compatible with TipTap `setContent` / `getJSON`. */
 export interface PMMarkJSON {
@@ -527,11 +528,7 @@ function coalesceTableProseBlocks(blocks: VisualBlock[]): VisualBlock[] {
 		}
 		const prevLines = prev.source.split('\n').filter((l) => l.trim() !== '');
 		const prevHasDelimiter = prevLines.some((l) => isTableDelimiterRow(l));
-		if (
-			prevHasDelimiter &&
-			isTableOnlyProse(prev.source) &&
-			isTableOnlyProse(block.source)
-		) {
+		if (prevHasDelimiter && isTableOnlyProse(prev.source) && isTableOnlyProse(block.source)) {
 			merged[merged.length - 1] = {
 				...prev,
 				source: `${prev.source}\n\n${block.source}`
@@ -589,7 +586,7 @@ function blockToPmNodes(block: VisualBlock, schema: Schema): PMNodeJSON[] {
 		return [{ type: 'markdocBlock', attrs: { source: block.source } }];
 	}
 
-	if (parsed.selfClosing || !isMarkdocContainerTag(parsed.tagName)) {
+	if (!isStructuredMarkdocContainerTag(parsed.tagName, { selfClosing: parsed.selfClosing })) {
 		return [
 			{
 				type: 'markdocWidget',
@@ -925,6 +922,14 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 		return '---';
 	}
 	return narrativeNodesToMarkdown([node], schema);
+}
+
+export function serializePmNodeToMarkdown(node: PMNode | PMNodeJSON): string {
+	if ('toJSON' in node) {
+		return serializeTiptapNode(node.toJSON() as PMNodeJSON, node.type.schema).trimEnd();
+	}
+	const schema = getMarkdocPmSchema();
+	return serializeTiptapNode(node, schema).trimEnd();
 }
 
 /** Parse a markdown(Markdoc) cell into a ProseMirror JSON document + optional frontmatter. */

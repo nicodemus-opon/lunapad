@@ -3,6 +3,7 @@
 import Markdoc from '@markdoc/markdoc';
 const { Tag } = Markdoc;
 import type { Config, ConfigFunction, RenderableTreeNode, Schema } from '@markdoc/markdoc';
+import { CUSTOM_MARKDOC_TAGS as CUSTOM_MARKDOC_TAG_REGISTRY } from './markdoc-tag-registry';
 
 /** Markdoc config extended with the original markdown string for raw mermaid slicing. */
 interface MarkdocConfig extends Config {
@@ -646,6 +647,39 @@ export function expandLoopsInSource(
 	return interpolateBareVars(template, mergeVariables(config, scope));
 }
 
+/** Expand only explicit loop blocks in a full markdown document.
+ *
+ * `expandLoopsInSource` intentionally interpolates bare `$field` tokens at its leaf,
+ * which is correct inside loop bodies but too aggressive for an entire report. This
+ * wrapper preserves ordinary prose/widgets and only replaces `{% group %}` /
+ * `{% each %}` regions with their rendered markdown. That makes loop authoring
+ * tolerant of blank lines because Markdoc sees the expanded markdown, not the fragile
+ * nested template tags.
+ */
+function expandLoopBlocksInDocument(
+	template: string,
+	config: MarkdocConfig,
+	scope: Record<string, unknown>
+): string {
+	const group = findTagBlock(template, 'group');
+	if (group) {
+		const before = expandLoopBlocksInDocument(template.slice(0, group.start), config, scope);
+		const middle = expandGroupBlock(group.attrStr, group.body, config, scope);
+		const after = expandLoopBlocksInDocument(template.slice(group.end), config, scope);
+		return stitchParts(before, middle, after);
+	}
+
+	const each = findTagBlock(template, 'each');
+	if (each) {
+		const before = expandLoopBlocksInDocument(template.slice(0, each.start), config, scope);
+		const middle = expandEachBlock(each.attrStr, each.body, config, scope);
+		const after = expandLoopBlocksInDocument(template.slice(each.end), config, scope);
+		return stitchParts(before, middle, after);
+	}
+
+	return template;
+}
+
 function expandEachFromNode(
 	node: AstLike,
 	config: MarkdocConfig,
@@ -921,25 +955,7 @@ const mermaidTag: Schema = {
 };
 
 /** Custom widget tags (excludes built-in Markdoc tags like `if`). */
-export const CUSTOM_MARKDOC_TAGS = [
-	'metric',
-	'chart',
-	'datatable',
-	'badge',
-	'progress',
-	'columns',
-	'column',
-	'grid',
-	'callout',
-	'card',
-	'details',
-	'tabs',
-	'tab',
-	'filter',
-	'mermaid',
-	'each',
-	'group'
-] as const;
+export const CUSTOM_MARKDOC_TAGS = CUSTOM_MARKDOC_TAG_REGISTRY;
 
 const TAGS: Record<string, Schema> = {
 	...Markdoc.tags,
@@ -995,8 +1011,11 @@ function buildMarkdocConfig(markdown: string, cells: Cell[]): MarkdocConfig {
 export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): MarkdocDiagnostic[] {
 	if (!markdown.includes('{%') && !markdown.includes('$')) return [];
 
-	const ast = Markdoc.parse(markdown);
 	const config = buildMarkdocConfig(markdown, cells);
+	const effectiveMarkdown = sourceHasLoopTags(markdown)
+		? expandLoopBlocksInDocument(markdown, config, {})
+		: markdown;
+	const ast = Markdoc.parse(effectiveMarkdown);
 	const diagnostics: MarkdocDiagnostic[] = [];
 
 	for (const raw of Markdoc.validate(ast, config)) {
@@ -1020,16 +1039,16 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 	// Flag undefined top-level $cell refs (inline prose + tag attributes)
 	const knownCells = new Set(Object.keys(buildMarkdocVariables(cells)));
 	const refNames = new Set([
-		...extractMarkdocRefs(markdown),
-		...extractBareMarkdocRefRoots(markdown)
+		...extractMarkdocRefs(effectiveMarkdown),
+		...extractBareMarkdocRefRoots(effectiveMarkdown)
 	]);
 	for (const refName of refNames) {
 		if (knownCells.has(refName) || refName === 'key' || refName === 'keyId' || refName === 'items')
 			continue;
 		const re = new RegExp(`\\$${refName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-		const match = re.exec(markdown);
+		const match = re.exec(effectiveMarkdown);
 		if (!match) continue;
-		const before = markdown.slice(0, match.index);
+		const before = effectiveMarkdown.slice(0, match.index);
 		const line = before.split('\n').length;
 		const column = match.index - before.lastIndexOf('\n');
 		diagnostics.push({
@@ -1045,8 +1064,12 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 }
 
 export function renderMarkdocCell(markdown: string, cells: Cell[]): MarkdocRenderResult {
-	const ast = Markdoc.parse(markdown);
-	const config = buildMarkdocConfig(markdown, cells);
+	const initialConfig = buildMarkdocConfig(markdown, cells);
+	const effectiveMarkdown = sourceHasLoopTags(markdown)
+		? expandLoopBlocksInDocument(markdown, initialConfig, {})
+		: markdown;
+	const ast = Markdoc.parse(effectiveMarkdown);
+	const config = buildMarkdocConfig(effectiveMarkdown, cells);
 	const validationErrors = Markdoc.validate(ast, config)
 		.filter((e) => e.error.level === 'critical' || e.error.level === 'error')
 		.map((e) => e.error.message);

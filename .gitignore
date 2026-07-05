@@ -34,7 +34,8 @@ test-results/
 playwright-report/
 artifacts/demo-videos/*.webm
 artifacts/demo-videos/*.mp4
-e2e/
+e2e/*
+!e2e/ai-ollama-dashboard.llm.spec.ts
 
 # Temp/scratch files
 .tmp-*.json
@@ -55,3 +56,5 @@ project/
 .pnpm-store/
 graphify-out/
 artifacts/
+.agents
+.codex/

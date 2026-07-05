@@ -259,6 +259,32 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
 	});
 
+	it('round-trips deeply nested dashboard layouts', () => {
+		const md = `{% tabs %}
+{% tab label="Overview" %}
+{% columns %}
+{% column %}
+{% metric value=$orders.count label="Rows" /%}
+{% /column %}
+{% column %}
+{% chart type="bar" data=$orders.rows x="region" y="revenue" /%}
+{% /column %}
+{% /columns %}
+{% /tab %}
+{% /tabs %}`;
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
+	it('keeps unknown non-self-closing tags as structured containers', () => {
+		const md =
+			'{% dashboard-shell variant="hero" %}\n{% callout type="info" %}\nNested\n{% /callout %}\n{% /dashboard-shell %}';
+		const { doc } = markdownToPmDocument(md);
+		const shell = doc.content?.[0];
+		expect(shell?.type).toBe('markdocContainer');
+		expect(shell?.attrs?.tagName).toBe('dashboard-shell');
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
 	it('preserves inline marks and expressions inside table cells', () => {
 		const md = '| Metric | Value |\n| --- | --- |\n| **Total** | {% $cell.total %} |';
 		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));

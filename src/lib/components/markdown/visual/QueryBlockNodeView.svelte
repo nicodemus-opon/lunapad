@@ -262,9 +262,17 @@
 	function toggleCollapsed() {
 		onSetDisplay(collapsed ? 'full' : 'collapsed');
 	}
+
+	function handleContainerKeydown(e: KeyboardEvent) {
+		if (!collapsed) return;
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		if ((e.target as Element).closest('button, input, [data-no-expand], .qb-gutter')) return;
+		e.preventDefault();
+		expandCollapsed();
+	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="query-block-view group/qb relative my-2 rounded-md border border-transparent transition-colors {selected
 		? 'border-ring bg-muted/10'
@@ -272,11 +280,15 @@
 			? 'cursor-pointer border-border/60 bg-muted/10 hover:border-border'
 			: 'hover:border-border'}"
 	data-cell-id={cellId}
+	role={collapsed ? 'button' : undefined}
+	tabindex={collapsed ? 0 : undefined}
+	aria-label={collapsed ? `Expand ${cell?.outputName || 'query block'}` : undefined}
 	onclick={(e) => {
 		if (!collapsed) return;
 		if ((e.target as Element).closest('button, input, [data-no-expand], .qb-gutter')) return;
 		expandCollapsed();
 	}}
+	onkeydown={handleContainerKeydown}
 	onfocusin={() => {
 		if (collapsed) return;
 		focused = true;
@@ -300,6 +312,7 @@
 				: ''}"
 		>
 			{#if cell}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div onmousedown={(e) => e.stopPropagation()}>
 					<CellMenu
 						{cell}

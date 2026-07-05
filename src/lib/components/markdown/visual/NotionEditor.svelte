@@ -12,18 +12,17 @@
 		pmDocumentToMarkdown,
 		type PMDocJSON
 	} from '$lib/services/markdoc-pm';
-	import {
-		parseVisualBlocks,
-		parseBlockWidget,
-		updateBlockWidgetSource,
-		serializeMarkdocTag,
-		type VisualBlock
-	} from '$lib/services/markdoc-ast';
+	import { parseVisualBlocks, type VisualBlock } from '$lib/services/markdoc-ast';
 	import type { SlashCommand } from '$lib/services/markdown-format';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import { buildNotionEditorExtensions } from './notion-editor-extensions';
+	import {
+		syncMarkdocNodeSelection,
+		patchMarkdocNodeSelection,
+		type MarkdocSelectedNode
+	} from './markdoc-node-selection';
 	import { clampContextMenuPosition, clampMenuPosition, handleMenuKeyDown } from './menu-utils';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import { Plus, Copy, Trash2, X, ArrowUp, ArrowDown } from '@lucide/svelte';
@@ -65,13 +64,7 @@
 	let mentionMenuPos = $state({ top: 0, left: 0 });
 
 	// Selection / inspector
-	let selectedNodeInfo = $state<{
-		type: 'widget' | 'container' | 'block';
-		tagName?: string;
-		attrs?: Record<string, unknown>;
-		source?: string;
-		pos?: number;
-	} | null>(null);
+	let selectedNodeInfo = $state<MarkdocSelectedNode | null>(null);
 
 	const selectedBlock = $derived.by((): VisualBlock | null => {
 		if (!selectedNodeInfo?.source) return null;
@@ -160,44 +153,7 @@
 
 	function syncSelection(ed: TipTapEditor) {
 		if (!NodeSelectionCtor) return;
-		const sel = ed.state.selection;
-		if (!(sel instanceof NodeSelectionCtor)) {
-			selectedNodeInfo = null;
-			return;
-		}
-		const node = sel.node;
-		const pos = sel.from;
-		if (node.type.name === 'markdocBlock') {
-			selectedNodeInfo = {
-				type: 'block',
-				source: String(node.attrs.source ?? ''),
-				pos
-			};
-		} else if (node.type.name === 'markdocWidget') {
-			const tagName = String(node.attrs.tagName ?? '');
-			let attrs: Record<string, unknown> = {};
-			try {
-				attrs = JSON.parse(String(node.attrs.attrsJson ?? '{}'));
-			} catch {
-				/* ignore */
-			}
-			const source = serializeMarkdocTag(tagName, attrs, {
-				selfClosing: Boolean(node.attrs.selfClosing)
-			});
-			selectedNodeInfo = { type: 'widget', tagName, attrs, source, pos };
-		} else if (node.type.name === 'markdocContainer') {
-			const tagName = String(node.attrs.tagName ?? '');
-			let attrs: Record<string, unknown> = {};
-			try {
-				attrs = JSON.parse(String(node.attrs.attrsJson ?? '{}'));
-			} catch {
-				/* ignore */
-			}
-			const source = serializeMarkdocTag(tagName, attrs, { body: '' });
-			selectedNodeInfo = { type: 'container', tagName, attrs, source, pos };
-		} else {
-			selectedNodeInfo = null;
-		}
+		selectedNodeInfo = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
 	}
 
 	function emitNow(ed: TipTapEditor) {
@@ -246,77 +202,8 @@
 		body?: string;
 		source?: string;
 	}) {
-		if (!editor || !selectedNodeInfo?.pos) return;
-		const pos = selectedNodeInfo.pos;
-
-		if (selectedNodeInfo.type === 'widget') {
-			const tagName = selectedNodeInfo.tagName ?? 'metric';
-			let attrs = { ...selectedNodeInfo.attrs, ...patch.attrs };
-			if (patch.source) {
-				const block: VisualBlock = {
-					id: 'patch',
-					kind: 'widget',
-					source: patch.source,
-					tagName
-				};
-				const parsed = parseBlockWidget(block);
-				if (parsed) attrs = { ...parsed.attrs, ...patch.attrs };
-			}
-			editor
-				.chain()
-				.focus()
-				.command(({ tr }) => {
-					tr.setNodeMarkup(pos, undefined, {
-						tagName,
-						attrsJson: JSON.stringify(attrs),
-						selfClosing: true
-					});
-					return true;
-				})
-				.run();
-			return;
-		}
-
-		if (selectedNodeInfo.type === 'container') {
-			const tagName = selectedNodeInfo.tagName ?? 'callout';
-			let attrs = { ...selectedNodeInfo.attrs, ...patch.attrs };
-			if (patch.source) {
-				const block: VisualBlock = {
-					id: 'patch',
-					kind: 'container',
-					source: patch.source,
-					tagName
-				};
-				const parsed = parseBlockWidget(block);
-				if (parsed) attrs = { ...parsed.attrs, ...patch.attrs };
-			}
-			editor
-				.chain()
-				.focus()
-				.command(({ tr }) => {
-					tr.setNodeAttribute(pos, 'tagName', tagName);
-					tr.setNodeAttribute(pos, 'attrsJson', JSON.stringify(attrs));
-					return true;
-				})
-				.run();
-			return;
-		}
-
-		if (!selectedBlock) return;
-		let next: VisualBlock;
-		if (patch.source !== undefined) {
-			next = { ...selectedBlock, source: patch.source };
-		} else {
-			next = updateBlockWidgetSource(selectedBlock, patch);
-		}
-		editor
-			.chain()
-			.focus()
-			.command(({ tr }) => {
-				tr.setNodeMarkup(pos, undefined, { source: next.source });
-				return true;
-			})
-			.run();
+		if (!editor || !selectedNodeInfo) return;
+		patchMarkdocNodeSelection(editor, selectedNodeInfo, selectedBlock, patch);
 	}
 
 	function duplicateBlockAt(pos: number) {
@@ -527,10 +414,7 @@
 									top: (event as DragEvent).clientY
 								})?.pos;
 								if (pos !== undefined) {
-									ed.chain()
-										.focus()
-										.insertContentAt(pos, { type: 'image', attrs: { src } })
-										.run();
+									ed.chain().focus().insertContentAt(pos, { type: 'image', attrs: { src } }).run();
 								}
 							};
 							reader.readAsDataURL(file);
@@ -551,8 +435,7 @@
 				e.stopPropagation();
 				if (hoveredBlockPos !== null) openSlashBelow(hoveredBlockPos);
 				else
-					ed
-						.chain()
+					ed.chain()
 						.focus()
 						.insertContent({ type: 'paragraph', content: [{ type: 'text', text: '/' }] })
 						.run();
@@ -692,8 +575,8 @@
 			<div class="rounded-lg border border-dashed border-border bg-muted/20 p-4">
 				<p class="text-sm font-semibold">Start writing</p>
 				<p class="mt-1 text-xs text-muted-foreground">
-					Type <kbd class="rounded bg-muted px-1 font-mono text-2xs">/</kbd> for blocks and widgets,
-					or pick a dashboard template.
+					Type <kbd class="rounded bg-muted px-1 font-mono text-2xs">/</kbd> for blocks and widgets, or
+					pick a dashboard template.
 				</p>
 				<div class="mt-3 grid gap-2 sm:grid-cols-3">
 					{#each dashboardTemplates as tpl (tpl.id)}
@@ -760,11 +643,7 @@
 		{#if ctxMenu && ctxMenuPos}
 			<BodyPortal>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="fixed inset-0 z-40"
-					onclick={() => (ctxMenu = null)}
-					onkeydown={() => {}}
-				></div>
+				<div class="fixed inset-0 z-40" onclick={() => (ctxMenu = null)} onkeydown={() => {}}></div>
 				<div
 					class="fixed z-50 min-w-40 rounded-md border bg-popover p-1 shadow-lg"
 					style="top: {ctxMenuPos.top}px; left: {ctxMenuPos.left}px;"
@@ -825,7 +704,9 @@
 	</div>
 
 	{#if selectedNodeInfo}
-		<aside class="visual-inspector w-72 shrink-0 overflow-hidden rounded-lg border border-border bg-popover shadow-sm">
+		<aside
+			class="visual-inspector w-72 shrink-0 overflow-hidden rounded-lg border border-border bg-popover shadow-sm"
+		>
 			<div class="flex items-center justify-between border-b border-border/80 px-3 py-2.5">
 				<div>
 					<span class="text-sm font-medium text-foreground">Properties</span>

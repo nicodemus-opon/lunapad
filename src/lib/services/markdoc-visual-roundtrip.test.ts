@@ -244,4 +244,31 @@ describe('visual inspector edit round-trips', () => {
 		expect(updated.source).not.toContain('NaN');
 		expect(parseErrors(updated.source)).toEqual([]);
 	});
+
+	it('preserves nested child content when only parent attrs change', () => {
+		const source = `{% grid cols=2 %}
+{% card title="Revenue" %}
+{% callout type="warning" %}
+{% datatable data=$o.rows cols=["region","amount"] /%}
+{% /callout %}
+{% /card %}
+{% /grid %}`;
+		const [block] = parseVisualBlocks(source);
+		const updated = updateBlockWidgetSource(block, { attrs: { cols: 3 } });
+		const originalBody = parseBlockWidget(block)?.bodySource.trim();
+		const updatedBody = parseBlockWidget(updated)?.bodySource.trim();
+		expect(updatedBody).toBe(originalBody);
+		expect(updated.source).toContain('{% grid cols=3 %}');
+	});
+
+	it('keeps unknown container tags structured during edits', () => {
+		const source =
+			'{% dashboard-shell tone="brand" %}\n{% metric value=1 label="One" /%}\n{% /dashboard-shell %}';
+		const [block] = parseVisualBlocks(source);
+		expect(block?.kind).toBe('container');
+		const updated = updateBlockWidgetSource(block, { attrs: { tone: 'neutral' } });
+		expect(parseErrors(updated.source)).toEqual([]);
+		expect(updated.source).toContain('{% dashboard-shell tone="neutral" %}');
+		expect(updated.source).toContain('{% metric value=1 label="One" /%}');
+	});
 });

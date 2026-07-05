@@ -10,21 +10,28 @@ import {
 } from './dashboard-fixture';
 
 const BASE = process.env.LUNAPAD_URL ?? 'http://localhost:5199';
+const LLM_PROVIDER =
+	process.env.LLM_PROVIDER ?? (process.env.NVAPI_KEY ? 'openapi-compatible' : 'ollama');
 const LLM = {
-	provider: 'openapi-compatible',
-	baseUrl: process.env.LLM_BASE_URL ?? 'https://integrate.api.nvidia.com/v1',
-	model: process.env.LLM_MODEL ?? 'meta/llama-3.1-8b-instruct',
+	provider: LLM_PROVIDER,
+	baseUrl:
+		process.env.LLM_BASE_URL ??
+		(LLM_PROVIDER === 'ollama' ? 'http://127.0.0.1:11434' : 'https://integrate.api.nvidia.com/v1'),
+	model:
+		process.env.LLM_MODEL ??
+		(LLM_PROVIDER === 'ollama' ? 'gemma4:12b-mlx' : 'meta/llama-3.1-8b-instruct'),
 	apiKey: process.env.NVAPI_KEY
 };
 
-const hasLlm = Boolean(LLM.apiKey);
+const hasLlmConfig = LLM_PROVIDER === 'ollama' || Boolean(LLM.apiKey);
 let serverUp = false;
+let modelAvailable = false;
 
 async function postChat(
 	userMsg: string,
 	opts: {
 		cells?: AIChatCell[];
-		subagentType?: 'dashboard';
+		subagentType?: 'dashboard' | 'sql-gen';
 		timeoutMs?: number;
 	} = {}
 ) {
@@ -102,7 +109,7 @@ function gradeCells() {
 
 describe('dashboard adversarial integration', () => {
 	beforeAll(async () => {
-		if (!hasLlm) return;
+		if (!hasLlmConfig) return;
 		try {
 			const res = await fetch(`${BASE}/api/ai/context-health`, {
 				signal: AbortSignal.timeout(5000)
@@ -111,17 +118,42 @@ describe('dashboard adversarial integration', () => {
 		} catch {
 			serverUp = false;
 		}
+		if (LLM_PROVIDER !== 'ollama') {
+			modelAvailable = Boolean(LLM.apiKey);
+			return;
+		}
+		try {
+			const res = await fetch(`${LLM.baseUrl.replace(/\/$/, '')}/api/tags`, {
+				signal: AbortSignal.timeout(5000)
+			});
+			if (!res.ok) return;
+			const data = (await res.json()) as { models?: Array<{ name?: string }> };
+			modelAvailable = (data.models ?? []).some((model) => model.name === LLM.model);
+		} catch {
+			modelAvailable = false;
+		}
 	});
 
-	const run = hasLlm ? it : it.skip;
+	const run = hasLlmConfig ? it : it.skip;
 	const runIfServer = (name: string, fn: () => Promise<void>) =>
 		run(name, async () => {
 			if (!serverUp) {
 				console.warn(`Skipping ${name}: dev server not reachable at ${BASE}`);
 				return;
 			}
+			if (!modelAvailable) {
+				console.warn(`Skipping ${name}: ${LLM.provider} model unavailable (${LLM.model})`);
+				return;
+			}
 			await fn();
 		});
+
+	runIfServer('ollama target model is available', async () => {
+		if (LLM_PROVIDER !== 'ollama') return;
+		expect(modelAvailable).toBe(true);
+		expect(LLM.model).toBe('gemma4:12b-mlx');
+	});
+
 	runIfServer('workflow: list_cells before markdown create', async () => {
 		const events = await postChat(
 			'Build a KPI grid and bar chart dashboard from existing cells. Search list_cells first.'
@@ -134,6 +166,11 @@ describe('dashboard adversarial integration', () => {
 			.sort((a, b) => a - b)[0];
 		if (createIdx >= 0 && exploreIdx !== undefined) {
 			expect(exploreIdx).toBeLessThan(createIdx);
+		}
+		const resultIdx = t.indexOf('get_cell_result');
+		if (createIdx >= 0) {
+			expect(resultIdx).toBeGreaterThanOrEqual(0);
+			expect(resultIdx).toBeLessThan(createIdx);
 		}
 	});
 
@@ -217,6 +254,51 @@ describe('dashboard adversarial integration', () => {
 			)
 		).toEqual([]);
 		expect(grade.score).toBeGreaterThanOrEqual(70);
+	});
+
+	runIfServer('analytics engineer dashboard brief uses tools and grades cleanly', async () => {
+		const events = await postChat(
+			'Build a board-ready revenue dashboard from orders with monthly trend, region performance, top products, quota progress, and findings. Use live refs only.'
+		);
+		const t = tools(events);
+		const createIdx = t.indexOf('create_cell');
+		expect(t.includes('list_cells')).toBe(true);
+		expect(t.includes('get_cell_result')).toBe(true);
+		if (createIdx >= 0) {
+			expect(t.indexOf('get_cell_result')).toBeLessThan(createIdx);
+		}
+		const queryCreates = events.filter((e) => {
+			if (e.type !== 'tool_call') return false;
+			const call = e.call as { tool?: string; args?: Record<string, unknown> };
+			return call.tool === 'create_cell' && call.args?.cellType === 'query';
+		});
+		expect(queryCreates.length).toBe(0);
+
+		const md = extractMarkdown(events, true) || extractMarkdown(events);
+		expect(md).toMatch(/\{%\s*(grid|metric|chart|tabs|progress)\b/i);
+		expect(md).not.toMatch(/\$cell\b|\$unicorn_revenue\b|create_dashboard|add_dashboard_block/i);
+		const grade = gradeDashboard(md, gradeCells());
+		expect(grade.failures).toEqual([]);
+		expect(grade.score).toBeGreaterThanOrEqual(70);
+	});
+
+	runIfServer('model-building prompt emits analytics-engineer tool sequence', async () => {
+		const events = await postChat(
+			'Build a reusable revenue and customer analysis from orders. Inspect the data, create a query cell, run it, chart it, and write findings.',
+			{ subagentType: 'sql-gen' }
+		);
+		const t = tools(events);
+		const createIdx = t.indexOf('create_cell');
+		expect(createIdx).toBeGreaterThanOrEqual(0);
+		const investigateIdx = ['query_data', 'sample_data', 'get_cell_result']
+			.map((name) => t.indexOf(name))
+			.filter((idx) => idx >= 0)
+			.sort((a, b) => a - b)[0];
+		if (investigateIdx !== undefined) expect(investigateIdx).toBeLessThanOrEqual(createIdx);
+		expect(t.includes('run_cells')).toBe(true);
+		const runIdx = t.indexOf('run_cells');
+		if (runIdx >= 0) expect(createIdx).toBeLessThan(runIdx);
+		expect(t.includes('pick_chart') || t.includes('create_cell')).toBe(true);
 	});
 
 	runIfServer('bloated notebook refs reporting cells', async () => {

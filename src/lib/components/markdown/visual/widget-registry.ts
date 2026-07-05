@@ -1,38 +1,10 @@
 import { normalizeMarkdocAttrs } from '$lib/services/markdoc-ast';
-
-/** Markdoc container tags that accept nested block content in visual mode. */
-export const MARKDOC_CONTAINER_TAGS = new Set([
-	'columns',
-	'column',
-	'grid',
-	'callout',
-	'card',
-	'details',
-	'tabs',
-	'tab',
-	'mermaid',
-	'each',
-	'group',
-	'if'
-]);
-
-/** Self-closing or leaf Markdoc widgets (no nested PM content). */
-export const MARKDOC_LEAF_WIDGET_TAGS = new Set([
-	'metric',
-	'chart',
-	'datatable',
-	'badge',
-	'progress',
-	'filter'
-]);
-
-export function isMarkdocContainerTag(tagName: string): boolean {
-	return MARKDOC_CONTAINER_TAGS.has(tagName);
-}
-
-export function isMarkdocLeafWidgetTag(tagName: string): boolean {
-	return MARKDOC_LEAF_WIDGET_TAGS.has(tagName);
-}
+export {
+	MARKDOC_CONTAINER_TAGS,
+	MARKDOC_LEAF_WIDGET_TAGS,
+	isMarkdocContainerTag,
+	isMarkdocLeafWidgetTag
+} from '$lib/services/markdoc-tag-registry';
 
 export function parseAttrsJson(raw: unknown): Record<string, unknown> {
 	if (typeof raw !== 'string' || !raw.trim()) return {};

@@ -1,3 +1,7 @@
+import { MARKDOC_TAG_CATALOG } from '$lib/services/markdoc-catalog';
+export { WIDGET_SNIPPETS } from '$lib/services/markdoc-snippets';
+import { WIDGET_SNIPPETS } from '$lib/services/markdoc-snippets';
+
 export interface TextAreaState {
 	value: string;
 	selectionStart: number;
@@ -170,40 +174,111 @@ export function applySlashCommand(state: TextAreaState, snippet: string): Format
 	return { value: newValue, selectionStart: newPos, selectionEnd: newPos };
 }
 
-// Markdoc widget boilerplates — used by toolbar and slash palette.
-export const WIDGET_SNIPPETS = {
-	callout: '{% callout type="info" %}\nYour message here.\n{% /callout %}',
-	metric: '{% metric value=$cell.value label="Label" /%}',
-	chart: '{% chart type="bar" data=$cell.rows x="col_x" y="col_y" /%}',
-	datatable: '{% datatable data=$cell.rows /%}',
-	columns:
-		'{% columns %}\n{% column %}\nLeft content.\n{% /column %}\n{% column %}\nRight content.\n{% /column %}\n{% /columns %}',
-	tabs: '{% tabs %}\n{% tab label="Tab 1" %}\nContent.\n{% /tab %}\n{% /tabs %}',
-	card: '{% card title="Title" %}\nContent.\n{% /card %}',
-	details: '{% details summary="Click to expand" %}\nHidden content.\n{% /details %}',
-	filter: '{% filter kind="dropdown" param="param" label="Label" options=[] /%}',
-	mermaid: '{% mermaid %}\ngraph TD\n    A --> B\n{% /mermaid %}',
-	badge: '{% badge value=$cell.status color="info" /%}',
-	progress: '{% progress value=$cell.completed max=$cell.total label="Label" /%}',
-	grid: '{% grid cols=3 %}\nContent.\n{% /grid %}',
-	conditional: '{% if gt($cell.count, 0) %}\nContent.\n{% else /%}\nFallback.\n{% /if %}',
-	pivotTable:
-		'{% datatable data=$cell.rows index=["group_col"] pivotBy="pivot_col" valueCol="value_col" agg="sum" valueFormatKind="number" /%}',
-	summaryTable:
-		'{% datatable data=$cell.rows index=["group_col"] valueCol="value_col" agg="sum" valueFormatKind="number" /%}',
-	mermaidLoop:
-		'{% mermaid %}\nkanban\n  {% group data=$cell.rows by="status" %}\n  $keyId[$key]\n    {% each data=$items %}\n    task_$id[$title]\n    {% /each %}\n  {% /group %}\n{% /mermaid %}'
-} as const;
-
 export interface SlashCommand {
 	id: string;
 	label: string;
 	description: string;
 	snippet: string;
-	group: 'heading' | 'structure' | 'widget' | 'query';
+	group: 'heading' | 'structure' | 'widget' | 'query' | 'report';
 }
 
-export const SLASH_COMMANDS: SlashCommand[] = [
+const MARKDOC_SLASH_LABELS: Record<string, string> = {
+	datatable: 'Data table',
+	each: 'Each loop',
+	group: 'Group loop',
+	if: 'Conditional',
+	else: 'Else branch'
+};
+
+function labelForMarkdocTag(tagName: string): string {
+	return (
+		MARKDOC_SLASH_LABELS[tagName] ??
+		tagName
+			.split('-')
+			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+			.join(' ')
+	);
+}
+
+function commandFromMarkdocTag([tagName, entry]: [
+	string,
+	(typeof MARKDOC_TAG_CATALOG)[string]
+]): SlashCommand {
+	return {
+		id: tagName,
+		label: labelForMarkdocTag(tagName),
+		description: entry.detail,
+		snippet: entry.slashSnippet,
+		group: 'widget'
+	};
+}
+
+const MARKDOC_SLASH_COMMANDS: SlashCommand[] =
+	Object.entries(MARKDOC_TAG_CATALOG).map(commandFromMarkdocTag);
+
+const MARKDOC_REPORT_COMMANDS: SlashCommand[] = [
+	{
+		id: 'report-summary',
+		label: 'Summary report',
+		description: 'Metrics, chart, and rows from an existing result',
+		snippet: '',
+		group: 'report'
+	},
+	{
+		id: 'report-filtered',
+		label: 'Filtered report',
+		description: 'Filter control wired to chart and table',
+		snippet: '',
+		group: 'report'
+	},
+	{
+		id: 'report-grouped',
+		label: 'Grouped sections',
+		description: 'Repeat nested content by a dimension',
+		snippet: '',
+		group: 'report'
+	},
+	{
+		id: 'report-tabs',
+		label: 'Tabbed drilldown',
+		description: 'Chart, rows, and grouped detail tabs',
+		snippet: '',
+		group: 'report'
+	}
+];
+
+const MARKDOC_PRESET_SLASH_COMMANDS: SlashCommand[] = [
+	{
+		id: 'conditional',
+		label: 'Conditional',
+		description: 'Show content only when a condition matches',
+		snippet: WIDGET_SNIPPETS.conditional,
+		group: 'widget'
+	},
+	{
+		id: 'summary-table',
+		label: 'Summary table',
+		description: 'Grouped aggregate table',
+		snippet: WIDGET_SNIPPETS.summaryTable,
+		group: 'widget'
+	},
+	{
+		id: 'pivot-table',
+		label: 'Pivot table',
+		description: 'Crosstab table from cell data',
+		snippet: WIDGET_SNIPPETS.pivotTable,
+		group: 'widget'
+	},
+	{
+		id: 'mermaid-loop',
+		label: 'Dynamic Mermaid loop',
+		description: 'Mermaid template with group/each blocks',
+		snippet: WIDGET_SNIPPETS.mermaidLoop,
+		group: 'widget'
+	}
+];
+
+const BASE_SLASH_COMMANDS: SlashCommand[] = [
 	{
 		id: 'sql',
 		label: 'SQL query',
@@ -304,111 +379,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		group: 'structure'
 	},
 	{
-		id: 'callout',
-		label: 'Callout',
-		description: 'Info / warning box',
-		snippet: WIDGET_SNIPPETS.callout,
-		group: 'widget'
-	},
-	{
-		id: 'card',
-		label: 'Card',
-		description: 'Bordered card',
-		snippet: WIDGET_SNIPPETS.card,
-		group: 'widget'
-	},
-	{
-		id: 'metric',
-		label: 'Metric',
-		description: 'KPI metric widget',
-		snippet: WIDGET_SNIPPETS.metric,
-		group: 'widget'
-	},
-	{
-		id: 'chart',
-		label: 'Chart',
-		description: 'Chart from cell data',
-		snippet: WIDGET_SNIPPETS.chart,
-		group: 'widget'
-	},
-	{
-		id: 'datatable',
-		label: 'Data table',
-		description: 'Table from cell data',
-		snippet: WIDGET_SNIPPETS.datatable,
-		group: 'widget'
-	},
-	{
-		id: 'summary-table',
-		label: 'Summary table',
-		description: 'Grouped aggregate table',
-		snippet: WIDGET_SNIPPETS.summaryTable,
-		group: 'widget'
-	},
-	{
-		id: 'pivot-table',
-		label: 'Pivot table',
-		description: 'Crosstab table from cell data',
-		snippet: WIDGET_SNIPPETS.pivotTable,
-		group: 'widget'
-	},
-	{
-		id: 'columns',
-		label: 'Columns',
-		description: 'Multi-column layout',
-		snippet: WIDGET_SNIPPETS.columns,
-		group: 'widget'
-	},
-	{
-		id: 'tabs',
-		label: 'Tabs',
-		description: 'Tabbed sections',
-		snippet: WIDGET_SNIPPETS.tabs,
-		group: 'widget'
-	},
-	{
-		id: 'details',
-		label: 'Details',
-		description: 'Collapsible section',
-		snippet: WIDGET_SNIPPETS.details,
-		group: 'widget'
-	},
-	{
-		id: 'filter',
-		label: 'Filter',
-		description: 'Interactive filter widget',
-		snippet: WIDGET_SNIPPETS.filter,
-		group: 'widget'
-	},
-	{
-		id: 'conditional',
-		label: 'Conditional',
-		description: 'Show content only when a condition matches',
-		snippet: WIDGET_SNIPPETS.conditional,
-		group: 'widget'
-	},
-	{
-		id: 'badge',
-		label: 'Badge',
-		description: 'Colored status badge',
-		snippet: WIDGET_SNIPPETS.badge,
-		group: 'widget'
-	},
-	{
-		id: 'progress',
-		label: 'Progress',
-		description: 'Progress bar',
-		snippet: WIDGET_SNIPPETS.progress,
-		group: 'widget'
-	},
-	{
-		id: 'grid',
-		label: 'Grid',
-		description: 'Responsive grid layout',
-		snippet: WIDGET_SNIPPETS.grid,
-		group: 'widget'
-	},
-	{
 		id: 'emoji',
 		label: 'Emoji',
 		description: 'Insert an emoji',
@@ -421,12 +391,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		description: 'Flowchart, sequence, pie, ER, gantt, git…',
 		snippet: '```mermaid\ngraph TD\n    A --> B\n```',
 		group: 'structure'
-	},
-	{
-		id: 'mermaid-loop',
-		label: 'Dynamic Mermaid loop',
-		description: 'Mermaid template with group/each blocks',
-		snippet: WIDGET_SNIPPETS.mermaidLoop,
-		group: 'widget'
 	}
+];
+
+export const SLASH_COMMANDS: SlashCommand[] = [
+	...BASE_SLASH_COMMANDS.slice(0, 4),
+	...MARKDOC_REPORT_COMMANDS,
+	...BASE_SLASH_COMMANDS.slice(4),
+	...MARKDOC_SLASH_COMMANDS,
+	...MARKDOC_PRESET_SLASH_COMMANDS
 ];

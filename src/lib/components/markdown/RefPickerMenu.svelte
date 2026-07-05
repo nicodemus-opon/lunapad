@@ -2,14 +2,10 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { Input } from '$lib/components/ui/input';
 	import { AtSign } from '@lucide/svelte';
-
-	interface RefEntry {
-		cellName: string;
-		columns: string[];
-	}
+	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 
 	interface Props {
-		entries: RefEntry[];
+		entries: MarkdownRefEntry[];
 		onSelect: (cellName: string, column: string) => void;
 	}
 
@@ -24,7 +20,7 @@
 		return entries
 			.map((e) => ({
 				cellName: e.cellName,
-				columns: e.columns.filter((c) => `${e.cellName}.${c}`.toLowerCase().includes(q))
+				columns: e.columns.filter((c) => `${e.cellName}.${c.name}`.toLowerCase().includes(q))
 			}))
 			.filter((e) => e.columns.length > 0 || e.cellName.toLowerCase().includes(q));
 	});
@@ -52,15 +48,15 @@
 				<div class="md-refpicker-empty">No matching cells</div>
 			{/if}
 			{#each filtered as entry (entry.cellName)}
-				{#each entry.columns as column (column)}
+				{#each entry.columns as column (column.name)}
 					<button
 						type="button"
 						class="md-refpicker-item"
-						onclick={() => pick(entry.cellName, column)}
+						onclick={() => pick(entry.cellName, column.name)}
 					>
 						<span class="md-refpicker-cell">{entry.cellName}</span><span class="md-refpicker-dot"
 							>.</span
-						><span class="md-refpicker-col">{column}</span>
+						><span class="md-refpicker-col">{column.name}</span>
 					</button>
 				{/each}
 			{/each}

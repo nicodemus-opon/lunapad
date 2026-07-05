@@ -5,7 +5,7 @@
 	import MentionMenu from './MentionMenu.svelte';
 	import type { MentionItem } from './mention-utils';
 	import BubbleToolbar from './BubbleToolbar.svelte';
-	import { cellsToPmDocument } from '$lib/services/notebook-pm';
+	import { cellsToPmDocument, pmDocumentToBlocks } from '$lib/services/notebook-pm';
 	import type { PMDocJSON } from '$lib/services/markdoc-pm';
 	import type { SlashCommand } from '$lib/services/markdown-format';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
@@ -58,11 +58,13 @@
 	// landing in a separate paragraph). Defer any store→document reconciliation
 	// until the editor loses focus.
 	let editorFocused = false;
+	let blurFlushPending = false;
 	let pendingReconcile = false;
-	let latestCells: Cell[] = cells;
+	let latestCells: Cell[] = [];
 	/** Notebook id the editor content belongs to — guards blur/debounced emits after tab switches. */
 	let editingNotebookId: string | null = null;
 	let loadedNotebookId: string | null = null;
+	let reconcilingFromStore = false;
 
 	let slashOpen = $state(false);
 	let slashItems = $state<SlashCommand[]>([]);
@@ -130,6 +132,7 @@
 			clearTimeout(emitTimer);
 			emitTimer = null;
 		}
+		emitNow(ed, notebookId);
 		const anchorId = findAnchorCellId(ed);
 		const cellId = insertQueryBlockCell(anchorId, lang, notebookId);
 		ed
@@ -211,6 +214,11 @@
 		emitTimer = setTimeout(() => {
 			emitTimer = null;
 			emitNow(ed, targetNotebookId);
+			if (!editorFocused && pendingReconcile) {
+				pendingReconcile = false;
+				const current = getNotebooks().find((n) => n.id === targetNotebookId)?.cells ?? latestCells;
+				reconcileFromCells(current);
+			}
 		}, 150);
 	}
 
@@ -221,6 +229,7 @@
 		}
 		editingNotebookId = null;
 		editorFocused = false;
+		blurFlushPending = false;
 		pendingReconcile = false;
 		nodeConfigOpen = false;
 		selectedNodeInfo = null;
@@ -237,13 +246,50 @@
 	function reconcileFromCells(c: Cell[]) {
 		const ed = editor;
 		if (!ed) return;
-		const pmDoc = cellsToPmDocument(c);
+		let pmDoc = cellsToPmDocument(c);
+		const hasMarkdownCell = c.some(
+			(cell) => cell.cellType === 'markdown' && !!(cell.markdown ?? '').trim()
+		);
+		const notebookName =
+			getNotebooks()
+				.find((n) => n.id === notebookId)
+				?.name.trim() ?? '';
+		if (!hasMarkdownCell && notebookName && notebookName !== 'Untitled notebook') {
+			pmDoc = {
+				...pmDoc,
+				content: [
+					{
+						type: 'heading',
+						attrs: { level: 1 },
+						content: [{ type: 'text', text: notebookName }]
+					},
+					...(pmDoc.content ?? [])
+				]
+			};
+		}
 		const serialized = JSON.stringify(pmDoc);
 		if (lastEmitted && JSON.stringify(lastEmitted) === serialized) return;
+		const currentDoc = ed.getJSON() as PMDocJSON;
+		const currentMarkdown = pmDocumentToBlocks(currentDoc)
+			.filter((block) => block.kind === 'markdown')
+			.map((block) => block.markdown.trim())
+			.filter(Boolean);
+		const nextHasMarkdown = pmDocumentToBlocks(pmDoc).some(
+			(block) => block.kind === 'markdown' && !!block.markdown.trim()
+		);
+		if (currentMarkdown.length > 0 && !nextHasMarkdown) {
+			emitNow(ed, loadedNotebookId ?? notebookId);
+			return;
+		}
 		lastEmitted = pmDoc;
 		const prevAnchor = ed.state.selection.anchor;
 		const hadFocus = ed.view.hasFocus();
-		ed.commands.setContent(pmDoc, { emitUpdate: false });
+		reconcilingFromStore = true;
+		try {
+			ed.commands.setContent(pmDoc, { emitUpdate: false });
+		} finally {
+			reconcilingFromStore = false;
+		}
 		// Restore the caret to (approximately) where it was; setContent otherwise
 		// collapses the selection to the document start.
 		const size = ed.state.doc.content.size;
@@ -393,6 +439,20 @@
 							'notion-surface notebook-document-surface markdown-surface prose markdown-body min-h-28 w-full px-0 pt-1 pb-24 focus:outline-none'
 					},
 					handleDOMEvents: {
+						beforeinput: () => {
+							const ed = editor;
+							if (ed && !reconcilingFromStore) {
+								setTimeout(() => {
+									if (!destroyed) scheduleEmit(ed);
+								}, 0);
+							}
+							return false;
+						},
+						input: () => {
+							const ed = editor;
+							if (ed && !reconcilingFromStore) scheduleEmit(ed);
+							return false;
+						},
 						// Portaled menus (bits-ui Select, Popover, etc.) render outside the
 						// query-block node view — stop PM from stealing their clicks.
 						mousedown: (_view, event) => {
@@ -418,6 +478,12 @@
 					syncSelection(e);
 					scheduleEmit(e);
 				},
+				onTransaction: ({ editor: e, transaction }) => {
+					if (transaction.docChanged && !reconcilingFromStore) {
+						syncSelection(e);
+						scheduleEmit(e);
+					}
+				},
 				onSelectionUpdate: ({ editor: e }) => syncSelection(e),
 				onFocus: () => {
 					editorFocused = true;
@@ -430,16 +496,28 @@
 					// Flush any debounced edit BEFORE reconciling so blurring quickly
 					// (e.g. clicking a button right after typing) never reverts the
 					// last keystrokes to the pre-debounce store snapshot.
+					let shouldEmit = false;
 					if (emitTimer) {
 						clearTimeout(emitTimer);
 						emitTimer = null;
-						emitNow(e, targetNotebookId);
+						shouldEmit = true;
 					}
-					if (pendingReconcile) {
-						pendingReconcile = false;
-						const current =
-							getNotebooks().find((n) => n.id === notebookId)?.cells ?? latestCells;
-						reconcileFromCells(current);
+					const shouldReconcile = pendingReconcile;
+					pendingReconcile = false;
+					if (shouldEmit || shouldReconcile) {
+						blurFlushPending = true;
+						setTimeout(() => {
+							if (destroyed) return;
+							if (shouldEmit) emitNow(e, targetNotebookId);
+							const reconcileAfterFlush = shouldReconcile || pendingReconcile;
+							pendingReconcile = false;
+							if (reconcileAfterFlush) {
+								const current =
+									getNotebooks().find((n) => n.id === notebookId)?.cells ?? latestCells;
+								reconcileFromCells(current);
+							}
+							blurFlushPending = false;
+						}, 0);
 					}
 				}
 			});
@@ -563,6 +641,14 @@
 
 			if (loadedNotebookId === null) loadedNotebookId = id;
 			latestCells = c;
+			if (emitTimer) {
+				pendingReconcile = true;
+				return;
+			}
+			if (blurFlushPending) {
+				pendingReconcile = true;
+				return;
+			}
 			// Never rebuild the document out from under an active editing session —
 			// that resets the caret and splits text the user is in the middle of
 			// typing. Defer until blur (see onBlur handler above).

@@ -21,7 +21,7 @@
 	let { shareToken, cellId: initialCellId = null, isAuthenticated }: Props = $props();
 
 	let open = $state(false);
-	let activeCellId = $state<string | null>(initialCellId);
+	let activeCellId = $state<string | null>(null);
 	let threads = $state<CommentThread[]>([]);
 	let selectedThreadId = $state<string | null>(null);
 	let comments = $state<Comment[]>([]);
@@ -29,6 +29,13 @@
 	let loading = $state(false);
 
 	const selectedThread = $derived(threads.find((t) => t.id === selectedThreadId) ?? null);
+
+	$effect(() => {
+		if (open) return;
+		activeCellId = initialCellId;
+		selectedThreadId = null;
+		comments = [];
+	});
 
 	export function openForCell(id: string | null): void {
 		activeCellId = id;
@@ -41,10 +48,15 @@
 		loading = true;
 		try {
 			threads = await fetchThreads({ shareToken, cellId: activeCellId ?? undefined });
+			if (selectedThreadId && !threads.some((thread) => thread.id === selectedThreadId)) {
+				selectedThreadId = null;
+				comments = [];
+			}
 			if (threads.length && !selectedThreadId) {
 				selectedThreadId = threads[0].id;
 				await loadComments(threads[0].id);
 			}
+			if (!threads.length) comments = [];
 		} finally {
 			loading = false;
 		}
@@ -102,7 +114,12 @@
 		<aside class="share-review-sidebar no-print" aria-label="Share review">
 			<header class="share-review-header">
 				<span>Share review</span>
-				<button type="button" class="share-review-close" onclick={() => (open = false)}>
+				<button
+					type="button"
+					class="share-review-close"
+					aria-label="Close share review"
+					onclick={() => (open = false)}
+				>
 					<X class="h-4 w-4" />
 				</button>
 			</header>
@@ -152,7 +169,7 @@
 {/if}
 
 <style>
-	.share-review-toggle {
+	:global(.share-review-toggle) {
 		position: fixed;
 		bottom: 1.25rem;
 		right: 1.25rem;
