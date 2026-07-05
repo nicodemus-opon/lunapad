@@ -328,6 +328,8 @@
 	const sidebarNotebookView = $derived(getSidebarNotebookView());
 	const recentNotebookIds = $derived(getRecentNotebookIds());
 	const favoriteNotebookIds = $derived(getFavoriteNotebookIds());
+	let favoritesCollapsed = $state(false);
+	let recentCollapsed = $state(false);
 	const markdownRefEntries = $derived(
 		cells
 			.filter(
@@ -1366,6 +1368,18 @@
 			</Tooltip.Root>
 		{/snippet}
 
+		{#snippet groupHeader(label: string, collapsed: boolean, onToggle: () => void)}
+			<button
+				type="button"
+				class="sidebar-group-header"
+				onclick={onToggle}
+				aria-expanded={!collapsed}
+			>
+				<ChevronRight class="sidebar-group-chevron h-3 w-3 shrink-0" />
+				<span class="flex-1 truncate text-left">{label}</span>
+			</button>
+		{/snippet}
+
 		{#snippet headerAction(
 			label: string,
 			Icon: typeof Plus,
@@ -1469,16 +1483,12 @@
 										</div>
 									</div>
 
-									<div
-										class="sidebar-segmented-tabs"
-										role="tablist"
-										aria-label="Notebook sidebar view"
-									>
+									<div class="sidebar-nav-tabs" role="tablist" aria-label="Notebook sidebar view">
 										<button
 											type="button"
 											role="tab"
 											aria-selected={sidebarNotebookView === 'browse'}
-											class="sidebar-segmented-tab"
+											class="sidebar-nav-tab"
 											onclick={() => setSidebarNotebookView('browse')}
 										>
 											Browse
@@ -1487,7 +1497,7 @@
 											type="button"
 											role="tab"
 											aria-selected={sidebarNotebookView === 'outline'}
-											class="sidebar-segmented-tab"
+											class="sidebar-nav-tab"
 											onclick={() => setSidebarNotebookView('outline')}
 										>
 											<ListTree class="h-3 w-3" />
@@ -1498,48 +1508,55 @@
 
 								{#if sidebarNotebookView === 'browse'}
 									{#if favoriteNotebookIds.length > 0}
-										<div class="pb-1">
-											<p class="sidebar-section-label">Favorites</p>
-											{#each favoriteNotebookIds as favId (favId)}
-												{@const fav = allNotebooks.find((n) => n.id === favId)}
-												{#if fav}
-													<TreeRow
-														depth={0}
-														selected={activeTabId === fav.id}
-														onActivate={() => setActiveTab(fav.id)}
-													>
-														{#snippet icon()}
-															<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-														{/snippet}
-														{#snippet label()}
-															<span class="truncate text-xs">{fav.name}</span>
-														{/snippet}
-													</TreeRow>
-												{/if}
-											{/each}
+										<div class="sidebar-group">
+											{@render groupHeader('Favorites', favoritesCollapsed, () => (favoritesCollapsed = !favoritesCollapsed))}
+											{#if !favoritesCollapsed}
+												{#each favoriteNotebookIds as favId (favId)}
+													{@const fav = allNotebooks.find((n) => n.id === favId)}
+													{#if fav}
+														<TreeRow
+															depth={0}
+															selected={activeTabId === fav.id}
+															onActivate={() => setActiveTab(fav.id)}
+														>
+															{#snippet icon()}
+																<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+															{/snippet}
+															{#snippet label()}
+																<span class="truncate text-xs">{fav.name}</span>
+															{/snippet}
+														</TreeRow>
+													{/if}
+												{/each}
+											{/if}
 										</div>
 									{/if}
 									{#if recentNotebookIds.length > 0}
-										<div class="pb-1">
-											<p class="sidebar-section-label">Recent</p>
-											{#each recentNotebookIds.slice(0, 6) as recentId (recentId)}
-												{@const recent = allNotebooks.find((n) => n.id === recentId)}
-												{#if recent}
-													<TreeRow
-														depth={0}
-														selected={activeTabId === recent.id}
-														onActivate={() => setActiveTab(recent.id)}
-													>
-														{#snippet icon()}
-															<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-														{/snippet}
-														{#snippet label()}
-															<span class="truncate text-xs">{recent.name}</span>
-														{/snippet}
-													</TreeRow>
-												{/if}
-											{/each}
+										<div class="sidebar-group">
+											{@render groupHeader('Recent', recentCollapsed, () => (recentCollapsed = !recentCollapsed))}
+											{#if !recentCollapsed}
+												{#each recentNotebookIds.slice(0, 6) as recentId (recentId)}
+													{@const recent = allNotebooks.find((n) => n.id === recentId)}
+													{#if recent}
+														<TreeRow
+															depth={0}
+															selected={activeTabId === recent.id}
+															onActivate={() => setActiveTab(recent.id)}
+														>
+															{#snippet icon()}
+																<BookOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+															{/snippet}
+															{#snippet label()}
+																<span class="truncate text-xs">{recent.name}</span>
+															{/snippet}
+														</TreeRow>
+													{/if}
+												{/each}
+											{/if}
 										</div>
+									{/if}
+									{#if (favoriteNotebookIds.length > 0 || recentNotebookIds.length > 0) && !showNotebookSearch && !sidebarSearch}
+										<div class="sidebar-tree-divider"></div>
 									{/if}
 									{#if showNotebookSearch || sidebarSearch}
 										<div class="sidebar-inline-search">

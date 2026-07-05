@@ -5,6 +5,10 @@ import { getCriticalMarkdownFailures } from '$lib/agent/evals/dashboard-grade.js
 export interface ChatToolPolicyContext {
 	schemaTableNames: Set<string>;
 	cellOutputNames: Set<string>;
+	/** outputNames (lowercased) whose own chart already has an xColumn set — what
+	 *  `ref=$cellName` actually inherits. Optional so tests/eval callers that don't track
+	 *  live chart state can omit it (falls back to permissive validation). */
+	chartedOutputNames?: Set<string>;
 	latestUserMessage: string;
 }
 
@@ -112,7 +116,10 @@ export function isChatToolCallAllowed(
 		const code = String(args.code ?? '');
 		if (code && codeReferencesUnknownTable(code, ctx)) return false;
 		const markdown = String(args.markdown ?? (args.cellType === 'markdown' ? args.code : '') ?? '');
-		if (markdown.trim() && getCriticalMarkdownFailures(markdown, ctx.cellOutputNames).length > 0) {
+		if (
+			markdown.trim() &&
+			getCriticalMarkdownFailures(markdown, ctx.cellOutputNames, ctx.chartedOutputNames).length > 0
+		) {
 			return false;
 		}
 	}
@@ -136,7 +143,8 @@ export function blockedToolFallbackText(
 				: (String(args.sql ?? '').match(/\bfrom\s+[`"']?([a-z0-9_]+)/i)?.[1] ?? '');
 		if (table && !tableKnown(table, ctx)) {
 			const available = schemaTables.map((t) => `\`${t.name}\``).join(', ');
-			return `Table \`${table}\` is not in the workspace schema. Available tables: ${available || '(none)'}.`;
+			const cells = [...ctx.cellOutputNames].map((n) => `\`${n}\``).join(', ');
+			return `Table \`${table}\` does not exist — it is not one of the workspace tables or cell outputs listed below. Do not guess another name; pick one from this exact list. Available tables: ${available || '(none)'}. Available cell outputs: ${cells || '(none)'}.`;
 		}
 	}
 	if (tool === 'create_cell' || tool === 'update_cell') {
@@ -144,10 +152,11 @@ export function blockedToolFallbackText(
 		const unknown = codeReferencesUnknownTable(code, ctx);
 		if (unknown) {
 			const available = schemaTables.map((t) => `\`${t.name}\``).join(', ');
-			return `Cannot write code referencing \`${unknown}\` — not in workspace schema. Available tables: ${available || '(none)'}. Use existing cell outputNames or schema tables only.`;
+			const cells = [...ctx.cellOutputNames].map((n) => `\`${n}\``).join(', ');
+			return `Cannot write code referencing \`${unknown}\` — it does not exist in the workspace schema or as a cell output. Do not guess another name; use only a name from this exact list. Available tables: ${available || '(none)'}. Available cell outputs: ${cells || '(none)'}.`;
 		}
 		const markdown = String(args.markdown ?? (args.cellType === 'markdown' ? args.code : '') ?? '');
-		const mdFailures = getCriticalMarkdownFailures(markdown, ctx.cellOutputNames);
+		const mdFailures = getCriticalMarkdownFailures(markdown, ctx.cellOutputNames, ctx.chartedOutputNames);
 		if (mdFailures.length > 0) {
 			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. Fix Markdoc syntax and $cell refs before creating the cell.`;
 		}

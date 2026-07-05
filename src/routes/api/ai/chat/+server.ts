@@ -1175,6 +1175,14 @@ export const POST: RequestHandler = async ({ request }) => {
 			const toolPolicyCtx: ChatToolPolicyContext = {
 				schemaTableNames: new Set(schema.map((t) => t.name.toLowerCase())),
 				cellOutputNames: new Set(cells.map((c) => c.outputName.toLowerCase())),
+				// Cells whose OWN chart has already been configured (has an xColumn) — this is
+				// what `ref=$cellName` actually inherits. A cell that has never been charted
+				// (e.g. a fresh python/query cell) contributes an empty base config, so
+				// `ref=$freshCell` without x=/y= overrides still renders the "Set x and y
+				// columns" placeholder despite looking correct in the markdown source.
+				chartedOutputNames: new Set(
+					cells.filter((c) => c.resultChartConfig?.xColumn).map((c) => c.outputName.toLowerCase())
+				),
 				latestUserMessage
 			};
 			const turnKnownOutputNames = new Set(cells.map((c) => c.outputName));
@@ -1225,15 +1233,24 @@ export const POST: RequestHandler = async ({ request }) => {
 				return true;
 			};
 
+			// Counts tool calls emitted via the XML/raw-JSON extraction paths (flushToolCalls,
+			// extractRawJsonToolCalls) — distinct from emittedNativeToolCalls, which only counts
+			// structured Ollama tool_calls deltas. A model that emits ONLY XML <tool_call> blocks
+			// would otherwise leave emittedNativeToolCalls at 0 and trigger a false
+			// "Model returned an empty response" error despite tool calls having succeeded.
+			let emittedXmlToolCalls = 0;
+
 			const emitToolCallGuarded = (raw: string): boolean => {
 				const call = parseToolCallObject(raw);
 				if (!call || typeof call.tool !== 'string') return false;
 				const args = normalizeToolCallArgs(call as Record<string, unknown>);
-				return emitPolicyToolCall(
+				const emitted = emitPolicyToolCall(
 					call.tool,
 					args,
 					typeof call.callId === 'string' ? call.callId : undefined
 				);
+				if (emitted) emittedXmlToolCalls++;
+				return emitted;
 			};
 
 			// Stop the LLM stream after the first result-critical tool call so the model sees
@@ -1556,13 +1573,20 @@ export const POST: RequestHandler = async ({ request }) => {
 							/* skip */
 						}
 					});
-					// Fallback: some models emit raw JSON tool calls as text content
-					// rather than using the native tool_calls delta format.
+					// Fallback: some models emit XML <tool_call> blocks or raw JSON tool calls
+					// as text content rather than using the native tool_calls delta format.
+					nativeTextBuf = flushToolCalls(nativeTextBuf, (rawJson) => {
+						emitToolCallGuarded(rawJson);
+					});
 					nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf.trim(), (rawJson) => {
 						emitToolCallGuarded(rawJson);
 					});
-					if (nativeTextBuf.trim()) {
-						sendTextDelta(ctrl, nativeTextBuf.trim(), () => {
+					// Drop any unclosed <tool_call>/partial-JSON fragment left in the buffer —
+					// there's no more stream coming to complete it, so emitting it raw would leak
+					// literal tags (e.g. "<tool_call>") into the visible response.
+					const finalNativeText = stripOpenTag(nativeTextBuf.trim()).trim();
+					if (finalNativeText) {
+						sendTextDelta(ctrl, finalNativeText, () => {
 							meaningfulTextEmitted = true;
 						});
 					}
@@ -1679,7 +1703,12 @@ export const POST: RequestHandler = async ({ request }) => {
 					}
 				}
 
-				if (useNativeTools && emittedNativeToolCalls === 0 && !meaningfulTextEmitted) {
+				if (
+					useNativeTools &&
+					emittedNativeToolCalls === 0 &&
+					emittedXmlToolCalls === 0 &&
+					!meaningfulTextEmitted
+				) {
 					send(ctrl, {
 						type: 'error',
 						error:

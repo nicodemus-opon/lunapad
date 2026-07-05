@@ -338,6 +338,22 @@ second
 		expect(diags.find((d) => d.message.includes('missing'))?.line).toBe(1);
 	});
 
+	it('translates raw Markdoc "missing closing" tokenizer errors into actionable text', () => {
+		// An {% if %} with no matching {% /if %} — Markdoc's parser flags this as a
+		// critical-level "Node 'if' is missing closing" error, which used to reach the
+		// UI verbatim as parser-internals jargon.
+		const unclosed = '{% if $orders.count %}\nSome text';
+		const diags = validateMarkdocMarkdown(unclosed, [makeCell('orders', [{ count: 1 }])]);
+		expect(diags.some((d) => /is missing closing/i.test(d.message))).toBe(false);
+		expect(diags.some((d) => /Malformed markdown.*unclosed or extra 'if' block/i.test(d.message))).toBe(
+			true
+		);
+
+		const { errors } = renderMarkdocCell(unclosed, [makeCell('orders', [{ count: 1 }])]);
+		expect(errors.some((e) => /is missing closing/i.test(e))).toBe(false);
+		expect(errors.some((e) => /Malformed markdown.*unclosed or extra 'if' block/i.test(e))).toBe(true);
+	});
+
 	it('preserves static mermaid source with frontmatter, newlines, and [*]', () => {
 		const src = `{% mermaid %}
 ---

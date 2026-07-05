@@ -59,4 +59,100 @@ describe('dashboard-grade', () => {
 		);
 		expect(failures).toEqual([]);
 	});
+
+	describe('chart axis requirements', () => {
+		it('fails big-value chart missing x=', () => {
+			const md = '{% chart data=$orders.rows type="big-value" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /big-value.*needs x=/.test(f))).toBe(true);
+		});
+
+		it('accepts big-value chart with x= set', () => {
+			const md = '{% chart data=$orders.rows type="big-value" x="revenue" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures).toEqual([]);
+		});
+
+		it('fails axis chart (bar) missing y=', () => {
+			const md = '{% chart data=$orders.rows type="bar" x="month" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /bar.*needs both x= and y=/.test(f))).toBe(true);
+		});
+
+		it('fails chart with no type= (defaults to bar) and no axes', () => {
+			const md = '{% chart data=$orders.rows /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /bar.*needs both x= and y=/.test(f))).toBe(true);
+		});
+
+		it('fails custom chart missing code=', () => {
+			const md = '{% chart data=$orders.rows type="custom" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /custom.*needs a code=/.test(f))).toBe(true);
+		});
+
+		it('accepts any chart type when ref= supplies the base config (no live chart state tracked)', () => {
+			const md = '{% chart ref=$orders type="big-value" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures).toEqual([]);
+		});
+
+		it('fails ref=$cell when the referenced cell has never been charted (reproduces the "Set x and y columns" placeholder bug)', () => {
+			// This is the literal shape of the bug: `ref=$py_result type="big-value"` looked
+			// correct in the markdown, but py_result's OWN chart had never been configured
+			// (resultChartConfig is null), so ref= supplied an empty base config and the
+			// widget rendered the "Set x and y columns to preview chart" placeholder.
+			const md = '{% chart ref=$py_result type="big-value" /%}';
+			const failures = getCriticalMarkdownFailures(
+				md,
+				new Set(['py_result']),
+				new Set() // py_result is known but NOT in chartedOutputNames — never charted
+			);
+			expect(failures.some((f) => /ref=\$py_result has no chart configured/.test(f))).toBe(true);
+		});
+
+		it('accepts ref=$cell when the referenced cell IS charted', () => {
+			const md = '{% chart ref=$py_result type="big-value" /%}';
+			const failures = getCriticalMarkdownFailures(
+				md,
+				new Set(['py_result']),
+				new Set(['py_result'])
+			);
+			expect(failures).toEqual([]);
+		});
+
+		it('accepts ref=$cell to an uncharted cell when explicit overrides are also given', () => {
+			const md = '{% chart ref=$py_result type="big-value" x="revenue" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['py_result']), new Set());
+			expect(failures).toEqual([]);
+		});
+
+		it('accepts ref=$cell to an uncharted cell for table type (no axes needed regardless)', () => {
+			const md = '{% chart ref=$py_result type="table" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['py_result']), new Set());
+			expect(failures).toEqual([]);
+		});
+
+		it('accepts table chart with no axes', () => {
+			const md = '{% chart data=$orders.rows type="table" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures).toEqual([]);
+		});
+
+		it('still catches a missing y= when another attribute value contains a literal "%"', () => {
+			// Regression guard: an earlier implementation matched the tag with a
+			// `[^%]*` regex over raw source text, which truncated at the first literal "%"
+			// inside a quoted attribute value — silently skipping validation for any chart
+			// whose title/label happened to mention a percentage.
+			const md = '{% chart data=$orders.rows type="bar" x="month" title="50% growth" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /bar.*needs both x= and y=/.test(f))).toBe(true);
+		});
+
+		it('does not mistake "x=" inside another attribute\'s string value for a real x= attribute', () => {
+			const md = '{% chart data=$orders.rows type="bar" title="y = f(x=1)" /%}';
+			const failures = getCriticalMarkdownFailures(md, new Set(['orders']));
+			expect(failures.some((f) => /bar.*needs both x= and y=/.test(f))).toBe(true);
+		});
+	});
 });

@@ -3639,6 +3639,12 @@ export async function submitAIMessage(
 			// kills the whole generation.
 			let streamErrorRetries = 0;
 			const MAX_STREAM_ERROR_RETRIES = 2;
+			// Set right before the mid-task-stall `break` below so the post-loop message can
+			// tell the difference between "stopped because cells have SQL errors" (already
+			// surfaced) and "stopped because the model kept producing no usable output" (which
+			// otherwise exited silently, leaving whatever garbage text it last streamed as the
+			// only visible response).
+			let stoppedFromExhaustedStall = false;
 
 			while (depth < MAX_DEPTH) {
 				if (abortController.signal.aborted) {
@@ -3890,6 +3896,7 @@ export async function submitAIMessage(
 						depth++;
 						continue;
 					}
+					stoppedFromExhaustedStall = true;
 					break;
 				}
 
@@ -3985,6 +3992,17 @@ export async function submitAIMessage(
 				updateMessageText(
 					aiMsg.id,
 					`\n\n⚠ Couldn't fix all SQL errors after multiple attempts. These cells still have errors:\n${details}\n\nTry asking me to use a different approach, or fix them manually.`
+				);
+				setMessageError(aiMsg.id);
+			} else if (stoppedFromExhaustedStall) {
+				// The model kept producing no usable output (no tool calls, no <done>, no cell
+				// errors to explain it — e.g. it got stuck repeating a malformed tool-call
+				// fragment) and every recovery nudge was already used. Without this, the loop
+				// exited silently and whatever partial/garbage text last streamed was the only
+				// thing the user saw.
+				updateMessageText(
+					aiMsg.id,
+					"\n\n⚠ I got stuck and couldn't make progress on this request after several attempts. Try rephrasing, or breaking it into smaller steps."
 				);
 				setMessageError(aiMsg.id);
 			}

@@ -994,6 +994,20 @@ export interface MarkdocRenderResult {
 	errors: string[];
 }
 
+// Markdoc's own tokenizer surfaces "Node 'X' is missing opening/closing" as critical-level
+// validate() entries when list/tag nesting is unbalanced (a common AI-generated-markdown
+// mistake — e.g. a `{% tag %}` block breaking a bullet list's indentation). These messages
+// are accurate but expose parser internals verbatim; translate them to something a reader
+// (or the model, when it comes back as a create_cell block reason) can actually act on.
+function friendlyMarkdocMessage(message: string): string {
+	const missing = message.match(/^Node '(.+)' is missing (opening|closing)$/);
+	if (missing) {
+		const [, name, which] = missing;
+		return `Malformed markdown: an unclosed or extra '${name}' block (missing its ${which} tag) — check list/tag nesting and indentation.`;
+	}
+	return message;
+}
+
 export interface MarkdocDiagnostic {
 	message: string;
 	line: number;
@@ -1038,7 +1052,7 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 		const startLine = (entry.location?.start?.line ?? entry.lines?.[0] ?? 0) + 1;
 		const endLine = (entry.location?.end?.line ?? entry.lines?.[1] ?? entry.lines?.[0] ?? 0) + 1;
 		diagnostics.push({
-			message: entry.error.message,
+			message: friendlyMarkdocMessage(entry.error.message),
 			line: startLine,
 			column: 1,
 			endLine,
@@ -1083,7 +1097,7 @@ export function renderMarkdocCell(markdown: string, cells: Cell[]): MarkdocRende
 	const config = buildMarkdocConfig(effectiveMarkdown, cells);
 	const validationErrors = Markdoc.validate(ast, config)
 		.filter((e) => e.error.level === 'critical' || e.error.level === 'error')
-		.map((e) => e.error.message);
+		.map((e) => friendlyMarkdocMessage(e.error.message));
 	const transformed = Markdoc.transform(ast, config);
 	const tree = Array.isArray(transformed) ? transformed : [transformed];
 	return { tree, errors: [...new Set(validationErrors)] };
