@@ -531,7 +531,7 @@
 							{#each headerGroup.headers as header, hi (header.id)}
 								{@const s = statsMap[header.id]}
 								<Table.Head
-									class="result-table-head border-b border-border p-2 align-top
+									class="result-table-head h-auto min-h-10 whitespace-normal border-b border-border p-2 align-top
 								{hi === 0 ? 'sticky top-0 left-0 z-30' : 'sticky top-0 z-20'}"
 								>
 									{#if s && headerInsights === 'full'}

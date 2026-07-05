@@ -68,9 +68,7 @@
 
 	let viewMode = $state<ResultViewMode>(untrack(() => initialViewMode ?? 'table'));
 	let chartConfig = $state<ChartConfig | null>(untrack(() => initialChartConfig ?? null));
-	let showConfigPanel = $state(
-		untrack(() => !compact && (initialViewMode ?? 'table') === 'chart')
-	);
+	let showConfigPanel = $state(false);
 	let lastInitialViewMode = $state<ResultViewMode | undefined>(untrack(() => initialViewMode));
 	let lastInitialChartConfig = $state<ChartConfig | null | undefined>(
 		untrack(() => initialChartConfig)
@@ -95,7 +93,6 @@
 		lastInitialViewMode = incoming;
 		if (incoming != null) {
 			viewMode = incoming;
-			if (incoming === 'chart' && !compact) showConfigPanel = true;
 		}
 	});
 	$effect(() => {
@@ -124,7 +121,6 @@
 	function switchView(mode: ResultViewMode) {
 		if (mode === 'chart') {
 			if (chartConfig === null) chartConfig = inferSmartChartConfig(columns, rows);
-			if (!compact) showConfigPanel = true;
 		}
 		viewMode = mode;
 		lastInitialViewMode = mode;

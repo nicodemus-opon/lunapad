@@ -246,14 +246,41 @@ export function normalizeToolCallArgs(obj: Record<string, unknown>): Record<stri
 	if (obj.args && typeof obj.args === 'object' && Object.keys(obj.args as object).length > 0) {
 		return obj.args as Record<string, unknown>;
 	}
-	// "arguments" key (OpenAI native format leaked into text)
+	// "parameters" key (OpenAI {"name":...,"parameters":{...}} format leaked into text)
+	if (obj.parameters && typeof obj.parameters === 'object') {
+		return obj.parameters as Record<string, unknown>;
+	}
+	// "arguments" key (OpenAI native format leaked into text) — sometimes a JSON string
 	if (obj.arguments && typeof obj.arguments === 'object') {
 		return obj.arguments as Record<string, unknown>;
 	}
-	// Flat format: every key except tool/callId/args/arguments is an arg
+	if (typeof obj.arguments === 'string') {
+		try {
+			return JSON.parse(obj.arguments) as Record<string, unknown>;
+		} catch {
+			/* fall through */
+		}
+	}
+	// Flat format: every key except tool/callId/args/arguments/name/parameters is an arg
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	const { tool: _t, callId: _c, args: _a, arguments: _ar, ...rest } = obj;
+	const { tool: _t, callId: _c, args: _a, arguments: _ar, name: _n, parameters: _p, ...rest } = obj;
 	return rest;
+}
+
+/**
+ * Detect the tool name from any of the shapes models emit: our internal `{"tool":...}`,
+ * OpenAI's leaked `{"name":...,"parameters":...}`, or the nested `{"function":{"name":...}}`.
+ * Returns a shallow-normalized object with `tool` set, or null if no name is found.
+ */
+function coerceToolCallShape(obj: Record<string, unknown>): Record<string, unknown> | null {
+	if (typeof obj.tool === 'string') return obj;
+	if (typeof obj.name === 'string') return { ...obj, tool: obj.name };
+	const fn = obj.function;
+	if (fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).name === 'string') {
+		const fnObj = fn as Record<string, unknown>;
+		return { tool: fnObj.name, arguments: fnObj.arguments, callId: obj.id ?? obj.callId };
+	}
+	return null;
 }
 
 /**
@@ -268,8 +295,12 @@ export function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) 
 	let result = text;
 
 	while (true) {
-		// Find the next {"tool": pattern anywhere in remaining text
-		const matchIdx = result.search(/\{"tool"\s*:/);
+		// Find the first JSON object anywhere in remaining text and test it for a tool-call
+		// shape — our internal {"tool":...}, OpenAI's leaked {"name":...,"parameters":...},
+		// {"function":{"name":...}}, or {"type":"function","name":...} (key order varies by
+		// model, so we can't anchor on a specific leading key — inspect whatever JSON.parse
+		// gives us instead of a "{"key"" substring match).
+		const matchIdx = result.indexOf('{');
 		if (matchIdx === -1) break;
 
 		// Find balanced braces starting from matchIdx
@@ -288,7 +319,8 @@ export function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) 
 		if (end === -1) break; // incomplete JSON — leave in buffer
 
 		const candidate = result.slice(matchIdx, end + 1);
-		const obj = parseToolCallObject(candidate);
+		const parsed = parseToolCallObject(candidate);
+		const obj = parsed && coerceToolCallShape(parsed);
 		if (obj && typeof obj.tool === 'string') {
 			obj.args = normalizeToolCallArgs(obj);
 			onToolCall(JSON.stringify(obj));
@@ -439,20 +471,27 @@ export function stripOpenTag(text: string): string {
 		}
 	}
 
-	// Hold back incomplete raw JSON tool call at end of buffer.
-	// (When a model outputs {"tool":...} as plain text, we need to wait
-	// for the complete object before extractRawJsonToolCalls can extract it.)
-	const jsonIdx = text.search(/\{"tool"\s*:/);
-	if (jsonIdx !== -1) {
+	// Hold back an incomplete bare JSON object at the end of the buffer.
+	// (When a model outputs a tool call as plain text — {"tool":...}, OpenAI's leaked
+	// {"name":...,"parameters":...}, {"type":"function","name":...}, or {"function":{...}} —
+	// we need to wait for the complete object before extractRawJsonToolCalls can extract it.
+	// Key order varies by model, so this can't anchor on a specific leading key: track brace
+	// depth across the whole buffer and hold back from the last top-level "{" that hasn't
+	// closed yet, whatever shape the object turns out to be.)
+	{
 		let depth = 0;
-		for (let i = jsonIdx; i < text.length; i++) {
-			if (text[i] === '{') depth++;
-			else if (text[i] === '}') {
+		let lastTopLevelStart = -1;
+		for (let i = 0; i < text.length; i++) {
+			if (text[i] === '{') {
+				if (depth === 0) lastTopLevelStart = i;
+				depth++;
+			} else if (text[i] === '}') {
 				depth--;
-				if (depth === 0) break;
 			}
 		}
-		if (depth > 0) return text.slice(0, jsonIdx); // incomplete — hold back
+		if (depth > 0 && lastTopLevelStart !== -1) {
+			return text.slice(0, lastTopLevelStart); // incomplete — hold back
+		}
 	}
 
 	// Hold back incomplete bare plan JSON {"tables":...} — same pattern as above.

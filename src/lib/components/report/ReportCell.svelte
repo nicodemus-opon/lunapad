@@ -31,7 +31,7 @@
 	const hasPythonOutput = $derived(
 		Boolean(
 			pythonOutput &&
-				(pythonOutput.error || pythonOutput.stdout.trim() || pythonOutput.figures.length > 0)
+			(pythonOutput.error || pythonOutput.stdout.trim() || pythonOutput.figures.length > 0)
 		)
 	);
 
@@ -51,6 +51,9 @@
 	}
 </script>
 
+{#if cell.code}
+	<pre class="report-cell-code"><code>{cell.code}</code></pre>
+{/if}
 {#if error}
 	<p class="report-cell-error">{error}</p>
 {:else if hasTabularData || hasPythonOutput}
@@ -102,6 +105,16 @@
 		display: flex;
 		gap: 0.35rem;
 		margin-bottom: 0.35rem;
+	}
+	.report-cell-code {
+		margin: 0 0 0.5rem;
+		padding: 0.5rem 0.65rem;
+		border-radius: 0.375rem;
+		background: var(--muted);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.report-cell-error {
 		font-family: var(--font-mono);

@@ -91,4 +91,33 @@ describe('buildShareSnapshot', () => {
 		expect(pythonCell?.pythonOutput?.stdout).toBe('hi\n');
 		expect(pythonCell?.pythonOutput?.figures).toHaveLength(1);
 	});
+
+	it('only includes code for pinned (display: full) query and python cells', () => {
+		const notebook = makeNotebook([
+			{
+				id: 'q1',
+				cellType: 'query',
+				outputName: 'orders',
+				display: 'full',
+				language: 'sql',
+				code: 'select 1',
+				connectionId: BUILTIN_DUCKDB_CONNECTION.id,
+				result: { rows: [{ n: 1 }], columns: ['n'] }
+			} as unknown as Notebook['cells'][number],
+			{
+				id: 'q2',
+				cellType: 'query',
+				outputName: 'products',
+				display: 'output',
+				language: 'sql',
+				code: 'select 2',
+				connectionId: BUILTIN_DUCKDB_CONNECTION.id,
+				result: { rows: [{ n: 2 }], columns: ['n'] }
+			} as unknown as Notebook['cells'][number]
+		]);
+
+		const snapshot = buildShareSnapshot(notebook);
+		expect(snapshot.cells.find((c) => c.outputName === 'orders')?.code).toBe('select 1');
+		expect(snapshot.cells.find((c) => c.outputName === 'products')?.code).toBeNull();
+	});
 });

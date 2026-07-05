@@ -107,6 +107,152 @@ function gradeCells() {
 	return buildSalesAnalyticsDemo().cells.filter((c) => c.cellType === 'query');
 }
 
+/** Fabricate plausible result rows from a cell's declared result columns, for feeding
+ *  synthetic get_cell_result tool responses in the multi-turn driver below. */
+function synthResultRows(columns: string[]): Array<Record<string, unknown>> {
+	const regions = ['North', 'South', 'East', 'West', 'Central'];
+	const products = ['Widget A', 'Widget B', 'Gadget C', 'Gizmo D', 'Doohickey E'];
+	const categories = ['Electronics', 'Apparel', 'Home', 'Sports', 'Toys'];
+	return Array.from({ length: 5 }, (_, i) => {
+		const row: Record<string, unknown> = {};
+		for (const col of columns) {
+			if (/date|month/i.test(col)) row[col] = `2026-0${(i % 9) + 1}-01`;
+			else if (/revenue|price|amount|value|total/i.test(col))
+				row[col] = Math.round((1000 + i * 537) * 100) / 100;
+			else if (/count|qty|quantity|units|orders|sold/i.test(col)) row[col] = 10 + i * 3;
+			else if (/pct|attainment|rate/i.test(col)) row[col] = Math.round((0.6 + i * 0.05) * 100) / 100;
+			else if (/region/i.test(col)) row[col] = regions[i % regions.length];
+			else if (/product/i.test(col)) row[col] = products[i % products.length];
+			else if (/category/i.test(col)) row[col] = categories[i % categories.length];
+			else row[col] = `val${i}`;
+		}
+		return row;
+	});
+}
+
+function rowsToCsvLike(columns: string[], rows: Array<Record<string, unknown>>): string {
+	const header = columns.join(',');
+	const body = rows.map((r) => columns.map((c) => String(r[c] ?? '')).join(',')).join('\n');
+	return `${header}\n${body}`;
+}
+
+/**
+ * Replicates the real client's `runDashboardLoop` (src/lib/services/ai-chat-client.ts) against
+ * the raw /api/ai/chat endpoint: executes result-critical tool calls (get_cell_result, list_cells)
+ * with synthetic data and feeds results back as the next turn, up to MAX_DEPTH turns, mirroring
+ * the exact injection directives the real client sends. The single-shot `postChat` above cannot
+ * exercise "investigate before build" prompts because get_cell_result stops the stream for the
+ * client to answer — this driver is what actually proves complex, multi-step dashboard prompts
+ * work end-to-end against a real model, not just prompts a model happens to answer in one shot.
+ */
+async function runMultiTurnDashboard(
+	userText: string,
+	cells: AIChatCell[] = buildDashboardFixtureCells()
+): Promise<{ events: Array<Record<string, unknown>>; md: string; turns: number }> {
+	let messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+		{ role: 'user', content: userText },
+		{ role: 'assistant', content: '' }
+	];
+	const allEvents: Array<Record<string, unknown>> = [];
+	const knownMarkdownNames = new Set<string>();
+	let inspected = false;
+	const MAX_DEPTH = 8;
+
+	for (let depth = 0; depth < MAX_DEPTH; depth++) {
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), 180000);
+		let events: Array<Record<string, unknown>>;
+		try {
+			const res = await fetch(`${BASE}/api/ai/chat`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					messages,
+					subagentType: 'dashboard',
+					notebookContext: {
+						cells,
+						connectionSchema: DASHBOARD_SCHEMA,
+						connectionDialect: 'duckdb',
+						pythonAvailable: false,
+						externalConnectionIds: [],
+						externalSchemaFallback: [],
+						activeConnectionId: 'builtin.duckdb'
+					},
+					llmConfig: LLM
+				}),
+				signal: ctrl.signal
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+			events = parseSSE(await res.text());
+		} finally {
+			clearTimeout(timer);
+		}
+		allEvents.push(...events);
+
+		const toolResultTexts: string[] = [];
+		for (const e of events) {
+			if (e.type !== 'tool_call') continue;
+			const call = e.call as { tool?: string; args?: Record<string, unknown> } | undefined;
+			if (call?.tool === 'get_cell_result') {
+				const cellId = String(call.args?.cellId ?? '');
+				const cell = cells.find((c) => c.outputName === cellId || c.id === cellId);
+				if (cell?.resultColumns?.length) {
+					const rows = synthResultRows(cell.resultColumns);
+					const csv = rowsToCsvLike(cell.resultColumns, rows);
+					toolResultTexts.push(
+						`get_cell_result(${cell.outputName}): ${rows.length} rows, columns: ${cell.resultColumns.join(', ')}\n${csv}`
+					);
+					inspected = true;
+				} else {
+					toolResultTexts.push(`get_cell_result(${cellId}): no result data — run it first`);
+				}
+			} else if (call?.tool === 'list_cells') {
+				const summary = cells
+					.map((c) => `${c.outputName} (${c.cellType}, ${c.status})`)
+					.join(', ');
+				toolResultTexts.push(`list_cells: ${summary}`);
+			} else if (call?.tool === 'create_cell' || call?.tool === 'update_cell') {
+				if (call.args?.cellType === 'markdown' || typeof call.args?.markdown === 'string') {
+					knownMarkdownNames.add(String(call.args?.outputName ?? 'dashboard'));
+				}
+			}
+		}
+
+		const md = extractMarkdown(events, true);
+		if (md.trim() && knownMarkdownNames.size > 0) return { events: allEvents, md, turns: depth + 1 };
+
+		if (toolResultTexts.length > 0) {
+			const directive = !inspected
+				? 'Inspect at least one relevant reporting result before writing dashboard markdown. You can use get_cell_result on an existing cell, or run_cells on newly created SQL/Python cells first.'
+				: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>.';
+			messages = [
+				...messages,
+				{
+					role: 'user',
+					content: `Tool results:\n\n${toolResultTexts.join('\n\n---\n\n')}\n\n${directive} Do NOT respond with prose only — call the tools now.`
+				},
+				{ role: 'assistant', content: '' }
+			];
+			continue;
+		}
+
+		if (knownMarkdownNames.size === 0) {
+			messages = [
+				...messages,
+				{
+					role: 'user',
+					content:
+						'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>. Do NOT respond with prose only — call the tools now.'
+				},
+				{ role: 'assistant', content: '' }
+			];
+			continue;
+		}
+		break;
+	}
+	return { events: allEvents, md: extractMarkdown(allEvents, true), turns: MAX_DEPTH };
+}
+
 describe('dashboard adversarial integration', () => {
 	beforeAll(async () => {
 		if (!hasLlmConfig) return;
@@ -189,6 +335,10 @@ describe('dashboard adversarial integration', () => {
 			'Create ONE markdown dashboard with {% grid %} of {% metric %} widgets and one {% chart %} from region_performance and monthly_revenue.'
 		);
 		const md = extractMarkdown(events);
+		if (process.env.DEBUG_EVENTS) {
+			const fs = await import('node:fs');
+			fs.writeFileSync('/tmp/debug-events.json', JSON.stringify({ tools: tools(events), md }, null, 2));
+		}
 		expect(md.length).toBeGreaterThan(20);
 		const grade = gradeDashboard(md, gradeCells());
 		expect(grade.failures).toEqual([]);
@@ -281,6 +431,33 @@ describe('dashboard adversarial integration', () => {
 		expect(grade.failures).toEqual([]);
 		expect(grade.score).toBeGreaterThanOrEqual(70);
 	});
+
+	runIfServer(
+		'multi-turn: genuinely complex dashboard prompt builds a valid multi-widget dashboard',
+		async () => {
+			const { md, turns } = await runMultiTurnDashboard(
+				'Build a comprehensive executive dashboard with tabs for Overview, Regions, and Products. ' +
+					'Overview tab: a KPI grid with total revenue, quota attainment, and order count metrics, plus a progress bar for quota attainment. ' +
+					'Regions tab: a bar chart of region_performance and a datatable of the same. ' +
+					'Products tab: a bar chart of top_products and a datatable of top_products. ' +
+					'Include a line chart of monthly_revenue trend somewhere appropriate. Use live refs only, no hardcoded numbers.'
+			);
+			expect(md.length).toBeGreaterThan(20);
+			expect(md).toMatch(/\{%\s*tabs\b/i);
+			expect(md).toMatch(/\{%\s*grid\b/i);
+			expect(md).toMatch(/\{%\s*metric\b/i);
+			expect(md).toMatch(/\{%\s*chart\b/i);
+			expect(md).not.toMatch(/\$cell\b|create_dashboard|add_dashboard_block/i);
+			const grade = gradeDashboard(md, gradeCells());
+			expect(
+				grade.failures.filter(
+					(f) => !/Placeholder \$cell|Undefined variable: 'cell'|Expected "\("/.test(f)
+				)
+			).toEqual([]);
+			expect(grade.score).toBeGreaterThanOrEqual(70);
+			expect(turns).toBeLessThanOrEqual(8);
+		}
+	);
 
 	runIfServer('model-building prompt emits analytics-engineer tool sequence', async () => {
 		const events = await postChat(

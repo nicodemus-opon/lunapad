@@ -61,6 +61,7 @@ export interface PublicShareCell {
 	publishRole: SharePublishRole;
 	language: ShareCellSnapshot['language'];
 	markdown: string;
+	code: ShareCellSnapshot['code'];
 	isLive: boolean;
 	frozenResult: ShareCellSnapshot['frozenResult'];
 	pythonOutput: ShareCellSnapshot['pythonOutput'];
@@ -96,6 +97,7 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 			publishRole: cell.publishRole ?? 'visible',
 			language: cell.language,
 			markdown: cell.markdown,
+			code: cell.code,
 			isLive: cell.isLive,
 			frozenResult: cell.isLive ? null : cell.frozenResult,
 			pythonOutput: cell.isLive ? null : cell.pythonOutput,

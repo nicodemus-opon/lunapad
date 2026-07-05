@@ -67,7 +67,20 @@ describe('notebook store', () => {
 		recordUploadedTableMetadataMock.mockReset();
 	});
 
-	it('closes notebook tab without deleting notebook', () => {
+	it('closes notebook tab without deleting a non-empty notebook', () => {
+		addNotebook();
+		const notebooks = getNotebooks();
+		expect(notebooks).toHaveLength(2);
+
+		const secondId = notebooks[1].id;
+		updateCellCode(notebooks[1].cells[0].id, 'select 1');
+		closeNotebookTab(secondId);
+
+		expect(getNotebooks()).toHaveLength(2);
+		expect(getOpenNotebookTabIds()).not.toContain(secondId);
+	});
+
+	it('closing an empty notebook tab deletes the notebook', () => {
 		addNotebook();
 		const notebooks = getNotebooks();
 		expect(notebooks).toHaveLength(2);
@@ -75,8 +88,53 @@ describe('notebook store', () => {
 		const secondId = notebooks[1].id;
 		closeNotebookTab(secondId);
 
-		expect(getNotebooks()).toHaveLength(2);
+		expect(getNotebooks()).toHaveLength(1);
+		expect(getNotebooks().some((n) => n.id === secondId)).toBe(false);
 		expect(getOpenNotebookTabIds()).not.toContain(secondId);
+	});
+
+	it('closing an empty notebook tab does not prune when it is the only open tab', () => {
+		const notebooks = getNotebooks();
+		expect(notebooks).toHaveLength(1);
+		const onlyId = notebooks[0].id;
+
+		closeNotebookTab(onlyId);
+
+		expect(getNotebooks()).toHaveLength(1);
+		expect(getNotebooks()[0].id).toBe(onlyId);
+	});
+
+	it('closing a notebook tab with a written markdown cell does not delete the notebook', () => {
+		addNotebook();
+		const notebooks = getNotebooks();
+		const secondId = notebooks[1].id;
+		openNotebookTab(secondId);
+		const markdownCellId = addMarkdownCell();
+		updateCellMarkdown(markdownCellId, 'some notes');
+
+		closeNotebookTab(secondId);
+
+		expect(getNotebooks().some((n) => n.id === secondId)).toBe(true);
+	});
+
+	it('closing a notebook tab prunes an untouched trailing cell but keeps populated ones', () => {
+		addNotebook();
+		const notebooks = getNotebooks();
+		const secondId = notebooks[1].id;
+		openNotebookTab(secondId);
+		const firstCellId = getNotebooks().find((n) => n.id === secondId)!.cells[0].id;
+		updateCellCode(firstCellId, 'select 1');
+		addCell();
+
+		const beforeClose = getNotebooks().find((n) => n.id === secondId)!;
+		expect(beforeClose.cells).toHaveLength(2);
+
+		closeNotebookTab(secondId);
+
+		const nb = getNotebooks().find((n) => n.id === secondId)!;
+		expect(nb).toBeDefined();
+		expect(nb.cells).toHaveLength(1);
+		expect(nb.cells[0].id).toBe(firstCellId);
 	});
 
 	it('deleting notebook removes its result tabs', () => {
@@ -170,6 +228,23 @@ describe('notebook store', () => {
 		// Clear the timer so it doesn't keep running past this test.
 		setNotebookAutoRefresh(nb.id, 0);
 		expect(getNotebookAutoRefresh(nb.id)).toBe(0);
+	});
+
+	it('clears the auto-refresh interval when its notebook is deleted', () => {
+		vi.useFakeTimers();
+		try {
+			addNotebook();
+			const nb = getNotebooks()[1];
+			setNotebookAutoRefresh(nb.id, 1000);
+			const timerCountWithInterval = vi.getTimerCount();
+
+			deleteNotebook(nb.id);
+
+			// The interval itself should be gone, not just self-healing on next tick.
+			expect(vi.getTimerCount()).toBeLessThan(timerCountWithInterval);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('blocks deleting a non-empty folder', () => {

@@ -51,9 +51,12 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				const snap = frozenById.get(cell.id);
 				const pythonOutput = cell.cellType === 'python' ? cell.pythonOutput : null;
 				const pythonHtml = pythonOutput ? renderPythonOutputToStaticHtml(pythonOutput) : '';
+				const codeHtml = cell.code
+					? `<pre class="report-cell-code"><code>${escapeHtml(cell.code)}</code></pre>`
+					: '';
 				if (!snap) {
-					return pythonHtml
-						? `<div class="cell">${pythonHtml}</div>`
+					return pythonHtml || codeHtml
+						? `<div class="cell">${codeHtml}${pythonHtml}</div>`
 						: `<div class="cell"><em>No static result available.</em></div>`;
 				}
 				const truncated = snap.rows.length > 500;
@@ -63,7 +66,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 					truncated,
 					columnFormatRules: cell.columnFormatRules ?? {}
 				});
-				return `<div class="cell">${pythonHtml}${tableHtml}</div>`;
+				return `<div class="cell">${codeHtml}${pythonHtml}${tableHtml}</div>`;
 			}
 
 			return `<div class="cell"></div>`;
@@ -96,6 +99,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     .report-markdown p { margin: 0 0 0.75rem; }
     .report-markdown h1, .report-markdown h2, .report-markdown h3, .report-markdown h4, .report-markdown h5, .report-markdown h6 { margin: 1.25rem 0 0.5rem; font-weight: 700; }
     .report-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.85em; }
+    .report-cell-code { margin: 0 0 0.5rem; padding: 0.5rem 0.65rem; border-radius: 0.375rem; background: #f5f5f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; }
     .python-block { margin: 0 0 0.75rem; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #e5e7eb; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto; }
     .python-block-muted { background: #f8fafc; color: #475569; }
     .python-block-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
@@ -148,9 +152,7 @@ function renderPythonOutputToStaticHtml(
 		chunks.push(`<pre class="python-block python-block-error">${escapeHtml(output.error)}</pre>`);
 	}
 	if (output.stdout.trim()) {
-		chunks.push(
-			`<pre class="python-block python-block-muted">${escapeHtml(output.stdout)}</pre>`
-		);
+		chunks.push(`<pre class="python-block python-block-muted">${escapeHtml(output.stdout)}</pre>`);
 	}
 	if (output.figures.length > 0) {
 		chunks.push(

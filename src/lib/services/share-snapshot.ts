@@ -29,6 +29,8 @@ export interface ShareCellSnapshot {
 	publishRole: SharePublishRole;
 	language: CellLanguage;
 	markdown: string;
+	/** Raw PRQL/SQL/python source, as typed — only populated for pinned (display === 'full') cells. */
+	code: string | null;
 	isLive: boolean;
 	connectionId: string | null;
 	frozenResult: Cell['result'] | null;
@@ -97,6 +99,7 @@ function buildShareSnapshotInternal(
 				? 'data'
 				: 'visible';
 
+		const isPinned = cell.display === 'full';
 		const base = {
 			id: cell.id,
 			cellType: cell.cellType,
@@ -105,6 +108,8 @@ function buildShareSnapshotInternal(
 			publishRole,
 			language: cell.language,
 			markdown: cell.markdown,
+			code:
+				isPinned && (cell.cellType === 'query' || cell.cellType === 'python') ? cell.code : null,
 			resultChartConfig: cell.resultChartConfig,
 			resultViewMode: cell.resultViewMode,
 			columnFormatRules: cell.columnFormatRules

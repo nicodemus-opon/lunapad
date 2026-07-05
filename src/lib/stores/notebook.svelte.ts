@@ -3443,9 +3443,25 @@ export function openNotebookTab(id: string): void {
 	scheduleSave();
 }
 
+function pruneTrailingEmptyCell(nb: Notebook): void {
+	if (nb.cells.length <= 1) return; // never touches the sole/first cell
+	const last = nb.cells[nb.cells.length - 1];
+	if (isCellUntouched(last)) removeCell(last.id, nb);
+}
+
 export function closeNotebookTab(id: string): void {
 	if (!state.openNotebookTabIds.includes(id)) return;
 	if (state.openNotebookTabIds.length <= 1) return;
+
+	const nb = state.notebooks.find((n) => n.id === id);
+	if (nb) {
+		if (isNotebookEmpty(nb)) {
+			deleteNotebook(id); // handles tab removal, activeTabId fixup, disk cleanup, save
+			return;
+		}
+		pruneTrailingEmptyCell(nb);
+	}
+
 	state.openNotebookTabIds = state.openNotebookTabIds.filter((tabId) => tabId !== id);
 	if (state.activeTabId === id) {
 		state.activeTabId = getNextActiveTabId(id);
@@ -3750,14 +3766,43 @@ export function getExpandedNotebookIds(): string[] {
 	return state.expandedNotebookIds;
 }
 
+function isCellUntouched(cell: Cell): boolean {
+	if (cell.cellType === 'markdown') return !cell.markdown?.trim();
+	if (cell.cellType === 'udf') return !cell.udfBody?.trim();
+	// query / python / plot cells
+	return (
+		!cell.code?.trim() &&
+		cell.result === null &&
+		cell.status === 'idle' &&
+		(cell.executionCount ?? 0) === 0
+	);
+}
+
+function isNotebookEmpty(nb: Notebook): boolean {
+	return nb.cells.every(isCellUntouched);
+}
+
 export function deleteNotebook(id: string): void {
 	if (state.notebooks.length <= 1) return;
 	const idx = state.notebooks.findIndex((n) => n.id === id);
 	if (idx === -1) return;
 	const nb = state.notebooks[idx];
 
+	// Orphaned auto-refresh interval would otherwise keep firing runCell
+	// against this notebook's stale cell references after it's gone.
+	const existingAutoRefreshTimer = autoRefreshTimers.get(id);
+	if (existingAutoRefreshTimer) {
+		clearInterval(existingAutoRefreshTimer);
+		autoRefreshTimers.delete(id);
+	}
+
 	// Drop DuckDB views and mark any cross-notebook referencing cells stale
 	for (const cell of nb.cells) {
+		const pythonJob = pythonJobByCellId.get(cell.id);
+		if (pythonJob) {
+			pythonJobByCellId.delete(cell.id);
+			void cancelPython(pythonJob.notebookId, pythonJob.jobId);
+		}
 		if (cell.cellType !== 'query') continue;
 		const viewName = getCellOutputReference(cell);
 		dropView(viewName).catch(() => {});
@@ -3798,6 +3843,8 @@ export function deleteNotebook(id: string): void {
 			}
 		}
 	}
+
+	historyStacks.delete(id);
 
 	state.openResultTabs = state.openResultTabs.filter((t) => t.notebookId !== id);
 	state.openNotebookTabIds = state.openNotebookTabIds.filter((tabId) => tabId !== id);
@@ -4815,14 +4862,19 @@ export function insertCellAfter(
 	return newCell.id;
 }
 
-export function removeCell(id: string): void {
-	const nb = getActiveNotebook();
+export function removeCell(id: string, nb: Notebook = getActiveNotebook()): void {
 	const cell = nb.cells.find((c) => c.id === id);
 	if (cell) {
 		pushHistoryCheckpoint(nb.id);
 		clearGuiCompileTimer(id);
 		const viewName = cell.outputName || `_cell_${cell.id}`;
 		dropView(viewName).catch(() => {});
+
+		const pythonJob = pythonJobByCellId.get(id);
+		if (pythonJob) {
+			pythonJobByCellId.delete(id);
+			void cancelPython(pythonJob.notebookId, pythonJob.jobId);
+		}
 
 		if (state.storageMode === 'filesystem' && state.projectFolder) {
 			if (nb.format !== 'luna') {
