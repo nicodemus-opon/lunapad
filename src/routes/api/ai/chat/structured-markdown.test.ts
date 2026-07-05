@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	compileStructuredMarkdownArgs,
 	hasDashboardResultContextFromMessages
-} from './+server.js';
+} from './structured-markdown.js';
 import type { AIChatCell } from '$lib/types/ai-chat.js';
 
 const baseCells: AIChatCell[] = [

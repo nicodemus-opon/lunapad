@@ -9,10 +9,11 @@ import type {
 } from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
+import { buildGeneratedDashboardPromptBlock } from '$lib/services/generated-dashboard.js';
 import {
-	buildGeneratedDashboardPromptBlock,
-	compileGeneratedDashboard
-} from '$lib/services/generated-dashboard.js';
+	compileStructuredMarkdownArgs,
+	hasDashboardResultContextFromMessages
+} from './structured-markdown.js';
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
 import { selectSchemaForPrompt, resolveExternalSchema } from '$lib/server/ai-schema-context.js';
 import {
@@ -45,64 +46,6 @@ import {
 } from '$lib/agent/server/chat-tool-policy.js';
 import { buildUserContent } from '$lib/server/ai-user-content.js';
 import { normalizeSafeLlmBaseUrl } from '$lib/server/safe-outbound-url';
-
-export type { AIChatRequest, AIChatToolCall, AIChatToolName, AIChatCell, AIChatSchemaTable };
-
-export function hasDashboardResultContextFromMessages(
-	messages: Array<{ role: 'user' | 'assistant'; content: string }>
-): boolean {
-	return messages.some(
-		(m) =>
-			/get_cell_result\([^)]+\):/i.test(m.content) ||
-			/run_cells result:/i.test(m.content)
-	);
-}
-
-export function compileStructuredMarkdownArgs(
-	tool: string,
-	args: Record<string, unknown>,
-	cells: AIChatCell[],
-	knownOutputNames?: Iterable<string>
-): { args: Record<string, unknown>; errors: string[] } {
-	if ((tool !== 'create_cell' && tool !== 'update_cell') || !args.dashboard) {
-		return { args, errors: [] };
-	}
-
-	if (typeof args.dashboard !== 'object' || Array.isArray(args.dashboard)) {
-		return { args, errors: ['dashboard payload must be an object'] };
-	}
-
-	const knownCells = knownOutputNames
-		? [...new Set(knownOutputNames)].map((outputName) => ({
-				id: outputName,
-				outputName,
-				language: 'sql' as const,
-				cellType: 'query' as const,
-				code: '',
-				resultColumns: [],
-				status: 'success'
-			}))
-		: cells;
-
-	const compiled = compileGeneratedDashboard(
-		args.dashboard as Parameters<typeof compileGeneratedDashboard>[0],
-		{
-			knownCells
-		}
-	);
-	if (compiled.errors.length > 0) {
-		return { args, errors: compiled.errors };
-	}
-
-	return {
-		args: {
-			...args,
-			cellType: 'markdown',
-			markdown: compiled.markdown
-		},
-		errors: []
-	};
-}
 
 function isMeaningfulTextDelta(delta: string): boolean {
 	return delta.replace(/[\s;.,:`'"_\-]+/g, '').length >= 2;
