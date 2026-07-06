@@ -359,10 +359,14 @@ export const MarkdocContainerExtension = Node.create({
 						});
 						loopComponent = mount(LoopPreviewView, { target: loopHost, props: loopProps });
 						lastLoopSource = source;
-					} else if (loopProps && source !== lastLoopSource) {
-						loopProps.source = source;
+					} else if (loopProps) {
+						loopProps.tagName = tagName;
+						loopProps.notebookId = ctx?.getNotebookId?.() ?? '';
 						loopProps.cells = ctx?.getCells() ?? [];
-						lastLoopSource = source;
+						if (source !== lastLoopSource) {
+							loopProps.source = source;
+							lastLoopSource = source;
+						}
 					}
 				}
 				if (loopHost) loopHost.style.display = isPreview ? '' : 'none';

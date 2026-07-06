@@ -43,6 +43,15 @@
 		return null;
 	}
 
+	function resolveRowValue(row: unknown, path: string): unknown {
+		let value = row;
+		for (const key of path.split('.').filter(Boolean)) {
+			if (!value || typeof value !== 'object') return undefined;
+			value = (value as Record<string, unknown>)[key];
+		}
+		return value;
+	}
+
 	// Live data badge: "N items" (each), "N groups" (group), ✓/✗ (if).
 	const dataBadge = $derived.by(() => {
 		if (tagName === 'each') {
@@ -53,7 +62,7 @@
 			const rows = resolveDataRows(attrs.data);
 			const by = String(attrs.by ?? '');
 			if (rows === null || !by) return 'no data';
-			const keys = new Set(rows.map((r) => String((r as Record<string, unknown>)?.[by] ?? '')));
+			const keys = new Set(rows.map((row) => String(resolveRowValue(row, by) ?? '')));
 			return `${keys.size} group${keys.size === 1 ? '' : 's'}`;
 		}
 		return null;

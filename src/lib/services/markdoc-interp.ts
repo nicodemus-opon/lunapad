@@ -439,20 +439,59 @@ function slugMermaidId(value: unknown): string {
 	);
 }
 
+function stringifyInterpolatedValue(value: unknown): string {
+	if (value == null) return '';
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	if (Array.isArray(value) || typeof value === 'object') return JSON.stringify(value);
+	return String(value);
+}
+
+function escapeQuotedInterpolation(value: unknown): string {
+	return stringifyInterpolatedValue(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function toMarkdocLiteralSource(value: unknown): string {
+	if (value === null || value === undefined) return '""';
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	return JSON.stringify(value);
+}
+
+function resolveScopeValue(root: unknown, path: string[]): unknown {
+	let value: unknown = root;
+	for (const key of path) {
+		if (value == null || typeof value !== 'object') return undefined;
+		value = (value as Record<string, unknown>)[key];
+	}
+	return value;
+}
+
 function interpolateBareVars(text: string, scope: Record<string, unknown>): string {
-	return text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name: string) => {
-		const v = scope[name];
-		return v == null ? '' : String(v);
-	});
+	return text.replace(
+		/\$([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)/g,
+		(match, path: string, offset: number) => {
+			const value = resolveScopeValue(scope, path.split('.'));
+			const before = text[offset - 1] ?? '';
+			const after = text[offset + match.length] ?? '';
+
+			// Exact quoted variable value: title="$user" -> title="{\"name\":\"Alice\"}"
+			if (before === '"' && after === '"') {
+				return escapeQuotedInterpolation(value);
+			}
+
+			// Exact unquoted attribute value: title=$user.name -> title="Alice"
+			const leftSide = text.slice(0, offset);
+			if (/=\s*$/u.test(leftSide) && /[\s/%}\]]/u.test(after || ' ')) {
+				return toMarkdocLiteralSource(value);
+			}
+
+			return stringifyInterpolatedValue(value);
+		}
+	);
 }
 
 function resolveScopeVar(scope: Record<string, unknown>, path: string[]): string {
-	let val: unknown = scope;
-	for (const key of path) {
-		if (val == null || typeof val !== 'object') return '';
-		val = (val as Record<string, unknown>)[key];
-	}
-	return val == null ? '' : String(val);
+	return stringifyInterpolatedValue(resolveScopeValue(scope, path));
 }
 
 function renderTextContent(content: unknown, scope: Record<string, unknown>): string {
@@ -529,6 +568,44 @@ interface SourceTagBlock {
 }
 
 type LoopTagName = 'each' | 'group';
+
+function singularizeLoopAlias(name: string): string {
+	if (name.endsWith('ies') && name.length > 3) return `${name.slice(0, -3)}y`;
+	if (name.endsWith('sses') || name.endsWith('ss')) return name;
+	if (name.endsWith('s') && name.length > 1) return name.slice(0, -1);
+	return name;
+}
+
+function deriveEachItemAliases(attrStr: string): string[] {
+	const match = attrStr.match(/\bdata\s*=\s*(\$[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)/);
+	if (!match) return ['item'];
+	const path = match[1].slice(1).split('.');
+	const base =
+		path[path.length - 1] === 'rows' && path.length > 1
+			? path[path.length - 2]
+			: path[path.length - 1];
+	const aliases = new Set(['item']);
+	if (/^[A-Za-z_]\w*$/.test(base)) {
+		aliases.add(base);
+		aliases.add(singularizeLoopAlias(base));
+	}
+	return [...aliases];
+}
+
+function buildEachItemScope(
+	parentScope: Record<string, unknown>,
+	item: unknown,
+	attrStr: string
+): Record<string, unknown> {
+	const nextScope: Record<string, unknown> = { ...parentScope };
+	if (item && typeof item === 'object' && !Array.isArray(item)) {
+		Object.assign(nextScope, item as Record<string, unknown>);
+	}
+	for (const alias of deriveEachItemAliases(attrStr)) {
+		nextScope[alias] = item;
+	}
+	return nextScope;
+}
 
 function getTagBlockFromNode(
 	source: string,
@@ -619,8 +696,10 @@ function expandEachBlock(
 	scope: Record<string, unknown>
 ): string {
 	const attrs = resolveParsedLoopAttrs('each', attrStr, config, scope);
-	const arr = Array.isArray(attrs.data) ? (attrs.data as Record<string, unknown>[]) : [];
-	const chunks = arr.map((item) => expandLoopsInSource(body, config, { ...scope, ...item }));
+	const arr = Array.isArray(attrs.data) ? attrs.data : [];
+	const chunks = arr.map((item) =>
+		expandLoopsInSource(body, config, buildEachItemScope(scope, item, attrStr))
+	);
 	return joinExpandedChunks(chunks);
 }
 
@@ -637,8 +716,9 @@ function expandGroupBlock(
 	};
 	const { data = [], by = '', order } = attrs;
 	const map = new Map<string, Record<string, unknown>[]>();
+	const byPath = by.split('.').filter(Boolean);
 	for (const row of data) {
-		const k = String(row[by] ?? '');
+		const k = String(resolveScopeValue(row, byPath) ?? '');
 		if (!map.has(k)) map.set(k, []);
 		map.get(k)!.push(row);
 	}

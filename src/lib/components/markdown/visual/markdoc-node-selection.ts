@@ -97,7 +97,6 @@ export function patchMarkdocNodeSelection(
 		}
 		editor
 			.chain()
-			.focus()
 			.command(({ tr }) => {
 				tr.setNodeMarkup(pos, undefined, {
 					tagName,
@@ -116,7 +115,6 @@ export function patchMarkdocNodeSelection(
 			const attrs = { ...selected.attrs, ...patch.attrs };
 			editor
 				.chain()
-				.focus()
 				.command(({ tr }) => {
 					tr.setNodeAttribute(pos, 'tagName', tagName);
 					tr.setNodeAttribute(pos, 'attrsJson', markdocAttrsToJson(attrs));
@@ -142,7 +140,6 @@ export function patchMarkdocNodeSelection(
 		if (!replacement || replacement.type !== 'markdocContainer') return;
 		editor
 			.chain()
-			.focus()
 			.command(({ tr }) => {
 				const currentNode = tr.doc.nodeAt(pos);
 				if (!currentNode) return false;
@@ -162,7 +159,6 @@ export function patchMarkdocNodeSelection(
 	}
 	editor
 		.chain()
-		.focus()
 		.command(({ tr }) => {
 			tr.setNodeMarkup(pos, undefined, { source: next.source });
 			return true;

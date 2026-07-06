@@ -345,13 +345,15 @@ second
 		const unclosed = '{% if $orders.count %}\nSome text';
 		const diags = validateMarkdocMarkdown(unclosed, [makeCell('orders', [{ count: 1 }])]);
 		expect(diags.some((d) => /is missing closing/i.test(d.message))).toBe(false);
-		expect(diags.some((d) => /Malformed markdown.*unclosed or extra 'if' block/i.test(d.message))).toBe(
-			true
-		);
+		expect(
+			diags.some((d) => /Malformed markdown.*unclosed or extra 'if' block/i.test(d.message))
+		).toBe(true);
 
 		const { errors } = renderMarkdocCell(unclosed, [makeCell('orders', [{ count: 1 }])]);
 		expect(errors.some((e) => /is missing closing/i.test(e))).toBe(false);
-		expect(errors.some((e) => /Malformed markdown.*unclosed or extra 'if' block/i.test(e))).toBe(true);
+		expect(errors.some((e) => /Malformed markdown.*unclosed or extra 'if' block/i.test(e))).toBe(
+			true
+		);
 	});
 
 	it('preserves static mermaid source with frontmatter, newlines, and [*]', () => {
@@ -673,6 +675,87 @@ sankey-beta
 		expect(text).not.toContain('$customer_name');
 	});
 
+	it('resolves dotted properties inside each loop bodies', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer: { name: 'Alice', tier: 'Gold' } },
+				{ customer: { name: 'Bob', tier: 'Silver' } }
+			])
+		];
+		const src = `{% each data=$orders.rows %}
+- $customer.name ($customer.tier)
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Alice (Gold)');
+		expect(text).toContain('Bob (Silver)');
+		expect(text).not.toContain('[object Object]');
+	});
+
+	it('exposes a singular current-item alias for ref-backed each loops', () => {
+		const cells = [
+			makeCell('users', [
+				{ name: 'Alice', role: 'Admin' },
+				{ name: 'Bob', role: 'Member' }
+			])
+		];
+		const src = `{% each data=$users.rows %}
+- $user.name ($user.role)
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Alice (Admin)');
+		expect(text).toContain('Bob (Member)');
+	});
+
+	it('supports singular aliases in unquoted tag attributes inside each loops', () => {
+		const cells = [
+			makeCell('users', [
+				{ name: 'Alice', role: 'Admin' },
+				{ name: 'Bob', role: 'Member' }
+			])
+		];
+		const src = `{% each data=$users.rows %}
+{% card title=$user.name %}
+{% /card %}
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const cards = findTags(tree, 'card');
+		expect(cards.map((card) => card.attributes.title)).toEqual(['Alice', 'Bob']);
+	});
+
+	it('keeps object aliases parse-safe inside quoted tag attributes', () => {
+		const cells = [
+			makeCell('users', [
+				{ name: 'Alice', role: 'Admin' },
+				{ name: 'Bob', role: 'Member' }
+			])
+		];
+		const src = `{% each data=$users.rows %}
+{% card title="$user" %}
+{% /card %}
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const cards = findTags(tree, 'card');
+		expect(String(cards[0]?.attributes.title)).toContain('"name":"Alice"');
+		expect(String(cards[1]?.attributes.title)).toContain('"name":"Bob"');
+	});
+
+	it('exposes $item for primitive each data', () => {
+		const { tree, errors } = renderMarkdocCell(
+			'{% each data=["Alice","Bob"] %}- $item\n{% /each %}',
+			[]
+		);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Alice');
+		expect(text).toContain('Bob');
+	});
+
 	it('does not interpolate ordinary bare refs outside loop blocks during pre-expansion', () => {
 		const cells = [makeCell('orders', [{ customer_name: 'Alice', revenue: 120 }])];
 		const src = `Literal prose keeps $orders.revenue.
@@ -709,6 +792,45 @@ sankey-beta
 		expect(cards.map((card) => card.attributes.title)).toEqual(['Alice', 'Bob']);
 		expect(metrics.map((metric) => metric.attributes.value)).toEqual([120, 80]);
 		expect(badges.map((badge) => badge.attributes.value)).toEqual(['West', 'East']);
+	});
+
+	it('resolves dotted properties inside widget attributes rendered by each loops', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer: { name: 'Alice' }, stats: { revenue: 120 } },
+				{ customer: { name: 'Bob' }, stats: { revenue: 80 } }
+			])
+		];
+		const src = `{% each data=$orders.rows %}
+{% card title="$customer.name" %}
+{% metric value=$stats.revenue label="$customer.name" /%}
+{% /card %}
+{% /each %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const cards = findTags(tree, 'card');
+		const metrics = findTags(tree, 'metric');
+		expect(cards.map((card) => card.attributes.title)).toEqual(['Alice', 'Bob']);
+		expect(metrics.map((metric) => metric.attributes.value)).toEqual([120, 80]);
+		expect(metrics.map((metric) => metric.attributes.label)).toEqual(['Alice', 'Bob']);
+	});
+
+	it('groups rows by dotted properties', () => {
+		const cells = [
+			makeCell('orders', [
+				{ customer: { region: 'West', name: 'Alice' } },
+				{ customer: { region: 'West', name: 'Anya' } },
+				{ customer: { region: 'East', name: 'Bob' } }
+			])
+		];
+		const src =
+			'{% group data=$orders.rows by="customer.region" %}{% each data=$items %}$key: $customer.name\n{% /each %}{% /group %}';
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('West: Alice');
+		expect(text).toContain('West: Anya');
+		expect(text).toContain('East: Bob');
 	});
 
 	it('renders nested conditionals and widgets inside group loops', () => {

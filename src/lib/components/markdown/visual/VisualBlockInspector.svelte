@@ -34,6 +34,66 @@
 		);
 	}
 
+	function collectLoopVariablePaths(
+		value: unknown,
+		prefix = '',
+		depth = 0,
+		out = new Set<string>()
+	): Set<string> {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+		for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+			if (!/^[A-Za-z_]\w*$/.test(key)) continue;
+			const path = prefix ? `${prefix}.${key}` : key;
+			out.add(path);
+			if (depth < 1 && nested && typeof nested === 'object' && !Array.isArray(nested)) {
+				collectLoopVariablePaths(nested, path, depth + 1, out);
+			}
+		}
+		return out;
+	}
+
+	function inferLoopColumns(refValue: unknown, cellList: Cell[]): string[] {
+		const rows = resolveLoopRows(refValue, cellList);
+		if (!rows?.length) return [];
+		const collected = new Set<string>();
+		for (const row of rows.slice(0, 25)) {
+			collectLoopVariablePaths(row, '', 0, collected);
+		}
+		return [...collected].sort((a, b) => a.localeCompare(b));
+	}
+
+	function singularizeLoopAlias(name: string): string {
+		if (name.endsWith('ies') && name.length > 3) return `${name.slice(0, -3)}y`;
+		if (name.endsWith('sses') || name.endsWith('ss')) return name;
+		if (name.endsWith('s') && name.length > 1) return name.slice(0, -1);
+		return name;
+	}
+
+	function deriveEachAliases(refValue: string): string[] {
+		const match = refValue.match(/^\$([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)$/);
+		if (!match) return ['item'];
+		const segments = match[1].split('.');
+		const base =
+			segments[segments.length - 1] === 'rows' && segments.length > 1
+				? segments[segments.length - 2]
+				: segments[segments.length - 1];
+		const aliases = new Set(['item']);
+		if (/^[A-Za-z_]\w*$/.test(base)) {
+			aliases.add(base);
+			aliases.add(singularizeLoopAlias(base));
+		}
+		return [...aliases];
+	}
+
+	function resolveLoopValue(row: unknown, path: string): unknown {
+		let value = row;
+		for (const key of path.split('.').filter(Boolean)) {
+			if (!value || typeof value !== 'object') return undefined;
+			value = (value as Record<string, unknown>)[key];
+		}
+		return value;
+	}
+
 	interface Props {
 		block: VisualBlock | null;
 		refEntries?: MarkdownRefEntry[];
@@ -53,6 +113,7 @@
 	}: Props = $props();
 
 	let showAdvanced = $state(false);
+	let lastBlockId = $state('');
 
 	const parsed = $derived(block ? parseBlockWidget(block) : null);
 	const catalog = $derived(parsed ? MARKDOC_TAG_CATALOG[parsed.tagName] : null);
@@ -132,7 +193,13 @@
 	// parseBlockWidget stores `data` as a Markdoc Variable object; coerce to its
 	// `$cell.rows` source form so column/row resolution can match on it.
 	const loopDataRef = $derived(parsed ? attr(parsed.attrs.data ?? parsed.attrs.ref) : '');
-	const loopColumns = $derived(columnsForRef(refEntries, loopDataRef));
+	const loopColumns = $derived.by(() => {
+		const fromRefs = columnsForRef(refEntries, loopDataRef);
+		return fromRefs.length
+			? fromRefs
+			: inferLoopColumns(parsed?.attrs.data ?? parsed?.attrs.ref, cells);
+	});
+	const eachAliases = $derived(deriveEachAliases(loopDataRef || '$items'));
 
 	/** Live group keys derived the same way expandGroupBlock does: unique values of
 	 * the `by` column across the resolved data rows, in first-seen order. */
@@ -140,11 +207,11 @@
 		if (!parsed || parsed.tagName !== 'group') return [];
 		const by = String(attr(parsed.attrs.by) ?? '');
 		if (!by) return [];
-		const rows = resolveLoopRows(loopDataRef, cells);
+		const rows = resolveLoopRows(parsed.attrs.data ?? parsed.attrs.ref, cells);
 		if (!rows) return [];
 		const seen: string[] = [];
 		for (const row of rows) {
-			const key = String((row as Record<string, unknown>)?.[by] ?? '');
+			const key = String(resolveLoopValue(row, by) ?? '');
 			if (key && !seen.includes(key)) seen.push(key);
 		}
 		return seen;
@@ -208,9 +275,7 @@
 	}
 
 	function humanize(value: string): string {
-		return value
-			.replace(/-/g, ' ')
-			.replace(/\b\w/g, (c) => c.toUpperCase());
+		return value.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
 
 	// ── if-condition builder ─────────────────────────────────────────────
@@ -227,7 +292,9 @@
 	const SIMPLE_CONDITION_RE =
 		/^\s*(equals|gt|gte|lt|lte)\(\s*(\$[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*,\s*(.+?)\s*\)\s*$/;
 
-	function parseSimpleCondition(src: string): { fn: string; operand: string; value: string } | null {
+	function parseSimpleCondition(
+		src: string
+	): { fn: string; operand: string; value: string } | null {
 		const m = SIMPLE_CONDITION_RE.exec(src);
 		if (!m) return null;
 		let value = m[3];
@@ -253,6 +320,20 @@
 	}
 
 	let conditionCustom = $state(false);
+
+	$effect(() => {
+		const nextBlockId = block?.id ?? '';
+		if (nextBlockId === lastBlockId) return;
+		lastBlockId = nextBlockId;
+		showAdvanced = false;
+		if (parsed?.tagName === 'if') {
+			const currentCondition = attr(parsed.attrs.condition, parsed.condition ?? '');
+			conditionCustom =
+				currentCondition.trim() !== '' && parseSimpleCondition(currentCondition) === null;
+		} else {
+			conditionCustom = false;
+		}
+	});
 </script>
 
 {#if !block}
@@ -328,7 +409,6 @@
 					{/snippet}
 				</NodeConfigField>
 			</div>
-
 		{:else if parsed.tagName === 'chart'}
 			<div class="nc-stack">
 				<NodeConfigField label="Chart type">
@@ -583,7 +663,6 @@
 					</div>
 				</details>
 			</div>
-
 		{:else if parsed.tagName === 'datatable'}
 			<div class="nc-stack">
 				<NodeConfigField label="View">
@@ -723,7 +802,6 @@
 					</div>
 				</details>
 			</div>
-
 		{:else if parsed.tagName === 'filter'}
 			{@const param = attr(parsed.attrs.param)}
 			<div class="nc-stack">
@@ -862,13 +940,14 @@
 							{/each}
 						</ul>
 					{:else if param}
-						<p class="nc-callout-warn">No query references <code>{'${' + param + '}'}</code> yet.</p>
+						<p class="nc-callout-warn">
+							No query references <code>{'${' + param + '}'}</code> yet.
+						</p>
 					{:else}
 						<p class="nc-callout-copy">Set a param to see linked cells.</p>
 					{/if}
 				</div>
 			</div>
-
 		{:else if parsed.tagName === 'badge'}
 			<div class="nc-stack">
 				<NodeConfigField label="Value">
@@ -1047,7 +1126,11 @@
 									onchange={(e) =>
 										setAttr(
 											'condition',
-											composeCondition(simple?.fn ?? 'gt', e.currentTarget.value, simple?.value ?? '0')
+											composeCondition(
+												simple?.fn ?? 'gt',
+												e.currentTarget.value,
+												simple?.value ?? '0'
+											)
 										)}
 								/>
 							{/snippet}
@@ -1082,7 +1165,11 @@
 									onchange={(e) =>
 										setAttr(
 											'condition',
-											composeCondition(simple?.fn ?? 'gt', simple?.operand ?? '', e.currentTarget.value)
+											composeCondition(
+												simple?.fn ?? 'gt',
+												simple?.operand ?? '',
+												e.currentTarget.value
+											)
 										)}
 								/>
 							{/snippet}
@@ -1207,6 +1294,16 @@
 							</select>
 						{/snippet}
 					</NodeConfigField>
+					<div class="nc-varhint">
+						<span class="nc-varhint-label">Current item aliases — click to copy</span>
+						<div class="nc-varchips">
+							{#each eachAliases as alias (alias)}
+								<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${alias}`)}
+									>${alias}</button
+								>
+							{/each}
+						</div>
+					</div>
 					{#if loopColumns.length}
 						<div class="nc-varhint">
 							<span class="nc-varhint-label">Available in the body — click to copy</span>
@@ -1217,6 +1314,24 @@
 									>
 								{/each}
 							</div>
+							{#if eachAliases.length}
+								<span class="nc-varhint-sub"
+									>Nested access also works on the current item alias:</span
+								>
+								<div class="nc-varchips">
+									{#each eachAliases as alias (alias)}
+										{#each loopColumns as col (`${alias}.${col}`)}
+											<button
+												type="button"
+												class="nc-varchip"
+												onclick={() => copyVariable(`$${alias}.${col}`)}
+											>
+												{alias}.{col}
+											</button>
+										{/each}
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				{:else if parsed.tagName === 'mermaid'}
@@ -1239,7 +1354,6 @@
 					<p class="nc-lead">Layout blocks are edited directly in the document.</p>
 				{/if}
 			</div>
-
 		{:else if parsed.tagName === 'card' || parsed.tagName === 'callout'}
 			<div class="nc-stack">
 				{#if parsed.tagName === 'card'}
@@ -1287,7 +1401,6 @@
 					</NodeConfigField>
 				{/if}
 			</div>
-
 		{:else}
 			<div class="nc-stack">
 				<p class="nc-section-label">Source</p>

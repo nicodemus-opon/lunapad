@@ -94,6 +94,15 @@
 			window.removeEventListener('resize', onLayout);
 		};
 	});
+
+	// When the popover opens the editor still holds DOM focus with the node
+	// NodeSelection-selected, so a stray Backspace/Delete would delete the whole
+	// node. Move focus onto the popover panel so keystrokes never reach the editor
+	// keymap until the user deliberately clicks back into the document.
+	$effect(() => {
+		if (!browser || !open) return;
+		tick().then(() => popoverEl?.focus());
+	});
 </script>
 
 {#if open && selected && panelPos}
@@ -107,10 +116,11 @@
 		></button>
 		<div
 			bind:this={popoverEl}
-			class="node-config-popover fixed z-(--z-dropdown) flex max-h-[min(70vh,28rem)] w-[min(20rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-xl shadow-black/10"
+			class="node-config-popover fixed z-(--z-dropdown) flex max-h-[min(70vh,28rem)] w-[min(20rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-xl shadow-black/10 focus:outline-none"
 			style="top: {panelPos.top}px; left: {panelPos.left}px;"
 			role="dialog"
 			aria-label="{title} properties"
+			tabindex={-1}
 		>
 			<header class="flex shrink-0 items-start justify-between gap-2 border-b border-border/80 px-3 py-2.5">
 				<div class="min-w-0">
