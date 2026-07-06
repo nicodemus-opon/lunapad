@@ -19,11 +19,19 @@ export type GeneratedDashboardBlock =
 	| {
 			type: 'grid';
 			cols?: number;
+			gap?: 'compact' | 'default' | 'comfortable';
 			items: GeneratedDashboardBlock[];
 	  }
 	| {
 			type: 'columns';
-			columns: Array<{ blocks: GeneratedDashboardBlock[] }>;
+			gap?: 'compact' | 'default' | 'comfortable';
+			columns: Array<{ width?: number | string; blocks: GeneratedDashboardBlock[] }>;
+	  }
+	| {
+			type: 'card';
+			title?: string;
+			accent?: 'neutral' | 'info' | 'success' | 'warning' | 'error';
+			blocks: GeneratedDashboardBlock[];
 	  }
 	| {
 			type: 'metric';
@@ -79,6 +87,28 @@ export type GeneratedDashboardBlock =
 			data: DashboardRef;
 			cols?: string[];
 			limit?: number;
+			pageSize?: number;
+			headerInsights?: 'full' | 'compact';
+			linkedFilter?: string;
+			/** Group-by / pivot index columns — renders a summary/pivot table instead of raw rows. */
+			index?: string[];
+			pivotBy?: string;
+			valueCol?: string;
+			agg?: 'sum' | 'avg' | 'min' | 'max' | 'count';
+			round?: number;
+			valueFormatKind?:
+				| 'boolean'
+				| 'id'
+				| 'email'
+				| 'url'
+				| 'datetime'
+				| 'date'
+				| 'percentage'
+				| 'currency'
+				| 'number'
+				| 'category'
+				| 'text';
+			valueCurrencySymbol?: string;
 	  }
 	| {
 			type: 'badge';
@@ -88,7 +118,8 @@ export type GeneratedDashboardBlock =
 	| {
 			type: 'progress';
 			value: DashboardValue;
-			max: DashboardValue;
+			/** Defaults to 100 at render time when omitted. */
+			max?: DashboardValue;
 			label?: string;
 			color?: 'info' | 'success' | 'warning' | 'error';
 	  }
@@ -109,14 +140,50 @@ export type GeneratedDashboardBlock =
 	  }
 	| {
 			type: 'filter';
-			kind?: 'dropdown' | 'multi' | 'relative-date';
+			/** 'multi' is a legacy alias normalized to 'multi-select'. */
+			kind?:
+				| 'dropdown'
+				| 'searchable-dropdown'
+				| 'multi-select'
+				| 'multi'
+				| 'text-input'
+				| 'button-group'
+				| 'date-range'
+				| 'relative-date'
+				| 'numeric-range';
 			param: string;
 			label: string;
 			options?: string[];
+			/** Derive options from this column of the filtered data instead of a static list. */
+			optionsColumn?: string;
+			default?: string;
+			/** date-range only */
+			startParam?: string;
+			endParam?: string;
+			/** numeric-range only */
+			minParam?: string;
+			maxParam?: string;
 	  }
 	| {
 			type: 'mermaid';
-			code: string;
+			/** Static Mermaid source. May embed {% each %}/{% group %} loop tags for data-driven diagrams. */
+			code?: string;
+			/** Read the Mermaid source from a cell field, e.g. "$pipeline.diagram_text". */
+			codeRef?: DashboardRef;
+	  }
+	| {
+			/** Repeat a text template once per row of `data`. Template uses bare $column tokens. */
+			type: 'each';
+			data: DashboardRef;
+			template: string;
+	  }
+	| {
+			/** Group rows by a column and repeat the template once per group ($key + row $column tokens). */
+			type: 'group';
+			data: DashboardRef;
+			by: string;
+			order?: string[];
+			template: string;
 	  }
 	| {
 			type: 'conditional';
@@ -160,6 +227,39 @@ const CHART_TYPES = new Set([
 	'choropleth',
 	'custom',
 	'sparkline'
+]);
+
+export const SUPPORTED_BLOCK_TYPES = [
+	'text',
+	'grid',
+	'columns',
+	'card',
+	'metric',
+	'chart',
+	'datatable',
+	'badge',
+	'progress',
+	'callout',
+	'details',
+	'tabs',
+	'filter',
+	'mermaid',
+	'each',
+	'group',
+	'conditional'
+] as const;
+
+/** Must stay in sync with the filter tag's `kind.matches` list in markdoc-interp.ts
+ *  (cross-checked by generated-dashboard.test.ts). */
+export const FILTER_KINDS = new Set([
+	'dropdown',
+	'text-input',
+	'date-range',
+	'button-group',
+	'multi-select',
+	'relative-date',
+	'numeric-range',
+	'searchable-dropdown'
 ]);
 
 function isRef(value: unknown): value is DashboardRef {
@@ -276,7 +376,10 @@ function renderBlock(
 					.map((item) => renderBlock(item, knownRoots, errors))
 					.filter(Boolean)
 					.join('\n'),
-				[['cols', block.cols ? String(block.cols) : null]]
+				[
+					['cols', block.cols ? String(block.cols) : null],
+					['gap', block.gap ? JSON.stringify(block.gap) : null]
+				]
 			);
 		case 'columns':
 			if (!block.columns.length) {
@@ -287,11 +390,25 @@ function renderBlock(
 				'columns',
 				block.columns
 					.map((column) =>
-						renderContainer('column', renderBlocks(column.blocks, knownRoots, errors))
+						renderContainer('column', renderBlocks(column.blocks, knownRoots, errors), [
+							[
+								'width',
+								column.width == null
+									? null
+									: typeof column.width === 'number'
+										? String(column.width)
+										: JSON.stringify(column.width)
+							]
+						])
 					)
 					.join('\n'),
-				[]
+				[['gap', block.gap ? JSON.stringify(block.gap) : null]]
 			);
+		case 'card':
+			return renderContainer('card', renderBlocks(block.blocks, knownRoots, errors), [
+				['title', block.title ? JSON.stringify(block.title) : null],
+				['accent', block.accent ? JSON.stringify(block.accent) : null]
+			]);
 		case 'metric':
 			validateRef(errors, block.value, knownRoots, 'metric value');
 			validateRef(errors, block.vs, knownRoots, 'metric vs');
@@ -340,7 +457,20 @@ function renderBlock(
 			return renderTag('datatable', [
 				['data', block.data],
 				['cols', block.cols?.length ? stringListToAttr(block.cols) : null],
-				['limit', block.limit != null ? String(block.limit) : null]
+				['limit', block.limit != null ? String(block.limit) : null],
+				['pageSize', block.pageSize != null ? String(block.pageSize) : null],
+				['headerInsights', block.headerInsights ? JSON.stringify(block.headerInsights) : null],
+				['linkedFilter', block.linkedFilter ? JSON.stringify(block.linkedFilter) : null],
+				['index', block.index?.length ? stringListToAttr(block.index) : null],
+				['pivotBy', block.pivotBy ? JSON.stringify(block.pivotBy) : null],
+				['valueCol', block.valueCol ? JSON.stringify(block.valueCol) : null],
+				['agg', block.agg ? JSON.stringify(block.agg) : null],
+				['round', block.round != null ? String(block.round) : null],
+				['valueFormatKind', block.valueFormatKind ? JSON.stringify(block.valueFormatKind) : null],
+				[
+					'valueCurrencySymbol',
+					block.valueCurrencySymbol ? JSON.stringify(block.valueCurrencySymbol) : null
+				]
 			]);
 		case 'badge':
 			validateRef(errors, block.value, knownRoots, 'badge value');
@@ -353,7 +483,7 @@ function renderBlock(
 			validateRef(errors, block.max, knownRoots, 'progress max');
 			return renderTag('progress', [
 				['value', scalarToAttr(block.value)],
-				['max', scalarToAttr(block.max)],
+				['max', block.max !== undefined ? scalarToAttr(block.max) : null],
 				['label', block.label ? JSON.stringify(block.label) : null],
 				['color', block.color ? JSON.stringify(block.color) : null]
 			]);
@@ -382,15 +512,61 @@ function renderBlock(
 					.join('\n'),
 				[]
 			);
-		case 'filter':
+		case 'filter': {
+			// 'multi' is a legacy alias older prompts taught — the runtime tag only accepts 'multi-select'.
+			const kind = block.kind === 'multi' ? 'multi-select' : (block.kind ?? 'dropdown');
+			if (!FILTER_KINDS.has(kind)) {
+				errors.push(
+					`Unsupported filter kind "${block.kind}". Supported: ${[...FILTER_KINDS].join(', ')}.`
+				);
+				return '';
+			}
 			return renderTag('filter', [
-				['kind', JSON.stringify(block.kind ?? 'dropdown')],
+				['kind', JSON.stringify(kind)],
 				['param', JSON.stringify(block.param)],
 				['label', JSON.stringify(block.label)],
-				['options', block.options?.length ? stringListToAttr(block.options) : null]
+				['options', block.options?.length ? stringListToAttr(block.options) : null],
+				['optionsColumn', block.optionsColumn ? JSON.stringify(block.optionsColumn) : null],
+				['default', block.default ? JSON.stringify(block.default) : null],
+				['startParam', block.startParam ? JSON.stringify(block.startParam) : null],
+				['endParam', block.endParam ? JSON.stringify(block.endParam) : null],
+				['minParam', block.minParam ? JSON.stringify(block.minParam) : null],
+				['maxParam', block.maxParam ? JSON.stringify(block.maxParam) : null]
 			]);
+		}
 		case 'mermaid':
+			if (block.codeRef) {
+				validateRef(errors, block.codeRef, knownRoots, 'mermaid codeRef');
+				return renderContainer('mermaid', '', [['code', block.codeRef]]);
+			}
+			if (!block.code?.trim()) {
+				errors.push('Mermaid block requires code or codeRef.');
+				return '';
+			}
 			return renderContainer('mermaid', block.code.trim());
+		case 'each':
+			validateRef(errors, block.data, knownRoots, 'each data');
+			if (!block.template?.trim()) {
+				errors.push('Each block requires a non-empty template.');
+				return '';
+			}
+			// Template body uses loop-scoped bare $column tokens — not validated against cell refs.
+			return renderContainer('each', block.template.trim(), [['data', block.data]]);
+		case 'group':
+			validateRef(errors, block.data, knownRoots, 'group data');
+			if (!block.by?.trim()) {
+				errors.push('Group block requires a "by" column.');
+				return '';
+			}
+			if (!block.template?.trim()) {
+				errors.push('Group block requires a non-empty template.');
+				return '';
+			}
+			return renderContainer('group', block.template.trim(), [
+				['data', block.data],
+				['by', JSON.stringify(block.by)],
+				['order', block.order?.length ? stringListToAttr(block.order) : null]
+			]);
 		case 'conditional':
 			validateRef(errors, block.test.left, knownRoots, 'conditional left');
 			validateRef(errors, block.test.right, knownRoots, 'conditional right');
@@ -402,6 +578,15 @@ function renderBlock(
 			]
 				.filter(Boolean)
 				.join('\n');
+		default: {
+			// Unknown types must surface as errors — silently dropping a block means the
+			// model believes the content was written when it wasn't.
+			const unknownType = (block as { type?: unknown }).type;
+			errors.push(
+				`Unsupported block type "${String(unknownType)}". Supported types: ${SUPPORTED_BLOCK_TYPES.join(', ')}.`
+			);
+			return '';
+		}
 	}
 }
 
@@ -464,10 +649,29 @@ Use create_cell/update_cell with:
   ]
 }
 
+Block grammar — every supported type with its fields ("?" = optional; [blocks] = nested block array, containers nest arbitrarily, e.g. grid inside tabs inside card):
+- {"type":"text","content":"markdown prose; may embed $ref live values"}
+- {"type":"grid","cols":3?,"gap":"compact|default|comfortable"?,"items":[blocks]}
+- {"type":"columns","gap":?,"columns":[{"width":2 or "300px"?,"blocks":[blocks]}]}
+- {"type":"card","title":?,"accent":"neutral|info|success|warning|error"?,"blocks":[blocks]}
+- {"type":"metric","value":"$m.field","label":"...","format":"number|currency|compact|percent"?,"vs":"$prev.field"?}
+- {"type":"chart","ref":"$cellName"? (inherits that cell's configured chart),"chartType":?,"data":"$m.rows"?,"x":?,"y":?,"yColumns":[..]?,"colorColumn":?,"seriesMode":"auto|grouped|stacked"?,"sortOrder":?,"title":?,"height":?}
+- {"type":"datatable","data":"$m.rows","cols":[..]?,"limit":?,"pageSize":?,"headerInsights":"full|compact"?,"linkedFilter":?, pivot/summary: "index":["col"]?,"pivotBy":?,"valueCol":?,"agg":"sum|avg|min|max|count"?,"round":?,"valueFormatKind":"currency|percentage|number|date|..."?,"valueCurrencySymbol":?}
+- {"type":"badge","value":"$m.status","color":"info|success|warning|error|neutral"?}
+- {"type":"progress","value":"$m.done","max":100? (default 100),"label":?,"color":?}
+- {"type":"callout","variant":"info|success|warning|error"?,"blocks":[blocks]}
+- {"type":"details","summary":"...","open":false?,"blocks":[blocks]}
+- {"type":"tabs","tabs":[{"label":"...","blocks":[blocks]}]}
+- {"type":"filter","kind":"dropdown|searchable-dropdown|multi-select|text-input|button-group|date-range|relative-date|numeric-range"?,"param":"name","label":"...","options":[..]?,"optionsColumn":? (derive options from data),"default":?, date-range: "startParam"/"endParam", numeric-range: "minParam"/"maxParam"}
+- {"type":"mermaid","code":"flowchart LR\\n..."} or {"type":"mermaid","codeRef":"$m.diagram_text"} — code may embed {% each %}/{% group %} loop tags for data-driven diagrams
+- {"type":"each","data":"$m.rows","template":"one line per row using bare $column tokens"}
+- {"type":"group","data":"$m.rows","by":"column","order":["A","B"]?,"template":"per-group template; $key + $column tokens"}
+- {"type":"conditional","test":{"op":"gt|gte|lt|lte|equals","left":"$m.count","right":0},"then":[blocks],"else":[blocks]?}
+
 Rules:
-- Use only these block types: text, grid, columns, metric, chart, datatable, badge, progress, callout, details, tabs, filter, mermaid, conditional.
 - Always reference existing SQL/Python result cells via $outputName or $outputName.field.
 - Never use $cell placeholders.
 - Never reference stg_ cells in dashboards.
-- If you send "dashboard", do not also hand-author raw Markdoc in "markdown".`;
+- If you send "dashboard", do not also hand-author raw Markdoc in "markdown".
+- Unknown block types are compile errors — use only the grammar above.`;
 }

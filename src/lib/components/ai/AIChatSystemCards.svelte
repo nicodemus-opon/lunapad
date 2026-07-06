@@ -11,7 +11,9 @@
 		getSprintTasks,
 		setSprintTasks,
 		isSprintPlanPendingApproval,
-		resolveSprintPlanApproval
+		resolveSprintPlanApproval,
+		getPendingAskUser,
+		resolveAskUser
 	} from '$lib/stores/ai-chat.svelte.js';
 	import { undoAIChanges, undoLastAIStep } from '$lib/services/ai-chat-client.js';
 
@@ -22,9 +24,15 @@
 	let sprintTasks = $derived(getSprintTasks());
 	let sprintPlanPending = $derived(isSprintPlanPendingApproval());
 	let sprintFeedback = $state('');
+	let pendingAskUser = $derived(getPendingAskUser());
+	let askUserFreeText = $state('');
 
 	let hasCards = $derived(
-		!!planProposal || sprintPlanPending || !!confirmationRequest || undoAvailable
+		!!planProposal ||
+			sprintPlanPending ||
+			!!confirmationRequest ||
+			!!pendingAskUser ||
+			undoAvailable
 	);
 </script>
 
@@ -157,6 +165,55 @@
 						onclick={() => resolveConfirmation(true)}
 					>
 						Proceed
+					</button>
+				</div>
+			</div>
+		{/if}
+
+		{#if pendingAskUser}
+			<div
+				class="rounded-lg border border-primary bg-background/95 px-3 py-2.5 shadow-sm backdrop-blur-sm"
+				data-testid="ai-ask-user"
+			>
+				<div class="mb-2 text-xs font-medium text-foreground">{pendingAskUser.question}</div>
+				{#if pendingAskUser.options?.length}
+					<div class="mb-2 flex flex-wrap gap-1.5">
+						{#each pendingAskUser.options as opt}
+							<button
+								class="rounded-full border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+								onclick={() => {
+									resolveAskUser(opt);
+									askUserFreeText = '';
+								}}
+							>
+								{opt}
+							</button>
+						{/each}
+					</div>
+				{/if}
+				<div
+					class="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-1 py-1 focus-within:border-primary focus-within:bg-background"
+				>
+					<input
+						bind:value={askUserFreeText}
+						placeholder="Or type your own answer…"
+						class="flex-1 bg-transparent px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+						onkeydown={(e) => {
+							if (e.key === 'Enter' && askUserFreeText.trim()) {
+								resolveAskUser(askUserFreeText.trim());
+								askUserFreeText = '';
+							}
+						}}
+					/>
+					<button
+						class="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+						disabled={!askUserFreeText.trim()}
+						onclick={() => {
+							resolveAskUser(askUserFreeText.trim());
+							askUserFreeText = '';
+						}}
+					>
+						Send
 					</button>
 				</div>
 			</div>

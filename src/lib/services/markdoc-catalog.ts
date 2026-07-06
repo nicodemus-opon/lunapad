@@ -144,7 +144,9 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Multi-column layout',
 		snippet: WIDGET_SNIPPETS.columns,
 		slashSnippet: WIDGET_SNIPPETS.columns,
-		attributes: {}
+		attributes: {
+			gap: { detail: 'Spacing between columns', enum: ['compact', 'default', 'comfortable'] }
+		}
 	},
 	column: {
 		detail: 'Single column inside {% columns %}',
@@ -159,7 +161,8 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		snippet: 'grid cols=${1:3} %}\n${2:Content.}\n{% /grid %}',
 		slashSnippet: WIDGET_SNIPPETS.grid,
 		attributes: {
-			cols: { detail: 'Number of columns' }
+			cols: { detail: 'Number of columns' },
+			gap: { detail: 'Spacing between cells', enum: ['compact', 'default', 'comfortable'] }
 		}
 	},
 	callout: {
@@ -175,7 +178,11 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		snippet: WIDGET_SNIPPETS.card,
 		slashSnippet: WIDGET_SNIPPETS.card,
 		attributes: {
-			title: { detail: 'Card title' }
+			title: { detail: 'Card title' },
+			accent: {
+				detail: 'Accent color',
+				enum: ['neutral', 'info', 'success', 'warning', 'error']
+			}
 		}
 	},
 	details: {

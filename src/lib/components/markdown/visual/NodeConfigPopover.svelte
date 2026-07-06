@@ -4,6 +4,7 @@
 	import { X } from '@lucide/svelte';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import VisualBlockInspector from './VisualBlockInspector.svelte';
+	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { nodeConfigTitle, type MarkdocSelectedNode } from './markdoc-node-selection';
 	import type { VisualBlock } from '$lib/services/markdoc-ast';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
@@ -21,6 +22,7 @@
 		block: VisualBlock | null;
 		refEntries?: MarkdownRefEntry[];
 		filterUsages?: Record<string, FilterUsage[]>;
+		cells?: Cell[];
 		onPatch: (patch: { attrs?: Record<string, unknown>; body?: string; source?: string }) => void;
 		onClose: () => void;
 	}
@@ -32,6 +34,7 @@
 		block,
 		refEntries = [],
 		filterUsages = {},
+		cells = [],
 		onPatch,
 		onClose
 	}: Props = $props();
@@ -125,7 +128,14 @@
 				</button>
 			</header>
 			<div class="node-config-scroll min-h-0 flex-1 overflow-y-auto px-1 py-2">
-				<VisualBlockInspector {block} {refEntries} {filterUsages} {onPatch} variant="popover" />
+				<VisualBlockInspector
+				{block}
+				{refEntries}
+				{filterUsages}
+				{cells}
+				{onPatch}
+				variant="popover"
+			/>
 			</div>
 		</div>
 	</BodyPortal>

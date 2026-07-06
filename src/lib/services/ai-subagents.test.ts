@@ -148,7 +148,8 @@ describe('documentation subagent tooling', () => {
 			'update_cell',
 			'get_cell_result',
 			'list_cells',
-			'record_decision'
+			'record_decision',
+			'ask_user'
 		]);
 		expect(SUBAGENT_TOOLS.documentation).not.toContain('run_cells');
 		expect(SUBAGENT_TOOLS.documentation).not.toContain('query_data');

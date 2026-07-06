@@ -7,10 +7,15 @@ export const DISCOVERY_TOOLS: AIChatToolName[] = [
 	'get_lineage',
 	'sample_data',
 	'profile_column',
-	'query_data'
+	'query_data',
+	'ask_user'
 ];
 
-export const MODELING_TOOLS: AIChatToolName[] = ['record_decision', 'search_workspace'];
+export const MODELING_TOOLS: AIChatToolName[] = [
+	'record_decision',
+	'search_workspace',
+	'ask_user'
+];
 
 export const SQL_GEN_TOOLS: AIChatToolName[] = [
 	'create_cell',
@@ -20,14 +25,16 @@ export const SQL_GEN_TOOLS: AIChatToolName[] = [
 	'sample_data',
 	'pick_chart',
 	'get_cell_result',
-	'record_decision'
+	'record_decision',
+	'ask_user'
 ];
 
 export const SQL_REVIEW_TOOLS: AIChatToolName[] = [
 	'get_cell_result',
 	'get_lineage',
 	'query_data',
-	'validate_result'
+	'validate_result',
+	'ask_user'
 ];
 
 export const DEBUG_TOOLS: AIChatToolName[] = [
@@ -38,7 +45,8 @@ export const DEBUG_TOOLS: AIChatToolName[] = [
 	'profile_column',
 	'update_cell',
 	'run_cells',
-	'validate_result'
+	'validate_result',
+	'ask_user'
 ];
 
 // Composes a Markdoc grid/columns layout of metric/chart widgets in a markdown cell —
@@ -51,7 +59,8 @@ export const DASHBOARD_TOOLS: AIChatToolName[] = [
 	'set_chart',
 	'set_view_mode',
 	'create_cell',
-	'update_cell'
+	'update_cell',
+	'ask_user'
 ];
 
 export const INVESTIGATION_TOOLS: AIChatToolName[] = [
@@ -62,13 +71,15 @@ export const INVESTIGATION_TOOLS: AIChatToolName[] = [
 	'search_workspace',
 	'list_cells',
 	'get_lineage',
-	'compare_cells'
+	'compare_cells',
+	'ask_user'
 ];
 
 export const SPRINT_PLANNING_TOOLS: AIChatToolName[] = [
 	'search_workspace',
 	'list_cells',
-	'sample_data'
+	'sample_data',
+	'ask_user'
 ];
 
 export const DOCUMENTATION_TOOLS: AIChatToolName[] = [
@@ -76,7 +87,8 @@ export const DOCUMENTATION_TOOLS: AIChatToolName[] = [
 	'update_cell',
 	'get_cell_result',
 	'list_cells',
-	'record_decision'
+	'record_decision',
+	'ask_user'
 ];
 
 // Per-task tool sets — narrowed by task type to reduce hallucinated tool use
@@ -91,7 +103,8 @@ export const SPRINT_TASK_TOOLS: Record<
 		'search_workspace',
 		'list_cells',
 		'get_lineage',
-		'record_decision'
+		'record_decision',
+		'ask_user'
 	],
 	build: [
 		'create_cell',
@@ -100,9 +113,17 @@ export const SPRINT_TASK_TOOLS: Record<
 		'validate_result',
 		'get_cell_result',
 		'query_data',
-		'record_decision'
+		'record_decision',
+		'ask_user'
 	],
-	visualize: ['pick_chart', 'set_chart', 'set_view_mode', 'get_cell_result', 'list_cells'],
+	visualize: [
+		'pick_chart',
+		'set_chart',
+		'set_view_mode',
+		'get_cell_result',
+		'list_cells',
+		'ask_user'
+	],
 	document: DOCUMENTATION_TOOLS,
 	dashboard: DASHBOARD_TOOLS
 };

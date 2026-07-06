@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { getNotebooks } from '$lib/stores/notebook.svelte';
-	import { renderMarkdocCell, buildMarkdocVariables } from '$lib/services/markdoc-interp';
+	import { renderMarkdocCell, resolveBareVariablePath } from '$lib/services/markdoc-interp';
+	import {
+		activeExpressionToken,
+		expressionSuggestions
+	} from '$lib/services/markdoc-expression-suggestions';
 	import Markdoc from '@markdoc/markdoc';
 
 	interface Props {
@@ -27,15 +31,9 @@
 	});
 
 	function resolveBareVariable(inner: string, cells: Cell[]): string | null {
-		if (!/^\$[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(inner)) return null;
-		const path = inner.slice(1).split('.');
-		let cur: unknown = buildMarkdocVariables(cells);
-		for (const key of path) {
-			if (cur == null || typeof cur !== 'object') return null;
-			cur = (cur as Record<string, unknown>)[key];
-		}
-		if (cur == null || typeof cur === 'object') return null;
-		return String(cur);
+		const value = resolveBareVariablePath(inner, cells);
+		if (value == null || typeof value === 'object') return null;
+		return String(value);
 	}
 
 	const resolved = $derived.by(() => {
@@ -92,30 +90,109 @@
 		editing = false;
 		draft = source;
 	}
+
+	// ── inline autocomplete (functions + cell/column refs) ───────────────
+	let acOpen = $state(false);
+	let acIndex = $state(0);
+	let cursor = $state(0);
+
+	const suggestions = $derived(acOpen ? expressionSuggestions(draft, cursor, liveCells) : []);
+
+	function refreshAc() {
+		cursor = inputEl?.selectionStart ?? draft.length;
+		acOpen = expressionSuggestions(draft, cursor, liveCells).length > 0;
+		acIndex = 0;
+	}
+
+	function applySuggestion(insert: string) {
+		const { start } = activeExpressionToken(draft, cursor);
+		draft = draft.slice(0, start) + insert + draft.slice(cursor);
+		const nextCursor = start + insert.length;
+		acOpen = false;
+		queueMicrotask(() => {
+			inputEl?.focus();
+			inputEl?.setSelectionRange(nextCursor, nextCursor);
+			cursor = nextCursor;
+		});
+	}
 </script>
 
 {#if editing}
-	<input
-		bind:this={inputEl}
-		class="md-expr md-expr-input"
-		class:is-error={resolved.error}
-		type="text"
-		bind:value={draft}
-		size={Math.max(8, draft.length + 1)}
-		onclick={(e) => e.stopPropagation()}
-		onmousedown={(e) => e.stopPropagation()}
-		onkeydown={(e) => {
-			e.stopPropagation();
-			if (e.key === 'Enter') {
-				e.preventDefault();
-				commit();
-			} else if (e.key === 'Escape') {
-				e.preventDefault();
-				cancel();
-			}
-		}}
-		onblur={commit}
-	/>
+	<span class="md-expr-editwrap">
+		<input
+			bind:this={inputEl}
+			class="md-expr md-expr-input"
+			class:is-error={resolved.error}
+			type="text"
+			bind:value={draft}
+			size={Math.max(8, draft.length + 1)}
+			onclick={(e) => e.stopPropagation()}
+			onmousedown={(e) => e.stopPropagation()}
+			oninput={refreshAc}
+			onkeyup={(e) => {
+				if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) refreshAc();
+			}}
+			onkeydown={(e) => {
+				e.stopPropagation();
+				if (acOpen && suggestions.length) {
+					if (e.key === 'ArrowDown') {
+						e.preventDefault();
+						acIndex = (acIndex + 1) % suggestions.length;
+						return;
+					}
+					if (e.key === 'ArrowUp') {
+						e.preventDefault();
+						acIndex = (acIndex - 1 + suggestions.length) % suggestions.length;
+						return;
+					}
+					if (e.key === 'Enter' || e.key === 'Tab') {
+						e.preventDefault();
+						applySuggestion(suggestions[acIndex].insert);
+						return;
+					}
+					if (e.key === 'Escape') {
+						e.preventDefault();
+						acOpen = false;
+						return;
+					}
+				}
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					commit();
+				} else if (e.key === 'Escape') {
+					e.preventDefault();
+					cancel();
+				}
+			}}
+			onblur={() => {
+				// Let a suggestion click land before committing.
+				setTimeout(() => {
+					if (editing) commit();
+				}, 120);
+			}}
+		/>
+		{#if acOpen && suggestions.length}
+			<div class="md-expr-ac" role="listbox">
+				{#each suggestions as s, i (s.insert + s.label)}
+					<button
+						type="button"
+						role="option"
+						aria-selected={i === acIndex}
+						class="md-expr-ac-item"
+						class:is-active={i === acIndex}
+						onmousedown={(e) => {
+							e.preventDefault();
+							applySuggestion(s.insert);
+						}}
+						onmouseenter={() => (acIndex = i)}
+					>
+						<span class="md-expr-ac-label">{s.label}</span>
+						<span class="md-expr-ac-detail">{s.detail}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</span>
 {:else}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

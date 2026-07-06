@@ -13,16 +13,44 @@
 		columnsForRef,
 		type FilterUsage
 	} from '$lib/services/markdoc-visual-analysis';
+	import { toast } from 'svelte-sonner';
+	import type { Cell } from '$lib/stores/notebook.svelte';
+	import { resolveBareVariablePath } from '$lib/services/markdoc-interp';
+
+	/** Resolve a loop `data` attr (literal array or `$cell.rows` ref) to rows, or null. */
+	function resolveLoopRows(data: unknown, cellList: Cell[]): unknown[] | null {
+		if (Array.isArray(data)) return data;
+		if (typeof data === 'string' && data.trim().startsWith('$')) {
+			const value = resolveBareVariablePath(data, cellList);
+			if (Array.isArray(value)) return value;
+		}
+		return null;
+	}
+
+	function copyVariable(token: string) {
+		navigator.clipboard?.writeText(token).then(
+			() => toast.success(`Copied ${token}`),
+			() => toast.error('Copy failed')
+		);
+	}
 
 	interface Props {
 		block: VisualBlock | null;
 		refEntries?: MarkdownRefEntry[];
 		filterUsages?: Record<string, FilterUsage[]>;
+		cells?: Cell[];
 		onPatch: (patch: { attrs?: Record<string, unknown>; body?: string; source?: string }) => void;
 		variant?: 'sidebar' | 'popover';
 	}
 
-	const { block, refEntries = [], filterUsages = {}, onPatch, variant = 'popover' }: Props = $props();
+	const {
+		block,
+		refEntries = [],
+		filterUsages = {},
+		cells = [],
+		onPatch,
+		variant = 'popover'
+	}: Props = $props();
 
 	let showAdvanced = $state(false);
 
@@ -101,6 +129,43 @@
 		parsed ? columnsForRef(refEntries, parsed.attrs.data ?? parsed.attrs.ref) : []
 	);
 
+	// parseBlockWidget stores `data` as a Markdoc Variable object; coerce to its
+	// `$cell.rows` source form so column/row resolution can match on it.
+	const loopDataRef = $derived(parsed ? attr(parsed.attrs.data ?? parsed.attrs.ref) : '');
+	const loopColumns = $derived(columnsForRef(refEntries, loopDataRef));
+
+	/** Live group keys derived the same way expandGroupBlock does: unique values of
+	 * the `by` column across the resolved data rows, in first-seen order. */
+	const groupKeys = $derived.by(() => {
+		if (!parsed || parsed.tagName !== 'group') return [];
+		const by = String(attr(parsed.attrs.by) ?? '');
+		if (!by) return [];
+		const rows = resolveLoopRows(loopDataRef, cells);
+		if (!rows) return [];
+		const seen: string[] = [];
+		for (const row of rows) {
+			const key = String((row as Record<string, unknown>)?.[by] ?? '');
+			if (key && !seen.includes(key)) seen.push(key);
+		}
+		return seen;
+	});
+
+	/** Order attr as a string list, defaulting to the natural group-key order. */
+	const orderList = $derived.by(() => {
+		if (!parsed || parsed.tagName !== 'group') return [];
+		const stored = parsed.attrs.order;
+		if (Array.isArray(stored)) return stored.map(String);
+		return [...groupKeys];
+	});
+
+	function moveOrderKey(index: number, delta: number) {
+		const next = [...orderList];
+		const target = index + delta;
+		if (target < 0 || target >= next.length) return;
+		[next[index], next[target]] = [next[target], next[index]];
+		setAttr('order', next);
+	}
+
 	function setJsonArrayAttr(key: string, value: string) {
 		try {
 			const trimmed = value.trim();
@@ -147,6 +212,47 @@
 			.replace(/-/g, ' ')
 			.replace(/\b\w/g, (c) => c.toUpperCase());
 	}
+
+	// ── if-condition builder ─────────────────────────────────────────────
+	// Simple conditions of the shape fn($path, literal) get a structured
+	// operand/operator/value UI; anything else falls back to the raw input.
+	const CONDITION_OPERATORS = [
+		{ fn: 'equals', label: '=' },
+		{ fn: 'gt', label: '>' },
+		{ fn: 'gte', label: '≥' },
+		{ fn: 'lt', label: '<' },
+		{ fn: 'lte', label: '≤' }
+	] as const;
+
+	const SIMPLE_CONDITION_RE =
+		/^\s*(equals|gt|gte|lt|lte)\(\s*(\$[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*,\s*(.+?)\s*\)\s*$/;
+
+	function parseSimpleCondition(src: string): { fn: string; operand: string; value: string } | null {
+		const m = SIMPLE_CONDITION_RE.exec(src);
+		if (!m) return null;
+		let value = m[3];
+		if (/^".*"$/.test(value)) {
+			try {
+				value = JSON.parse(value);
+			} catch {
+				/* keep the raw literal */
+			}
+		}
+		return { fn: m[1], operand: m[2], value };
+	}
+
+	function composeCondition(fn: string, operand: string, value: string): string {
+		const trimmed = value.trim();
+		const literal =
+			trimmed !== '' && !Number.isNaN(Number(trimmed))
+				? trimmed
+				: trimmed === 'true' || trimmed === 'false'
+					? trimmed
+					: JSON.stringify(trimmed);
+		return `${fn}(${operand.trim() || '$cell.count'}, ${literal})`;
+	}
+
+	let conditionCustom = $state(false);
 </script>
 
 {#if !block}
@@ -791,7 +897,6 @@
 					{/snippet}
 				</NodeConfigField>
 			</div>
-
 		{:else if parsed.tagName === 'progress'}
 			<div class="nc-stack">
 				<NodeConfigField label="Value">
@@ -822,9 +927,43 @@
 						/>
 					{/snippet}
 				</NodeConfigField>
+				<NodeConfigField label="Color">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each ['info', 'success', 'warning', 'error'] as c (c)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.color, 'info') === c}
+									onclick={() => setAttr('color', c)}
+								>
+									{c}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
 			</div>
-
-		{:else if parsed.tagName === 'grid' || parsed.tagName === 'columns' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
+		{:else if parsed.tagName === 'columns'}
+			<div class="nc-stack">
+				<NodeConfigField label="Gap">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each ['compact', 'default', 'comfortable'] as g (g)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.gap, 'default') === g}
+									onclick={() => setAttr('gap', g)}
+								>
+									{humanize(g)}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+			</div>
+		{:else if parsed.tagName === 'grid' || parsed.tagName === 'column' || parsed.tagName === 'tabs' || parsed.tagName === 'tab' || parsed.tagName === 'details' || parsed.tagName === 'if' || parsed.tagName === 'group' || parsed.tagName === 'each' || parsed.tagName === 'mermaid'}
 			<div class="nc-stack">
 				{#if parsed.tagName === 'grid'}
 					<NodeConfigField label="Columns">
@@ -837,6 +976,22 @@
 								value={Number(parsed.attrs.cols ?? 3)}
 								oninput={(e) => setAttr('cols', Number(e.currentTarget.value))}
 							/>
+						{/snippet}
+					</NodeConfigField>
+					<NodeConfigField label="Gap">
+						{#snippet control()}
+							<div class="nc-segments">
+								{#each ['compact', 'default', 'comfortable'] as g (g)}
+									<button
+										type="button"
+										class="nc-segment"
+										class:is-active={attr(parsed.attrs.gap, 'default') === g}
+										onclick={() => setAttr('gap', g)}
+									>
+										{humanize(g)}
+									</button>
+								{/each}
+							</div>
 						{/snippet}
 					</NodeConfigField>
 				{:else if parsed.tagName === 'column'}
@@ -879,16 +1034,86 @@
 						<span>Open by default</span>
 					</label>
 				{:else if parsed.tagName === 'if'}
-					<NodeConfigField label="Condition">
-						{#snippet control()}
-							<input
-								class="nc-input font-mono"
-								value={attr(parsed.attrs.condition, parsed.condition ?? '')}
-								placeholder="gt($orders.count, 0)"
-								oninput={(e) => setAttr('condition', e.currentTarget.value)}
-							/>
-						{/snippet}
-					</NodeConfigField>
+					{@const currentCondition = attr(parsed.attrs.condition, parsed.condition ?? '')}
+					{@const simple = parseSimpleCondition(currentCondition)}
+					{#if !conditionCustom && (simple !== null || currentCondition.trim() === '')}
+						<NodeConfigField label="Left side">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									list="visual-condition-refs"
+									value={simple?.operand ?? ''}
+									placeholder="$orders.count"
+									onchange={(e) =>
+										setAttr(
+											'condition',
+											composeCondition(simple?.fn ?? 'gt', e.currentTarget.value, simple?.value ?? '0')
+										)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Operator">
+							{#snippet control()}
+								<div class="nc-segments">
+									{#each CONDITION_OPERATORS as op (op.fn)}
+										<button
+											type="button"
+											class="nc-segment"
+											class:is-active={(simple?.fn ?? 'gt') === op.fn}
+											title={op.fn}
+											onclick={() =>
+												setAttr(
+													'condition',
+													composeCondition(op.fn, simple?.operand ?? '', simple?.value ?? '0')
+												)}
+										>
+											{op.label}
+										</button>
+									{/each}
+								</div>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Right side">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={simple?.value ?? ''}
+									placeholder="0"
+									onchange={(e) =>
+										setAttr(
+											'condition',
+											composeCondition(simple?.fn ?? 'gt', simple?.operand ?? '', e.currentTarget.value)
+										)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<button type="button" class="nc-mode-link" onclick={() => (conditionCustom = true)}>
+							Edit as custom expression
+						</button>
+						<datalist id="visual-condition-refs">
+							{#each refOptions() as r (r)}<option value={r}></option>{/each}
+						</datalist>
+					{:else}
+						<NodeConfigField label="Condition">
+							{#snippet control()}
+								<input
+									class="nc-input font-mono"
+									value={currentCondition}
+									placeholder="gt($orders.count, 0)"
+									oninput={(e) => setAttr('condition', e.currentTarget.value)}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						{#if simple !== null || currentCondition.trim() === ''}
+							<button type="button" class="nc-mode-link" onclick={() => (conditionCustom = false)}>
+								Use simple builder
+							</button>
+						{:else}
+							<p class="nc-lead">
+								Comparisons: equals, gt, gte, lt, lte — e.g. gt($orders.count, 0)
+							</p>
+						{/if}
+					{/if}
 				{:else if parsed.tagName === 'group'}
 					<NodeConfigField label="Data">
 						{#snippet control()}
@@ -914,6 +1139,59 @@
 							/>
 						{/snippet}
 					</NodeConfigField>
+					<div class="nc-varhint">
+						<span class="nc-varhint-label">Available inside each group — click to copy</span>
+						<div class="nc-varchips">
+							<button type="button" class="nc-varchip" onclick={() => copyVariable('$key')}
+								>$key</button
+							>
+							<button type="button" class="nc-varchip" onclick={() => copyVariable('$keyId')}
+								>$keyId</button
+							>
+							<button type="button" class="nc-varchip" onclick={() => copyVariable('$items')}
+								>$items</button
+							>
+						</div>
+						{#if loopColumns.length}
+							<span class="nc-varhint-sub">
+								Loop rows with <code>{'{% each data=$items %}'}</code>, then use these fields:
+							</span>
+							<div class="nc-varchips">
+								{#each loopColumns as col (col)}
+									<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${col}`)}
+										>${col}</button
+									>
+								{/each}
+							</div>
+						{/if}
+					</div>
+					{#if orderList.length > 1}
+						<NodeConfigField label="Group order">
+							{#snippet control()}
+								<div class="nc-orderlist">
+									{#each orderList as key, i (key)}
+										<div class="nc-orderrow">
+											<span class="nc-orderkey">{key}</span>
+											<button
+												type="button"
+												class="nc-orderbtn"
+												disabled={i === 0}
+												title="Move up"
+												onclick={() => moveOrderKey(i, -1)}>↑</button
+											>
+											<button
+												type="button"
+												class="nc-orderbtn"
+												disabled={i === orderList.length - 1}
+												title="Move down"
+												onclick={() => moveOrderKey(i, 1)}>↓</button
+											>
+										</div>
+									{/each}
+								</div>
+							{/snippet}
+						</NodeConfigField>
+					{/if}
 				{:else if parsed.tagName === 'each'}
 					<NodeConfigField label="Data">
 						{#snippet control()}
@@ -929,6 +1207,18 @@
 							</select>
 						{/snippet}
 					</NodeConfigField>
+					{#if loopColumns.length}
+						<div class="nc-varhint">
+							<span class="nc-varhint-label">Available in the body — click to copy</span>
+							<div class="nc-varchips">
+								{#each loopColumns as col (col)}
+									<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${col}`)}
+										>${col}</button
+									>
+								{/each}
+							</div>
+						</div>
+					{/if}
 				{:else if parsed.tagName === 'mermaid'}
 					<p class="nc-lead">Edit the diagram in the canvas, or pick a code reference.</p>
 					<NodeConfigField label="Code ref">
@@ -960,6 +1250,22 @@
 								value={attr(parsed.attrs.title)}
 								oninput={(e) => setAttr('title', e.currentTarget.value)}
 							/>
+						{/snippet}
+					</NodeConfigField>
+					<NodeConfigField label="Accent">
+						{#snippet control()}
+							<div class="nc-segments nc-segments--wrap">
+								{#each ['neutral', 'info', 'success', 'warning', 'error'] as a (a)}
+									<button
+										type="button"
+										class="nc-segment"
+										class:is-active={attr(parsed.attrs.accent, 'neutral') === a}
+										onclick={() => setAttr('accent', a)}
+									>
+										{a}
+									</button>
+								{/each}
+							</div>
 						{/snippet}
 					</NodeConfigField>
 				{:else}
@@ -1111,6 +1417,92 @@
 		background: color-mix(in oklab, var(--secondary) 22%, transparent);
 		color: var(--foreground);
 		box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--secondary) 35%, transparent);
+	}
+	.nc-mode-link {
+		align-self: flex-start;
+		border: none;
+		background: none;
+		padding: 0;
+		font-size: var(--text-2xs);
+		color: var(--muted-foreground);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		cursor: pointer;
+	}
+	.nc-mode-link:hover {
+		color: var(--foreground);
+	}
+	.nc-varhint {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		padding: 0.35rem 0;
+	}
+	.nc-varhint-label,
+	.nc-varhint-sub {
+		font-size: var(--text-2xs);
+		color: var(--muted-foreground);
+	}
+	.nc-varhint-sub code {
+		font-size: 0.9em;
+	}
+	.nc-varchips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+	.nc-varchip {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--background);
+		padding: 0.1rem 0.4rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-2xs);
+		color: var(--foreground);
+		cursor: pointer;
+		transition:
+			border-color var(--motion-fast) var(--motion-ease-out),
+			background var(--motion-fast) var(--motion-ease-out);
+	}
+	.nc-varchip:hover {
+		border-color: var(--primary);
+		background: color-mix(in oklab, var(--primary) 8%, transparent);
+	}
+	.nc-orderlist {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		width: 100%;
+	}
+	.nc-orderrow {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.nc-orderkey {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-2xs);
+	}
+	.nc-orderbtn {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--background);
+		width: 1.4rem;
+		height: 1.4rem;
+		font-size: var(--text-2xs);
+		color: var(--foreground);
+		cursor: pointer;
+	}
+	.nc-orderbtn:hover:not(:disabled) {
+		border-color: var(--primary);
+	}
+	.nc-orderbtn:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 	.nc-advanced {
 		margin-top: 0.15rem;

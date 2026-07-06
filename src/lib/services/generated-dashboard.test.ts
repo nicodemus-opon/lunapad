@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
 	compileGeneratedDashboard,
+	FILTER_KINDS,
+	type GeneratedDashboardBlock,
 	type GeneratedDashboardDefinition
 } from './generated-dashboard.js';
+import { FILTER_WIDGET_KINDS, validateMarkdocMarkdown } from './markdoc-interp.js';
 import type { AIChatCell } from '$lib/types/ai-chat.js';
 
 function makeCell(
@@ -115,5 +118,264 @@ describe('compileGeneratedDashboard', () => {
 		);
 
 		expect(result.errors.join(' ')).toMatch(/unknown/i);
+	});
+
+	it('errors on unknown block types instead of silently dropping them', () => {
+		const result = compileGeneratedDashboard(
+			{
+				blocks: [
+					{ type: 'heading', text: 'Not a real block' } as unknown as GeneratedDashboardBlock,
+					{ type: 'metric', value: '$orders.total', label: 'Revenue' }
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+
+		expect(result.errors.join(' ')).toMatch(/unsupported block type "heading"/i);
+		// The valid sibling still compiles.
+		expect(result.markdown).toContain('{% metric value=$orders.total label="Revenue" /%}');
+	});
+
+	it('compiles card, gap presets, and column widths', () => {
+		const result = compileGeneratedDashboard(
+			{
+				blocks: [
+					{
+						type: 'card',
+						title: 'Revenue',
+						accent: 'info',
+						blocks: [
+							{
+								type: 'grid',
+								cols: 2,
+								gap: 'compact',
+								items: [{ type: 'metric', value: '$orders.total', label: 'Total' }]
+							},
+							{
+								type: 'columns',
+								gap: 'comfortable',
+								columns: [
+									{ width: 2, blocks: [{ type: 'text', content: 'Left' }] },
+									{ width: '300px', blocks: [{ type: 'text', content: 'Right' }] }
+								]
+							}
+						]
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain('{% card title="Revenue" accent="info" %}');
+		expect(result.markdown).toContain('{% grid cols=2 gap="compact" %}');
+		expect(result.markdown).toContain('{% columns gap="comfortable" %}');
+		expect(result.markdown).toContain('{% column width=2 %}');
+		expect(result.markdown).toContain('{% column width="300px" %}');
+	});
+
+	it('compiles datatable pivot/summary attributes', () => {
+		const result = compileGeneratedDashboard(
+			{
+				blocks: [
+					{
+						type: 'datatable',
+						data: '$orders.rows',
+						index: ['region'],
+						pivotBy: 'category',
+						valueCol: 'revenue',
+						agg: 'sum',
+						round: 2,
+						valueFormatKind: 'currency',
+						valueCurrencySymbol: '€',
+						pageSize: 25,
+						headerInsights: 'full'
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain(
+			'{% datatable data=$orders.rows pageSize=25 headerInsights="full" index=["region"] pivotBy="category" valueCol="revenue" agg="sum" round=2 valueFormatKind="currency" valueCurrencySymbol="€" /%}'
+		);
+	});
+
+	it('normalizes legacy filter kind "multi" and rejects unknown kinds', () => {
+		const ok = compileGeneratedDashboard(
+			{
+				blocks: [
+					{ type: 'filter', kind: 'multi', param: 'region', label: 'Region', options: ['N', 'S'] },
+					{
+						type: 'filter',
+						kind: 'date-range',
+						param: 'window',
+						label: 'Window',
+						startParam: 'start_date',
+						endParam: 'end_date'
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+		expect(ok.errors).toEqual([]);
+		expect(ok.markdown).toContain('kind="multi-select"');
+		expect(ok.markdown).toContain('startParam="start_date" endParam="end_date"');
+
+		const bad = compileGeneratedDashboard(
+			{
+				blocks: [
+					{
+						type: 'filter',
+						kind: 'slider' as unknown as 'dropdown',
+						param: 'x',
+						label: 'X'
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+		expect(bad.errors.join(' ')).toMatch(/unsupported filter kind "slider"/i);
+	});
+
+	it('keeps the AI filter kinds in sync with the runtime filter tag', () => {
+		expect([...FILTER_KINDS].sort()).toEqual([...FILTER_WIDGET_KINDS].sort());
+	});
+
+	it('compiles mermaid codeRef, each, and group loop blocks', () => {
+		const result = compileGeneratedDashboard(
+			{
+				blocks: [
+					{ type: 'mermaid', codeRef: '$pipeline.diagram_text' },
+					{ type: 'each', data: '$orders.rows', template: '- $product: $revenue' },
+					{
+						type: 'group',
+						data: '$orders.rows',
+						by: 'region',
+						order: ['North', 'South'],
+						template: '$keyId[$key]'
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders'), makeCell('pipeline')] }
+		);
+
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain('{% mermaid code=$pipeline.diagram_text %}');
+		expect(result.markdown).toContain('{% each data=$orders.rows %}\n- $product: $revenue\n{% /each %}');
+		expect(result.markdown).toContain(
+			'{% group data=$orders.rows by="region" order=["North","South"] %}'
+		);
+	});
+
+	it('omits max on progress when not provided (runtime defaults to 100)', () => {
+		const result = compileGeneratedDashboard(
+			{ blocks: [{ type: 'progress', value: '$orders.done_pct', label: 'Done' }] },
+			{ knownCells: [makeCell('orders')] }
+		);
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain('{% progress value=$orders.done_pct label="Done" /%}');
+	});
+
+	it('kitchen-sink definition compiles to Markdoc the runtime tag schemas accept', () => {
+		const definition: GeneratedDashboardDefinition = {
+			title: 'Full Surface',
+			statusBadge: { value: 'Live', color: 'success' },
+			blocks: [
+				{ type: 'text', content: 'Intro prose with $orders.count live ref.' },
+				{
+					type: 'card',
+					title: 'KPIs',
+					accent: 'info',
+					blocks: [
+						{
+							type: 'grid',
+							cols: 3,
+							gap: 'compact',
+							items: [
+								{ type: 'metric', value: '$orders.total', label: 'Revenue', format: 'currency' },
+								{ type: 'badge', value: '$orders.status', color: 'warning' },
+								{ type: 'progress', value: '$orders.done_pct', label: 'Done' }
+							]
+						}
+					]
+				},
+				{
+					type: 'columns',
+					gap: 'default',
+					columns: [
+						{
+							width: 2,
+							blocks: [{ type: 'chart', data: '$orders.rows', chartType: 'bar', x: 'month', y: 'revenue' }]
+						},
+						{
+							blocks: [
+								{
+									type: 'datatable',
+									data: '$orders.rows',
+									index: ['region'],
+									valueCol: 'revenue',
+									agg: 'sum',
+									valueFormatKind: 'currency'
+								}
+							]
+						}
+					]
+				},
+				{
+					type: 'tabs',
+					tabs: [
+						{
+							label: 'Filters',
+							blocks: [
+								{ type: 'filter', kind: 'multi', param: 'region', label: 'Region', optionsColumn: 'region' },
+								{
+									type: 'filter',
+									kind: 'numeric-range',
+									param: 'rev',
+									label: 'Revenue',
+									minParam: 'rev_min',
+									maxParam: 'rev_max'
+								}
+							]
+						},
+						{
+							label: 'Diagram',
+							blocks: [
+								{ type: 'mermaid', code: 'flowchart LR\n  a --> b' },
+								{ type: 'each', data: '$orders.rows', template: '- $product' },
+								{ type: 'group', data: '$orders.rows', by: 'region', template: '$keyId[$key]' }
+							]
+						}
+					]
+				},
+				{
+					type: 'details',
+					summary: 'Notes',
+					open: true,
+					blocks: [{ type: 'callout', variant: 'warning', blocks: [{ type: 'text', content: 'Careful.' }] }]
+				},
+				{
+					type: 'conditional',
+					test: { op: 'equals', left: '$orders.count', right: 0 },
+					then: [{ type: 'text', content: 'No data.' }],
+					else: [{ type: 'text', content: 'Data present.' }]
+				}
+			]
+		};
+
+		const result = compileGeneratedDashboard(definition, {
+			knownCells: [makeCell('orders')]
+		});
+		expect(result.errors).toEqual([]);
+
+		// Cross-check: the compiled output must validate against the REAL runtime tag
+		// schemas in markdoc-interp (attribute names, matches lists, required attrs).
+		// Undefined-variable diagnostics are expected (no live cells here) and ignored.
+		const diagnostics = validateMarkdocMarkdown(result.markdown, []).filter(
+			(d) => !/undefined variable/i.test(d.message)
+		);
+		expect(diagnostics).toEqual([]);
 	});
 });

@@ -126,7 +126,6 @@
 	import MarkdocPreviewProvider from '$lib/components/markdown/MarkdocPreviewProvider.svelte';
 	import NotebookBreadcrumbs from '$lib/components/notebook/NotebookBreadcrumbs.svelte';
 	import NotebookBacklinks from '$lib/components/notebook/NotebookBacklinks.svelte';
-	import MetricsPanel from '$lib/components/notebook/MetricsPanel.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
@@ -206,8 +205,7 @@
 		ArrowDown,
 		MessageSquare,
 		LogOut,
-		ShieldUser,
-		BarChart3
+		ShieldUser
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -409,7 +407,7 @@
 	const menuTriggerClass =
 		'h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 
-	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence' | 'metrics';
+	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence';
 	let activeSidebarPanel = $state<SidebarPanel>('notebooks');
 
 	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
@@ -1413,9 +1411,6 @@
 					style="width: var(--sidebar-rail-width)"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
-					{#if isNotebookTab}
-						{@render railButton('metrics', BarChart3, 'Metrics catalog')}
-					{/if}
 					{@render railButton('tables', Database, 'Databases & tables')}
 					{#if isDbtProject}
 						{@render railButton('dbt', FlaskConical, 'dbt models')}
@@ -1621,20 +1616,6 @@
 										</p>
 									</div>
 								{/if}
-							{:else if activeSidebarPanel === 'metrics' && isNotebookTab}
-								<div class="sidebar-panel-header">
-									<span class="flex-1 text-2xs font-medium text-muted-foreground">Metrics</span>
-								</div>
-								<MetricsPanel
-									{cells}
-									onInsertRef={(ref) => {
-										const focused = getFocusedCellId();
-										const cell = cells.find((c) => c.id === focused);
-										if (cell?.cellType === 'markdown') {
-											updateCellMarkdown(cell.id, `${cell.markdown ?? ''}\n${ref}`);
-										}
-									}}
-								/>
 							{:else if activeSidebarPanel === 'tables'}
 								<!-- Databases & tables panel -->
 								<div class="sidebar-panel-header">

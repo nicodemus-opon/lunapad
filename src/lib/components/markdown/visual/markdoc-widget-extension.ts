@@ -63,7 +63,9 @@ export const MarkdocWidgetExtension = Node.create({
 					}
 				},
 				onDelete: () => {
-					editor.chain().focus().deleteSelection().run();
+					const pos = getPos();
+					if (typeof pos !== 'number') return;
+					editor.chain().focus().setNodeSelection(pos).deleteSelection().run();
 				},
 				onPatch: (patch: {
 					tagName?: string;

@@ -2,8 +2,9 @@
 	import MarkdocRenderer from '$lib/components/markdown/MarkdocRenderer.svelte';
 	import { renderMarkdocCell } from '$lib/services/markdoc-interp';
 	import { markdocAttrToDisplay as attr, serializeMarkdocTag } from '$lib/services/markdoc-ast';
+	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import type { Cell } from '$lib/stores/notebook.svelte';
-	import { Trash2, SlidersHorizontal } from '@lucide/svelte';
+	import { Trash2, SlidersHorizontal, TriangleAlert } from '@lucide/svelte';
 
 	interface Props {
 		tagName: string;
@@ -39,6 +40,15 @@
 	);
 
 	const isElseDivider = $derived(tagName === 'else');
+
+	// Editor-only orphan check: a filter whose param no query cell consumes.
+	const filterParam = $derived(tagName === 'filter' ? attr(attrs.param).trim() : '');
+	const filterOrphaned = $derived(
+		Boolean(filterParam) && findFilterUsages(cells ?? [], filterParam).length === 0
+	);
+	const orphanTitle = $derived(
+		`No query uses \${${filterParam}} — add \${${filterParam}} to a query cell's code`
+	);
 
 	const rendered = $derived(isElseDivider ? null : renderMarkdocCell(source, cells ?? []));
 	const hasErrors = $derived((rendered?.errors.length ?? 0) > 0);
@@ -85,6 +95,15 @@
 		onSelect?.();
 	}}
 >
+	{#if filterOrphaned}
+		<div
+			class="iw-orphan absolute -top-2.5 left-1 z-10 inline-flex items-center gap-0.5 rounded-sm border border-warning/50 bg-background/90 px-1 py-px text-3xs text-warning"
+			title={orphanTitle}
+		>
+			<TriangleAlert class="h-2.5 w-2.5" />
+			unused
+		</div>
+	{/if}
 	<div
 		class="iw-chrome absolute -top-2.5 right-1 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/iw:opacity-100 {selected
 			? 'opacity-100'

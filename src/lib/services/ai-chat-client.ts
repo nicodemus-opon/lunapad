@@ -74,6 +74,7 @@ import {
 	requestConfirmation,
 	resolveConfirmation,
 	requestPlanApproval,
+	requestAskUser,
 	getSprintTasks,
 	setSprintTasks,
 	updateSprintTask,
@@ -105,6 +106,7 @@ import type {
 	SampleDataArgs,
 	ProfileColumnArgs,
 	RecordDecisionArgs,
+	AskUserArgs,
 	WorkspaceContract,
 	WorkspaceNamingRule,
 	SprintTask,
@@ -2385,6 +2387,17 @@ async function streamOneTurn(
 				break;
 			case 'tool_call': {
 				const toolCall = event.call as AIChatToolCall;
+				if (toolCall.tool === 'ask_user') {
+					const args = toolCall.args as AskUserArgs;
+					setCurrentActivityLabel('Waiting for your answer…');
+					const answer = await requestAskUser(args.question, args.options);
+					allToolResults.push(
+						answer
+							? `ask_user("${args.question}") → user answered: ${answer}`
+							: `ask_user("${args.question}") → user dismissed without answering; proceed with your best judgment.`
+					);
+					break;
+				}
 				setCurrentActivityLabel(activityLabelForTool(toolCall.tool));
 				if (DATA_TOOL_NAMES.has(toolCall.tool)) {
 					// Execute inline so results reach the model in the same turn

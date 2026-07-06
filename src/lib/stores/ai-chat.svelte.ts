@@ -107,6 +107,12 @@ let _pendingPlanProposal = $state<{
 	assertions?: PlanAssertion[];
 } | null>(null);
 let _planProposalResolve = $state<((proceed: boolean) => void) | null>(null);
+// Ask-user gate — resolves when the user picks a quick-reply option or submits free text
+let _pendingAskUser = $state<{
+	question: string;
+	options?: string[];
+	resolve: (answer: string) => void;
+} | null>(null);
 
 // Rolling history-summary cache (Improvement: token-budgeted history) — `atMessageCount` is the
 // total message count (`allMsgs.length` in ai-chat-client.ts buildRequest) at the time the
@@ -274,6 +280,10 @@ export function abortGeneration(): void {
 		_sprintPlanApprovalResolve = null;
 		_sprintPlanApprovalPending = false;
 	}
+	if (_pendingAskUser) {
+		_pendingAskUser.resolve('');
+		_pendingAskUser = null;
+	}
 }
 
 // ── Context cells ─────────────────────────────────────────────────────────────
@@ -399,6 +409,27 @@ export function resolvePlanApproval(proceed: boolean): void {
 	_planProposalResolve?.(proceed);
 	_pendingPlanProposal = null;
 	_planProposalResolve = null;
+}
+
+// ── Ask-user gate ─────────────────────────────────────────────────────────────
+
+export function getPendingAskUser(): { question: string; options?: string[] } | null {
+	return _pendingAskUser
+		? { question: _pendingAskUser.question, options: _pendingAskUser.options }
+		: null;
+}
+
+export function requestAskUser(question: string, options?: string[]): Promise<string> {
+	// If a question is already pending, don't overwrite the resolver (would leave it hanging).
+	if (_pendingAskUser) return Promise.resolve('');
+	return new Promise<string>((resolve) => {
+		_pendingAskUser = { question, options, resolve };
+	});
+}
+
+export function resolveAskUser(answer: string): void {
+	_pendingAskUser?.resolve(answer);
+	_pendingAskUser = null;
 }
 
 // ── Input suggestion ─────────────────────────────────────────────────────────

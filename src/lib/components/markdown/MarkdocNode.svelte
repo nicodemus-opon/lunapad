@@ -20,6 +20,7 @@
 	import ResultTable from '$lib/components/ResultTable.svelte';
 	import { resolveHeadingAnchorId, textFromMarkdocChildren } from '$lib/services/notebook-outline';
 	import { sanitizeUrl } from '$lib/services/safe-url';
+	import { GRID_GAP_PRESETS, COLUMNS_GAP_PRESETS } from '$lib/services/markdoc-style-presets';
 
 	interface Props {
 		node: RenderableTreeNode;
@@ -129,7 +130,10 @@
 {:else if tag?.name === 'progress'}
 	<ProgressWidget {...tag.attributes} />
 {:else if tag?.name === 'columns'}
-	<div class="md-columns">
+	<div
+		class="md-columns"
+		style="--md-columns-gap: {COLUMNS_GAP_PRESETS[tag.attributes.gap ?? 'default']}"
+	>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'column'}
@@ -140,7 +144,12 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'grid'}
-	<div class="md-grid" style="--md-grid-cols: {tag.attributes.cols ?? 3}">
+	<div
+		class="md-grid"
+		style="--md-grid-cols: {tag.attributes.cols ?? 3}; --md-grid-gap: {GRID_GAP_PRESETS[
+			tag.attributes.gap ?? 'default'
+		]}"
+	>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'callout'}
@@ -148,7 +157,11 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'card'}
-	<div class="md-card">
+	<div
+		class="md-card {tag.attributes.accent && tag.attributes.accent !== 'neutral'
+			? `md-card--${tag.attributes.accent}`
+			: ''}"
+	>
 		{#if tag.attributes.title}<div class="md-card-title">{tag.attributes.title}</div>{/if}
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>

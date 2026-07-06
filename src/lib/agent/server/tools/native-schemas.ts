@@ -26,7 +26,7 @@ export const NATIVE_TOOLS = [
 					code: {
 						type: 'string',
 						description:
-							'Complete SQL or Python source for query/python cells. Omit for markdown cells.'
+							'Complete SQL or Python source for query/python cells. Omit for markdown cells. Python cells: data is injected, never loaded — each upstream cell and workspace table is a pandas DataFrame named by its outputName/table name (bound only when that name appears in the code); pd/np are pre-imported; the last DataFrame expression becomes the result and is registered as a downstream table under this cell\'s outputName. Never read files or open DB connections in Python.'
 					},
 					markdown: {
 						type: 'string',
@@ -50,8 +50,33 @@ export const NATIVE_TOOLS = [
 								type: 'array',
 								items: {
 									type: 'object',
+									properties: {
+										type: {
+											type: 'string',
+											enum: [
+												'text',
+												'grid',
+												'columns',
+												'card',
+												'metric',
+												'chart',
+												'datatable',
+												'badge',
+												'progress',
+												'callout',
+												'details',
+												'tabs',
+												'filter',
+												'mermaid',
+												'each',
+												'group',
+												'conditional'
+											]
+										}
+									},
+									required: ['type'],
 									description:
-										'One typed notebook block. Supported types: text, grid, columns, metric, chart, datatable, badge, progress, callout, details, tabs, filter, mermaid, conditional.'
+										'One typed notebook block. Container blocks (grid.items, columns.columns[].blocks, card/callout/details/tabs/conditional block arrays) nest these same blocks recursively — follow the block grammar in the system prompt for each type\'s fields.'
 								}
 							}
 						}
@@ -205,7 +230,7 @@ export const NATIVE_TOOLS = [
 					dashboard: {
 						type: 'object',
 						description:
-							'Preferred structured replacement for AI-authored notebook/report/dashboard markdown. Compiled server-side into canonical Markdoc before the tool call reaches the client.'
+							'Preferred structured replacement for AI-authored notebook/report/dashboard markdown. Same {title, statusBadge, blocks} shape as create_cell.dashboard — see the block grammar in the system prompt. Compiled server-side into canonical Markdoc before the tool call reaches the client.'
 					}
 				},
 				required: ['cellId']
@@ -341,6 +366,32 @@ export const NATIVE_TOOLS = [
 					cellId2: { type: 'string', description: 'Second cell outputName or id.' }
 				},
 				required: ['cellId1', 'cellId2']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'ask_user',
+			description:
+				'Pause and ask the user a clarifying question when genuinely blocked by ambiguity you cannot resolve from the schema, data, or workspace conventions (e.g. which of two plausible join keys, whether to reuse an existing cell vs create a new one, an ambiguous business rule). Do NOT use this for anything you can resolve yourself by investigating data (sample_data/query_data/profile_column) or by making a reasonable, stated default choice. Overuse annoys the user — reserve for cases where a wrong guess would require redoing significant work.',
+			parameters: {
+				type: 'object',
+				properties: {
+					question: {
+						type: 'string',
+						description: 'The clarifying question to ask, phrased concisely (one sentence).'
+					},
+					options: {
+						type: 'array',
+						items: { type: 'string' },
+						minItems: 2,
+						maxItems: 4,
+						description:
+							'Optional 2-4 short quick-reply choices (e.g. ["customer_id", "email"]). Omit if the answer cannot be reduced to a few discrete choices — the user can always type free text instead.'
+					}
+				},
+				required: ['question']
 			}
 		}
 	}

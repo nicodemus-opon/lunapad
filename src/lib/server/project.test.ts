@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { renameCellFile, walkProjectDirectory } from './project.js';
+import { deleteCellFile, renameCellFile, walkProjectDirectory } from './project.js';
 
 let dir: string;
 
@@ -43,6 +43,45 @@ describe('renameCellFile', () => {
 		expect(await fs.readFile(path.join(dir, 'models/c.prql'), 'utf-8')).toBe('from a');
 		expect(await fs.readFile(path.join(dir, 'models/c.sql'), 'utf-8')).toBe('select * from a');
 		await expect(fs.access(path.join(dir, 'models/a.prql'))).rejects.toThrow();
+	});
+});
+
+describe('deleteCellFile', () => {
+	it('unlinks the file from disk (not just in-memory state)', async () => {
+		await write('models/a.prql', 'from a');
+		const abs = path.join(dir, 'models/a.prql');
+		expect(await fs.readFile(abs, 'utf-8')).toBe('from a');
+
+		await deleteCellFile(abs);
+
+		await expect(fs.access(abs)).rejects.toThrow();
+	});
+
+	it('deletes the companion .sql file alongside a .prql source', async () => {
+		await write('models/a.prql', 'from a');
+		await write('models/a.sql', 'select * from a');
+
+		await deleteCellFile(path.join(dir, 'models/a.prql'));
+
+		await expect(fs.access(path.join(dir, 'models/a.prql'))).rejects.toThrow();
+		await expect(fs.access(path.join(dir, 'models/a.sql'))).rejects.toThrow();
+	});
+
+	it('removes the parent directory once it is left empty', async () => {
+		await write('models/sub/a.prql', 'from a');
+
+		await deleteCellFile(path.join(dir, 'models/sub/a.prql'));
+
+		await expect(fs.access(path.join(dir, 'models/sub'))).rejects.toThrow();
+	});
+
+	it('leaves the parent directory when a sibling file remains', async () => {
+		await write('models/sub/a.prql', 'from a');
+		await write('models/sub/b.prql', 'from b');
+
+		await deleteCellFile(path.join(dir, 'models/sub/a.prql'));
+
+		expect(await fs.readFile(path.join(dir, 'models/sub/b.prql'), 'utf-8')).toBe('from b');
 	});
 });
 

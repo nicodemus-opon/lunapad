@@ -217,6 +217,7 @@ Get cell result: <tool_call>{"tool":"get_cell_result","callId":"D4","args":{"cel
 List cells:      <tool_call>{"tool":"list_cells","callId":"L1","args":{}}</tool_call>
 Search:          <tool_call>{"tool":"search_workspace","callId":"S1","args":{"query":"customer dim"}}</tool_call>
 Record decision: <tool_call>{"tool":"record_decision","callId":"R1","args":{"decision":"treating email as FK to customers — no id in source"}}</tool_call>
+Ask user:        <tool_call>{"tool":"ask_user","callId":"Q1","args":{"question":"Which join key — customer_id or email?","options":["customer_id","email"]}}</tool_call>
 `;
 
 	// Small models (≤8B): compact prompt — one-shot format example first, 6 critical rules, trimmed context
@@ -269,12 +270,13 @@ RULES:
 11. Use window functions (LAG, RANK, SUM OVER, ROW_NUMBER) for growth rates, rankings, running totals.
 12. Start with a markdown intro cell, then SQL cells, then run_cells, then pick_chart.
 13. SELF-CORRECT: After run_cells, if ANY cell failed, fix it with update_cell and retry. Do NOT output <done> until all succeed.
-14. DONE: <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Keep each suggestion under 60 chars. Never include <done> in a response that also calls run_cells, sample_data, query_data, or profile_column — the system pauses after those and gives you results first.
+14. DONE: <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Keep each suggestion under 60 chars. Never include <done> in a response that also calls run_cells, sample_data, query_data, profile_column, or ask_user — the system pauses after those and gives you results first.
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
 16. DOCUMENT YOUR WORK: after cells run clean, always write a markdown findings cell (cellType:"markdown", outputName:"findings") summarising what was built, data quality notes, and key decisions.
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
 18. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
 19. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
+20. ASK ONLY WHEN GENUINELY BLOCKED: call ask_user only when an ambiguity cannot be resolved by investigating data (sample_data/query_data/profile_column) and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, or unclear whether to reuse an existing cell vs create a new one). Prefer a stated default over asking — pick the more common convention, note the assumption, and proceed. Never ask about anything answerable from the Schema or Cells sections above. Provide options only for a naturally short discrete choice (2-4 items); omit options otherwise. At most once per task unless the answer creates a new ambiguity.
 
 You MAY write 1–2 sentences of explanation before tool calls.
 
@@ -285,7 +287,14 @@ Schema:
 
 function buildToolSelectionSection(pythonAvailable: boolean): string {
 	if (pythonAvailable) {
-		return `\n\n## Tool selection\nUse SQL for relational transforms (joins, filters, aggregations, window functions). Use create_cell with cellType:"python" for statistics, ML, text/regex processing, or custom visualization beyond what set_chart/pick_chart support. When a different cell type would serve the request better than an existing cell, create a new cell (afterCellId set to the current one) rather than forcing a mismatched language via update_cell — leave the original cell unchanged.`;
+		return `\n\n## Tool selection\nUse SQL for relational transforms (joins, filters, aggregations, window functions). Use create_cell with cellType:"python" for statistics, ML, text/regex processing, or custom visualization beyond what set_chart/pick_chart support. When a different cell type would serve the request better than an existing cell, create a new cell (afterCellId set to the current one) rather than forcing a mismatched language via update_cell — leave the original cell unchanged.
+
+## Python cell data contract (READ before writing any python cell)
+Data is INJECTED, never loaded. Do NOT read files, open DuckDB/SQL connections, call APIs, or fabricate data.
+- Every upstream cell AND every workspace table is available as a pandas DataFrame variable named exactly by its outputName/table name — but ONLY if that name appears verbatim in your code. To use table \`sales_orders\` or cell \`revenue_by_month\`, just reference \`sales_orders\` / \`revenue_by_month\` as a DataFrame (e.g. \`df = revenue_by_month\`). pandas (\`pd\`) and numpy (\`np\`) are pre-imported.
+- The cell's RESULT is the last DataFrame you leave as the final expression (or the last DataFrame assigned). That result is registered as a DuckDB table under this cell's outputName, so downstream SQL/PRQL/python cells can read it by name — this is how you chain SQL → Python → SQL.
+- print(...) goes to stdout; matplotlib/plotly figures are captured automatically. For a tabular result, end the cell with a DataFrame expression.
+- Reference an upstream cell by outputName to create a dependency, exactly like a SQL cell would. Never reference a raw uploaded-file table name with a timestamp — go through the cell that reads it.`;
 	}
 	return `\n\n## Tool selection\nPython cells are not available in this environment — always use SQL, even for tasks that would normally suit Python (statistics, ML, text processing).`;
 }
@@ -502,6 +511,7 @@ ${buildGeneratedDashboardPromptBlock()}
 - search_workspace: {query:string} — semantic search; returns full SQL code for matched cells, plus relevant past decisions/discoveries recorded via record_decision (use in Step 1 to find reusable models AND check what's already been decided)
 - get_cell_result: {cellId:string, limit?:number} — read an already-run cell's result data without re-querying. Use when explaining results or charting existing data.
 - **record_decision: {decision:string, type?:"decision"|"discovery"}** — record a modeling decision or notable data discovery that persists across turns AND across future sessions (written to disk). Call after confirming a primary key, join key, grain, business rule, or data quality fix (type: "decision"); call for a surprising data fact too (type: "discovery"). Prevents re-investigating already-resolved questions in later turns or later sessions.
+- **ask_user: {question:string, options?:string[]}** — pause and ask the user a clarifying question. Use ONLY when genuinely blocked by ambiguity you cannot resolve via sample_data/query_data/profile_column or a reasonable stated default, and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, reuse vs create a new cell). Never ask about anything answerable from the Schema or Notebook below. Provide 'options' (2-4 short choices) only when the answer is naturally discrete; omit it otherwise so the user can answer freely. At most once per task unless the answer creates a new ambiguity. The system pauses after this call and gives you the user's answer before you continue — do NOT include a done block in the same response as ask_user.
 
 ## Graph notation
 depends_on=[x] = reads FROM x. feeds_into=[x] = x reads FROM this. [HIGH IMPACT] = cell has 3+ dependents — be conservative when modifying.
@@ -533,7 +543,12 @@ function buildSubagentSystemPrompt(
 	sessionPlanContext: string[] | undefined,
 	connectionDialect: string,
 	isOllama: boolean,
-	isSmall: boolean
+	isSmall: boolean,
+	// Required (no default) on purpose: a silent `false` default here previously made the
+	// creation pipeline's sql-gen subagent believe Python was always unavailable, so the
+	// flagship notebook-composition path could never build Python cells. Keeping it required
+	// makes any un-forwarded call site a compile error.
+	pythonAvailable: boolean
 ): string {
 	const cellList =
 		cells.length > 0
@@ -568,6 +583,10 @@ function buildSubagentSystemPrompt(
 	const toolFmt = `
 TOOL FORMAT:
 <tool_call>{"tool":"TOOL_NAME","callId":"C1","args":{...}}</tool_call>
+
+## Clarifying questions (ask_user)
+- ask_user: {"question": "...", "options": ["choice1","choice2"]} — options is optional (2-4 short items), omit for a free-text answer.
+Use ONLY when genuinely blocked — the ambiguity cannot be resolved by investigating data (sample_data/query_data/profile_column) and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, or unclear whether to reuse an existing cell vs create a new one). Prefer a stated default over asking: pick the more common convention, note the assumption, and proceed. Never ask about anything answerable from the Notebook or Schema below. At most once per task unless the answer creates a new ambiguity. The system pauses after this call and gives you the user's answer before you continue — never include a <done> block in the same response as ask_user.
 `;
 
 	switch (type) {
@@ -659,7 +678,8 @@ ${cellList}${planNote}${contractNote}${dialectNote}`;
 						sessionPlanContext,
 						undefined,
 						connectionDialect,
-						isSmall
+						isSmall,
+						pythonAvailable
 					)
 				: buildSystemPromptXML(
 						cells,
@@ -670,7 +690,8 @@ ${cellList}${planNote}${contractNote}${dialectNote}`;
 						sessionPlanContext,
 						undefined,
 						connectionDialect,
-						true
+						true,
+						pythonAvailable
 					);
 			const skipNote =
 				"\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After cells run clean (Step 4 — Validate), write a findings markdown cell (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell's outputName as your upstream reference.\n";
@@ -860,12 +881,14 @@ Workflow:
    - findings / insights for KPI + chart sections
    - appendix / methodology for drill-down tables or caveats
 5. Prefer rich layout blocks:
-   - grid for KPI rows
+   - grid for KPI rows (card to frame a titled section)
    - tabs or columns for multiple chart sections
-   - datatable for drill-downs
+   - datatable for drill-downs (index/pivotBy/valueCol/agg for pivot & summary tables)
    - progress for quota/goal tracking
    - callout for warnings
    - conditional for empty states
+   - filter (dropdown/multi-select/date-range/numeric-range) when the user asks for interactivity
+   - mermaid + each/group for data-driven diagrams
 6. Reference existing result cells via $outputName or $outputName.field only. Never hardcode numbers/dates/categories from results, never use $cell, and never reference stg_ cells.
 7. Call <done>.
 
@@ -1061,7 +1084,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				sessionPlanContext,
 				connectionDialect,
 				isOllama,
-				isSmall
+				isSmall,
+				pythonAvailable
 			)
 		: isOllama
 			? buildSystemPromptOllama(

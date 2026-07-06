@@ -726,6 +726,7 @@
 		block={selectedBlock}
 		{refEntries}
 		{filterUsages}
+		{cells}
 		onPatch={patchSelected}
 		onClose={() => {
 			nodeConfigOpen = false;

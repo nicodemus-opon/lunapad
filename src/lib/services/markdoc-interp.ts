@@ -61,6 +61,20 @@ export function buildMarkdocVariables(cells: Cell[]): Record<string, unknown> {
 	return vars;
 }
 
+/** Fast-path resolution for bare `$cell.field` paths against the cell variable bag.
+ * Returns the raw resolved value (arrays/objects included), or undefined when the
+ * expression isn't a bare variable path or the path doesn't resolve. */
+export function resolveBareVariablePath(inner: string, cells: Cell[]): unknown {
+	if (!/^\$[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(inner.trim())) return undefined;
+	const path = inner.trim().slice(1).split('.');
+	let cur: unknown = buildMarkdocVariables(cells);
+	for (const key of path) {
+		if (cur == null || typeof cur !== 'object') return undefined;
+		cur = (cur as Record<string, unknown>)[key];
+	}
+	return cur;
+}
+
 /** AI often emits explicit first-row indexing (`$cell.rows.0.metric` or `$cell.rows[0].metric`)
  * even though Markdoc exposes first-row fields directly as `$cell.metric`. Normalize those
  * patterns up-front so validation/rendering accept the intended ref shape. */
@@ -356,7 +370,13 @@ const datatableTag: Schema = {
 	}
 };
 
-const columnsTag: Schema = { render: 'columns', children: CONTAINER_CHILDREN };
+const columnsTag: Schema = {
+	render: 'columns',
+	children: CONTAINER_CHILDREN,
+	attributes: {
+		gap: { type: String, matches: ['compact', 'default', 'comfortable'], default: 'default' }
+	}
+};
 const columnTag: Schema = {
 	render: 'column',
 	children: CONTAINER_CHILDREN,
@@ -365,7 +385,10 @@ const columnTag: Schema = {
 const gridTag: Schema = {
 	render: 'grid',
 	children: CONTAINER_CHILDREN,
-	attributes: { cols: { type: Number, default: 3 } }
+	attributes: {
+		cols: { type: Number, default: 3 },
+		gap: { type: String, matches: ['compact', 'default', 'comfortable'], default: 'default' }
+	}
 };
 const calloutTag: Schema = {
 	render: 'callout',
@@ -377,7 +400,14 @@ const calloutTag: Schema = {
 const cardTag: Schema = {
 	render: 'card',
 	children: CONTAINER_CHILDREN,
-	attributes: { title: { type: String } }
+	attributes: {
+		title: { type: String },
+		accent: {
+			type: String,
+			matches: ['neutral', 'info', 'success', 'warning', 'error'],
+			default: 'neutral'
+		}
+	}
 };
 const detailsTag: Schema = {
 	render: 'details',
@@ -885,22 +915,26 @@ const groupTag: Schema = {
 // Declarative only — current value is read/written live by FilterWidget.svelte via the
 // notebook store (setNotebookFilterValue/getNotebookFilterValue), not through Markdoc
 // variables, since Markdoc resolves its whole tree once per render rather than per keystroke.
+/** Filter control kinds accepted by the {% filter %} tag — the source of truth the
+ *  AI-facing FILTER_KINDS in generated-dashboard.ts is cross-checked against. */
+export const FILTER_WIDGET_KINDS = [
+	'dropdown',
+	'text-input',
+	'date-range',
+	'button-group',
+	'multi-select',
+	'relative-date',
+	'numeric-range',
+	'searchable-dropdown'
+] as const;
+
 const filterTag: Schema = {
 	render: 'filter',
 	selfClosing: true,
 	attributes: {
 		kind: {
 			type: String,
-			matches: [
-				'dropdown',
-				'text-input',
-				'date-range',
-				'button-group',
-				'multi-select',
-				'relative-date',
-				'numeric-range',
-				'searchable-dropdown'
-			],
+			matches: [...FILTER_WIDGET_KINDS],
 			default: 'dropdown'
 		},
 		param: { type: String, required: true },

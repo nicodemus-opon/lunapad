@@ -8,10 +8,26 @@ import ContainerChrome from './ContainerChrome.svelte';
 import MermaidContainerView from './MermaidContainerView.svelte';
 import { mermaidCodeFromContainerNode } from './mermaid-code';
 import { reactiveProps } from './reactive-props.svelte';
-import { markdownToPmDocument } from '$lib/services/markdoc-pm';
+import { markdownToPmDocument, serializePmNodeToMarkdown } from '$lib/services/markdoc-pm';
+import { GRID_GAP_PRESETS, COLUMNS_GAP_PRESETS } from '$lib/services/markdoc-style-presets';
+import { resolveBareVariablePath } from '$lib/services/markdoc-interp';
+import LoopPreviewView from './LoopPreviewView.svelte';
 
 export interface MarkdocContainerExtensionContext {
 	getCells: () => Cell[];
+	getNotebookId?: () => string;
+}
+
+const LOGIC_PREVIEW_TAGS = new Set(['each', 'group']);
+
+/** Resolve a loop `data` attr (literal array or `$cell.rows` ref) to rows, or null. */
+function resolveLoopRows(data: unknown, cells: Cell[]): unknown[] | null {
+	if (Array.isArray(data)) return data;
+	if (typeof data === 'string' && data.trim().startsWith('$')) {
+		const value = resolveBareVariablePath(data, cells);
+		if (Array.isArray(value)) return value;
+	}
+	return null;
 }
 
 function syncTabsStrip(
@@ -103,9 +119,14 @@ function applyContainerSemantics(
 		dom.classList.add('is-grid', 'is-wysiwyg');
 		contentDOM.classList.add('md-grid');
 		contentDOM.style.setProperty('--md-grid-cols', String(cols));
+		contentDOM.style.setProperty('--md-grid-gap', GRID_GAP_PRESETS[String(attrs.gap ?? 'default')]);
 	} else if (tagName === 'columns') {
 		dom.classList.add('is-columns', 'is-wysiwyg');
 		contentDOM.classList.add('md-columns');
+		contentDOM.style.setProperty(
+			'--md-columns-gap',
+			COLUMNS_GAP_PRESETS[String(attrs.gap ?? 'default')]
+		);
 	} else if (tagName === 'column') {
 		dom.classList.add('is-column', 'is-wysiwyg');
 		contentDOM.classList.add('md-column');
@@ -115,7 +136,9 @@ function applyContainerSemantics(
 		dom.classList.add('is-callout', 'is-wysiwyg', `md-callout--${type}`);
 		contentDOM.classList.add('md-callout');
 	} else if (tagName === 'card') {
+		const accent = String(attrs.accent ?? 'neutral');
 		dom.classList.add('is-card', 'is-wysiwyg');
+		if (accent !== 'neutral') dom.classList.add(`md-card--${accent}`);
 		contentDOM.classList.add('md-card');
 		if (attrs.title) {
 			const titleEl = document.createElement('div');
@@ -276,6 +299,77 @@ export const MarkdocContainerExtension = Node.create({
 				});
 			};
 
+			// ── each/group live preview (Webflow collection-list style) ──────────
+			// Same dual-surface approach as mermaid above: contentDOM stays the
+			// editable template (and the single source of truth for round-tripping);
+			// a mounted LoopPreviewView renders the expanded output. `logicOverride`
+			// is the user's explicit toggle; when null, mode is auto: preview when
+			// the data attr resolves to a non-empty array, template otherwise.
+			let logicOverride: 'preview' | 'template' | null = null;
+			let loopHost: HTMLDivElement | null = null;
+			let loopComponent: ReturnType<typeof mount> | null = null;
+			let loopProps: {
+				source: string;
+				tagName: string;
+				notebookId: string;
+				cells: Cell[];
+			} | null = null;
+			let lastLoopSource: string | null = null;
+
+			const loopRowCount = (): number | null => {
+				const rows = resolveLoopRows(parseAttrsJson(attrsJson).data, ctx?.getCells() ?? []);
+				return rows ? rows.length : null;
+			};
+
+			const effectiveLogicMode = (): 'preview' | 'template' => {
+				if (logicOverride) return logicOverride;
+				const count = loopRowCount();
+				return count !== null && count > 0 ? 'preview' : 'template';
+			};
+
+			const applyLoopView = () => {
+				if (!LOGIC_PREVIEW_TAGS.has(tagName)) {
+					if (loopComponent) {
+						unmount(loopComponent);
+						loopComponent = null;
+					}
+					loopHost?.remove();
+					loopHost = null;
+					lastLoopSource = null;
+					if (dom.classList.contains('is-loop-preview')) {
+						dom.classList.remove('is-loop-preview');
+						contentDOM.style.display = '';
+					}
+					return;
+				}
+				const isPreview = effectiveLogicMode() === 'preview';
+				if (isPreview) {
+					if (!loopHost) {
+						loopHost = document.createElement('div');
+						loopHost.className = 'loop-preview-host markdown-surface';
+						dom.appendChild(loopHost);
+					}
+					const source = serializePmNodeToMarkdown(pmNode);
+					if (!loopComponent) {
+						loopProps = reactiveProps({
+							source,
+							tagName,
+							notebookId: ctx?.getNotebookId?.() ?? '',
+							cells: ctx?.getCells() ?? []
+						});
+						loopComponent = mount(LoopPreviewView, { target: loopHost, props: loopProps });
+						lastLoopSource = source;
+					} else if (loopProps && source !== lastLoopSource) {
+						loopProps.source = source;
+						loopProps.cells = ctx?.getCells() ?? [];
+						lastLoopSource = source;
+					}
+				}
+				if (loopHost) loopHost.style.display = isPreview ? '' : 'none';
+				contentDOM.style.display = isPreview ? 'none' : '';
+				dom.classList.toggle('is-loop-preview', isPreview);
+			};
+
 			const patchAttrs = (patch: Record<string, unknown>) => {
 				const pos = getPos();
 				if (typeof pos !== 'number') return;
@@ -305,6 +399,7 @@ export const MarkdocContainerExtension = Node.create({
 						});
 					}
 				});
+				applyLoopView();
 				renderChrome();
 			};
 
@@ -319,12 +414,16 @@ export const MarkdocContainerExtension = Node.create({
 				} else if (tagName === 'tabs') {
 					const tabCount = containerNode.content.childCount + 1;
 					snippet = `{% tab label="Tab ${tabCount}" %}\n\n{% /tab %}`;
+				} else if (tagName === 'if') {
+					// Else divider plus an empty paragraph so the new branch has a
+					// place to type into.
+					snippet = '{% else /%}\n\nOtherwise content.';
 				}
 				if (!snippet) return;
-				const child = markdownToPmDocument(snippet).doc.content?.[0];
-				if (!child) return;
+				const children = markdownToPmDocument(snippet).doc.content ?? [];
+				if (!children.length) return;
 				const insertPos = pos + 1 + containerNode.content.size;
-				editor.chain().focus().insertContentAt(insertPos, child).run();
+				editor.chain().focus().insertContentAt(insertPos, children).run();
 				if (tagName === 'tabs') {
 					activeTabIndex = containerNode.content.childCount;
 					requestAnimationFrame(() => applyAll());
@@ -337,7 +436,10 @@ export const MarkdocContainerExtension = Node.create({
 			const chromeProps = reactiveProps({
 				tagName,
 				attrs: parseAttrsJson(attrsJson),
+				cells: ctx?.getCells() ?? [],
 				selected: false,
+				logicMode: null as 'preview' | 'template' | null,
+				hasElse: false,
 				onSelect: () => {
 					const pos = getPos();
 					if (typeof pos === 'number') {
@@ -345,36 +447,54 @@ export const MarkdocContainerExtension = Node.create({
 					}
 				},
 				onDelete: () => {
-					editor.chain().focus().deleteSelection().run();
+					const pos = getPos();
+					if (typeof pos !== 'number') return;
+					editor.chain().focus().setNodeSelection(pos).deleteSelection().run();
 				},
 				onPatchAttrs: (patch: Record<string, unknown>) => patchAttrs(patch),
-				onAddChild: () => addChild()
+				onAddChild: () => addChild(),
+				onToggleLogicMode: () => {
+					logicOverride = effectiveLogicMode() === 'preview' ? 'template' : 'preview';
+					applyLoopView();
+					renderChrome();
+				},
+				onIfState: (state: string | null) => {
+					if (state) dom.dataset.ifState = state;
+					else delete dom.dataset.ifState;
+				}
 			});
 
 			const renderChrome = () => {
-				const minimalChrome =
-					tagName === 'tabs' ||
-					tagName === 'grid' ||
-					tagName === 'columns' ||
-					tagName === 'callout' ||
-					tagName === 'card' ||
-					tagName === 'column' ||
-					tagName === 'tab' ||
-					tagName === 'details' ||
-					tagName === 'mermaid';
-				const showChrome = !minimalChrome || isSelected;
-
+				// Chrome is always present in the DOM and hover-revealed via CSS
+				// (ContainerChrome's own opacity-0 / group-hover:opacity-100), mirroring
+				// how leaf widgets (InlineWidgetNodeView's .iw-chrome) work. It must never
+				// be gated on `isSelected` — that made it a closed loop for non-atomic
+				// container nodes (grid, columns, callout, card, ...): a plain click inside
+				// their content only ever produces a text cursor, never a NodeSelection, so
+				// there was no way to ever reach `isSelected = true` in the first place.
 				chromeProps.tagName = tagName;
 				chromeProps.attrs = parseAttrsJson(attrsJson);
+				chromeProps.cells = ctx?.getCells() ?? [];
 				chromeProps.selected = isSelected;
+				chromeProps.logicMode = LOGIC_PREVIEW_TAGS.has(tagName) ? effectiveLogicMode() : null;
+				if (tagName === 'if') {
+					let hasElse = false;
+					pmNode.forEach((child) => {
+						if (child.type.name === 'markdocWidget' && String(child.attrs.tagName) === 'else') {
+							hasElse = true;
+						}
+					});
+					chromeProps.hasElse = hasElse;
+				} else {
+					chromeProps.hasElse = false;
+				}
 
-				if (showChrome && !chromeHost) {
+				if (!chromeHost) {
 					chromeHost = document.createElement('div');
 					chromeHost.className = 'markdoc-container-chrome';
 					dom.insertBefore(chromeHost, contentDOM);
 					component = mount(ContainerChrome, { target: chromeHost, props: chromeProps });
 				}
-				if (chromeHost) chromeHost.style.display = showChrome ? '' : 'none';
 			};
 
 			const applyAll = () => {
@@ -465,6 +585,7 @@ export const MarkdocContainerExtension = Node.create({
 			applyAll();
 			ensureTabObserver();
 			applyMermaidView();
+			applyLoopView();
 			renderChrome();
 
 			return {
@@ -479,12 +600,14 @@ export const MarkdocContainerExtension = Node.create({
 					ensureTabObserver();
 					startTabPoll();
 					applyMermaidView();
+					applyLoopView();
 					renderChrome();
 					return true;
 				},
 				destroy() {
 					if (component) unmount(component);
 					if (mermaidComponent) unmount(mermaidComponent);
+					if (loopComponent) unmount(loopComponent);
 					tabObserver?.disconnect();
 					if (tabPollHandle) cancelAnimationFrame(tabPollHandle);
 				},
@@ -502,7 +625,9 @@ export const MarkdocContainerExtension = Node.create({
 					const target = event.target as HTMLElement;
 					if (target.closest('.md-tabs-strip, .md-details-summary, .md-tab-btn')) return true;
 					if (
-						target.closest('.markdoc-container-chrome, .mermaid-container-host, .markdown-mode-bar')
+						target.closest(
+							'.markdoc-container-chrome, .mermaid-container-host, .loop-preview-host, .markdown-mode-bar'
+						)
 					)
 						return true;
 					return false;

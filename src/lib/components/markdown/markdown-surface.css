@@ -4,7 +4,7 @@
 
 .md-columns {
 	display: flex;
-	gap: 1rem;
+	gap: var(--md-columns-gap, 1rem);
 	margin: 0.5rem 0;
 }
 
@@ -16,7 +16,7 @@
 .md-grid {
 	display: grid;
 	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
-	gap: 0.75rem;
+	gap: var(--md-grid-gap, 0.75rem);
 	margin: 0.55rem 0;
 }
 
@@ -55,6 +55,22 @@
 	border-radius: var(--radius-sm);
 	padding: 0.65rem 0.8rem;
 	margin: 0.75rem 0;
+}
+
+.md-card--info {
+	border-color: var(--chart-1);
+}
+
+.md-card--success {
+	border-color: var(--success);
+}
+
+.md-card--warning {
+	border-color: var(--warning);
+}
+
+.md-card--error {
+	border-color: var(--destructive);
 }
 
 .md-card-title,
@@ -471,6 +487,63 @@
 	opacity: 0.75;
 }
 
+.md-expr-editwrap {
+	position: relative;
+	display: inline-block;
+}
+
+.md-expr-ac {
+	position: absolute;
+	top: calc(100% + 2px);
+	left: 0;
+	z-index: var(--z-dropdown, 65);
+	min-width: 14rem;
+	max-height: 15rem;
+	overflow-y: auto;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--popover);
+	box-shadow: var(--shadow-lg);
+	padding: 0.15rem;
+}
+
+.md-expr-ac-item {
+	display: flex;
+	width: 100%;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+	border: none;
+	background: none;
+	border-radius: var(--radius-sm);
+	padding: 0.2rem 0.4rem;
+	text-align: left;
+	cursor: pointer;
+}
+
+.md-expr-ac-item.is-active {
+	background: var(--accent);
+	color: var(--accent-foreground);
+}
+
+.md-expr-ac-label {
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	white-space: nowrap;
+}
+
+.md-expr-ac-detail {
+	font-size: var(--text-3xs);
+	color: var(--muted-foreground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.md-expr-ac-item.is-active .md-expr-ac-detail {
+	color: color-mix(in oklab, var(--accent-foreground) 70%, transparent);
+}
+
 /* ── Shared editor/report controls ─────────────────────────────────────── */
 
 .md-control,
@@ -628,7 +701,7 @@ textarea.md-control {
 .markdown-surface .markdoc-container-content.md-grid {
 	display: grid;
 	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
-	gap: 0.75rem;
+	gap: var(--md-grid-gap, 0.75rem);
 	margin: 0.55rem 0 0;
 }
 
@@ -654,7 +727,7 @@ textarea.md-control {
 
 .markdown-surface .markdoc-container-content.md-columns {
 	display: flex;
-	gap: 1rem;
+	gap: var(--md-columns-gap, 1rem);
 }
 
 .markdown-surface .markdoc-container-node.is-column .markdoc-container-content.md-column {
@@ -693,6 +766,85 @@ textarea.md-control {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	padding: 0.65rem 0.8rem;
+}
+
+.markdown-surface .markdoc-container-node.md-card--info .markdoc-container-content.md-card {
+	border-color: var(--chart-1);
+}
+
+.markdown-surface .markdoc-container-node.md-card--success .markdoc-container-content.md-card {
+	border-color: var(--success);
+}
+
+.markdown-surface .markdoc-container-node.md-card--warning .markdoc-container-content.md-card {
+	border-color: var(--warning);
+}
+
+.markdown-surface .markdoc-container-node.md-card--error .markdoc-container-content.md-card {
+	border-color: var(--destructive);
+}
+
+/* ── Nested container chrome: innermost-only reveal ────────────────────── */
+/* When hovering a nested container, every ancestor container is also hovered,
+   so all their chrome bars would reveal at once. Suppress an ancestor's own
+   chrome while one of its descendant containers is hovered — only the
+   innermost hovered container shows its bar. A selected node keeps its chrome. */
+.markdown-surface
+	.markdoc-container-node:has(.markdoc-container-node:hover):not(.ProseMirror-selectednode)
+	> .markdoc-container-chrome
+	> .container-chrome {
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* ── each/group live preview (visual editor) ───────────────────────────── */
+
+.markdown-surface .loop-preview-host {
+	min-width: 0;
+}
+
+.markdown-surface .loop-preview > :first-child {
+	margin-top: 0;
+}
+
+.markdown-surface .loop-preview > :last-child {
+	margin-bottom: 0;
+}
+
+/* ── Conditional branch dimming (visual editor) ────────────────────────── */
+/* The chrome pushes the live condition state onto the container node as
+   data-if-state; dim whichever branch will not render. The else divider is
+   identified structurally via :has(.md-else-divider). */
+
+.markdown-surface
+	.markdoc-container-node[data-tag='if'][data-if-state='true']
+	> .markdoc-container-content
+	> .markdoc-widget-node:has(.md-else-divider),
+.markdown-surface
+	.markdoc-container-node[data-tag='if'][data-if-state='true']
+	> .markdoc-container-content
+	> .markdoc-widget-node:has(.md-else-divider)
+	~ * {
+	opacity: 0.45;
+}
+
+.markdown-surface
+	.markdoc-container-node[data-tag='if'][data-if-state='false']
+	> .markdoc-container-content
+	> * {
+	opacity: 0.45;
+}
+
+.markdown-surface
+	.markdoc-container-node[data-tag='if'][data-if-state='false']
+	> .markdoc-container-content
+	> .markdoc-widget-node:has(.md-else-divider),
+.markdown-surface
+	.markdoc-container-node[data-tag='if'][data-if-state='false']
+	> .markdoc-container-content
+	> .markdoc-widget-node:has(.md-else-divider)
+	~ * {
+	opacity: 1;
 }
 
 /* ── Mermaid (visual editor) ───────────────────────────────────────────── */
@@ -796,34 +948,34 @@ textarea.md-control {
 
 /* ── GFM tables (TipTap / ProseMirror visual editor) ─────────────────────── */
 
-.markdown-surface .ProseMirror table,
-.markdown-surface .markdown-body table,
-.notion-surface .ProseMirror table,
-.notebook-document-surface .ProseMirror table {
+.markdown-surface .ProseMirror table:not(.result-table),
+.markdown-surface .markdown-body table:not(.result-table),
+.notion-surface .ProseMirror table:not(.result-table),
+.notebook-document-surface .ProseMirror table:not(.result-table) {
 	border-collapse: collapse;
 	width: 100%;
 	margin: 0.5rem 0;
 	table-layout: fixed;
 }
 
-.markdown-surface .ProseMirror td,
-.markdown-surface .ProseMirror th,
-.markdown-surface .markdown-body td,
-.markdown-surface .markdown-body th,
-.notion-surface .ProseMirror td,
-.notion-surface .ProseMirror th,
-.notebook-document-surface .ProseMirror td,
-.notebook-document-surface .ProseMirror th {
+.markdown-surface .ProseMirror td:not(.result-table *),
+.markdown-surface .ProseMirror th:not(.result-table *),
+.markdown-surface .markdown-body td:not(.result-table *),
+.markdown-surface .markdown-body th:not(.result-table *),
+.notion-surface .ProseMirror td:not(.result-table *),
+.notion-surface .ProseMirror th:not(.result-table *),
+.notebook-document-surface .ProseMirror td:not(.result-table *),
+.notebook-document-surface .ProseMirror th:not(.result-table *) {
 	border: 1px solid var(--border);
 	padding: 0.35rem 0.5rem;
 	vertical-align: top;
 	min-width: 3rem;
 }
 
-.markdown-surface .ProseMirror th,
-.markdown-surface .markdown-body th,
-.notion-surface .ProseMirror th,
-.notebook-document-surface .ProseMirror th {
+.markdown-surface .ProseMirror th:not(.result-table *),
+.markdown-surface .markdown-body th:not(.result-table *),
+.notion-surface .ProseMirror th:not(.result-table *),
+.notebook-document-surface .ProseMirror th:not(.result-table *) {
 	background: color-mix(in oklab, var(--muted) 45%, transparent);
 	font-weight: 600;
 	text-align: left;
@@ -960,4 +1112,3 @@ textarea.md-control {
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
 }
-
