@@ -55,7 +55,8 @@ import {
 	cancelConnectionQuery,
 	materializeConnectionRelation,
 	queryConnectionSQL,
-	syncConnectionMetadata
+	syncConnectionMetadata,
+	uploadConnectionTable
 } from '$lib/services/connections';
 import {
 	executeSQL,
@@ -123,6 +124,17 @@ import {
 } from './ai-chat.svelte';
 import { buildSalesAnalyticsDemo } from '$lib/demo/sales-analytics-demo';
 import { getDashboardTemplate } from '$lib/demo/dashboard-templates';
+import {
+	buildPythonCatalogEntries,
+	buildPythonUpstreamDescriptors,
+	extractPythonTableRefs,
+	findReferencedBareLocalTables,
+	rankPythonTableHints,
+	resolvePythonCatalogEntry,
+	type PythonCatalogEntry,
+	type PythonTableHint,
+	type PythonTableDescriptor as PythonRuntimeTableDescriptor
+} from '$lib/services/python-tables';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
@@ -673,6 +685,15 @@ function makeNotebook(name: string, cells?: Cell[]): Notebook {
 		defaultCellLanguage: 'sql',
 		filters: {}
 	};
+}
+
+function replaceNotebookCells(notebookId: string, cells: Cell[]): void {
+	state.notebooks = state.notebooks.map((n) => (n.id === notebookId ? { ...n, cells } : n));
+}
+
+function focusInsertedCell(cellId: string): void {
+	state.focusedCellId = cellId;
+	state.focusedTarget = { cellId };
 }
 
 export function loadDemoNotebook(): void {
@@ -1456,7 +1477,7 @@ function getSchemaTablesForConnection(cell: Cell): SchemaTable[] {
 		}));
 }
 
-function inferMaterializeTargetSchema(cell: Cell, connection: Connection): string | undefined {
+function inferMaterializeTargetSchema(connection: Connection): string | undefined {
 	if (isBuiltinDuckDBConnection(connection)) return undefined;
 
 	const availableSchemas = state.externalSchemaTables
@@ -1504,6 +1525,19 @@ function inferMaterializeTargetSchema(cell: Cell, connection: Connection): strin
 	}
 
 	return undefined;
+}
+
+function getNotebookDefaultExternalConnection(notebook: Notebook): Connection | null {
+	const counts = new Map<string, number>();
+	for (const cell of notebook.cells) {
+		if (cell.cellType !== 'query') continue;
+		const connectionId = cell.connectionId;
+		if (!connectionId || connectionId === BUILTIN_DUCKDB_CONNECTION_ID) continue;
+		counts.set(connectionId, (counts.get(connectionId) ?? 0) + 1);
+	}
+	const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+	if (ranked.length === 0) return null;
+	return state.connections.find((connection) => connection.id === ranked[0]?.[0]) ?? null;
 }
 
 function recordNotebookEvent(
@@ -3242,6 +3276,32 @@ export function getExternalSchemaTables(): ExternalSchemaTable[] {
 	return state.externalSchemaTables;
 }
 
+export function getPythonTableHints(code: string, notebookId?: string): PythonTableHint[] {
+	const localTables = state.tables;
+	const notebook =
+		(typeof notebookId === 'string' && notebookId
+			? state.notebooks.find((entry) => entry.id === notebookId)
+			: null) ?? getActiveNotebook();
+	const externalConnectionIds = new Set(
+		notebook.cells
+			.filter((cell) => cell.cellType === 'query' && cell.connectionId)
+			.map((cell) => cell.connectionId!)
+			.filter((id) => id !== BUILTIN_DUCKDB_CONNECTION_ID)
+	);
+	const externalTables =
+		externalConnectionIds.size === 0
+			? []
+			: state.externalSchemaTables.filter((table) => externalConnectionIds.has(table.connectionId));
+	return rankPythonTableHints(
+		code,
+		buildPythonCatalogEntries({
+			localTables,
+			externalTables,
+			connections: state.connections
+		})
+	);
+}
+
 export function getTheme(): 'light' | 'dark' | 'system' {
 	return state.theme;
 }
@@ -3670,7 +3730,7 @@ export function insertQueryBlockCell(
 	} else {
 		newCell = makeCell('', deconflictOutputName('query'), lang);
 	}
-	newCell.display = 'output';
+	newCell.display = 'full';
 
 	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
 	if (inFsMode) {
@@ -3687,13 +3747,12 @@ export function insertQueryBlockCell(
 		cells.unshift(newCell);
 	}
 
-	state.notebooks = state.notebooks.map((n) => (n.id === nb.id ? { ...n, cells } : n));
+	replaceNotebookCells(nb.id, cells);
 	scheduleSave();
 	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
 	else if (nb.format === 'luna') scheduleLunaNotebookSave(nb.id);
 
-	state.focusedCellId = newCell.id;
-	state.focusedTarget = { cellId: newCell.id };
+	focusInsertedCell(newCell.id);
 	return newCell.id;
 }
 
@@ -4416,6 +4475,7 @@ function generateUniqueOutputName(): string {
  */
 export function addCellWithLanguage(lang: CellLanguage): void {
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const queryCells = nb.cells.filter((c) => c.cellType === 'query');
 	const previousQueryCell = queryCells[queryCells.length - 1] ?? null;
 	const inheritedSource = lang === 'prql' ? getPreviousCellOutputReference(queryCells) : null;
@@ -4432,22 +4492,22 @@ export function addCellWithLanguage(lang: CellLanguage): void {
 			guiStages,
 			editMode: lang === 'sql' ? 'prql' : 'gui'
 		};
-		nb.cells = [...nb.cells, newCell];
+		replaceNotebookCells(notebookId, [...nb.cells, newCell]);
+		focusInsertedCell(newCell.id);
 		scheduleSave();
-		scheduleFileSave(nb.id, newCell.id);
+		scheduleFileSave(notebookId, newCell.id);
 		return;
 	}
 
 	const outputName = generateUniqueOutputName();
-	nb.cells = [
-		...nb.cells,
-		{
-			...makeCell(code, outputName, lang),
-			connectionId: previousQueryCell?.connectionId ?? null,
-			guiStages,
-			editMode: lang === 'sql' ? 'prql' : 'gui'
-		}
-	];
+	const newCell: Cell = {
+		...makeCell(code, outputName, lang),
+		connectionId: previousQueryCell?.connectionId ?? null,
+		guiStages,
+		editMode: lang === 'sql' ? 'prql' : 'gui'
+	};
+	replaceNotebookCells(notebookId, [...nb.cells, newCell]);
+	focusInsertedCell(newCell.id);
 	scheduleSave();
 }
 
@@ -4501,17 +4561,20 @@ export function canAddUdfCell(): boolean {
 export function addUdfCell(): void {
 	if (!canAddUdfCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makeUdfCell();
 	cell.outputName = deconflictOutputName(cell.outputName);
-	nb.cells = [...nb.cells, cell];
+	replaceNotebookCells(notebookId, [...nb.cells, cell]);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 export function insertUdfCellAfter(id: string): void {
 	if (!canAddUdfCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4519,14 +4582,16 @@ export function insertUdfCellAfter(id: string): void {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 export function insertUdfCellBefore(id: string): void {
 	if (!canAddUdfCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4534,9 +4599,10 @@ export function insertUdfCellBefore(id: string): void {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 /** Plot cells (JS evaluated against upstream cells' results, returning a
@@ -4553,17 +4619,20 @@ export function canAddPlotCell(): boolean {
 export function addPlotCell(): void {
 	if (!canAddPlotCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makePlotCell();
 	cell.outputName = deconflictOutputName(cell.outputName);
-	nb.cells = [...nb.cells, cell];
+	replaceNotebookCells(notebookId, [...nb.cells, cell]);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 export function insertPlotCellAfter(id: string): void {
 	if (!canAddPlotCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4571,14 +4640,16 @@ export function insertPlotCellAfter(id: string): void {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 export function insertPlotCellBefore(id: string): void {
 	if (!canAddPlotCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4586,9 +4657,10 @@ export function insertPlotCellBefore(id: string): void {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 /** Python cells run server-side (see python-runner.ts) and need a real project
@@ -4610,12 +4682,14 @@ export function getPythonAvailable(): boolean {
 export function addPythonCell(): string | null {
 	if (!canAddPythonCell()) return null;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	pushHistoryCheckpoint(nb.id);
 	const cell = makePythonCell();
 	cell.outputName = deconflictOutputName(cell.outputName);
-	nb.cells = [...nb.cells, cell];
+	replaceNotebookCells(notebookId, [...nb.cells, cell]);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 	return cell.id;
 }
 
@@ -4637,8 +4711,7 @@ export function injectTestPythonResultCell(input: {
 	cell.result = {
 		rows: input.rows,
 		columns:
-			input.columns ??
-			(input.rows[0] ? Object.keys(input.rows[0] as Record<string, unknown>) : [])
+			input.columns ?? (input.rows[0] ? Object.keys(input.rows[0] as Record<string, unknown>) : [])
 	};
 	nb.cells = [...nb.cells, cell];
 	scheduleSave();
@@ -4648,6 +4721,7 @@ export function injectTestPythonResultCell(input: {
 export function insertPythonCellAfter(id: string): string | null {
 	if (!canAddPythonCell()) return null;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return null;
 	pushHistoryCheckpoint(nb.id);
@@ -4655,15 +4729,17 @@ export function insertPythonCellAfter(id: string): string | null {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 	return cell.id;
 }
 
 export function insertPythonCellBefore(id: string): void {
 	if (!canAddPythonCell()) return;
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4671,9 +4747,10 @@ export function insertPythonCellBefore(id: string): void {
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
 	scheduleSave();
-	scheduleFileSave(nb.id, cell.id);
+	scheduleFileSave(notebookId, cell.id);
 }
 
 /** Append a query or markdown cell at the end of the active notebook; returns the new cell id. */
@@ -4792,6 +4869,7 @@ export function insertCellBefore(
 	}
 ): void {
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return;
 	pushHistoryCheckpoint(nb.id);
@@ -4814,9 +4892,10 @@ export function insertCellBefore(
 	if (inFsMode) newCell.id = outputName;
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, newCell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(newCell.id);
 	scheduleSave();
-	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
+	if (inFsMode) scheduleFileSave(notebookId, newCell.id);
 }
 
 export function insertCellAfter(
@@ -4831,6 +4910,7 @@ export function insertCellAfter(
 	}
 ): string {
 	const nb = getActiveNotebook();
+	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
 	if (idx === -1) return '';
 	pushHistoryCheckpoint(nb.id);
@@ -4856,9 +4936,10 @@ export function insertCellAfter(
 	if (inFsMode) newCell.id = outputName;
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, newCell);
-	nb.cells = cells;
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(newCell.id);
 	scheduleSave();
-	if (inFsMode) scheduleFileSave(nb.id, newCell.id);
+	if (inFsMode) scheduleFileSave(notebookId, newCell.id);
 	return newCell.id;
 }
 
@@ -6465,57 +6546,211 @@ export function runPlotCell(id: string): void {
  *  completion sets cell.result to the captured DataFrame (so the existing
  *  InlineResultView table/chart rendering picks it up with no changes) and
  *  cell.pythonOutput to the captured stdout/figures/error for PythonCellOutput. */
-/**
- * Phase 2 of Python cell support: lets a cell read any table by name —
- * built-in DuckDB tables/views or external-connection tables — without an
- * explicit upstream cell dependency, the same whole-word-match technique
- * `resolvePythonDataRefs` already uses for in-notebook cells. Only matches
- * names not already covered by `alreadyBound` (explicit deps take priority
- * and are never re-fetched here).
- */
-async function resolvePythonCatalogTables(
-	code: string,
-	alreadyBound: Set<string>
-): Promise<Record<string, PythonTablePayload>> {
-	const tables: Record<string, PythonTablePayload> = {};
-	const isReferenced = (name: string): boolean =>
-		new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(code);
+const PYTHON_FULL_TABLE_BATCH = 1_000;
 
+function quoteSqlPath(name: string): string {
+	return name
+		.split('.')
+		.map((part) => `"${part.replace(/"/g, '""')}"`)
+		.join('.');
+}
+
+function inferColumnTypeFromValues(values: unknown[]): string {
+	for (const value of values) {
+		if (value == null) continue;
+		if (typeof value === 'boolean') return 'BOOLEAN';
+		if (typeof value === 'number') return Number.isInteger(value) ? 'BIGINT' : 'DOUBLE';
+		if (value instanceof Date) return 'TIMESTAMP';
+	}
+	return 'VARCHAR';
+}
+
+function inferResultColumnTypes(
+	columns: string[],
+	rows: Record<string, unknown>[],
+	fallback?: string[]
+): string[] {
+	return columns.map(
+		(column, idx) => fallback?.[idx] ?? inferColumnTypeFromValues(rows.map((row) => row[column]))
+	);
+}
+
+function rowsToMatrix(columns: string[], rows: Record<string, unknown>[]): unknown[][] {
+	return rows.map((row) => columns.map((column) => row[column] ?? null));
+}
+
+async function readLocalPythonTable(
+	entry: Extract<PythonCatalogEntry, { source: 'local' }>,
+	rowMode: 'preview' | 'full'
+): Promise<PythonTablePayload> {
+	if (rowMode === 'preview') {
+		const result = await executeSQL(
+			`SELECT * FROM ${quoteSqlPath(entry.canonicalName)} LIMIT ${AUTO_LIMIT}`
+		);
+		return { rows: result.rows, columns: result.columns };
+	}
+
+	const rows: Record<string, unknown>[] = [];
+	let offset = 0;
+	let columns = entry.columns;
+	while (true) {
+		const result = await executeSQL(
+			`SELECT * FROM ${quoteSqlPath(entry.canonicalName)} LIMIT ${PYTHON_FULL_TABLE_BATCH} OFFSET ${offset}`
+		);
+		columns = result.columns;
+		rows.push(...result.rows);
+		if (result.rows.length < PYTHON_FULL_TABLE_BATCH) break;
+		offset += PYTHON_FULL_TABLE_BATCH;
+	}
+	return { rows, columns };
+}
+
+async function readExternalPythonTable(
+	entry: Extract<PythonCatalogEntry, { source: 'external' }>,
+	rowMode: 'preview' | 'full'
+): Promise<PythonTablePayload> {
+	const connection = state.connections.find((candidate) => candidate.id === entry.connectionId);
+	if (!connection) throw new Error(`Connection '${entry.connectionId}' is unavailable.`);
+	const qualified = entry.canonicalName;
+	if (rowMode === 'preview') {
+		const result = await queryConnectionSQL(
+			connection,
+			`SELECT * FROM ${quoteSqlPath(qualified)} LIMIT ${AUTO_LIMIT}`
+		);
+		return { rows: result.rows, columns: result.columns };
+	}
+
+	const rows: Record<string, unknown>[] = [];
+	let offset = 0;
+	let columns = entry.columns;
+	while (true) {
+		const result = await queryConnectionSQL(
+			connection,
+			`SELECT * FROM ${quoteSqlPath(qualified)} LIMIT ${PYTHON_FULL_TABLE_BATCH} OFFSET ${offset}`
+		);
+		columns = result.columns;
+		rows.push(...result.rows);
+		if (result.rows.length < PYTHON_FULL_TABLE_BATCH) break;
+		offset += PYTHON_FULL_TABLE_BATCH;
+	}
+	return { rows, columns };
+}
+
+async function resolvePythonTableBindings(args: {
+	code: string;
+	upstreamDescriptors: PythonRuntimeTableDescriptor[];
+	upstreamTables: Record<string, PythonTablePayload>;
+}): Promise<{
+	tables: Record<string, PythonTablePayload>;
+	tableDescriptors: PythonRuntimeTableDescriptor[];
+}> {
+	const { code, upstreamDescriptors, upstreamTables } = args;
+	const tables: Record<string, PythonTablePayload> = { ...upstreamTables };
+	const tableDescriptors = [...upstreamDescriptors];
+	const alreadyBound = new Set(
+		upstreamDescriptors
+			.map((descriptor) => descriptor.bindBareGlobal)
+			.filter((value): value is string => typeof value === 'string' && value.length > 0)
+	);
+
+	let localTables: Awaited<ReturnType<typeof listMainSchemaRelations>> = [];
 	try {
-		const relations = await listMainSchemaRelations();
-		for (const rel of relations) {
-			if (alreadyBound.has(rel.name) || !isReferenced(rel.name)) continue;
-			try {
-				const result = await executeSQL(`SELECT * FROM "${rel.name}" LIMIT ${AUTO_LIMIT}`);
-				tables[rel.name] = { rows: result.rows, columns: result.columns };
-				alreadyBound.add(rel.name);
-			} catch {
-				// table exists but couldn't be read — skip, not fatal to the cell
-			}
-		}
+		localTables = await listMainSchemaRelations();
 	} catch {
-		// DuckDB not initialized yet — fine, just no catalog matches this run
+		localTables = [];
 	}
 
-	const connections = getConnections();
-	for (const table of state.externalSchemaTables) {
-		if (alreadyBound.has(table.name) || !isReferenced(table.name)) continue;
-		const connection = connections.find((c) => c.id === table.connectionId);
-		if (!connection) continue;
-		const qualified = table.schema ? `"${table.schema}"."${table.name}"` : `"${table.name}"`;
+	const catalog = buildPythonCatalogEntries({
+		localTables: localTables.map((table) => ({
+			name: table.name,
+			fileName: table.name,
+			rowCount: table.rowCount,
+			columns: table.columns,
+			columnTypes: table.columnTypes,
+			relationType: table.relationType
+		})),
+		externalTables: state.externalSchemaTables,
+		connections: state.connections
+	});
+	const refs = extractPythonTableRefs(code);
+	const requested = new Map<
+		string,
+		{ entry: PythonCatalogEntry; rowMode: 'preview' | 'full'; bindBareGlobal?: string | null }
+	>();
+	const queueEntry = (
+		entry: PythonCatalogEntry,
+		rowMode: 'preview' | 'full',
+		bindBareGlobal?: string | null
+	): void => {
+		const existing = requested.get(entry.canonicalName);
+		if (existing) {
+			existing.rowMode = existing.rowMode === 'full' || rowMode === 'full' ? 'full' : 'preview';
+			if (bindBareGlobal) existing.bindBareGlobal = bindBareGlobal;
+			return;
+		}
+		requested.set(entry.canonicalName, { entry, rowMode, bindBareGlobal });
+	};
+
+	for (const name of refs.attributeNames) {
+		const entry = resolvePythonCatalogEntry(name, catalog);
+		if (entry) queueEntry(entry, 'preview');
+	}
+	for (const name of refs.itemNames) {
+		const entry = resolvePythonCatalogEntry(name, catalog);
+		if (entry) queueEntry(entry, 'preview');
+	}
+	for (const name of refs.loadNames) {
+		const entry = resolvePythonCatalogEntry(name, catalog);
+		if (entry) queueEntry(entry, 'full');
+	}
+	for (const entry of findReferencedBareLocalTables(code, catalog, alreadyBound)) {
+		queueEntry(entry, 'preview', entry.attributeAlias ?? null);
+	}
+
+	for (const { entry, rowMode, bindBareGlobal } of requested.values()) {
 		try {
-			const result = await queryConnectionSQL(
-				connection,
-				`SELECT * FROM ${qualified} LIMIT ${AUTO_LIMIT}`
-			);
-			tables[table.name] = { rows: result.rows, columns: result.columns };
-			alreadyBound.add(table.name);
+			const payload =
+				entry.source === 'local'
+					? await readLocalPythonTable(entry, rowMode)
+					: await readExternalPythonTable(entry, rowMode);
+			tables[entry.canonicalName] = payload;
+			tableDescriptors.push({
+				dataKey: entry.canonicalName,
+				canonicalName: entry.canonicalName,
+				source: entry.source,
+				aliases: entry.aliases,
+				attributeAlias: entry.attributeAlias,
+				bindBareGlobal,
+				columns: payload.columns,
+				columnTypes: entry.columnTypes,
+				description: entry.description,
+				rowMode
+			});
 		} catch {
-			// external connection unreachable/table unreadable — skip
+			// Table resolution is best-effort; unresolved tables should surface as normal python errors.
 		}
 	}
 
-	return tables;
+	return { tables, tableDescriptors };
+}
+
+async function publishPythonResultToWarehouse(
+	notebook: Notebook,
+	cell: Cell,
+	dataframe: { rows: Record<string, unknown>[]; columns: string[] }
+): Promise<void> {
+	if (!cell.outputName) return;
+	const connection = getNotebookDefaultExternalConnection(notebook);
+	if (!connection || isBuiltinDuckDBConnection(connection)) return;
+	const columnTypes = inferResultColumnTypes(dataframe.columns, dataframe.rows);
+	await uploadConnectionTable(
+		connection,
+		cell.outputName,
+		dataframe.columns.map((name, idx) => ({ name, type: columnTypes[idx] ?? 'VARCHAR' })),
+		rowsToMatrix(dataframe.columns, dataframe.rows),
+		'replace',
+		inferMaterializeTargetSchema(connection)
+	);
 }
 
 export async function runPythonCell(id: string): Promise<void> {
@@ -6545,21 +6780,32 @@ export async function runPythonCell(id: string): Promise<void> {
 	};
 
 	const deps = resolvePythonDataRefs(nb.cells, idx);
-	const tables: Record<string, PythonTablePayload> = {};
-	const boundNames = new Set<string>();
+	const upstreamTables: Record<string, PythonTablePayload> = {};
+	const upstreamDescriptors = buildPythonUpstreamDescriptors(
+		deps.filter((dep) => Boolean(dep.result))
+	);
 	for (const dep of deps) {
 		if (!dep.result) continue;
-		tables[dep.outputName] = {
+		upstreamTables[dep.outputName] = {
 			rows: dep.result.rows.slice(0, AUTO_LIMIT),
 			columns: dep.result.columns
 		};
-		boundNames.add(dep.outputName);
 	}
-	Object.assign(tables, await resolvePythonCatalogTables(cell.code, boundNames));
+	const { tables, tableDescriptors } = await resolvePythonTableBindings({
+		code: cell.code,
+		upstreamDescriptors,
+		upstreamTables
+	});
 
 	const notebookId = nb.id;
 	try {
-		const jobId = await runPython(notebookId, cell.code, tables, state.projectFolder);
+		const jobId = await runPython(
+			notebookId,
+			cell.code,
+			tables,
+			tableDescriptors,
+			state.projectFolder
+		);
 		pythonJobByCellId.set(cell.id, { notebookId, jobId });
 		await new Promise<void>((resolve) => {
 			watchPythonLogs(
@@ -6583,8 +6829,20 @@ export async function runPythonCell(id: string): Promise<void> {
 						cell.executionCount = (cell.executionCount ?? 0) + 1;
 						if (result?.dataframe) {
 							cell.result = result.dataframe;
-							// Phase 3: register the result as a real DuckDB table so
-							// downstream SQL/PRQL/plot/python cells can read it by name.
+							try {
+								await publishPythonResultToWarehouse(nb, cell, result.dataframe);
+							} catch (err) {
+								cell.status = 'error';
+								cell.pythonOutput = {
+									stdout,
+									figures: result?.figures ?? [],
+									error: (err as Error).message
+								};
+								cell.lastRunAt = Date.now();
+								scheduleSave();
+								resolve();
+								return;
+							}
 							if (cell.outputName) {
 								try {
 									await registerPythonResultTable(
@@ -6594,7 +6852,7 @@ export async function runPythonCell(id: string): Promise<void> {
 									);
 									await refreshTablesFromCatalog();
 								} catch {
-									// non-fatal — the cell's own result still rendered fine
+									// local cache refresh is non-fatal
 								}
 							}
 						} else {
@@ -6890,7 +7148,7 @@ export async function materializeCell(id: string): Promise<void> {
 	}
 
 	try {
-		const targetSchema = inferMaterializeTargetSchema(cell, connection);
+		const targetSchema = inferMaterializeTargetSchema(connection);
 		const dbMode = cell.materializeMode as DBMaterializationMode;
 		const relation = isBuiltin
 			? await materializeRelation(targetName, sql, dbMode)

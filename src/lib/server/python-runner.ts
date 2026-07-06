@@ -9,6 +9,19 @@ export interface PythonTable {
 	columns: string[];
 }
 
+export interface PythonTableDescriptor {
+	dataKey: string;
+	canonicalName: string;
+	source: 'cell' | 'local' | 'external';
+	aliases: string[];
+	attributeAlias?: string | null;
+	bindBareGlobal?: string | null;
+	columns: string[];
+	columnTypes?: string[];
+	description?: string;
+	rowMode: 'preview' | 'full';
+}
+
 export interface PythonRunResult {
 	error: string | null;
 	missingModule: string | null;
@@ -290,6 +303,7 @@ const WORKER_SCRIPT = `
 import ast, sys, json, traceback
 
 import pandas as pd
+import numpy as np
 try:
     import plotly.graph_objects as go
     import plotly.express as px
@@ -304,7 +318,98 @@ try:
 except Exception:
     jedi = None
 
-ns: dict = {'pd': pd, 'go': go, 'px': px}
+ns: dict = {'pd': pd, 'np': np, 'go': go, 'px': px}
+bound_table_globals = set()
+
+class TablesNamespace:
+    """Workspace table namespace.
+
+    Use item access for canonical names, e.g. tables["analytics.public.orders"].
+    Use load(name) for explicit full-table loads. available() and find(query)
+    expose the current bounded working set, not the full warehouse catalog.
+    """
+    def __init__(self):
+        self._frames = {}
+        self._meta = {}
+
+    def register(self, desc, frame):
+        canonical = desc.get('canonicalName') or desc.get('dataKey')
+        if not canonical:
+            return
+        aliases = []
+        for alias in desc.get('aliases', []):
+            if isinstance(alias, str) and alias and alias not in aliases:
+                aliases.append(alias)
+        if canonical not in aliases:
+            aliases.insert(0, canonical)
+        self._meta[canonical] = {
+            'canonicalName': canonical,
+            'aliases': aliases,
+            'columns': desc.get('columns', []),
+            'columnTypes': desc.get('columnTypes', []),
+            'description': desc.get('description'),
+            'source': desc.get('source', 'table'),
+            'rowMode': desc.get('rowMode', 'preview')
+        }
+        for alias in aliases:
+            self._frames[alias] = frame
+        attr_alias = desc.get('attributeAlias')
+        if isinstance(attr_alias, str) and attr_alias:
+            setattr(self, attr_alias, frame)
+
+    def __getitem__(self, name):
+        if name in self._frames:
+            return self._frames[name]
+        raise KeyError(f"Unknown table '{name}'. Try tables.available() or tables.find('name').")
+
+    def load(self, name):
+        """Return a table DataFrame by canonical or alias name."""
+        return self[name]
+
+    def available(self):
+        """List the current bounded table working set."""
+        return list(self._meta.keys())
+
+    def find(self, query=''):
+        """Search the current bounded table working set by substring."""
+        q = str(query or '').lower().strip()
+        if not q:
+            return self.available()[:25]
+        matches = []
+        for canonical, meta in self._meta.items():
+            hay = ' '.join([canonical] + list(meta.get('aliases', []))).lower()
+            if q in hay:
+                matches.append(canonical)
+        return matches[:25]
+
+def _frame_from_payload(payload, columns):
+    rows = payload.get('rows', []) if isinstance(payload, dict) else []
+    cols = columns or (payload.get('columns', []) if isinstance(payload, dict) else [])
+    return pd.DataFrame(rows, columns=cols or None)
+
+def sync_tables(req):
+    global bound_table_globals
+    for name in list(bound_table_globals):
+        ns.pop(name, None)
+    bound_table_globals = set()
+
+    table_payloads = req.get('tables', {}) or {}
+    frame_cache = {}
+    tables_ns = TablesNamespace()
+    for desc in req.get('tableDescriptors', []) or []:
+        data_key = desc.get('dataKey')
+        if data_key not in frame_cache:
+            frame_cache[data_key] = _frame_from_payload(
+                table_payloads.get(data_key, {}),
+                desc.get('columns', [])
+            )
+        frame = frame_cache[data_key]
+        tables_ns.register(desc, frame)
+        bare = desc.get('bindBareGlobal')
+        if isinstance(bare, str) and bare:
+            ns[bare] = frame
+            bound_table_globals.add(bare)
+    ns['tables'] = tables_ns
 
 def _compile_cell(code):
     # IPython-style: if the cell ends in a bare expression (e.g. just
@@ -322,8 +427,7 @@ def _compile_cell(code):
 
 def run_one(req):
     code = req['code']
-    for name, table in req.get('tables', {}).items():
-        ns[name] = pd.DataFrame(table.get('rows', []))
+    sync_tables(req)
 
     error = None
     missing_module = None
@@ -393,6 +497,7 @@ def complete_one(req):
     if jedi is None:
         return {'error': 'jedi not installed', 'completions': []}
     try:
+        sync_tables(req)
         interp = jedi.Interpreter(req['code'], namespaces=[ns])
         completions = interp.complete(req.get('line', 1), req.get('column', 0))
         out = []
@@ -415,6 +520,7 @@ def hover_one(req):
     if jedi is None:
         return {'error': 'jedi not installed', 'hover': None}
     try:
+        sync_tables(req)
         interp = jedi.Interpreter(req['code'], namespaces=[ns])
         helps = interp.help(req.get('line', 1), req.get('column', 0))
         if not helps:
@@ -447,8 +553,20 @@ for line in sys.stdin:
 `;
 
 type PythonWorkerRequest =
-	| { id: string; code: string; tables: Record<string, PythonTable> }
-	| { id: string; type: 'complete' | 'hover'; code: string; line: number; column: number };
+	| {
+			id: string;
+			code: string;
+			tables: Record<string, PythonTable>;
+			tableDescriptors: PythonTableDescriptor[];
+	  }
+	| {
+			id: string;
+			type: 'complete' | 'hover';
+			code: string;
+			line: number;
+			column: number;
+			tableDescriptors: PythonTableDescriptor[];
+	  };
 
 interface QueueItem {
 	req: PythonWorkerRequest;
@@ -625,7 +743,12 @@ function maybeRetryMissingModule(
 	notebookId: string,
 	worker: WorkerHandle,
 	jobId: string,
-	req: { id: string; code: string; tables: Record<string, PythonTable> },
+	req: {
+		id: string;
+		code: string;
+		tables: Record<string, PythonTable>;
+		tableDescriptors: PythonTableDescriptor[];
+	},
 	missingModule: string
 ): void {
 	const job = jobs.get(jobId);
@@ -658,7 +781,8 @@ function maybeRetryMissingModule(
 export function spawnPythonCell(
 	notebookId: string,
 	code: string,
-	tables: Record<string, PythonTable>
+	tables: Record<string, PythonTable>,
+	tableDescriptors: PythonTableDescriptor[]
 ): string {
 	const id = makeId();
 	const emitter = new EventEmitter();
@@ -668,7 +792,7 @@ export function spawnPythonCell(
 	jobs.set(id, job);
 	setTimeout(() => jobs.delete(id), 5 * 60_000);
 
-	const req = { id, code, tables };
+	const req = { id, code, tables, tableDescriptors };
 
 	getOrSpawnWorker(notebookId)
 		.then((worker) => {
@@ -719,13 +843,14 @@ export async function requestPythonIntel(
 	type: 'complete' | 'hover',
 	code: string,
 	line: number,
-	column: number
+	column: number,
+	tableDescriptors: PythonTableDescriptor[] = []
 ): Promise<Record<string, unknown>> {
 	const worker = workers.get(notebookId);
 	if (!worker) return type === 'complete' ? { completions: [] } : { hover: null };
 
 	const id = makeId();
-	const req: PythonWorkerRequest = { id, type, code, line, column };
+	const req: PythonWorkerRequest = { id, type, code, line, column, tableDescriptors };
 	return new Promise((resolve) => {
 		intelResolvers.set(id, resolve);
 		worker.queue.push({ req, jobId: id });

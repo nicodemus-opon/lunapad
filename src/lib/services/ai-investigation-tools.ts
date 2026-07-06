@@ -398,7 +398,7 @@ async function trialRunPython(cellId: string, candidateCode: string): Promise<Tr
 	}
 
 	try {
-		const jobId = await runPython(notebookId, candidateCode, tables, getProjectFolder());
+		const jobId = await runPython(notebookId, candidateCode, tables, [], getProjectFolder());
 		return await new Promise<TrialRunResult>((resolve) => {
 			const timeout = setTimeout(() => {
 				void cancelPython(notebookId, jobId);

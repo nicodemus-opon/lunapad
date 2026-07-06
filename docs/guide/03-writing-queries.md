@@ -55,9 +55,9 @@ There's also a menu of ready-made multi-stage combinations: top-N-by-metric, ded
 
 Python cells run server-side. The Docker image ships with pandas, numpy, pyarrow, and plotly; local installs bootstrap a venv on first use.
 
-Typical pattern: pull a table with the connection helpers Lunapad injects, transform in pandas, assign to a variable Lunapad picks up as the cell output. Stdout and figures render below the cell. Errors show a traceback.
+Typical pattern: read upstream cells by output name, or use the built-in `tables` namespace for warehouse tables. `tables["schema.table"]` and `tables["catalog.schema.table"]` fetch bounded previews; `tables.load("catalog.schema.table")` performs an explicit full load. Stdout and figures render below the cell. Errors show a traceback.
 
-Use Python when you need a library SQL doesn't have, or when you're prototyping a transform before rewriting it as SQL. Downstream PRQL/SQL cells can reference a Python cell's output name once it produces a result set.
+Use Python when you need a library SQL doesn't have, or when you're prototyping a transform before rewriting it as SQL. Downstream PRQL/SQL cells can reference a Python cell's output name once it produces a result set, and notebooks with an external connection publish successful Python outputs there for schedules and downstream warehouse SQL.
 
 ## Autocomplete and errors
 

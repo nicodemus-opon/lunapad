@@ -3,15 +3,17 @@ import type { RequestHandler } from './$types';
 import {
 	spawnPythonCell,
 	ensureProjectPinnedPackages,
-	type PythonTable
+	type PythonTable,
+	type PythonTableDescriptor
 } from '$lib/server/python-runner';
 import { readPinnedPackages } from '$lib/server/python-packages';
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		const { code, tables, notebookId, folder } = (await request.json()) as {
+		const { code, tables, tableDescriptors, notebookId, folder } = (await request.json()) as {
 			code?: string;
 			tables?: Record<string, PythonTable>;
+			tableDescriptors?: PythonTableDescriptor[];
 			notebookId?: string;
 			folder?: string;
 		};
@@ -27,7 +29,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			await ensureProjectPinnedPackages(folder, pins);
 		}
 
-		const jobId = spawnPythonCell(notebookId, code, tables ?? {});
+		const jobId = spawnPythonCell(notebookId, code, tables ?? {}, tableDescriptors ?? []);
 		return json({ jobId });
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });

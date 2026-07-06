@@ -10,6 +10,7 @@ import {
 	__resetStateForTests,
 	exportJSON,
 	getCells,
+	getFocusedTarget,
 	getNotebooks,
 	importJSON,
 	insertQueryBlockCell,
@@ -130,6 +131,7 @@ describe('python cell roundtrip', () => {
 		expect(newId).toBeTruthy();
 		const inserted = getCells().find((c) => c.id === newId);
 		expect(inserted?.cellType).toBe('python');
-		expect(inserted?.display).toBe('output');
+		expect(inserted?.display).toBe('full');
+		expect(getFocusedTarget()).toEqual({ cellId: newId });
 	});
 });

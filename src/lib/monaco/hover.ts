@@ -3,8 +3,11 @@ import { PRQL_DOCS } from './prql';
 import { PY_TYPE_TO_TRINO } from '$lib/services/udf';
 import { getSqlFunctionDoc } from './sql-dialects';
 import {
+	buildPythonIntelDescriptors,
 	getModelDialect,
 	getModelPythonContext,
+	getModelPythonSchema,
+	getModelPythonTableHints,
 	getModelCompletions,
 	parseRegistry
 } from './completions';
@@ -12,6 +15,7 @@ import { formatTableHover, lookupTable, sqlIdentBeforeCursor } from './sql-schem
 import { findColumnInScope, getCachedSqlScope, resolveTableRef } from './sql-scope';
 import { hoverPython } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
+import { formatPythonTableHintDoc } from '$lib/services/python-tables';
 
 function columnHoverMarkdown(
 	tableRef: string,
@@ -48,6 +52,8 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 			const word = model.getWordAtPosition(position);
 			if (!word) return null;
 			const context = getModelPythonContext(model);
+			const tableHints = getModelPythonTableHints(model);
+			const upstreamSchemas = getModelPythonSchema(model);
 
 			if (!context || context.kind === 'udf') {
 				const trinoType = PY_TYPE_TO_TRINO[word.word];
@@ -65,6 +71,91 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 				};
 			}
 
+			const lineText = model.getLineContent(position.lineNumber);
+			if (word.word === 'tables') {
+				return {
+					range: new monaco.Range(
+						position.lineNumber,
+						word.startColumn,
+						position.lineNumber,
+						word.endColumn
+					),
+					contents: [
+						{
+							value:
+								'**tables**\n\nWorkspace table namespace. Use `tables["schema.table"]`, `tables.load("catalog.schema.table")`, `tables.available()`, and `tables.find("name")`.'
+						}
+					]
+				};
+			}
+			if (/tables\./.test(lineText.slice(0, word.startColumn - 1))) {
+				if (word.word === 'load') {
+					return {
+						range: new monaco.Range(
+							position.lineNumber,
+							word.startColumn,
+							position.lineNumber,
+							word.endColumn
+						),
+						contents: [{ value: '**tables.load(name)**\n\nExplicit full-table load by canonical or alias name.' }]
+					};
+				}
+				if (word.word === 'find') {
+					return {
+						range: new monaco.Range(
+							position.lineNumber,
+							word.startColumn,
+							position.lineNumber,
+							word.endColumn
+						),
+						contents: [{ value: '**tables.find(query)**\n\nSearch the current bounded table working set.' }]
+					};
+				}
+				if (word.word === 'available') {
+					return {
+						range: new monaco.Range(
+							position.lineNumber,
+							word.startColumn,
+							position.lineNumber,
+							word.endColumn
+						),
+						contents: [{ value: '**tables.available()**\n\nList the current bounded table working set.' }]
+					};
+				}
+				const staticHint = tableHints.find((hint) => hint.attributeAlias === word.word);
+				if (staticHint) {
+					return {
+						range: new monaco.Range(
+							position.lineNumber,
+							word.startColumn,
+							position.lineNumber,
+							word.endColumn
+						),
+						contents: [{ value: formatPythonTableHintDoc(staticHint) }]
+					};
+				}
+			}
+			const upstreamSchema = upstreamSchemas.find((schema) => schema.name === word.word);
+			if (upstreamSchema) {
+				const columns = upstreamSchema.columns.slice(0, 10);
+				return {
+					range: new monaco.Range(
+						position.lineNumber,
+						word.startColumn,
+						position.lineNumber,
+						word.endColumn
+					),
+					contents: [
+						{
+							value:
+								columns.length > 0
+									? `**${upstreamSchema.name}**\n\nUpstream cell DataFrame.\n\nColumns:\n${columns.map((column) => `- \`${column}\``).join('\n')}`
+									: `**${upstreamSchema.name}**\n\nUpstream cell DataFrame.`
+						}
+					]
+				};
+			}
+
 			const controller = new AbortController();
 			token.onCancellationRequested(() => controller.abort());
 			try {
@@ -73,6 +164,7 @@ export function registerHoverProviders(monaco: typeof Monaco): void {
 					model.getValue(),
 					position.lineNumber,
 					position.column - 1,
+					buildPythonIntelDescriptors(tableHints, upstreamSchemas),
 					controller.signal
 				);
 				if (!hover) return null;

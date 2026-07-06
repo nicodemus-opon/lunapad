@@ -13,6 +13,7 @@
 	import type {
 		CompletionEntry,
 		PythonCellContext,
+		PythonTableHint,
 		PythonUpstreamSchema,
 		SqlModelContext
 	} from '$lib/monaco/completions';
@@ -58,6 +59,8 @@
 		 * registry so completions can show "orders: id, status, amount" rather than
 		 * guessing from jedi names. */
 		pythonSchemas?: PythonUpstreamSchema[];
+		/** Bounded working-set hints for Python's `tables` namespace. */
+		pythonTableHints?: PythonTableHint[];
 		/** `auto` grows to content height; `fill` fills the parent with internal scroll */
 		layout?: 'auto' | 'fill';
 		/** Notebook-inline styling — no border, themed code background */
@@ -80,6 +83,7 @@
 		plotGlobalsDts,
 		pythonContext,
 		pythonSchemas = [],
+		pythonTableHints = [],
 		layout = 'auto',
 		embeddedNotebook = false
 	}: Props = $props();
@@ -109,6 +113,10 @@
 		| ((m: Monaco.editor.ITextModel, schemas: PythonUpstreamSchema[]) => void)
 		| null = null;
 	let clearModelPythonSchema: ((m: Monaco.editor.ITextModel) => void) | null = null;
+	let setModelPythonTableHints:
+		| ((m: Monaco.editor.ITextModel, hints: PythonTableHint[]) => void)
+		| null = null;
+	let clearModelPythonTableHints: ((m: Monaco.editor.ITextModel) => void) | null = null;
 	let activatePlotGlobals: ((modelUri: string) => void) | null = null;
 	let suppressUpdate = false;
 	let previewLocked = false;
@@ -240,6 +248,8 @@
 		clearModelPlotGlobals = mod.clearModelPlotGlobals;
 		setModelPythonSchema = mod.setModelPythonSchema;
 		clearModelPythonSchema = mod.clearModelPythonSchema;
+		setModelPythonTableHints = mod.setModelPythonTableHints;
+		clearModelPythonTableHints = mod.clearModelPythonTableHints;
 		activatePlotGlobals = mod.activatePlotGlobals;
 
 		model = m.editor.createModel(
@@ -256,6 +266,7 @@
 		}
 		if (pythonContext) setModelPythonContext(model, pythonContext);
 		if (pythonSchemas.length > 0) setModelPythonSchema(model, pythonSchemas);
+		if (pythonTableHints.length > 0) setModelPythonTableHints?.(model, pythonTableHints);
 		if (plotGlobalsDts != null) {
 			setModelPlotGlobals(model, plotGlobalsDts);
 			// Make this editor's globals live immediately on mount rather than
@@ -366,6 +377,8 @@
 		if (model && clearModelCompletions) clearModelCompletions(model);
 		if (model && clearModelDialect) clearModelDialect(model);
 		if (model && clearModelPythonContext) clearModelPythonContext(model);
+		if (model && clearModelPythonSchema) clearModelPythonSchema(model);
+		if (model && clearModelPythonTableHints) clearModelPythonTableHints(model);
 		if (model && clearModelPlotGlobals) clearModelPlotGlobals(model);
 		editor?.dispose();
 		model?.dispose();
@@ -448,6 +461,11 @@
 	$effect(() => {
 		if (!model || !setModelPythonSchema) return;
 		setModelPythonSchema(model, pythonSchemas);
+	});
+
+	$effect(() => {
+		if (!model || !setModelPythonTableHints) return;
+		setModelPythonTableHints(model, pythonTableHints);
 	});
 
 	// Sync sandbox-globals dts → per-model registry (and the live extraLib, if

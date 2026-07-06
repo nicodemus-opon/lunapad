@@ -26,7 +26,7 @@ export const NATIVE_TOOLS = [
 					code: {
 						type: 'string',
 						description:
-							'Complete SQL or Python source for query/python cells. Omit for markdown cells. Python cells: data is injected, never loaded — each upstream cell and workspace table is a pandas DataFrame named by its outputName/table name (bound only when that name appears in the code); pd/np are pre-imported; the last DataFrame expression becomes the result and is registered as a downstream table under this cell\'s outputName. Never read files or open DB connections in Python.'
+							'Complete SQL or Python source for query/python cells. Omit for markdown cells. Python cells: data is injected, never loaded manually — upstream cells are pandas DataFrames by outputName; workspace tables are available through the built-in tables namespace (for example tables["schema.table"] or tables.load("catalog.schema.table")); pd/np are pre-imported; the last DataFrame expression becomes the result and is published under this cell\'s outputName for downstream SQL/Python use. Never read files or open DB connections in Python.'
 					},
 					markdown: {
 						type: 'string',

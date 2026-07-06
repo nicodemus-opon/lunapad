@@ -17,6 +17,7 @@
 		getConnections,
 		getTables,
 		getExternalSchemaTables,
+		getPythonTableHints,
 		getIsDbtProject,
 		testCell,
 		type Cell
@@ -77,6 +78,7 @@
 	const isQueryCell = $derived(cell?.cellType === 'query');
 	const isPythonCell = $derived(cell?.cellType === 'python');
 	const isPlotCell = $derived(cell?.cellType === 'plot');
+	const pythonTableHints = $derived(cell ? getPythonTableHints(cell.code, notebookId) : []);
 	const connections = $derived(getConnections());
 	const isDbtProject = $derived(getIsDbtProject());
 	const connectionValue = $derived(cell?.connectionId ?? BUILTIN_DUCKDB_CONNECTION_ID);
@@ -547,6 +549,7 @@
 										: 'prql'}
 								pythonContext={isPythonCell ? { kind: 'data', notebookId } : undefined}
 								pythonSchemas={isPythonCell ? prevCellSources : []}
+								{pythonTableHints}
 								{dark}
 								layout="auto"
 								embeddedNotebook

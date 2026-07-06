@@ -3,7 +3,9 @@ import {
 	getModelCompletions,
 	getModelPythonContext,
 	getModelDialect,
-	getModelPythonSchema
+	getModelPythonSchema,
+	getModelPythonTableHints,
+	buildPythonIntelDescriptors
 } from './completions';
 import type { CompletionEntry } from './completions';
 import { completePython } from '$lib/services/python-client';
@@ -113,10 +115,19 @@ async function buildContextHints(
 		if (!pyContext || pyContext.kind === 'udf') return { schema: '', pythonKind: 'udf' };
 
 		const upstreamSchemas = getModelPythonSchema(model);
+		const tableHints = getModelPythonTableHints(model);
 		const schemaNames = new Set(upstreamSchemas.map((s) => s.name));
 		const lines: string[] = upstreamSchemas.map((s) =>
 			s.columns.length > 0 ? `${s.name}: ${s.columns.join(', ')}` : s.name
 		);
+		if (tableHints.length > 0) {
+			lines.push(
+				...tableHints.slice(0, 12).map((hint) => {
+					const cols = hint.columns.length > 0 ? `: ${hint.columns.join(', ')}` : '';
+					return `tables["${hint.canonicalName}"] (${hint.source})${cols}`;
+				})
+			);
+		}
 
 		try {
 			const items = await completePython(
@@ -124,6 +135,7 @@ async function buildContextHints(
 				model.getValue(),
 				position.lineNumber,
 				position.column - 1,
+				buildPythonIntelDescriptors(tableHints, upstreamSchemas),
 				signal
 			);
 			const extra = items

@@ -3,6 +3,19 @@ export interface PythonTablePayload {
 	columns: string[];
 }
 
+export interface PythonTableDescriptor {
+	dataKey: string;
+	canonicalName: string;
+	source: 'cell' | 'local' | 'external';
+	aliases: string[];
+	attributeAlias?: string | null;
+	bindBareGlobal?: string | null;
+	columns: string[];
+	columnTypes?: string[];
+	description?: string;
+	rowMode: 'preview' | 'full';
+}
+
 export interface PythonRunResult {
 	error: string | null;
 	missingModule?: string | null;
@@ -14,12 +27,19 @@ export async function runPython(
 	notebookId: string,
 	code: string,
 	tables: Record<string, PythonTablePayload>,
+	tableDescriptors: PythonTableDescriptor[],
 	folder?: string | null
 ): Promise<string> {
 	const res = await fetch('/api/python/run', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ notebookId, code, tables, folder: folder ?? undefined })
+		body: JSON.stringify({
+			notebookId,
+			code,
+			tables,
+			tableDescriptors,
+			folder: folder ?? undefined
+		})
 	});
 	const body = (await res.json()) as { error?: string; jobId?: string };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to run python cell');
@@ -42,13 +62,14 @@ export async function completePython(
 	code: string,
 	line: number,
 	column: number,
+	tableDescriptors: PythonTableDescriptor[] = [],
 	signal?: AbortSignal
 ): Promise<PythonCompletionItem[]> {
 	try {
 		const res = await fetch('/api/python/complete', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ notebookId, code, line, column }),
+			body: JSON.stringify({ notebookId, code, line, column, tableDescriptors }),
 			signal
 		});
 		const body = (await res.json()) as { completions?: PythonCompletionItem[] };
@@ -63,13 +84,14 @@ export async function hoverPython(
 	code: string,
 	line: number,
 	column: number,
+	tableDescriptors: PythonTableDescriptor[] = [],
 	signal?: AbortSignal
 ): Promise<{ signature: string; doc: string } | null> {
 	try {
 		const res = await fetch('/api/python/hover', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ notebookId, code, line, column }),
+			body: JSON.stringify({ notebookId, code, line, column, tableDescriptors }),
 			signal
 		});
 		const body = (await res.json()) as { hover?: { signature: string; doc: string } | null };

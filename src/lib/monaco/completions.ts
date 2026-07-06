@@ -5,8 +5,9 @@ import { getSqlFunctionDoc } from './sql-dialects';
 import { clearSqlScopeCache } from './sql-scope';
 import type { ConnectionType } from '$lib/types/connection';
 import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
-import { completePython } from '$lib/services/python-client';
+import { completePython, type PythonTableDescriptor } from '$lib/services/python-client';
 import { formatDocstring } from '$lib/services/docstring-format';
+import { formatPythonTableHintDoc, type PythonTableHint } from '$lib/services/python-tables';
 import {
 	buildSqlCompletions,
 	parseRegistryWithMeta,
@@ -14,6 +15,7 @@ import {
 	type CompletionKind
 } from './sql-completion-engine';
 import { recordCompletionAcceptance } from '$lib/stores/sql-completion-recency';
+export type { PythonTableHint } from '$lib/services/python-tables';
 
 // Both UDF cells and Python data cells use Monaco language id 'python', but
 // want very different completions (UDF: fixed type-hint skeleton; data cell:
@@ -61,6 +63,23 @@ export function clearModelPythonSchema(model: Monaco.editor.ITextModel): void {
 
 export function getModelPythonSchema(model: Monaco.editor.ITextModel): PythonUpstreamSchema[] {
 	return pythonSchemaByModel.get(model.uri.toString()) ?? [];
+}
+
+const pythonTableHintsByModel = new Map<string, PythonTableHint[]>();
+
+export function setModelPythonTableHints(
+	model: Monaco.editor.ITextModel,
+	hints: PythonTableHint[]
+): void {
+	pythonTableHintsByModel.set(model.uri.toString(), hints);
+}
+
+export function clearModelPythonTableHints(model: Monaco.editor.ITextModel): void {
+	pythonTableHintsByModel.delete(model.uri.toString());
+}
+
+export function getModelPythonTableHints(model: Monaco.editor.ITextModel): PythonTableHint[] {
+	return pythonTableHintsByModel.get(model.uri.toString()) ?? [];
 }
 
 // A completion candidate from the per-cell registry: "table.column" pairs or
@@ -413,7 +432,58 @@ const PY_KEYWORDS = [
 	'with',
 	'yield'
 ];
-const PY_DATA_CELL_BARE = ['pd', 'go', 'result'];
+const PY_DATA_CELL_BARE = ['pd', 'np', 'go', 'px', 'result', 'tables'];
+
+function pythonTableDescriptorsForIntel(hints: PythonTableHint[]): PythonTableDescriptor[] {
+	return hints.map((hint) => ({
+		dataKey: hint.canonicalName,
+		canonicalName: hint.canonicalName,
+		source: hint.source,
+		aliases: hint.aliases,
+		attributeAlias: hint.attributeAlias ?? null,
+		columns: hint.columns,
+		columnTypes: hint.columnTypes,
+		description: hint.description,
+		rowMode: 'preview'
+	}));
+}
+
+function formatPythonSchemaDoc(schema: PythonUpstreamSchema): string {
+	const columns = schema.columns.slice(0, 10);
+	if (columns.length === 0) return `**${schema.name}**\n\nUpstream cell DataFrame.`;
+	return `**${schema.name}**\n\nUpstream cell DataFrame.\n\nColumns:\n${columns.map((column) => `- \`${column}\``).join('\n')}`;
+}
+
+export function buildPythonIntelDescriptors(
+	hints: PythonTableHint[],
+	schemas: PythonUpstreamSchema[]
+): PythonTableDescriptor[] {
+	const descriptors: PythonTableDescriptor[] = [];
+	const seen = new Set<string>();
+
+	for (const schema of schemas) {
+		if (!schema.name || seen.has(schema.name)) continue;
+		seen.add(schema.name);
+		descriptors.push({
+			dataKey: schema.name,
+			canonicalName: schema.name,
+			source: 'cell',
+			aliases: [schema.name],
+			attributeAlias: schema.name,
+			bindBareGlobal: schema.name,
+			columns: schema.columns,
+			rowMode: 'preview'
+		});
+	}
+
+	for (const descriptor of pythonTableDescriptorsForIntel(hints)) {
+		if (seen.has(descriptor.canonicalName)) continue;
+		seen.add(descriptor.canonicalName);
+		descriptors.push(descriptor);
+	}
+
+	return descriptors;
+}
 
 function jediKindToMonaco(
 	type: string,
@@ -453,6 +523,8 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 			const kinds = monaco.languages.CompletionItemKind;
 			const lineBefore = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
 			const context = getModelPythonContext(model);
+			const tableHints = getModelPythonTableHints(model);
+			const upstreamSchemas = getModelPythonSchema(model);
 
 			if (!context || context.kind === 'udf') {
 				// Param type hint (`x:`) or return type (`->`) position — only the
@@ -508,7 +580,60 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 				});
 			};
 			for (const name of PY_DATA_CELL_BARE) push(name, kinds.Variable, '0');
+			for (const schema of upstreamSchemas) {
+				push(
+					schema.name,
+					kinds.Variable,
+					'0',
+					'Upstream DataFrame',
+					formatPythonSchemaDoc(schema)
+				);
+			}
 			for (const kw of PY_KEYWORDS) push(kw, kinds.Keyword, '3');
+			if (/tables\.[A-Za-z_0-9]*$/.test(lineBefore)) {
+				push(
+					'available',
+					kinds.Method,
+					'0',
+					'available()',
+					'List the current bounded table working set.'
+				);
+				push(
+					'find',
+					kinds.Method,
+					'0',
+					'find(query)',
+					'Search the current bounded table working set.'
+				);
+				push(
+					'load',
+					kinds.Method,
+					'0',
+					'load(name)',
+					'Load a table by canonical or alias name.'
+				);
+				for (const hint of tableHints) {
+					if (!hint.attributeAlias) continue;
+					push(
+						hint.attributeAlias,
+						kinds.Field,
+						'1',
+						hint.canonicalName,
+						formatPythonTableHintDoc(hint)
+					);
+				}
+			}
+			if (/tables(?:\.load)?\(\s*["'][^"']*$/.test(lineBefore) || /tables\[\s*["'][^"']*$/.test(lineBefore)) {
+				for (const hint of tableHints) {
+					push(
+						hint.canonicalName,
+						kinds.Value,
+						'1',
+						hint.source,
+						formatPythonTableHintDoc(hint)
+					);
+				}
+			}
 
 			const controller = new AbortController();
 			token.onCancellationRequested(() => controller.abort());
@@ -518,6 +643,7 @@ function registerPythonCompletions(monaco: typeof Monaco): void {
 					model.getValue(),
 					position.lineNumber,
 					position.column - 1,
+					buildPythonIntelDescriptors(tableHints, upstreamSchemas),
 					controller.signal
 				);
 				for (const item of items) {

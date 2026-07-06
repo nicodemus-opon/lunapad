@@ -8,7 +8,15 @@ const {
 	executeSQLMock,
 	queryConnectionSQLMock,
 	materializeConnectionRelationMock,
-	setPrevViewMock
+	setPrevViewMock,
+	registerPythonResultTableMock,
+	clearPythonResultTableMock,
+	listMainSchemaRelationsMock,
+	uploadConnectionTableMock,
+	runPythonMock,
+	watchPythonLogsMock,
+	cancelPythonMock,
+	isPythonEnvReadyMock
 } = vi.hoisted(() => ({
 	compilePRQLMock: vi.fn(),
 	createViewMock: vi.fn(),
@@ -17,7 +25,15 @@ const {
 	executeSQLMock: vi.fn(),
 	queryConnectionSQLMock: vi.fn(),
 	materializeConnectionRelationMock: vi.fn(),
-	setPrevViewMock: vi.fn()
+	setPrevViewMock: vi.fn(),
+	registerPythonResultTableMock: vi.fn(),
+	clearPythonResultTableMock: vi.fn(),
+	listMainSchemaRelationsMock: vi.fn(),
+	uploadConnectionTableMock: vi.fn(),
+	runPythonMock: vi.fn(),
+	watchPythonLogsMock: vi.fn(),
+	cancelPythonMock: vi.fn(),
+	isPythonEnvReadyMock: vi.fn()
 }));
 
 const { recordCellExecutionMetadataMock, recordUploadedTableMetadataMock } = vi.hoisted(() => ({
@@ -34,13 +50,24 @@ vi.mock('$lib/services/duckdb', () => ({
 	dropTable: dropTableMock,
 	dropView: dropViewMock,
 	executeSQL: executeSQLMock,
-	setPrevView: setPrevViewMock
+	setPrevView: setPrevViewMock,
+	registerPythonResultTable: registerPythonResultTableMock,
+	clearPythonResultTable: clearPythonResultTableMock,
+	listMainSchemaRelations: listMainSchemaRelationsMock
 }));
 
 vi.mock('$lib/services/connections', () => ({
 	queryConnectionSQL: queryConnectionSQLMock,
 	materializeConnectionRelation: materializeConnectionRelationMock,
+	uploadConnectionTable: uploadConnectionTableMock,
 	syncConnectionMetadata: vi.fn().mockResolvedValue(undefined)
+}));
+
+vi.mock('$lib/services/python-client', () => ({
+	runPython: runPythonMock,
+	watchPythonLogs: watchPythonLogsMock,
+	cancelPython: cancelPythonMock,
+	isPythonEnvReady: isPythonEnvReadyMock
 }));
 
 vi.mock('$lib/services/intelligence-db', () => ({
@@ -54,14 +81,18 @@ import {
 	AUTO_LIMIT,
 	wrapWithAutoLimit,
 	addCell,
+	addNotebook,
 	getNotebookEvents,
 	getNotebooks,
+	getPythonTableHints,
 	materializeCell,
 	runCell,
+	runPythonCell,
 	setCellConnection,
 	setExternalConnectionSchema,
 	upsertConnection
 } from '$lib/stores/notebook.svelte';
+import type { Cell } from '$lib/stores/notebook.svelte';
 
 function autoLimitSql(inner: string): string {
 	return `SELECT _lunapad_sub.*, COUNT(*) OVER () AS __lunapad_total_rows FROM (${inner}) AS _lunapad_sub LIMIT ${AUTO_LIMIT + 1}`;
@@ -90,6 +121,14 @@ describe('notebook cell execution', () => {
 		queryConnectionSQLMock.mockReset();
 		materializeConnectionRelationMock.mockReset();
 		setPrevViewMock.mockReset();
+		registerPythonResultTableMock.mockReset();
+		clearPythonResultTableMock.mockReset();
+		listMainSchemaRelationsMock.mockReset();
+		uploadConnectionTableMock.mockReset();
+		runPythonMock.mockReset();
+		watchPythonLogsMock.mockReset();
+		cancelPythonMock.mockReset();
+		isPythonEnvReadyMock.mockReset();
 
 		compilePRQLMock.mockReturnValue({
 			sql: 'SELECT * FROM employees',
@@ -101,6 +140,20 @@ describe('notebook cell execution', () => {
 		queryConnectionSQLMock.mockResolvedValue({ rows: [], columns: [] });
 		materializeConnectionRelationMock.mockResolvedValue({ name: 'employees_mart', type: 'table' });
 		setPrevViewMock.mockResolvedValue(undefined);
+		registerPythonResultTableMock.mockResolvedValue(undefined);
+		clearPythonResultTableMock.mockResolvedValue(undefined);
+		listMainSchemaRelationsMock.mockResolvedValue([]);
+		uploadConnectionTableMock.mockResolvedValue({ rowsInserted: 1 });
+		runPythonMock.mockResolvedValue('py-job-1');
+		isPythonEnvReadyMock.mockResolvedValue(true);
+		watchPythonLogsMock.mockImplementation((_jobId, _onLine, onDone) => {
+			onDone(0, {
+				error: null,
+				figures: [],
+				dataframe: { rows: [{ id: 1 }], columns: ['id'] }
+			});
+			return () => {};
+		});
 
 		// New cells default to SQL; these tests exercise the PRQL compile path.
 		getNotebooks()[0].cells[0].language = 'prql';
@@ -465,5 +518,164 @@ describe('wrapWithAutoLimit', () => {
 	it('leaves multi-statement SQL unwrapped', () => {
 		const sql = 'CREATE TABLE t (id INT); SELECT * FROM t';
 		expect(wrapWithAutoLimit(sql)).toEqual({ sql, wrapped: false });
+	});
+});
+
+function pythonCellFixture(): Cell {
+	return {
+		...getNotebooks()[0].cells[0],
+		id: 'py-cell-1',
+		cellType: 'python',
+		outputName: 'py_sales',
+		code: 'result = pd.DataFrame({"id": [1]})',
+		status: 'idle',
+		result: null,
+		pythonOutput: null,
+		errors: [],
+		executionMs: null,
+		compiledSQL: null,
+		materializeStatus: 'idle',
+		materializeError: null,
+		materializedRelationType: null,
+		needsRun: false,
+		staleReason: null,
+		staleSources: [],
+		lastRunAt: null,
+		executionCount: 0
+	} as Cell;
+}
+
+describe('python cell execution', () => {
+	beforeEach(() => {
+		__resetStateForTests();
+		uploadConnectionTableMock.mockReset();
+		registerPythonResultTableMock.mockReset();
+		runPythonMock.mockReset();
+		watchPythonLogsMock.mockReset();
+		isPythonEnvReadyMock.mockReset();
+		uploadConnectionTableMock.mockResolvedValue({ rowsInserted: 1 });
+		runPythonMock.mockResolvedValue('py-job-1');
+		isPythonEnvReadyMock.mockResolvedValue(true);
+		watchPythonLogsMock.mockImplementation((_jobId, _onLine, onDone) => {
+			onDone(0, {
+				error: null,
+				figures: [],
+				dataframe: { rows: [{ id: 1 }], columns: ['id'] }
+			});
+			return () => {};
+		});
+	});
+
+	it('publishes successful python results to the notebook default external connection', async () => {
+		upsertConnection({
+			id: 'pg-main',
+			name: 'Primary Postgres',
+			type: 'postgres',
+			catalogName: 'analytics',
+			host: 'localhost',
+			port: 5432,
+			database: 'warehouse',
+			username: 'nico',
+			ssl: false
+		});
+		setCellConnection(getNotebooks()[0].cells[0].id, 'pg-main');
+		getNotebooks()[0].cells.push(pythonCellFixture());
+
+		await runPythonCell('py-cell-1');
+
+		expect(uploadConnectionTableMock).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
+			'py_sales',
+			[{ name: 'id', type: 'BIGINT' }],
+			[[1]],
+			'replace',
+			'public'
+		);
+		expect(registerPythonResultTableMock).toHaveBeenCalledWith('py_sales', [{ id: 1 }], ['id']);
+	});
+
+	it('falls back to the local cache when the notebook has no external connection', async () => {
+		getNotebooks()[0].cells.push(pythonCellFixture());
+
+		await runPythonCell('py-cell-1');
+
+		expect(uploadConnectionTableMock).not.toHaveBeenCalled();
+		expect(registerPythonResultTableMock).toHaveBeenCalledWith('py_sales', [{ id: 1 }], ['id']);
+	});
+
+	it('scopes python table hints to the current notebook connections', async () => {
+		upsertConnection({
+			id: 'pg-main',
+			name: 'Primary Postgres',
+			type: 'postgres',
+			catalogName: 'analytics',
+			host: 'localhost',
+			port: 5432,
+			database: 'warehouse',
+			username: 'nico',
+			ssl: false
+		});
+		upsertConnection({
+			id: 'mysql-main',
+			name: 'Secondary MySQL',
+			type: 'mysql',
+			catalogName: 'ops',
+			host: 'localhost',
+			port: 3306,
+			database: 'warehouse',
+			username: 'nico',
+			ssl: false
+		});
+		setCellConnection(getNotebooks()[0].cells[0].id, 'pg-main');
+		setExternalConnectionSchema('pg-main', 'Primary Postgres', [
+			{ name: 'orders', schema: 'public', columns: ['id'], columnTypes: ['BIGINT'] }
+		]);
+		setExternalConnectionSchema('mysql-main', 'Secondary MySQL', [
+			{ name: 'tickets', schema: 'support', columns: ['id'], columnTypes: ['BIGINT'] }
+		]);
+
+		addNotebook();
+		const secondNotebook = getNotebooks()[1]!;
+		secondNotebook.cells[0].cellType = 'query';
+		secondNotebook.cells[0].language = 'sql';
+		setCellConnection(secondNotebook.cells[0].id, 'mysql-main');
+
+		const hints = getPythonTableHints('tables["orders"]', getNotebooks()[0]!.id);
+
+		expect(hints.some((hint) => hint.canonicalName === 'analytics.public.orders')).toBe(true);
+		expect(hints.some((hint) => hint.canonicalName === 'ops.support.tickets')).toBe(false);
+	});
+
+	it('reads fully qualified external tables with the catalog intact', async () => {
+		upsertConnection({
+			id: 'pg-main',
+			name: 'Primary Postgres',
+			type: 'postgres',
+			catalogName: 'analytics',
+			host: 'localhost',
+			port: 5432,
+			database: 'warehouse',
+			username: 'nico',
+			ssl: false
+		});
+		setCellConnection(getNotebooks()[0].cells[0].id, 'pg-main');
+		setExternalConnectionSchema('pg-main', 'Primary Postgres', [
+			{
+				name: 'orders',
+				schema: 'public',
+				columns: ['id'],
+				columnTypes: ['BIGINT']
+			}
+		]);
+		const pythonCell = pythonCellFixture();
+		pythonCell.code = 'result = tables["analytics.public.orders"]';
+		getNotebooks()[0].cells.push(pythonCell);
+
+		await runPythonCell('py-cell-1');
+
+		expect(queryConnectionSQLMock).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'pg-main', type: 'postgres' }),
+			'SELECT * FROM "analytics"."public"."orders" LIMIT 1000'
+		);
 	});
 });

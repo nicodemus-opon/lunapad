@@ -51,12 +51,15 @@ export {
 	setModelPythonContext,
 	clearModelPythonContext,
 	setModelPythonSchema,
-	clearModelPythonSchema
+	clearModelPythonSchema,
+	setModelPythonTableHints,
+	clearModelPythonTableHints
 } from './completions';
 export { setGhostInlineEditActive } from './ghost-completions';
 export type {
 	CompletionEntry,
 	PythonCellContext,
+	PythonTableHint,
 	PythonUpstreamSchema,
 	SqlModelContext
 } from './completions';

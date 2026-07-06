@@ -63,7 +63,8 @@
 		type Cell,
 		getCrossNotebookUsageCount,
 		getSameNotebookUsageCount,
-		openWorksheetView
+		openWorksheetView,
+		getPythonTableHints
 	} from '$lib/stores/notebook.svelte';
 	import InlinePromptBar from './cell/InlinePromptBar.svelte';
 	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
@@ -249,6 +250,7 @@
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	const isPlotCell = $derived(cell.cellType === 'plot');
 	const isPythonCell = $derived(cell.cellType === 'python');
+	const pythonTableHints = $derived(getPythonTableHints(cell.code, notebookId));
 	// Raw-code editor cells the inline "Tell AI what to do" prompt supports — GUI-mode
 	// query cells have their own AI entry via AddStageMenu instead.
 	const canInlinePrompt = $derived((isQueryCell && cell.editMode !== 'gui') || isPythonCell);
@@ -1032,6 +1034,7 @@
 					language="python"
 					pythonContext={{ kind: 'data', notebookId }}
 					pythonSchemas={prevCellSources}
+					{pythonTableHints}
 					{dark}
 					layout={editorLayout}
 					embeddedNotebook

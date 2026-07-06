@@ -27,6 +27,21 @@ interface MaterializeConnectionResponse {
 	type: ExternalRelationType;
 }
 
+interface UploadConnectionRequest {
+	connection: Connection;
+	tableName: string;
+	schema?: string;
+	columns: { name: string; type: string }[];
+	rows: unknown[][];
+	mode: 'replace' | 'append';
+}
+
+interface UploadConnectionResponse {
+	ok: boolean;
+	rowsInserted?: number;
+	error?: string;
+}
+
 async function postJSON<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
 	const response = await fetch(url, {
 		method: 'POST',
@@ -129,4 +144,24 @@ export async function materializeConnectionRelation(
 		sql,
 		mode
 	} satisfies MaterializeConnectionRequest);
+}
+
+export async function uploadConnectionTable(
+	connection: Connection,
+	tableName: string,
+	columns: { name: string; type: string }[],
+	rows: unknown[][],
+	mode: 'replace' | 'append' = 'replace',
+	schema?: string
+): Promise<{ rowsInserted: number }> {
+	const result = await postJSON<UploadConnectionResponse>('/api/connections/upload', {
+		connection,
+		tableName,
+		schema,
+		columns,
+		rows,
+		mode
+	} satisfies UploadConnectionRequest);
+	if (!result.ok) throw new Error(result.error ?? 'Upload failed');
+	return { rowsInserted: result.rowsInserted ?? 0 };
 }

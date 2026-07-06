@@ -3,7 +3,7 @@ import { spawnPythonCell, getPythonJob } from './python-runner';
 
 describe('python-runner', () => {
 	it('captures a raised exception', async () => {
-		const jobId = spawnPythonCell('debug-nb', 'raise ValueError("boom test")', {});
+		const jobId = spawnPythonCell('debug-nb', 'raise ValueError("boom test")', {}, []);
 		const job = getPythonJob(jobId)!;
 		await new Promise<void>((resolve) => {
 			job.emitter.once('done', () => resolve());
@@ -20,7 +20,8 @@ describe('python-runner', () => {
 				'df = pd.DataFrame({"id": [1, 2], "n": ["a", "b"]})',
 				'df'
 			].join('\n'),
-			{}
+			{},
+			[]
 		);
 		const job = getPythonJob(jobId)!;
 		await new Promise<void>((resolve) => {
@@ -29,5 +30,20 @@ describe('python-runner', () => {
 		expect(job.result?.error).toBeFalsy();
 		expect(job.result?.dataframe?.columns).toEqual(['id', 'n']);
 		expect(job.result?.dataframe?.rows).toHaveLength(2);
+	}, 30000);
+
+	it('provides numpy in the warm namespace', async () => {
+		const jobId = spawnPythonCell(
+			'debug-nb-np',
+			['df = pd.DataFrame({"sum": [int(np.array([1, 2, 3]).sum())]})', 'df'].join('\n'),
+			{},
+			[]
+		);
+		const job = getPythonJob(jobId)!;
+		await new Promise<void>((resolve) => {
+			job.emitter.once('done', () => resolve());
+		});
+		expect(job.result?.error).toBeFalsy();
+		expect(job.result?.dataframe?.rows).toEqual([{ sum: 6 }]);
 	}, 30000);
 });
