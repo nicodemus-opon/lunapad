@@ -50,7 +50,7 @@
 
 <div
 	bind:this={scrollEl}
-	class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-sidebar py-1"
+	class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background py-1"
 	data-testid="ai-thread"
 >
 	{#if messages.length === 0}

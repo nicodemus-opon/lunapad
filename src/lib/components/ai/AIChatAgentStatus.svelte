@@ -55,7 +55,7 @@
 
 {#if visible}
 	<div
-		class="shrink-0 border-t border-border bg-sidebar px-2 py-1"
+		class="shrink-0 border-t border-border bg-background px-2 py-1"
 		data-testid="ai-agent-status"
 	>
 		{#if pipelinePhases.length > 0 || sprintTasks.length > 0}
