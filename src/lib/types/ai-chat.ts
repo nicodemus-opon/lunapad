@@ -158,6 +158,8 @@ export interface UpdateCellArgs {
 	markdown?: string;
 	/** Structured notebook/report/dashboard content compiled into canonical Markdoc server-side. */
 	dashboard?: GeneratedDashboardDefinition;
+	/** Set true to hide this cell from Report view/published shares; false to surface it. */
+	hideInReport?: boolean;
 }
 
 export interface SetChartArgs {

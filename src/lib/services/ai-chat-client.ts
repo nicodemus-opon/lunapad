@@ -24,6 +24,7 @@ import {
 	restoreCellSnapshots,
 	moveCell,
 	reorderCell,
+	setCellHideInReport,
 	getConnections,
 	getAllCellsAcrossNotebooks,
 	scheduleSave,
@@ -1617,6 +1618,7 @@ async function executeToolCallWithResult(
 				}
 			}
 			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
+			if (args.hideInReport !== undefined) setCellHideInReport(cellId, args.hideInReport);
 			if (args.outputName !== undefined) {
 				const renameResult = updateCellName(cellId, args.outputName);
 				if (!renameResult.ok) return `update_cell: ${renameResult.error}`;

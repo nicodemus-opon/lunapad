@@ -419,6 +419,10 @@ function renderBlocks(
 	knownRoots: Set<string>,
 	errors: string[]
 ): string {
+	if (!Array.isArray(blocks)) {
+		errors.push('Expected an array of blocks but got something else.');
+		return '';
+	}
 	return blocks
 		.map((block) => renderBlock(block, knownRoots, errors))
 		.filter(Boolean)
@@ -437,9 +441,30 @@ function renderBlock(
 		case 'divider':
 			return '---';
 		case 'grid':
-			if (!block.items.length) {
-				errors.push('Grid block must contain at least one item.');
+			if (!Array.isArray(block.items) || !block.items.length) {
+				errors.push('Grid block must contain at least one item (an array of blocks).');
 				return '';
+			}
+			for (const item of block.items) {
+				if (
+					item.type === 'chart' ||
+					item.type === 'datatable' ||
+					item.type === 'mermaid' ||
+					item.type === 'columns' ||
+					item.type === 'tabs'
+				) {
+					errors.push(
+						`Grid items must be small tiles (metric/badge/progress/card) — move "${item.type}" content to a columns block or a top-level block instead.`
+					);
+				}
+			}
+			if (block.cols !== undefined && block.cols > 4) {
+				errors.push(`Grid cols must be 4 or fewer (got ${block.cols}) — split into multiple sections instead of a wide grid.`);
+			}
+			if (block.items.length > (block.cols ?? 3) * 3) {
+				errors.push(
+					`Grid has ${block.items.length} items, too many for cols=${block.cols ?? 3} — split into another section or use a datatable.`
+				);
 			}
 			return renderContainer(
 				'grid',
@@ -453,8 +478,8 @@ function renderBlock(
 				]
 			);
 		case 'columns':
-			if (!block.columns.length) {
-				errors.push('Columns block must contain at least one column.');
+			if (!Array.isArray(block.columns) || !block.columns.length) {
+				errors.push('Columns block must contain at least one column (an array).');
 				return '';
 			}
 			return renderContainer(
@@ -580,8 +605,8 @@ function renderBlock(
 				['open', block.open ? 'true' : null]
 			]);
 		case 'tabs':
-			if (!block.tabs.length) {
-				errors.push('Tabs block must contain at least one tab.');
+			if (!Array.isArray(block.tabs) || !block.tabs.length) {
+				errors.push('Tabs block must contain at least one tab (an array).');
 				return '';
 			}
 			return renderContainer(
@@ -713,6 +738,21 @@ export function compileGeneratedDashboard(
 		validateRef(errors, definition.statusBadge.value, knownRoots, 'status badge value');
 	}
 
+	if (
+		!definition.title?.trim() &&
+		Array.isArray(definition.blocks) &&
+		definition.blocks.length >= 4
+	) {
+		const hasHeading = definition.blocks.some(
+			(block) => block.type === 'text' && /^#{1,6}\s/m.test(block.content)
+		);
+		if (!hasHeading) {
+			errors.push(
+				'Dashboard has 4+ top-level blocks but no title and no heading — add a title or a "## Section" heading in a text block so the report has structure.'
+			);
+		}
+	}
+
 	const parts: string[] = [];
 	if (definition.title?.trim()) parts.push(`## ${definition.title.trim()}`);
 	if (definition.statusBadge) {
@@ -737,25 +777,33 @@ export function compileGeneratedDashboard(
 }
 
 export function buildGeneratedDashboardPromptBlock(): string {
-	return `For dashboard/report markdown cells, prefer a typed dashboard payload over raw Markdoc.
+	return `A "dashboard" typed payload is for a SINGLE markdown cell that needs a dense KPI-tile
+summary, a status callout, or an interactive filter — NOT the primary way to build a report.
+Prefer curating the notebook itself (reorder/hide existing query cells, insert short narrative
+markdown cells between them — see the workflow) so Report view shows real cells with their own
+charts. Reach for this payload only when content doesn't map to an existing cell.
 
 Use create_cell/update_cell with:
 "cellType":"markdown",
 "dashboard":{
-  "title":"Executive Summary",
-  "statusBadge":{"value":"Live","color":"success"},
+  "title":"Q3 Revenue Slipped 8% on Churn in the SMB Segment",
   "blocks":[
+    {"type":"text","content":"SMB churn drove the shortfall — enterprise held steady. Two levers below."},
     {"type":"grid","cols":3,"items":[
-      {"type":"metric","value":"$monthly_revenue.total_revenue","label":"Revenue","format":"currency"},
+      {"type":"metric","value":"$monthly_revenue.total_revenue","label":"Revenue","format":"currency","vs":"$monthly_revenue.prior_total"},
       {"type":"metric","value":"$orders.count","label":"Orders"},
-      {"type":"progress","value":"$quota_attainment.attainment_pct","max":100,"label":"Quota %","color":"success"}
+      {"type":"progress","value":"$quota_attainment.attainment_pct","max":100,"label":"Quota %","color":"warning"}
     ]},
-    {"type":"tabs","tabs":[
-      {"label":"Trend","blocks":[{"type":"chart","ref":"$monthly_revenue","chartType":"line"}]},
-      {"label":"Breakdown","blocks":[{"type":"datatable","data":"$top_products.rows","cols":["product","total_revenue"],"limit":10}]}
-    ]}
+    {"type":"columns","columns":[
+      {"width":2,"blocks":[{"type":"chart","ref":"$monthly_revenue","chartType":"line"}]},
+      {"blocks":[{"type":"datatable","data":"$top_products.rows","cols":["product","total_revenue"],"limit":10}]}
+    ]},
+    {"type":"callout","variant":"warning","title":"Data quality","blocks":[{"type":"text","content":"12% of $orders.rows are missing customer_id — likely guest checkout, excluded from the churn calc."}]}
   ]
 }
+Note the shape: a title stating the actual finding (not a generic "Executive Summary" label),
+narrative text before evidence, a small capped grid for KPI tiles, columns (not tabs) for a wide
+chart next to a narrower table, and a callout used for a genuine caveat.
 
 Block grammar — every supported type with its fields ("?" = optional; [blocks] = nested block array, containers nest arbitrarily, e.g. grid inside tabs inside card):
 - {"type":"text","content":"markdown prose; may embed $ref live values"}
@@ -787,5 +835,10 @@ Rules:
 - Never use $cell placeholders.
 - Never reference stg_ cells in dashboards.
 - If you send "dashboard", do not also hand-author raw Markdoc in "markdown".
-- Unknown block types are compile errors — use only the grammar above.`;
+- Unknown block types are compile errors — use only the grammar above.
+- grid items must be small tiles only (metric/badge/progress/card) — a chart/datatable/mermaid/
+  columns/tabs inside a grid item is a compile error; put wide content in columns or a top-level
+  block instead. grid cols must be ≤4, and item count should fit cols×3 or fewer.
+- A dashboard with 4+ top-level blocks needs a "title" or a "## Heading" inside a text block —
+  a flat wall of blocks with no heading is a compile error.`;
 }

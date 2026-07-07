@@ -30,7 +30,10 @@ export const QueryBlockExtension = Node.create({
 	defining: true,
 	isolating: true,
 	selectable: true,
-	draggable: true,
+	// Dragging goes exclusively through the dedicated rail handle (drag-gutter.ts).
+	// A native draggable="true" on the whole node hijacks in-block gestures (e.g.
+	// dragging a table's column-resize handle) into a native HTML5 drag of the block.
+	draggable: false,
 
 	addAttributes() {
 		return {

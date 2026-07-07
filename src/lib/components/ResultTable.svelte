@@ -655,7 +655,9 @@
 									<div
 										class="column-resize-handle"
 										class:is-resizing={header.column.getIsResizing()}
+										draggable="false"
 										onmousedown={(e) => {
+											e.preventDefault();
 											e.stopPropagation();
 											header.getResizeHandler()(e);
 										}}

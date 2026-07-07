@@ -923,6 +923,56 @@ function sourceHasLoopTags(source: string): boolean {
 	return /\{%\s*(each|group)\b/.test(source);
 }
 
+// ── Bare $var interpolation in plain prose ──────────────────────────────────
+// Markdoc's own grammar only resolves `$var` inside `{% %}` annotations or tag
+// attributes — a bare `$orders.revenue` sitting in a paragraph, card body, callout,
+// list item, etc. is left as literal text (verified against @markdoc/markdoc 0.5.7).
+// The AI system prompt and most hand-written cell content assume bare refs "just
+// print the value" outside of formatting functions, so without this pass every
+// container that isn't a widget attribute (cards, callouts, columns, plain body
+// text) shows the raw `$cell.field` token instead of the resolved value.
+//
+// Only interpolate `$root.path` tokens whose `root` is a known cell/variable name
+// (mirrors the caution in validateMarkdocMarkdown's bareRefNames check) so stray
+// dollar signs or unrelated `$word` mentions in prose are left untouched. Fenced
+// code blocks, inline code spans, and existing `{% %}` tag regions are skipped
+// entirely — those are either literal examples or already handled natively by Markdoc.
+const PROSE_SEGMENT_RE = /(```[\s\S]*?```|`[^`\n]*`|\{%[\s\S]*?%\})/g;
+
+function interpolateKnownBareVars(
+	text: string,
+	variables: Record<string, unknown>,
+	knownRoots: Set<string>
+): string {
+	return text.replace(
+		/\$([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)/g,
+		(match, root: string, rest: string) => {
+			if (!knownRoots.has(root)) return match;
+			const path = [root, ...rest.slice(1).split('.')];
+			return stringifyInterpolatedValue(resolveScopeValue(variables, path));
+		}
+	);
+}
+
+/** Interpolate bare `$cell.field` refs in ordinary prose (outside `{% %}` tags/code). */
+export function interpolateBareVarsInProse(markdown: string, cells: Cell[]): string {
+	const variables = buildMarkdocVariables(cells);
+	const knownRoots = new Set(Object.keys(variables));
+	if (knownRoots.size === 0) return markdown;
+
+	let result = '';
+	let lastIndex = 0;
+	PROSE_SEGMENT_RE.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = PROSE_SEGMENT_RE.exec(markdown))) {
+		result += interpolateKnownBareVars(markdown.slice(lastIndex, match.index), variables, knownRoots);
+		result += match[0];
+		lastIndex = match.index + match[0].length;
+	}
+	result += interpolateKnownBareVars(markdown.slice(lastIndex), variables, knownRoots);
+	return result;
+}
+
 function sliceMermaidBody(source: string, lines: number[]): string {
 	const srcLines = source.split('\n');
 	if (lines.length >= 4) {
@@ -1264,9 +1314,10 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 export function renderMarkdocCell(markdown: string, cells: Cell[]): MarkdocRenderResult {
 	const normalizedMarkdown = normalizeMarkdocFirstRowRefs(markdown);
 	const initialConfig = buildMarkdocConfig(normalizedMarkdown, cells);
-	const effectiveMarkdown = sourceHasLoopTags(normalizedMarkdown)
+	const loopExpanded = sourceHasLoopTags(normalizedMarkdown)
 		? expandLoopBlocksInDocument(normalizedMarkdown, initialConfig, {})
 		: normalizedMarkdown;
+	const effectiveMarkdown = interpolateBareVarsInProse(loopExpanded, cells);
 	const ast = Markdoc.parse(effectiveMarkdown);
 	const config = buildMarkdocConfig(effectiveMarkdown, cells);
 	const validationErrors = Markdoc.validate(ast, config)

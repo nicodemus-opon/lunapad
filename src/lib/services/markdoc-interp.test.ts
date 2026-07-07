@@ -222,6 +222,22 @@ ok
 		expect(card?.attributes.title).toBe('Data Quality');
 	});
 
+	it('interpolates bare $cell.field refs inside card/callout/column body text', () => {
+		const cells = [makeCell('orders', [{ revenue: 500, count: 10 }])];
+		const src = `{% card title="Summary" %}
+Revenue is $orders.revenue and count is $orders.count.
+{% /card %}
+
+{% callout type="info" %}
+We saw $orders.count orders.
+{% /callout %}`;
+		const { tree, errors } = renderMarkdocCell(src, cells);
+		expect(errors).toEqual([]);
+		const text = textOf(tree);
+		expect(text).toContain('Revenue is 500 and count is 10.');
+		expect(text).toContain('We saw 10 orders.');
+	});
+
 	it('renders a datatable tag passthrough', () => {
 		const cells = [
 			makeCell('orders', [
@@ -819,7 +835,7 @@ sankey-beta
 		expect(text).toContain('Bob');
 	});
 
-	it('does not interpolate ordinary bare refs outside loop blocks during pre-expansion', () => {
+	it('interpolates bare refs in ordinary prose outside loop blocks', () => {
 		const cells = [makeCell('orders', [{ customer_name: 'Alice', revenue: 120 }])];
 		const src = `Literal prose keeps $orders.revenue.
 
@@ -829,7 +845,7 @@ sankey-beta
 		const { tree, errors } = renderMarkdocCell(src, cells);
 		expect(errors).toEqual([]);
 		const text = textOf(tree);
-		expect(text).toContain('Literal prose keeps $orders.revenue.');
+		expect(text).toContain('Literal prose keeps 120.');
 		expect(text).toContain('Alice');
 	});
 

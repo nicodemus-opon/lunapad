@@ -49,8 +49,11 @@ export const DEBUG_TOOLS: AIChatToolName[] = [
 	'ask_user'
 ];
 
-// Composes a Markdoc grid/columns layout of metric/chart widgets in a markdown cell —
-// also covers the 'visualize' sprint task (charting a single existing cell).
+// Curates the notebook into a report: reorders/hides existing cells and inserts narrative
+// markdown around them (drives the same Report view/share renderer humans use). The Markdoc
+// grid/columns block grammar inside a markdown cell is a secondary tool for dense KPI tiles
+// or interactive filters — not the primary composition mechanism. Also covers the
+// 'visualize' sprint task (charting a single existing cell).
 export const DASHBOARD_TOOLS: AIChatToolName[] = [
 	'list_cells',
 	'get_cell_result',
@@ -60,6 +63,7 @@ export const DASHBOARD_TOOLS: AIChatToolName[] = [
 	'set_view_mode',
 	'create_cell',
 	'update_cell',
+	'move_cell',
 	'ask_user'
 ];
 
@@ -85,6 +89,7 @@ export const SPRINT_PLANNING_TOOLS: AIChatToolName[] = [
 export const DOCUMENTATION_TOOLS: AIChatToolName[] = [
 	'create_cell',
 	'update_cell',
+	'move_cell',
 	'get_cell_result',
 	'list_cells',
 	'record_decision',

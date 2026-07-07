@@ -70,6 +70,11 @@ export const NATIVE_TOOLS = [
 						enum: ['ephemeral', 'view', 'table', 'incremental'],
 						description:
 							'How to materialize this model. Set per workspace naming conventions: dim_→table, fct_→incremental, stg_→view, metric_→incremental. Omit for ephemeral ad-hoc queries.'
+					},
+					afterCellId: {
+						type: 'string',
+						description:
+							'Insert the new cell immediately after this cell id/outputName instead of appending at the end of the notebook. Use this to place narrative markdown cells precisely when curating a report.'
 					}
 				},
 				required: ['outputName', 'cellType']
@@ -214,6 +219,11 @@ export const NATIVE_TOOLS = [
 						type: 'object',
 						description:
 							'Preferred structured replacement for AI-authored notebook/report/dashboard markdown. Same {title, statusBadge, blocks} shape as create_cell.dashboard — see the block grammar in the system prompt. Compiled server-side into canonical Markdoc before the tool call reaches the client.'
+					},
+					hideInReport: {
+						type: 'boolean',
+						description:
+							'Set true to hide this cell from Report view and published shares (e.g. staging/intermediate cells); false to surface it.'
 					}
 				},
 				required: ['cellId']

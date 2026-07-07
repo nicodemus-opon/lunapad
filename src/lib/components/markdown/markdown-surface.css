@@ -90,7 +90,7 @@
 .md-tabs-strip {
 	display: flex;
 	gap: 0.2rem;
-	border-bottom: 1px solid var(--foreground);
+	border-bottom: 1px solid var(--border);
 }
 
 .md-tab-btn {

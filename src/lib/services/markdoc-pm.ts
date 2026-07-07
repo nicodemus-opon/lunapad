@@ -288,12 +288,25 @@ function tiptapNodeJsonToPm(node: PMNodeJSON): PMNodeJSON {
 }
 
 const MARKDOC_EXPR_RE = /\{%\s*[^%]+?\s*%\}/g;
+// A bare `$cell.field` reference outside `{% %}` — Lunapad's Markdoc pipeline resolves
+// these directly in prose (see interpolateBareVarsInProse in markdoc-interp.ts), so the
+// editor should turn them into the same live/editable chip as an explicit `{% %}` ref.
+// Require at least one dot segment to avoid false positives on stray `$word` mentions.
+const BARE_VAR_RE = /\$[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+/g;
+const MARKDOC_EXPR_OR_BARE_VAR_RE = new RegExp(
+	`(?:${MARKDOC_EXPR_RE.source})|(?:${BARE_VAR_RE.source})`,
+	'g'
+);
+
+function textLikelyHasExpression(text: string): boolean {
+	return text.includes('{%') || /\$[A-Za-z_]\w*\./.test(text);
+}
 
 function splitTextWithExpressions(text: string, marks?: PMMarkJSON[]): PMNodeJSON[] {
 	const nodes: PMNodeJSON[] = [];
 	let last = 0;
 	let match: RegExpExecArray | null;
-	const re = new RegExp(MARKDOC_EXPR_RE.source, 'g');
+	const re = new RegExp(MARKDOC_EXPR_OR_BARE_VAR_RE.source, 'g');
 	while ((match = re.exec(text)) !== null) {
 		if (match.index > last) {
 			nodes.push({
@@ -319,7 +332,7 @@ function injectExpressionsInNodes(nodes: PMNodeJSON[]): PMNodeJSON[] {
 	return nodes.map((node) => {
 		if (node.content?.length) {
 			const content = node.content.flatMap((child) => {
-				if (child.type === 'text' && child.text?.includes('{%')) {
+				if (child.type === 'text' && child.text && textLikelyHasExpression(child.text)) {
 					return splitTextWithExpressions(child.text, child.marks);
 				}
 				return [injectExpressionsInNodes([child])[0]!];

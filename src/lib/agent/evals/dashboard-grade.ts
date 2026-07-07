@@ -24,6 +24,9 @@ export interface DashboardGrade {
 		hasCallout: boolean;
 		hasConditional: boolean;
 		hasInteractive: boolean;
+		/** A markdown heading (title or "## Section") — signals the report has narrative
+		 * structure rather than being a flat wall of blocks. */
+		hasHeading: boolean;
 	};
 }
 
@@ -310,7 +313,8 @@ function scoreStructure(markdown: string): DashboardGrade['structure'] {
 		hasDatatable: /\{%\s*datatable\b/.test(markdown),
 		hasCallout: /\{%\s*callout\b/.test(markdown),
 		hasConditional: /\{%\s*if\b/.test(markdown),
-		hasInteractive: /filterParam=|linkedFilter=|kind="relative-date"/.test(markdown)
+		hasInteractive: /filterParam=|linkedFilter=|kind="relative-date"/.test(markdown),
+		hasHeading: /^#{1,6}\s/m.test(markdown)
 	};
 }
 
@@ -341,23 +345,39 @@ export function gradeDashboard(markdown: string, cells: Cell[]): DashboardGrade 
 	if (!structure.hasMetric && !structure.hasChart && !structure.hasDatatable) {
 		failures.push('No data widgets (metric, chart, or datatable)');
 	}
+	// A dashboard with several distinct structural elements but no heading anywhere is a flat
+	// wall of blocks with no narrative sectioning — composition quality, not tag inventory.
+	const structuralElementCount = [
+		structure.hasGrid,
+		structure.hasTabs,
+		structure.hasColumns,
+		structure.hasDatatable,
+		structure.hasCallout
+	].filter(Boolean).length;
+	if (structuralElementCount >= 2 && !structure.hasHeading) {
+		warnings.push('Multiple structural elements but no heading — report reads as unsectioned');
+	}
 
 	const { errors: renderErrors } = renderMarkdocCell(markdown, renderCells);
 	for (const e of renderErrors) failures.push(`Render: ${e}`);
 
+	// Bonuses are intentionally small and capped — presence of a tag type is not itself a
+	// quality signal (a flat wall of grid+tabs+filter used to score highest here, which
+	// rewarded inventory over composition). Structure (hasHeading) carries the largest bonus.
 	let score = 100;
 	score -= failures.length * 15;
 	score -= warnings.length * 5;
-	if (structure.hasGrid) score += 5;
-	if (structure.hasMetric) score += 5;
-	if (structure.hasChart) score += 5;
-	if (structure.hasTabs) score += 8;
-	if (structure.hasFilter) score += 8;
-	if (structure.hasProgress) score += 5;
-	if (structure.hasDatatable) score += 5;
-	if (structure.hasCallout) score += 4;
-	if (structure.hasConditional) score += 4;
-	if (structure.hasInteractive) score += 6;
+	if (structure.hasHeading) score += 8;
+	if (structure.hasGrid) score += 3;
+	if (structure.hasMetric) score += 3;
+	if (structure.hasChart) score += 3;
+	if (structure.hasTabs) score += 3;
+	if (structure.hasFilter) score += 4;
+	if (structure.hasProgress) score += 3;
+	if (structure.hasDatatable) score += 3;
+	if (structure.hasCallout) score += 3;
+	if (structure.hasConditional) score += 3;
+	if (structure.hasInteractive) score += 4;
 
 	return {
 		score: Math.max(0, Math.min(100, score)),

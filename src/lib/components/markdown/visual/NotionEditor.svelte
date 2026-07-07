@@ -931,6 +931,12 @@
 	}
 	.notebook-markdown-editor :global(.notion-drag-gutter) {
 		margin-left: calc(-1 * var(--notebook-gutter-width) + 0.25rem);
+		/* Bridge the gap this shift creates between the rail and the block edge with
+		   an invisible hit-testable padding strip, so a mouse moving from the block
+		   toward the rail never crosses dead space — which would fire a native
+		   mouseleave on the ProseMirror content and make @tiptap/extension-drag-handle
+		   hide the rail (and null out its tracked node) right as the pointer arrives. */
+		padding-right: calc(var(--notebook-gutter-width) - 0.25rem);
 	}
 	:global(.notion-surface) {
 		font-size: var(--text-sm);

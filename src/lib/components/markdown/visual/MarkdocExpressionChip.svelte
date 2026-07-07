@@ -39,6 +39,10 @@
 	const resolved = $derived.by(() => {
 		const trimmed = source.trim();
 		if (!trimmed.startsWith('{%')) {
+			// Bare `$cell.field` chip (no annotation braces) — resolve it the same way
+			// as an annotated `{% $cell.field %}` ref instead of showing it literally.
+			const bare = resolveBareVariable(trimmed, liveCells);
+			if (bare !== null) return { text: bare, error: false, raw: false };
 			return { text: trimmed, error: false, raw: true };
 		}
 		const inner = trimmed

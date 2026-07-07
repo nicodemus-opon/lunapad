@@ -196,6 +196,23 @@ describe('markdoc-pm', () => {
 		expect(para?.content?.some((c) => c.type === 'markdocExpression')).toBe(true);
 	});
 
+	it('round-trips bare $cell.field refs in prose as live expression chips', () => {
+		const md = 'Revenue is $orders.revenue and count is $orders.count.';
+		const rt = roundTrip(md);
+		expect(rt).toBe(md);
+		const { doc } = markdownToPmDocument(md);
+		const para = doc.content?.find((n) => n.type === 'paragraph');
+		const chips = para?.content?.filter((c) => c.type === 'markdocExpression') ?? [];
+		expect(chips.map((c) => c.attrs?.source)).toEqual(['$orders.revenue', '$orders.count']);
+	});
+
+	it('does not chip-ify a bare $word with no dotted field access', () => {
+		const md = 'Set $HOME before running the script.';
+		const { doc } = markdownToPmDocument(md);
+		const para = doc.content?.find((n) => n.type === 'paragraph');
+		expect(para?.content?.some((c) => c.type === 'markdocExpression')).toBe(false);
+	});
+
 	it('preserves surrounding whitespace around inline expressions', () => {
 		const md =
 			'The dataset contains {% $orders.count %} orders totaling {% currency($rev.total) %} now.';
