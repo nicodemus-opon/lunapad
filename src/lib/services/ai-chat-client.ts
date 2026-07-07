@@ -2303,6 +2303,12 @@ function activityLabelForTool(tool: string): string {
 
 // ── Streaming helper ──────────────────────────────────────────────────────────
 
+// Matches the fixed fallback strings chat-tool-policy.ts / structured-markdown.ts send as plain
+// assistant text when a create_cell/update_cell call is blocked server-side (see
+// blockedToolFallbackText and the pendingPolicyFallback assignments in +server.ts).
+const BLOCKED_TOOL_FALLBACK_PATTERN =
+	/^(Markdown validation failed|Structured notebook UI validation failed|Inspect at least one relevant cell result|Cannot write code referencing|Table `.+` does not exist|I will not delete cells)/;
+
 async function streamOneTurn(
 	reqBody: AIChatRequest,
 	aiMsgId: string,
@@ -2319,6 +2325,7 @@ async function streamOneTurn(
 	sprintUpdate?: SprintTask[];
 }> {
 	const allToolResults: string[] = [];
+	let emittedText = '';
 	let hadDataToolCalls = false;
 	let signalledDone = false;
 	let wasTruncated = false;
@@ -2383,7 +2390,10 @@ async function streamOneTurn(
 	const dispatchEvent = async (event: SSEEvent): Promise<void> => {
 		switch (event.type) {
 			case 'text_delta':
-				if (typeof event.delta === 'string') updateMessageText(aiMsgId, event.delta);
+				if (typeof event.delta === 'string') {
+					updateMessageText(aiMsgId, event.delta);
+					emittedText += event.delta;
+				}
 				break;
 			case 'tool_call': {
 				const toolCall = event.call as AIChatToolCall;
@@ -2494,6 +2504,17 @@ async function streamOneTurn(
 		// Flush any trailing complete event left without a final newline.
 		for (const event of parser.flush()) await dispatchEvent(event);
 		setCurrentActivityLabel(null);
+		// A blocked create_cell/update_cell never reaches the client as a 'tool_call' event —
+		// chat-tool-policy.ts silently drops it server-side and sends the reason as plain
+		// assistant text instead (pendingPolicyFallback). Without this, agentic loops (e.g.
+		// runDashboardLoop) see zero tool results, have no idea a call was rejected or why, and
+		// just re-nudge the model with a generic "write the markdown" instruction — which
+		// repeats the same mistake until the loop's retry budget runs out and it silently gives
+		// up. Recognizing the known fallback text and feeding it into allToolResults lets the
+		// retry directive quote the actual validation error back to the model so it can fix it.
+		if (BLOCKED_TOOL_FALLBACK_PATTERN.test(emittedText.trim())) {
+			allToolResults.push(`create_cell/update_cell blocked: ${emittedText.trim()}`);
+		}
 	} catch (err) {
 		setCurrentActivityLabel(null);
 		// The SSE stream broke mid-response (network reset, server closed the connection).

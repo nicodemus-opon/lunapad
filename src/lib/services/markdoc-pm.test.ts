@@ -233,6 +233,11 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
 	});
 
+	it('round-trips a callout with a title', () => {
+		const md = '{% callout type="warning" title="Heads up" %}\nBody text.\n{% /callout %}';
+		expect(normalizeMarkdocMarkdown(roundTrip(md))).toBe(normalizeMarkdocMarkdown(md));
+	});
+
 	it('round-trips tabs with nested widgets', () => {
 		const md = `{% tabs %}
 {% tab label="A" %}

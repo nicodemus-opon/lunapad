@@ -177,6 +177,10 @@ function insertSlashItem(
 		if (url) editor.chain().focus().setImage({ src: url }).run();
 		return;
 	}
+	if (id === 'video' && opts?.onRequestMedia) {
+		opts.onRequestMedia('video', editor);
+		return;
+	}
 	if (id === 'bullet') {
 		editor.chain().focus().toggleBulletList().run();
 		return;

@@ -38,6 +38,9 @@
 		filterParam?: string;
 		filterColumn?: string;
 		drillCell?: string;
+		latColumn?: string | null;
+		lonColumn?: string | null;
+		geoScope?: ChartConfig['geoScope'];
 	}
 
 	const {
@@ -57,7 +60,10 @@
 		height = 280,
 		filterParam,
 		filterColumn,
-		drillCell
+		drillCell,
+		latColumn = null,
+		lonColumn = null,
+		geoScope
 	}: Props = $props();
 
 	const filterCtx = getContext<FilterContextValue | undefined>(FILTER_CONTEXT_KEY);
@@ -75,7 +81,10 @@
 			sortOrder,
 			histogramBins,
 			title,
-			code
+			code,
+			latColumn,
+			lonColumn,
+			geoScope
 		})
 	);
 

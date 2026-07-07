@@ -291,9 +291,9 @@ function buildToolSelectionSection(pythonAvailable: boolean): string {
 
 ## Python cell data contract (READ before writing any python cell)
 Data is INJECTED, never loaded manually. Do NOT read files, open DuckDB/SQL connections, call APIs, or fabricate data.
-- Upstream cells are bound as pandas DataFrames by outputName. Workspace tables are available through the built-in \`tables\` namespace: use \`tables["schema.table"]\`, \`tables["catalog.schema.table"]\`, or \`tables.load("catalog.schema.table")\` for an explicit full load. Small local tables may also be available by bare name when unambiguous. pandas (\`pd\`) and numpy (\`np\`) are pre-imported.
-- The cell's RESULT is the last DataFrame you leave as the final expression (or the last DataFrame assigned). That result is cached locally for the UI and, when the notebook has an external connection, published under this cell's outputName so downstream SQL/PRQL/python cells and schedules can read it by name.
-- print(...) goes to stdout; matplotlib/plotly figures are captured automatically. For a tabular result, end the cell with a DataFrame expression.
+- Upstream cells are bound as pandas DataFrames by outputName, capped at 1000 rows (same cap the UI uses for query previews) — not the full result set. Workspace tables are exposed through a LAZY \`tables\` namespace, resolved per-run against only the tables your code actually references (the engine never hydrates the full external catalog into the process) — use \`tables.available()\` to list the tables already in scope for this run, or \`tables.find("keyword")\` to search that same bounded set by substring before guessing a name; both are read-only discovery calls, not a warehouse-wide search. To read a table's data: \`tables["schema.table"]\` / \`tables["catalog.schema.table"]\` return a 1000-row preview; \`tables.load("catalog.schema.table")\` instead fetches the ENTIRE table in paginated batches — only use \`.load()\` when you genuinely need full-table row-level computation (e.g. an exact percentile or dedup that can't be pushed to SQL), never as a default, since it can be slow on large tables and a SQL cell computing the aggregate is almost always cheaper. Names passed to \`tables[...]\`/\`tables.load(...)\` must be literal string constants in the code (\`tables["orders"]\`, not a name built from a variable) — that's what makes the targeted, non-hydrating resolution possible; a dynamically-built name won't be seen and will raise \`KeyError\` at runtime. Small local (DuckDB) tables are also bound as a bare global by their exact table name when that name is a valid Python identifier and appears literally in the code — this bare-name binding never applies to external/warehouse tables. pandas (\`pd\`), numpy (\`np\`), and plotly (\`go\`/\`px\`, i.e. \`plotly.graph_objects\`/\`plotly.express\`) are pre-imported; matplotlib is NOT installed or captured — use Plotly (\`go.Figure\`/\`px.*\`) for all chart output from Python.
+- The cell's RESULT is the last DataFrame you leave as the final expression (or the last DataFrame assigned). It is always registered into the local DuckDB catalog under this cell's outputName — that's a preview/cache path only, for the UI and for other cells to read from immediately. Separately, when the notebook has a non-DuckDB external connection configured, a successful Python result is ALSO published (uploaded) to that external connection under the same outputName — that external copy, not the local DuckDB cache, is what downstream SQL/PRQL cells on that connection and schedules actually query.
+- print(...) goes to stdout; Plotly figures (\`go.Figure\` objects, including anything returned by \`px.*\`) are captured automatically — do not call \`.show()\`. For a tabular result, end the cell with a DataFrame expression.
 - Reference an upstream cell by outputName to create a dependency, exactly like a SQL cell would. Never reference a raw uploaded-file table name with a timestamp — go through the cell that reads it.`;
 	}
 	return `\n\n## Tool selection\nPython cells are not available in this environment — always use SQL, even for tasks that would normally suit Python (statistics, ML, text processing).`;
@@ -1207,6 +1207,13 @@ export const POST: RequestHandler = async ({ request }) => {
 				chartedOutputNames: new Set(
 					cells.filter((c) => c.resultChartConfig?.xColumn).map((c) => c.outputName.toLowerCase())
 				),
+				// Real result column names so markdown validation resolves Markdoc variables
+				// against the actual schema instead of a generic mock row.
+				columnsByOutputName: new Map(
+					cells
+						.filter((c) => c.outputName && c.resultColumns?.length)
+						.map((c) => [c.outputName, c.resultColumns])
+				),
 				latestUserMessage
 			};
 			const turnKnownOutputNames = new Set(cells.map((c) => c.outputName));
@@ -1249,7 +1256,10 @@ export const POST: RequestHandler = async ({ request }) => {
 					tool: tool as AIChatToolName,
 					args: args as unknown as AIChatToolCall['args']
 				};
-				if ((tool === 'create_cell' || tool === 'update_cell') && typeof args.outputName === 'string') {
+				if (
+					(tool === 'create_cell' || tool === 'update_cell') &&
+					typeof args.outputName === 'string'
+				) {
 					turnKnownOutputNames.add(args.outputName);
 					toolPolicyCtx.cellOutputNames.add(args.outputName.toLowerCase());
 				}

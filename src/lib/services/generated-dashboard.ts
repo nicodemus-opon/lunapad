@@ -1,4 +1,9 @@
 import type { AIChatCell } from '$lib/types/ai-chat.js';
+import type {
+	ThresholdOp,
+	ConditionalTone,
+	ConditionalIcon
+} from './report-table-conditional-format';
 
 type DashboardRef = `$${string}`;
 type DashboardScalar = string | number | boolean;
@@ -16,6 +21,7 @@ export interface GeneratedDashboardDefinition {
 
 export type GeneratedDashboardBlock =
 	| { type: 'text'; content: string }
+	| { type: 'divider' }
 	| {
 			type: 'grid';
 			cols?: number;
@@ -109,6 +115,37 @@ export type GeneratedDashboardBlock =
 				| 'category'
 				| 'text';
 			valueCurrencySymbol?: string;
+			/** Highlight cells based on their value — one entry per column, same rule shapes as the
+			 * Conditional Format UI (VisualBlockInspector). */
+			conditionalFormats?: Array<{
+				column: string;
+				rules: Array<
+					| {
+							type: 'threshold';
+							op: ThresholdOp;
+							value?: string | number | boolean | null;
+							value2?: string | number | boolean | null;
+							tone?: ConditionalTone;
+							icon?: ConditionalIcon;
+					  }
+					| {
+							type: 'colorScale';
+							minColor?: ConditionalTone;
+							midColor?: ConditionalTone;
+							maxColor?: ConditionalTone;
+							min?: number | null;
+							max?: number | null;
+							mid?: number | null;
+					  }
+					| { type: 'dataBar'; tone?: ConditionalTone; min?: number | null; max?: number | null }
+					| {
+							type: 'iconSet';
+							negativeTone?: ConditionalTone;
+							positiveTone?: ConditionalTone;
+							neutralTone?: ConditionalTone;
+					  }
+				>;
+			}>;
 	  }
 	| {
 			type: 'badge';
@@ -126,6 +163,7 @@ export type GeneratedDashboardBlock =
 	| {
 			type: 'callout';
 			variant?: 'info' | 'success' | 'warning' | 'error';
+			title?: string;
 			blocks: GeneratedDashboardBlock[];
 	  }
 	| {
@@ -194,6 +232,31 @@ export type GeneratedDashboardBlock =
 			};
 			then: GeneratedDashboardBlock[];
 			else?: GeneratedDashboardBlock[];
+	  }
+	| { type: 'toc' }
+	| {
+			type: 'math';
+			latex: string;
+			/** Centered display block vs inline. */
+			display?: boolean;
+	  }
+	| {
+			type: 'video';
+			src: string;
+			poster?: string;
+			loop?: boolean;
+			muted?: boolean;
+	  }
+	| {
+			type: 'embed';
+			url: string;
+			aspect?: '16:9' | '4:3' | '1:1';
+	  }
+	| {
+			type: 'bookmark';
+			url: string;
+			title?: string;
+			description?: string;
 	  };
 
 export interface CompileDashboardOptions {
@@ -231,6 +294,7 @@ const CHART_TYPES = new Set([
 
 export const SUPPORTED_BLOCK_TYPES = [
 	'text',
+	'divider',
 	'grid',
 	'columns',
 	'card',
@@ -246,7 +310,12 @@ export const SUPPORTED_BLOCK_TYPES = [
 	'mermaid',
 	'each',
 	'group',
-	'conditional'
+	'conditional',
+	'toc',
+	'math',
+	'video',
+	'embed',
+	'bookmark'
 ] as const;
 
 /** Must stay in sync with the filter tag's `kind.matches` list in markdoc-interp.ts
@@ -365,6 +434,8 @@ function renderBlock(
 		case 'text':
 			pushStringRefs(errors, block.content, knownRoots);
 			return block.content.trim();
+		case 'divider':
+			return '---';
 		case 'grid':
 			if (!block.items.length) {
 				errors.push('Grid block must contain at least one item.');
@@ -470,6 +541,17 @@ function renderBlock(
 				[
 					'valueCurrencySymbol',
 					block.valueCurrencySymbol ? JSON.stringify(block.valueCurrencySymbol) : null
+				],
+				[
+					'conditionalFormats',
+					block.conditionalFormats?.length
+						? JSON.stringify(
+								block.conditionalFormats.map((cf) => ({
+									column: cf.column,
+									rules: cf.rules.map((r, i) => ({ id: `${cf.column}-${i}`, ...r }))
+								}))
+							)
+						: null
 				]
 			]);
 		case 'badge':
@@ -489,7 +571,8 @@ function renderBlock(
 			]);
 		case 'callout':
 			return renderContainer('callout', renderBlocks(block.blocks, knownRoots, errors), [
-				['type', block.variant ? JSON.stringify(block.variant) : null]
+				['type', block.variant ? JSON.stringify(block.variant) : null],
+				['title', block.title ? JSON.stringify(block.title) : null]
 			]);
 		case 'details':
 			return renderContainer('details', renderBlocks(block.blocks, knownRoots, errors), [
@@ -578,6 +661,31 @@ function renderBlock(
 			]
 				.filter(Boolean)
 				.join('\n');
+		case 'toc':
+			return renderTag('toc', []);
+		case 'math':
+			return renderTag('math', [
+				['latex', JSON.stringify(block.latex)],
+				['display', block.display ? 'true' : null]
+			]);
+		case 'video':
+			return renderTag('video', [
+				['src', JSON.stringify(block.src)],
+				['poster', block.poster ? JSON.stringify(block.poster) : null],
+				['loop', block.loop ? 'true' : null],
+				['muted', block.muted ? 'true' : null]
+			]);
+		case 'embed':
+			return renderTag('embed', [
+				['url', JSON.stringify(block.url)],
+				['aspect', block.aspect ? JSON.stringify(block.aspect) : null]
+			]);
+		case 'bookmark':
+			return renderTag('bookmark', [
+				['url', JSON.stringify(block.url)],
+				['title', block.title ? JSON.stringify(block.title) : null],
+				['description', block.description ? JSON.stringify(block.description) : null]
+			]);
 		default: {
 			// Unknown types must surface as errors — silently dropping a block means the
 			// model believes the content was written when it wasn't.
@@ -651,15 +759,16 @@ Use create_cell/update_cell with:
 
 Block grammar — every supported type with its fields ("?" = optional; [blocks] = nested block array, containers nest arbitrarily, e.g. grid inside tabs inside card):
 - {"type":"text","content":"markdown prose; may embed $ref live values"}
+- {"type":"divider"} — horizontal rule to visually separate sections
 - {"type":"grid","cols":3?,"gap":"compact|default|comfortable"?,"items":[blocks]}
 - {"type":"columns","gap":?,"columns":[{"width":2 or "300px"?,"blocks":[blocks]}]}
 - {"type":"card","title":?,"accent":"neutral|info|success|warning|error"?,"blocks":[blocks]}
 - {"type":"metric","value":"$m.field","label":"...","format":"number|currency|compact|percent"?,"vs":"$prev.field"?}
 - {"type":"chart","ref":"$cellName"? (inherits that cell's configured chart),"chartType":?,"data":"$m.rows"?,"x":?,"y":?,"yColumns":[..]?,"colorColumn":?,"seriesMode":"auto|grouped|stacked"?,"sortOrder":?,"title":?,"height":?}
-- {"type":"datatable","data":"$m.rows","cols":[..]?,"limit":?,"pageSize":?,"headerInsights":"full|compact"?,"linkedFilter":?, pivot/summary: "index":["col"]?,"pivotBy":?,"valueCol":?,"agg":"sum|avg|min|max|count"?,"round":?,"valueFormatKind":"currency|percentage|number|date|..."?,"valueCurrencySymbol":?}
+- {"type":"datatable","data":"$m.rows","cols":[..]?,"limit":?,"pageSize":?,"headerInsights":"full|compact"?,"linkedFilter":?, pivot/summary: "index":["col"]?,"pivotBy":?,"valueCol":?,"agg":"sum|avg|min|max|count"?,"round":?,"valueFormatKind":"currency|percentage|number|date|..."?,"valueCurrencySymbol":?, "conditionalFormats":[{"column":"col","rules":[{"type":"threshold","op":"<|<=|=|!=|>=|>","value":100,"tone":"positive|negative|warning|info|neutral"}]}]? (highlight cells by value — also supports rule types "colorScale"{minColor,midColor,maxColor,min,mid,max}, "dataBar"{tone,min,max}, "iconSet"{negativeTone,positiveTone,neutralTone})}
 - {"type":"badge","value":"$m.status","color":"info|success|warning|error|neutral"?}
 - {"type":"progress","value":"$m.done","max":100? (default 100),"label":?,"color":?}
-- {"type":"callout","variant":"info|success|warning|error"?,"blocks":[blocks]}
+- {"type":"callout","variant":"info|success|warning|error"?,"title":? (optional heading above the body),"blocks":[blocks]}
 - {"type":"details","summary":"...","open":false?,"blocks":[blocks]}
 - {"type":"tabs","tabs":[{"label":"...","blocks":[blocks]}]}
 - {"type":"filter","kind":"dropdown|searchable-dropdown|multi-select|text-input|button-group|date-range|relative-date|numeric-range"?,"param":"name","label":"...","options":[..]?,"optionsColumn":? (derive options from data),"default":?, date-range: "startParam"/"endParam", numeric-range: "minParam"/"maxParam"}
@@ -667,6 +776,11 @@ Block grammar — every supported type with its fields ("?" = optional; [blocks]
 - {"type":"each","data":"$m.rows","template":"one line per row using bare $column tokens"}
 - {"type":"group","data":"$m.rows","by":"column","order":["A","B"]?,"template":"per-group template; $key + $column tokens"}
 - {"type":"conditional","test":{"op":"gt|gte|lt|lte|equals","left":"$m.count","right":0},"then":[blocks],"else":[blocks]?}
+- {"type":"toc"} — table of contents from this notebook's headings
+- {"type":"math","latex":"E = mc^2","display":true?} — KaTeX equation
+- {"type":"video","src":"https://...","poster":?,"loop":?,"muted":?}
+- {"type":"embed","url":"https://...","aspect":"16:9|4:3|1:1"?} — YouTube/Vimeo/Loom, or a link-card fallback for other hosts
+- {"type":"bookmark","url":"https://...","title":?,"description":?} — link preview card
 
 Rules:
 - Always reference existing SQL/Python result cells via $outputName or $outputName.field.

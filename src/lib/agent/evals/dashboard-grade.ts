@@ -41,65 +41,81 @@ const MOCK_ROW: Record<string, unknown> = {
 	category: 'Electronics'
 };
 
-/** Minimal query cells so markdoc validators see known outputNames. */
-export function stubCellsForRefs(outputNames: Iterable<string>): Cell[] {
-	return [...outputNames].map((outputName) => ({
-		id: `stub-${outputName}`,
-		cellType: 'query' as const,
-		connectionId: 'builtin.duckdb',
-		outputName,
-		code: '',
-		markdown: '',
-		markdownPreview: false,
-		markdownEditMode: 'source' as const,
-		udfBody: '',
-		language: 'sql' as const,
-		status: 'success' as const,
-		result: {
-			rows: [MOCK_ROW, { ...MOCK_ROW, region: 'South', product: 'Phone' }],
-			columns: Object.keys(MOCK_ROW)
-		},
-		pythonOutput: null,
-		errors: [],
-		compiledSQL: null,
-		executionMs: 1,
-		guiStages: [],
-		editMode: 'prql' as const,
-		resultViewMode: 'table' as const,
-		resultChartConfig: null,
-		columnFormatRules: {},
-		columnWidths: {},
-		display: 'full' as const,
-		stageResultsCollapsed: [],
-		materializeMode: 'ephemeral' as const,
-		materializeTarget: '',
-		materializeStatus: 'idle' as const,
-		materializeError: null,
-		materializedRelationType: null,
-		description: null,
-		dbtSchema: null,
-		dbtTags: [],
-		promotedModelPath: null,
-		promotedSeedPath: null,
-		dbtTestStatus: 'idle' as const,
-		dbtTestResults: [],
-		dbtTestLog: [],
-		scheduleEnabled: false,
-		scheduleIntervalMinutes: 60,
-		scheduleScope: 'cell' as const,
-		scheduleStatus: 'idle' as const,
-		scheduleLastRunAt: null,
-		scheduleNextRunAt: null,
-		scheduleLastError: null,
-		intelligence: null,
-		needsRun: false,
-		staleReason: null,
-		staleSources: [],
-		lastRunAt: null,
-		hideResult: false,
-		hideInReport: false,
-		executionCount: 0
-	}));
+/** Minimal query cells so markdoc validators see known outputNames.
+ *
+ * `columnsByOutputName`, when given, supplies each cell's REAL result column names (the
+ * server only ever receives column names from the client, never row values — see
+ * AIChatCell.resultColumns). Without it, every stub falls back to the generic MOCK_ROW shape,
+ * which would make any real, non-demo column (e.g. `distinct_companies`) look "undefined" to
+ * Markdoc's variable resolution even though it genuinely exists. */
+export function stubCellsForRefs(
+	outputNames: Iterable<string>,
+	columnsByOutputName?: Map<string, string[]>
+): Cell[] {
+	return [...outputNames].map((outputName) => {
+		const realColumns = columnsByOutputName?.get(outputName);
+		const row =
+			realColumns && realColumns.length > 0
+				? Object.fromEntries(realColumns.map((col) => [col, MOCK_ROW[col] ?? 1]))
+				: MOCK_ROW;
+		return {
+			id: `stub-${outputName}`,
+			cellType: 'query' as const,
+			connectionId: 'builtin.duckdb',
+			outputName,
+			code: '',
+			markdown: '',
+			markdownPreview: false,
+			markdownEditMode: 'source' as const,
+			udfBody: '',
+			language: 'sql' as const,
+			status: 'success' as const,
+			result: {
+				rows: [row, row],
+				columns: Object.keys(row)
+			},
+			pythonOutput: null,
+			errors: [],
+			compiledSQL: null,
+			executionMs: 1,
+			guiStages: [],
+			editMode: 'prql' as const,
+			resultViewMode: 'table' as const,
+			resultChartConfig: null,
+			columnFormatRules: {},
+			columnWidths: {},
+			display: 'full' as const,
+			stageResultsCollapsed: [],
+			materializeMode: 'ephemeral' as const,
+			materializeTarget: '',
+			materializeStatus: 'idle' as const,
+			materializeError: null,
+			materializedRelationType: null,
+			description: null,
+			dbtSchema: null,
+			dbtTags: [],
+			promotedModelPath: null,
+			promotedSeedPath: null,
+			dbtTestStatus: 'idle' as const,
+			dbtTestResults: [],
+			dbtTestLog: [],
+			scheduleEnabled: false,
+			scheduleIntervalMinutes: 60,
+			scheduleScope: 'cell' as const,
+			scheduleStatus: 'idle' as const,
+			scheduleLastRunAt: null,
+			scheduleNextRunAt: null,
+			scheduleLastError: null,
+			intelligence: null,
+			needsRun: false,
+			staleReason: null,
+			staleSources: [],
+			lastRunAt: null,
+			hideResult: false,
+			hideInReport: false,
+			executionCount: 0
+		};
+	});
 }
 
 function cellsWithResults(cells: Cell[]): Cell[] {
@@ -114,23 +130,39 @@ function cellsWithResults(cells: Cell[]): Cell[] {
 	});
 }
 
-/** Critical failures only — used to block tool calls server-side. */
+/** Critical failures only — used to block tool calls server-side.
+ *
+ * `columnsByOutputName`, when given, supplies each cell's REAL result column names (keyed
+ * case-insensitively, since `knownOutputNames` is lowercased by some callers — chat-tool-
+ * policy.ts — but not others — gradeDashboard's eval path). Without it, validation falls back
+ * to `stubCellsForRefs`'s generic MOCK_ROW shape, which would flag any real, non-demo column
+ * (e.g. `distinct_companies`) as "undefined" even though it genuinely exists. */
 export function getCriticalMarkdownFailures(
 	markdown: string,
 	knownOutputNames: Set<string>,
-	chartedOutputNames?: Set<string>
+	chartedOutputNames?: Set<string>,
+	columnsByOutputName?: Map<string, string[]>
 ): string[] {
 	if (!markdown.trim()) return ['empty markdown'];
 	const normalizedMarkdown = normalizeMarkdocFirstRowRefs(markdown);
 	const failures: string[] = [];
-	const stubs = stubCellsForRefs(knownOutputNames);
+	const lowercasedColumns = columnsByOutputName
+		? new Map([...columnsByOutputName].map(([name, cols]) => [name.toLowerCase(), cols]))
+		: undefined;
+	const stubs = stubCellsForRefs(knownOutputNames, lowercasedColumns);
 
 	for (const d of validateMarkdocMarkdown(normalizedMarkdown, stubs)) {
 		failures.push(d.message);
 	}
 
+	// Only bare refs with an explicit `.field` access are unambiguous cell-reference intent —
+	// a lone `$word` in prose (no dot) is just as likely a stray dollar sign in casual text,
+	// so treating it as a hard failure produces false positives on ordinary narration.
 	for (const ref of extractBareMarkdocRefRoots(normalizedMarkdown)) {
-		if (!knownOutputNames.has(ref)) {
+		const hasFieldAccess = new RegExp(
+			`\\$${ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.[A-Za-z_]`
+		).test(normalizedMarkdown);
+		if (hasFieldAccess && !knownOutputNames.has(ref)) {
 			failures.push(`Undefined variable: '${ref}'`);
 		}
 	}
@@ -138,7 +170,14 @@ export function getCriticalMarkdownFailures(
 	if (/\{%\s*\w+[^%]*\|[^%]*%\}/.test(normalizedMarkdown)) {
 		failures.push('Pipe operator inside Markdoc tag (not supported)');
 	}
-	if (/\bSELECT\b/i.test(normalizedMarkdown.replace(/\{%[^%]*%\}/g, ''))) {
+	// Require FROM-with-an-identifier alongside SELECT so ordinary prose ("select a date
+	// range", "we selected the top vendors") doesn't trip this — real embedded SQL has SELECT
+	// and FROM <table> together, not FROM followed by an English determiner.
+	if (
+		/\bSELECT\b[\s\S]{0,300}?\bFROM\s+(?!(?:the|a|an|this|that|these|those|our|your|my|his|her|their)\b)[a-zA-Z_][\w.]*\b/i.test(
+			normalizedMarkdown.replace(/\{%[^%]*%\}/g, '')
+		)
+	) {
 		failures.push('Raw SQL in markdown body');
 	}
 	if (/create_dashboard|add_dashboard_block/i.test(normalizedMarkdown)) {

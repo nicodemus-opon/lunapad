@@ -32,7 +32,7 @@ SELECT SUM(amount) AS total FROM orders_clean
 
 **Query cells** default to PRQL. Switch to SQL or open the visual pipeline builder from the cell header (see [Writing queries](03-writing-queries.md)). SQL cells get the same CTE auto-wiring but cannot enter GUI mode.
 
-**Python cells** run on the server in an isolated interpreter (pandas, numpy, plotly, and friends are pre-installed in the Docker image). Output is stdout, any matplotlib/plotly figures, and errors. Python cells have an output name like query cells and can participate in the notebook dependency graph when they emit a dataframe.
+**Python cells** run on the server in an isolated interpreter (pandas, numpy, plotly, and friends are pre-installed in the Docker image). Output is stdout, any Plotly figures (matplotlib is not installed or captured), and errors. Python cells have an output name like query cells and can participate in the notebook dependency graph when they emit a dataframe.
 
 **UDF cells** define a scalar function on the active connection (see [Writing queries](03-writing-queries.md)). Once saved, any query cell on that connection can call the function.
 

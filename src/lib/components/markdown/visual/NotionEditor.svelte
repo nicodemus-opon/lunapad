@@ -40,6 +40,7 @@
 	import { Plus, Copy, Trash2, X, ArrowUp, ArrowDown } from '@lucide/svelte';
 	import { createDragGutter, type DragGutterHandle } from './drag-gutter';
 	import { handleImageDrop, handleImagePaste } from './image-drop-paste';
+	import { pmContentFromSnippet } from './slash-command-extension';
 	import MediaInsertPopover from './MediaInsertPopover.svelte';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
@@ -107,6 +108,9 @@
 		if (!ed) return;
 		if (kind === 'image') {
 			ed.chain().focus().setImage({ src }).run();
+		} else {
+			const content = pmContentFromSnippet(`{% video src=${JSON.stringify(src)} /%}`);
+			ed.chain().focus().insertContent(content).run();
 		}
 	}
 

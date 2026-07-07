@@ -735,31 +735,63 @@ textarea.md-control {
 	min-width: 0;
 }
 
-.markdown-surface .markdoc-container-content.md-callout {
+.markdown-surface .markdoc-container-node.is-callout {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.55rem;
+	align-items: start;
 	padding: 0.6rem 0.8rem;
 	border-radius: var(--radius-sm);
 	border: 1px solid;
 	font-size: 0.9em;
 }
 
-.markdown-surface .markdoc-container-node.md-callout--info .markdoc-container-content.md-callout {
+.markdown-surface .markdoc-container-node.is-callout .md-callout-icon {
+	grid-row: 1 / -1;
+	display: flex;
+	margin-top: 0.15rem;
+}
+
+.markdown-surface .markdoc-container-node.is-callout .md-callout-title-editor {
+	grid-column: 2;
+	margin: 0 0 0.15rem;
+	font-weight: 600;
+}
+
+.markdown-surface .markdoc-container-node.is-callout .markdoc-container-content.md-callout {
+	grid-column: 2;
+}
+
+.markdown-surface .markdoc-container-node.md-callout--info {
 	background: color-mix(in oklab, var(--chart-1) 8%, transparent);
 	border-color: var(--chart-1);
 }
+.markdown-surface .markdoc-container-node.md-callout--info .md-callout-icon {
+	color: var(--chart-1);
+}
 
-.markdown-surface .markdoc-container-node.md-callout--success .markdoc-container-content.md-callout {
+.markdown-surface .markdoc-container-node.md-callout--success {
 	background: color-mix(in oklab, var(--success) 8%, transparent);
 	border-color: var(--success);
 }
+.markdown-surface .markdoc-container-node.md-callout--success .md-callout-icon {
+	color: var(--success);
+}
 
-.markdown-surface .markdoc-container-node.md-callout--warning .markdoc-container-content.md-callout {
+.markdown-surface .markdoc-container-node.md-callout--warning {
 	background: color-mix(in oklab, var(--warning) 8%, transparent);
 	border-color: var(--warning);
 }
+.markdown-surface .markdoc-container-node.md-callout--warning .md-callout-icon {
+	color: var(--warning);
+}
 
-.markdown-surface .markdoc-container-node.md-callout--error .markdoc-container-content.md-callout {
+.markdown-surface .markdoc-container-node.md-callout--error {
 	background: color-mix(in oklab, var(--destructive) 8%, transparent);
 	border-color: var(--destructive);
+}
+.markdown-surface .markdoc-container-node.md-callout--error .md-callout-icon {
+	color: var(--destructive);
 }
 
 .markdown-surface .markdoc-container-content.md-card {
@@ -868,6 +900,28 @@ textarea.md-control {
 	background: color-mix(in oklab, var(--muted) 35%, transparent);
 	font-family: var(--font-mono, ui-monospace, monospace);
 	font-size: var(--text-2xs);
+}
+
+/* ── Prose links (visual editor + report) ───────────────────────────────── */
+/* Plain <a> tags had no styling at all here — indistinguishable from body text. */
+
+.markdown-surface a:not(.md-bookmark, .md-embed-fallback, .nc-mode-link, .nc-varchip),
+.markdown-surface .markdown-body a:not(.md-bookmark, .md-embed-fallback),
+.notion-surface a:not(.md-bookmark, .md-embed-fallback),
+.notebook-document-surface a:not(.md-bookmark, .md-embed-fallback),
+.report-markdown a:not(.md-bookmark, .md-embed-fallback) {
+	color: var(--primary);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	text-decoration-color: color-mix(in oklab, var(--primary) 45%, transparent);
+}
+
+.markdown-surface a:not(.md-bookmark, .md-embed-fallback, .nc-mode-link, .nc-varchip):hover,
+.markdown-surface .markdown-body a:not(.md-bookmark, .md-embed-fallback):hover,
+.notion-surface a:not(.md-bookmark, .md-embed-fallback):hover,
+.notebook-document-surface a:not(.md-bookmark, .md-embed-fallback):hover,
+.report-markdown a:not(.md-bookmark, .md-embed-fallback):hover {
+	text-decoration-color: var(--primary);
 }
 
 /* ── Prose lists (visual editor + report) ───────────────────────────────── */
@@ -988,9 +1042,9 @@ textarea.md-control {
 	margin: 0.5rem 0;
 }
 
-.markdown-surface .ProseMirror .column-resize-handle,
-.notion-surface .ProseMirror .column-resize-handle,
-.notebook-document-surface .ProseMirror .column-resize-handle {
+.markdown-surface .ProseMirror .column-resize-handle:not(.result-table *),
+.notion-surface .ProseMirror .column-resize-handle:not(.result-table *),
+.notebook-document-surface .ProseMirror .column-resize-handle:not(.result-table *) {
 	background-color: var(--primary);
 	bottom: -2px;
 	pointer-events: none;

@@ -191,7 +191,14 @@ function renderTagAttributes(name: string, attributes: Record<string, unknown>):
 	const parts: string[] = [];
 	if (name === 'a' && typeof attributes.href === 'string') {
 		const safeHref = sanitizeUrl(attributes.href);
-		if (safeHref) parts.push(`href="${escapeHtml(safeHref)}"`);
+		if (safeHref) {
+			parts.push(`href="${escapeHtml(safeHref)}"`);
+			// Plain markdown links carry no target/rel; open external links in a new
+			// tab without leaking window.opener, matching the live editor's behavior.
+			if (/^https?:\/\//i.test(safeHref)) {
+				parts.push('target="_blank"', 'rel="noopener noreferrer"');
+			}
+		}
 	}
 	if (name === 'img') {
 		if (typeof attributes.src === 'string') {
@@ -267,7 +274,11 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 		}
 		if (tag.name === 'callout') {
 			const tone = escapeHtml(String(attrs.type ?? 'info'));
-			return `<aside data-markdoc-tag="callout" class="markdoc-callout markdoc-callout--${tone}">${childrenHtml}</aside>`;
+			const title =
+				typeof attrs.title === 'string' && attrs.title
+					? `<p class="markdoc-callout-title">${escapeHtml(attrs.title)}</p>`
+					: '';
+			return `<aside data-markdoc-tag="callout" class="markdoc-callout markdoc-callout--${tone}"><span class="markdoc-callout-icon"></span><div class="markdoc-callout-body">${title}${childrenHtml}</div></aside>`;
 		}
 		if (tag.name === 'card') {
 			const title =

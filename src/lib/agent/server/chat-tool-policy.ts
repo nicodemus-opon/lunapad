@@ -9,6 +9,10 @@ export interface ChatToolPolicyContext {
 	 *  `ref=$cellName` actually inherits. Optional so tests/eval callers that don't track
 	 *  live chart state can omit it (falls back to permissive validation). */
 	chartedOutputNames?: Set<string>;
+	/** Real result column names per outputName (from AIChatCell.resultColumns — the server never
+	 *  sees row values). Lets markdown validation resolve Markdoc variables against the actual
+	 *  schema instead of falling back to a generic mock row — see getCriticalMarkdownFailures. */
+	columnsByOutputName?: Map<string, string[]>;
 	latestUserMessage: string;
 }
 
@@ -118,7 +122,12 @@ export function isChatToolCallAllowed(
 		const markdown = String(args.markdown ?? (args.cellType === 'markdown' ? args.code : '') ?? '');
 		if (
 			markdown.trim() &&
-			getCriticalMarkdownFailures(markdown, ctx.cellOutputNames, ctx.chartedOutputNames).length > 0
+			getCriticalMarkdownFailures(
+				markdown,
+				ctx.cellOutputNames,
+				ctx.chartedOutputNames,
+				ctx.columnsByOutputName
+			).length > 0
 		) {
 			return false;
 		}
@@ -156,7 +165,12 @@ export function blockedToolFallbackText(
 			return `Cannot write code referencing \`${unknown}\` — it does not exist in the workspace schema or as a cell output. Do not guess another name; use only a name from this exact list. Available tables: ${available || '(none)'}. Available cell outputs: ${cells || '(none)'}.`;
 		}
 		const markdown = String(args.markdown ?? (args.cellType === 'markdown' ? args.code : '') ?? '');
-		const mdFailures = getCriticalMarkdownFailures(markdown, ctx.cellOutputNames, ctx.chartedOutputNames);
+		const mdFailures = getCriticalMarkdownFailures(
+			markdown,
+			ctx.cellOutputNames,
+			ctx.chartedOutputNames,
+			ctx.columnsByOutputName
+		);
 		if (mdFailures.length > 0) {
 			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. Fix Markdoc syntax and $cell refs before creating the cell.`;
 		}

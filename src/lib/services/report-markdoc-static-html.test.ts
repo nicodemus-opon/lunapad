@@ -96,6 +96,17 @@ describe('renderMarkdocCellToStaticHtml', () => {
 		expect(html).toContain('class="markdoc-callout markdoc-callout--warning"');
 	});
 
+	it('renders a callout with a title', () => {
+		const html = renderMarkdocCellToStaticHtml(
+			'{% callout type="warning" title="Heads up" %}\nBody text.\n{% /callout %}',
+			[]
+		);
+		expect(html).toContain('markdoc-callout--warning');
+		expect(html).toContain('markdoc-callout-title');
+		expect(html).toContain('Heads up');
+		expect(html).toContain('Body text.');
+	});
+
 	it('falls back to escaped mermaid source in static export', () => {
 		const html = renderMarkdocCellToStaticHtml(
 			'{% mermaid %}\ngraph TD\nA-->B\n{% /mermaid %}',

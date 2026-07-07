@@ -439,7 +439,8 @@ const calloutTag: Schema = {
 	render: 'callout',
 	children: CONTAINER_CHILDREN,
 	attributes: {
-		type: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' }
+		type: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' },
+		title: { type: String }
 	}
 };
 const cardTag: Schema = {
@@ -1224,12 +1225,21 @@ export function validateMarkdocMarkdown(markdown: string, cells: Cell[]): Markdo
 		});
 	}
 
-	// Flag undefined top-level $cell refs (inline prose + tag attributes)
+	// Flag undefined top-level $cell refs (real tag variable nodes + bare prose refs).
+	// `extractMarkdocRefs` roots are backed by an actual Markdoc AST Variable node inside a
+	// tag, so they're unambiguous. `extractBareMarkdocRefRoots` scans raw text outside tags —
+	// a lone `$word` there could just as easily be a stray dollar sign in ordinary prose, so
+	// only treat it as a probable cell reference when it has an explicit `.field` access.
 	const knownCells = new Set(Object.keys(buildMarkdocVariables(cells)));
-	const refNames = new Set([
-		...extractMarkdocRefs(effectiveMarkdown),
-		...extractBareMarkdocRefRoots(effectiveMarkdown)
-	]);
+	const astRefNames = new Set(extractMarkdocRefs(effectiveMarkdown));
+	const bareRefNames = new Set(
+		extractBareMarkdocRefRoots(effectiveMarkdown).filter((ref) =>
+			new RegExp(`\\$${ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.[A-Za-z_]`).test(
+				effectiveMarkdown
+			)
+		)
+	);
+	const refNames = new Set([...astRefNames, ...bareRefNames]);
 	for (const refName of refNames) {
 		if (knownCells.has(refName) || refName === 'key' || refName === 'keyId' || refName === 'items')
 			continue;

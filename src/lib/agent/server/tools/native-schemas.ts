@@ -1,4 +1,5 @@
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
+import { SUPPORTED_BLOCK_TYPES } from '$lib/services/generated-dashboard.js';
 
 // Native OpenAI-format tool definitions (kept minimal to reduce token count)
 // Lookup tools run client-side; they inject results as text into the message thread.
@@ -53,30 +54,12 @@ export const NATIVE_TOOLS = [
 									properties: {
 										type: {
 											type: 'string',
-											enum: [
-												'text',
-												'grid',
-												'columns',
-												'card',
-												'metric',
-												'chart',
-												'datatable',
-												'badge',
-												'progress',
-												'callout',
-												'details',
-												'tabs',
-												'filter',
-												'mermaid',
-												'each',
-												'group',
-												'conditional'
-											]
+											enum: [...SUPPORTED_BLOCK_TYPES]
 										}
 									},
 									required: ['type'],
 									description:
-										'One typed notebook block. Container blocks (grid.items, columns.columns[].blocks, card/callout/details/tabs/conditional block arrays) nest these same blocks recursively — follow the block grammar in the system prompt for each type\'s fields.'
+										"One typed notebook block. Container blocks (grid.items, columns.columns[].blocks, card/callout/details/tabs/conditional block arrays) nest these same blocks recursively — follow the block grammar in the system prompt for each type's fields."
 								}
 							}
 						}

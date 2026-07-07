@@ -291,6 +291,16 @@ ok
 		expect(progress?.attributes.color).toBe('info');
 	});
 
+	it('renders a callout title passthrough', () => {
+		const { tree } = renderMarkdocCell(
+			'{% callout type="warning" title="Heads up" %}\nBody.\n{% /callout %}',
+			[]
+		);
+		const callout = findTag(tree, 'callout');
+		expect(callout?.attributes.type).toBe('warning');
+		expect(callout?.attributes.title).toBe('Heads up');
+	});
+
 	it('renders a video tag passthrough', () => {
 		const { tree, errors } = renderMarkdocCell(
 			'{% video src="https://example.com/a.mp4" loop=true muted=true /%}',

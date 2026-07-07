@@ -1,5 +1,6 @@
 <script lang="ts">
 	import NodeConfigField from './NodeConfigField.svelte';
+	import ConditionalFormatEditor from './ConditionalFormatEditor.svelte';
 	import Editor from '$lib/components/Editor.svelte';
 	import { CUSTOM_CHART_GLOBALS_DTS } from '$lib/services/plot-cell';
 	import { DEFAULT_CUSTOM_CHART_CODE } from '$lib/utils';
@@ -16,6 +17,10 @@
 	import { toast } from 'svelte-sonner';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { resolveBareVariablePath } from '$lib/services/markdoc-interp';
+	import { sanitizeUrl } from '$lib/services/safe-url';
+	import { embedUrlToIframeSrc } from '$lib/services/embed-providers';
+	import { buildNotebookOutline } from '$lib/services/notebook-outline';
+	import katex from 'katex';
 
 	/** Resolve a loop `data` attr (literal array or `$cell.rows` ref) to rows, or null. */
 	function resolveLoopRows(data: unknown, cellList: Cell[]): unknown[] | null {
@@ -118,6 +123,31 @@
 	const parsed = $derived(block ? parseBlockWidget(block) : null);
 	const catalog = $derived(parsed ? MARKDOC_TAG_CATALOG[parsed.tagName] : null);
 
+	const embedPreviewUrl = $derived.by(() => {
+		if (!parsed || parsed.tagName !== 'embed') return '';
+		return sanitizeUrl(attr(parsed.attrs.url));
+	});
+	const embedIframeSrc = $derived(embedPreviewUrl ? embedUrlToIframeSrc(embedPreviewUrl) : null);
+
+	const mathPreviewHtml = $derived.by(() => {
+		if (!parsed || parsed.tagName !== 'math') return '';
+		const latex = attr(parsed.attrs.latex);
+		if (!latex.trim()) return '';
+		try {
+			return katex.renderToString(latex, {
+				throwOnError: false,
+				displayMode: Boolean(parsed.attrs.display)
+			});
+		} catch {
+			return '';
+		}
+	});
+
+	const tocHeadingCount = $derived.by(() => {
+		if (!parsed || parsed.tagName !== 'toc') return 0;
+		return buildNotebookOutline(cells).filter((e) => e.kind === 'heading').length;
+	});
+
 	const aggOptions: TableAggKind[] = ['sum', 'avg', 'min', 'max', 'count'];
 	const chartTypes = [
 		'table',
@@ -155,6 +185,19 @@
 		'boolean'
 	] as const;
 	const metricFormats = ['number', 'currency', 'compact', 'percent'] as const;
+	const valueFormatKinds = [
+		'number',
+		'currency',
+		'percentage',
+		'boolean',
+		'id',
+		'email',
+		'url',
+		'datetime',
+		'date',
+		'category',
+		'text'
+	] as const;
 	const filterKinds = [
 		'dropdown',
 		'text-input',
@@ -551,6 +594,56 @@
 								{/snippet}
 							</NodeConfigField>
 						{/if}
+						{#if attr(parsed.attrs.type, 'bar') === 'map'}
+							<NodeConfigField label="Latitude column">
+								{#snippet control()}
+									<input
+										class="nc-input"
+										list="visual-columns"
+										value={attr(parsed.attrs.lat)}
+										oninput={(e) => setAttr('lat', e.currentTarget.value || undefined)}
+									/>
+								{/snippet}
+							</NodeConfigField>
+							<NodeConfigField label="Longitude column">
+								{#snippet control()}
+									<input
+										class="nc-input"
+										list="visual-columns"
+										value={attr(parsed.attrs.lon)}
+										oninput={(e) => setAttr('lon', e.currentTarget.value || undefined)}
+									/>
+								{/snippet}
+							</NodeConfigField>
+						{/if}
+						{#if attr(parsed.attrs.type, 'bar') === 'choropleth'}
+							<NodeConfigField label="Region scope">
+								{#snippet control()}
+									<div class="nc-segments">
+										{#each ['world', 'usa-states'] as scope (scope)}
+											<button
+												type="button"
+												class="nc-segment"
+												class:is-active={attr(parsed.attrs.geoScope, 'world') === scope}
+												onclick={() => setAttr('geoScope', scope)}
+											>
+												{humanize(scope)}
+											</button>
+										{/each}
+									</div>
+								{/snippet}
+							</NodeConfigField>
+							<NodeConfigField label="Region column" hint="Column with country/state names or codes">
+								{#snippet control()}
+									<input
+										class="nc-input"
+										list="visual-columns"
+										value={attr(parsed.attrs.x)}
+										oninput={(e) => setAttr('x', e.currentTarget.value || undefined)}
+									/>
+								{/snippet}
+							</NodeConfigField>
+						{/if}
 						<NodeConfigField label="Y columns (JSON)">
 							{#snippet control()}
 								<input
@@ -790,6 +883,48 @@
 								</select>
 							{/snippet}
 						</NodeConfigField>
+						<NodeConfigField label="Round" hint="Decimal places">
+							{#snippet control()}
+								<input
+									class="nc-input"
+									type="number"
+									min="0"
+									max="10"
+									value={parsed.attrs.round != null ? Number(parsed.attrs.round) : ''}
+									placeholder="auto"
+									oninput={(e) => {
+										const raw = e.currentTarget.value.trim();
+										setAttr('round', raw ? Number(raw) : undefined);
+									}}
+								/>
+							{/snippet}
+						</NodeConfigField>
+						<NodeConfigField label="Value format">
+							{#snippet control()}
+								<select
+									class="nc-select"
+									value={attr(parsed.attrs.valueFormatKind)}
+									onchange={(e) => setAttr('valueFormatKind', e.currentTarget.value || undefined)}
+								>
+									<option value="">Auto</option>
+									{#each valueFormatKinds as fmt (fmt)}
+										<option value={fmt}>{humanize(fmt)}</option>
+									{/each}
+								</select>
+							{/snippet}
+						</NodeConfigField>
+						{#if parsed.attrs.valueFormatKind === 'currency'}
+							<NodeConfigField label="Currency symbol">
+								{#snippet control()}
+									<input
+										class="nc-input"
+										value={attr(parsed.attrs.valueCurrencySymbol, '$')}
+										maxlength="3"
+										oninput={(e) => setAttr('valueCurrencySymbol', e.currentTarget.value || undefined)}
+									/>
+								{/snippet}
+							</NodeConfigField>
+						{/if}
 						<NodeConfigField label="Linked filter">
 							{#snippet control()}
 								<input
@@ -801,6 +936,11 @@
 						</NodeConfigField>
 					</div>
 				</details>
+				<ConditionalFormatEditor
+					columns={availableColumns}
+					value={Array.isArray(parsed.attrs.conditionalFormats) ? parsed.attrs.conditionalFormats : []}
+					onChange={(next) => setAttr('conditionalFormats', next.length ? next : undefined)}
+				/>
 			</div>
 		{:else if parsed.tagName === 'filter'}
 			{@const param = attr(parsed.attrs.param)}
@@ -1022,6 +1162,179 @@
 						</div>
 					{/snippet}
 				</NodeConfigField>
+			</div>
+		{:else if parsed.tagName === 'video'}
+			<div class="nc-stack">
+				<NodeConfigField label="Source" hint="Video file URL">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.src)}
+							placeholder="https://example.com/clip.mp4"
+							oninput={(e) => setAttr('src', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Poster" hint="Preview image shown before playback">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.poster)}
+							placeholder="https://example.com/poster.jpg"
+							oninput={(e) => setAttr('poster', e.currentTarget.value || undefined)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<label class="nc-check">
+					<input
+						type="checkbox"
+						checked={Boolean(parsed.attrs.loop)}
+						onchange={(e) => setAttr('loop', e.currentTarget.checked || undefined)}
+					/>
+					<span>Loop playback</span>
+				</label>
+				<label class="nc-check">
+					<input
+						type="checkbox"
+						checked={Boolean(parsed.attrs.muted)}
+						onchange={(e) => setAttr('muted', e.currentTarget.checked || undefined)}
+					/>
+					<span>Start muted</span>
+				</label>
+				{#if attr(parsed.attrs.src) && !sanitizeUrl(attr(parsed.attrs.src))}
+					<p class="nc-callout-warn">Unsafe or unsupported URL scheme.</p>
+				{/if}
+			</div>
+		{:else if parsed.tagName === 'embed'}
+			<div class="nc-stack">
+				<NodeConfigField label="URL" hint="YouTube, Vimeo, or Loom link">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.url)}
+							placeholder="https://www.youtube.com/watch?v=…"
+							oninput={(e) => setAttr('url', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Aspect ratio">
+					{#snippet control()}
+						<div class="nc-segments">
+							{#each ['16:9', '4:3', '1:1'] as ratio (ratio)}
+								<button
+									type="button"
+									class="nc-segment"
+									class:is-active={attr(parsed.attrs.aspect, '16:9') === ratio}
+									onclick={() => setAttr('aspect', ratio)}
+								>
+									{ratio}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</NodeConfigField>
+				{#if embedPreviewUrl}
+					<div class="nc-callout">
+						{#if embedIframeSrc}
+							<p class="nc-callout-title">✓ Embeddable</p>
+							<p class="nc-callout-copy">Renders as a player.</p>
+						{:else}
+							<p class="nc-callout-warn">Host isn't on the embed allowlist</p>
+							<p class="nc-callout-copy">Renders as a link card instead of a player.</p>
+						{/if}
+					</div>
+				{:else if attr(parsed.attrs.url)}
+					<p class="nc-callout-warn">Unsafe or unsupported URL.</p>
+				{/if}
+			</div>
+		{:else if parsed.tagName === 'bookmark'}
+			<div class="nc-stack">
+				<NodeConfigField label="URL">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.url)}
+							placeholder="https://example.com"
+							oninput={(e) => setAttr('url', e.currentTarget.value)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Title" hint="Defaults to the URL">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.title)}
+							oninput={(e) => setAttr('title', e.currentTarget.value || undefined)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Description">
+					{#snippet control()}
+						<input
+							class="nc-input"
+							value={attr(parsed.attrs.description)}
+							oninput={(e) => setAttr('description', e.currentTarget.value || undefined)}
+						/>
+					{/snippet}
+				</NodeConfigField>
+				{#if attr(parsed.attrs.url) && !sanitizeUrl(attr(parsed.attrs.url))}
+					<p class="nc-callout-warn">Unsafe or unsupported URL scheme.</p>
+				{/if}
+			</div>
+		{:else if parsed.tagName === 'math'}
+			<div class="nc-stack">
+				<NodeConfigField label="LaTeX">
+					{#snippet control()}
+						<textarea
+							class="nc-textarea font-mono"
+							value={attr(parsed.attrs.latex)}
+							placeholder="E = mc^2"
+							oninput={(e) => setAttr('latex', e.currentTarget.value)}
+						></textarea>
+					{/snippet}
+				</NodeConfigField>
+				<NodeConfigField label="Layout">
+					{#snippet control()}
+						<div class="nc-segments">
+							<button
+								type="button"
+								class="nc-segment"
+								class:is-active={!parsed.attrs.display}
+								onclick={() => setAttr('display', undefined)}
+							>
+								Inline
+							</button>
+							<button
+								type="button"
+								class="nc-segment"
+								class:is-active={Boolean(parsed.attrs.display)}
+								onclick={() => setAttr('display', true)}
+							>
+								Display block
+							</button>
+						</div>
+					{/snippet}
+				</NodeConfigField>
+				{#if mathPreviewHtml}
+					<div class="nc-callout nc-math-preview">
+						<p class="nc-callout-title">Preview</p>
+						{@html mathPreviewHtml}
+					</div>
+				{:else if attr(parsed.attrs.latex)}
+					<p class="nc-callout-warn">Invalid LaTeX.</p>
+				{/if}
+			</div>
+		{:else if parsed.tagName === 'toc'}
+			<div class="nc-stack">
+				<p class="nc-lead">
+					Updates automatically from this notebook's headings — nothing to configure.
+				</p>
+				<div class="nc-callout">
+					<p class="nc-callout-copy">
+						{tocHeadingCount}
+						{tocHeadingCount === 1 ? 'heading' : 'headings'} found right now.
+					</p>
+				</div>
 			</div>
 		{:else if parsed.tagName === 'columns'}
 			<div class="nc-stack">
@@ -1399,6 +1712,15 @@
 							</div>
 						{/snippet}
 					</NodeConfigField>
+					<NodeConfigField label="Title" hint="Optional heading above the body">
+						{#snippet control()}
+							<input
+								class="nc-input"
+								value={attr(parsed.attrs.title)}
+								oninput={(e) => setAttr('title', e.currentTarget.value || undefined)}
+							/>
+						{/snippet}
+					</NodeConfigField>
 				{/if}
 			</div>
 		{:else}
@@ -1668,5 +1990,11 @@
 	}
 	.nc-callout-list {
 		padding-left: 1rem;
+	}
+	.nc-math-preview {
+		overflow-x: auto;
+	}
+	.nc-math-preview :global(.katex-display) {
+		margin: 0.3rem 0 0;
 	}
 </style>

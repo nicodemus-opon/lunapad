@@ -117,7 +117,10 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 					'text'
 				]
 			},
-			valueCurrencySymbol: { detail: 'Currency symbol when valueFormatKind=currency' }
+			valueCurrencySymbol: { detail: 'Currency symbol when valueFormatKind=currency' },
+			conditionalFormats: {
+				detail: 'Per-column cell highlighting rules (threshold/colorScale/dataBar/iconSet)'
+			}
 		}
 	},
 	badge: {
@@ -175,7 +178,8 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		slashSnippet: WIDGET_SNIPPETS.callout,
 		aliases: ['info', 'warning', 'note'],
 		attributes: {
-			type: { detail: 'Callout style', enum: ['info', 'success', 'warning', 'error'] }
+			type: { detail: 'Callout style', enum: ['info', 'success', 'warning', 'error'] },
+			title: { detail: 'Optional title shown above the body' }
 		}
 	},
 	card: {
@@ -292,7 +296,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		}
 	},
 	toc: {
-		detail: 'Table of contents from this notebook\'s headings',
+		detail: "Table of contents from this notebook's headings",
 		snippet: 'toc /%}',
 		slashSnippet: WIDGET_SNIPPETS.toc,
 		selfClosing: true,

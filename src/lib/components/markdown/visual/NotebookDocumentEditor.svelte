@@ -8,6 +8,7 @@
 	import LinkPopover from './LinkPopover.svelte';
 	import MediaInsertPopover from './MediaInsertPopover.svelte';
 	import { handleImageDrop, handleImagePaste } from './image-drop-paste';
+	import { pmContentFromSnippet } from './slash-command-extension';
 	import { sanitizeUrl } from '$lib/services/safe-url';
 	import { cellsToPmDocument, pmDocumentToBlocks } from '$lib/services/notebook-pm';
 	import type { PMDocJSON } from '$lib/services/markdoc-pm';
@@ -121,6 +122,9 @@
 		if (!ed) return;
 		if (kind === 'image') {
 			ed.chain().focus().setImage({ src }).run();
+		} else {
+			const content = pmContentFromSnippet(`{% video src=${JSON.stringify(src)} /%}`);
+			ed.chain().focus().insertContent(content).run();
 		}
 	}
 

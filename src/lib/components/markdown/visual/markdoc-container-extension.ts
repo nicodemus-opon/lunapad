@@ -18,6 +18,18 @@ export interface MarkdocContainerExtensionContext {
 	getNotebookId?: () => string;
 }
 
+/** Matches the icon set CalloutWidget.svelte uses for report/static rendering, kept as raw
+ * SVG here since this NodeView is built with vanilla DOM APIs, not Svelte components. */
+const CALLOUT_ICON_SVG: Record<string, string> = {
+	info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+	success:
+		'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+	warning:
+		'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+	error:
+		'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>'
+};
+
 const LOGIC_PREVIEW_TAGS = new Set(['each', 'group']);
 
 /** Resolve a loop `data` attr (literal array or `$cell.rows` ref) to rows, or null. */
@@ -113,6 +125,8 @@ function applyContainerSemantics(
 	dom.querySelector('.md-tabs-strip')?.remove();
 	dom.querySelector('.md-details-summary')?.remove();
 	dom.querySelector('.md-card-title-editor')?.remove();
+	dom.querySelector('.md-callout-icon')?.remove();
+	dom.querySelector('.md-callout-title-editor')?.remove();
 
 	if (tagName === 'grid') {
 		const cols = Number(attrs.cols ?? 3);
@@ -135,6 +149,16 @@ function applyContainerSemantics(
 		const type = String(attrs.type ?? 'info');
 		dom.classList.add('is-callout', 'is-wysiwyg', `md-callout--${type}`);
 		contentDOM.classList.add('md-callout');
+		const iconEl = document.createElement('span');
+		iconEl.className = 'md-callout-icon';
+		iconEl.innerHTML = CALLOUT_ICON_SVG[type] ?? CALLOUT_ICON_SVG.info;
+		dom.insertBefore(iconEl, contentDOM);
+		if (attrs.title) {
+			const titleEl = document.createElement('p');
+			titleEl.className = 'md-callout-title-editor';
+			titleEl.textContent = String(attrs.title);
+			dom.insertBefore(titleEl, contentDOM);
+		}
 	} else if (tagName === 'card') {
 		const accent = String(attrs.accent ?? 'neutral');
 		dom.classList.add('is-card', 'is-wysiwyg');

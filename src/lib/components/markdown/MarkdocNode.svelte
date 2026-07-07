@@ -12,6 +12,7 @@
 	import FilterWidget from './FilterWidget.svelte';
 	import BadgeWidget from './BadgeWidget.svelte';
 	import ProgressWidget from './ProgressWidget.svelte';
+	import CalloutWidget from './CalloutWidget.svelte';
 	import VideoWidget from './VideoWidget.svelte';
 	import EmbedWidget from './EmbedWidget.svelte';
 	import BookmarkWidget from './BookmarkWidget.svelte';
@@ -64,6 +65,14 @@
 				if (safe) copy[key] = safe;
 				else delete copy[key];
 			}
+		}
+		// Plain markdown links (`[text](url)`) carry no target/rel — the editor's TipTap
+		// Link mark sets these on insert, but they don't survive the markdown round-trip.
+		// Reapply them here so every rendered link (report view, static export source)
+		// opens external URLs in a new tab without a window.opener leak.
+		if (tag.name === 'a' && typeof copy.href === 'string' && /^https?:\/\//i.test(copy.href)) {
+			copy.target = '_blank';
+			copy.rel = 'noopener noreferrer';
 		}
 		return copy;
 	});
@@ -168,9 +177,9 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'callout'}
-	<div class="md-callout md-callout--{tag.attributes.type ?? 'info'}">
+	<CalloutWidget type={tag.attributes.type ?? 'info'} title={tag.attributes.title}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
-	</div>
+	</CalloutWidget>
 {:else if tag?.name === 'card'}
 	<div
 		class="md-card {tag.attributes.accent && tag.attributes.accent !== 'neutral'
