@@ -39,6 +39,7 @@
 		setCellResultViewMode,
 		setCellResultChartConfig,
 		updateCellColumnFormatRules,
+		updateCellColumnWidths,
 		updateCellMarkdown,
 		updateCellUdfBody,
 		updatePlotCellCode,
@@ -1262,6 +1263,8 @@
 							onAddFilter={cell.editMode === 'gui' ? addFilterSuggestion : undefined}
 							columnFormatRules={cell.columnFormatRules}
 							onColumnFormatRulesChange={(rules) => updateCellColumnFormatRules(cell.id, rules)}
+							columnWidths={cell.columnWidths}
+							onColumnWidthsChange={(widths) => updateCellColumnWidths(cell.id, widths)}
 							columnDescriptions={isDbtProject ? columnDescriptions : undefined}
 							onColumnDescriptionChange={isDbtProject ? handleColumnDescriptionChange : undefined}
 						>

@@ -1099,6 +1099,82 @@ textarea.md-control {
 	box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 55%, transparent);
 }
 
+/* ── Notion-style drag gutter (rail + "+" button) ──────────────────────── */
+/* Shared by NotionEditor and NotebookDocumentEditor. Reveal on hovering the
+   editor wrapper (not just :focus-within) so the rail shows before the user
+   has clicked into the document, matching Notion's hover-to-reveal behavior. */
+
+.notion-drag-gutter {
+	display: flex;
+	align-items: center;
+	gap: 1px;
+	opacity: 0;
+	transition: opacity var(--motion-fast) var(--motion-ease-out);
+}
+
+.notebook-document-editor:hover .notion-drag-gutter,
+.notebook-markdown-editor:hover .notion-drag-gutter,
+.notebook-markdown-editor:focus-within .notion-drag-gutter,
+.notion-drag-gutter:hover,
+.notion-drag-gutter.is-open {
+	opacity: 1;
+}
+
+.notion-plus-btn,
+.notion-drag-handle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.25rem;
+	height: 1.25rem;
+	border-radius: var(--radius-sm);
+	color: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
+	cursor: pointer;
+	position: relative;
+}
+
+.notion-plus-btn:hover,
+.notion-drag-handle:hover {
+	background: var(--muted);
+	color: var(--foreground);
+}
+
+/* ── Insert-between-blocks hover divider ───────────────────────────────── */
+
+.block-insert-line {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 0;
+	display: none;
+	align-items: center;
+	z-index: 5;
+	pointer-events: none;
+}
+
+.block-insert-line-bar {
+	flex: 1 1 auto;
+	height: 2px;
+	background: var(--primary);
+	border-radius: 1px;
+}
+
+.block-insert-line-chip {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.1rem;
+	height: 1.1rem;
+	margin-right: 0.35rem;
+	border-radius: 999px;
+	border: none;
+	background: var(--primary);
+	color: var(--primary-foreground);
+	cursor: pointer;
+	pointer-events: auto;
+	flex-shrink: 0;
+}
+
 /* ── Adjacent block selection radii ────────────────────────────────────── */
 
 .markdown-surface .ProseMirror-selectednode + .ProseMirror-selectednode .inline-widget-view,

@@ -88,6 +88,7 @@
 					initialViewMode={cell.resultViewMode}
 					initialChartConfig={cell.resultChartConfig}
 					columnFormatRules={cell.columnFormatRules}
+					columnWidths={cell.columnWidths}
 					controlsVisible={exportEnabled}
 					toolbarReserveSpace={false}
 				/>

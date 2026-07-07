@@ -33,6 +33,7 @@ export function makeDemoCell(
 		resultViewMode: 'table',
 		resultChartConfig: null,
 		columnFormatRules: {},
+		columnWidths: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',

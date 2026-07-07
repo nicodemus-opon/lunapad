@@ -102,6 +102,7 @@
 		"highlight.js": "^11.11.1",
 		"inngest": "^4.5.0",
 		"ioredis": "^5.11.1",
+		"katex": "^0.17.0",
 		"marked": "^18.0.4",
 		"mermaid": "^11.16.0",
 		"monaco-editor": "^0.55.1",

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import {
 		type ColumnDef,
 		type ColumnFiltersState,
@@ -65,6 +66,9 @@
 		truncated?: boolean;
 		/** Fill the parent's height instead of capping the table at max-h-96 (full result tab) */
 		fillHeight?: boolean;
+		/** Persisted column pixel widths, keyed by column id. Uncontrolled (resize-only, not persisted) if omitted. */
+		columnWidths?: Record<string, number>;
+		onColumnWidthsChange?: (widths: Record<string, number>) => void;
 	}
 
 	let {
@@ -84,7 +88,9 @@
 		fillHeight = false,
 		onAddSort,
 		onAddFilter,
-		onColumnDescriptionChange
+		onColumnDescriptionChange,
+		columnWidths,
+		onColumnWidthsChange
 	}: Props = $props();
 
 	let descPopoverCol = $state<string | null>(null);
@@ -115,6 +121,23 @@
 	const globalSearch = $derived(searchValue ?? internalSearch);
 	let sorting = $state<SortingState>([]);
 	let columnFilters = $state<ColumnFiltersState>([]);
+
+	// ── Column widths ────────────────────────────────────────────────────
+	// Only treated as controlled (writes go through the callback, nothing stored locally) when
+	// `onColumnWidthsChange` is passed — e.g. notebook cells, which persist widths on the Cell.
+	// Otherwise `columnWidths` is just an initial value and resizing is session-local — used by
+	// read-only report views (no write path back to the source notebook) and markdown
+	// `{% datatable %}` blocks (no cell to persist against).
+	let internalColumnWidths = $state<Record<string, number>>(untrack(() => columnWidths ?? {}));
+	const effectiveColumnWidths = $derived(
+		onColumnWidthsChange ? (columnWidths ?? {}) : internalColumnWidths
+	);
+	const hasResizedColumns = $derived(Object.keys(effectiveColumnWidths).length > 0);
+
+	function setColumnWidths(next: Record<string, number>) {
+		if (onColumnWidthsChange) onColumnWidthsChange(next);
+		else internalColumnWidths = next;
+	}
 
 	let filterPopoverCol = $state<string | null>(null);
 	let filterPopoverValue = $state('');
@@ -336,6 +359,9 @@
 			},
 			get columnFilters() {
 				return columnFilters;
+			},
+			get columnSizing() {
+				return effectiveColumnWidths;
 			}
 		},
 		onPaginationChange(updater) {
@@ -348,6 +374,11 @@
 		onColumnFiltersChange(updater) {
 			columnFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
 			resetPaginationToFirstPage();
+		},
+		columnResizeMode: 'onChange',
+		onColumnSizingChange(updater) {
+			const next = typeof updater === 'function' ? updater(effectiveColumnWidths) : updater;
+			setColumnWidths(next);
 		},
 		getCoreRowModel: getCoreRowModel(),
 		getFilteredRowModel: getFilteredRowModel(),
@@ -524,6 +555,7 @@
 				containerClass="rounded-sm border border-border {fillHeight
 					? 'min-h-0 w-full max-w-full flex-1 overflow-auto'
 					: 'max-h-96 overflow-auto'}"
+				style={hasResizedColumns ? 'table-layout: fixed;' : undefined}
 			>
 				<Table.Header>
 					{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
@@ -531,8 +563,9 @@
 							{#each headerGroup.headers as header, hi (header.id)}
 								{@const s = statsMap[header.id]}
 								<Table.Head
-									class="result-table-head h-auto min-h-10 whitespace-normal border-b border-border p-2 align-top
+									class="result-table-head relative h-auto min-h-10 whitespace-normal border-b border-border p-2 align-top
 								{hi === 0 ? 'sticky top-0 left-0 z-30' : 'sticky top-0 z-20'}"
+									style={hasResizedColumns ? `width: ${header.getSize()}px;` : undefined}
 								>
 									{#if s && headerInsights === 'full'}
 										{@const Icon = formatMap[s.col]
@@ -618,6 +651,22 @@
 											{@render headerControls(header.id)}
 										</div>
 									{/if}
+									<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+									<div
+										class="column-resize-handle"
+										class:is-resizing={header.column.getIsResizing()}
+										onmousedown={(e) => {
+											e.stopPropagation();
+											header.getResizeHandler()(e);
+										}}
+										ontouchstart={(e) => {
+											e.stopPropagation();
+											header.getResizeHandler()(e);
+										}}
+										role="separator"
+										aria-orientation="vertical"
+										aria-label="Resize column {header.id}"
+									></div>
 								</Table.Head>
 							{/each}
 						</Table.Row>
@@ -632,12 +681,14 @@
 								{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
 								{@const conditional = styleForCell(value, cell.column.id)}
 								<Table.Cell
-									class="max-w-64 cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
+									class="{hasResizedColumns ? '' : 'max-w-64'} cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
 									{ci === 0 ? 'result-table-sticky-col sticky left-0 z-10' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage')
 										? 'text-right'
 										: ''}"
-									style={styleAttrForCell(conditional, ci === 0)}
+									style="{styleAttrForCell(conditional, ci === 0)}{hasResizedColumns
+										? `width: ${cell.column.getSize()}px;`
+										: ''}"
 									onclick={() => {
 										selectedCell = { col: cell.column.id, value };
 										copied = false;
@@ -1095,6 +1146,24 @@
 	:global(.result-table .result-table-sticky-col) {
 		background-color: var(--card);
 		background-clip: padding-box;
+	}
+
+	:global(.result-table .column-resize-handle) {
+		position: absolute;
+		top: 0;
+		right: -3px;
+		height: 100%;
+		width: 6px;
+		cursor: col-resize;
+		user-select: none;
+		touch-action: none;
+		z-index: 40;
+	}
+
+	:global(.result-table .column-resize-handle:hover),
+	:global(.result-table .column-resize-handle.is-resizing) {
+		background-color: var(--primary);
+		opacity: 0.5;
 	}
 
 	.column-menu {

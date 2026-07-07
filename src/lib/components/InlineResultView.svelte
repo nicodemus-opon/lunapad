@@ -29,6 +29,8 @@
 		onColumnDescriptionChange?: (column: string, description: string) => void;
 		columnFormatRules?: ColumnConditionalRules;
 		onColumnFormatRulesChange?: (rules: ColumnConditionalRules) => void;
+		columnWidths?: Record<string, number>;
+		onColumnWidthsChange?: (widths: Record<string, number>) => void;
 		/** Hide non-essential controls until the surrounding cell is focused */
 		controlsVisible?: boolean;
 		/** When false, the hidden toolbar collapses to 0 height instead of reserving a row (used when the cell shows output only) */
@@ -59,6 +61,8 @@
 		onColumnDescriptionChange,
 		columnFormatRules = {},
 		onColumnFormatRulesChange,
+		columnWidths,
+		onColumnWidthsChange,
 		controlsVisible = true,
 		toolbarReserveSpace = true,
 		toolbarActions,
@@ -269,6 +273,8 @@
 				{onColumnDescriptionChange}
 				{columnFormatRules}
 				{onColumnFormatRulesChange}
+				{columnWidths}
+				{onColumnWidthsChange}
 				searchValue={tableSearch}
 				onSearchValueChange={(value) => (tableSearch = value)}
 				showSearch={false}

@@ -12,6 +12,11 @@
 	import FilterWidget from './FilterWidget.svelte';
 	import BadgeWidget from './BadgeWidget.svelte';
 	import ProgressWidget from './ProgressWidget.svelte';
+	import VideoWidget from './VideoWidget.svelte';
+	import EmbedWidget from './EmbedWidget.svelte';
+	import BookmarkWidget from './BookmarkWidget.svelte';
+	import MathWidget from './MathWidget.svelte';
+	import TocWidget from './TocWidget.svelte';
 	import DetailsWidget from './DetailsWidget.svelte';
 	import TabsWidget from './TabsWidget.svelte';
 	import CodeBlock from './CodeBlock.svelte';
@@ -129,6 +134,16 @@
 	<BadgeWidget {...tag.attributes} />
 {:else if tag?.name === 'progress'}
 	<ProgressWidget {...tag.attributes} />
+{:else if tag?.name === 'video'}
+	<VideoWidget {...tag.attributes} />
+{:else if tag?.name === 'embed'}
+	<EmbedWidget {...tag.attributes} />
+{:else if tag?.name === 'bookmark'}
+	<BookmarkWidget {...tag.attributes} />
+{:else if tag?.name === 'math'}
+	<MathWidget {...tag.attributes} />
+{:else if tag?.name === 'toc'}
+	<TocWidget {notebookId} />
 {:else if tag?.name === 'columns'}
 	<div
 		class="md-columns"

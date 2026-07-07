@@ -5,6 +5,10 @@
 	import MentionMenu from './MentionMenu.svelte';
 	import type { MentionItem } from './mention-utils';
 	import BubbleToolbar from './BubbleToolbar.svelte';
+	import LinkPopover from './LinkPopover.svelte';
+	import MediaInsertPopover from './MediaInsertPopover.svelte';
+	import { handleImageDrop, handleImagePaste } from './image-drop-paste';
+	import { sanitizeUrl } from '$lib/services/safe-url';
 	import { cellsToPmDocument, pmDocumentToBlocks } from '$lib/services/notebook-pm';
 	import type { PMDocJSON } from '$lib/services/markdoc-pm';
 	import type { SlashCommand } from '$lib/services/markdown-format';
@@ -14,12 +18,23 @@
 		syncNotebookFromPmDocument,
 		insertQueryBlockCell,
 		removeQueryBlockCell,
+		duplicateQueryBlockCell,
 		getNotebooks
 	} from '$lib/stores/notebook.svelte';
 	import { buildNotebookDocumentExtensions } from './notebook-document-extensions';
 	import { clampMenuPosition, handleMenuKeyDown } from './menu-utils';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import NodeConfigPopover from './NodeConfigPopover.svelte';
+	import BlockMenu from './BlockMenu.svelte';
+	import {
+		buildBlockMenuGroups,
+		insertBlockAbove,
+		turnBlockInto,
+		duplicateBlockAt,
+		deleteBlockAt,
+		copyHeadingLinkAt,
+		type BlockMenuGroup
+	} from './block-menu-actions';
 	import {
 		syncMarkdocNodeSelection,
 		visualBlockFromSelection,
@@ -27,6 +42,7 @@
 		type MarkdocSelectedNode
 	} from './markdoc-node-selection';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
+	import { createDragGutter, type DragGutterHandle } from './drag-gutter';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
 	type NodeSelectionClass = typeof import('@tiptap/pm/state').NodeSelection;
@@ -65,6 +81,7 @@
 	let editingNotebookId: string | null = null;
 	let loadedNotebookId: string | null = null;
 	let reconcilingFromStore = false;
+	let dragGutter: DragGutterHandle | null = null;
 
 	let slashOpen = $state(false);
 	let slashItems = $state<SlashCommand[]>([]);
@@ -79,6 +96,151 @@
 	let mentionSelected = $state(0);
 	let mentionCommandFn = $state<((item: { id: string; label: string }) => void) | null>(null);
 	let mentionMenuPos = $state({ top: 0, left: 0 });
+
+	// Media insert popover ("/image" slash command)
+	let mediaPopoverOpen = $state(false);
+	let mediaPopoverKind = $state<'image' | 'video'>('image');
+	let mediaPopoverPos = $state({ top: 0, left: 0 });
+	let mediaPopoverEditor: TipTapEditor | null = null;
+
+	function onRequestMedia(kind: 'image' | 'video', ed: TipTapEditor) {
+		mediaPopoverEditor = ed;
+		mediaPopoverKind = kind;
+		const coords = ed.view.coordsAtPos(ed.state.selection.from);
+		mediaPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 160 }
+		);
+		mediaPopoverOpen = true;
+	}
+
+	function applyMediaInsert(src: string) {
+		const ed = mediaPopoverEditor;
+		const kind = mediaPopoverKind;
+		mediaPopoverOpen = false;
+		if (!ed) return;
+		if (kind === 'image') {
+			ed.chain().focus().setImage({ src }).run();
+		}
+	}
+
+	// Link popover state (bubble toolbar link button + "/link" slash command)
+	let linkPopoverOpen = $state(false);
+	let linkPopoverPos = $state({ top: 0, left: 0 });
+	let linkPopoverEditor: TipTapEditor | null = null;
+
+	function onRequestLink(ed: TipTapEditor) {
+		linkPopoverEditor = ed;
+		const coords = ed.view.coordsAtPos(ed.state.selection.from);
+		linkPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 60 }
+		);
+		linkPopoverOpen = true;
+	}
+
+	function applyLinkFromPopover(url: string) {
+		const ed = linkPopoverEditor;
+		linkPopoverOpen = false;
+		if (!ed) return;
+		const safe = sanitizeUrl(url);
+		if (!safe) {
+			ed.commands.focus();
+			return;
+		}
+		const { from, to } = ed.state.selection;
+		if (from === to) {
+			ed
+				.chain()
+				.focus()
+				.insertContent({ type: 'text', text: safe, marks: [{ type: 'link', attrs: { href: safe } }] })
+				.run();
+		} else {
+			ed.chain().focus().extendMarkRange('link').setLink({ href: safe }).run();
+		}
+	}
+
+	// Block menu (drag-handle click)
+	let blockMenuOpen = $state(false);
+	let blockMenuPos = $state({ top: 0, left: 0 });
+	let blockMenuGroups = $state<BlockMenuGroup[]>([]);
+	let blockMenuSelected = $state(0);
+	let blockMenuNodePos: number | null = null;
+
+	function openBlockMenu(pos: number | null, handleEl: HTMLElement) {
+		if (pos === null || !editor) return;
+		blockMenuNodePos = pos;
+		blockMenuGroups = buildBlockMenuGroups(editor, pos);
+		blockMenuSelected = 0;
+		const rect = handleEl.getBoundingClientRect();
+		blockMenuPos = clampMenuPosition(
+			{ top: rect.top, left: rect.right, bottom: rect.bottom },
+			{ width: 224, height: 320 },
+			{ placement: 'beside' }
+		);
+		blockMenuOpen = true;
+		dragGutter?.setOpen(true);
+	}
+
+	function closeBlockMenu() {
+		blockMenuOpen = false;
+		blockMenuNodePos = null;
+		dragGutter?.setOpen(false);
+		editor?.commands.focus();
+	}
+
+	function handleBlockMenuSelect(id: string) {
+		const ed = editor;
+		const pos = blockMenuNodePos;
+		closeBlockMenu();
+		if (!ed || pos === null) return;
+		if (id === 'add-above') {
+			insertBlockAbove(ed, pos);
+			return;
+		}
+		if (id === 'add-below') {
+			openSlashBelow(ed, pos);
+			return;
+		}
+		if (id === 'duplicate') {
+			duplicateBlockAt(ed, pos, {
+				onDuplicateQueryBlock: (cellId) => duplicateQueryBlockCell(cellId, notebookId)
+			});
+			return;
+		}
+		if (id === 'delete') {
+			deleteBlockAt(ed, pos, { onDeleteQueryBlock: (cellId) => removeQueryBlockCell(cellId) });
+			return;
+		}
+		if (id === 'copy-link') {
+			const anchor = copyHeadingLinkAt(ed, pos, cells);
+			if (anchor && typeof navigator !== 'undefined' && navigator.clipboard) {
+				const url = `${location.origin}${location.pathname}#${anchor}`;
+				void navigator.clipboard.writeText(url);
+			}
+			return;
+		}
+		if (id.startsWith('turn-')) {
+			turnBlockInto(ed, pos, id);
+		}
+	}
+
+	function handleBlockMenuKeydown(e: KeyboardEvent): boolean {
+		if (!blockMenuOpen) return false;
+		const flat = blockMenuGroups.flatMap((g) => g.items);
+		return handleMenuKeyDown(e, {
+			itemCount: () => flat.length,
+			getSelectedIndex: () => blockMenuSelected,
+			setSelectedIndex: (i) => {
+				blockMenuSelected = i;
+			},
+			selectAt: (i) => {
+				const item = flat[i];
+				if (item && !item.disabled) handleBlockMenuSelect(item.id);
+			},
+			close: closeBlockMenu
+		});
+	}
 
 	let bubbleHost = $state<HTMLDivElement | null>(null);
 	let bubbleVisible = $state(false);
@@ -102,7 +264,8 @@
 	const bubbleGate = {
 		isSlashOpen: () => slashOpen,
 		isMentionOpen: () => mentionOpen,
-		isContextMenuOpen: () => nodeConfigOpen,
+		isContextMenuOpen: () =>
+			nodeConfigOpen || linkPopoverOpen || blockMenuOpen || mediaPopoverOpen,
 		onShow: () => {
 			bubbleVisible = true;
 		},
@@ -177,6 +340,24 @@
 			.insertContentAt(insertPos, { type: 'paragraph', content: [{ type: 'text', text: '/' }] })
 			.setTextSelection(insertPos + 2)
 			.focus()
+			.run();
+	}
+
+	/** Insert a "/" paragraph right after the given top-level block and open the slash
+	 * menu there — used by the gutter "+" button when hovering a specific block, so the
+	 * insert lands where the user is pointing rather than at the current selection. */
+	function openSlashBelow(ed: TipTapEditor, pos: number) {
+		const node = ed.state.doc.nodeAt(pos);
+		if (!node) {
+			addBlockBelow(ed);
+			return;
+		}
+		const insertPos = pos + node.nodeSize;
+		ed
+			.chain()
+			.focus()
+			.insertContentAt(insertPos, { type: 'paragraph', content: [{ type: 'text', text: '/' }] })
+			.setTextSelection(insertPos + 2)
 			.run();
 	}
 
@@ -355,16 +536,8 @@
 			NodeSelectionCtor = NodeSelection;
 			if (destroyed || !editorMount || !bubbleHost) return;
 
-			const dragGutter = document.createElement('div');
-			dragGutter.className = 'notion-drag-gutter';
-			dragGutter.innerHTML = `
-				<button type="button" class="notion-plus-btn" title="Add block below" aria-label="Add block">
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-				</button>
-				<div class="notion-drag-handle" data-drag-handle draggable="true" title="Drag to reorder">
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-				</div>
-			`;
+			const gutter: DragGutterHandle = createDragGutter();
+			dragGutter = gutter;
 
 			const pmDoc = cellsToPmDocument(cells);
 			lastEmitted = pmDoc;
@@ -377,9 +550,12 @@
 					refEntries: () => refEntries,
 					bubbleMenuElement: bubbleHost,
 					bubbleMenuGate: bubbleGate,
-					dragHandleRender: () => dragGutter,
+					dragHandleRender: () => gutter.element,
+					onDragHandleNodeChange: ({ node, pos }) => gutter.setHoveredPos(node ? pos : null),
 					insertQueryBlock: (lang, e) => insertQueryBlock(lang, e),
 					insertPage,
+					onRequestLink: (e) => onRequestLink(e),
+					onRequestMedia: (kind, e) => onRequestMedia(kind, e),
 					slashHandler: {
 						onStart: ({ items, command }) => {
 							slashItems = items;
@@ -453,6 +629,8 @@
 							if (ed && !reconcilingFromStore) scheduleEmit(ed);
 							return false;
 						},
+						drop: (view, event) => handleImageDrop(view, event),
+						paste: (view, event) => handleImagePaste(view, event),
 						// Portaled menus (bits-ui Select, Popover, etc.) render outside the
 						// query-block node view — stop PM from stealing their clicks.
 						mousedown: (_view, event) => {
@@ -522,11 +700,11 @@
 				}
 			});
 
-			dragGutter.querySelector('.notion-plus-btn')?.addEventListener('mousedown', (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				addBlockBelow(ed);
+			gutter.setOnAddBlock((hoveredPos) => {
+				if (hoveredPos !== null) openSlashBelow(ed, hoveredPos);
+				else addBlockBelow(ed);
 			});
+			gutter.setOnHandleClick((hoveredPos, handleEl) => openBlockMenu(hoveredPos, handleEl));
 
 			editor = ed;
 			loadedNotebookId = notebookId;
@@ -611,6 +789,20 @@
 		}
 	}
 
+	function onKeydown(e: KeyboardEvent) {
+		if (blockMenuOpen && handleBlockMenuKeydown(e)) return;
+		if (e.key === 'Escape') {
+			if (linkPopoverOpen) {
+				linkPopoverOpen = false;
+				editor?.commands.focus();
+			}
+			if (mediaPopoverOpen) {
+				mediaPopoverOpen = false;
+				editor?.commands.focus();
+			}
+		}
+	}
+
 	$effect(() => {
 		if (editorMount && bubbleHost && browser && !editor) void bootEditor();
 	});
@@ -660,6 +852,8 @@
 		});
 	});
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -713,6 +907,58 @@
 					}}
 					onHoverIndex={(i) => {
 						mentionSelected = i;
+					}}
+				/>
+			</div>
+		</BodyPortal>
+	{/if}
+
+	{#if linkPopoverOpen}
+		<BodyPortal>
+			<div
+				class="link-popover-anchor fixed z-50"
+				style="top: {linkPopoverPos.top}px; left: {linkPopoverPos.left}px;"
+			>
+				<LinkPopover
+					onApply={applyLinkFromPopover}
+					onCancel={() => {
+						linkPopoverOpen = false;
+						editor?.commands.focus();
+					}}
+				/>
+			</div>
+		</BodyPortal>
+	{/if}
+
+	{#if mediaPopoverOpen}
+		<BodyPortal>
+			<div
+				class="media-popover-anchor fixed z-50"
+				style="top: {mediaPopoverPos.top}px; left: {mediaPopoverPos.left}px;"
+			>
+				<MediaInsertPopover
+					kind={mediaPopoverKind}
+					onInsert={applyMediaInsert}
+					onCancel={() => {
+						mediaPopoverOpen = false;
+						editor?.commands.focus();
+					}}
+				/>
+			</div>
+		</BodyPortal>
+	{/if}
+
+	{#if blockMenuOpen}
+		<BodyPortal>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="fixed inset-0 z-40" onclick={closeBlockMenu} onkeydown={() => {}}></div>
+			<div class="fixed z-50" style="top: {blockMenuPos.top}px; left: {blockMenuPos.left}px;">
+				<BlockMenu
+					groups={blockMenuGroups}
+					selectedIndex={blockMenuSelected}
+					onSelect={handleBlockMenuSelect}
+					onHoverIndex={(i) => {
+						blockMenuSelected = i;
 					}}
 				/>
 			</div>
@@ -775,6 +1021,7 @@
 		pointer-events: auto;
 	}
 	.notebook-document-host {
+		position: relative;
 		min-height: 60vh;
 		cursor: text;
 	}

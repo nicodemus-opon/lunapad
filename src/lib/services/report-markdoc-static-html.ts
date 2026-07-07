@@ -2,11 +2,13 @@ import Markdoc from '@markdoc/markdoc';
 import type { RenderableTreeNode, Tag } from '@markdoc/markdoc';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { renderMarkdocCell } from '$lib/services/markdoc-interp';
-import { textFromMarkdocChildren } from '$lib/services/notebook-outline';
+import { textFromMarkdocChildren, buildNotebookOutline } from '$lib/services/notebook-outline';
 import type { ColumnFormatKind } from '$lib/services/column-format';
 import type { TableAggKind } from '$lib/services/report-table-summary';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
 import { sanitizeUrl } from '$lib/services/safe-url';
+import { embedUrlToIframeSrc } from '$lib/services/embed-providers';
+import katex from 'katex';
 import { pivotTable } from '$lib/services/report-table-pivot';
 import { summarizeTable } from '$lib/services/report-table-summary';
 import type {
@@ -290,6 +292,64 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 			const code = typeof attrs.code === 'string' ? attrs.code : childrenHtml;
 			return `<pre data-markdoc-tag="mermaid" class="markdoc-mermaid"><code>${escapeHtml(code)}</code></pre>`;
 		}
+		if (tag.name === 'video') {
+			const safeSrc = typeof attrs.src === 'string' ? sanitizeUrl(attrs.src) : '';
+			if (!safeSrc) return '';
+			const poster =
+				typeof attrs.poster === 'string' && sanitizeUrl(attrs.poster)
+					? ` poster="${escapeHtml(sanitizeUrl(attrs.poster))}"`
+					: '';
+			const loop = attrs.loop ? ' loop' : '';
+			const muted = attrs.muted ? ' muted' : '';
+			return `<video data-markdoc-tag="video" class="markdoc-video" src="${escapeHtml(safeSrc)}"${poster}${loop}${muted} controls playsinline></video>`;
+		}
+		if (tag.name === 'embed') {
+			const safeUrl = typeof attrs.url === 'string' ? sanitizeUrl(attrs.url) : '';
+			if (!safeUrl) return '';
+			const iframeSrc = embedUrlToIframeSrc(safeUrl);
+			if (iframeSrc) {
+				return `<div data-markdoc-tag="embed" class="markdoc-embed"><iframe src="${escapeHtml(iframeSrc)}" title="Embedded content" loading="lazy" sandbox="allow-scripts allow-same-origin allow-presentation" referrerpolicy="no-referrer"></iframe></div>`;
+			}
+			return `<a data-markdoc-tag="embed" class="markdoc-embed-fallback" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(safeUrl)}</a>`;
+		}
+		if (tag.name === 'bookmark') {
+			const safeUrl = typeof attrs.url === 'string' ? sanitizeUrl(attrs.url) : '';
+			if (!safeUrl) return '';
+			const title = typeof attrs.title === 'string' && attrs.title ? attrs.title : safeUrl;
+			const description =
+				typeof attrs.description === 'string' && attrs.description
+					? `<span class="markdoc-bookmark-desc">${escapeHtml(attrs.description)}</span>`
+					: '';
+			return `<a data-markdoc-tag="bookmark" class="markdoc-bookmark" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer nofollow"><span class="markdoc-bookmark-title">${escapeHtml(title)}</span>${description}<span class="markdoc-bookmark-url">${escapeHtml(safeUrl)}</span></a>`;
+		}
+		if (tag.name === 'math') {
+			const latex = typeof attrs.latex === 'string' ? attrs.latex : '';
+			if (!latex.trim()) return '';
+			let renderedHtml: string;
+			try {
+				renderedHtml = katex.renderToString(latex, {
+					throwOnError: false,
+					displayMode: Boolean(attrs.display)
+				});
+			} catch {
+				return '';
+			}
+			const displayClass = attrs.display ? ' markdoc-math--display' : '';
+			return `<span data-markdoc-tag="math" class="markdoc-math${displayClass}">${renderedHtml}</span>`;
+		}
+		if (tag.name === 'toc') {
+			const headings = buildNotebookOutline(currentStaticHtmlCells).filter(
+				(e) => e.kind === 'heading'
+			);
+			if (!headings.length) return '';
+			const items = headings
+				.map(
+					(h) =>
+						`<li style="padding-left:${(h.level - 1) * 0.85}rem"><a href="#${escapeHtml(h.anchorId ?? '')}">${escapeHtml(h.label)}</a></li>`
+				)
+				.join('');
+			return `<nav data-markdoc-tag="toc" class="markdoc-toc"><p class="markdoc-toc-title">Contents</p><ul>${items}</ul></nav>`;
+		}
 
 		// Keep custom/unknown wrappers so exported HTML preserves layout semantics.
 		return renderGenericMarkdocWrapper(tag.name, childrenHtml);
@@ -298,7 +358,20 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 	return escapeHtml(String(node));
 }
 
+/** Cells for the notebook currently being exported, set by `renderMarkdocCellToStaticHtml`.
+ * `{% toc %}` needs the full notebook (not just this markdown cell's variables) to build its
+ * heading list, and threading `cells` through every recursive render call would touch every
+ * branch above for one tag — a module-scoped value read only by the `toc` branch is simpler.
+ * Safe because rendering is synchronous and re-entrant only via the calls this module makes. */
+let currentStaticHtmlCells: Cell[] = [];
+
 export function renderMarkdocCellToStaticHtml(markdown: string, cells: Cell[]): string {
 	const { tree } = renderMarkdocCell(markdown, cells);
-	return tree.map((n) => renderRenderableToStaticHtml(n)).join('\n');
+	const previousCells = currentStaticHtmlCells;
+	currentStaticHtmlCells = cells;
+	try {
+		return tree.map((n) => renderRenderableToStaticHtml(n)).join('\n');
+	} finally {
+		currentStaticHtmlCells = previousCells;
+	}
 }

@@ -23,6 +23,7 @@ import { createMarkdocContainerExtension } from './markdoc-container-extension';
 import { createMarkdocExpressionExtension } from './markdoc-expression-extension';
 import { createSlashCommandExtension, type SlashCommandHandler } from './slash-command-extension';
 import { ListKeymapExtension } from './list-keymap-extension';
+import { BlockInsertLineExtension } from './block-insert-line-extension';
 import { rankRefEntries } from './mention-utils';
 
 export interface MentionCommandHandler {
@@ -71,9 +72,18 @@ export interface NotionEditorExtensionOptions {
 		editor: import('@tiptap/core').Editor
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
+	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
+	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
 	bubbleMenuElement: HTMLElement;
 	bubbleMenuGate: BubbleMenuGate;
 	dragHandleRender: () => HTMLElement;
+	/** DragHandlePlugin destructures `onNodeChange` into a closure variable at plugin-creation
+	 * time, so it must be passed here (not mutated on the extension instance after boot). */
+	onDragHandleNodeChange?: (info: {
+		node: { type: { name: string } } | null;
+		pos: number;
+		editor: import('@tiptap/core').Editor;
+	}) => void;
 }
 
 export function expandExtensionNames(extensions: Extensions): string[] {
@@ -225,7 +235,9 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 		createSlashCommandExtension(opts.slashHandler, {
 			refEntries,
 			insertQueryBlock: opts.insertQueryBlock,
-			insertPage: opts.insertPage
+			insertPage: opts.insertPage,
+			onRequestLink: opts.onRequestLink,
+			onRequestMedia: opts.onRequestMedia
 		}),
 		BubbleMenu.configure({
 			element: opts.bubbleMenuElement,
@@ -251,8 +263,15 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 		}),
 		DragHandle.configure({
 			render: opts.dragHandleRender,
-			nested: true
-		})
+			nested: true,
+			// DragHandleOptions.onNodeChange's public type omits `pos`, but the plugin forwards
+			// this callback straight to DragHandlePlugin's onNodeChange, which does pass `pos` —
+			// a type-declaration gap in the library, not a runtime one.
+			onNodeChange: opts.onDragHandleNodeChange as unknown as
+				| ((options: { node: import('@tiptap/pm/model').Node | null; editor: Editor }) => void)
+				| undefined
+		}),
+		BlockInsertLineExtension
 	];
 }
 

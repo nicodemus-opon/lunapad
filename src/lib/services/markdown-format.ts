@@ -180,6 +180,8 @@ export interface SlashCommand {
 	description: string;
 	snippet: string;
 	group: 'heading' | 'structure' | 'widget' | 'query' | 'report';
+	/** Extra search terms that match this command in the slash menu (e.g. "hr" for divider). */
+	aliases?: string[];
 }
 
 const MARKDOC_SLASH_LABELS: Record<string, string> = {
@@ -187,7 +189,8 @@ const MARKDOC_SLASH_LABELS: Record<string, string> = {
 	each: 'Each loop',
 	group: 'Group loop',
 	if: 'Conditional',
-	else: 'Else branch'
+	else: 'Else branch',
+	details: 'Toggle (collapsible)'
 };
 
 function labelForMarkdocTag(tagName: string): string {
@@ -209,7 +212,8 @@ function commandFromMarkdocTag([tagName, entry]: [
 		label: labelForMarkdocTag(tagName),
 		description: entry.detail,
 		snippet: entry.slashSnippet,
-		group: 'widget'
+		group: 'widget',
+		aliases: entry.aliases
 	};
 }
 
@@ -329,11 +333,33 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 		group: 'heading'
 	},
 	{
+		id: 'h4',
+		label: 'Heading 4',
+		description: 'Sub-section header',
+		snippet: '#### ',
+		group: 'heading'
+	},
+	{
+		id: 'h5',
+		label: 'Heading 5',
+		description: 'Sub-section header',
+		snippet: '##### ',
+		group: 'heading'
+	},
+	{
+		id: 'h6',
+		label: 'Heading 6',
+		description: 'Sub-section header',
+		snippet: '###### ',
+		group: 'heading'
+	},
+	{
 		id: 'divider',
 		label: 'Divider',
 		description: 'Horizontal rule',
 		snippet: '\n---\n',
-		group: 'structure'
+		group: 'structure',
+		aliases: ['hr', 'rule', 'line', 'separator']
 	},
 	{
 		id: 'bullet',
@@ -354,7 +380,8 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 		label: 'To-do list',
 		description: 'Task list with checkboxes',
 		snippet: '- [ ] ',
-		group: 'structure'
+		group: 'structure',
+		aliases: ['todo', 'checkbox']
 	},
 	{
 		id: 'table',
@@ -368,7 +395,16 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Image',
 		description: 'Embed an image by URL',
 		snippet: '![](https://)',
-		group: 'structure'
+		group: 'structure',
+		aliases: ['img', 'photo', 'picture']
+	},
+	{
+		id: 'link',
+		label: 'Link',
+		description: 'Insert a hyperlink',
+		snippet: '',
+		group: 'structure',
+		aliases: ['url', 'href', 'hyperlink']
 	},
 	{ id: 'quote', label: 'Quote', description: 'Blockquote', snippet: '> ', group: 'structure' },
 	{

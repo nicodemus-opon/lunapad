@@ -30,6 +30,7 @@ function makeCell(partial: Partial<Cell> & Pick<Cell, 'id' | 'cellType'>): Cell 
 		resultViewMode: 'table',
 		resultChartConfig: null,
 		columnFormatRules: {},
+		columnWidths: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',

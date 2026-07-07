@@ -54,13 +54,15 @@ export interface SlashCommandExtensionOptions {
 		editor: import('@tiptap/core').Editor
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
+	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
+	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
 }
 
 export function contextualSnippet(item: SlashCommand, entries: MarkdownRefEntry[]): string {
 	return buildContextualMarkdocSnippet(item.id, entries) || item.snippet;
 }
 
-function filterCommands(query: string, entries: MarkdownRefEntry[] = []): SlashCommand[] {
+export function filterCommands(query: string, entries: MarkdownRefEntry[] = []): SlashCommand[] {
 	const q = query.toLowerCase().trim();
 	const hasUsableRef = Boolean(getUsableMarkdocRefEntry(entries));
 	const availableCommands = hasUsableRef
@@ -69,16 +71,25 @@ function filterCommands(query: string, entries: MarkdownRefEntry[] = []): SlashC
 	if (!q) return availableCommands.slice(0, 32);
 
 	const scored = availableCommands.map((cmd) => {
+		const aliases = cmd.aliases ?? [];
+		const aliasExact = aliases.some((a) => a.toLowerCase() === q);
+		const aliasStarts = aliases.some((a) => a.toLowerCase().startsWith(q));
+		const aliasIncludes = aliases.some((a) => a.toLowerCase().includes(q));
+
 		let score = 0;
 		if (cmd.id.toLowerCase() === q) score += 100;
+		else if (aliasExact) score += 90;
 		else if (cmd.label.toLowerCase().startsWith(q)) score += 60;
 		else if (cmd.id.toLowerCase().startsWith(q)) score += 50;
+		else if (aliasStarts) score += 45;
 		else if (cmd.label.toLowerCase().includes(q)) score += 30;
+		else if (aliasIncludes) score += 20;
 		else if (cmd.description.toLowerCase().includes(q)) score += 15;
 		else if (
 			!cmd.id.toLowerCase().includes(q) &&
 			!cmd.label.toLowerCase().includes(q) &&
-			!cmd.description.toLowerCase().includes(q)
+			!cmd.description.toLowerCase().includes(q) &&
+			!aliasIncludes
 		) {
 			return null;
 		}
@@ -111,7 +122,10 @@ function insertWidgetFromSnippet(editor: import('@tiptap/core').Editor, snippet:
 function insertSlashItem(
 	editor: import('@tiptap/core').Editor,
 	item: SlashCommand,
-	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage' | 'refEntries'>
+	opts?: Pick<
+		SlashCommandExtensionOptions,
+		'insertQueryBlock' | 'insertPage' | 'refEntries' | 'onRequestLink' | 'onRequestMedia'
+	>
 ): void {
 	const { id, group } = item;
 	const snippet = contextualSnippet(item, opts?.refEntries?.() ?? []);
@@ -126,7 +140,7 @@ function insertSlashItem(
 	}
 
 	if (group === 'heading') {
-		const level = id === 'h1' ? 1 : id === 'h2' ? 2 : 3;
+		const level = Number(id.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6;
 		editor.chain().focus().setNode('heading', { level }).run();
 		return;
 	}
@@ -150,7 +164,15 @@ function insertSlashItem(
 		editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
 		return;
 	}
+	if (id === 'link') {
+		opts?.onRequestLink?.(editor);
+		return;
+	}
 	if (id === 'image') {
+		if (opts?.onRequestMedia) {
+			opts.onRequestMedia('image', editor);
+			return;
+		}
 		const url = prompt('Image URL');
 		if (url) editor.chain().focus().setImage({ src: url }).run();
 		return;
@@ -244,7 +266,9 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 				onExit: () => {}
 			},
 			insertQueryBlock: undefined,
-			insertPage: undefined
+			insertPage: undefined,
+			onRequestLink: undefined,
+			onRequestMedia: undefined
 		};
 	},
 
@@ -261,7 +285,9 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 		const insertQueryBlock = this.options.insertQueryBlock;
 		const insertPage = this.options.insertPage;
 		const refEntries = this.options.refEntries;
-		const slashOpts = { insertQueryBlock, insertPage, refEntries };
+		const onRequestLink = this.options.onRequestLink;
+		const onRequestMedia = this.options.onRequestMedia;
+		const slashOpts = { insertQueryBlock, insertPage, refEntries, onRequestLink, onRequestMedia };
 		// Guards the onExit cleanup: when a command runs it already deleteRange()s the
 		// trigger, so onExit must NOT delete again (that would eat real content).
 		let commandExecuted = false;
@@ -324,7 +350,10 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 
 export function createSlashCommandExtension(
 	handler: SlashCommandHandler,
-	opts?: Pick<SlashCommandExtensionOptions, 'insertQueryBlock' | 'insertPage' | 'refEntries'>
+	opts?: Pick<
+		SlashCommandExtensionOptions,
+		'insertQueryBlock' | 'insertPage' | 'refEntries' | 'onRequestLink' | 'onRequestMedia'
+	>
 ) {
 	return SlashCommandExtension.configure({ handler, ...opts });
 }

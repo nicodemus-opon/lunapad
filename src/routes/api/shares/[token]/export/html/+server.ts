@@ -5,6 +5,7 @@ import { requireSharesRead } from '$lib/server/share-guards';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { renderMarkdocCellToStaticHtml } from '$lib/services/report-markdoc-static-html';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
+import katexCss from 'katex/dist/katex.min.css?raw';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const denied = requireSharesRead(locals);
@@ -73,12 +74,17 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		})
 		.join('\n');
 
+	// Inlined (not CDN-linked) so the export stays a single, offline-viewable file — same
+	// self-contained philosophy as the rest of this shell. Only paid for when actually used.
+	const needsKatex = cellsHtml.includes('markdoc-math');
+
 	const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(view.notebookName)}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  ${needsKatex ? `<style>${katexCss}</style>` : ''}
   <style>
     :root {
       --table-positive: oklch(0.73 0.17 150);
@@ -116,6 +122,17 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     .tag-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; transform: translateY(1px); }
     .truncate { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
     .table-note { font-size: 0.72rem; opacity: 0.7; margin-top: 0.35rem; }
+    .markdoc-video { max-width: 100%; max-height: 32rem; border-radius: 0.375rem; }
+    .markdoc-embed { position: relative; width: 100%; padding-top: 56.25%; margin: 0.5rem 0; border-radius: 0.375rem; overflow: hidden; background: #f5f5f5; }
+    .markdoc-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+    .markdoc-embed-fallback, .markdoc-bookmark { display: block; padding: 0.5rem 0.65rem; border: 1px solid #ddd; border-radius: 0.375rem; margin: 0.5rem 0; }
+    .markdoc-bookmark-title { display: block; font-weight: 600; }
+    .markdoc-bookmark-desc { display: block; font-size: 0.8rem; color: #6b7280; }
+    .markdoc-bookmark-url { display: block; font-size: 0.75rem; color: #9ca3af; }
+    .markdoc-math--display { display: block; margin: 0.5rem 0; overflow-x: auto; text-align: center; }
+    .markdoc-toc { border: 1px solid #ddd; border-radius: 0.375rem; padding: 0.5rem 0.65rem; margin: 0.5rem 0; font-size: 0.8rem; }
+    .markdoc-toc-title { font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; margin: 0 0 0.3rem; }
+    .markdoc-toc ul { list-style: none; margin: 0; padding: 0; }
   </style>
 </head>
 <body>

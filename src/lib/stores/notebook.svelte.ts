@@ -194,6 +194,8 @@ export interface Cell {
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
 	columnFormatRules: ColumnConditionalRules;
+	/** Persisted result-table column pixel widths, keyed by column name. */
+	columnWidths: Record<string, number>;
 	display: CellDisplay;
 	stageResultsCollapsed: boolean[];
 	materializeMode: CellMaterializationMode;
@@ -584,6 +586,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		resultViewMode: 'table',
 		resultChartConfig: null,
 		columnFormatRules: {},
+		columnWidths: {},
 		display: 'full',
 		stageResultsCollapsed: [],
 		materializeMode: 'table',
@@ -1357,6 +1360,10 @@ function deserializeCell(c: Cell, i: number): Cell {
 			(c as Partial<Cell>).columnFormatRules &&
 			typeof (c as Partial<Cell>).columnFormatRules === 'object'
 				? ((c as Partial<Cell>).columnFormatRules as ColumnConditionalRules)
+				: {},
+		columnWidths:
+			(c as Partial<Cell>).columnWidths && typeof (c as Partial<Cell>).columnWidths === 'object'
+				? ((c as Partial<Cell>).columnWidths as Record<string, number>)
 				: {},
 		// Restore persisted (capped) result so output survives reload/HMR.
 		result: (c as Partial<Cell>).result ?? null,
@@ -3760,6 +3767,39 @@ export function removeQueryBlockCell(cellId: string): void {
 	removeCell(cellId);
 }
 
+/** Duplicate a query/python block cell in place (right after the source cell). Used by the
+ * document editor's block menu "Duplicate" action. Returns the new cell id, or null if the
+ * source cell no longer exists. */
+export function duplicateQueryBlockCell(cellId: string, notebookId?: string): string | null {
+	const nb = notebookId
+		? (state.notebooks.find((n) => n.id === notebookId) ?? getActiveNotebook())
+		: getActiveNotebook();
+	const idx = nb.cells.findIndex((c) => c.id === cellId);
+	if (idx === -1) return null;
+
+	pushHistoryCheckpoint(nb.id);
+	const source = nb.cells[idx];
+	const newOutputName = source.outputName ? deconflictOutputName(source.outputName) : source.outputName;
+	const clone: Cell = {
+		...source,
+		id: makeId(),
+		outputName: newOutputName,
+		materializeTarget: newOutputName,
+		result: null
+	};
+
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, clone);
+	replaceNotebookCells(nb.id, cells);
+	scheduleSave();
+
+	const inFsMode = state.storageMode === 'filesystem' && !!state.projectFolder;
+	if (inFsMode) scheduleFileSave(nb.id, clone.id);
+	else if (nb.format === 'luna') scheduleLunaNotebookSave(nb.id);
+
+	return clone.id;
+}
+
 export function touchRecentNotebook(notebookId: string): void {
 	const filtered = state.recentNotebookIds.filter((id) => id !== notebookId);
 	state.recentNotebookIds = [notebookId, ...filtered].slice(0, 12);
@@ -4426,6 +4466,16 @@ export function setCellResultChartConfig(cellId: string, config: ChartConfig | n
 	}
 }
 
+export function updateCellColumnWidths(cellId: string, widths: Record<string, number>): void {
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (!cell) continue;
+		cell.columnWidths = widths;
+		scheduleSave();
+		return;
+	}
+}
+
 export function updateCellColumnFormatRules(cellId: string, rules: ColumnConditionalRules): void {
 	for (const nb of state.notebooks) {
 		const cell = nb.cells.find((c) => c.id === cellId);
@@ -5015,6 +5065,7 @@ export interface CellSnapshot {
 	resultViewMode?: Cell['resultViewMode'];
 	resultChartConfig?: Cell['resultChartConfig'];
 	columnFormatRules?: Cell['columnFormatRules'];
+	columnWidths?: Cell['columnWidths'];
 	executionMs?: Cell['executionMs'];
 	errors?: Cell['errors'];
 }
@@ -5046,6 +5097,7 @@ function cellToSnapshot(cell: Cell): CellSnapshot {
 		resultViewMode: cell.resultViewMode,
 		resultChartConfig: cell.resultChartConfig,
 		columnFormatRules: cell.columnFormatRules,
+		columnWidths: cell.columnWidths,
 		executionMs: cell.executionMs,
 		errors: cell.errors
 	};
@@ -5082,6 +5134,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 				description: snap.description,
 				dbtTags: snap.dbtTags,
 				columnFormatRules: snap.columnFormatRules ?? live.columnFormatRules,
+				columnWidths: snap.columnWidths ?? live.columnWidths,
 				scheduleEnabled: snap.scheduleEnabled,
 				scheduleIntervalMinutes: snap.scheduleIntervalMinutes,
 				scheduleScope: snap.scheduleScope
@@ -5114,6 +5167,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			...(snap.resultViewMode !== undefined && { resultViewMode: snap.resultViewMode }),
 			...(snap.resultChartConfig !== undefined && { resultChartConfig: snap.resultChartConfig }),
 			...(snap.columnFormatRules !== undefined && { columnFormatRules: snap.columnFormatRules }),
+			...(snap.columnWidths !== undefined && { columnWidths: snap.columnWidths }),
 			...(snap.executionMs !== undefined && { executionMs: snap.executionMs }),
 			...(snap.errors !== undefined && { errors: snap.errors })
 		} satisfies Cell;

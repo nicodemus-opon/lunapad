@@ -68,6 +68,7 @@ export interface PublicShareCell {
 	resultChartConfig: ShareCellSnapshot['resultChartConfig'];
 	resultViewMode: ShareCellSnapshot['resultViewMode'];
 	columnFormatRules?: ShareCellSnapshot['columnFormatRules'];
+	columnWidths?: ShareCellSnapshot['columnWidths'];
 }
 
 export interface PublicShareView {
@@ -103,7 +104,8 @@ export function toPublicShareView(share: ShareRecord): PublicShareView {
 			pythonOutput: cell.isLive ? null : cell.pythonOutput,
 			resultChartConfig: cell.resultChartConfig,
 			resultViewMode: cell.resultViewMode,
-			columnFormatRules: cell.columnFormatRules
+			columnFormatRules: cell.columnFormatRules,
+			columnWidths: cell.columnWidths
 		}))
 	};
 }

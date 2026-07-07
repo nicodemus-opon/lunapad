@@ -28,5 +28,10 @@ export const WIDGET_SNIPPETS = {
 		'{% group data=[{group_column:"A",title:"Example",value:42,status:"Ready"}] by="group_column" %}\n{% card title="$key" %}\n{% each data=$items %}\n{% card title="$title" %}\n{% metric value=$value label="Value" /%}\n{% badge value="$status" /%}\n{% /card %}\n{% /each %}\n{% /card %}\n{% /group %}',
 	each:
 		'{% each data=[{title:"Example",value:42,status:"Ready"}] %}\n{% card title="$title" %}\n{% metric value=$value label="Value" /%}\n{% badge value="$status" /%}\n{% /card %}\n{% /each %}',
-	else: '{% else /%}'
+	else: '{% else /%}',
+	video: '{% video src="https://" /%}',
+	embed: '{% embed url="https://" /%}',
+	bookmark: '{% bookmark url="https://" /%}',
+	math: '{% math latex="E = mc^2" /%}',
+	toc: '{% toc /%}'
 } as const;

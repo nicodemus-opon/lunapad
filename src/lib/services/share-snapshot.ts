@@ -39,6 +39,7 @@ export interface ShareCellSnapshot {
 	resultChartConfig: ChartConfig | null;
 	resultViewMode: ResultViewMode;
 	columnFormatRules?: ColumnConditionalRules;
+	columnWidths?: Record<string, number>;
 }
 
 export interface ShareConnectionInput {
@@ -112,7 +113,8 @@ function buildShareSnapshotInternal(
 				isPinned && (cell.cellType === 'query' || cell.cellType === 'python') ? cell.code : null,
 			resultChartConfig: cell.resultChartConfig,
 			resultViewMode: cell.resultViewMode,
-			columnFormatRules: cell.columnFormatRules
+			columnFormatRules: cell.columnFormatRules,
+			columnWidths: cell.columnWidths
 		};
 
 		if (cell.cellType !== 'query') {

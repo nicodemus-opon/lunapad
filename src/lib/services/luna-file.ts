@@ -68,6 +68,7 @@ export interface LunaQueryMeta {
 	resultViewMode?: ResultViewMode;
 	chartConfig?: ChartConfig | null;
 	columnFormatRules?: ColumnConditionalRules;
+	columnWidths?: Record<string, number>;
 	guiStages?: GUIPipelineStage[];
 	display?: CellDisplay;
 	hideResult?: boolean;
@@ -299,6 +300,7 @@ export interface SerializableCell {
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
 	columnFormatRules: ColumnConditionalRules;
+	columnWidths: Record<string, number>;
 	guiStages: GUIPipelineStage[];
 	display: CellDisplay;
 	hideResult: boolean;
@@ -320,6 +322,10 @@ function buildMeta(cell: SerializableCell): LunaQueryMeta {
 			cell.columnFormatRules && Object.keys(cell.columnFormatRules).length > 0
 				? cell.columnFormatRules
 				: undefined,
+		columnWidths:
+			cell.columnWidths && Object.keys(cell.columnWidths).length > 0
+				? cell.columnWidths
+				: undefined,
 		guiStages: cell.guiStages,
 		display: cell.display,
 		hideResult: cell.hideResult,
@@ -337,6 +343,7 @@ function hasNonDefaultMeta(meta: LunaQueryMeta, lang: CellLanguage): boolean {
 		meta.resultViewMode !== 'table' ||
 		!!meta.chartConfig ||
 		(!!meta.columnFormatRules && Object.keys(meta.columnFormatRules).length > 0) ||
+		(!!meta.columnWidths && Object.keys(meta.columnWidths).length > 0) ||
 		(meta.guiStages?.length ?? 0) > 1 ||
 		meta.display !== 'full' ||
 		!!meta.hideResult ||

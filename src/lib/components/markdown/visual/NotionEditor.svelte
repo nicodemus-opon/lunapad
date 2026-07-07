@@ -7,6 +7,18 @@
 	import MentionMenu from './MentionMenu.svelte';
 	import type { MentionItem } from './mention-utils';
 	import BubbleToolbar from './BubbleToolbar.svelte';
+	import LinkPopover from './LinkPopover.svelte';
+	import { sanitizeUrl } from '$lib/services/safe-url';
+	import BlockMenu from './BlockMenu.svelte';
+	import {
+		buildBlockMenuGroups,
+		insertBlockAbove,
+		turnBlockInto,
+		duplicateBlockAt as duplicateBlockMenuAt,
+		deleteBlockAt as deleteBlockMenuAt,
+		copyHeadingLinkAt,
+		type BlockMenuGroup
+	} from './block-menu-actions';
 	import {
 		markdownToPmDocument,
 		pmDocumentToMarkdown,
@@ -26,6 +38,9 @@
 	import { clampContextMenuPosition, clampMenuPosition, handleMenuKeyDown } from './menu-utils';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import { Plus, Copy, Trash2, X, ArrowUp, ArrowDown } from '@lucide/svelte';
+	import { createDragGutter, type DragGutterHandle } from './drag-gutter';
+	import { handleImageDrop, handleImagePaste } from './image-drop-paste';
+	import MediaInsertPopover from './MediaInsertPopover.svelte';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
 	let NodeSelectionCtor: typeof PMNodeSelection | null = null;
@@ -62,6 +77,151 @@
 	let mentionSelected = $state(0);
 	let mentionCommandFn = $state<((item: { id: string; label: string }) => void) | null>(null);
 	let mentionMenuPos = $state({ top: 0, left: 0 });
+
+	// Link popover state (bubble toolbar link button + "/link" slash command)
+	let linkPopoverOpen = $state(false);
+	let linkPopoverPos = $state({ top: 0, left: 0 });
+	let linkPopoverEditor: TipTapEditor | null = null;
+
+	// Media insert popover ("/image" slash command)
+	let mediaPopoverOpen = $state(false);
+	let mediaPopoverKind = $state<'image' | 'video'>('image');
+	let mediaPopoverPos = $state({ top: 0, left: 0 });
+	let mediaPopoverEditor: TipTapEditor | null = null;
+
+	function onRequestMedia(kind: 'image' | 'video', ed: TipTapEditor) {
+		mediaPopoverEditor = ed;
+		mediaPopoverKind = kind;
+		const coords = ed.view.coordsAtPos(ed.state.selection.from);
+		mediaPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 160 }
+		);
+		mediaPopoverOpen = true;
+	}
+
+	function applyMediaInsert(src: string) {
+		const ed = mediaPopoverEditor;
+		const kind = mediaPopoverKind;
+		mediaPopoverOpen = false;
+		if (!ed) return;
+		if (kind === 'image') {
+			ed.chain().focus().setImage({ src }).run();
+		}
+	}
+
+	let dragGutter: DragGutterHandle | null = null;
+
+	function onRequestLink(ed: TipTapEditor) {
+		linkPopoverEditor = ed;
+		const coords = ed.view.coordsAtPos(ed.state.selection.from);
+		linkPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 60 }
+		);
+		linkPopoverOpen = true;
+	}
+
+	function applyLinkFromPopover(url: string) {
+		const ed = linkPopoverEditor;
+		linkPopoverOpen = false;
+		if (!ed) return;
+		const safe = sanitizeUrl(url);
+		if (!safe) {
+			ed.commands.focus();
+			return;
+		}
+		const { from, to } = ed.state.selection;
+		if (from === to) {
+			ed
+				.chain()
+				.focus()
+				.insertContent({ type: 'text', text: safe, marks: [{ type: 'link', attrs: { href: safe } }] })
+				.run();
+		} else {
+			ed.chain().focus().extendMarkRange('link').setLink({ href: safe }).run();
+		}
+	}
+
+	// Block menu (drag-handle click)
+	let blockMenuOpen = $state(false);
+	let blockMenuPos = $state({ top: 0, left: 0 });
+	let blockMenuGroups = $state<BlockMenuGroup[]>([]);
+	let blockMenuSelected = $state(0);
+	let blockMenuNodePos: number | null = null;
+
+	function openBlockMenu(pos: number | null, handleEl: HTMLElement) {
+		if (pos === null || !editor) return;
+		blockMenuNodePos = pos;
+		blockMenuGroups = buildBlockMenuGroups(editor, pos);
+		blockMenuSelected = 0;
+		const rect = handleEl.getBoundingClientRect();
+		blockMenuPos = clampMenuPosition(
+			{ top: rect.top, left: rect.right, bottom: rect.bottom },
+			{ width: 224, height: 320 },
+			{ placement: 'beside' }
+		);
+		blockMenuOpen = true;
+		dragGutter?.setOpen(true);
+	}
+
+	function closeBlockMenu() {
+		blockMenuOpen = false;
+		blockMenuNodePos = null;
+		dragGutter?.setOpen(false);
+		editor?.commands.focus();
+	}
+
+	function handleBlockMenuSelect(id: string) {
+		const ed = editor;
+		const pos = blockMenuNodePos;
+		closeBlockMenu();
+		if (!ed || pos === null) return;
+		if (id === 'add-above') {
+			insertBlockAbove(ed, pos);
+			return;
+		}
+		if (id === 'add-below') {
+			openSlashBelow(pos);
+			return;
+		}
+		if (id === 'duplicate') {
+			duplicateBlockMenuAt(ed, pos);
+			return;
+		}
+		if (id === 'delete') {
+			deleteBlockMenuAt(ed, pos);
+			return;
+		}
+		if (id === 'copy-link') {
+			const anchor = copyHeadingLinkAt(ed, pos, cells);
+			if (anchor && typeof navigator !== 'undefined' && navigator.clipboard) {
+				const url = `${location.origin}${location.pathname}#${anchor}`;
+				void navigator.clipboard.writeText(url);
+			}
+			return;
+		}
+		if (id.startsWith('turn-')) {
+			turnBlockInto(ed, pos, id);
+		}
+	}
+
+	function handleBlockMenuKeydown(e: KeyboardEvent): boolean {
+		if (!blockMenuOpen) return false;
+		const flat = blockMenuGroups.flatMap((g) => g.items);
+		return handleMenuKeyDown(e, {
+			itemCount: () => flat.length,
+			getSelectedIndex: () => blockMenuSelected,
+			setSelectedIndex: (i) => {
+				blockMenuSelected = i;
+			},
+			selectAt: (i) => {
+				const item = flat[i];
+				if (item && !item.disabled) handleBlockMenuSelect(item.id);
+			},
+			close: closeBlockMenu
+		});
+	}
 
 	// Selection / inspector
 	let selectedNodeInfo = $state<MarkdocSelectedNode | null>(null);
@@ -101,7 +261,8 @@
 	const bubbleGate = {
 		isSlashOpen: () => slashOpen,
 		isMentionOpen: () => mentionOpen,
-		isContextMenuOpen: () => ctxMenu !== null,
+		isContextMenuOpen: () =>
+			ctxMenu !== null || linkPopoverOpen || blockMenuOpen || mediaPopoverOpen,
 		onShow: () => {
 			bubbleVisible = true;
 		},
@@ -318,18 +479,8 @@
 			if (destroyed || !editorMount || !bubbleHost) return;
 
 			// Drag handle gutter
-			const dragGutter = document.createElement('div');
-			dragGutter.className = 'notion-drag-gutter';
-			dragGutter.innerHTML = `
-				<button type="button" class="notion-plus-btn" title="Add block below" aria-label="Add block">
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-				</button>
-				<div class="notion-drag-handle" data-drag-handle draggable="true" title="Drag to reorder">
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-				</div>
-			`;
-
-			let hoveredBlockPos: number | null = null;
+			const gutter: DragGutterHandle = createDragGutter();
+			dragGutter = gutter;
 
 			const pm = markdownToPmDocument(value);
 			frontmatter = pm.frontmatter;
@@ -343,7 +494,10 @@
 					refEntries: () => refEntries,
 					bubbleMenuElement: bubbleHost,
 					bubbleMenuGate: bubbleGate,
-					dragHandleRender: () => dragGutter,
+					dragHandleRender: () => gutter.element,
+					onDragHandleNodeChange: ({ node, pos }) => gutter.setHoveredPos(node ? pos : null),
+					onRequestLink: (e) => onRequestLink(e),
+					onRequestMedia: (kind, e) => onRequestMedia(kind, e),
 					slashHandler: {
 						onStart: ({ items, command }) => {
 							slashItems = items;
@@ -400,26 +554,8 @@
 							onEditorContextMenu(event as MouseEvent);
 							return true;
 						},
-						drop: (view, event) => {
-							const files = (event as DragEvent).dataTransfer?.files;
-							if (!files?.length) return false;
-							const file = files[0];
-							if (!file.type.startsWith('image/')) return false;
-							event.preventDefault();
-							const reader = new FileReader();
-							reader.onload = () => {
-								const src = reader.result as string;
-								const pos = view.posAtCoords({
-									left: (event as DragEvent).clientX,
-									top: (event as DragEvent).clientY
-								})?.pos;
-								if (pos !== undefined) {
-									ed.chain().focus().insertContentAt(pos, { type: 'image', attrs: { src } }).run();
-								}
-							};
-							reader.readAsDataURL(file);
-							return true;
-						}
+						drop: (view, event) => handleImageDrop(view, event),
+						paste: (view, event) => handleImagePaste(view, event)
 					}
 				},
 				onUpdate: ({ editor: e }) => {
@@ -430,31 +566,15 @@
 			});
 
 			// Plus button opens slash menu below hovered block
-			dragGutter.querySelector('.notion-plus-btn')?.addEventListener('mousedown', (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				if (hoveredBlockPos !== null) openSlashBelow(hoveredBlockPos);
+			gutter.setOnAddBlock((hoveredPos) => {
+				if (hoveredPos !== null) openSlashBelow(hoveredPos);
 				else
 					ed.chain()
 						.focus()
 						.insertContent({ type: 'paragraph', content: [{ type: 'text', text: '/' }] })
 						.run();
 			});
-
-			// Track hovered block for plus button via drag handle onNodeChange
-			const dragExt = ed.extensionManager.extensions.find((x) => x.name === 'dragHandle');
-			if (dragExt) {
-				dragExt.options.onNodeChange = ({
-					node,
-					pos
-				}: {
-					node: { type: { name: string } } | null;
-					pos: number;
-					editor: TipTapEditor;
-				}) => {
-					hoveredBlockPos = node ? pos : null;
-				};
-			}
+			gutter.setOnHandleClick((hoveredPos, handleEl) => openBlockMenu(hoveredPos, handleEl));
 
 			editor = ed;
 			bubbleToolbarMount = mount(BubbleToolbar, {
@@ -511,6 +631,7 @@
 	}
 
 	function onKeydown(e: KeyboardEvent) {
+		if (blockMenuOpen && handleBlockMenuKeydown(e)) return;
 		if (e.key === 'Escape') {
 			if (slashOpen) {
 				slashOpen = false;
@@ -518,6 +639,16 @@
 			}
 			if (mentionOpen) {
 				mentionOpen = false;
+				return;
+			}
+			if (linkPopoverOpen) {
+				linkPopoverOpen = false;
+				editor?.commands.focus();
+				return;
+			}
+			if (mediaPopoverOpen) {
+				mediaPopoverOpen = false;
+				editor?.commands.focus();
 				return;
 			}
 			if (ctxMenu) {
@@ -640,7 +771,59 @@
 			</BodyPortal>
 		{/if}
 
-		{#if ctxMenu && ctxMenuPos}
+		{#if linkPopoverOpen}
+			<BodyPortal>
+				<div
+					class="link-popover-anchor fixed z-50"
+					style="top: {linkPopoverPos.top}px; left: {linkPopoverPos.left}px;"
+				>
+					<LinkPopover
+						onApply={applyLinkFromPopover}
+						onCancel={() => {
+							linkPopoverOpen = false;
+							editor?.commands.focus();
+						}}
+					/>
+				</div>
+			</BodyPortal>
+		{/if}
+
+		{#if mediaPopoverOpen}
+			<BodyPortal>
+				<div
+					class="media-popover-anchor fixed z-50"
+					style="top: {mediaPopoverPos.top}px; left: {mediaPopoverPos.left}px;"
+				>
+					<MediaInsertPopover
+						kind={mediaPopoverKind}
+						onInsert={applyMediaInsert}
+						onCancel={() => {
+							mediaPopoverOpen = false;
+							editor?.commands.focus();
+						}}
+					/>
+				</div>
+			</BodyPortal>
+		{/if}
+
+		{#if blockMenuOpen}
+			<BodyPortal>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0 z-40" onclick={closeBlockMenu} onkeydown={() => {}}></div>
+				<div class="fixed z-50" style="top: {blockMenuPos.top}px; left: {blockMenuPos.left}px;">
+					<BlockMenu
+						groups={blockMenuGroups}
+						selectedIndex={blockMenuSelected}
+						onSelect={handleBlockMenuSelect}
+						onHoverIndex={(i) => {
+							blockMenuSelected = i;
+						}}
+					/>
+				</div>
+			</BodyPortal>
+		{/if}
+
+	{#if ctxMenu && ctxMenuPos}
 			<BodyPortal>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="fixed inset-0 z-40" onclick={() => (ctxMenu = null)} onkeydown={() => {}}></div>
@@ -773,17 +956,6 @@
 		margin: 0.35rem 0;
 		padding-left: 1.25rem;
 	}
-	:global(.notion-drag-gutter) {
-		display: flex;
-		align-items: center;
-		gap: 1px;
-		opacity: 0;
-		transition: opacity var(--motion-fast) var(--motion-ease-out);
-	}
-	.notebook-markdown-editor:focus-within :global(.notion-drag-gutter),
-	:global(.notion-drag-gutter:hover) {
-		opacity: 1;
-	}
 	:global(.notion-surface mark) {
 		background: color-mix(in oklab, var(--warning) 32%, transparent);
 		color: inherit;
@@ -791,23 +963,6 @@
 		padding: 0 0.1rem;
 		box-decoration-break: clone;
 		-webkit-box-decoration-break: clone;
-	}
-	:global(.notion-plus-btn),
-	:global(.notion-drag-handle) {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.25rem;
-		height: 1.25rem;
-		border-radius: var(--radius-sm);
-		color: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
-		cursor: pointer;
-		position: relative;
-	}
-	:global(.notion-plus-btn:hover),
-	:global(.notion-drag-handle:hover) {
-		background: var(--muted);
-		color: var(--foreground);
 	}
 	:global(.mention) {
 		background: color-mix(in oklab, var(--primary) 12%, transparent);
@@ -833,6 +988,7 @@
 		pointer-events: auto;
 	}
 	.notion-editor-host {
+		position: relative;
 		min-height: 6rem;
 	}
 	@media (max-width: 720px) {

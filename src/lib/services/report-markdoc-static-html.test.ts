@@ -105,4 +105,91 @@ describe('renderMarkdocCellToStaticHtml', () => {
 		expect(html).toContain('graph TD');
 		expect(html).toContain('A--&gt;B');
 	});
+
+	it('renders a {% video %} widget with controls', () => {
+		const html = renderMarkdocCellToStaticHtml('{% video src="https://example.com/a.mp4" /%}', []);
+		expect(html).toContain('<video');
+		expect(html).toContain('controls');
+		expect(html).toContain('src="https://example.com/a.mp4"');
+	});
+
+	it('rejects a javascript: URL on {% video %}', () => {
+		const html = renderMarkdocCellToStaticHtml('{% video src="javascript:alert(1)" /%}', []);
+		expect(html).not.toContain('javascript:');
+		expect(html).not.toContain('<video');
+	});
+
+	it('renders a {% embed %} widget for an allowlisted host as an iframe', () => {
+		const html = renderMarkdocCellToStaticHtml(
+			'{% embed url="https://www.youtube.com/watch?v=abc123" /%}',
+			[]
+		);
+		expect(html).toContain('<iframe');
+		expect(html).toContain('youtube-nocookie.com/embed/abc123');
+		expect(html).toContain('sandbox=');
+		expect(html).toContain('referrerpolicy="no-referrer"');
+	});
+
+	it('falls back to a link for a non-allowlisted embed host (no raw iframe)', () => {
+		const html = renderMarkdocCellToStaticHtml(
+			'{% embed url="https://attacker.example/evil" /%}',
+			[]
+		);
+		expect(html).not.toContain('<iframe');
+		expect(html).toContain('href="https://attacker.example/evil"');
+	});
+
+	it('rejects a javascript: URL on {% embed %}', () => {
+		const html = renderMarkdocCellToStaticHtml('{% embed url="javascript:alert(1)" /%}', []);
+		expect(html).not.toContain('javascript:');
+		expect(html).not.toContain('<iframe');
+		expect(html).not.toContain('<a ');
+	});
+
+	it('renders a {% bookmark %} widget as a link card', () => {
+		const html = renderMarkdocCellToStaticHtml(
+			'{% bookmark url="https://example.com" title="Example" description="A site" /%}',
+			[]
+		);
+		expect(html).toContain('data-markdoc-tag="bookmark"');
+		expect(html).toContain('href="https://example.com"');
+		expect(html).toContain('Example');
+		expect(html).toContain('A site');
+	});
+
+	it('rejects a javascript: URL on {% bookmark %}', () => {
+		const html = renderMarkdocCellToStaticHtml('{% bookmark url="javascript:alert(1)" /%}', []);
+		expect(html).not.toContain('javascript:');
+		expect(html).not.toContain('<a ');
+	});
+
+	it('renders a {% math %} widget with KaTeX HTML', () => {
+		const html = renderMarkdocCellToStaticHtml('{% math latex="E = mc^2" /%}', []);
+		expect(html).toContain('data-markdoc-tag="math"');
+		expect(html).toContain('katex');
+	});
+
+	it('renders a {% math %} display block with the display class', () => {
+		const html = renderMarkdocCellToStaticHtml('{% math latex="x^2" display=true /%}', []);
+		expect(html).toContain('markdoc-math--display');
+	});
+
+	it('renders a {% toc %} widget from notebook headings', () => {
+		const cells = [
+			{
+				id: 'intro',
+				cellType: 'markdown',
+				markdown: '# Overview\n\nSome text.\n\n## Details\n\nMore text.'
+			} as unknown as Cell
+		];
+		const html = renderMarkdocCellToStaticHtml('{% toc /%}', cells);
+		expect(html).toContain('data-markdoc-tag="toc"');
+		expect(html).toContain('Overview');
+		expect(html).toContain('Details');
+	});
+
+	it('omits the {% toc %} widget entirely when there are no headings', () => {
+		const html = renderMarkdocCellToStaticHtml('{% toc /%}', []);
+		expect(html).not.toContain('data-markdoc-tag="toc"');
+	});
 });

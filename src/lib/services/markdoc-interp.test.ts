@@ -291,6 +291,59 @@ ok
 		expect(progress?.attributes.color).toBe('info');
 	});
 
+	it('renders a video tag passthrough', () => {
+		const { tree, errors } = renderMarkdocCell(
+			'{% video src="https://example.com/a.mp4" loop=true muted=true /%}',
+			[]
+		);
+		expect(errors).toEqual([]);
+		const video = findTag(tree, 'video');
+		expect(video?.attributes.src).toBe('https://example.com/a.mp4');
+		expect(video?.attributes.loop).toBe(true);
+		expect(video?.attributes.muted).toBe(true);
+	});
+
+	it('renders an embed tag passthrough with default aspect', () => {
+		const { tree } = renderMarkdocCell(
+			'{% embed url="https://www.youtube.com/watch?v=abc123" /%}',
+			[]
+		);
+		const embed = findTag(tree, 'embed');
+		expect(embed?.attributes.url).toBe('https://www.youtube.com/watch?v=abc123');
+		expect(embed?.attributes.aspect).toBe('16:9');
+	});
+
+	it('renders a bookmark tag passthrough', () => {
+		const { tree } = renderMarkdocCell(
+			'{% bookmark url="https://example.com" title="Example" description="A site" /%}',
+			[]
+		);
+		const bookmark = findTag(tree, 'bookmark');
+		expect(bookmark?.attributes.url).toBe('https://example.com');
+		expect(bookmark?.attributes.title).toBe('Example');
+		expect(bookmark?.attributes.description).toBe('A site');
+	});
+
+	it('renders a math tag passthrough with default display', () => {
+		const { tree, errors } = renderMarkdocCell('{% math latex="E = mc^2" /%}', []);
+		expect(errors).toEqual([]);
+		const math = findTag(tree, 'math');
+		expect(math?.attributes.latex).toBe('E = mc^2');
+		expect(math?.attributes.display).toBe(false);
+	});
+
+	it('renders a math tag with display=true', () => {
+		const { tree } = renderMarkdocCell('{% math latex="x^2" display=true /%}', []);
+		const math = findTag(tree, 'math');
+		expect(math?.attributes.display).toBe(true);
+	});
+
+	it('renders a toc tag passthrough', () => {
+		const { tree, errors } = renderMarkdocCell('{% toc /%}', []);
+		expect(errors).toEqual([]);
+		expect(findTag(tree, 'toc')).toBeTruthy();
+	});
+
 	it('renders a details tag with its summary/open and children', () => {
 		const { tree } = renderMarkdocCell(
 			'{% details summary="More" open=true %}\nhidden text\n{% /details %}',

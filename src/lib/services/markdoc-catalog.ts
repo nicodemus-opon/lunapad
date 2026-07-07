@@ -25,6 +25,8 @@ export interface MarkdocTagCatalogEntry {
 	slashSnippet: string;
 	selfClosing?: boolean;
 	attributes?: Record<string, MarkdocAttrCatalog>;
+	/** Extra search terms that surface this tag in the slash menu (e.g. "toggle" for details). */
+	aliases?: string[];
 }
 
 export interface MarkdocFunctionCatalogEntry {
@@ -123,6 +125,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		snippet: 'badge value=${1:\\$cell.status} color="${2|info,success,warning,error,neutral|}" /%}',
 		slashSnippet: WIDGET_SNIPPETS.badge,
 		selfClosing: true,
+		aliases: ['tag', 'chip', 'status'],
 		attributes: {
 			value: { detail: 'Badge text ($cell.field)', required: true },
 			color: { detail: 'Badge color', enum: ['info', 'success', 'warning', 'error', 'neutral'] }
@@ -144,6 +147,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Multi-column layout',
 		snippet: WIDGET_SNIPPETS.columns,
 		slashSnippet: WIDGET_SNIPPETS.columns,
+		aliases: ['cols', 'layout'],
 		attributes: {
 			gap: { detail: 'Spacing between columns', enum: ['compact', 'default', 'comfortable'] }
 		}
@@ -169,6 +173,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Info / warning box',
 		snippet: WIDGET_SNIPPETS.callout,
 		slashSnippet: WIDGET_SNIPPETS.callout,
+		aliases: ['info', 'warning', 'note'],
 		attributes: {
 			type: { detail: 'Callout style', enum: ['info', 'success', 'warning', 'error'] }
 		}
@@ -189,6 +194,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		detail: 'Collapsible section',
 		snippet: WIDGET_SNIPPETS.details,
 		slashSnippet: WIDGET_SNIPPETS.details,
+		aliases: ['toggle', 'collapse', 'accordion'],
 		attributes: {
 			summary: { detail: 'Summary label', required: true },
 			open: { detail: 'Start expanded' }
@@ -238,10 +244,66 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 			maxParam: { detail: 'Maximum parameter for numeric ranges' }
 		}
 	},
+	video: {
+		detail: 'Embed a video file',
+		snippet: 'video src="${1:https://}" /%}',
+		slashSnippet: WIDGET_SNIPPETS.video,
+		selfClosing: true,
+		aliases: ['movie', 'mp4'],
+		attributes: {
+			src: { detail: 'Video URL', required: true },
+			poster: { detail: 'Poster image URL shown before playback' },
+			loop: { detail: 'Loop playback' },
+			muted: { detail: 'Start muted' }
+		}
+	},
+	embed: {
+		detail: 'Embed a YouTube/Vimeo/Loom video (or a link card for other hosts)',
+		snippet: 'embed url="${1:https://}" /%}',
+		slashSnippet: WIDGET_SNIPPETS.embed,
+		selfClosing: true,
+		aliases: ['youtube', 'iframe', 'yt', 'vimeo', 'loom'],
+		attributes: {
+			url: { detail: 'Video page URL', required: true },
+			aspect: { detail: 'Aspect ratio', enum: ['16:9', '4:3', '1:1'] }
+		}
+	},
+	bookmark: {
+		detail: 'Link preview card',
+		snippet: 'bookmark url="${1:https://}" /%}',
+		slashSnippet: WIDGET_SNIPPETS.bookmark,
+		selfClosing: true,
+		aliases: ['link-card', 'card-link', 'preview'],
+		attributes: {
+			url: { detail: 'Target URL', required: true },
+			title: { detail: 'Title override' },
+			description: { detail: 'Description text' }
+		}
+	},
+	math: {
+		detail: 'LaTeX equation (rendered with KaTeX)',
+		snippet: 'math latex="${1:E = mc^2}" display=${2:true} /%}',
+		slashSnippet: WIDGET_SNIPPETS.math,
+		selfClosing: true,
+		aliases: ['latex', 'katex', 'equation', 'formula'],
+		attributes: {
+			latex: { detail: 'LaTeX source', required: true },
+			display: { detail: 'Render as a centered display block (vs inline)' }
+		}
+	},
+	toc: {
+		detail: 'Table of contents from this notebook\'s headings',
+		snippet: 'toc /%}',
+		slashSnippet: WIDGET_SNIPPETS.toc,
+		selfClosing: true,
+		aliases: ['contents', 'outline'],
+		attributes: {}
+	},
 	mermaid: {
 		detail: 'Mermaid diagram (any diagram type)',
 		snippet: WIDGET_SNIPPETS.mermaid,
 		slashSnippet: WIDGET_SNIPPETS.mermaid,
+		aliases: ['diagram', 'flowchart'],
 		attributes: {
 			code: { detail: 'Diagram source from $cell.field' }
 		}

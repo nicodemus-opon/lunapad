@@ -17,6 +17,7 @@ function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell 
 		resultViewMode: 'table',
 		resultChartConfig: null,
 		columnFormatRules: {},
+		columnWidths: {},
 		guiStages: [{ type: 'from', table: '' }],
 		display: 'full',
 		hideResult: false,

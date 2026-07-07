@@ -5,6 +5,9 @@
 		Heading1,
 		Heading2,
 		Heading3,
+		Heading4,
+		Heading5,
+		Heading6,
 		Minus,
 		Quote,
 		Code,
@@ -13,6 +16,7 @@
 		ListChecks,
 		Table,
 		Image,
+		Link,
 		Smile,
 		LayoutGrid,
 		Columns2,
@@ -25,12 +29,18 @@
 		AlertCircle,
 		CreditCard,
 		PanelTop,
+		ChevronsDownUp,
 		Workflow,
 		Braces,
 		Repeat2,
 		GitBranch,
 		Code2,
-		FileCode2
+		FileCode2,
+		Video,
+		Film,
+		Bookmark,
+		Sigma,
+		TableOfContents
 	} from '@lucide/svelte';
 	import { scrollMenuItemIntoView } from './menu-utils';
 
@@ -55,6 +65,9 @@
 		h1: Heading1,
 		h2: Heading2,
 		h3: Heading3,
+		h4: Heading4,
+		h5: Heading5,
+		h6: Heading6,
 		divider: Minus,
 		quote: Quote,
 		code: Code,
@@ -63,6 +76,7 @@
 		task: ListChecks,
 		table: Table,
 		image: Image,
+		link: Link,
 		emoji: Smile,
 		grid: LayoutGrid,
 		columns: Columns2,
@@ -77,7 +91,7 @@
 		callout: AlertCircle,
 		card: CreditCard,
 		tabs: PanelTop,
-		details: PanelTop,
+		details: ChevronsDownUp,
 		mermaid: Workflow,
 		'report-summary': LayoutGrid,
 		'report-filtered': Filter,
@@ -91,7 +105,12 @@
 		sql: Code2,
 		prql: FileCode2,
 		python: Code2,
-		page: PanelTop
+		page: PanelTop,
+		video: Video,
+		embed: Film,
+		bookmark: Bookmark,
+		math: Sigma,
+		toc: TableOfContents
 	};
 
 	const grouped = $derived.by(() => {

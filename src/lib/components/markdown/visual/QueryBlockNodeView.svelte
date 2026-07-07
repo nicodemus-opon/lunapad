@@ -12,6 +12,7 @@
 		getPrecedingCodeForCell,
 		setCellResultViewMode,
 		setCellResultChartConfig,
+		updateCellColumnWidths,
 		openWorksheetView,
 		getCells,
 		getConnections,
@@ -583,6 +584,8 @@
 							initialChartConfig={cell.resultChartConfig}
 							onViewModeChange={(mode) => setCellResultViewMode(cellId, mode)}
 							onChartConfigChange={(config) => setCellResultChartConfig(cellId, config)}
+							columnWidths={cell.columnWidths}
+							onColumnWidthsChange={(widths) => updateCellColumnWidths(cellId, widths)}
 							controlsVisible={focused || selected || hovered}
 							toolbarReserveSpace={false}
 							executionMs={cell.executionMs}

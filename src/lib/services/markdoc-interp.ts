@@ -334,6 +334,51 @@ const progressTag: Schema = {
 	}
 };
 
+const videoTag: Schema = {
+	render: 'video',
+	selfClosing: true,
+	attributes: {
+		src: { type: String, required: true },
+		poster: { type: String },
+		loop: { type: Boolean },
+		muted: { type: Boolean }
+	}
+};
+
+const embedTag: Schema = {
+	render: 'embed',
+	selfClosing: true,
+	attributes: {
+		url: { type: String, required: true },
+		aspect: { type: String, matches: ['16:9', '4:3', '1:1'], default: '16:9' }
+	}
+};
+
+const bookmarkTag: Schema = {
+	render: 'bookmark',
+	selfClosing: true,
+	attributes: {
+		url: { type: String, required: true },
+		title: { type: String },
+		description: { type: String }
+	}
+};
+
+const mathTag: Schema = {
+	render: 'math',
+	selfClosing: true,
+	attributes: {
+		latex: { type: String, required: true },
+		display: { type: Boolean, default: false }
+	}
+};
+
+const tocTag: Schema = {
+	render: 'toc',
+	selfClosing: true,
+	attributes: {}
+};
+
 const datatableTag: Schema = {
 	render: 'datatable',
 	selfClosing: true,
@@ -1087,6 +1132,11 @@ const TAGS: Record<string, Schema> = {
 	datatable: datatableTag,
 	badge: badgeTag,
 	progress: progressTag,
+	video: videoTag,
+	embed: embedTag,
+	bookmark: bookmarkTag,
+	math: mathTag,
+	toc: tocTag,
 	columns: columnsTag,
 	column: columnTag,
 	grid: gridTag,

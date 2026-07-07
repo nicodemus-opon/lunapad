@@ -416,7 +416,12 @@ Intro text
 			'{% datatable data=$o.rows limit=10 /%}',
 			'{% badge value="ok" color="success" /%}',
 			'{% progress value=50 max=100 label="Half" color="warning" /%}',
-			'{% filter param="region" kind="dropdown" label="Region" /%}'
+			'{% filter param="region" kind="dropdown" label="Region" /%}',
+			'{% video src="https://example.com/a.mp4" loop=true muted=true /%}',
+			'{% embed url="https://www.youtube.com/watch?v=abc123" aspect="16:9" /%}',
+			'{% bookmark url="https://example.com" title="Example" description="A site" /%}',
+			'{% math latex="E = mc^2" display=true /%}',
+			'{% toc /%}'
 		];
 		for (const w of widgets) {
 			expect(normalizeMarkdocMarkdown(roundTrip(w))).toBe(normalizeMarkdocMarkdown(w));
