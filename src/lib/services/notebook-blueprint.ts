@@ -74,9 +74,7 @@ function diagnostic(
 }
 
 function paragraph(text = ''): PMNodeJSON {
-	return text
-		? { type: 'paragraph', content: [{ type: 'text', text }] }
-		: { type: 'paragraph' };
+	return text ? { type: 'paragraph', content: [{ type: 'text', text }] } : { type: 'paragraph' };
 }
 
 function textNodesFromMarkdown(markdown: string): PMNodeJSON[] {
@@ -133,7 +131,10 @@ function validateKnownRef(
 	}
 }
 
-function attrsFromBlock(block: Record<string, unknown>, omit: string[] = ['type']): Record<string, unknown> {
+function attrsFromBlock(
+	block: Record<string, unknown>,
+	omit: string[] = ['type']
+): Record<string, unknown> {
 	const attrs: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(block)) {
 		if (omit.includes(key) || value === undefined || value === null || value === '') continue;
@@ -152,7 +153,7 @@ function compileChildren(
 }
 
 interface CompileContext {
-	executableIds: Set<string>;
+	queryBlockCellIds: Set<string>;
 	knownRefs: Set<string>;
 	diagnostics: NotebookBlueprintDiagnostic[];
 }
@@ -170,10 +171,12 @@ function compileBlock(
 	switch (block.type) {
 		case 'queryBlock': {
 			if (!block.cellId?.trim()) {
-				ctx.diagnostics.push(diagnostic(path, 'queryBlock requires cellId.', { nodeType: 'queryBlock' }));
+				ctx.diagnostics.push(
+					diagnostic(path, 'queryBlock requires cellId.', { nodeType: 'queryBlock' })
+				);
 				return [];
 			}
-			if (!ctx.executableIds.has(block.cellId)) {
+			if (!ctx.queryBlockCellIds.has(block.cellId)) {
 				ctx.diagnostics.push(
 					diagnostic(path, `queryBlock references missing executable cell "${block.cellId}".`, {
 						nodeType: 'queryBlock',
@@ -213,7 +216,11 @@ function compileBlock(
 					(block.columns ?? []).map((column, index) =>
 						container(
 							'column',
-							compileChildren(column.blocks as NotebookBlueprintBlock[], `${path}.columns.${index}.blocks`, ctx),
+							compileChildren(
+								column.blocks as NotebookBlueprintBlock[],
+								`${path}.columns.${index}.blocks`,
+								ctx
+							),
 							attrsFromBlock(column as Record<string, unknown>, ['blocks'])
 						)
 					),
@@ -237,7 +244,11 @@ function compileBlock(
 					(block.tabs ?? []).map((tab, index) =>
 						container(
 							'tab',
-							compileChildren(tab.blocks as NotebookBlueprintBlock[], `${path}.tabs.${index}.blocks`, ctx),
+							compileChildren(
+								tab.blocks as NotebookBlueprintBlock[],
+								`${path}.tabs.${index}.blocks`,
+								ctx
+							),
 							{ label: tab.label }
 						)
 					)
@@ -275,7 +286,9 @@ function compileBlock(
 			const content = compileChildren(block.then as NotebookBlueprintBlock[], `${path}.then`, ctx);
 			if (block.else?.length) {
 				content.push(widget('else'));
-				content.push(...compileChildren(block.else as NotebookBlueprintBlock[], `${path}.else`, ctx));
+				content.push(
+					...compileChildren(block.else as NotebookBlueprintBlock[], `${path}.else`, ctx)
+				);
 			}
 			return [container('if', content, { condition })];
 		}
@@ -290,14 +303,19 @@ function compileBlock(
 		case 'video':
 		case 'embed':
 		case 'bookmark': {
-			for (const value of Object.values(block)) validateKnownRef(value, ctx.knownRefs, path, ctx.diagnostics);
+			for (const value of Object.values(block))
+				validateKnownRef(value, ctx.knownRefs, path, ctx.diagnostics);
 			return [widget(block.type, attrsFromBlock(block))];
 		}
 		default:
 			ctx.diagnostics.push(
-				diagnostic(path, `Unsupported block type "${String((block as { type?: unknown }).type)}".`, {
-					invalidValue: (block as { type?: unknown }).type
-				})
+				diagnostic(
+					path,
+					`Unsupported block type "${String((block as { type?: unknown }).type)}".`,
+					{
+						invalidValue: (block as { type?: unknown }).type
+					}
+				)
 			);
 			return [];
 	}
@@ -313,7 +331,9 @@ function validateContainerRules(
 		const requiredChildTag = CONTAINER_CHILD_RULES[tagName];
 		const children = node.content ?? [];
 		if (!children.length) {
-			diagnostics.push(diagnostic(path, 'Container must contain at least one block.', { nodeType: tagName }));
+			diagnostics.push(
+				diagnostic(path, 'Container must contain at least one block.', { nodeType: tagName })
+			);
 		}
 		if (requiredChildTag) {
 			for (let i = 0; i < children.length; i++) {
@@ -366,11 +386,12 @@ export function validateNotebookPmDocument(doc: PMDocJSON): NotebookBlueprintDia
 
 export function compileNotebookBlueprint(
 	blueprint: NotebookBlueprint,
-	knownRefs: Iterable<string> = []
+	knownRefs: Iterable<string> = [],
+	knownCellIds: Iterable<string> = []
 ): CompileNotebookBlueprintResult {
 	const executableCells = blueprint.executableCells ?? [];
 	const ctx: CompileContext = {
-		executableIds: new Set(executableCells.map((cell) => cell.cellId)),
+		queryBlockCellIds: new Set([...knownCellIds, ...executableCells.map((cell) => cell.cellId)]),
 		knownRefs: new Set([...knownRefs, ...executableCells.map((cell) => cell.outputName)]),
 		diagnostics: []
 	};
@@ -410,11 +431,15 @@ function findChildContainer(
 		return null;
 	};
 	const found = visit(doc);
-	if (!found) diagnostics.push(diagnostic('patch', `Node "${nodeId}" not found.`, { invalidValue: nodeId }));
+	if (!found)
+		diagnostics.push(diagnostic('patch', `Node "${nodeId}" not found.`, { invalidValue: nodeId }));
 	return found;
 }
 
-function removeNode(doc: PMDocJSON, nodeId: string): { document: PMDocJSON; removed: PMNodeJSON | null } {
+function removeNode(
+	doc: PMDocJSON,
+	nodeId: string
+): { document: PMDocJSON; removed: PMNodeJSON | null } {
 	let removed: PMNodeJSON | null = null;
 	const walk = (node: PMDocJSON | PMNodeJSON): PMDocJSON | PMNodeJSON => {
 		const content: PMNodeJSON[] = [];
@@ -491,7 +516,11 @@ export function applyNotebookPatchOperations(
 				continue;
 			}
 			const content = [...(parent.content ?? [])];
-			content.splice(Math.max(0, Math.min(op.index ?? content.length, content.length)), 0, normalized);
+			content.splice(
+				Math.max(0, Math.min(op.index ?? content.length, content.length)),
+				0,
+				normalized
+			);
 			parent.content = content;
 			continue;
 		}

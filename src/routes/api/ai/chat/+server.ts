@@ -854,19 +854,21 @@ ${schemaList}`;
 		}
 
 		case 'dashboard':
-			return `You are a notebook editor. Your job is to curate existing SQL/Python result cells into a readable notebook report — the SAME cell sequence the human sees in Report view and published shares. That view renders cells in notebook order, skipping any cell marked hideInReport, and shows each query/python cell with its own picked chart inline. Your primary job is to arrange and narrate THOSE cells, not to build a separate widget inside one markdown blob.
+			return `You are a notebook editor. Your job is to compose a readable notebook report from existing SQL/Python result cells and, when needed, add new executable query nodes inside a complete notebook blueprint. The report is the SAME notebook document the human sees in Report view and published shares. Do not use legacy cell-by-cell authoring; create or edit the notebook atomically.
 
 ${toolFmt}
 Available tools:
 - list_cells: {}
+- inspect_notebook: {"notebookId": "..."}
 - get_cell_result: {"cellId": "...", "limit": 5}
 - get_lineage: {"outputName": "..."}
 - pick_chart: {"cellId": "..."}
 - set_chart: {"cellId": "...", "chartConfig": {...}}
 - set_view_mode: {"cellId": "...", "mode": "table"|"chart"|"stats"}
-- create_cell: {"outputName": "overview", "cellType": "markdown", "markdown": "...", "afterCellId": "..."}
-- update_cell: {"cellId": "...", "markdown": "...", "hideInReport": true|false}
-- move_cell: {"cellId": "...", "direction": "up"|"down"} or {"cellId": "...", "toIndex": N}
+- create_notebook: {"blueprint": {"title": "...", "executableCells": [{"cellId": "q_metric", "outputName": "metric", "cellType": "query", "language": "sql", "code": "SELECT ..."}], "blocks": [{"type": "text", "content": "# Heading"}, {"type": "queryBlock", "cellId": "q_metric"}]}}
+- apply_notebook_patch: {"blueprint": {...}} or {"document": {...}} or {"operations": [...]}
+- run_query_nodes: {"cellIds": ["q_metric"]} or {"nodeIds": ["node-id"]}
+- validate_notebook: {"notebookId": "..."}
 
 ${buildMarkdocSyntaxBlock()}
 ${buildGeneratedDashboardPromptBlock()}
@@ -886,32 +888,25 @@ Workflow:
    Answer: <the one-line finding this report leads with>
    Sections (2-4, MECE): [title] — [which existing cell/chart is the evidence] — [narrative gist]
    </plan>
-5. Realize the plan by curating the actual notebook, not by writing one giant cell:
-   - move_cell each evidence cell AT MOST ONCE to its final position — decide the order once,
-     don't reposition a cell repeatedly.
-   - create_cell (markdown, afterCellId set precisely) a short section-opening cell before each
-     evidence cell: a heading + one sentence of "so what," not evidence alone.
-   - update_cell hideInReport:true on any selected cell that's staging/intermediate and shouldn't
-     appear in the reader's view — it stays in the notebook, just hidden from Report view/shares.
-   - Reach for a "dashboard" JSON block cell (grid/metric/callout/etc, see grammar below) only for
-     a dense KPI-tile summary or an interactive filter — not as the default report mechanism.
-   - If the request is simple (one metric, one chart, no real curation needed), skip all of the
-     above and just write one markdown cell with the dashboard grammar — that's still valid.
+5. Realize the plan with create_notebook for a new report, or inspect_notebook then apply_notebook_patch for an existing report:
+   - Use text blocks for section headings and concise "so what" narrative.
+   - Use queryBlock blocks to place selected executable cells in the reader's flow.
+   - Use dashboard grammar blocks (grid/metric/chart/datatable/callout/tabs/filter) for a dense KPI-tile summary or interactive filter.
+   - If a query is missing, add it as executableCells plus a queryBlock in the same blueprint.
+   - Never call create_cell, update_cell, or move_cell. They are legacy tools and are disabled.
 6. Reference existing result cells via $outputName or $outputName.field only in any markdown you write. Never hardcode numbers/dates/categories from results, never use $cell, and never reference stg_ cells.
-7. Call <done>, mentioning that Report view (or Share) shows the curated result.
+7. After create_notebook/apply_notebook_patch, call run_query_nodes for every queryBlock you added or changed, repair failures with apply_notebook_patch, then call validate_notebook.
+8. Call <done> only after validate_notebook returns ok:true.
 
 Hard rules:
-- Never call the same tool with the same cellId twice — decide once, move on.
-- Only call move_cell/set_view_mode/pick_chart/set_chart/update_cell on a cellId that came back
-  from list_cells or a create_cell you just made — never invent a cellId.
+- Never invent a cellId: queryBlock cellId must match an executableCells cellId or an existing inspected cell id.
+- Only call set_view_mode/pick_chart/set_chart on a cellId that came back from list_cells.
 - Only call ask_user for something genuinely ambiguous and blocking (e.g. two equally plausible
   topics to report on) — never for implementation trivia like join keys or view-mode choices;
   pick a reasonable default instead.
-- You have a limited number of tool calls — always finish with create_cell/update_cell producing
-  real content and <done>, even for a small report. Curating cells without ever writing or
-  surfacing any content is not a valid outcome.
+- You have a limited number of tool calls — always finish with create_notebook or apply_notebook_patch producing real content, then run_query_nodes, validate_notebook, and <done>.
 
-Do NOT write SQL or Python — only curate and narrate around existing result cells.
+Write SQL/Python only inside create_notebook/apply_notebook_patch executableCells. Do not put SQL in prose or markdown code blocks.
 
 <done>{"suggestions":["Follow-up ideas for the summary"]}</done>
 
@@ -919,15 +914,15 @@ Notebook:
 ${cellList}${contractNote}`;
 
 		case 'documentation':
-			return `You are a documentation agent. Your job is to curate existing cell results into a well-structured notebook narrative — the SAME cell sequence Report view and published shares render, in order, skipping cells marked hideInReport. Do NOT write or modify SQL/Python result cells; you arrange and narrate around them.
+			return `You are a documentation agent. Your job is to curate existing cell results into a well-structured notebook narrative — the SAME notebook document Report view and published shares render. Do NOT use legacy cell-by-cell authoring; edit the notebook atomically.
 
 ${toolFmt}
 Available tools:
 - list_cells: {}
+- inspect_notebook: {"notebookId": "..."}
 - get_cell_result: {"cellId": "...", "limit": 50}
-- create_cell: {"outputName": "findings", "cellType": "markdown", "markdown": "...", "afterCellId": "..."}
-- update_cell: {"cellId": "...", "markdown": "...", "hideInReport": true|false}
-- move_cell: {"cellId": "...", "direction": "up"|"down"} or {"cellId": "...", "toIndex": N}
+- apply_notebook_patch: {"blueprint": {...}} or {"document": {...}} or {"operations": [...]}
+- validate_notebook: {"notebookId": "..."}
 - record_decision: {"decision": "..."}
 
 ${buildMarkdocSyntaxBlock()}
@@ -936,18 +931,17 @@ ${buildGeneratedDashboardPromptBlock()}
 Workflow:
 1. Call list_cells, then get_cell_result once per cell relevant to this task to see actual values, row counts, and column names. SQL and Python result cells are both valid sources.
 2. Plan a short narrative (skip for a single simple answer): lead with the one-line finding, then 2-4 MECE sections, each anchored on an existing evidence cell.
-3. Realize it by curating the notebook: move_cell each relevant cell AT MOST ONCE into its final
-   position, create_cell short markdown cells (afterCellId set precisely) opening each section
-   with a heading + the finding, and update_cell hideInReport:true on any cell that shouldn't
-   appear in the reader's view. If the request is simple, skip curation and just write one
-   markdown cell with the dashboard grammar instead — that's still valid.
+3. Realize it by calling inspect_notebook, then apply_notebook_patch with operations or a full
+   document. Add concise text blocks around the relevant queryBlocks and reorder/hide content
+   through the patched notebook document. If the request is simple, write one text block with
+   the dashboard grammar instead — that's still valid.
 4. Use structured "dashboard" blocks (grid/callout/datatable/etc) only for a KPI-tile summary or empty-state — not as the default mechanism. Use real outputName refs from list_cells — never $cell placeholders.
 5. Never hard-code a value — number, date, or text — that comes from a query result; every such value must be a live ref.
-6. Call <done>, mentioning that Report view (or Share) shows the curated result.
+6. Call validate_notebook, then <done>, mentioning that Report view (or Share) shows the curated result.
 
-Hard rules: never call the same tool with the same cellId twice; never invent a cellId not seen
-from list_cells; always finish with real create_cell/update_cell content and <done> — curating
-without ever writing or surfacing content is not a valid outcome.
+Hard rules: never call create_cell, update_cell, or move_cell. Never invent a cellId not seen
+from list_cells or inspect_notebook. Always finish with real apply_notebook_patch content and
+<done> — curating without ever writing or surfacing content is not a valid outcome.
 
 <done>{"suggestions":["Follow-up ideas for the documentation"]}</done>
 
@@ -1298,7 +1292,13 @@ export const POST: RequestHandler = async ({ request }) => {
 				const sig = `${tool}:${JSON.stringify(args)}`;
 				if (emittedToolSigs.has(sig)) return false;
 				emittedToolSigs.add(sig);
-				if (req.allowedTools && !req.allowedTools.includes(tool as AIChatToolName)) return false;
+				if (req.allowedTools && !req.allowedTools.includes(tool as AIChatToolName)) {
+					pendingPolicyFallback ??=
+						tool === 'create_cell' || tool === 'update_cell' || tool === 'move_cell'
+							? 'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.'
+							: `Tool '${tool}' is not available in this step. Use one of: ${req.allowedTools.join(', ')}.`;
+					return false;
+				}
 				callCounter++;
 				const toolCall: AIChatToolCall = {
 					callId: callId || `auto_${callCounter}`,
@@ -1690,7 +1690,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					}
 				}
 
-				if (pendingPolicyFallback && emittedNativeToolCalls === 0 && !meaningfulTextEmitted) {
+				if (pendingPolicyFallback && emittedNativeToolCalls === 0 && emittedXmlToolCalls === 0) {
 					sendTextDelta(ctrl, pendingPolicyFallback, () => {
 						meaningfulTextEmitted = true;
 					});

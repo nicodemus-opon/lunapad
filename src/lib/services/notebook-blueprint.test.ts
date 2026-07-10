@@ -102,4 +102,27 @@ describe('notebook-blueprint', () => {
 			/q_missing|Unknown live reference/
 		);
 	});
+
+	it('allows query blocks that reference existing notebook cells', () => {
+		const compiled = compileNotebookBlueprint(
+			{
+				title: 'Existing Cell Report',
+				blocks: [
+					{ type: 'text', content: '## Revenue\n\nLive total: $monthly_revenue.revenue.' },
+					{ type: 'queryBlock', cellId: 'cell_monthly_revenue' },
+					{
+						type: 'chart',
+						ref: '$monthly_revenue',
+						chartType: 'line'
+					}
+				]
+			},
+			['monthly_revenue'],
+			['cell_monthly_revenue']
+		);
+
+		expect(compiled.diagnostics).toEqual([]);
+		expect(compiled.document).not.toBeNull();
+		expect(compiled.executableCells).toEqual([]);
+	});
 });

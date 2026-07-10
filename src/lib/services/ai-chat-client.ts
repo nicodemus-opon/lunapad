@@ -134,10 +134,7 @@ import { executeSQL } from '$lib/services/duckdb.js';
 import { queryConnectionSQL } from '$lib/services/connections.js';
 import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
-import {
-	repairMarkdocTagBalance,
-	validateMarkdocMarkdown
-} from '$lib/services/markdoc-interp.js';
+import { repairMarkdocTagBalance, validateMarkdocMarkdown } from '$lib/services/markdoc-interp.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { rowsToCsv } from '$lib/utils.js';
 import {
@@ -168,9 +165,15 @@ import { createFsmContext, transitionFsm, applyTransition } from '$lib/agent/fsm
 import {
 	applyNotebookPatchOperations,
 	compileNotebookBlueprint,
-	validateNotebookPmDocument
+	validateNotebookPmDocument,
+	type NotebookBlueprint
 } from '$lib/services/notebook-blueprint.js';
 import { cellsToPmDocument } from '$lib/services/notebook-pm.js';
+import {
+	initialDashboardLoopState,
+	reduceDashboardTurn,
+	dashboardDone
+} from '$lib/services/dashboard-loop-signals.js';
 import { normalizePmNodeIds, type PMDocJSON } from '$lib/services/markdoc-pm.js';
 
 function escapeRegExp(s: string): string {
@@ -1266,7 +1269,9 @@ function getNotebookForAiTool(notebookId?: string) {
 	return getNotebooks().find((notebook) => notebook.id === id) ?? null;
 }
 
-function currentNotebookDocument(notebookId?: string): { notebookId: string; document: PMDocJSON } | null {
+function currentNotebookDocument(
+	notebookId?: string
+): { notebookId: string; document: PMDocJSON } | null {
 	const notebook = getNotebookForAiTool(notebookId);
 	if (!notebook) return null;
 	return {
@@ -1290,6 +1295,63 @@ function queryBlockCellIdsFromDocument(document: PMDocJSON, nodeIds?: string[]):
 	};
 	visit(document);
 	return cellIds;
+}
+
+function queryBlockCellIdsFromBlueprint(blocks: NotebookBlueprint['blocks'] | undefined): string[] {
+	const cellIds: string[] = [];
+	const visit = (block: NotebookBlueprint['blocks'][number]) => {
+		if (!block || typeof block !== 'object') return;
+		if (block.type === 'queryBlock') {
+			if (block.cellId) cellIds.push(block.cellId);
+			return;
+		}
+		if ('items' in block && Array.isArray(block.items)) {
+			for (const child of block.items as NotebookBlueprint['blocks']) visit(child);
+		}
+		if ('blocks' in block && Array.isArray(block.blocks)) {
+			for (const child of block.blocks as NotebookBlueprint['blocks']) visit(child);
+		}
+		if ('columns' in block && Array.isArray(block.columns)) {
+			for (const column of block.columns) {
+				for (const child of (column.blocks ?? []) as NotebookBlueprint['blocks']) visit(child);
+			}
+		}
+		if ('tabs' in block && Array.isArray(block.tabs)) {
+			for (const tab of block.tabs) {
+				for (const child of (tab.blocks ?? []) as NotebookBlueprint['blocks']) visit(child);
+			}
+		}
+		if ('then' in block && Array.isArray(block.then)) {
+			for (const child of block.then as NotebookBlueprint['blocks']) visit(child);
+		}
+		if ('else' in block && Array.isArray(block.else)) {
+			for (const child of block.else as NotebookBlueprint['blocks']) visit(child);
+		}
+	};
+	for (const block of blocks ?? []) visit(block);
+	return [...new Set(cellIds)];
+}
+
+function hydrateExistingExecutableCells(
+	blueprint: NotebookBlueprint
+): NotebookBlueprint['executableCells'] {
+	const existingPayloads = new Map(
+		(blueprint.executableCells ?? []).map((cell) => [cell.cellId, cell])
+	);
+	const existingCells = getAllCellsAcrossNotebooks();
+	for (const cellId of queryBlockCellIdsFromBlueprint(blueprint.blocks)) {
+		if (existingPayloads.has(cellId)) continue;
+		const cell = existingCells.find((candidate) => candidate.id === cellId);
+		if (!cell || (cell.cellType !== 'query' && cell.cellType !== 'python')) continue;
+		existingPayloads.set(cellId, {
+			cellId: cell.id,
+			outputName: cell.outputName,
+			cellType: cell.cellType === 'python' ? 'python' : 'query',
+			language: cell.language,
+			code: cell.code
+		});
+	}
+	return [...existingPayloads.values()];
 }
 
 async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<string> {
@@ -1331,7 +1393,10 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 		case 'validate_notebook': {
 			const args = call.args as ValidateNotebookArgs;
 			const current = args.document
-				? { notebookId: args.notebookId ?? getActiveTabId(), document: normalizePmNodeIds(args.document) }
+				? {
+						notebookId: args.notebookId ?? getActiveTabId(),
+						document: normalizePmNodeIds(args.document)
+					}
 				: currentNotebookDocument(args.notebookId);
 			if (!current) return 'validate_notebook: notebook not found';
 			const diagnostics = validateNotebookPmDocument(current.document);
@@ -1537,8 +1602,17 @@ async function executeToolCallWithResult(
 	switch (call.tool) {
 		case 'create_notebook': {
 			const args = call.args as CreateNotebookArgs;
-			const knownRefs = getAllCellsAcrossNotebooks().map((cell) => cell.outputName);
-			const compiled = compileNotebookBlueprint(args.blueprint, knownRefs);
+			const allCells = getAllCellsAcrossNotebooks();
+			const knownRefs = allCells.map((cell) => cell.outputName);
+			const hydratedBlueprint = {
+				...args.blueprint,
+				executableCells: hydrateExistingExecutableCells(args.blueprint)
+			};
+			const compiled = compileNotebookBlueprint(
+				hydratedBlueprint,
+				knownRefs,
+				allCells.map((cell) => cell.id)
+			);
 			if (!compiled.document) {
 				return `create_notebook: draft validation failed; repair these diagnostics and call create_notebook again: ${compiled.diagnostics
 					.slice(0, 6)
@@ -1546,7 +1620,7 @@ async function executeToolCallWithResult(
 					.join('; ')}`;
 			}
 			const notebookId = createNotebookFromPmDocument({
-				name: args.blueprint.title,
+				name: hydratedBlueprint.title,
 				document: compiled.document,
 				executableCells: compiled.executableCells
 			});
@@ -1571,9 +1645,11 @@ async function executeToolCallWithResult(
 			let executableCells = args.executableCells ?? [];
 
 			if (args.blueprint) {
+				const allCells = getAllCellsAcrossNotebooks();
 				const compiled = compileNotebookBlueprint(
 					args.blueprint,
-					getAllCellsAcrossNotebooks().map((cell) => cell.outputName)
+					allCells.map((cell) => cell.outputName),
+					allCells.map((cell) => cell.id)
 				);
 				if (!compiled.document) {
 					return `apply_notebook_patch: blueprint validation failed; repair these diagnostics: ${compiled.diagnostics
@@ -1586,7 +1662,10 @@ async function executeToolCallWithResult(
 			} else if (args.document) {
 				document = normalizePmNodeIds(args.document);
 			} else if (args.operations?.length) {
-				const patched = applyNotebookPatchOperations(cellsToPmDocument(notebook.cells), args.operations);
+				const patched = applyNotebookPatchOperations(
+					cellsToPmDocument(notebook.cells),
+					args.operations
+				);
 				if (!patched.document) {
 					return `apply_notebook_patch: patch validation failed; repair these diagnostics: ${patched.diagnostics
 						.slice(0, 6)
@@ -1962,10 +2041,9 @@ async function executeToolCallWithResult(
 			const args = call.args as RunQueryNodesArgs;
 			const current = currentNotebookDocument();
 			if (!current) return 'run_query_nodes: notebook not found';
-			const cellIds =
-				args.cellIds?.length
-					? args.cellIds
-					: queryBlockCellIdsFromDocument(current.document, args.nodeIds);
+			const cellIds = args.cellIds?.length
+				? args.cellIds
+				: queryBlockCellIdsFromDocument(current.document, args.nodeIds);
 			if (!cellIds.length) return 'run_query_nodes: no query nodes matched';
 			return executeToolCallWithResult(
 				{ callId: call.callId, tool: 'run_cells', args: { cellIds } },
@@ -2553,7 +2631,12 @@ const ACTIVITY_LABELS: Record<string, string> = {
 	profile_column: 'Profiling column…',
 	record_decision: 'Recording decision…',
 	validate_result: 'Validating result…',
-	compare_cells: 'Comparing cells…'
+	compare_cells: 'Comparing cells…',
+	create_notebook: 'Composing notebook…',
+	apply_notebook_patch: 'Updating notebook…',
+	run_query_nodes: 'Running query nodes…',
+	validate_notebook: 'Validating notebook…',
+	inspect_notebook: 'Inspecting notebook…'
 };
 
 function activityLabelForTool(tool: string): string {
@@ -2566,7 +2649,7 @@ function activityLabelForTool(tool: string): string {
 // assistant text when a create_cell/update_cell call is blocked server-side (see
 // blockedToolFallbackText and the pendingPolicyFallback assignments in +server.ts).
 const BLOCKED_TOOL_FALLBACK_PATTERN =
-	/^(Markdown validation failed|Structured notebook UI validation failed|Inspect at least one relevant cell result|Cannot write code referencing|Table `.+` does not exist|I will not delete cells)/;
+	/(Markdown validation failed|Structured notebook UI validation failed|Inspect at least one relevant cell result|Cannot write code referencing|Table `.+` does not exist|I will not delete cells|Legacy cell tools are disabled)/;
 
 async function streamOneTurn(
 	reqBody: AIChatRequest,
@@ -2986,12 +3069,13 @@ async function runSprintLoop(
 				}
 
 				const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
+				const hadRunQueryNodes = allToolResults.some((r) => r.startsWith('run_query_nodes result:'));
 				const directive =
 					errorLines.length > 0
-						? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
-						: hadRunCells
+						? `Fix SQL errors with apply_notebook_patch, then run_query_nodes:\n${errorLines.join('\n')}`
+						: hadRunCells || hadRunQueryNodes
 							? `Cells ran. Check: ${task.successCriteria ?? 'all cells succeeded'}. If done, output <done>. Otherwise continue.`
-							: 'Continue the task. Call run_cells to validate, then output <done> when complete.';
+							: 'Continue the task. Use create_notebook or apply_notebook_patch for notebook content, call run_query_nodes to validate query nodes, then output <done> when complete.';
 				taskInjection = {
 					role: 'user',
 					content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
@@ -3009,8 +3093,8 @@ async function runSprintLoop(
 						: task.type === 'visualize'
 							? 'Call pick_chart on the cell to chart it, then output <done>.'
 							: task.type === 'dashboard'
-								? 'Call list_cells, then create_cell with cellType:"markdown" using {% grid %}, {% metric %}, and {% chart %} tags, then output <done>.'
-								: 'Call create_cell with the SQL, then run_cells to validate it, then output <done>.';
+								? 'Call list_cells, inspect/get relevant results, then create_notebook or apply_notebook_patch with the report content, validate_notebook, and output <done>.'
+								: 'Call create_notebook or apply_notebook_patch with the SQL as executableCells, then run_query_nodes to validate it, then output <done>.';
 				taskInjection = { role: 'user', content: `You have not completed the task yet. ${hint}` };
 				taskDepth++;
 				continue;
@@ -3066,7 +3150,7 @@ async function runSprintLoop(
 				tool: 'record_decision',
 				label: `Retrying task ${i + 1}: ${task.title}`
 			});
-			const retryContent = `Task ${i + 1} verification failed.\n${errorDetails}\n\nFix the SQL errors: call update_cell with corrected SQL, then run_cells. Task done when all cells pass.`;
+			const retryContent = `Task ${i + 1} verification failed.\n${errorDetails}\n\nFix the SQL errors with apply_notebook_patch, then run_query_nodes. Task done when all query nodes pass.`;
 			const { allToolResults: retryResults, aborted: retryAborted } = await streamOneTurn(
 				buildSprintReq('sql-gen', taskPrompt, SPRINT_TASK_TOOLS['build'], {
 					role: 'user',
@@ -3616,14 +3700,9 @@ async function runDashboardLoop(
 	let depth = 0;
 	let injection: { role: 'user'; content: string } | null = null;
 	let stallRetries = 0;
-	const knownMarkdownCellNames = new Set<string>();
-	// Markdown cells whose last write failed the ground-truth render check (see
-	// renderCheckSuffix) — the cell exists but displays errors to the user. <done> is not
-	// honored while any remain; a later clean write on the same cell clears it.
-	const brokenMarkdownCellNames = new Set<string>();
-	let inspectedResult = false;
-	let lastBlockedReason: string | null = null;
-	let blockedTurns = 0;
+	// Progress/completion tracking against the atomic notebook tools (create_notebook,
+	// apply_notebook_patch, run_query_nodes, validate_notebook) — see dashboard-loop-signals.ts.
+	let loopState = initialDashboardLoopState();
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
 		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
@@ -3648,61 +3727,35 @@ async function runDashboardLoop(
 
 		if (allToolResults.length > 0) {
 			stallRetries = 0;
-			if (
-				allToolResults.some(
-					(r) => r.startsWith('get_cell_result(') || r.startsWith('run_cells result:')
-				)
-			) {
-				inspectedResult = true;
+			loopState = reduceDashboardTurn(loopState, allToolResults);
+
+			// If the model keeps producing blueprints the compiler rejects, or keeps calling
+			// the disabled legacy cell tools, it isn't converging — bail out with the last
+			// reason instead of silently burning the remaining retry budget (which reads as a
+			// freeze followed by no output). A turn that lands a create/patch resets the
+			// counters (see reduceDashboardTurn).
+			if (loopState.rejectedTurns >= 3 || loopState.legacyBlockedTurns >= 3) {
+				if (loopState.notebookReady) break; // never claim failure after a successful create
+				appendErrorMessage(
+					`Dashboard generation stopped: the model repeatedly produced a notebook the server rejected. Last reason — ${(loopState.lastRejection ?? 'unknown').replace('create_cell/update_cell blocked: ', '')}`
+				);
+				return;
 			}
 
-			// If the server keeps rejecting the model's markdown, it isn't converging — the
-			// rejection reasons often differ slightly between attempts (a different attribute,
-			// a different column guess), so count blocked turns rather than identical messages,
-			// and bail out with the last reason instead of silently burning the remaining retry
-			// budget (which reads as a freeze followed by no output). A turn that lands a
-			// markdown cell resets the count — rejections mixed with progress are fine.
-			const blocked = allToolResults.find((r) => r.startsWith('create_cell/update_cell blocked:'));
-			const madeProgress = allToolResults.some((r) => /Cell '.+?' (?:created|updated)/.test(r));
-			if (blocked) {
-				lastBlockedReason = blocked;
-				blockedTurns = madeProgress ? 0 : blockedTurns + 1;
-				if (blockedTurns >= 3) {
-					appendErrorMessage(
-						`Dashboard generation stopped: the model repeatedly produced markdown the server rejected. Last reason — ${blocked.replace('create_cell/update_cell blocked: ', '')}`
-					);
-					return;
-				}
-			} else if (madeProgress) {
-				blockedTurns = 0;
-			}
+			if (dashboardDone(loopState, signalledDone)) break;
 
-			for (const r of allToolResults) {
-				const m = r.match(/Cell '(.+?)' (?:created|updated)/);
-				if (!m) continue;
-				const name = m[1];
-				const current = getCells().find((cell) => cell.outputName === name);
-				if (current?.cellType !== 'markdown') continue;
-				knownMarkdownCellNames.add(name);
-				if (r.includes('Render check FAILED')) brokenMarkdownCellNames.add(name);
-				else brokenMarkdownCellNames.delete(name);
-			}
-
-			if (
-				signalledDone &&
-				inspectedResult &&
-				knownMarkdownCellNames.size > 0 &&
-				brokenMarkdownCellNames.size === 0
-			)
-				break;
-
-			const directive = !inspectedResult
-				? 'Inspect at least one relevant reporting result before writing dashboard markdown. You can use get_cell_result on an existing cell, or run_cells on newly created SQL/Python cells first.'
-				: brokenMarkdownCellNames.size > 0
-					? `These markdown cells currently render with errors: ${[...brokenMarkdownCellNames].join(', ')}. Read the "Render check FAILED" details in the tool results above and fix each cell with update_cell, then call <done>.`
-					: knownMarkdownCellNames.size > 0
-						? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section. Then call <done>.`
-						: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>.';
+			const directive =
+				loopState.legacyBlockedTurns >= 1
+					? 'create_cell/update_cell are disabled. Compose the notebook with create_notebook (new notebook) or apply_notebook_patch (existing notebook) instead.'
+					: loopState.rejectedTurns >= 1
+						? 'Fix exactly the diagnostics listed in the tool results above and call create_notebook / apply_notebook_patch again.'
+						: !loopState.inspectedResult
+							? 'Inspect at least one relevant result before finishing: use get_cell_result on an existing cell, or run_query_nodes to execute the notebook’s query nodes.'
+							: loopState.validationFailed
+								? 'validate_notebook reported problems. Repair the document with apply_notebook_patch, then call validate_notebook again.'
+								: loopState.notebookReady
+									? `Notebook '${loopState.notebookLabel ?? ''}' is in place. Refine it with apply_notebook_patch or run_query_nodes if needed, then call <done>.`
+									: 'Call create_notebook with a blueprint (markdown sections plus query nodes over the relevant cells), then call <done>.';
 
 			injection = {
 				role: 'user',
@@ -3712,21 +3765,15 @@ async function runDashboardLoop(
 			continue;
 		}
 
-		if (
-			signalledDone &&
-			inspectedResult &&
-			knownMarkdownCellNames.size > 0 &&
-			brokenMarkdownCellNames.size === 0
-		)
-			break;
+		if (dashboardDone(loopState, signalledDone)) break;
 
 		if (stallRetries < 2) {
 			stallRetries++;
-			const directive = !inspectedResult
-				? 'Call list_cells, then inspect relevant reporting results before writing dashboard markdown. Use get_cell_result for existing cells, or run_cells if you just created SQL/Python cells. Do NOT respond with prose only.'
-				: knownMarkdownCellNames.size > 0
-					? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section, then call <done>. Do NOT respond with prose only.`
-					: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>. Do NOT respond with prose only.';
+			const directive = !loopState.inspectedResult
+				? 'Call list_cells, then inspect relevant results with get_cell_result or run_query_nodes before composing the notebook. Do NOT respond with prose only.'
+				: loopState.notebookReady
+					? `Notebook '${loopState.notebookLabel ?? ''}' is in place. Refine it with apply_notebook_patch or run_query_nodes if needed, then call <done>. Do NOT respond with prose only.`
+					: 'Call create_notebook with a blueprint (markdown sections plus query nodes over the relevant cells), then call <done>. Do NOT respond with prose only.';
 			injection = { role: 'user', content: directive };
 			depth++;
 			continue;
@@ -3735,17 +3782,17 @@ async function runDashboardLoop(
 	}
 
 	// Loop exhausted (or stalled out) without a clean result — tell the user why instead of
-	// ending the turn with no visible output.
+	// ending the turn with no visible output. A created notebook is never reported as failure.
 	if (signal.aborted) return;
-	if (knownMarkdownCellNames.size === 0) {
+	if (!loopState.notebookReady) {
 		appendErrorMessage(
-			lastBlockedReason
-				? `Dashboard generation failed. Last server rejection — ${lastBlockedReason.replace('create_cell/update_cell blocked: ', '')}`
-				: 'Dashboard generation failed: the model never produced a valid markdown cell. Try again, or attach the relevant result cells as context.'
+			loopState.lastRejection
+				? `Dashboard generation failed. Last rejection — ${loopState.lastRejection.replace('create_cell/update_cell blocked: ', '')}`
+				: 'Dashboard generation failed: the model never produced a valid notebook. Try again, or attach the relevant result cells as context.'
 		);
-	} else if (brokenMarkdownCellNames.size > 0) {
+	} else if (loopState.validationFailed) {
 		appendErrorMessage(
-			`Dashboard generated, but these markdown cells still render with errors: ${[...brokenMarkdownCellNames].join(', ')}. Ask me to fix them, or edit the cells directly.`
+			`Notebook '${loopState.notebookLabel ?? ''}' was created, but validate_notebook still reports issues. Ask me to fix them, or edit the notebook directly.`
 		);
 	}
 }
