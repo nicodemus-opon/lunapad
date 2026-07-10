@@ -8,7 +8,8 @@ import {
 	extractMarkdocRefs,
 	validateMarkdocMarkdown,
 	normalizeMarkdocFirstRowRefs,
-	normalizeMermaidCode
+	normalizeMermaidCode,
+	repairMarkdocTagBalance
 } from './markdoc-interp.js';
 import { WIDGET_SNIPPETS } from './markdoc-snippets';
 import type { Cell } from '$lib/stores/notebook.svelte';
@@ -1076,5 +1077,45 @@ describe('extractMarkdocRefs', () => {
 
 	it('returns empty array for no refs', () => {
 		expect(extractMarkdocRefs('plain text')).toEqual([]);
+	});
+});
+
+describe('repairMarkdocTagBalance', () => {
+	it('self-closes a self-closing tag missing its /', () => {
+		const repaired = repairMarkdocTagBalance('{% datatable data=$orders.rows %}');
+		expect(repaired).toBe('{% datatable data=$orders.rows /%}');
+		const cells = [makeCell('orders', [{ revenue: 1 }])];
+		expect(validateMarkdocMarkdown(repaired, cells)).toEqual([]);
+	});
+
+	it('appends missing container closers innermost-first', () => {
+		const repaired = repairMarkdocTagBalance(
+			'{% card title="A" %}\n{% grid cols=2 %}\n{% metric value=$orders.revenue label="R" /%}'
+		);
+		expect(repaired.trimEnd().endsWith('{% /grid %}\n{% /card %}')).toBe(true);
+		const cells = [makeCell('orders', [{ revenue: 1 }])];
+		expect(validateMarkdocMarkdown(repaired, cells)).toEqual([]);
+	});
+
+	it('removes a stray closer', () => {
+		const repaired = repairMarkdocTagBalance('Some prose\n{% /card %}\nmore prose');
+		expect(repaired).not.toContain('/card');
+	});
+
+	it('leaves balanced markdown untouched', () => {
+		const md =
+			'{% card title="A" %}\n{% metric value=$orders.revenue label="R" /%}\n{% /card %}';
+		expect(repairMarkdocTagBalance(md)).toBe(md);
+	});
+
+	it('handles interleaved closers by closing the skipped container', () => {
+		const repaired = repairMarkdocTagBalance('{% card %}\n{% grid %}\ntext\n{% /card %}');
+		const cells = [makeCell('orders', [{ revenue: 1 }])];
+		expect(validateMarkdocMarkdown(repaired, cells)).toEqual([]);
+	});
+
+	it('ignores tags inside code fences and unknown tag names', () => {
+		const md = '```\n{% datatable data=$x.rows %}\n```\n{% bogus %}';
+		expect(repairMarkdocTagBalance(md)).toBe(md);
 	});
 });

@@ -18,12 +18,13 @@ export const MODELING_TOOLS: AIChatToolName[] = [
 ];
 
 export const SQL_GEN_TOOLS: AIChatToolName[] = [
-	'create_cell',
-	'update_cell',
-	'run_cells',
+	'inspect_notebook',
+	'create_notebook',
+	'apply_notebook_patch',
+	'run_query_nodes',
+	'validate_notebook',
 	'query_data',
 	'sample_data',
-	'pick_chart',
 	'get_cell_result',
 	'record_decision',
 	'ask_user'
@@ -43,8 +44,10 @@ export const DEBUG_TOOLS: AIChatToolName[] = [
 	'query_data',
 	'sample_data',
 	'profile_column',
-	'update_cell',
-	'run_cells',
+	'inspect_notebook',
+	'apply_notebook_patch',
+	'run_query_nodes',
+	'validate_notebook',
 	'validate_result',
 	'ask_user'
 ];
@@ -56,14 +59,16 @@ export const DEBUG_TOOLS: AIChatToolName[] = [
 // 'visualize' sprint task (charting a single existing cell).
 export const DASHBOARD_TOOLS: AIChatToolName[] = [
 	'list_cells',
+	'inspect_notebook',
 	'get_cell_result',
 	'get_lineage',
 	'pick_chart',
 	'set_chart',
 	'set_view_mode',
-	'create_cell',
-	'update_cell',
-	'move_cell',
+	'create_notebook',
+	'apply_notebook_patch',
+	'run_query_nodes',
+	'validate_notebook',
 	'ask_user'
 ];
 
@@ -87,9 +92,9 @@ export const SPRINT_PLANNING_TOOLS: AIChatToolName[] = [
 ];
 
 export const DOCUMENTATION_TOOLS: AIChatToolName[] = [
-	'create_cell',
-	'update_cell',
-	'move_cell',
+	'inspect_notebook',
+	'apply_notebook_patch',
+	'validate_notebook',
 	'get_cell_result',
 	'list_cells',
 	'record_decision',
@@ -112,9 +117,11 @@ export const SPRINT_TASK_TOOLS: Record<
 		'ask_user'
 	],
 	build: [
-		'create_cell',
-		'update_cell',
-		'run_cells',
+		'inspect_notebook',
+		'create_notebook',
+		'apply_notebook_patch',
+		'run_query_nodes',
+		'validate_notebook',
 		'validate_result',
 		'get_cell_result',
 		'query_data',

@@ -331,25 +331,50 @@
 		font-size: 0.95rem;
 		line-height: 1.7;
 	}
+	/* Infographic type scale: h1 = display headline, h2 = tracked-caps section header
+	   with a heavy rule, h3 = quiet kicker/eyebrow. A real hierarchy ladder instead of
+	   three near-identical bold sizes. */
 	.report-markdown :global(h1) {
-		font-size: 1.3rem;
-		font-weight: 700;
-		margin: 0 0 0.75rem;
-		line-height: 1.3;
+		font-size: 2.6rem;
+		font-weight: 800;
+		letter-spacing: -0.03em;
+		margin: 0 0 1.25rem;
+		line-height: 1.05;
 	}
 	.report-markdown :global(h2) {
-		font-size: 1.15rem;
-		font-weight: 600;
-		margin: 1.25rem 0 0.5rem;
+		font-size: 0.95rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		border-top: 3px solid var(--foreground);
+		padding-top: 0.5rem;
+		margin: 2.25rem 0 0.9rem;
 		line-height: 1.35;
 	}
-	.report-markdown :global(h3),
+	.report-markdown :global(h3) {
+		font-size: var(--text-2xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--muted-foreground);
+		margin: 1.5rem 0 0.35rem;
+	}
 	.report-markdown :global(h4),
 	.report-markdown :global(h5),
 	.report-markdown :global(h6) {
 		font-size: 1rem;
 		font-weight: 600;
 		margin: 1rem 0 0.4rem;
+	}
+	/* Blockquotes as serif-italic captions — source lines and asides. */
+	.report-markdown :global(blockquote) {
+		border: none;
+		margin: 0.5rem 0 0.75rem;
+		padding: 0;
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 0.85rem;
+		color: var(--muted-foreground);
 	}
 	.report-markdown :global(p) {
 		margin: 0 0 0.75rem;

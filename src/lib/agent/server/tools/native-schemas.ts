@@ -3,7 +3,165 @@ import { SUPPORTED_BLOCK_TYPES } from '$lib/services/generated-dashboard.js';
 
 // Native OpenAI-format tool definitions (kept minimal to reduce token count)
 // Lookup tools run client-side; they inject results as text into the message thread.
-export const NATIVE_TOOLS = [
+const ALL_NATIVE_TOOLS = [
+	{
+		type: 'function',
+		function: {
+			name: 'create_notebook',
+			description:
+				'Create a complete notebook atomically from a typed blueprint. Prefer this for user requests to create a whole notebook, report, or dashboard from scratch. The blueprint is compiled into a validated ProseMirror/Tiptap document before anything is committed, so recoverable rich-layout errors are returned for repair instead of becoming visible broken cells.',
+			parameters: {
+				type: 'object',
+				properties: {
+					blueprint: {
+						type: 'object',
+						properties: {
+							title: { type: 'string' },
+							executableCells: {
+								type: 'array',
+								items: {
+									type: 'object',
+									properties: {
+										cellId: {
+											type: 'string',
+											description:
+												'Stable id used by queryBlock nodes, e.g. q_monthly_revenue.'
+										},
+										outputName: {
+											type: 'string',
+											description:
+												'SQL/Python output name, e.g. monthly_revenue.'
+										},
+										cellType: { type: 'string', enum: ['query', 'python'] },
+										language: { type: 'string', enum: ['sql', 'prql'] },
+										code: { type: 'string' }
+									},
+									required: ['cellId', 'outputName', 'code']
+								}
+							},
+							blocks: {
+								type: 'array',
+								items: {
+									type: 'object',
+									properties: {
+										type: {
+											type: 'string',
+											enum: ['queryBlock', ...SUPPORTED_BLOCK_TYPES]
+										}
+									},
+									required: ['type'],
+									description:
+										'Recursive notebook presentation blocks. Use queryBlock to place executable cells by cellId; use the dashboard block grammar for grid/columns/card/metric/chart/datatable/callout/tabs/filter/conditional/loop rich nodes.'
+								}
+							}
+						},
+						required: ['blocks']
+					}
+				},
+				required: ['blueprint']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'inspect_notebook',
+			description:
+				'Inspect the current notebook as a validated PM/Tiptap document plus executable query-node payloads. Use before editing an existing notebook.',
+			parameters: {
+				type: 'object',
+				properties: {
+					notebookId: { type: 'string' }
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'apply_notebook_patch',
+			description:
+				'Atomically patch the notebook PM document. Provide either a full replacement document, a typed notebook blueprint, or node operations. The result is validated before it is committed.',
+			parameters: {
+				type: 'object',
+				properties: {
+					notebookId: { type: 'string' },
+					blueprint: { type: 'object' },
+					document: { type: 'object' },
+					operations: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								op: {
+									type: 'string',
+									enum: [
+										'replace_document',
+										'insert_node',
+										'replace_node',
+										'delete_node',
+										'patch_attrs',
+										'move_node'
+									]
+								},
+								nodeId: { type: 'string' },
+								parentNodeId: { type: 'string' },
+								index: { type: 'number' },
+								node: { type: 'object' },
+								attrs: { type: 'object' },
+								document: { type: 'object' }
+							},
+							required: ['op']
+						}
+					},
+					executableCells: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								cellId: { type: 'string' },
+								outputName: { type: 'string' },
+								cellType: { type: 'string', enum: ['query', 'python'] },
+								language: { type: 'string', enum: ['sql', 'prql'] },
+								code: { type: 'string' }
+							},
+							required: ['cellId', 'outputName', 'code']
+						}
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'run_query_nodes',
+			description:
+				'Run executable queryBlock nodes by PM nodeId or cellId. Use after create_notebook or apply_notebook_patch; do not call done until this succeeds.',
+			parameters: {
+				type: 'object',
+				properties: {
+					nodeIds: { type: 'array', items: { type: 'string' } },
+					cellIds: { type: 'array', items: { type: 'string' } }
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'validate_notebook',
+			description:
+				'Validate the full PM notebook document and live queryBlock references. Completion requires this to return ok:true.',
+			parameters: {
+				type: 'object',
+				properties: {
+					notebookId: { type: 'string' },
+					document: { type: 'object' }
+				}
+			}
+		}
+	},
 	{
 		type: 'function',
 		function: {
@@ -389,3 +547,9 @@ export const NATIVE_TOOLS = [
 		}
 	}
 ];
+
+const LEGACY_CELL_TOOLS = new Set(['create_cell', 'update_cell']);
+
+export const NATIVE_TOOLS = ALL_NATIVE_TOOLS.filter(
+	(tool) => !LEGACY_CELL_TOOLS.has(tool.function.name)
+);

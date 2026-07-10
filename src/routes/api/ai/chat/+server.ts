@@ -9,6 +9,7 @@ import type {
 } from '$lib/types/ai-chat.js';
 import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
+import { repairMarkdocTagBalance } from '$lib/services/markdoc-interp.js';
 import { buildGeneratedDashboardPromptBlock } from '$lib/services/generated-dashboard.js';
 import {
 	compileStructuredMarkdownArgs,
@@ -203,13 +204,13 @@ function buildSystemPromptOllama(
 		? ''
 		: `
 TOOL CALL FORMAT — args always nested under "args":
-SQL cell:        <tool_call>{"tool":"create_cell","callId":"C1","args":{"outputName":"cell_name","cellType":"query","code":"SELECT ...","materializeMode":"table"}}</tool_call>
-Markdown cell:   <tool_call>{"tool":"create_cell","callId":"C2","args":{"outputName":"intro","cellType":"markdown","markdown":"## Title\\n\\nText."}}</tool_call>
-Update cell:     <tool_call>{"tool":"update_cell","callId":"C3","args":{"cellId":"EXISTING_ID","code":"SELECT ..."}}</tool_call>
-Move cell:       <tool_call>{"tool":"move_cell","callId":"C4","args":{"cellId":"EXISTING_ID","direction":"up"}}</tool_call>
+Complete notebook: <tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Revenue Review","executableCells":[{"cellId":"q_monthly_revenue","outputName":"monthly_revenue","cellType":"query","language":"sql","code":"SELECT ..."}],"blocks":[{"type":"text","content":"# Revenue Review"},{"type":"queryBlock","cellId":"q_monthly_revenue"},{"type":"grid","cols":2,"items":[{"type":"metric","value":"$monthly_revenue.revenue","label":"Revenue"}]}]}}}</tool_call>
+Inspect notebook: <tool_call>{"tool":"inspect_notebook","callId":"I1","args":{}}</tool_call>
+Patch notebook:   <tool_call>{"tool":"apply_notebook_patch","callId":"P1","args":{"operations":[{"op":"patch_attrs","nodeId":"NODE_ID","attrs":{"tagName":"card"}}]}}</tool_call>
+Run query nodes:  <tool_call>{"tool":"run_query_nodes","callId":"R1","args":{"cellIds":["q_monthly_revenue"]}}</tool_call>
+Validate notebook:<tool_call>{"tool":"validate_notebook","callId":"V1","args":{}}</tool_call>
 Auto chart:      <tool_call>{"tool":"pick_chart","callId":"C5","args":{"cellId":"C1"}}</tool_call>
 Custom chart:    <tool_call>{"tool":"set_chart","callId":"C6","args":{"cellId":"C1","chartConfig":{"chartType":"area","xColumn":"month","yColumns":["revenue"],"title":"Revenue Over Time"}}}</tool_call>
-Run cells:       <tool_call>{"tool":"run_cells","callId":"C7","args":{"cellIds":["C1","C2","C3"]}}</tool_call>
 Query data:      <tool_call>{"tool":"query_data","callId":"D1","args":{"sql":"SELECT DISTINCT status FROM orders LIMIT 10"}}</tool_call>
 Sample table:    <tool_call>{"tool":"sample_data","callId":"D2","args":{"table":"orders","n":5}}</tool_call>
 Profile col:     <tool_call>{"tool":"profile_column","callId":"D3","args":{"table":"orders","column":"status"}}</tool_call>
@@ -227,10 +228,9 @@ Ask user:        <tool_call>{"tool":"ask_user","callId":"Q1","args":{"question":
 				? '\nDecisions: ' + sessionPlanContext.slice(-3).join('; ')
 				: '';
 		return `TOOL FORMAT — use exactly:
-<tool_call>{"tool":"create_cell","callId":"C1","args":{"outputName":"sales_by_month","cellType":"query","code":"SELECT month, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 1"}}</tool_call>
-<tool_call>{"tool":"run_cells","callId":"R1","args":{"cellIds":["C1"]}}</tool_call>
-<tool_call>{"tool":"pick_chart","callId":"P1","args":{"cellId":"C1"}}</tool_call>
-<tool_call>{"tool":"update_cell","callId":"U1","args":{"cellId":"C1","code":"SELECT ..."}}</tool_call>
+<tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Sales Review","executableCells":[{"cellId":"q_sales_by_month","outputName":"sales_by_month","cellType":"query","language":"sql","code":"SELECT month, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 1"}],"blocks":[{"type":"text","content":"# Sales Review"},{"type":"queryBlock","cellId":"q_sales_by_month"}]}}}</tool_call>
+<tool_call>{"tool":"run_query_nodes","callId":"R1","args":{"cellIds":["q_sales_by_month"]}}</tool_call>
+<tool_call>{"tool":"validate_notebook","callId":"V1","args":{}}</tool_call>
 <tool_call>{"tool":"sample_data","callId":"D1","args":{"table":"orders","n":5}}</tool_call>
 <tool_call>{"tool":"query_data","callId":"D2","args":{"sql":"SELECT DISTINCT status FROM orders LIMIT 5"}}</tool_call>
 
@@ -241,10 +241,10 @@ RULES:
 2. NEVER write WITH (...) CTEs — write SELECT FROM tablename directly.
 3. NEVER end SQL with semicolon (;).
 4. ALL SQL goes inside tool_call args — never in prose.
-5. After run_cells: if a cell failed, fix with update_cell then run_cells again.
-6. End with <done>{"suggestions":["short 1","short 2","short 3"]}</done> — but NEVER in the same response as run_cells or sample_data (you will receive their results first).
+5. After run_query_nodes: if a query failed, repair with apply_notebook_patch then run_query_nodes again.
+6. End with <done>{"suggestions":["short 1","short 2","short 3"]}</done> only after validate_notebook returns ok:true.
 
-Other tools: list_cells{}, search_workspace{query}, create_cell markdown: {outputName,cellType:"markdown",markdown:"# Title\\nText"}
+Other tools: inspect_notebook{}, apply_notebook_patch{blueprint|document|operations}, list_cells{}, search_workspace{query}
 ${contractNote}${buildDialectSection(connectionDialect)}${pythonAvailable ? '' : '\nNo Python cells available — SQL only.'}
 
 Cells: ${cellList}
@@ -257,22 +257,23 @@ Schema:
 You are a senior analytics engineer responsible for designing maintainable, reusable analytical data models. Build professional notebooks using tool calls.
 
 RULES:
-1. DISCOVER FIRST (for new models): Call list_cells and search_workspace before creating any new SQL cell. State what you found. DUPLICATION IS A MODELING ERROR — check before you build.
+0. COMPLETE NOTEBOOKS: create and edit notebooks with create_notebook / inspect_notebook / apply_notebook_patch / run_query_nodes / validate_notebook. Do not use legacy cell-by-cell authoring.
+1. DISCOVER FIRST (for new models): Call list_cells and search_workspace before creating new query payloads. State what you found. DUPLICATION IS A MODELING ERROR — check before you build.
 2. INVESTIGATE DATA: Call sample_data on unfamiliar tables before writing SQL. Skip if session data context already shows the table.
 3. SCHEMA IS LAW: ONLY use column names listed in the Schema section. Column names shown as "name" (with double-quotes) contain spaces — you MUST write them as "name" in SQL.
-4. MARKDOWN CELLS: use cellType:"markdown" and the markdown field. NEVER put headings or prose in the code field.
+4. NOTEBOOK STRUCTURE: narrative and rich UI belong in the blueprint/PM document blocks, not raw markdown cells.
 5. NEVER end SQL with a semicolon (;). Trailing semicolons break CTE chaining.
 6. NEVER write WITH clauses — each cell's outputName is auto-wrapped as a CTE.
 7. MATERIALIZATION: set materializeMode on new model cells (table/view/incremental/ephemeral) per workspace conventions.
-8. CHARTS — always call pick_chart after run_cells; it auto-selects the best chart type and falls back to table view for results with no numeric columns. Use set_chart only for specific non-default types (area for cumulative, pie, scatter).
+8. CHARTS — configure charts through queryBlock presentation or pick_chart/set_chart only after query nodes run clean.
 9. NEVER write SQL in prose or markdown code blocks. ALL SQL goes inside tool_call args.
-10. Modify existing cells with update_cell. Call run_cells after updates.
+10. Modify existing notebooks with inspect_notebook then apply_notebook_patch. Call run_query_nodes after query payload changes.
 11. Use window functions (LAG, RANK, SUM OVER, ROW_NUMBER) for growth rates, rankings, running totals.
-12. Start with a markdown intro cell, then SQL cells, then run_cells, then pick_chart.
-13. SELF-CORRECT: After run_cells, if ANY cell failed, fix it with update_cell and retry. Do NOT output <done> until all succeed.
-14. DONE: <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Keep each suggestion under 60 chars. Never include <done> in a response that also calls run_cells, sample_data, query_data, profile_column, or ask_user — the system pauses after those and gives you results first.
+12. Build a complete notebook blueprint, run_query_nodes, validate_notebook, then finish.
+13. SELF-CORRECT: After run_query_nodes, if ANY query failed, repair with apply_notebook_patch and retry. Do NOT output <done> until all succeed.
+14. DONE: <done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>. Keep each suggestion under 60 chars. Completion requires validate_notebook ok:true.
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
-16. DOCUMENT YOUR WORK: after cells run clean, always write a markdown findings cell (cellType:"markdown", outputName:"findings") summarising what was built, data quality notes, and key decisions.
+16. DOCUMENT YOUR WORK: include findings, data quality notes, and key decisions as narrative blocks in the PM document.
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
 18. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
 19. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
@@ -287,7 +288,7 @@ Schema:
 
 function buildToolSelectionSection(pythonAvailable: boolean): string {
 	if (pythonAvailable) {
-		return `\n\n## Tool selection\nUse SQL for relational transforms (joins, filters, aggregations, window functions). Use create_cell with cellType:"python" for statistics, ML, text/regex processing, or custom visualization beyond what set_chart/pick_chart support. When a different cell type would serve the request better than an existing cell, create a new cell (afterCellId set to the current one) rather than forcing a mismatched language via update_cell — leave the original cell unchanged.
+		return `\n\n## Tool selection\nUse SQL for relational transforms (joins, filters, aggregations, window functions). Use Python query payloads inside create_notebook/apply_notebook_patch for statistics, ML, text/regex processing, or custom visualization beyond what set_chart/pick_chart support. When a different cell type would serve the request better than an existing query node, add a new queryBlock and executable payload rather than forcing a mismatched language into the old node.
 
 ## Python cell data contract (READ before writing any python cell)
 Data is INJECTED, never loaded manually. Do NOT read files, open DuckDB/SQL connections, call APIs, or fabricate data.
@@ -1253,12 +1254,32 @@ export const POST: RequestHandler = async ({ request }) => {
 				args: Record<string, unknown>,
 				callId?: string
 			): boolean => {
+				if (tool === 'create_cell' || tool === 'update_cell') {
+					pendingPolicyFallback ??=
+						'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.';
+					return false;
+				}
 				const compiled = compileStructuredMarkdownArgs(tool, args, cells, turnKnownOutputNames);
 				if (compiled.errors.length > 0) {
 					pendingPolicyFallback ??= `Structured notebook UI validation failed: ${compiled.errors.slice(0, 3).join('; ')}.`;
 					return false;
 				}
 				args = compiled.args;
+				// Mechanically repair unbalanced Markdoc tags (dropped `/%}`, missing container
+				// closer, stray closer) before validating — rejecting these back to the model
+				// burns retry turns on something deterministic. Validation below still runs on
+				// the repaired text.
+				if (tool === 'create_cell' || tool === 'update_cell') {
+					if (typeof args.markdown === 'string' && args.markdown.includes('{%')) {
+						args = { ...args, markdown: repairMarkdocTagBalance(args.markdown) };
+					} else if (
+						args.cellType === 'markdown' &&
+						typeof args.code === 'string' &&
+						args.code.includes('{%')
+					) {
+						args = { ...args, code: repairMarkdocTagBalance(args.code) };
+					}
+				}
 				if (isSchemaListingQuestion) return false;
 				if (
 					req.subagentType === 'dashboard' &&

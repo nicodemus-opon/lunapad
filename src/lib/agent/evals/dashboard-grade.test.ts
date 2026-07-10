@@ -60,6 +60,45 @@ describe('dashboard-grade', () => {
 		expect(failures).toEqual([]);
 	});
 
+	it('accepts a real non-demo column on a known cell whose columns are unknown', () => {
+		// Regression: without a columnsByOutputName entry the stub falls back to MOCK_ROW, which
+		// used to flag genuinely existing columns (distinct_companies) as undefined and deadlock
+		// the dashboard loop.
+		const failures = getCriticalMarkdownFailures(
+			'{% metric value=$stats.distinct_companies label="Companies" /%}',
+			new Set(['stats'])
+		);
+		expect(failures).toEqual([]);
+	});
+
+	it('accepts deep paths on a known cell whose columns are unknown, but still fails phantom roots', () => {
+		const md =
+			'{% metric value=$stats.meta.updated_at label="Updated" /%}\nTotal: $phantom.total';
+		const failures = getCriticalMarkdownFailures(md, new Set(['stats']));
+		expect(failures.some((f) => /stats/.test(f))).toBe(false);
+		expect(failures.some((f) => /phantom/.test(f))).toBe(true);
+	});
+
+	it('still fails a wrong column when the real columns are known', () => {
+		const failures = getCriticalMarkdownFailures(
+			'{% metric value=$stats.distinct_companies label="Companies" /%}',
+			new Set(['stats']),
+			undefined,
+			new Map([['stats', ['total_rows', 'min_scraped_at']]])
+		);
+		expect(failures.some((f) => /distinct_companies/.test(f))).toBe(true);
+	});
+
+	it('accepts format="date" on metric', () => {
+		const failures = getCriticalMarkdownFailures(
+			'{% metric value=$stats.min_scraped_at label="Oldest" format="date" /%}',
+			new Set(['stats']),
+			undefined,
+			new Map([['stats', ['min_scraped_at']]])
+		);
+		expect(failures).toEqual([]);
+	});
+
 	describe('chart axis requirements', () => {
 		it('fails big-value chart missing x=', () => {
 			const md = '{% chart data=$orders.rows type="big-value" /%}';

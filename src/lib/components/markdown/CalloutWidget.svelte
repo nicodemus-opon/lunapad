@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { Info, CheckCircle2, TriangleAlert, CircleX } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
+	import { resolveDashboardIcon } from './icon-map';
 
 	interface Props {
 		type?: 'info' | 'success' | 'warning' | 'error';
 		title?: string;
+		/** Allowlisted lucide icon name — overrides the type's default icon. */
+		icon?: string;
 		children?: Snippet;
 	}
 
-	const { type = 'info', title, children }: Props = $props();
+	const { type = 'info', title, icon, children }: Props = $props();
 
 	const icons = { info: Info, success: CheckCircle2, warning: TriangleAlert, error: CircleX };
-	const Icon = $derived(icons[type] ?? Info);
+	const Icon = $derived(resolveDashboardIcon(icon) ?? icons[type] ?? Info);
 </script>
 
 <div class="md-callout md-callout--{type}">

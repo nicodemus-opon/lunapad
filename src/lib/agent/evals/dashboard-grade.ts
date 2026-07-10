@@ -27,6 +27,18 @@ export interface DashboardGrade {
 		/** A markdown heading (title or "## Section") — signals the report has narrative
 		 * structure rather than being a flat wall of blocks. */
 		hasHeading: boolean;
+		/** One dominant display numeral (metric size="hero") — visual hierarchy, not a flat tile wall. */
+		hasHeroMetric: boolean;
+		/** Stat-rail line items (metric layout="row") — infographic-style icon·label·value lists. */
+		hasRowMetrics: boolean;
+		/** Any allowlisted icon= on metric/card/callout. */
+		hasIcon: boolean;
+		/** Pictogram/waffle display (metric iconCount=). */
+		hasPictogram: boolean;
+		/** Asymmetric layout: a columns width= or a grid item span= — varied sizing, not uniform tiles. */
+		hasAsymmetry: boolean;
+		/** ≥2 "## Section" headers — the report is sectioned like a designed document. */
+		hasSectionHeaders: boolean;
 	};
 }
 
@@ -153,6 +165,37 @@ export function getCriticalMarkdownFailures(
 		? new Map([...columnsByOutputName].map(([name, cols]) => [name.toLowerCase(), cols]))
 		: undefined;
 	const stubs = stubCellsForRefs(knownOutputNames, lowercasedColumns);
+
+	// For known cells whose REAL columns we don't have (cell never run, or an older client that
+	// only sent context-cell columns), the stub row is just MOCK_ROW — so any real column would
+	// fail Markdoc's variable resolution as "undefined" even though we have no basis to judge
+	// it. Make those stubs permissive structurally: graft every `$cell.path…` the markdown
+	// actually references into the stub row (at any depth), so validation passes for exactly
+	// the refs used while phantom cell roots still fail. Strictness applies only when the real
+	// columns are known.
+	const RESERVED_VAR_FIELDS = new Set(['rows', 'count', 'rowCount', 'columns', 'chartConfig']);
+	const referencedPaths = [...normalizedMarkdown.matchAll(/\$([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)/g)];
+	for (const stub of stubs) {
+		if (lowercasedColumns?.get(stub.outputName.toLowerCase())?.length) continue;
+		if (!stub.result?.rows?.length) continue;
+		const row: Record<string, unknown> = { ...(stub.result.rows[0] as Record<string, unknown>) };
+		for (const [, root, dottedPath] of referencedPaths) {
+			if (root.toLowerCase() !== stub.outputName.toLowerCase()) continue;
+			const segments = dottedPath.slice(1).split('.');
+			if (RESERVED_VAR_FIELDS.has(segments[0])) continue;
+			let cur = row;
+			for (let i = 0; i < segments.length; i++) {
+				const seg = segments[i];
+				if (i === segments.length - 1) {
+					if (!(seg in cur)) cur[seg] = 1;
+				} else {
+					if (typeof cur[seg] !== 'object' || cur[seg] === null) cur[seg] = {};
+					cur = cur[seg] as Record<string, unknown>;
+				}
+			}
+		}
+		stub.result = { rows: [row, row], columns: Object.keys(row) };
+	}
 
 	for (const d of validateMarkdocMarkdown(normalizedMarkdown, stubs)) {
 		failures.push(d.message);
@@ -314,7 +357,13 @@ function scoreStructure(markdown: string): DashboardGrade['structure'] {
 		hasCallout: /\{%\s*callout\b/.test(markdown),
 		hasConditional: /\{%\s*if\b/.test(markdown),
 		hasInteractive: /filterParam=|linkedFilter=|kind="relative-date"/.test(markdown),
-		hasHeading: /^#{1,6}\s/m.test(markdown)
+		hasHeading: /^#{1,6}\s/m.test(markdown),
+		hasHeroMetric: /size="hero"/.test(markdown),
+		hasRowMetrics: /layout="row"/.test(markdown),
+		hasIcon: /\bicon="/.test(markdown),
+		hasPictogram: /\biconCount=/.test(markdown),
+		hasAsymmetry: /\bwidth=|\bspan=/.test(markdown),
+		hasSectionHeaders: (markdown.match(/^##\s/gm) ?? []).length >= 2
 	};
 }
 
@@ -358,6 +407,19 @@ export function gradeDashboard(markdown: string, cells: Cell[]): DashboardGrade 
 		warnings.push('Multiple structural elements but no heading — report reads as unsectioned');
 	}
 
+	// Visual hierarchy — the difference between an infographic and a generated form dump.
+	const metricCount = (markdown.match(/\{%\s*metric\b/g) ?? []).length;
+	if (metricCount >= 3 && !structure.hasHeroMetric) {
+		warnings.push(
+			'Flat KPI wall — no hero stat; promote the key figure to size="hero" and demote the rest to "compact"'
+		);
+	}
+	if (structure.hasGrid && metricCount >= 4 && !structure.hasAsymmetry && !structure.hasRowMetrics) {
+		warnings.push(
+			'Uniform tile grid — use an asymmetric columns split (width=2 vs 1), span=, or a layout="row" stat rail to create hierarchy'
+		);
+	}
+
 	const { errors: renderErrors } = renderMarkdocCell(markdown, renderCells);
 	for (const e of renderErrors) failures.push(`Render: ${e}`);
 
@@ -378,6 +440,13 @@ export function gradeDashboard(markdown: string, cells: Cell[]): DashboardGrade 
 	if (structure.hasCallout) score += 3;
 	if (structure.hasConditional) score += 3;
 	if (structure.hasInteractive) score += 4;
+	// Hierarchy bonuses — composition quality, kept below hasHeading's +8.
+	if (structure.hasHeroMetric) score += 5;
+	if (structure.hasAsymmetry) score += 4;
+	if (structure.hasSectionHeaders) score += 3;
+	if (structure.hasRowMetrics) score += 2;
+	if (structure.hasIcon) score += 2;
+	if (structure.hasPictogram) score += 2;
 
 	return {
 		score: Math.max(0, Math.min(100, score)),

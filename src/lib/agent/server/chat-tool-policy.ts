@@ -19,6 +19,24 @@ export interface ChatToolPolicyContext {
 export function isNativeToolCallWellFormed(tool: string, args: Record<string, unknown>): boolean {
 	const str = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
 	switch (tool) {
+		case 'create_notebook':
+			return (
+				!!args.blueprint &&
+				typeof args.blueprint === 'object' &&
+				!Array.isArray(args.blueprint) &&
+				Array.isArray((args.blueprint as { blocks?: unknown }).blocks) &&
+				((args.blueprint as { blocks?: unknown[] }).blocks?.length ?? 0) > 0
+			);
+		case 'inspect_notebook':
+		case 'validate_notebook':
+			return true;
+		case 'apply_notebook_patch':
+			return Boolean(args.blueprint || args.document || args.operations);
+		case 'run_query_nodes':
+			return (
+				(Array.isArray(args.nodeIds) && args.nodeIds.length > 0) ||
+				(Array.isArray(args.cellIds) && args.cellIds.length > 0)
+			);
 		case 'profile_column':
 			return str(args.table) && str(args.column);
 		case 'sample_data':
@@ -172,7 +190,23 @@ export function blockedToolFallbackText(
 			ctx.columnsByOutputName
 		);
 		if (mdFailures.length > 0) {
-			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. Fix Markdoc syntax and $cell refs before creating the cell.`;
+			// Undefined-variable rejections are only actionable if the model learns the REAL
+			// column list — without it, it can only guess again and loop. Attach the columns of
+			// every cell whose refs failed (case-insensitive: refs use authored casing, the
+			// columns map is keyed by outputName as sent by the client).
+			const columnsLower = new Map(
+				[...(ctx.columnsByOutputName ?? [])].map(([name, cols]) => [name.toLowerCase(), cols])
+			);
+			const hints: string[] = [];
+			const hinted = new Set<string>();
+			for (const f of mdFailures) {
+				const root = f.match(/^Undefined variable: '([A-Za-z_]\w*)/)?.[1]?.toLowerCase();
+				if (!root || hinted.has(root)) continue;
+				hinted.add(root);
+				const cols = columnsLower.get(root);
+				if (cols?.length) hints.push(`Cell '${root}' has exactly these columns: ${cols.join(', ')}.`);
+			}
+			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. ${hints.join(' ')} Fix Markdoc syntax and $cell refs before creating the cell.`.replace(/\s{2,}/g, ' ');
 		}
 	}
 	return null;

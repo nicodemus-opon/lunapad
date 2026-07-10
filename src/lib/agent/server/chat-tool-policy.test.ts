@@ -156,4 +156,37 @@ describe('chat-tool-policy', () => {
 			)
 		).toBe(false);
 	});
+
+	it('allows real columns on a known cell whose columns were not sent', () => {
+		expect(
+			isChatToolCallAllowed(
+				'create_cell',
+				{
+					outputName: 'summary',
+					cellType: 'markdown',
+					markdown:
+						'{% metric value=$stats.distinct_companies label="Companies" /%}\n{% metric value=$stats.min_scraped_at label="Oldest" format="date" /%}'
+				},
+				{ ...ctx, latestUserMessage: 'dashboard', cellOutputNames: new Set(['stats']) }
+			)
+		).toBe(true);
+	});
+
+	it('blocks wrong columns when real columns are known, and names the real columns in the fallback', () => {
+		const policyCtx = {
+			...ctx,
+			latestUserMessage: 'dashboard',
+			cellOutputNames: new Set(['stats']),
+			columnsByOutputName: new Map([['stats', ['total_rows', 'min_scraped_at']]])
+		};
+		const args = {
+			outputName: 'summary',
+			cellType: 'markdown',
+			markdown: '{% metric value=$stats.distinct_companies label="Companies" /%}'
+		};
+		expect(isChatToolCallAllowed('create_cell', args, policyCtx)).toBe(false);
+		const msg = blockedToolFallbackText('create_cell', args, policyCtx, []);
+		expect(msg).toMatch(/distinct_companies/);
+		expect(msg).toMatch(/total_rows, min_scraped_at/);
+	});
 });

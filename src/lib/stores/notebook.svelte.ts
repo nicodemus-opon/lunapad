@@ -3468,6 +3468,71 @@ export function addNotebook(): void {
 	}
 }
 
+export interface CreateNotebookFromPmDocumentOptions {
+	name?: string;
+	document: PMDocJSON;
+	executableCells?: Array<{
+		cellId: string;
+		outputName: string;
+		cellType?: 'query' | 'python';
+		language?: CellLanguage;
+		code: string;
+	}>;
+}
+
+/** Atomically create a notebook from a validated PM document plus executable payloads. */
+export function createNotebookFromPmDocument(opts: CreateNotebookFromPmDocumentOptions): string | null {
+	let folderId: string;
+	if (state.storageMode === 'filesystem') {
+		const stagingFolder = state.folders.find((f) => f.id === 'models/staging');
+		const anyModelsFolder = state.folders.find(
+			(f) => f.parentId === null && f.id.startsWith('models/')
+		);
+		folderId = stagingFolder?.id ?? anyModelsFolder?.id ?? ensureDefaultFolder();
+	} else {
+		folderId = ensureDefaultFolder();
+	}
+
+	const notebook = _createNotebook(folderId);
+	if (opts.name?.trim()) notebook.name = opts.name.trim();
+
+	const payloadCells = new Map<string, Cell>();
+	for (const payload of opts.executableCells ?? []) {
+		const cell =
+			payload.cellType === 'python'
+				? makePythonCell(payload.code)
+				: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
+		cell.id = payload.cellId;
+		cell.outputName = payload.outputName;
+		cell.materializeTarget = payload.outputName;
+		cell.display = 'full';
+		payloadCells.set(cell.id, cell);
+	}
+
+	const scaffold: Notebook = {
+		...notebook,
+		cells: payloadCells.size ? [...payloadCells.values()] : notebook.cells
+	};
+	const cells = rebuildCellsFromBlocks(scaffold, pmDocumentToBlocks(opts.document));
+	if (!cells.length) return null;
+
+	const created: Notebook = {
+		...notebook,
+		cells,
+		format: state.storageMode === 'filesystem' ? 'luna' : notebook.format
+	};
+	state.notebooks = [...state.notebooks, created];
+	if (!state.openNotebookTabIds.includes(created.id)) {
+		state.openNotebookTabIds = [...state.openNotebookTabIds, created.id];
+	}
+	state.activeTabId = created.id;
+	state.focusedCellId = created.cells[0]?.id ?? null;
+	state.focusedTarget = created.cells[0] ? { cellId: created.cells[0].id } : null;
+	scheduleSave();
+	if (state.storageMode === 'filesystem') scheduleLunaNotebookSave(created.id);
+	return created.id;
+}
+
 export function addNotebookInFolder(folderId: string | null): void {
 	const n = _createNotebook(folderId);
 	state.notebooks = [...state.notebooks, n];

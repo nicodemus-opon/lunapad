@@ -330,7 +330,7 @@ describe('notebook cell execution', () => {
 		addCell();
 		addCell();
 
-		const [, second, third] = notebook.cells;
+		const [, second, third] = getNotebooks()[0].cells;
 		second.language = 'prql';
 		third.language = 'prql';
 		second.outputName = 'employees_named';
@@ -366,7 +366,7 @@ describe('notebook cell execution', () => {
 		notebook.cells[0].connectionId = 'pg-main';
 		addCell();
 
-		const [, second] = notebook.cells;
+		const [, second] = getNotebooks()[0].cells;
 		second.language = 'prql';
 		second.outputName = 'pg_result';
 		second.code = 'from employees_raw\nfilter active = true';

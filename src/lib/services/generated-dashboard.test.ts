@@ -472,4 +472,147 @@ describe('compileGeneratedDashboard', () => {
 		);
 		expect(diagnostics).toEqual([]);
 	});
+
+	it('compiles visual-hierarchy attributes (size/layout/icon/pictogram/accent/span/striped)', () => {
+		const result = compileGeneratedDashboard(
+			{
+				title: 'Hierarchy Surface',
+				blocks: [
+					{
+						type: 'metric',
+						value: '$orders.total',
+						label: 'Revenue',
+						format: 'currency',
+						size: 'hero',
+						accent: 'info'
+					},
+					{
+						type: 'grid',
+						cols: 1,
+						gap: 'compact',
+						striped: true,
+						items: [
+							{
+								type: 'metric',
+								value: '$orders.count',
+								label: 'Orders',
+								layout: 'row',
+								icon: 'ShoppingCart'
+							},
+							{ type: 'metric', value: '$orders.aov', label: 'AOV', size: 'compact' }
+						]
+					},
+					{
+						type: 'grid',
+						cols: 3,
+						items: [
+							{
+								type: 'card',
+								title: 'Spotlight',
+								icon: 'Star',
+								span: 2,
+								blocks: [{ type: 'text', content: 'Wide card.' }]
+							},
+							{ type: 'badge', value: '$orders.status', color: 'warning', span: 1 },
+							{ type: 'progress', value: '$orders.done_pct', label: 'Done', span: 3 }
+						]
+					},
+					{
+						type: 'metric',
+						value: 3,
+						label: 'of 10 regions at quota',
+						icon: 'Flag',
+						iconCount: 3,
+						iconTotal: 10
+					},
+					{
+						type: 'callout',
+						variant: 'warning',
+						title: 'Data quality',
+						icon: 'Database',
+						blocks: [{ type: 'text', content: 'Caveat.' }]
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain('size="hero"');
+		expect(result.markdown).toContain('accent="info"');
+		expect(result.markdown).toContain('layout="row" icon="ShoppingCart"');
+		expect(result.markdown).toContain('size="compact"');
+		expect(result.markdown).toContain('striped=true');
+		expect(result.markdown).toContain('icon="Star" span=2');
+		expect(result.markdown).toContain('color="warning"');
+		expect(result.markdown).toContain('span=3');
+		expect(result.markdown).toContain('iconCount=3 iconTotal=10');
+		expect(result.markdown).toContain('icon="Database"');
+
+		// The runtime tag schemas must accept every new attribute the compiler emits.
+		const diagnostics = validateMarkdocMarkdown(result.markdown, []).filter(
+			(d) => !/undefined variable/i.test(d.message)
+		);
+		expect(diagnostics).toEqual([]);
+	});
+
+	it('rejects unknown icons, oversized pictograms, and out-of-range spans', () => {
+		const bad = compileGeneratedDashboard(
+			{
+				blocks: [
+					{ type: 'metric', value: 1, label: 'Bad icon', icon: 'NotARealIcon' },
+					{ type: 'metric', value: 100, label: 'Too many icons', icon: 'Star', iconCount: 100 },
+					{ type: 'metric', value: 1, label: 'Count sans icon', iconCount: 5 },
+					{ type: 'metric', value: 8, label: 'Backwards waffle', icon: 'Star', iconCount: 8, iconTotal: 4 },
+					{ type: 'metric', value: 1, label: 'Wild span', span: 9 },
+					{
+						type: 'grid',
+						cols: 2,
+						items: [{ type: 'metric', value: 1, label: 'Span > cols', span: 4 }]
+					}
+				]
+			},
+			{ knownCells: [makeCell('orders')] }
+		);
+		const joined = bad.errors.join(' | ');
+		expect(joined).toMatch(/unknown metric icon "NotARealIcon"/i);
+		expect(joined).toMatch(/iconCount must be an integer between 1 and 60/i);
+		expect(joined).toMatch(/iconCount requires an icon/i);
+		expect(joined).toMatch(/iconTotal must be an integer/i);
+		expect(joined).toMatch(/span must be an integer between 1 and 4/i);
+		expect(joined).toMatch(/span=4 exceeds its grid's cols=2/i);
+	});
+
+	it('reference infographic fixtures compile clean — the grammar can express all four', async () => {
+		// The acceptance bar for the dashboard grammar's design range: four definitions
+		// recreating the reference infographics (travel recap, ECO poster, hotel projection,
+		// GE Middle Market). If a grammar change breaks any of these, design range regressed.
+		const { REFERENCE_DASHBOARDS, REFERENCE_FIXTURE_CELLS } = await import(
+			'./__fixtures__/reference-dashboards.js'
+		);
+		const knownCells = REFERENCE_FIXTURE_CELLS.map((name) => makeCell(name));
+
+		for (const [name, definition] of Object.entries(REFERENCE_DASHBOARDS)) {
+			const result = compileGeneratedDashboard(definition, { knownCells });
+			expect(result.errors, `fixture "${name}"`).toEqual([]);
+			const diagnostics = validateMarkdocMarkdown(result.markdown, []).filter(
+				(d) => !/undefined variable/i.test(d.message)
+			);
+			expect(diagnostics, `fixture "${name}" runtime validation`).toEqual([]);
+		}
+
+		// Marker spot-checks: the design devices each reference image depends on.
+		const travel = compileGeneratedDashboard(REFERENCE_DASHBOARDS.travelRecap, { knownCells });
+		expect(travel.markdown).toContain('size="hero"');
+		expect(travel.markdown).toContain('layout="row"');
+		expect(travel.markdown).toContain('striped=true');
+		expect(travel.markdown).toContain('iconCount=2');
+
+		const ge = compileGeneratedDashboard(REFERENCE_DASHBOARDS.middleMarket, { knownCells });
+		expect(ge.markdown).toContain('iconCount=3 iconTotal=10');
+		expect(ge.markdown).toContain('type="bar-horizontal"');
+
+		const hotel = compileGeneratedDashboard(REFERENCE_DASHBOARDS.hotelProjection, { knownCells });
+		expect(hotel.markdown).toContain('conditionalFormats=');
+	});
 });

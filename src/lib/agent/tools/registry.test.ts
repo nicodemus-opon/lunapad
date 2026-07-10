@@ -4,10 +4,12 @@ import { NATIVE_TOOLS } from '$lib/agent/server/tools/native-schemas.js';
 import { getAgentTool, listAgentTools, isStopAfterTool } from './registry.js';
 
 describe('agent tool registry', () => {
-	it('includes create_cell as client mutating tool', () => {
-		const t = getAgentTool('create_cell');
+	it('includes node-native notebook tools as client mutating tools', () => {
+		const t = getAgentTool('apply_notebook_patch');
 		expect(t?.executor).toBe('client');
 		expect(t?.mutates).toBe(true);
+		expect(getAgentTool('create_notebook')?.mutates).toBe(true);
+		expect(getAgentTool('create_cell')).toBeUndefined();
 	});
 
 	it('includes MCP server tools', () => {
@@ -22,8 +24,8 @@ describe('agent tool registry', () => {
 	});
 
 	it('maps stop-after tools', () => {
-		expect(isStopAfterTool('run_cells')).toBe(true);
-		expect(isStopAfterTool('create_cell')).toBe(false);
+		expect(isStopAfterTool('run_query_nodes')).toBe(true);
+		expect(isStopAfterTool('inspect_notebook')).toBe(false);
 	});
 
 	it('has native schemas for every subagent tool', () => {

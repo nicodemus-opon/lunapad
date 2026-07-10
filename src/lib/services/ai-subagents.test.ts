@@ -142,10 +142,11 @@ describe('classifyComplexity', () => {
 });
 
 describe('documentation subagent tooling', () => {
-	it('gives the documentation subagent read + markdown-write tools, no SQL tools', () => {
+	it('gives the documentation subagent read + node-native patch tools, no SQL tools', () => {
 		expect(SUBAGENT_TOOLS.documentation).toEqual([
-			'create_cell',
-			'update_cell',
+			'inspect_notebook',
+			'apply_notebook_patch',
+			'validate_notebook',
 			'get_cell_result',
 			'list_cells',
 			'record_decision',

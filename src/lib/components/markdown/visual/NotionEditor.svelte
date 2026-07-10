@@ -943,20 +943,41 @@
 		line-height: 1.6;
 		color: var(--foreground);
 	}
+	/* Mirrors the report-view type scale (ReportPage.svelte .report-markdown) so the
+	   editor shows the hierarchy the published report will have: display h1,
+	   tracked-caps ruled h2, kicker h3. */
 	:global(.notion-surface h1) {
-		font-size: 1.5rem;
-		font-weight: 700;
-		margin: 0.75rem 0 0.35rem;
+		font-size: 2.6rem;
+		font-weight: 800;
+		letter-spacing: -0.03em;
+		line-height: 1.05;
+		margin: 0.75rem 0 0.6rem;
 	}
 	:global(.notion-surface h2) {
-		font-size: 1.25rem;
-		font-weight: 600;
-		margin: 0.65rem 0 0.3rem;
+		font-size: 0.95rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		border-top: 3px solid var(--foreground);
+		padding-top: 0.5rem;
+		margin: 1.5rem 0 0.4rem;
 	}
 	:global(.notion-surface h3) {
-		font-size: 1.1rem;
+		font-size: var(--text-2xs);
 		font-weight: 600;
-		margin: 0.5rem 0 0.25rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--muted-foreground);
+		margin: 1rem 0 0.25rem;
+	}
+	:global(.notion-surface blockquote) {
+		border: none;
+		margin: 0.5rem 0;
+		padding: 0;
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 0.85rem;
+		color: var(--muted-foreground);
 	}
 	:global(.notion-surface p) {
 		margin: 0.35rem 0;

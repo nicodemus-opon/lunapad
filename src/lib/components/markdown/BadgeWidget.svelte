@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { resolveSemanticToken, type SemanticTone } from './semantic-tone';
+
 	interface Props {
 		value?: string | number;
-		color?: 'info' | 'success' | 'warning' | 'error' | 'neutral';
+		color?: SemanticTone;
+		span?: number;
 	}
 
-	const { value, color }: Props = $props();
+	const { value, color, span }: Props = $props();
 
 	const CHART_TOKENS = [
 		'var(--chart-1)',
@@ -20,22 +23,12 @@
 		return h % CHART_TOKENS.length;
 	}
 
-	const token = $derived.by(() => {
-		switch (color) {
-			case 'info':
-				return 'var(--chart-1)';
-			case 'success':
-				return 'var(--success)';
-			case 'warning':
-				return 'var(--warning)';
-			case 'error':
-				return 'var(--destructive)';
-			case 'neutral':
-				return 'var(--foreground)';
-			default:
-				return CHART_TOKENS[hashIndex(String(value))];
-		}
-	});
+	const token = $derived(
+		resolveSemanticToken(color, CHART_TOKENS[hashIndex(String(value))])
+	);
 </script>
 
-<span class="md-badge" style="--md-badge-token: {token}">{value ?? ''}</span>
+<span
+	class="md-badge"
+	style="--md-badge-token: {token}"
+	style:grid-column={span && span > 1 ? `span ${span}` : undefined}>{value ?? ''}</span>

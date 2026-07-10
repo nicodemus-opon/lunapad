@@ -27,6 +27,7 @@
 	import { resolveHeadingAnchorId, textFromMarkdocChildren } from '$lib/services/notebook-outline';
 	import { sanitizeUrl } from '$lib/services/safe-url';
 	import { GRID_GAP_PRESETS, COLUMNS_GAP_PRESETS } from '$lib/services/markdoc-style-presets';
+	import { resolveDashboardIcon } from './icon-map';
 
 	interface Props {
 		node: RenderableTreeNode;
@@ -170,6 +171,7 @@
 {:else if tag?.name === 'grid'}
 	<div
 		class="md-grid"
+		data-striped={tag.attributes.striped ? 'true' : undefined}
 		style="--md-grid-cols: {tag.attributes.cols ?? 3}; --md-grid-gap: {GRID_GAP_PRESETS[
 			tag.attributes.gap ?? 'default'
 		]}"
@@ -177,16 +179,29 @@
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'callout'}
-	<CalloutWidget type={tag.attributes.type ?? 'info'} title={tag.attributes.title}>
+	<CalloutWidget
+		type={tag.attributes.type ?? 'info'}
+		title={tag.attributes.title}
+		icon={tag.attributes.icon}
+	>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</CalloutWidget>
 {:else if tag?.name === 'card'}
+	{@const CardIcon = resolveDashboardIcon(tag.attributes.icon)}
 	<div
 		class="md-card {tag.attributes.accent && tag.attributes.accent !== 'neutral'
 			? `md-card--${tag.attributes.accent}`
 			: ''}"
+		style:grid-column={typeof tag.attributes.span === 'number' && tag.attributes.span > 1
+			? `span ${tag.attributes.span}`
+			: undefined}
 	>
-		{#if tag.attributes.title}<div class="md-card-title">{tag.attributes.title}</div>{/if}
+		{#if tag.attributes.title || CardIcon}
+			<div class="md-card-title">
+				{#if CardIcon}<CardIcon class="md-card-title-icon" size={13} />{/if}
+				{#if tag.attributes.title}{tag.attributes.title}{/if}
+			</div>
+		{/if}
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'details'}

@@ -22,6 +22,9 @@ export async function authorizeAITool(tool: AIChatToolName | string): Promise<bo
 	} catch {
 		// Offline / no auth — allow read tools, block mutations conservatively.
 		const readOnly = ![
+			'create_notebook',
+			'apply_notebook_patch',
+			'run_query_nodes',
 			'create_cell',
 			'update_cell',
 			'delete_cell',

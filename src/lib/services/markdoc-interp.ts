@@ -4,6 +4,7 @@ import Markdoc from '@markdoc/markdoc';
 const { Tag } = Markdoc;
 import type { Config, ConfigFunction, RenderableTreeNode, Schema } from '@markdoc/markdoc';
 import { CUSTOM_MARKDOC_TAGS as CUSTOM_MARKDOC_TAG_REGISTRY } from './markdoc-tag-registry';
+import { DASHBOARD_ICON_NAMES } from './dashboard-icons';
 
 /** Markdoc config extended with the original markdown string for raw mermaid slicing. */
 interface MarkdocConfig extends Config {
@@ -184,9 +185,16 @@ const metricTag: Schema = {
 		vs: { type: [Number, String] },
 		format: {
 			type: String,
-			matches: ['number', 'currency', 'compact', 'percent'],
+			matches: ['number', 'currency', 'compact', 'percent', 'date'],
 			default: 'number'
-		}
+		},
+		size: { type: String, matches: ['hero', 'default', 'compact'], default: 'default' },
+		layout: { type: String, matches: ['tile', 'row'], default: 'tile' },
+		icon: { type: String, matches: [...DASHBOARD_ICON_NAMES] },
+		iconCount: { type: Number },
+		iconTotal: { type: Number },
+		accent: { type: String, matches: ['neutral', 'info', 'success', 'warning', 'error'] },
+		span: { type: Number }
 	},
 	transform(node, config) {
 		const attrs = node.transformAttributes(config);
@@ -199,7 +207,14 @@ const metricTag: Schema = {
 				format: attrs.format,
 				vs: attrs.vs,
 				deltaPct,
-				trend
+				trend,
+				size: attrs.size,
+				layout: attrs.layout,
+				icon: attrs.icon,
+				iconCount: attrs.iconCount,
+				iconTotal: attrs.iconTotal,
+				accent: attrs.accent,
+				span: attrs.span
 			},
 			[]
 		);
@@ -319,7 +334,8 @@ const badgeTag: Schema = {
 	selfClosing: true,
 	attributes: {
 		value: { type: [String, Number], required: true },
-		color: { type: String, matches: ['info', 'success', 'warning', 'error', 'neutral'] }
+		color: { type: String, matches: ['info', 'success', 'warning', 'error', 'neutral'] },
+		span: { type: Number }
 	}
 };
 
@@ -330,7 +346,8 @@ const progressTag: Schema = {
 		value: { type: Number, required: true },
 		max: { type: Number, default: 100 },
 		label: { type: String },
-		color: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' }
+		color: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' },
+		span: { type: Number }
 	}
 };
 
@@ -432,7 +449,8 @@ const gridTag: Schema = {
 	children: CONTAINER_CHILDREN,
 	attributes: {
 		cols: { type: Number, default: 3 },
-		gap: { type: String, matches: ['compact', 'default', 'comfortable'], default: 'default' }
+		gap: { type: String, matches: ['compact', 'default', 'comfortable'], default: 'default' },
+		striped: { type: Boolean, default: false }
 	}
 };
 const calloutTag: Schema = {
@@ -440,7 +458,8 @@ const calloutTag: Schema = {
 	children: CONTAINER_CHILDREN,
 	attributes: {
 		type: { type: String, matches: ['info', 'success', 'warning', 'error'], default: 'info' },
-		title: { type: String }
+		title: { type: String },
+		icon: { type: String, matches: [...DASHBOARD_ICON_NAMES] }
 	}
 };
 const cardTag: Schema = {
@@ -452,7 +471,9 @@ const cardTag: Schema = {
 			type: String,
 			matches: ['neutral', 'info', 'success', 'warning', 'error'],
 			default: 'neutral'
-		}
+		},
+		icon: { type: String, matches: [...DASHBOARD_ICON_NAMES] },
+		span: { type: Number }
 	}
 };
 const detailsTag: Schema = {
@@ -1229,6 +1250,104 @@ export interface MarkdocDiagnostic {
 	column: number;
 	endLine?: number;
 	endColumn?: number;
+}
+
+/** Deterministically repair unbalanced Markdoc tags in AI-emitted markdown.
+ *
+ * Models routinely drop the `/` on a self-closing tag (`{% datatable … %}` instead of
+ * `{% datatable … /%}`), forget a container's closing tag, or emit a stray closer. All three
+ * are mechanical — rejecting them back to the model just burns agent-loop turns on something
+ * we can fix in place. Repairs, driven by each tag's schema:
+ *  - unmatched open of a `selfClosing` tag → rewritten to self-closing form
+ *  - unmatched open of a container tag → closing tag appended at the end (reverse nesting order)
+ *  - closer with no matching open → removed
+ * Unknown tag names and content inside code fences are left untouched, and validation still
+ * runs on the repaired text — a repair that guesses wrong fails validation exactly like the
+ * original would have. */
+export function repairMarkdocTagBalance(markdown: string): string {
+	if (!markdown.includes('{%')) return markdown;
+
+	// Ranges of fenced code blocks — tags inside them are content, not markup.
+	const fenceRanges: Array<[number, number]> = [];
+	for (const f of markdown.matchAll(/^```[\s\S]*?^```[ \t]*$/gm)) {
+		fenceRanges.push([f.index, f.index + f[0].length]);
+	}
+	const inFence = (i: number) => fenceRanges.some(([a, b]) => i >= a && i < b);
+
+	interface TagToken {
+		start: number;
+		end: number;
+		name: string;
+		kind: 'open' | 'close' | 'self';
+	}
+	const tokens: TagToken[] = [];
+	for (const m of markdown.matchAll(/\{%[\s\S]*?%\}/g)) {
+		if (inFence(m.index)) continue;
+		const inner = m[0].slice(2, -2).trim();
+		const name = inner.match(/^\/?\s*([A-Za-z_][\w-]*)/)?.[1];
+		if (!name || !(name in TAGS)) continue;
+		tokens.push({
+			start: m.index,
+			end: m.index + m[0].length,
+			name,
+			kind: inner.startsWith('/') ? 'close' : inner.endsWith('/') ? 'self' : 'open'
+		});
+	}
+
+	const stack: TagToken[] = [];
+	const unclosedOpens: TagToken[] = [];
+	const orphanCloses: TagToken[] = [];
+	const insertions: Array<{ pos: number; text: string }> = [];
+	for (const t of tokens) {
+		if (t.kind === 'open') {
+			stack.push(t);
+		} else if (t.kind === 'close') {
+			const at = stack.findLastIndex((s) => s.name === t.name);
+			if (at === -1) {
+				orphanCloses.push(t);
+			} else {
+				// Anything the closer skips over was never closed itself.
+				const skipped = stack.splice(at + 1);
+				for (const skippedOpen of skipped.reverse()) {
+					if (TAGS[skippedOpen.name]?.selfClosing) {
+						unclosedOpens.push(skippedOpen);
+					} else {
+						insertions.push({ pos: t.start, text: `{% /${skippedOpen.name} %}\n` });
+					}
+				}
+				stack.pop();
+			}
+		}
+	}
+	unclosedOpens.push(...stack);
+	if (unclosedOpens.length === 0 && orphanCloses.length === 0 && insertions.length === 0)
+		return markdown;
+
+	// Apply span edits back-to-front so earlier offsets stay valid.
+	const edits: Array<{ start: number; end: number; text: string }> = [];
+	for (const t of unclosedOpens) {
+		if (TAGS[t.name]?.selfClosing) {
+			const tag = markdown.slice(t.start, t.end);
+			edits.push({ start: t.start, end: t.end, text: tag.replace(/\s*%\}$/, ' /%}') });
+		}
+	}
+	for (const t of orphanCloses) edits.push({ start: t.start, end: t.end, text: '' });
+	for (const insertion of insertions) {
+		edits.push({ start: insertion.pos, end: insertion.pos, text: insertion.text });
+	}
+	let repaired = markdown;
+	for (const e of edits.sort((a, b) => b.start - a.start)) {
+		repaired = repaired.slice(0, e.start) + e.text + repaired.slice(e.end);
+	}
+	// Containers get their missing closers appended innermost-first.
+	const missingClosers = unclosedOpens
+		.filter((t) => !TAGS[t.name]?.selfClosing)
+		.sort((a, b) => b.start - a.start)
+		.map((t) => `{% /${t.name} %}`);
+	if (missingClosers.length > 0) {
+		repaired = `${repaired.replace(/\s*$/, '')}\n${missingClosers.join('\n')}\n`;
+	}
+	return repaired;
 }
 
 function buildMarkdocConfig(markdown: string, cells: Cell[]): MarkdocConfig {

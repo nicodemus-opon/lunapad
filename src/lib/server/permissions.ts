@@ -96,6 +96,9 @@ export const ALL_API_SCOPES: PermissionAction[] = [
 
 /** Tools that mutate notebook state — require ai:mutate permission. */
 export const AI_MUTATING_TOOLS = new Set([
+	'create_notebook',
+	'apply_notebook_patch',
+	'run_query_nodes',
 	'create_cell',
 	'update_cell',
 	'delete_cell',

@@ -134,6 +134,8 @@ function applyContainerSemantics(
 		contentDOM.classList.add('md-grid');
 		contentDOM.style.setProperty('--md-grid-cols', String(cols));
 		contentDOM.style.setProperty('--md-grid-gap', GRID_GAP_PRESETS[String(attrs.gap ?? 'default')]);
+		if (attrs.striped) contentDOM.dataset.striped = 'true';
+		else delete contentDOM.dataset.striped;
 	} else if (tagName === 'columns') {
 		dom.classList.add('is-columns', 'is-wysiwyg');
 		contentDOM.classList.add('md-columns');

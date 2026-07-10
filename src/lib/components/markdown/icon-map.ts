@@ -1,0 +1,101 @@
+/**
+ * Client-side resolution of dashboard icon names to @lucide/svelte components.
+ * Typed as Record<DashboardIconName, Component> so drift against DASHBOARD_ICON_NAMES
+ * (the compile-time allowlist in src/lib/services/dashboard-icons.ts) is a type error.
+ */
+import type { Component } from 'svelte';
+import type { DashboardIconName } from '$lib/services/dashboard-icons';
+import {
+	TrendingUp,
+	TrendingDown,
+	Activity,
+	Gauge,
+	Percent,
+	Target,
+	BarChart3,
+	PieChart,
+	Users,
+	DollarSign,
+	CreditCard,
+	ShoppingCart,
+	Building2,
+	Award,
+	Star,
+	Heart,
+	Package,
+	Truck,
+	Plane,
+	Car,
+	Bus,
+	TrainFront,
+	Bike,
+	Ship,
+	Luggage,
+	Home,
+	MapPin,
+	Globe,
+	Calendar,
+	Clock,
+	Flag,
+	AlertTriangle,
+	CheckCircle2,
+	XCircle,
+	Database,
+	Zap,
+	Eye,
+	Mail,
+	Rocket,
+	Droplets,
+	Leaf,
+	TreePine
+} from '@lucide/svelte';
+
+export const DASHBOARD_ICON_COMPONENTS: Record<DashboardIconName, Component> = {
+	TrendingUp,
+	TrendingDown,
+	Activity,
+	Gauge,
+	Percent,
+	Target,
+	BarChart3,
+	PieChart,
+	Users,
+	DollarSign,
+	CreditCard,
+	ShoppingCart,
+	Building2,
+	Award,
+	Star,
+	Heart,
+	Package,
+	Truck,
+	Plane,
+	Car,
+	Bus,
+	TrainFront,
+	Bike,
+	Ship,
+	Luggage,
+	Home,
+	MapPin,
+	Globe,
+	Calendar,
+	Clock,
+	Flag,
+	AlertTriangle,
+	CheckCircle2,
+	XCircle,
+	Database,
+	Zap,
+	Eye,
+	Mail,
+	Rocket,
+	Droplets,
+	Leaf,
+	TreePine
+};
+
+export function resolveDashboardIcon(name?: string | null): Component | undefined {
+	if (!name) return undefined;
+	return (DASHBOARD_ICON_COMPONENTS as Record<string, Component>)[name];
+}

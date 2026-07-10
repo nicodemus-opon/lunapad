@@ -5,6 +5,7 @@ import {
 	getTables,
 	getLLMConfig,
 	getActiveTabId,
+	getNotebooks,
 	insertCellAfter,
 	appendCellAtEnd,
 	updateCellCode,
@@ -30,6 +31,8 @@ import {
 	scheduleSave,
 	getProjectFolder,
 	getIsDbtProject,
+	createNotebookFromPmDocument,
+	syncNotebookFromPmDocument,
 	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
@@ -92,6 +95,11 @@ import {
 import type {
 	AIChatRequest,
 	AIChatToolCall,
+	CreateNotebookArgs,
+	InspectNotebookArgs,
+	ApplyNotebookPatchArgs,
+	RunQueryNodesArgs,
+	ValidateNotebookArgs,
 	CreateCellArgs,
 	UpdateCellArgs,
 	SetChartArgs,
@@ -126,6 +134,10 @@ import { executeSQL } from '$lib/services/duckdb.js';
 import { queryConnectionSQL } from '$lib/services/connections.js';
 import { resolveDependencies } from '$lib/services/cell-deps.js';
 import { detectHardcodedContent } from '$lib/services/markdown-lint.js';
+import {
+	repairMarkdocTagBalance,
+	validateMarkdocMarkdown
+} from '$lib/services/markdoc-interp.js';
 import { createSSEParser, type SSEEvent } from '$lib/services/ai-stream.js';
 import { rowsToCsv } from '$lib/utils.js';
 import {
@@ -153,6 +165,13 @@ import {
 import { authorizeAITool, clearAIToolAuthCache } from '$lib/agent/tools/authorize.js';
 import { routeAgentIntent } from '$lib/agent/router/intent-router.js';
 import { createFsmContext, transitionFsm, applyTransition } from '$lib/agent/fsm/agent-fsm.js';
+import {
+	applyNotebookPatchOperations,
+	compileNotebookBlueprint,
+	validateNotebookPmDocument
+} from '$lib/services/notebook-blueprint.js';
+import { cellsToPmDocument } from '$lib/services/notebook-pm.js';
+import { normalizePmNodeIds, type PMDocJSON } from '$lib/services/markdoc-pm.js';
 
 function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1194,8 +1213,11 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 						c.cellType === 'python' ? 'python' : c.cellType === 'markdown' ? 'markdown' : 'query',
 					code: codeSnippet,
 					...(c.cellType === 'markdown' && { markdown: codeSnippet }),
-					// Only include result columns for context cells — non-context columns duplicate schema info
-					resultColumns: isContext ? (c.result?.columns ?? []) : [],
+					// Send result columns for every run cell, not just context cells: the server's
+					// markdown validation (chat-tool-policy columnsByOutputName) resolves $cell.field
+					// refs against these — an empty list makes it fall back to a mock row and flag
+					// real columns as undefined, deadlocking the dashboard loop.
+					resultColumns: c.result?.columns ?? [],
 					status: c.status,
 					isActiveNotebook: true,
 					...(isContext && { isContextCell: true }),
@@ -1239,12 +1261,91 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 
 // ── Read-only inspection tools ────────────────────────────────────────────────
 
+function getNotebookForAiTool(notebookId?: string) {
+	const id = notebookId || getActiveTabId();
+	return getNotebooks().find((notebook) => notebook.id === id) ?? null;
+}
+
+function currentNotebookDocument(notebookId?: string): { notebookId: string; document: PMDocJSON } | null {
+	const notebook = getNotebookForAiTool(notebookId);
+	if (!notebook) return null;
+	return {
+		notebookId: notebook.id,
+		document: normalizePmNodeIds(cellsToPmDocument(notebook.cells))
+	};
+}
+
+function queryBlockCellIdsFromDocument(document: PMDocJSON, nodeIds?: string[]): string[] {
+	const wanted = nodeIds?.length ? new Set(nodeIds) : null;
+	const cellIds: string[] = [];
+	const visit = (node: PMDocJSON | import('$lib/services/markdoc-pm.js').PMNodeJSON) => {
+		if (
+			node.type === 'queryBlock' &&
+			(!wanted || wanted.has(String(node.attrs?.nodeId ?? ''))) &&
+			node.attrs?.cellId
+		) {
+			cellIds.push(String(node.attrs.cellId));
+		}
+		for (const child of node.content ?? []) visit(child);
+	};
+	visit(document);
+	return cellIds;
+}
+
 async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<string> {
 	const cells = getCells();
 	const cellSourceForRefs = (cell: (typeof cells)[number]) =>
 		cell.cellType === 'markdown' ? cell.markdown : cell.code;
 
 	switch (call.tool) {
+		case 'inspect_notebook': {
+			const args = call.args as InspectNotebookArgs;
+			const notebook = getNotebookForAiTool(args.notebookId);
+			if (!notebook) return 'inspect_notebook: notebook not found';
+			const document = normalizePmNodeIds(cellsToPmDocument(notebook.cells));
+			const executableCells = notebook.cells
+				.filter((cell) => cell.cellType === 'query' || cell.cellType === 'python')
+				.map((cell) => ({
+					cellId: cell.id,
+					outputName: cell.outputName,
+					cellType: cell.cellType,
+					language: cell.language,
+					code: cell.code,
+					status: cell.status,
+					columns: cell.result?.columns ?? []
+				}));
+			const text = JSON.stringify(
+				{
+					notebookId: notebook.id,
+					name: notebook.name,
+					document,
+					executableCells
+				},
+				null,
+				2
+			);
+			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
+			return text;
+		}
+
+		case 'validate_notebook': {
+			const args = call.args as ValidateNotebookArgs;
+			const current = args.document
+				? { notebookId: args.notebookId ?? getActiveTabId(), document: normalizePmNodeIds(args.document) }
+				: currentNotebookDocument(args.notebookId);
+			if (!current) return 'validate_notebook: notebook not found';
+			const diagnostics = validateNotebookPmDocument(current.document);
+			const missingCells = queryBlockCellIdsFromDocument(current.document).filter(
+				(cellId) => !getAllCellsAcrossNotebooks().some((cell) => cell.id === cellId)
+			);
+			const text =
+				diagnostics.length || missingCells.length
+					? JSON.stringify({ ok: false, diagnostics, missingCells }, null, 2)
+					: JSON.stringify({ ok: true, notebookId: current.notebookId }, null, 2);
+			updateMessageText(aiMsgId, `\n\n${text}\n\n`);
+			return text;
+		}
+
 		case 'get_lineage': {
 			const { outputName } = call.args as GetLineageArgs;
 			const re = new RegExp(`\\b${escapeRegExp(outputName)}\\b`);
@@ -1415,6 +1516,8 @@ async function executeToolCallWithResult(
 
 	// Read-only inspection tools — inject result as text, also return for LLM re-injection
 	if (
+		call.tool === 'inspect_notebook' ||
+		call.tool === 'validate_notebook' ||
 		call.tool === 'get_lineage' ||
 		call.tool === 'list_cells' ||
 		call.tool === 'search_workspace' ||
@@ -1432,6 +1535,91 @@ async function executeToolCallWithResult(
 		_madeNotebookChanges = true;
 
 	switch (call.tool) {
+		case 'create_notebook': {
+			const args = call.args as CreateNotebookArgs;
+			const knownRefs = getAllCellsAcrossNotebooks().map((cell) => cell.outputName);
+			const compiled = compileNotebookBlueprint(args.blueprint, knownRefs);
+			if (!compiled.document) {
+				return `create_notebook: draft validation failed; repair these diagnostics and call create_notebook again: ${compiled.diagnostics
+					.slice(0, 6)
+					.map((d) => `${d.path}: ${d.message}`)
+					.join('; ')}`;
+			}
+			const notebookId = createNotebookFromPmDocument({
+				name: args.blueprint.title,
+				document: compiled.document,
+				executableCells: compiled.executableCells
+			});
+			if (!notebookId) return 'create_notebook: failed to create notebook from validated draft';
+			appendActionEvent(aiMsgId, {
+				tool: 'create_cell',
+				label: `Created notebook \`${args.blueprint.title ?? notebookId}\``
+			});
+			for (const cell of compiled.executableCells) {
+				_outputNameToId.set(cell.outputName, cell.cellId);
+				if (call.callId) _callIdToId.set(call.callId, cell.cellId);
+				markGhostCell(cell.cellId);
+			}
+			return `Notebook '${args.blueprint.title ?? notebookId}' created (id: ${notebookId}) with ${compiled.executableCells.length} executable cell(s)`;
+		}
+
+		case 'apply_notebook_patch': {
+			const args = call.args as ApplyNotebookPatchArgs;
+			const notebook = getNotebookForAiTool(args.notebookId);
+			if (!notebook) return 'apply_notebook_patch: notebook not found';
+			let document: PMDocJSON | null = null;
+			let executableCells = args.executableCells ?? [];
+
+			if (args.blueprint) {
+				const compiled = compileNotebookBlueprint(
+					args.blueprint,
+					getAllCellsAcrossNotebooks().map((cell) => cell.outputName)
+				);
+				if (!compiled.document) {
+					return `apply_notebook_patch: blueprint validation failed; repair these diagnostics: ${compiled.diagnostics
+						.slice(0, 6)
+						.map((d) => `${d.path}: ${d.message}`)
+						.join('; ')}`;
+				}
+				document = compiled.document;
+				executableCells = compiled.executableCells;
+			} else if (args.document) {
+				document = normalizePmNodeIds(args.document);
+			} else if (args.operations?.length) {
+				const patched = applyNotebookPatchOperations(cellsToPmDocument(notebook.cells), args.operations);
+				if (!patched.document) {
+					return `apply_notebook_patch: patch validation failed; repair these diagnostics: ${patched.diagnostics
+						.slice(0, 6)
+						.map((d) => `${d.path}: ${d.message}`)
+						.join('; ')}`;
+				}
+				document = patched.document;
+			}
+
+			if (!document) return 'apply_notebook_patch: provide blueprint, document, or operations';
+			const diagnostics = validateNotebookPmDocument(document);
+			if (diagnostics.length) {
+				return `apply_notebook_patch: document validation failed; repair these diagnostics: ${diagnostics
+					.slice(0, 6)
+					.map((d) => `${d.path}: ${d.message}`)
+					.join('; ')}`;
+			}
+
+			syncNotebookFromPmDocument(notebook.id, document);
+			for (const payload of executableCells ?? []) {
+				const existingId = resolveCellId(payload.cellId) ?? resolveCellId(payload.outputName);
+				if (!existingId) continue;
+				if (payload.cellType === 'python') updatePythonCellCode(existingId, payload.code);
+				else updateCellCode(existingId, sanitizeSQL(stripTrailingSemicolons(payload.code)));
+				if (payload.outputName) updateCellName(existingId, payload.outputName);
+			}
+			appendActionEvent(aiMsgId, {
+				tool: 'update_cell',
+				label: `Patched notebook \`${notebook.name}\``
+			});
+			return `Notebook '${notebook.name}' patched and validated`;
+		}
+
 		case 'create_cell': {
 			const args = call.args as CreateCellArgs;
 			// Ensure outputName is never null/undefined
@@ -1483,8 +1671,12 @@ async function executeToolCallWithResult(
 				);
 			const isMarkdown =
 				args.cellType === 'markdown' || args.markdown !== undefined || codeIsMarkdown;
-			// When markdown content landed in the code field, use it as the markdown body
-			const markdownContent = args.markdown ?? (codeIsMarkdown ? (args.code ?? '') : '');
+			// When markdown content landed in the code field, use it as the markdown body.
+			// Repair mechanical tag imbalance (dropped /%}, missing closer) before writing —
+			// the server does the same, but this also covers tool paths that bypass it.
+			const markdownContent = repairMarkdocTagBalance(
+				args.markdown ?? (codeIsMarkdown ? (args.code ?? '') : '')
+			);
 
 			// Redirect duplicate SQL cell creates to update_cell. Models sometimes call
 			// create_cell when self-correcting an error instead of calling update_cell,
@@ -1519,7 +1711,7 @@ async function executeToolCallWithResult(
 			if (isMarkdown) {
 				const existingMarkdownId = resolveCellId(outputName);
 				if (existingMarkdownId) {
-					const newMarkdown = markdownContent || args.code || '';
+					const newMarkdown = markdownContent || repairMarkdocTagBalance(args.code || '');
 					if (newMarkdown) updateCellMarkdown(existingMarkdownId, newMarkdown);
 					_outputNameToId.set(outputName, existingMarkdownId);
 					if (call.callId) _callIdToId.set(call.callId, existingMarkdownId);
@@ -1531,7 +1723,7 @@ async function executeToolCallWithResult(
 					const redirectLintHint = newMarkdown
 						? detectHardcodedContent(newMarkdown, getAllCellsAcrossNotebooks())
 						: null;
-					return `Cell '${outputName}' updated (create_cell redirected — markdown cell already exists)${redirectLintHint ? `\n\n⚠ Live-ref hint: ${redirectLintHint}` : ''}`;
+					return `Cell '${outputName}' updated (create_cell redirected — markdown cell already exists)${redirectLintHint ? `\n\n⚠ Live-ref hint: ${redirectLintHint}` : ''}${renderCheckSuffix(newMarkdown, outputName)}`;
 				}
 			}
 
@@ -1593,7 +1785,8 @@ async function executeToolCallWithResult(
 				const createLintHint = isMarkdown
 					? detectHardcodedContent(markdownContent, getAllCellsAcrossNotebooks())
 					: null;
-				return `Cell '${outputName}' created (id: ${newCellId}, type: ${isMarkdown ? 'markdown' : 'query'})${createColWarning ? `\n\n⚠ Column hint: ${createColWarning}` : ''}${createLintHint ? `\n\n⚠ Live-ref hint: ${createLintHint}` : ''}`;
+				const createRenderCheck = isMarkdown ? renderCheckSuffix(markdownContent, outputName) : '';
+				return `Cell '${outputName}' created (id: ${newCellId}, type: ${isMarkdown ? 'markdown' : 'query'})${createColWarning ? `\n\n⚠ Column hint: ${createColWarning}` : ''}${createLintHint ? `\n\n⚠ Live-ref hint: ${createLintHint}` : ''}${createRenderCheck}`;
 			}
 			return null;
 		}
@@ -1617,7 +1810,9 @@ async function executeToolCallWithResult(
 					updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
 				}
 			}
-			if (args.markdown !== undefined) updateCellMarkdown(cellId, args.markdown);
+			const repairedMarkdown =
+				args.markdown !== undefined ? repairMarkdocTagBalance(args.markdown) : undefined;
+			if (repairedMarkdown !== undefined) updateCellMarkdown(cellId, repairedMarkdown);
 			if (args.hideInReport !== undefined) setCellHideInReport(cellId, args.hideInReport);
 			if (args.outputName !== undefined) {
 				const renameResult = updateCellName(cellId, args.outputName);
@@ -1630,8 +1825,8 @@ async function executeToolCallWithResult(
 			_updatedCellIds.add(cellId);
 			const newCode = args.code !== undefined ? stripTrailingSemicolons(args.code) : undefined;
 			const updateLintHint =
-				args.markdown !== undefined
-					? detectHardcodedContent(args.markdown, getAllCellsAcrossNotebooks())
+				repairedMarkdown !== undefined
+					? detectHardcodedContent(repairedMarkdown, getAllCellsAcrossNotebooks())
 					: null;
 			appendActionEvent(aiMsgId, {
 				tool: 'update_cell',
@@ -1644,7 +1839,11 @@ async function executeToolCallWithResult(
 				args.code !== undefined
 					? validateColumnRefs(newCode ?? oldCode ?? '', getExternalSchemaTables(), getTables())
 					: null;
-			return `Cell '${args.outputName ?? args.cellId}' updated${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}${updateLintHint ? `\n\n⚠ Live-ref hint: ${updateLintHint}` : ''}`;
+			const updateRenderCheck =
+				repairedMarkdown !== undefined
+					? renderCheckSuffix(repairedMarkdown, String(args.outputName ?? args.cellId))
+					: '';
+			return `Cell '${args.outputName ?? args.cellId}' updated${colWarning ? `\n\n⚠ Column hint: ${colWarning}` : ''}${updateLintHint ? `\n\n⚠ Live-ref hint: ${updateLintHint}` : ''}${updateRenderCheck}`;
 		}
 
 		case 'set_chart': {
@@ -1757,6 +1956,21 @@ async function executeToolCallWithResult(
 				return `Decision recorded: "${text}"`;
 			}
 			return 'record_decision: decision text is required';
+		}
+
+		case 'run_query_nodes': {
+			const args = call.args as RunQueryNodesArgs;
+			const current = currentNotebookDocument();
+			if (!current) return 'run_query_nodes: notebook not found';
+			const cellIds =
+				args.cellIds?.length
+					? args.cellIds
+					: queryBlockCellIdsFromDocument(current.document, args.nodeIds);
+			if (!cellIds.length) return 'run_query_nodes: no query nodes matched';
+			return executeToolCallWithResult(
+				{ callId: call.callId, tool: 'run_cells', args: { cellIds } },
+				aiMsgId
+			);
 		}
 
 		case 'run_cells': {
@@ -2276,6 +2490,49 @@ function resolveCellId(ref: string): string | null {
 
 	// Try callId map — some models reference a created cell by its creation callId
 	return _callIdToId.get(ref) ?? null;
+}
+
+/** Ground-truth render check for AI-written markdown cells.
+ *
+ * Runs the exact validation the real render surface uses (NotebookCell.svelte renders with
+ * `getAllCellsAcrossNotebooks()`), against real cells with real result rows. Server-side
+ * validation only ever sees stubbed rows and column names, so it is structurally incapable of
+ * catching everything — this check reports what the user will actually see, for ANY failure
+ * class, and its message is fed back to the model in the tool result so it can self-correct
+ * with update_cell. */
+function renderCheckFailure(markdown: string): string | null {
+	if (!markdown.trim()) return null;
+	try {
+		const cells = getAllCellsAcrossNotebooks();
+		const diags = validateMarkdocMarkdown(markdown, cells);
+		if (diags.length === 0) return null;
+		const msgs = [...new Set(diags.map((d) => d.message))].slice(0, 5);
+		// A bare "undefined variable" is only actionable if the model learns the real column
+		// list — attach it for every failed ref whose cell actually has a result.
+		const hinted = new Set<string>();
+		const hints: string[] = [];
+		for (const msg of msgs) {
+			const root = msg.match(/Undefined variable: '([A-Za-z_]\w*)/)?.[1];
+			if (!root || hinted.has(root)) continue;
+			hinted.add(root);
+			const cell = cells.find((c) => c.outputName === root);
+			if (cell?.result?.columns?.length) {
+				hints.push(`Cell '${root}' has exactly these columns: ${cell.result.columns.join(', ')}.`);
+			} else if (cell) {
+				hints.push(`Cell '${root}' exists but has no result yet — run it with run_cells first.`);
+			}
+		}
+		return [msgs.join('; '), ...hints].join(' ');
+	} catch (err) {
+		return `markdown failed to render: ${err instanceof Error ? err.message : String(err)}`;
+	}
+}
+
+function renderCheckSuffix(markdown: string, cellRef: string): string {
+	const failure = renderCheckFailure(markdown);
+	return failure
+		? `\n\n⚠ Render check FAILED — this cell currently displays errors to the user: ${failure}. Fix it with update_cell (cellId: '${cellRef}') before finishing.`
+		: '';
 }
 
 const ACTIVITY_LABELS: Record<string, string> = {
@@ -3360,7 +3617,13 @@ async function runDashboardLoop(
 	let injection: { role: 'user'; content: string } | null = null;
 	let stallRetries = 0;
 	const knownMarkdownCellNames = new Set<string>();
+	// Markdown cells whose last write failed the ground-truth render check (see
+	// renderCheckSuffix) — the cell exists but displays errors to the user. <done> is not
+	// honored while any remain; a later clean write on the same cell clears it.
+	const brokenMarkdownCellNames = new Set<string>();
 	let inspectedResult = false;
+	let lastBlockedReason: string | null = null;
+	let blockedTurns = 0;
 
 	while (depth < MAX_DEPTH && !signal.aborted) {
 		const { allToolResults, aborted, signalledDone, wasTruncated, streamError } =
@@ -3393,21 +3656,53 @@ async function runDashboardLoop(
 				inspectedResult = true;
 			}
 
+			// If the server keeps rejecting the model's markdown, it isn't converging — the
+			// rejection reasons often differ slightly between attempts (a different attribute,
+			// a different column guess), so count blocked turns rather than identical messages,
+			// and bail out with the last reason instead of silently burning the remaining retry
+			// budget (which reads as a freeze followed by no output). A turn that lands a
+			// markdown cell resets the count — rejections mixed with progress are fine.
+			const blocked = allToolResults.find((r) => r.startsWith('create_cell/update_cell blocked:'));
+			const madeProgress = allToolResults.some((r) => /Cell '.+?' (?:created|updated)/.test(r));
+			if (blocked) {
+				lastBlockedReason = blocked;
+				blockedTurns = madeProgress ? 0 : blockedTurns + 1;
+				if (blockedTurns >= 3) {
+					appendErrorMessage(
+						`Dashboard generation stopped: the model repeatedly produced markdown the server rejected. Last reason — ${blocked.replace('create_cell/update_cell blocked: ', '')}`
+					);
+					return;
+				}
+			} else if (madeProgress) {
+				blockedTurns = 0;
+			}
+
 			for (const r of allToolResults) {
 				const m = r.match(/Cell '(.+?)' (?:created|updated)/);
 				if (!m) continue;
 				const name = m[1];
 				const current = getCells().find((cell) => cell.outputName === name);
-				if (current?.cellType === 'markdown') knownMarkdownCellNames.add(name);
+				if (current?.cellType !== 'markdown') continue;
+				knownMarkdownCellNames.add(name);
+				if (r.includes('Render check FAILED')) brokenMarkdownCellNames.add(name);
+				else brokenMarkdownCellNames.delete(name);
 			}
 
-			if (signalledDone && inspectedResult && knownMarkdownCellNames.size > 0) break;
+			if (
+				signalledDone &&
+				inspectedResult &&
+				knownMarkdownCellNames.size > 0 &&
+				brokenMarkdownCellNames.size === 0
+			)
+				break;
 
 			const directive = !inspectedResult
 				? 'Inspect at least one relevant reporting result before writing dashboard markdown. You can use get_cell_result on an existing cell, or run_cells on newly created SQL/Python cells first.'
-				: knownMarkdownCellNames.size > 0
-					? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section. Then call <done>.`
-					: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>.';
+				: brokenMarkdownCellNames.size > 0
+					? `These markdown cells currently render with errors: ${[...brokenMarkdownCellNames].join(', ')}. Read the "Render check FAILED" details in the tool results above and fix each cell with update_cell, then call <done>.`
+					: knownMarkdownCellNames.size > 0
+						? `Existing notebook markdown cells: ${[...knownMarkdownCellNames].join(', ')}. Continue composing the notebook with create_cell for new sections or update_cell to revise an existing section. Then call <done>.`
+						: 'Write one or more markdown cells (create_cell, cellType:"markdown") that compose the notebook UI around the relevant result cells, then call <done>.';
 
 			injection = {
 				role: 'user',
@@ -3417,7 +3712,13 @@ async function runDashboardLoop(
 			continue;
 		}
 
-		if (signalledDone && inspectedResult && knownMarkdownCellNames.size > 0) break;
+		if (
+			signalledDone &&
+			inspectedResult &&
+			knownMarkdownCellNames.size > 0 &&
+			brokenMarkdownCellNames.size === 0
+		)
+			break;
 
 		if (stallRetries < 2) {
 			stallRetries++;
@@ -3431,6 +3732,21 @@ async function runDashboardLoop(
 			continue;
 		}
 		break;
+	}
+
+	// Loop exhausted (or stalled out) without a clean result — tell the user why instead of
+	// ending the turn with no visible output.
+	if (signal.aborted) return;
+	if (knownMarkdownCellNames.size === 0) {
+		appendErrorMessage(
+			lastBlockedReason
+				? `Dashboard generation failed. Last server rejection — ${lastBlockedReason.replace('create_cell/update_cell blocked: ', '')}`
+				: 'Dashboard generation failed: the model never produced a valid markdown cell. Try again, or attach the relevant result cells as context.'
+		);
+	} else if (brokenMarkdownCellNames.size > 0) {
+		appendErrorMessage(
+			`Dashboard generated, but these markdown cells still render with errors: ${[...brokenMarkdownCellNames].join(', ')}. Ask me to fix them, or edit the cells directly.`
+		);
 	}
 }
 

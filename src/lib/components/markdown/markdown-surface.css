@@ -17,7 +17,24 @@
 	display: grid;
 	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
 	gap: var(--md-grid-gap, 0.75rem);
-	margin: 0.55rem 0;
+	margin: 0.75rem 0;
+}
+
+/* Alternating row bands for stacked stat rails (grid cols=1 of layout="row" metrics). */
+.md-grid[data-striped] > :nth-child(even) {
+	background: color-mix(in oklab, var(--muted) 55%, transparent);
+	border-radius: var(--radius-sm);
+}
+
+/* ── Section dividers ──────────────────────────────────────────────────── */
+/* `---` dividers should read as deliberate section breaks, not browser-default rules. */
+
+.markdown-surface hr,
+.report-markdown hr,
+.markdown-surface .markdown-body hr {
+	border: none;
+	border-top: 1px dotted var(--border);
+	margin: 1.75rem 0;
 }
 
 /* ── Callouts & cards ──────────────────────────────────────────────────── */
@@ -57,28 +74,42 @@
 	margin: 0.75rem 0;
 }
 
+/* Accented cards get the same subtle fill callouts use — panels, not just outlines. */
 .md-card--info {
 	border-color: var(--chart-1);
+	background: color-mix(in oklab, var(--chart-1) 8%, transparent);
 }
 
 .md-card--success {
 	border-color: var(--success);
+	background: color-mix(in oklab, var(--success) 8%, transparent);
 }
 
 .md-card--warning {
 	border-color: var(--warning);
+	background: color-mix(in oklab, var(--warning) 8%, transparent);
 }
 
 .md-card--error {
 	border-color: var(--destructive);
+	background: color-mix(in oklab, var(--destructive) 8%, transparent);
 }
 
 .md-card-title,
 .md-card-title-editor {
-	font-weight: 600;
-	font-size: 0.85em;
-	margin-bottom: 0.3rem;
-	opacity: 0.8;
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-weight: 700;
+	font-size: var(--text-2xs);
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--muted-foreground);
+	margin-bottom: 0.4rem;
+}
+
+.md-card-title-icon {
+	flex-shrink: 0;
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
@@ -215,6 +246,7 @@
 	line-height: 1.1;
 	letter-spacing: -0.02em;
 	font-variant-numeric: tabular-nums;
+	color: var(--md-metric-accent, inherit);
 }
 
 .md-metric-label {
@@ -222,6 +254,94 @@
 	color: var(--muted-foreground);
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
+}
+
+/* ── Metric hierarchy (size / layout / icon / pictogram) ───────────────────
+   hero  = unboxed display numeral — the one number a section is about.
+   compact = small support stat for stacked rails beside a chart.
+   row   = icon · label · dotted leader · value line item (infographic stat list). */
+
+.md-metric-icon {
+	flex-shrink: 0;
+	color: var(--md-metric-accent, var(--muted-foreground));
+}
+
+.md-metric[data-size='hero'] {
+	border: none;
+	background: transparent;
+	padding: 0.3rem 0;
+	gap: 0.2rem;
+}
+
+.md-metric[data-size='hero'] .md-metric-value {
+	font-size: 2.75rem;
+	font-weight: 800;
+	letter-spacing: -0.035em;
+	line-height: 1;
+}
+
+.md-metric[data-size='hero'] .md-metric-label {
+	font-size: 0.72rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+}
+
+.md-metric[data-size='compact'] {
+	padding: 0.35rem 0.5rem;
+	min-width: 0;
+}
+
+.md-metric[data-size='compact'] .md-metric-value {
+	font-size: 0.95rem;
+}
+
+.md-metric[data-layout='row'] {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 0.5rem;
+	width: 100%;
+	min-width: 0;
+	border: none;
+	background: transparent;
+	padding: 0.3rem 0.15rem;
+}
+
+.md-metric[data-layout='row'] .md-metric-label {
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.md-metric-leader {
+	flex: 1 1 auto;
+	min-width: 1.25rem;
+	border-bottom: 1px dotted var(--border);
+	transform: translateY(0.25em);
+}
+
+.md-metric[data-layout='row'] .md-metric-value {
+	font-size: 1.05rem;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+/* Pictogram / isotype: iconCount filled glyphs, remainder muted (waffle). */
+.md-metric-icons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.2rem;
+	max-width: 14rem;
+}
+
+.md-metric-icons .md-metric-picto.is-filled {
+	color: var(--md-metric-accent, var(--foreground));
+}
+
+.md-metric-icons .md-metric-picto.is-empty {
+	color: var(--muted-foreground);
+	opacity: 0.35;
 }
 
 .md-metric-delta {

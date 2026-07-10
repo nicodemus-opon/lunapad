@@ -1,5 +1,10 @@
 import type { ChartConfig } from './gui-pipeline.js';
 import type { GeneratedDashboardDefinition } from '$lib/services/generated-dashboard.js';
+import type {
+	NotebookBlueprint,
+	NotebookPatchOperation
+} from '$lib/services/notebook-blueprint.js';
+import type { PMDocJSON } from '$lib/services/markdoc-pm.js';
 
 /** 'dashboard' composes a Markdoc grid/columns layout of metric/chart widgets in one markdown cell. */
 export type SprintTaskType = 'investigate' | 'build' | 'visualize' | 'document' | 'dashboard';
@@ -117,6 +122,11 @@ export interface AIChatRequest {
 }
 
 export type AIChatToolName =
+	| 'create_notebook'
+	| 'inspect_notebook'
+	| 'apply_notebook_patch'
+	| 'run_query_nodes'
+	| 'validate_notebook'
 	| 'create_cell'
 	| 'update_cell'
 	| 'set_chart'
@@ -148,6 +158,33 @@ export interface CreateCellArgs {
 	/** Structured notebook/report/dashboard content compiled into canonical Markdoc server-side. */
 	dashboard?: GeneratedDashboardDefinition;
 	materializeMode?: string;
+}
+
+export interface CreateNotebookArgs {
+	/** Complete typed notebook draft. Compiled into a PM document and committed atomically. */
+	blueprint: NotebookBlueprint;
+}
+
+export interface InspectNotebookArgs {
+	notebookId?: string;
+}
+
+export interface ApplyNotebookPatchArgs {
+	notebookId?: string;
+	operations?: NotebookPatchOperation[];
+	document?: PMDocJSON;
+	blueprint?: NotebookBlueprint;
+	executableCells?: NotebookBlueprint['executableCells'];
+}
+
+export interface RunQueryNodesArgs {
+	nodeIds?: string[];
+	cellIds?: string[];
+}
+
+export interface ValidateNotebookArgs {
+	notebookId?: string;
+	document?: PMDocJSON;
 }
 
 export interface UpdateCellArgs {
@@ -246,6 +283,11 @@ export interface AIChatToolCall {
 	callId: string;
 	tool: AIChatToolName;
 	args:
+		| CreateNotebookArgs
+		| InspectNotebookArgs
+		| ApplyNotebookPatchArgs
+		| RunQueryNodesArgs
+		| ValidateNotebookArgs
 		| CreateCellArgs
 		| UpdateCellArgs
 		| SetChartArgs

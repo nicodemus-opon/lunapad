@@ -30,12 +30,65 @@ export interface PMNodeJSON extends PMMarkJSON {
 
 export interface PMDocJSON {
 	type: 'doc';
+	attrs?: Record<string, unknown>;
 	content?: PMNodeJSON[];
 }
 
 export interface MarkdocPmDocument {
 	frontmatter: string;
 	doc: PMDocJSON;
+}
+
+function hashNodeId(value: string): string {
+	let hash = 5381;
+	for (let i = 0; i < value.length; i++) hash = (hash * 33) ^ value.charCodeAt(i);
+	return `n_${(hash >>> 0).toString(36)}`;
+}
+
+function nodeFingerprint(node: PMNodeJSON | PMDocJSON, path: string): string {
+	const attrs = { ...(node.attrs ?? {}) };
+	delete attrs.nodeId;
+	return JSON.stringify({
+		path,
+		type: node.type,
+		text: 'text' in node ? node.text : undefined,
+		attrs
+	});
+}
+
+export function normalizePmNodeIds(doc: PMDocJSON): PMDocJSON {
+	const seen = new Set<string>();
+	const normalize = (node: PMNodeJSON | PMDocJSON, path: string): PMNodeJSON | PMDocJSON => {
+		if (node.type === 'text') return node;
+		const current = String(node.attrs?.nodeId ?? '').trim();
+		let nodeId = current && !seen.has(current) ? current : hashNodeId(nodeFingerprint(node, path));
+		let counter = 1;
+		while (seen.has(nodeId)) nodeId = `${nodeId}_${counter++}`;
+		seen.add(nodeId);
+		return {
+			...node,
+			attrs: { ...(node.attrs ?? {}), nodeId },
+			...((node.content?.length ?? 0) > 0
+				? {
+						content: node.content!.map((child, index) =>
+							normalize(child, `${path}.content.${index}`)
+						) as PMNodeJSON[]
+					}
+				: {})
+		};
+	};
+	return normalize(doc, 'doc') as PMDocJSON;
+}
+
+export function collectPmNodeIds(doc: PMDocJSON): string[] {
+	const ids: string[] = [];
+	const visit = (node: PMNodeJSON | PMDocJSON) => {
+		const nodeId = String(node.attrs?.nodeId ?? '').trim();
+		if (nodeId) ids.push(nodeId);
+		for (const child of node.content ?? []) visit(child);
+	};
+	visit(doc);
+	return ids;
 }
 
 function isNarrativeKind(kind: VisualBlockKind): boolean {
@@ -48,18 +101,33 @@ function isMarkdocAtomKind(kind: VisualBlockKind): boolean {
 
 let cachedSchema: Schema | null = null;
 
+function withNodeIdAttrs(nodes: typeof defaultMarkdownParser.schema.spec.nodes) {
+	let next = nodes;
+	next.forEach((name, spec) => {
+		if (name === 'text') return;
+		next = next.update(name, {
+			...spec,
+			attrs: {
+				...(spec.attrs ?? {}),
+				nodeId: { default: null }
+			}
+		});
+	});
+	return next;
+}
+
 /** ProseMirror schema: standard markdown nodes + Markdoc widget/container atoms. */
 export function getMarkdocPmSchema(): Schema {
 	if (cachedSchema) return cachedSchema;
 	const base = defaultMarkdownParser.schema;
-	cachedSchema = new Schema({
-		nodes: base.spec.nodes.append({
+	const nodes = withNodeIdAttrs(
+		base.spec.nodes.append({
 			markdocBlock: {
 				atom: true,
 				group: 'block',
 				defining: true,
 				isolating: true,
-				attrs: { source: { default: '' } },
+				attrs: { source: { default: '' }, nodeId: { default: null } },
 				parseDOM: [
 					{
 						tag: 'div[data-markdoc-block]',
@@ -86,7 +154,8 @@ export function getMarkdocPmSchema(): Schema {
 				attrs: {
 					tagName: { default: 'metric' },
 					attrsJson: { default: '{}' },
-					selfClosing: { default: true }
+					selfClosing: { default: true },
+					nodeId: { default: null }
 				},
 				parseDOM: [{ tag: 'div[data-markdoc-widget]' }],
 				toDOM() {
@@ -100,7 +169,8 @@ export function getMarkdocPmSchema(): Schema {
 				isolating: true,
 				attrs: {
 					tagName: { default: 'callout' },
-					attrsJson: { default: '{}' }
+					attrsJson: { default: '{}' },
+					nodeId: { default: null }
 				},
 				parseDOM: [{ tag: 'div[data-markdoc-container]' }],
 				toDOM() {
@@ -111,7 +181,7 @@ export function getMarkdocPmSchema(): Schema {
 				inline: true,
 				group: 'inline',
 				atom: true,
-				attrs: { source: { default: '' } },
+				attrs: { source: { default: '' }, nodeId: { default: null } },
 				parseDOM: [{ tag: 'span[data-markdoc-expression]' }],
 				toDOM(node) {
 					return ['span', { 'data-markdoc-expression': 'true', 'data-source': node.attrs.source }];
@@ -125,7 +195,8 @@ export function getMarkdocPmSchema(): Schema {
 				attrs: {
 					cellId: { default: '' },
 					cellType: { default: 'query' },
-					pinned: { default: false }
+					pinned: { default: false },
+					nodeId: { default: null }
 				},
 				parseDOM: [{ tag: 'div[data-query-block]' }],
 				toDOM(node) {
@@ -145,7 +216,8 @@ export function getMarkdocPmSchema(): Schema {
 				defining: true,
 				attrs: {
 					title: { default: 'Untitled' },
-					pageId: { default: null }
+					pageId: { default: null },
+					nodeId: { default: null }
 				},
 				parseDOM: [{ tag: 'div[data-notebook-page]' }],
 				toDOM(node) {
@@ -159,7 +231,10 @@ export function getMarkdocPmSchema(): Schema {
 					];
 				}
 			}
-		}),
+		})
+	);
+	cachedSchema = new Schema({
+		nodes,
 		marks: base.spec.marks
 			.append({
 				strike: {
