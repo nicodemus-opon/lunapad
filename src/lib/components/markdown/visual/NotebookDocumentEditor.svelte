@@ -15,6 +15,7 @@
 	import type { SlashCommand } from '$lib/services/markdown-format';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import type { Cell } from '$lib/stores/notebook.svelte';
+	import type { PlotStarterKind } from '$lib/services/plot-defaults';
 	import {
 		syncNotebookFromPmDocument,
 		insertQueryBlockCell,
@@ -56,13 +57,7 @@
 		refEntries?: MarkdownRefEntry[];
 	}
 
-	const {
-		notebookId,
-		cells,
-		dark = false,
-		reportView = false,
-		refEntries = []
-	}: Props = $props();
+	const { notebookId, cells, dark = false, reportView = false, refEntries = [] }: Props = $props();
 
 	let editorMount = $state<HTMLDivElement | null>(null);
 	let editor = $state<TipTapEditor | null>(null);
@@ -154,10 +149,13 @@
 		}
 		const { from, to } = ed.state.selection;
 		if (from === to) {
-			ed
-				.chain()
+			ed.chain()
 				.focus()
-				.insertContent({ type: 'text', text: safe, marks: [{ type: 'link', attrs: { href: safe } }] })
+				.insertContent({
+					type: 'text',
+					text: safe,
+					marks: [{ type: 'link', attrs: { href: safe } }]
+				})
 				.run();
 		} else {
 			ed.chain().focus().extendMarkRange('link').setLink({ href: safe }).run();
@@ -268,8 +266,7 @@
 	const bubbleGate = {
 		isSlashOpen: () => slashOpen,
 		isMentionOpen: () => mentionOpen,
-		isContextMenuOpen: () =>
-			nodeConfigOpen || linkPopoverOpen || blockMenuOpen || mediaPopoverOpen,
+		isContextMenuOpen: () => nodeConfigOpen || linkPopoverOpen || blockMenuOpen || mediaPopoverOpen,
 		onShow: () => {
 			bubbleVisible = true;
 		},
@@ -291,7 +288,11 @@
 		return cells.length ? cells[cells.length - 1].id : null;
 	}
 
-	function insertQueryBlock(lang: 'sql' | 'prql' | 'python', ed: TipTapEditor) {
+	function insertQueryBlock(
+		lang: 'sql' | 'prql' | 'python' | 'plot',
+		ed: TipTapEditor,
+		plotKind?: PlotStarterKind
+	) {
 		// The slash trigger text ("/sql"...) was already removed by the suggestion
 		// command. Insert the visual query block in the same editor flow, then sync
 		// that exact document to the store so focus does not jump back to the old line.
@@ -301,14 +302,17 @@
 		}
 		emitNow(ed, notebookId);
 		const anchorId = findAnchorCellId(ed);
-		const cellId = insertQueryBlockCell(anchorId, lang, notebookId);
-		ed
-			.chain()
+		const cellId = insertQueryBlockCell(anchorId, lang, notebookId, plotKind);
+		ed.chain()
 			.focus()
 			.insertContent([
 				{
 					type: 'queryBlock',
-					attrs: { cellId, cellType: lang === 'python' ? 'python' : 'query', pinned: false }
+					attrs: {
+						cellId,
+						cellType: lang === 'python' ? 'python' : lang === 'plot' ? 'plot' : 'query',
+						pinned: false
+					}
 				},
 				{ type: 'paragraph' }
 			])
@@ -339,8 +343,7 @@
 			insertPos = resolvedTo.depth >= 1 ? resolvedTo.after(1) : state.doc.content.size;
 		}
 		insertPos = Math.min(insertPos, state.doc.content.size);
-		ed
-			.chain()
+		ed.chain()
 			.insertContentAt(insertPos, { type: 'paragraph', content: [{ type: 'text', text: '/' }] })
 			.setTextSelection(insertPos + 2)
 			.focus()
@@ -357,8 +360,7 @@
 			return;
 		}
 		const insertPos = pos + node.nodeSize;
-		ed
-			.chain()
+		ed.chain()
 			.focus()
 			.insertContentAt(insertPos, { type: 'paragraph', content: [{ type: 'text', text: '/' }] })
 			.setTextSelection(insertPos + 2)
@@ -367,8 +369,7 @@
 
 	function insertPage(ed: TipTapEditor) {
 		const pageId = `page-${Date.now().toString(36)}`;
-		ed
-			.chain()
+		ed.chain()
 			.focus()
 			.insertContent({
 				type: 'notebookPage',
@@ -551,12 +552,13 @@
 				extensions: buildNotebookDocumentExtensions({
 					getCells: () => cells,
 					getNotebookId: () => notebookId,
+					reportView: () => reportView,
 					refEntries: () => refEntries,
 					bubbleMenuElement: bubbleHost,
 					bubbleMenuGate: bubbleGate,
 					dragHandleRender: () => gutter.element,
 					onDragHandleNodeChange: ({ node, pos }) => gutter.setHoveredPos(node ? pos : null),
-					insertQueryBlock: (lang, e) => insertQueryBlock(lang, e),
+					insertQueryBlock: (lang, e, plotKind) => insertQueryBlock(lang, e, plotKind),
 					insertPage,
 					onRequestLink: (e) => onRequestLink(e),
 					onRequestMedia: (kind, e) => onRequestMedia(kind, e),
@@ -640,11 +642,7 @@
 						mousedown: (_view, event) => {
 							const raw = event.target;
 							const el =
-								raw instanceof Element
-									? raw
-									: raw instanceof Text
-										? raw.parentElement
-										: null;
+								raw instanceof Element ? raw : raw instanceof Text ? raw.parentElement : null;
 							if (
 								el?.closest(
 									'[data-slot="select-content"], [data-slot="select-item"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], .column-menu, .node-config-popover, .node-config-backdrop'
@@ -865,7 +863,9 @@
 	onpointerdown={onContainerPointerDown}
 >
 	{#if initError}
-		<div class="rounded-md border border-destructive bg-destructive/10 p-3 text-xs text-destructive">
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 p-3 text-xs text-destructive"
+		>
 			Document editor failed: {initError}
 		</div>
 	{/if}

@@ -27,7 +27,6 @@
 		renameFolder,
 		renameNotebook,
 		setFolderExpanded,
-		loadDemoNotebook,
 		navigateToOutlineEntry,
 		toggleFavoriteNotebook,
 		getFavoriteNotebookIds,
@@ -56,7 +55,15 @@
 		Star
 	} from '@lucide/svelte';
 
-	let { pendingRenameFolderId = $bindable<string | null>(null), filterQuery = '' } = $props();
+	let {
+		pendingRenameFolderId = $bindable<string | null>(null),
+		filterQuery = '',
+		onBrowseTemplates
+	}: {
+		pendingRenameFolderId?: string | null;
+		filterQuery?: string;
+		onBrowseTemplates?: () => void;
+	} = $props();
 
 	type TreeRowItem =
 		| { kind: 'folder'; depth: number; folder: NotebookFolder }
@@ -368,8 +375,8 @@
 						<Button variant="ghost" size="sm" onclick={() => addNotebook()}>
 							<Plus /> New notebook
 						</Button>
-						<Button variant="ghost" size="sm" onclick={() => loadDemoNotebook()}>
-							<FlaskConical /> Explore demo
+						<Button variant="ghost" size="sm" onclick={() => onBrowseTemplates?.()}>
+							<FlaskConical /> Browse templates
 						</Button>
 					{/snippet}
 				</EmptyState>

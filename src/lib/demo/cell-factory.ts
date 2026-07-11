@@ -32,6 +32,9 @@ export function makeDemoCell(
 		editMode: language === 'sql' ? 'prql' : 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -75,6 +78,15 @@ export function makeDemoMarkdownCell(markdown = '', overrides: Partial<Cell> = {
 		markdown,
 		markdownPreview: false,
 		markdownEditMode: 'visual' as const,
+		editMode: 'prql',
+		...overrides
+	};
+}
+
+export function makeDemoPythonCell(code = '', outputName = '', overrides: Partial<Cell> = {}): Cell {
+	return {
+		...makeDemoCell(code, outputName, 'prql'),
+		cellType: 'python',
 		editMode: 'prql',
 		...overrides
 	};

@@ -74,7 +74,6 @@
 		openProject,
 		clearAllResults,
 		setNotebookDefaultCellLanguage,
-		loadDemoNotebook,
 		runCell,
 		runPythonCell,
 		insertCellBefore,
@@ -229,6 +228,7 @@
 		shortcutsByGroup
 	} from '$lib/keyboard';
 	import WelcomeDialog from '$lib/components/WelcomeDialog.svelte';
+	import TemplateGalleryDialog from '$lib/components/TemplateGalleryDialog.svelte';
 	import {
 		bootstrapDemoNotebook,
 		hasStoredWorkspace,
@@ -400,6 +400,7 @@
 	let commandPaletteOpen = $state(false);
 	let projectOpenDialogOpen = $state(false);
 	let welcomeOpen = $state(false);
+	let templateGalleryOpen = $state(false);
 	let uploadDialogOpen = $state(false);
 	let projectFolderInput = $state('');
 	let projectOpenLoading = $state(false);
@@ -1008,8 +1009,8 @@
 								<DropdownMenu.Item onclick={() => addNotebook()}>
 									<Plus class="h-3.5 w-3.5" /> New notebook
 								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => loadDemoNotebook()}>
-									<FlaskConical class="h-3.5 w-3.5" /> Explore demo notebook
+								<DropdownMenu.Item onclick={() => (templateGalleryOpen = true)}>
+									<FlaskConical class="h-3.5 w-3.5" /> Browse templates
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
 									<Code2 class="h-3.5 w-3.5" /> New PRQL cell
@@ -1631,7 +1632,11 @@
 
 									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 										<div class="min-h-0 flex-1 overflow-hidden">
-											<NotebookTree bind:pendingRenameFolderId filterQuery={sidebarSearch} />
+											<NotebookTree
+											bind:pendingRenameFolderId
+											filterQuery={sidebarSearch}
+											onBrowseTemplates={() => (templateGalleryOpen = true)}
+										/>
 										</div>
 										{#if isNotebookTab && activeTabId}
 											<NotebookBacklinks notebookId={activeTabId} />
@@ -2132,17 +2137,17 @@
 													<div>
 														<p class="text-sm font-medium text-foreground">New here?</p>
 														<p class="text-xs text-muted-foreground">
-															Load the interactive demo to see charts, PRQL, and dashboards in about
+															Browse starter templates to see charts, PRQL, and dashboards in about
 															30 seconds.
 														</p>
 													</div>
 													<Button
 														size="sm"
 														class="shrink-0 gap-2"
-														onclick={() => void bootstrapDemoNotebook({ runCells: true })}
+														onclick={() => (templateGalleryOpen = true)}
 													>
 														<FlaskConical class="h-3.5 w-3.5" />
-														Explore demo
+														Browse templates
 													</Button>
 												</div>
 											{/if}
@@ -2403,14 +2408,15 @@
 <SitesPanel bind:open={sitesDialogOpen} />
 <WelcomeDialog
 	bind:open={welcomeOpen}
-	onTryDemo={async () => {
+	onBrowseTemplates={() => {
 		markWelcomeSeen();
-		await bootstrapDemoNotebook({ runCells: true });
+		templateGalleryOpen = true;
 	}}
 	onStartBlank={() => {
 		markWelcomeSeen();
 	}}
 />
+<TemplateGalleryDialog bind:open={templateGalleryOpen} />
 
 <!-- About dialog -->
 <Dialog.Root bind:open={aboutOpen}>

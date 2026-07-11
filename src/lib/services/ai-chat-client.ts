@@ -18,6 +18,11 @@ import {
 	addPythonCell,
 	updatePythonCellCode,
 	getPythonAvailable,
+	insertPlotCellAfter,
+	addPlotCell,
+	canAddPlotCell,
+	updatePlotCellCode,
+	setPlotMode,
 	setCellResultChartConfig,
 	setCellResultViewMode,
 	setCellMarkdownPreview,
@@ -1444,7 +1449,11 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 
 		case 'list_cells': {
 			const visibleCells = cells.filter(
-				(c) => c.cellType === 'query' || c.cellType === 'python' || c.cellType === 'markdown'
+				(c) =>
+					c.cellType === 'query' ||
+					c.cellType === 'python' ||
+					c.cellType === 'markdown' ||
+					c.cellType === 'plot'
 			);
 			if (visibleCells.length === 0) {
 				const text = '**Cells:** (none)';
@@ -1456,6 +1465,9 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 					if (c.cellType === 'markdown') {
 						const preview = c.markdown.replace(/\s+/g, ' ').trim().slice(0, 120);
 						return `- \`${c.outputName}\` (markdown${preview ? `: ${preview}` : ''})`;
+					}
+					if (c.cellType === 'plot') {
+						return `- \`${c.outputName}\` (plot, ${c.plotMode === 'gui' ? 'GUI-configured' : 'freeform JS'})`;
 					}
 					return `- \`${c.outputName}\` (${c.cellType === 'python' ? 'python' : c.language}, ${c.status}, ${c.result?.rows?.length ?? 0} rows)`;
 				})
@@ -1702,7 +1714,7 @@ async function executeToolCallWithResult(
 				return Boolean(
 					targetNotebook?.cells.some(
 						(cell) =>
-							(cell.cellType === 'query' || cell.cellType === 'python') &&
+							(cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot') &&
 							(cell.id === payload.cellId || cell.outputName === payload.outputName)
 					)
 				);
@@ -1721,6 +1733,7 @@ async function executeToolCallWithResult(
 				const existingId = resolveCellId(payload.cellId) ?? resolveCellId(payload.outputName);
 				if (!existingId) continue;
 				if (payload.cellType === 'python') updatePythonCellCode(existingId, payload.code);
+				else if (payload.cellType === 'plot') updatePlotCellCode(existingId, payload.code);
 				else updateCellCode(existingId, sanitizeSQL(stripTrailingSemicolons(payload.code)));
 				if (payload.outputName) updateCellName(existingId, payload.outputName);
 				_outputNameToId.set(payload.outputName, existingId);
@@ -1774,6 +1787,46 @@ async function executeToolCallWithResult(
 				_outputNameToId.set(outputName, pyCellId);
 				if (call.callId) _callIdToId.set(call.callId, pyCellId);
 				return `Cell '${outputName}' created (id: ${pyCellId}, type: python)`;
+			}
+
+			if (args.cellType === 'plot') {
+				if (!canAddPlotCell()) {
+					return 'create_cell: plot cells are not available in this notebook (filesystem projects need .luna format) — use a {% chart %} Markdoc block instead.';
+				}
+				const existingId = resolveCellId(outputName);
+				const code = args.code ?? '';
+				if (existingId) {
+					if (code.trim()) {
+						updatePlotCellCode(existingId, code);
+						setPlotMode(existingId, 'code');
+					}
+					_updatedCellIds.add(existingId);
+					_outputNameToId.set(outputName, existingId);
+					if (call.callId) _callIdToId.set(call.callId, existingId);
+					appendActionEvent(aiMsgId, {
+						tool: 'update_cell',
+						label: `Edited cell \`${outputName}\``,
+						cellId: existingId
+					});
+					return `Cell '${outputName}' updated (create_cell redirected — cell already exists)`;
+				}
+				const plotCellId = anchor ? insertPlotCellAfter(anchor) : addPlotCell();
+				if (!plotCellId) return 'create_cell: failed to create plot cell';
+				if (code.trim()) {
+					updatePlotCellCode(plotCellId, code);
+					setPlotMode(plotCellId, 'code');
+				}
+				const renameResult = updateCellName(plotCellId, outputName);
+				if (!renameResult.ok) return `create_cell: ${renameResult.error}`;
+				markGhostCell(plotCellId);
+				appendActionEvent(aiMsgId, {
+					tool: 'create_cell',
+					label: `Created plot cell \`${outputName}\``,
+					cellId: plotCellId
+				});
+				_outputNameToId.set(outputName, plotCellId);
+				if (call.callId) _callIdToId.set(call.callId, plotCellId);
+				return `Cell '${outputName}' created (id: ${plotCellId}, type: plot)`;
 			}
 
 			let newCellId: string;
@@ -1919,9 +1972,12 @@ async function executeToolCallWithResult(
 			const oldName = cellBeforeUpdate?.outputName;
 			if (args.code !== undefined) {
 				// Route by the target's actual cellType — sanitizeSQL/stripTrailingSemicolons
-				// are SQL-specific and would corrupt Python source.
+				// are SQL-specific and would corrupt Python/plot source.
 				if (cellBeforeUpdate?.cellType === 'python') {
 					updatePythonCellCode(cellId, args.code);
+				} else if (cellBeforeUpdate?.cellType === 'plot') {
+					updatePlotCellCode(cellId, args.code);
+					setPlotMode(cellId, 'code');
 				} else {
 					updateCellCode(cellId, sanitizeSQL(stripTrailingSemicolons(args.code)));
 				}
@@ -2092,10 +2148,22 @@ async function executeToolCallWithResult(
 			const args = call.args as RunCellsArgs;
 			// cellIds may be undefined/empty — fall back to all ghost cells created this generation
 			const rawIds: string[] = args.cellIds?.length ? args.cellIds : [..._outputNameToId.values()];
-			const resolvedIds = rawIds
+			const preResolvedIds = rawIds
 				.map((id: string) => resolveCellId(id))
 				.filter((id: string | null): id is string => !!id);
-			if (resolvedIds.length === 0) return 'run_cells: no cells to run';
+			// Plot cells render reactively from their `code`/`plotConfig` — there's
+			// nothing to "run" (no SQL/Python execution), so skip them here rather
+			// than falling through to runCell(id), which would try to compile their
+			// JS as SQL and surface a confusing error for a perfectly fine chart.
+			const plotOnlyIds = preResolvedIds.filter(
+				(id) => getCells().find((c) => c.id === id)?.cellType === 'plot'
+			);
+			const resolvedIds = preResolvedIds.filter((id) => !plotOnlyIds.includes(id));
+			if (resolvedIds.length === 0) {
+				return plotOnlyIds.length > 0
+					? `run_cells: ${plotOnlyIds.length} plot cell(s) skipped — they render reactively, no run needed`
+					: 'run_cells: no cells to run';
+			}
 
 			appendActionEvent(aiMsgId, {
 				tool: 'run_cells',

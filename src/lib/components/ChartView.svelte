@@ -2,7 +2,7 @@
 	import PlotlyMount from './PlotlyMount.svelte';
 	import type { ChartConfig, ChartType } from '$lib/types/gui-pipeline';
 	import { coerceNumber } from '$lib/utils';
-	import { resolveCSSColor, resolveChartColorway } from '$lib/utils/theme-colors';
+	import { resolveCSSColor, resolveChartColorway, CHART_COLOR_VARS } from '$lib/utils/theme-colors';
 	import { watchTheme } from '$lib/services/plotly-render.svelte';
 	import { evaluateCustomChartCode, type PlotCellFigure } from '$lib/services/plot-cell';
 	import type { Data, Layout } from 'plotly.js-dist-min';
@@ -507,13 +507,7 @@
 		return !config.xColumn || config.yColumns.length === 0;
 	});
 
-	const CHART_COLOR_RANGE = [
-		'var(--chart-1)',
-		'var(--chart-2)',
-		'var(--chart-3)',
-		'var(--chart-4)',
-		'var(--chart-5)'
-	];
+	const CHART_COLOR_RANGE = CHART_COLOR_VARS;
 
 	// Resolved (concrete rgb(...)) chart colors — needed wherever a color has
 	// to be alpha-blended (area fills) or interpolated (continuous heatmap

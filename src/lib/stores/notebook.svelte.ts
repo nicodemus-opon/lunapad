@@ -11,6 +11,11 @@ import {
 } from '$lib/services/cell-deps';
 import { buildPlotScope, runPlotCode } from '$lib/services/plot-cell';
 import {
+	findPlotSourceCell,
+	buildPlotDefaults,
+	type PlotStarterKind
+} from '$lib/services/plot-defaults';
+import {
 	runPython,
 	watchPythonLogs,
 	cancelPython,
@@ -123,7 +128,7 @@ import {
 	type WorkspaceStandards
 } from './ai-chat.svelte';
 import { buildSalesAnalyticsDemo } from '$lib/demo/sales-analytics-demo';
-import { getDashboardTemplate } from '$lib/demo/dashboard-templates';
+import { getDashboardTemplate } from '$lib/demo/templates/registry';
 import {
 	buildPythonCatalogEntries,
 	buildPythonUpstreamDescriptors,
@@ -193,6 +198,17 @@ export interface Cell {
 	editMode: CellEditMode;
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
+	/** cellType 'plot' only: 'gui' renders `plotConfig` via ChartView against
+	 *  `plotSourceCellId`'s result; 'code' evaluates the freeform `code` field
+	 *  in the plot-cell sandbox. Missing/undefined (cells persisted before this
+	 *  field existed) is treated as 'code'. */
+	plotMode: 'gui' | 'code';
+	/** cellType 'plot', plotMode 'gui': the declarative chart config, same
+	 *  shape as resultChartConfig. */
+	plotConfig: ChartConfig | null;
+	/** cellType 'plot', plotMode 'gui': which upstream query/python cell's
+	 *  result plotConfig charts. */
+	plotSourceCellId: string | null;
 	columnFormatRules: ColumnConditionalRules;
 	/** Persisted result-table column pixel widths, keyed by column name. */
 	columnWidths: Record<string, number>;
@@ -587,6 +603,9 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		editMode: language === 'sql' ? 'prql' : 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -646,23 +665,24 @@ function makeUdfCell(udfBody = DEFAULT_UDF_BODY): Cell {
 	};
 }
 
-const DEFAULT_PLOT_CODE = `// Reference an upstream cell by its output name, e.g. my_query.rows
-return {
-  data: [
-    // { type: "scatter", mode: "markers", x: my_query.rows.map(r => r.column_a), y: my_query.rows.map(r => r.column_b) }
-  ],
-  layout: {}
-};
-`;
-
 // Plot cells are JS code (reuse the existing `code` field, same as query cells'
 // PRQL/SQL) evaluated against rows/columns pulled from upstream cells referenced
 // by name — see resolvePlotDataRefs in cell-deps.ts and runPlotCell below.
-function makePlotCell(code = DEFAULT_PLOT_CODE): Cell {
+function makePlotCell(
+	opts: {
+		code?: string;
+		plotMode?: 'gui' | 'code';
+		plotConfig?: ChartConfig | null;
+		plotSourceCellId?: string | null;
+	} = {}
+): Cell {
 	return {
-		...makeCell(code, 'chart'),
+		...makeCell(opts.code ?? buildPlotDefaults(null, 'auto').code, 'chart'),
 		cellType: 'plot',
-		editMode: 'prql'
+		editMode: 'prql',
+		plotMode: opts.plotMode ?? 'code',
+		plotConfig: opts.plotConfig ?? null,
+		plotSourceCellId: opts.plotSourceCellId ?? null
 	};
 }
 
@@ -1358,6 +1378,12 @@ function deserializeCell(c: Cell, i: number): Cell {
 		editMode,
 		resultViewMode,
 		resultChartConfig: (c as Partial<Cell>).resultChartConfig ?? null,
+		plotMode: (c as Partial<Cell>).plotMode === 'gui' ? 'gui' : 'code',
+		plotConfig: (c as Partial<Cell>).plotConfig ?? null,
+		plotSourceCellId:
+			typeof (c as Partial<Cell>).plotSourceCellId === 'string'
+				? ((c as Partial<Cell>).plotSourceCellId as string)
+				: null,
 		columnFormatRules:
 			(c as Partial<Cell>).columnFormatRules &&
 			typeof (c as Partial<Cell>).columnFormatRules === 'object'
@@ -3505,7 +3531,7 @@ export interface CreateNotebookFromPmDocumentOptions {
 	executableCells?: Array<{
 		cellId: string;
 		outputName: string;
-		cellType?: 'query' | 'python';
+		cellType?: 'query' | 'python' | 'plot';
 		language?: CellLanguage;
 		code: string;
 	}>;
@@ -3514,7 +3540,7 @@ export interface CreateNotebookFromPmDocumentOptions {
 export interface MaterializeNotebookExecutableCellPayload {
 	cellId: string;
 	outputName: string;
-	cellType?: 'query' | 'python';
+	cellType?: 'query' | 'python' | 'plot';
 	language?: CellLanguage;
 	code: string;
 }
@@ -3533,7 +3559,7 @@ export function materializeNotebookExecutableCells(
 		if (
 			next.some(
 				(cell) =>
-					(cell.cellType === 'query' || cell.cellType === 'python') &&
+					(cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot') &&
 					(cell.id === payload.cellId || cell.outputName === payload.outputName)
 			)
 		) {
@@ -3542,7 +3568,9 @@ export function materializeNotebookExecutableCells(
 		const cell =
 			payload.cellType === 'python'
 				? makePythonCell(payload.code)
-				: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
+				: payload.cellType === 'plot'
+					? makePlotCell({ code: payload.code, plotMode: 'code' })
+					: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
 		cell.id = payload.cellId;
 		cell.outputName = payload.outputName;
 		cell.materializeTarget = payload.outputName;
@@ -3579,7 +3607,9 @@ export function createNotebookFromPmDocument(opts: CreateNotebookFromPmDocumentO
 		const cell =
 			payload.cellType === 'python'
 				? makePythonCell(payload.code)
-				: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
+				: payload.cellType === 'plot'
+					? makePlotCell({ code: payload.code, plotMode: 'code' })
+					: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
 		cell.id = payload.cellId;
 		cell.outputName = payload.outputName;
 		cell.materializeTarget = payload.outputName;
@@ -3794,7 +3824,7 @@ function rebuildCellsFromBlocks(notebook: Notebook, blocks: NotebookPmBlock[]): 
 					block.cellType === 'python'
 						? makePythonCell('')
 						: block.cellType === 'plot'
-							? makePlotCell('')
+							? makePlotCell({ code: '' })
 							: makeCell('', block.cellId, 'sql');
 				stub.id = block.cellId;
 				if (!stub.outputName) stub.outputName = block.cellId;
@@ -3868,11 +3898,12 @@ export function syncNotebookFromPmDocument(
 	}
 }
 
-/** Insert an executable block cell for inline document insertion (/sql, /prql, /python). */
+/** Insert an executable block cell for inline document insertion (/sql, /prql, /python, /plot). */
 export function insertQueryBlockCell(
 	afterCellId: string | null,
-	lang: 'sql' | 'prql' | 'python',
-	notebookId?: string
+	lang: 'sql' | 'prql' | 'python' | 'plot',
+	notebookId?: string,
+	plotKind?: PlotStarterKind
 ): string {
 	const nb = notebookId
 		? (state.notebooks.find((n) => n.id === notebookId) ?? getActiveNotebook())
@@ -3882,6 +3913,10 @@ export function insertQueryBlockCell(
 	let newCell: Cell;
 	if (lang === 'python') {
 		newCell = makePythonCell('');
+	} else if (lang === 'plot') {
+		const insertIdx = afterCellId ? nb.cells.findIndex((c) => c.id === afterCellId) + 1 : 0;
+		const source = findPlotSourceCell(nb.cells, insertIdx);
+		newCell = makePlotCell(buildPlotDefaults(source, plotKind ?? 'auto'));
 	} else {
 		newCell = makeCell('', deconflictOutputName('query'), lang);
 	}
@@ -4614,6 +4649,44 @@ export function setCellResultChartConfig(cellId: string, config: ChartConfig | n
 	}
 }
 
+/** cellType 'plot' only — toggles between the ChartView-driven GUI builder and
+ *  the freeform-JS sandbox. See Cell.plotMode. */
+export function setPlotMode(cellId: string, mode: 'gui' | 'code'): void {
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (cell) {
+			cell.plotMode = mode;
+			scheduleSave();
+			return;
+		}
+	}
+}
+
+/** cellType 'plot', plotMode 'gui' — which upstream query/python cell's
+ *  result the ChartConfig builder charts. */
+export function setPlotSourceCellId(cellId: string, sourceCellId: string | null): void {
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (cell) {
+			cell.plotSourceCellId = sourceCellId;
+			scheduleSave();
+			return;
+		}
+	}
+}
+
+/** cellType 'plot', plotMode 'gui' — the declarative chart config. */
+export function setPlotConfig(cellId: string, config: ChartConfig | null): void {
+	for (const nb of state.notebooks) {
+		const cell = nb.cells.find((c) => c.id === cellId);
+		if (cell) {
+			cell.plotConfig = config;
+			scheduleSave();
+			return;
+		}
+	}
+}
+
 export function updateCellColumnWidths(cellId: string, widths: Record<string, number>): void {
 	for (const nb of state.notebooks) {
 		const cell = nb.cells.find((c) => c.id === cellId);
@@ -4814,27 +4887,30 @@ export function canAddPlotCell(): boolean {
 	return true;
 }
 
-export function addPlotCell(): void {
-	if (!canAddPlotCell()) return;
+export function addPlotCell(): string | null {
+	if (!canAddPlotCell()) return null;
 	const nb = getActiveNotebook();
 	const notebookId = nb.id;
 	pushHistoryCheckpoint(nb.id);
-	const cell = makePlotCell();
+	const source = findPlotSourceCell(nb.cells, nb.cells.length);
+	const cell = makePlotCell(buildPlotDefaults(source, 'auto'));
 	cell.outputName = deconflictOutputName(cell.outputName);
 	replaceNotebookCells(notebookId, [...nb.cells, cell]);
 	focusInsertedCell(cell.id);
 	scheduleSave();
 	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
 }
 
-export function insertPlotCellAfter(id: string): void {
-	if (!canAddPlotCell()) return;
+export function insertPlotCellAfter(id: string): string | null {
+	if (!canAddPlotCell()) return null;
 	const nb = getActiveNotebook();
 	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return null;
 	pushHistoryCheckpoint(nb.id);
-	const cell = makePlotCell();
+	const source = findPlotSourceCell(nb.cells, idx + 1);
+	const cell = makePlotCell(buildPlotDefaults(source, 'auto'));
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, cell);
@@ -4842,16 +4918,18 @@ export function insertPlotCellAfter(id: string): void {
 	focusInsertedCell(cell.id);
 	scheduleSave();
 	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
 }
 
-export function insertPlotCellBefore(id: string): void {
-	if (!canAddPlotCell()) return;
+export function insertPlotCellBefore(id: string): string | null {
+	if (!canAddPlotCell()) return null;
 	const nb = getActiveNotebook();
 	const notebookId = nb.id;
 	const idx = nb.cells.findIndex((c) => c.id === id);
-	if (idx === -1) return;
+	if (idx === -1) return null;
 	pushHistoryCheckpoint(nb.id);
-	const cell = makePlotCell();
+	const source = findPlotSourceCell(nb.cells, idx);
+	const cell = makePlotCell(buildPlotDefaults(source, 'auto'));
 	cell.outputName = deconflictOutputName(cell.outputName);
 	const cells = [...nb.cells];
 	cells.splice(idx, 0, cell);
@@ -4859,6 +4937,7 @@ export function insertPlotCellBefore(id: string): void {
 	focusInsertedCell(cell.id);
 	scheduleSave();
 	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
 }
 
 /** Python cells run server-side (see python-runner.ts) and need a real project

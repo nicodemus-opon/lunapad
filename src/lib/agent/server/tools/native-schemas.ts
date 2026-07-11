@@ -32,7 +32,7 @@ const ALL_NATIVE_TOOLS = [
 											description:
 												'SQL/Python output name, e.g. monthly_revenue.'
 										},
-										cellType: { type: 'string', enum: ['query', 'python'] },
+										cellType: { type: 'string', enum: ['query', 'python', 'plot'] },
 										language: { type: 'string', enum: ['sql', 'prql'] },
 										code: { type: 'string' }
 									},
@@ -125,7 +125,7 @@ const ALL_NATIVE_TOOLS = [
 							properties: {
 								cellId: { type: 'string' },
 								outputName: { type: 'string' },
-								cellType: { type: 'string', enum: ['query', 'python'] },
+								cellType: { type: 'string', enum: ['query', 'python', 'plot'] },
 								language: { type: 'string', enum: ['sql', 'prql'] },
 								code: { type: 'string' }
 							},
@@ -171,7 +171,7 @@ const ALL_NATIVE_TOOLS = [
 		function: {
 			name: 'create_cell',
 			description:
-				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). For statistics/ML/text-processing/custom viz (only when Python is available — see Tool selection): cellType="python", Python source in "code", omit "language". Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL/Python outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
+				'MANDATORY: Use this for every SQL query and every markdown block. Never write SQL in text. For SQL cells: cellType="query", complete SQL in "code". For prose/explanation: cellType="markdown", GitHub-flavored markdown in "markdown" (# headers, **bold**, bullet lists). For statistics/ML/text-processing/custom viz (only when Python is available — see Tool selection): cellType="python", Python source in "code", omit "language". For a custom Plotly chart beyond what the {% chart %} block supports (dual/secondary axis, custom hover templates, box/violin, sankey, treemap, subplots) — prefer {% chart %} first: cellType="plot", Plotly figure JS in "code". Markdown outputNames: intro, overview, summary, insights, methodology, findings. SQL/Python outputNames: revenue_by_month, top_customers, order_funnel (snake_case).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -182,14 +182,14 @@ const ALL_NATIVE_TOOLS = [
 					},
 					cellType: {
 						type: 'string',
-						enum: ['query', 'markdown', 'python'],
+						enum: ['query', 'markdown', 'python', 'plot'],
 						description:
-							'query for SQL, markdown for explanatory prose, python for stats/ML/text-processing (only if Python is available in this environment — see Tool selection section)'
+							'query for SQL, markdown for explanatory prose, python for stats/ML/text-processing (only if Python is available in this environment — see Tool selection section), plot for a custom Plotly chart the declarative {% chart %} block cannot express'
 					},
 					code: {
 						type: 'string',
 						description:
-							'Complete SQL or Python source for query/python cells. Omit for markdown cells. Python cells: data is injected, never loaded manually — upstream cells are pandas DataFrames by outputName; workspace tables are available through the built-in tables namespace (for example tables["schema.table"] or tables.load("catalog.schema.table")); pd/np are pre-imported; the last DataFrame expression becomes the result and is published under this cell\'s outputName for downstream SQL/Python use. Never read files or open DB connections in Python.'
+							'Complete SQL or Python source for query/python cells. Omit for markdown cells. Python cells: data is injected, never loaded manually — upstream cells are pandas DataFrames by outputName; workspace tables are available through the built-in tables namespace (for example tables["schema.table"] or tables.load("catalog.schema.table")); pd/np are pre-imported; the last DataFrame expression becomes the result and is published under this cell\'s outputName for downstream SQL/Python use. Never read files or open DB connections in Python. Plot cells: JS that must `return { data: [...], layout: {...} }` (a Plotly figure), referencing upstream cells by outputName.rows/outputName.columns exactly like a query cell reads another cell\'s outputName. Never hardcode colors — use var(--chart-1) through var(--chart-5) only; never set paper_bgcolor/plot_bgcolor/font.color, the app themes those automatically.'
 					},
 					markdown: {
 						type: 'string',

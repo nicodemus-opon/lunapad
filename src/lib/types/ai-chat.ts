@@ -47,7 +47,7 @@ export interface AIChatCell {
 	outputName: string;
 	language: 'prql' | 'sql';
 	/** 'query'|'markdown' cells use `language` for dialect; 'python' cells ignore it. */
-	cellType?: 'query' | 'markdown' | 'python';
+	cellType?: 'query' | 'markdown' | 'python' | 'plot';
 	code: string;
 	/** Markdown source for document/prose/dashboard cells. */
 	markdown?: string;
@@ -150,7 +150,7 @@ export type AIChatToolName =
 export interface CreateCellArgs {
 	afterCellId?: string;
 	outputName: string;
-	cellType?: 'query' | 'markdown' | 'python';
+	cellType?: 'query' | 'markdown' | 'python' | 'plot';
 	language?: 'sql' | 'prql';
 	editMode?: 'prql' | 'gui';
 	code?: string;

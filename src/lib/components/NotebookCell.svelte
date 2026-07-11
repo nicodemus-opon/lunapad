@@ -42,6 +42,9 @@
 		updateCellMarkdown,
 		updateCellUdfBody,
 		updatePlotCellCode,
+		setPlotMode,
+		setPlotSourceCellId,
+		setPlotConfig,
 		runPlotCell,
 		updatePythonCellCode,
 		runPythonCell,
@@ -965,36 +968,42 @@
 				/>
 			</div>
 		{:else if isPlotCell}
-			<div class="mb-1 flex justify-end">
-				<select
-					class="h-6 rounded-md border border-input bg-background px-1.5 text-2xs text-muted-foreground"
-					value=""
-					onchange={(e) => {
-						const select = e.target as HTMLSelectElement;
-						const tpl = PLOT_TEMPLATES.find((t) => t.id === select.value);
-						if (tpl) editorRef?.insertAtCursor(tpl.code);
-						select.value = '';
-					}}
-				>
-					<option value="" disabled selected>Insert template…</option>
-					{#each PLOT_TEMPLATES as tpl (tpl.id)}
-						<option value={tpl.id}>{tpl.label}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
-				<Editor
-					bind:this={editorRef}
-					code={cell.code}
-					errors={cell.errors}
-					language="javascript"
-					plotGlobalsDts={plotCellGlobalsDts}
-					{dark}
-					layout={editorLayout}
-					embeddedNotebook
-					onchange={(c) => updatePlotCellCode(cell.id, c)}
-				/>
-			</div>
+			{#if cell.plotMode === 'gui'}
+				<p class="mb-1 text-2xs text-muted-foreground">
+					GUI chart — configure it in the toolbar below, or "Switch to code" for freeform Plotly JS.
+				</p>
+			{:else}
+				<div class="mb-1 flex justify-end">
+					<select
+						class="h-6 rounded-md border border-input bg-background px-1.5 text-2xs text-muted-foreground"
+						value=""
+						onchange={(e) => {
+							const select = e.target as HTMLSelectElement;
+							const tpl = PLOT_TEMPLATES.find((t) => t.id === select.value);
+							if (tpl) editorRef?.insertAtCursor(tpl.code);
+							select.value = '';
+						}}
+					>
+						<option value="" disabled selected>Insert template…</option>
+						{#each PLOT_TEMPLATES as tpl (tpl.id)}
+							<option value={tpl.id}>{tpl.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="notebook-code-block {worksheet ? 'flex min-h-0 flex-1 flex-col' : ''}">
+					<Editor
+						bind:this={editorRef}
+						code={cell.code}
+						errors={cell.errors}
+						language="javascript"
+						plotGlobalsDts={plotCellGlobalsDts}
+						{dark}
+						layout={editorLayout}
+						embeddedNotebook
+						onchange={(c) => updatePlotCellCode(cell.id, c)}
+					/>
+				</div>
+			{/if}
 			{#if !worksheet}
 				<p class="mt-1 text-2xs text-muted-foreground">
 					Reference upstream cells by name (e.g. <code>my_query.rows</code>) and
@@ -1189,7 +1198,17 @@
 					     derived — not stored state, so it stays live as you type. -->
 		{#if isPlotCell}
 			<div in:fade={{ duration: 220 }} class={worksheet ? 'min-h-0 flex-1' : 'min-h-64'}>
-				<PlotCellOutput {cell} deps={plotDeps} />
+				<PlotCellOutput
+				{cell}
+				deps={plotDeps}
+				allCells={getCells()}
+				onPlotSourceCellChange={(sourceCellId) => setPlotSourceCellId(cell.id, sourceCellId)}
+				onPlotConfigChange={(config) => setPlotConfig(cell.id, config)}
+				onEjectToCode={(code) => {
+					updatePlotCellCode(cell.id, code);
+					setPlotMode(cell.id, 'code');
+				}}
+			/>
 			</div>
 		{/if}
 

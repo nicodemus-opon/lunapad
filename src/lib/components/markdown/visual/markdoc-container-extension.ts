@@ -16,6 +16,9 @@ import LoopPreviewView from './LoopPreviewView.svelte';
 export interface MarkdocContainerExtensionContext {
 	getCells: () => Cell[];
 	getNotebookId?: () => string;
+	/** Report view is read-only: editing chrome (toolbar, grid-cell guides, selection
+	 * indicator) must not appear — only the static-render appearance. */
+	reportView?: () => boolean;
 }
 
 /** Matches the icon set CalloutWidget.svelte uses for report/static rendering, kept as raw
@@ -84,12 +87,14 @@ function applyContainerSemantics(
 	contentDOM: HTMLElement,
 	tagName: string,
 	attrsJson: string,
-	tabState?: { activeIndex: number; onTabSelect?: (i: number) => void }
+	tabState?: { activeIndex: number; onTabSelect?: (i: number) => void },
+	isReport = false
 ) {
 	const attrs = parseAttrsJson(attrsJson);
 	// className reset must not wipe ProseMirror's selection marker mid-update.
 	const wasSelected = dom.classList.contains('ProseMirror-selectednode');
 	dom.className = 'markdoc-container-node group/container';
+	if (isReport) dom.classList.add('is-report');
 	if (wasSelected) dom.classList.add('ProseMirror-selectednode');
 	// A container's own span (e.g. a card inside a grid) lands on the node-view
 	// wrapper, which is the actual grid child in the editor.
@@ -261,6 +266,12 @@ export const MarkdocContainerExtension = Node.create({
 			let lastMermaidCode: string | null = null;
 			let pmNode: ProseMirrorNode = node;
 
+			const isReportView = () => ctx?.reportView?.() ?? false;
+			const runApplyContainerSemantics = (tabState?: {
+				activeIndex: number;
+				onTabSelect?: (i: number) => void;
+			}) => applyContainerSemantics(dom, contentDOM, tagName, attrsJson, tabState, isReportView());
+
 			const currentMermaidCode = () =>
 				mermaidCodeFromContainerNode(pmNode, attrsJson, ctx?.getCells() ?? []);
 
@@ -425,15 +436,15 @@ export const MarkdocContainerExtension = Node.create({
 						return true;
 					})
 					.run();
-				applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+				runApplyContainerSemantics({
 					activeIndex: activeTabIndex,
 					onTabSelect: (i) => {
 						activeTabIndex = i;
-						applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+						runApplyContainerSemantics({
 							activeIndex: activeTabIndex,
 							onTabSelect: (idx) => {
 								activeTabIndex = idx;
-								applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+								runApplyContainerSemantics({
 									activeIndex: activeTabIndex,
 									onTabSelect: () => {}
 								});
@@ -533,7 +544,7 @@ export const MarkdocContainerExtension = Node.create({
 					chromeProps.hasElse = false;
 				}
 
-				if (!chromeHost) {
+				if (!chromeHost && !isReportView()) {
 					chromeHost = document.createElement('div');
 					chromeHost.className = 'markdoc-container-chrome';
 					dom.insertBefore(chromeHost, contentDOM);
@@ -542,11 +553,11 @@ export const MarkdocContainerExtension = Node.create({
 			};
 
 			const applyAll = () => {
-				applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+				runApplyContainerSemantics({
 					activeIndex: activeTabIndex,
 					onTabSelect: (i) => {
 						activeTabIndex = i;
-						applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+						runApplyContainerSemantics({
 							activeIndex: activeTabIndex,
 							onTabSelect: (idx) => {
 								activeTabIndex = idx;
@@ -557,7 +568,7 @@ export const MarkdocContainerExtension = Node.create({
 				});
 				if (tagName === 'tabs') {
 					requestAnimationFrame(() => {
-						applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+						runApplyContainerSemantics({
 							activeIndex: activeTabIndex,
 							onTabSelect: (i) => {
 								activeTabIndex = i;
@@ -578,7 +589,7 @@ export const MarkdocContainerExtension = Node.create({
 				if (tabCount === 0) return false;
 				const stripCount = dom.querySelector(':scope > .md-tabs-strip')?.children.length ?? 0;
 				if (stripCount === tabCount) return true;
-				applyContainerSemantics(dom, contentDOM, tagName, attrsJson, {
+				runApplyContainerSemantics({
 					activeIndex: activeTabIndex,
 					onTabSelect: (i) => {
 						activeTabIndex = i;

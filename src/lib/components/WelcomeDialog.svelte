@@ -5,25 +5,13 @@
 
 	let {
 		open = $bindable(false),
-		onTryDemo,
+		onBrowseTemplates,
 		onStartBlank
 	}: {
 		open?: boolean;
-		onTryDemo: () => void | Promise<void>;
+		onBrowseTemplates: () => void;
 		onStartBlank: () => void;
 	} = $props();
-
-	let loading = $state(false);
-
-	async function handleTryDemo() {
-		loading = true;
-		try {
-			open = false;
-			await onTryDemo();
-		} finally {
-			loading = false;
-		}
-	}
 </script>
 
 <Dialog.Root bind:open>
@@ -34,20 +22,19 @@
 			</div>
 			<Dialog.Title>Welcome to Lunapad</Dialog.Title>
 			<Dialog.Description class="leading-relaxed">
-				Lunapad is a notebook-style SQL/PRQL IDE. Start with the interactive demo to see charts,
-				PRQL pipelines, and live dashboards — or begin with a blank notebook.
+				Lunapad is a notebook-style SQL/PRQL IDE. Browse starter templates to see charts, PRQL
+				pipelines, and live dashboards — or begin with a blank notebook.
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="px-4 py-3">
 			<p class="text-2xs text-muted-foreground">
-				You can always load the demo later from <strong>File → Explore demo notebook</strong>.
+				You can always browse templates later from <strong>File → Browse templates</strong>.
 			</p>
 		</div>
 		<Dialog.Footer>
 			<Button
 				variant="ghost"
 				size="sm"
-				disabled={loading}
 				onclick={() => {
 					open = false;
 					onStartBlank();
@@ -55,8 +42,14 @@
 			>
 				Start blank
 			</Button>
-			<Button size="sm" disabled={loading} onclick={() => void handleTryDemo()}>
-				Try the demo
+			<Button
+				size="sm"
+				onclick={() => {
+					open = false;
+					onBrowseTemplates();
+				}}
+			>
+				Browse templates
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

@@ -12,6 +12,10 @@
 		getPrecedingCodeForCell,
 		setCellResultViewMode,
 		setCellResultChartConfig,
+		updatePlotCellCode,
+		setPlotMode,
+		setPlotSourceCellId,
+		setPlotConfig,
 		updateCellColumnWidths,
 		openWorksheetView,
 		getCells,
@@ -28,6 +32,8 @@
 	import GUIEditor from '$lib/components/gui/GUIEditor.svelte';
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
 	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
+	import PlotCellOutput from '$lib/components/PlotCellOutput.svelte';
+	import { resolvePlotDataRefs, isChartableSourceCell } from '$lib/services/cell-deps';
 	import CellMenu from '$lib/components/cell/CellMenu.svelte';
 	import CellModeSwitchDialogs from '$lib/components/cell/CellModeSwitchDialogs.svelte';
 	import MaterializeDialog from '$lib/components/MaterializeDialog.svelte';
@@ -109,7 +115,10 @@
 	const showPythonOutput = $derived(
 		!collapsed && !cell?.hideResult && isPythonCell && Boolean(cell?.pythonOutput)
 	);
-	const hasVisibleOutput = $derived(showResult || showPythonOutput);
+	const plotDeps = $derived(
+		cell && isPlotCell ? resolvePlotDataRefs(cells, cellIndex) : []
+	);
+	const hasVisibleOutput = $derived(showResult || showPythonOutput || isPlotCell);
 
 	// ── PRQL / Visual / SQL toggle ────────────────────────────────────────────
 	const tables = $derived(getTables());
@@ -161,9 +170,7 @@
 	const prevCellSources = $derived<GUISourceSchema[]>(
 		cells
 			.slice(0, cellIndex < 0 ? 0 : cellIndex)
-			.filter(
-				(c) => (c.cellType === 'query' || c.cellType === 'python') && c.outputName
-			)
+			.filter(isChartableSourceCell)
 			.map((c) => ({ name: c.outputName || `_cell_${c.id}`, columns: c.result?.columns ?? [] }))
 	);
 	const stageErrorMap = $derived(
@@ -227,6 +234,7 @@
 
 	function handleCodeChange(code: string) {
 		if (isPythonCell) updatePythonCellCode(cellId, code);
+		else if (isPlotCell) updatePlotCellCode(cellId, code);
 		else updateCellCode(cellId, code);
 	}
 
@@ -343,7 +351,7 @@
 					/>
 				</div>
 			{/if}
-			{#if cell?.cellType === 'query' || cell?.cellType === 'python' || cell?.cellType === 'plot'}
+			{#if cell?.cellType === 'query' || cell?.cellType === 'python'}
 				<button
 					type="button"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {running
@@ -572,6 +580,22 @@
 				{#if showPythonOutput && cell.pythonOutput}
 					<div class="qb-python-output {codeExpanded ? 'mt-1' : ''}">
 						<PythonCellOutput output={cell.pythonOutput} />
+					</div>
+				{/if}
+
+				{#if isPlotCell && !collapsed}
+					<div class="qb-plot-output {codeExpanded ? 'mt-1' : ''}">
+						<PlotCellOutput
+							{cell}
+							deps={plotDeps}
+							allCells={cells}
+							onPlotSourceCellChange={(sourceCellId) => setPlotSourceCellId(cellId, sourceCellId)}
+							onPlotConfigChange={(config) => setPlotConfig(cellId, config)}
+							onEjectToCode={(code) => {
+								updatePlotCellCode(cellId, code);
+								setPlotMode(cellId, 'code');
+							}}
+						/>
 					</div>
 				{/if}
 

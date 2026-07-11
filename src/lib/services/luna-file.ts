@@ -79,6 +79,15 @@ export interface LunaQueryMeta {
 	scheduleScope?: CellScheduleScope;
 }
 
+export interface LunaPlotMeta {
+	plotMode?: 'gui' | 'code';
+	plotConfig?: ChartConfig | null;
+	/** Source cell referenced by outputName, not id — ids aren't stable across
+	 *  reloads/reparse the way outputNames are, so this is resolved back to an
+	 *  id post-hydration (see hydrateLunaEntries in server/project.ts). */
+	plotSourceCellName?: string | null;
+}
+
 export interface LunaQueryEntry {
 	kind: 'query';
 	name: string;
@@ -96,7 +105,7 @@ export type LunaEntry =
 	| LunaQueryEntry
 	| { kind: 'modelRef'; ref: string }
 	| { kind: 'udf'; udfBody: string }
-	| { kind: 'plot'; name: string; code: string }
+	| { kind: 'plot'; name: string; code: string; meta?: LunaPlotMeta }
 	| { kind: 'python'; name: string; code: string };
 
 export interface LunaDocument {
@@ -122,16 +131,16 @@ function fromBase64(b64: string): string {
 	);
 }
 
-function decodeMeta(b64: string | undefined): LunaQueryMeta {
-	if (!b64) return {};
+function decodeMeta<T>(b64: string | undefined): T | undefined {
+	if (!b64) return undefined;
 	try {
-		return JSON.parse(fromBase64(b64)) as LunaQueryMeta;
+		return JSON.parse(fromBase64(b64)) as T;
 	} catch {
-		return {};
+		return undefined;
 	}
 }
 
-function encodeMeta(meta: LunaQueryMeta): string {
+function encodeMeta(meta: object): string {
 	return toBase64(JSON.stringify(meta));
 }
 
@@ -215,7 +224,12 @@ export function parseLunaFile(content: string): LunaDocument {
 				bodyLines.push(lines[i]);
 				i++;
 			}
-			entries.push({ kind: 'plot', name: attrs.name ?? '', code: bodyLines.join('\n').trim() });
+			entries.push({
+				kind: 'plot',
+				name: attrs.name ?? '',
+				code: bodyLines.join('\n').trim(),
+				meta: decodeMeta<LunaPlotMeta>(attrs.meta)
+			});
 			i++; // skip closing marker (no-op if body ran to EOF unterminated)
 			continue;
 		}
@@ -258,7 +272,7 @@ export function parseLunaFile(content: string): LunaDocument {
 							.map((t) => t.trim())
 							.filter(Boolean)
 					: [],
-				meta: decodeMeta(attrs.meta),
+				meta: decodeMeta<LunaQueryMeta>(attrs.meta) ?? {},
 				code: bodyLines.join('\n').trim()
 			});
 			i++; // skip closing marker (no-op if body ran to EOF unterminated)
@@ -285,6 +299,7 @@ export function parseLunaFile(content: string): LunaDocument {
 /** Minimal shape needed to serialize one cell — kept separate from the store's
  *  `Cell` type so this module has no runtime dependency on notebook.svelte.ts. */
 export interface SerializableCell {
+	id: string;
 	cellType: 'query' | 'markdown' | 'udf' | 'plot' | 'python';
 	markdown: string;
 	markdownEditMode?: 'visual' | 'source';
@@ -299,6 +314,9 @@ export interface SerializableCell {
 	editMode: CellEditMode;
 	resultViewMode: ResultViewMode;
 	resultChartConfig: ChartConfig | null;
+	plotMode: 'gui' | 'code';
+	plotConfig: ChartConfig | null;
+	plotSourceCellId: string | null;
 	columnFormatRules: ColumnConditionalRules;
 	columnWidths: Record<string, number>;
 	guiStages: GUIPipelineStage[];
@@ -409,7 +427,17 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 		} else if (cell.cellType === 'udf') {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
 		} else if (cell.cellType === 'plot') {
-			blocks.push(`{% plot name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /plot %}`);
+			const attrs = [`name="${cell.outputName}"`];
+			if (cell.plotMode === 'gui' && cell.plotConfig) {
+				const sourceName = cells.find((c) => c.id === cell.plotSourceCellId)?.outputName ?? null;
+				const meta: LunaPlotMeta = {
+					plotMode: 'gui',
+					plotConfig: cell.plotConfig,
+					plotSourceCellName: sourceName
+				};
+				attrs.push(`meta="${encodeMeta(meta)}"`);
+			}
+			blocks.push(`{% plot ${attrs.join(' ')} %}\n${cell.code.trim()}\n{% /plot %}`);
 		} else if (cell.cellType === 'python') {
 			blocks.push(`{% python name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /python %}`);
 		} else if (cell.promotedModelPath) {

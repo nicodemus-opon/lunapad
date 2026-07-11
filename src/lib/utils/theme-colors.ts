@@ -110,6 +110,13 @@ export function resolveChartColorway(): string[] {
 	return CHART_COLORWAY_VARS.map(resolveCSSColor);
 }
 
+/** `var(--chart-N)` strings for discrete fill/stroke channels that *can* take
+ *  a live CSS custom property reference (the browser resolves them at paint
+ *  time, so they re-theme for free) — used by ChartView.svelte's series
+ *  colors and by generated plot-cell code (see plot-defaults.ts) so both
+ *  read the same token list instead of duplicating it. */
+export const CHART_COLOR_VARS = CHART_COLORWAY_VARS.map((v) => `var(${v})`);
+
 /** Move an sRGB color toward white by `amount` percent (0–100). */
 export function rgbLighten(rgb: string, amount: number): string {
 	const m = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);

@@ -2,7 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { parseCellFile, serializeCell, stripRefs } from '$lib/services/prql-file';
-import { parseLunaFile, type LunaEntry, type LunaQueryEntry } from '$lib/services/luna-file';
+import {
+	parseLunaFile,
+	type LunaEntry,
+	type LunaQueryEntry,
+	type LunaPlotMeta
+} from '$lib/services/luna-file';
 import { parseUdfSignature } from '$lib/services/udf';
 import type { Cell, CellLanguage, Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
 import { readSchemaFile, findSchemaFile, upsertModelEntry, writeSchemaFile } from './dbt-schema.js';
@@ -563,6 +568,9 @@ async function loadMissingModelsFromManifest(
 			editMode: 'prql',
 			resultViewMode: 'table',
 			resultChartConfig: null,
+			plotMode: 'code',
+			plotConfig: null,
+			plotSourceCellId: null,
 			columnFormatRules: {},
 			columnWidths: {},
 			display: 'full',
@@ -750,7 +758,7 @@ async function hydrateLunaEntries(
 			continue;
 		}
 		if (entry.kind === 'plot') {
-			const cell = buildPlotCellFromLuna(entry.name, entry.code);
+			const cell = buildPlotCellFromLuna(entry.name, entry.code, entry.meta);
 			claimCellOutputName(usedOutputNames, cell);
 			cells.push(cell);
 			continue;
@@ -797,6 +805,17 @@ async function hydrateLunaEntries(
 		claimCellOutputName(usedOutputNames, stub);
 		cells.push({ ...stub, promotedModelPath: relPath ?? '' });
 	}
+	// Resolve plotSourceCellName -> id now that every cell's final (deconflicted)
+	// outputName is known. entries[i] corresponds 1:1 to cells[i] — every branch
+	// above pushes exactly one cell per entry.
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		const sourceName = entry.kind === 'plot' ? entry.meta?.plotSourceCellName : undefined;
+		if (sourceName) {
+			const source = cells.find((c) => c.outputName === sourceName);
+			if (source) cells[i].plotSourceCellId = source.id;
+		}
+	}
 	return cells;
 }
 
@@ -824,6 +843,9 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -859,7 +881,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 	};
 }
 
-function buildPlotCellFromLuna(name: string, code: string): Cell {
+function buildPlotCellFromLuna(name: string, code: string, meta?: LunaPlotMeta): Cell {
 	return {
 		id: name || crypto.randomUUID(),
 		cellType: 'plot',
@@ -881,6 +903,12 @@ function buildPlotCellFromLuna(name: string, code: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: meta?.plotMode === 'gui' ? 'gui' : 'code',
+		plotConfig: meta?.plotConfig ?? null,
+		// Resolved from meta.plotSourceCellName -> id in hydrateLunaEntries once
+		// every cell in the notebook has been built (outputNames aren't unique
+		// until claimCellOutputName runs, so it can't be resolved here).
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -938,6 +966,9 @@ function buildPythonCellFromLuna(name: string, code: string): Cell {
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -999,6 +1030,9 @@ function buildMarkdownCell(
 		editMode: 'prql',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: 'full',
@@ -1056,6 +1090,9 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		editMode: entry.meta.editMode ?? (entry.lang === 'sql' ? 'prql' : 'gui'),
 		resultViewMode: entry.meta.resultViewMode ?? 'table',
 		resultChartConfig: entry.meta.chartConfig ?? null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: entry.meta.columnFormatRules ?? {},
 		columnWidths: entry.meta.columnWidths ?? {},
 		display: entry.meta.display ?? 'full',
@@ -1148,6 +1185,9 @@ async function readCellFile(
 		editMode: parsed.meta.editMode ?? (parsed.language === 'sql' ? 'prql' : 'gui'),
 		resultViewMode: parsed.meta.resultViewMode ?? 'table',
 		resultChartConfig: parsed.meta.chartConfig ?? null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		display: parsed.meta.display ?? (parsed.meta.collapsed ? 'collapsed' : 'full'),

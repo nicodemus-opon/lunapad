@@ -17,6 +17,7 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import DragHandle from '@tiptap/extension-drag-handle';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
+import type { PlotStarterKind } from '$lib/services/plot-defaults';
 import { createMarkdocBlockExtension } from './markdoc-block-extension';
 import { createMarkdocWidgetExtension } from './markdoc-widget-extension';
 import { createMarkdocContainerExtension } from './markdoc-container-extension';
@@ -64,12 +65,15 @@ export interface BubbleMenuGate {
 export interface NotionEditorExtensionOptions {
 	getCells: () => Cell[];
 	getNotebookId: () => string;
+	/** True while the document is shown in the in-app, read-only report view. */
+	reportView?: () => boolean;
 	refEntries?: () => MarkdownRefEntry[];
 	slashHandler: SlashCommandHandler;
 	mentionHandler?: MentionCommandHandler;
 	insertQueryBlock?: (
-		lang: 'sql' | 'prql' | 'python',
-		editor: import('@tiptap/core').Editor
+		lang: 'sql' | 'prql' | 'python' | 'plot',
+		editor: import('@tiptap/core').Editor,
+		plotKind?: PlotStarterKind
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
@@ -226,7 +230,8 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 			getNotebookId: opts.getNotebookId
 		}),
 		createMarkdocContainerExtension({
-			getCells: opts.getCells
+			getCells: opts.getCells,
+			reportView: opts.reportView
 		}),
 		createMarkdocExpressionExtension({
 			getCells: opts.getCells,

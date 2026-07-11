@@ -1,10 +1,12 @@
 import type { Cell, Notebook } from '$lib/stores/notebook.svelte';
 import type { ChartConfig } from '$lib/types/gui-pipeline';
 import type { GUIPipelineStage } from '$lib/types/gui-pipeline';
+import { guiToPreql } from '$lib/services/gui-prql';
 import {
 	makeDemoCell,
 	makeDemoId,
 	makeDemoMarkdownCell,
+	makeDemoPythonCell,
 	type ChartConfig as DemoChartConfig
 } from './cell-factory';
 
@@ -13,16 +15,29 @@ export const DEMO_NOTEBOOK_NAME = 'Sales Analytics Demo';
 export function buildSalesAnalyticsDemo(): Notebook {
 	// Pure SELECT so the execution engine can wrap it as a view.
 	// PRQL downstream cells inline this via: let orders = (s"SELECT ...")
+	// Categorical picks use random() (via a product_idx computed once in the
+	// inner query, so product/category/unit_price stay correlated) rather than
+	// range % N — a fixed modulo cycle divides evenly into round row counts
+	// and produces perfectly uniform per-category counts, which reads as fake.
 	const seedSQL = `SELECT
-  range + 1 AS order_id,
-  DATE '2023-01-01' + CAST((range * 13 % 730) AS INTEGER) * INTERVAL '1 day' AS order_date,
-  (['Laptop','Phone','Tablet','Monitor','Keyboard','Mouse','Headset','Webcam'])[(range % 8) + 1] AS product,
-  (['Electronics','Electronics','Electronics','Peripherals','Peripherals','Peripherals','Peripherals','Peripherals'])[(range % 8) + 1] AS category,
-  (['Enterprise','SMB','Consumer'])[(range % 3) + 1] AS customer_segment,
-  1 + (range * 7 % 4) AS quantity,
-  ([1200.0, 799.0, 449.0, 349.0, 79.0, 39.0, 149.0, 89.0])[(range % 8) + 1] AS unit_price,
-  (['North','South','East','West','Central'])[(range % 5) + 1] AS region
-FROM range(2000)`;
+  order_id,
+  order_date,
+  (['Laptop','Phone','Tablet','Monitor','Keyboard','Mouse','Headset','Webcam'])[product_idx + 1] AS product,
+  (['Electronics','Electronics','Electronics','Peripherals','Peripherals','Peripherals','Peripherals','Peripherals'])[product_idx + 1] AS category,
+  customer_segment,
+  quantity,
+  ([1200.0, 799.0, 449.0, 349.0, 79.0, 39.0, 149.0, 89.0])[product_idx + 1] AS unit_price,
+  region
+FROM (
+  SELECT
+    range + 1 AS order_id,
+    DATE '2023-01-01' + FLOOR(random() * 730)::INTEGER * INTERVAL '1 day' AS order_date,
+    FLOOR(random() * 8)::INTEGER AS product_idx,
+    (['Enterprise','SMB','Consumer'])[FLOOR(random() * 3)::INTEGER + 1] AS customer_segment,
+    1 + FLOOR(random() * 4)::INTEGER AS quantity,
+    (['North','South','East','West','Central'])[FLOOR(random() * 5)::INTEGER + 1] AS region
+  FROM range(2000)
+)`;
 
 	// target_region (not "region") so the post-join schema has only one
 	// unqualified `region` column — joining on same-named columns leaves both
@@ -56,40 +71,77 @@ group o.region (
 )
 sort {-total_revenue}`;
 
-	const categoryPRQL = `from orders
-derive revenue = quantity * unit_price
-group category (
-  aggregate {
-    total_revenue = sum revenue,
-    order_count = count this
-  }
-)
-sort {-total_revenue}`;
+	const categorySQL = `SELECT
+  category,
+  SUM(quantity * unit_price) AS total_revenue,
+  COUNT(*) AS order_count
+FROM orders
+GROUP BY category
+ORDER BY total_revenue DESC`;
 
-	const segmentPRQL = `from orders
-derive revenue = quantity * unit_price
-group customer_segment (
-  aggregate {
-    total_revenue = sum revenue,
-    order_count = count this
-  }
-)
-sort {-total_revenue}`;
+	// GUI-pipeline cell (filter + group, a different stage combo than
+	// region_performance's join). Code is generated from the stages below via
+	// guiToPreql so the two never drift out of sync (editMode is 'gui').
+	const segmentGuiStages: GUIPipelineStage[] = [
+		{ type: 'from', table: 'orders' },
+		{
+			type: 'derive',
+			columns: [
+				{
+					name: 'revenue',
+					expr: {
+						mode: 'binary',
+						left: { kind: 'column', value: 'quantity' },
+						op: '*',
+						right: { kind: 'column', value: 'unit_price' }
+					}
+				}
+			]
+		},
+		{
+			type: 'filter',
+			conditions: [{ column: 'revenue', op: '>', value: '0' }],
+			logic: 'and'
+		},
+		{
+			type: 'group',
+			by: ['customer_segment'],
+			aggregations: [
+				{ name: 'total_revenue', func: 'sum', column: 'revenue' },
+				{ name: 'order_count', func: 'count', column: '' }
+			]
+		},
+		{ type: 'sort', keys: [{ column: 'total_revenue', dir: 'desc' }] }
+	];
+	const segmentPRQL = guiToPreql(segmentGuiStages);
 
 	const orderValueDistributionPRQL = `from orders
 derive revenue = quantity * unit_price
 select { revenue }`;
 
-	const topProductsPRQL = `from orders
-derive revenue = quantity * unit_price
-group product (
-  aggregate {
-    total_revenue = sum revenue,
-    units_sold = sum quantity
-  }
+	const topProductsSQL = `SELECT
+  product,
+  SUM(quantity * unit_price) AS total_revenue,
+  SUM(quantity) AS units_sold
+FROM orders
+GROUP BY product
+ORDER BY total_revenue DESC
+LIMIT 10`;
+
+	const categoryHeatmapPython = `# orders is bound automatically as a pandas DataFrame (upstream cell output).
+orders['revenue'] = orders['quantity'] * orders['unit_price']
+pivot = orders.pivot_table(
+    index='category', columns='customer_segment', values='revenue', aggfunc='sum'
+).fillna(0)
+
+fig = px.imshow(
+    pivot,
+    labels=dict(x='Customer segment', y='Category', color='Revenue'),
+    color_continuous_scale='Blues',
+    title='Revenue by category × customer segment'
 )
-sort {-total_revenue}
-take 10`;
+
+result = pivot.reset_index()`;
 
 	const growthSQL = `SELECT
   month,
@@ -126,7 +178,9 @@ flowchart LR
   orders --> region_performance[region_performance]
   region_targets[region_targets] --> region_performance
   orders --> category_breakdown[category_breakdown]
+  orders --> segment_breakdown[segment_breakdown]
   orders --> top_products[top_products]
+  orders --> category_segment_heatmap[category_segment_heatmap]
 {% /mermaid %}`;
 
 	const dashboardMarkdown = `## Explore by region
@@ -158,15 +212,16 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 
 	const closingMarkdown = `## What you just ran
 
-- **PRQL & SQL cells** referencing each other as CTEs — no boilerplate \`WITH\` needed
-- **GUI pipeline editor** (\`region_performance\`) — includes a join, not just filter/derive/group
+- **PRQL & SQL cells** referencing each other as CTEs — no boilerplate \`WITH\` needed, and roughly an even mix of both languages
+- **Two GUI pipeline editors** — \`region_performance\` (from/derive/join/group/sort) and \`segment_breakdown\` (from/derive/filter/group/sort) show different stage combinations, not just one canned example
 - **Stats view** (\`orders\`) — per-column min/max/null/distinct counts; switch back to table anytime
 - **Chart variety** — area, grouped bar, horizontal bar, and histogram via each cell's view toolbar
+- **A Python cell** (\`category_segment_heatmap\`) — pandas pivot table + a Plotly heatmap, referencing \`orders\` as a bound DataFrame with no import boilerplate
 - **Markdoc dashboards** — tabs, metrics, inline live numbers, progress bars, badges, and embedded charts
 - **Interactive filters** — the region dropdown re-runs \`region_filtered_orders\` automatically
 - **Customer segments** — a second grouping dimension on the seed data
 
-**Not shown here** (need a full deployment, not demo mode): team comments & review, the AI assistant, dbt project workflow, external connections, and Python UDF cells.`;
+**Not shown here** (need a full deployment, not demo mode): team comments & review, the AI assistant's persistent memory, dbt project workflow, and external connections.`;
 
 	const cells: Cell[] = [
 		{
@@ -241,7 +296,7 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 			} satisfies ChartConfig
 		},
 		{
-			...makeDemoCell(categoryPRQL, 'category_breakdown', 'prql'),
+			...makeDemoCell(categorySQL, 'category_breakdown', 'sql'),
 			editMode: 'prql',
 			resultViewMode: 'chart',
 			resultChartConfig: {
@@ -254,7 +309,8 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 		},
 		{
 			...makeDemoCell(segmentPRQL, 'segment_breakdown', 'prql'),
-			editMode: 'prql',
+			editMode: 'gui',
+			guiStages: segmentGuiStages,
 			resultViewMode: 'chart',
 			resultChartConfig: {
 				chartType: 'bar',
@@ -278,7 +334,7 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 			} satisfies ChartConfig
 		},
 		{
-			...makeDemoCell(topProductsPRQL, 'top_products', 'prql'),
+			...makeDemoCell(topProductsSQL, 'top_products', 'sql'),
 			editMode: 'prql',
 			resultViewMode: 'chart',
 			resultChartConfig: {
@@ -288,6 +344,10 @@ The dataset contains **{% $orders.count %}** orders totaling **{% currency($mont
 				colorColumn: null,
 				title: 'Top Products by Revenue'
 			} satisfies ChartConfig
+		},
+		{
+			...makeDemoPythonCell(categoryHeatmapPython, 'category_segment_heatmap'),
+			resultViewMode: 'table'
 		},
 		{
 			...makeDemoCell(growthSQL, 'growth_analysis', 'sql'),

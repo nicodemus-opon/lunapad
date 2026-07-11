@@ -813,10 +813,11 @@ textarea.md-control {
 
 /* Selected container: Jupyter-style solid left bar (no ring halo). ::before keeps
    it out of layout — .markdoc-container-node is position: relative. */
-.markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg {
+.markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg:not(.is-report) {
 	outline: none;
 }
-.markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg::before {
+.markdown-surface
+	.ProseMirror-selectednode.markdoc-container-node.is-wysiwyg:not(.is-report)::before {
 	content: '';
 	position: absolute;
 	left: -0.75rem;
@@ -828,24 +829,36 @@ textarea.md-control {
 }
 
 /* Grid boundaries while editing: .markdoc-container-node exists only in editor
-   node views, so the published report is unaffected. Faint by default, slightly
-   stronger while the pointer is inside the grid. */
-.markdown-surface .markdoc-container-node.is-grid > .markdoc-container-content.md-grid {
+   node views, so the published (public share) report is unaffected. Faint by
+   default, slightly stronger while the pointer is inside the grid. Suppressed
+   entirely in the in-app report view (.is-report) — that surface reuses this
+   same editor but is read-only, so the editing guides have nothing to guide. */
+.markdown-surface
+	.markdoc-container-node.is-grid:not(.is-report)
+	> .markdoc-container-content.md-grid {
 	outline: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
 	outline-offset: 4px;
 	border-radius: var(--radius-sm);
 }
-.markdown-surface .markdoc-container-node.is-grid > .markdoc-container-content.md-grid > * {
+.markdown-surface
+	.markdoc-container-node.is-grid:not(.is-report)
+	> .markdoc-container-content.md-grid
+	> * {
 	outline: 1px dashed color-mix(in oklab, var(--border) 55%, transparent);
 	border-radius: var(--radius-sm);
 }
-.markdown-surface .markdoc-container-node.is-grid:hover > .markdoc-container-content.md-grid {
+.markdown-surface
+	.markdoc-container-node.is-grid:not(.is-report):hover
+	> .markdoc-container-content.md-grid {
 	outline-color: var(--border);
 }
 
 /* Keep container chrome findable while the caret is inside the container, not
    just while hovering it. */
-.markdown-surface .markdoc-container-node:focus-within > .markdoc-container-chrome .container-chrome {
+.markdown-surface
+	.markdoc-container-node:focus-within
+	> .markdoc-container-chrome
+	.container-chrome {
 	opacity: 1;
 }
 
@@ -1395,7 +1408,8 @@ textarea.md-control {
 }
 
 .markdown-surface .ProseMirror-selectednode:has(+ .ProseMirror-selectednode) .inline-widget-view,
-.markdown-surface .ProseMirror-selectednode:has(+ .ProseMirror-selectednode).markdoc-container-node {
+.markdown-surface
+	.ProseMirror-selectednode:has(+ .ProseMirror-selectednode).markdoc-container-node {
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
 }

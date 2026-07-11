@@ -29,7 +29,24 @@ describe('buildSalesAnalyticsDemo', () => {
 	});
 
 	it('has a stable cell count', () => {
-		expect(notebook.cells).toHaveLength(14);
+		expect(notebook.cells).toHaveLength(15);
+	});
+
+	it('includes a python cell', () => {
+		const pythonCells = notebook.cells.filter((c) => c.cellType === 'python');
+		expect(pythonCells).toHaveLength(1);
+		expect(pythonCells[0]?.outputName).toBeTruthy();
+	});
+
+	it('uses SQL for category_breakdown and top_products, GUI-pipeline PRQL for segment_breakdown', () => {
+		const category = notebook.cells.find((c) => c.outputName === 'category_breakdown');
+		const topProducts = notebook.cells.find((c) => c.outputName === 'top_products');
+		const segment = notebook.cells.find((c) => c.outputName === 'segment_breakdown');
+		expect(category?.language).toBe('sql');
+		expect(topProducts?.language).toBe('sql');
+		expect(segment?.language).toBe('prql');
+		expect(segment?.editMode).toBe('gui');
+		expect(segment?.guiStages.some((s) => s.type === 'filter')).toBe(true);
 	});
 
 	it('assigns unique output names to query cells', () => {

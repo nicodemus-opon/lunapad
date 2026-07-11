@@ -13,7 +13,7 @@ import { markdocAttrsToJson } from './markdoc-ast';
 export interface NotebookExecutableBlueprint {
 	cellId: string;
 	outputName: string;
-	cellType?: Extract<CellType, 'query' | 'python'>;
+	cellType?: Extract<CellType, 'query' | 'python' | 'plot'>;
 	language?: CellLanguage;
 	code: string;
 }
@@ -23,7 +23,7 @@ export type NotebookBlueprintBlock =
 	| {
 			type: 'queryBlock';
 			cellId: string;
-			cellType?: Extract<CellType, 'query' | 'python'>;
+			cellType?: Extract<CellType, 'query' | 'python' | 'plot'>;
 			pinned?: boolean;
 	  };
 

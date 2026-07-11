@@ -305,6 +305,49 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 		group: 'query'
 	},
 	{
+		id: 'plot',
+		label: 'Plot',
+		description: 'Chart auto-picked from the nearest query above',
+		snippet: '',
+		group: 'query',
+		aliases: ['chart', 'graph']
+	},
+	{
+		id: 'plot-bar',
+		label: 'Plot: Bar chart',
+		description: 'Chart preloaded as a bar chart',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'plot-line',
+		label: 'Plot: Line chart',
+		description: 'Chart preloaded as a line chart',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'plot-scatter',
+		label: 'Plot: Scatter plot',
+		description: 'Chart preloaded as a scatter plot',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'plot-pie',
+		label: 'Plot: Pie chart',
+		description: 'Chart preloaded as a pie chart',
+		snippet: '',
+		group: 'query'
+	},
+	{
+		id: 'plot-area',
+		label: 'Plot: Area chart',
+		description: 'Chart preloaded as an area chart',
+		snippet: '',
+		group: 'query'
+	},
+	{
 		id: 'page',
 		label: 'Sub-page',
 		description: 'Nested page section',

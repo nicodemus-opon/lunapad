@@ -8,6 +8,7 @@ import {
 import { SLASH_COMMANDS, type SlashCommand } from '$lib/services/markdown-format';
 import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 import { markdownToPmDocument } from '$lib/services/markdoc-pm';
+import type { PlotStarterKind } from '$lib/services/plot-defaults';
 
 export const slashCommandPluginKey = new PluginKey('slashCommand');
 const ENTER_EXITS_TO_FOLLOWING_PARAGRAPH = new Set(['heading', 'blockquote']);
@@ -50,8 +51,9 @@ export interface SlashCommandExtensionOptions {
 	handler: SlashCommandHandler;
 	refEntries?: () => MarkdownRefEntry[];
 	insertQueryBlock?: (
-		lang: 'sql' | 'prql' | 'python',
-		editor: import('@tiptap/core').Editor
+		lang: 'sql' | 'prql' | 'python' | 'plot',
+		editor: import('@tiptap/core').Editor,
+		plotKind?: PlotStarterKind
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
@@ -132,6 +134,11 @@ function insertSlashItem(
 
 	if (id === 'sql' || id === 'prql' || id === 'python') {
 		opts?.insertQueryBlock?.(id, editor);
+		return;
+	}
+	if (id === 'plot' || id.startsWith('plot-')) {
+		const kind = (id === 'plot' ? 'auto' : id.slice('plot-'.length)) as PlotStarterKind;
+		opts?.insertQueryBlock?.('plot', editor, kind);
 		return;
 	}
 	if (id === 'page') {

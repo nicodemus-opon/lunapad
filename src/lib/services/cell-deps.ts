@@ -5,6 +5,13 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** A finished, nameable result a plot cell / GUI chart builder / Python cell
+ *  can bind to by outputName — query cells (SQL/PRQL) and Python cells both
+ *  expose `.result.rows/columns` in the same shape. */
+export function isChartableSourceCell(cell: Cell): boolean {
+	return (cell.cellType === 'query' || cell.cellType === 'python') && !!cell.outputName;
+}
+
 function indent(code: string): string {
 	return code
 		.split('\n')
@@ -263,8 +270,7 @@ export function resolvePlotDataRefs(cells: Cell[], idx: number): Cell[] {
 		// 'python' included so a plot cell can chart a Python cell's DataFrame
 		// result directly — buildPlotScope only reads `.result.rows/columns`,
 		// which is cellType-agnostic.
-		if ((c.cellType === 'query' || c.cellType === 'python') && c.outputName)
-			byName.set(c.outputName, c);
+		if (isChartableSourceCell(c)) byName.set(c.outputName, c);
 	}
 
 	const refs: Cell[] = [];
@@ -288,8 +294,7 @@ export function resolvePythonDataRefs(cells: Cell[], idx: number): Cell[] {
 	const byName = new Map<string, Cell>();
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if ((c.cellType === 'query' || c.cellType === 'python') && c.outputName)
-			byName.set(c.outputName, c);
+		if (isChartableSourceCell(c)) byName.set(c.outputName, c);
 	}
 
 	const refs: Cell[] = [];

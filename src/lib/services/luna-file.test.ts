@@ -3,6 +3,7 @@ import { parseLunaFile, serializeLunaFile, type SerializableCell } from './luna-
 
 function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell {
 	return {
+		id: 'stg_orders',
 		cellType: 'query',
 		markdown: '',
 		udfBody: '',
@@ -16,6 +17,9 @@ function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell 
 		editMode: 'gui',
 		resultViewMode: 'table',
 		resultChartConfig: null,
+		plotMode: 'code',
+		plotConfig: null,
+		plotSourceCellId: null,
 		columnFormatRules: {},
 		columnWidths: {},
 		guiStages: [{ type: 'from', table: '' }],
