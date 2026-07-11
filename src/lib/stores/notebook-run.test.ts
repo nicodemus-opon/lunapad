@@ -86,10 +86,13 @@ import {
 	getNotebooks,
 	getPythonTableHints,
 	materializeCell,
+	runAllStale,
 	runCell,
 	runPythonCell,
 	setCellConnection,
+	setAutoRun,
 	setExternalConnectionSchema,
+	updateCellCode,
 	upsertConnection
 } from '$lib/stores/notebook.svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
@@ -393,6 +396,50 @@ describe('notebook cell execution', () => {
 		expect(compilePRQLMock).toHaveBeenCalledWith('from employees', 'sql.duckdb');
 	});
 
+	it('marks downstream cells stale as soon as an upstream query is edited', () => {
+		const notebook = getNotebooks()[0];
+		const upstream = notebook.cells[0];
+		upstream.outputName = 'employees_raw';
+		upstream.code = 'from employees';
+		upstream.status = 'success';
+		upstream.result = { rows: [{ id: 1 }], columns: ['id'] };
+		upstream.lastRunAt = Date.now();
+		addCell();
+		const downstream = getNotebooks()[0].cells[1];
+		downstream.outputName = 'employees_summary';
+		downstream.code = 'from employees_raw\naggregate {ct = count this}';
+		downstream.status = 'success';
+		downstream.result = { rows: [{ ct: 1 }], columns: ['ct'] };
+		downstream.lastRunAt = Date.now();
+
+		updateCellCode(upstream.id, 'from employees\nselect {id}');
+
+		expect(upstream.needsRun).toBe(true);
+		expect(upstream.staleReason).toBe('code-changed');
+		expect(downstream.needsRun).toBe(true);
+		expect(downstream.staleReason).toBe('upstream-changed');
+		expect(downstream.staleSources).toContain('employees_raw');
+	});
+
+	it('debounces autorun after query edits instead of running on every keystroke', async () => {
+		vi.useFakeTimers();
+		try {
+			const cell = getNotebooks()[0].cells[0];
+			cell.code = 'from employees';
+			executeSQLMock.mockResolvedValue({ rows: [], columns: [] });
+			setAutoRun(true);
+
+			updateCellCode(cell.id, 'from employees\nselect {id}');
+			await vi.advanceTimersByTimeAsync(2_499);
+			expect(executeSQLMock).not.toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(1);
+			expect(executeSQLMock).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('keeps compile cache scoped by SQL target', async () => {
 		const cell = getNotebooks()[0].cells[0];
 		cell.code = 'from employees';
@@ -601,6 +648,25 @@ describe('python cell execution', () => {
 
 		expect(uploadConnectionTableMock).not.toHaveBeenCalled();
 		expect(registerPythonResultTableMock).toHaveBeenCalledWith('py_sales', [{ id: 1 }], ['id']);
+	});
+
+	it('refreshes stale python cells when running all stale cells', async () => {
+		const pythonCell = pythonCellFixture();
+		pythonCell.needsRun = true;
+		pythonCell.staleReason = 'upstream-changed';
+		getNotebooks()[0].cells.push(pythonCell);
+
+		await runAllStale();
+
+		expect(runPythonMock).toHaveBeenCalledWith(
+			getNotebooks()[0].id,
+			'result = pd.DataFrame({"id": [1]})',
+			expect.any(Object),
+			expect.any(Array),
+			null
+		);
+		expect(pythonCell.needsRun).toBe(false);
+		expect(pythonCell.status).toBe('success');
 	});
 
 	it('scopes python table hints to the current notebook connections', async () => {

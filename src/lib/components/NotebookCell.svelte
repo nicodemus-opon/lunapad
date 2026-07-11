@@ -22,7 +22,6 @@
 	import {
 		runCell,
 		cancelCell,
-		runCellAndDownstream,
 		updateCellCode,
 		updateGuiStages,
 		setEditMode,
@@ -68,7 +67,6 @@
 		getPythonTableHints
 	} from '$lib/stores/notebook.svelte';
 	import InlinePromptBar from './cell/InlinePromptBar.svelte';
-	import { isChipEditing } from '$lib/stores/chip-edit.svelte';
 	import { updateProjectSchema } from '$lib/services/project-client';
 	import { resolvePlotDataRefs } from '$lib/services/cell-deps';
 	import { buildSandboxGlobalsDts } from '$lib/services/plot-cell';
@@ -78,7 +76,7 @@
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
-	import { Loader2, ExternalLink, GripVertical } from '@lucide/svelte';
+	import { Loader2, ExternalLink } from '@lucide/svelte';
 	import CellGutter from './cell/CellGutter.svelte';
 	import CellHeader from './cell/CellHeader.svelte';
 	import CellMenu from './cell/CellMenu.svelte';
@@ -143,7 +141,6 @@
 		dark = false,
 		prevCellSources = [],
 		notebookId = '',
-		autoRun = false,
 		reportView = false,
 		isGhost = false,
 		onShareWithAI,
@@ -178,8 +175,6 @@
 		if (collabEnabled) void refreshCellCount(cell.id);
 		setTimeout(() => (entering = false), 220);
 	});
-	let autoRunTimer: ReturnType<typeof setTimeout> | undefined;
-	let pendingAutoRun = $state(false);
 	let menuOpen = $state(false);
 	let materializeDialogOpen = $state(false);
 	let promoteDialogOpen = $state(false);
@@ -302,12 +297,22 @@
 		splitResizeStartHeight = editorHeight;
 		(e.target as HTMLElement).setPointerCapture(e.pointerId);
 	}
+	let splitResizeLatestY = 0;
+	let splitResizeRaf = 0;
 	function onSplitResizeMove(e: PointerEvent) {
 		if (!splitResizing) return;
-		editorHeight = Math.max(
-			MIN_WORKSHEET_EDITOR_HEIGHT,
-			splitResizeStartHeight + (e.clientY - splitResizeStartY)
-		);
+		// rAF-coalesced: every editorHeight write relayouts the embedded Monaco,
+		// and pointermove can fire far faster than the frame rate.
+		splitResizeLatestY = e.clientY;
+		if (splitResizeRaf) return;
+		splitResizeRaf = requestAnimationFrame(() => {
+			splitResizeRaf = 0;
+			if (!splitResizing) return;
+			editorHeight = Math.max(
+				MIN_WORKSHEET_EDITOR_HEIGHT,
+				splitResizeStartHeight + (splitResizeLatestY - splitResizeStartY)
+			);
+		});
 	}
 	function onSplitResizeEnd() {
 		splitResizing = false;
@@ -755,36 +760,6 @@
 				)
 			: new Map<number, PRQLStageError[]>()
 	);
-
-	// Auto-run: re-run this cell (and its downstream segment) after content changes
-	$effect(() => {
-		if (!isQueryCell) return;
-		// Track content — code in PRQL mode, stages in GUI mode
-		const _content = cell.editMode === 'gui' ? JSON.stringify(cell.guiStages) : cell.code;
-
-		clearTimeout(autoRunTimer);
-
-		if (!autoRun) return;
-
-		autoRunTimer = setTimeout(() => {
-			if (cell.status === 'running' || isChipEditing()) {
-				pendingAutoRun = true;
-			} else {
-				runCellAndDownstream(cell.id);
-			}
-		}, 1500);
-
-		return () => clearTimeout(autoRunTimer);
-	});
-
-	// Deferred rerun: if a run completed (or chip editing ended) while
-	// pendingAutoRun was set, run now
-	$effect(() => {
-		if (cell.status !== 'running' && !isChipEditing() && pendingAutoRun) {
-			pendingAutoRun = false;
-			runCellAndDownstream(cell.id);
-		}
-	});
 
 	function onCellFocusIn() {
 		cellFocused = true;
@@ -1425,18 +1400,6 @@
 							{index + 1}
 						</span>
 					{/if}
-					<button
-						type="button"
-						class="flex h-5 w-5 cursor-grab items-center justify-center rounded text-muted-foreground/35 transition-[opacity,color,background-color] duration-(--motion-fast) outline-none hover:bg-muted/50 hover:text-muted-foreground active:cursor-grabbing {revealed
-							? 'opacity-100'
-							: 'pointer-events-none opacity-0'}"
-						data-drag-handle
-						tabindex="-1"
-						aria-label="Drag to reorder cell"
-						title="Drag to reorder"
-					>
-						<GripVertical class="h-3.5 w-3.5" />
-					</button>
 					<CellGutter
 						isQueryCell={isQueryCell || isPythonCell || isPlotCell}
 						{revealed}

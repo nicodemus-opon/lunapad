@@ -97,7 +97,7 @@
 
 	const collapsed = $derived(cell?.display === 'collapsed');
 	const codeExpanded = $derived(
-		!reportView && !collapsed && (focused || pinned || cell?.display === 'full')
+		!reportView && !collapsed && (pinned || cell?.display === 'full')
 	);
 	const running = $derived(cell?.status === 'running');
 	const showResult = $derived(
@@ -199,6 +199,7 @@
 	function handleGutterClick(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
+		onSetDisplay('full');
 		focused = true;
 		onFocus();
 		tickFocus();
@@ -277,7 +278,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-	class="query-block-view group/qb relative my-2 rounded-md border border-transparent transition-colors {selected
+	class="query-block-view group/qb relative -ml-6 my-2 w-[calc(100%+1.5rem)] rounded-md border border-transparent transition-colors {selected
 		? 'border-ring bg-muted/10'
 		: collapsed
 			? 'cursor-pointer border-border/60 bg-muted/10 hover:border-border'
@@ -308,7 +309,7 @@
 >
 	<div class="flex gap-1">
 		<div
-			class="qb-gutter flex w-5 shrink-0 flex-col items-center gap-0.5 pt-1 opacity-0 transition-opacity group-focus-within/qb:opacity-100 group-hover/qb:opacity-100 {selected ||
+			class="qb-gutter flex w-5 shrink-0 flex-col items-center gap-0.5 pt-1 opacity-0 transition-opacity hover:opacity-100 group-focus-within/qb:opacity-100 group-hover/qb:opacity-100 {selected ||
 			focused ||
 			menuOpen
 				? 'opacity-100'

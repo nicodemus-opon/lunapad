@@ -115,6 +115,13 @@
 		onPatchAttrs?.({ cols: Math.max(1, Math.min(6, next)) });
 	}
 
+	const cardSpan = $derived(Number(attrs.span ?? 1));
+
+	function setCardSpan(next: number) {
+		const clamped = Math.max(1, Math.min(6, next));
+		onPatchAttrs?.({ span: clamped === 1 ? undefined : clamped });
+	}
+
 	const GAP_STEPS = ['compact', 'default', 'comfortable'] as const;
 	const gap = $derived(String(attrs.gap ?? 'default'));
 
@@ -144,9 +151,10 @@
 
 	{#if dataBadge !== null}
 		<span
-			class="rounded-sm border px-1 py-px text-3xs tabular-nums {dataBadge === 'no data'
+			class="rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium tabular-nums {dataBadge ===
+			'no data'
 				? 'border-warning/40 text-warning'
-				: 'border-border bg-background/80 text-muted-foreground'}"
+				: 'border-border text-muted-foreground'}"
 		>
 			{dataBadge}
 		</span>
@@ -154,7 +162,7 @@
 
 	{#if ifState !== null}
 		<span
-			class="inline-flex items-center gap-0.5 rounded-sm border px-1 py-px text-3xs {ifState ===
+			class="inline-flex items-center gap-0.5 rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium {ifState ===
 			'true'
 				? 'border-success/40 text-success'
 				: ifState === 'false'
@@ -191,6 +199,37 @@
 				onclick={(e) => {
 					e.stopPropagation();
 					setGridCols(gridCols + 1);
+				}}
+			>
+				<Plus class="h-3 w-3" />
+			</button>
+		</div>
+	{/if}
+
+	{#if tagName === 'card' && onPatchAttrs}
+		<div
+			class="flex items-center gap-0.5 rounded-sm border bg-background/80 px-0.5"
+			title="Grid columns this card spans"
+		>
+			<button
+				type="button"
+				class="md-action"
+				title="Span fewer columns"
+				onclick={(e) => {
+					e.stopPropagation();
+					setCardSpan(cardSpan - 1);
+				}}
+			>
+				<Minus class="h-3 w-3" />
+			</button>
+			<span class="min-w-4 text-center tabular-nums">×{cardSpan}</span>
+			<button
+				type="button"
+				class="md-action"
+				title="Span more columns"
+				onclick={(e) => {
+					e.stopPropagation();
+					setCardSpan(cardSpan + 1);
 				}}
 			>
 				<Plus class="h-3 w-3" />
@@ -243,17 +282,17 @@
 		</button>
 	{/if}
 
-	{#if (tagName === 'columns' || tagName === 'tabs') && onAddChild}
+	{#if (tagName === 'columns' || tagName === 'tabs' || tagName === 'grid') && onAddChild}
 		<button
 			type="button"
 			class="md-action rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium"
-			title={tagName === 'columns' ? 'Add column' : 'Add tab'}
+			title={tagName === 'columns' ? 'Add column' : tagName === 'tabs' ? 'Add tab' : 'Add cell'}
 			onclick={(e) => {
 				e.stopPropagation();
 				onAddChild();
 			}}
 		>
-			{tagName === 'columns' ? 'Add column' : 'Add tab'}
+			{tagName === 'columns' ? 'Add column' : tagName === 'tabs' ? 'Add tab' : 'Add cell'}
 		</button>
 	{/if}
 

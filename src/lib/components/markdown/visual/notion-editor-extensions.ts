@@ -264,6 +264,29 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 		DragHandle.configure({
 			render: opts.dragHandleRender,
 			nested: true,
+			// Without this the plugin's drag-image clone copies the FULL computed style
+			// (~340 properties) of every descendant of the dragged block — a query block
+			// hosting Monaco + a result table is thousands of elements, which froze the
+			// UI at dragstart. Copy only what the ghost needs to look right.
+			dragImageProperties: [
+				'width',
+				'height',
+				'margin',
+				'padding',
+				'border',
+				'border-radius',
+				'background-color',
+				'color',
+				'font-family',
+				'font-size',
+				'font-weight',
+				'line-height',
+				'opacity',
+				'display',
+				'flex',
+				'grid-template-columns',
+				'gap'
+			],
 			// DragHandleOptions.onNodeChange's public type omits `pos`, but the plugin forwards
 			// this callback straight to DragHandlePlugin's onNodeChange, which does pass `pos` —
 			// a type-declaration gap in the library, not a runtime one.

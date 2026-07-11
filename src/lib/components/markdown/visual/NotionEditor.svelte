@@ -938,6 +938,14 @@
 		   hide the rail (and null out its tracked node) right as the pointer arrives. */
 		padding-right: calc(var(--notebook-gutter-width) - 0.25rem);
 	}
+	/* See NotebookDocumentEditor.svelte: extend view.dom's hit box under the whole
+	   rail column (padding cancelled by negative margin, no layout change) so the
+	   pointer never leaves the ProseMirror element on its way to the rail — the
+	   drag-handle plugin hides the rail on view.dom mouseleave. */
+	.notebook-markdown-editor :global(.ProseMirror) {
+		padding-left: var(--notebook-gutter-width);
+		margin-left: calc(-1 * var(--notebook-gutter-width));
+	}
 	:global(.notion-surface) {
 		font-size: var(--text-sm);
 		line-height: 1.6;

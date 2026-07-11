@@ -41,4 +41,53 @@ describe('mermaid-code', () => {
 			'flowchart LR\n  A-->B'
 		);
 	});
+
+	it('interpolates bare $var refs in the body text (visual editor live preview)', () => {
+		const fakeNode = {
+			forEach(fn: (child: { type: { name: string }; textContent: string }) => void) {
+				fn({
+					type: { name: 'codeBlock' },
+					textContent: 'flowchart LR\n  A[$orders.count orders] --> B'
+				});
+			}
+		};
+		const cells = [
+			{
+				cellType: 'query',
+				outputName: 'orders',
+				result: { rows: [{ count: 42 }], columns: ['count'] }
+			}
+		] as never[];
+		expect(mermaidCodeFromContainerNode(fakeNode as never, '{}', cells)).toBe(
+			'flowchart LR\n  A[42 orders] --> B'
+		);
+	});
+
+	it('expands {% each %} loops in the body text (visual editor live preview)', () => {
+		const fakeNode = {
+			forEach(fn: (child: { type: { name: string }; textContent: string }) => void) {
+				fn({
+					type: { name: 'codeBlock' },
+					textContent: 'flowchart LR\n{% each data=$orders.rows %}\n  $item.id[$item.name]\n{% /each %}'
+				});
+			}
+		};
+		const cells = [
+			{
+				cellType: 'query',
+				outputName: 'orders',
+				result: {
+					rows: [
+						{ id: 'a', name: 'Alpha' },
+						{ id: 'b', name: 'Beta' }
+					],
+					columns: ['id', 'name']
+				}
+			}
+		] as never[];
+		const result = mermaidCodeFromContainerNode(fakeNode as never, '{}', cells);
+		expect(result).toContain('Alpha');
+		expect(result).toContain('Beta');
+		expect(result).not.toContain('{% each');
+	});
 });

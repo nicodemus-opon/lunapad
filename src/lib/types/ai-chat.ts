@@ -171,6 +171,8 @@ export interface InspectNotebookArgs {
 
 export interface ApplyNotebookPatchArgs {
 	notebookId?: string;
+	/** Optional display title/name for the notebook being patched. */
+	title?: string;
 	operations?: NotebookPatchOperation[];
 	document?: PMDocJSON;
 	blueprint?: NotebookBlueprint;

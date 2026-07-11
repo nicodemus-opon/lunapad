@@ -50,6 +50,24 @@ describe('parseToolCallObject', () => {
 		spy.mockRestore();
 	});
 
+	it('recovers a truncated JSON array by closing unbalanced brackets', () => {
+		const raw =
+			'[{"type": "text", "content": "Revenue Ops Review"}, {"type": "columns", "columns": [{"width": 2, "blocks": [{"type": "queryBlock", "cellId": "revenue_by_month"}, {"type": "queryBlock", "cellId": "region_performance"}]}, {"blocks": [{"type": "queryBlock", "cellId": "product_mix"}]}]}';
+		const obj = parseToolCallObject(raw) as unknown as Record<string, unknown>[];
+		expect(Array.isArray(obj)).toBe(true);
+		expect(obj).toHaveLength(2);
+		expect(obj[1].type).toBe('columns');
+	});
+
+	it('recovers a complete top-level value followed by trailing garbage', () => {
+		const raw =
+			'{"name": "apply_notebook_patch", "parameters": {"blueprint": {"executableCells": [{"cellId": "revenue_by_month", "code": "SELECT 1"}], "blocks": [{"type": "queryBlock", "cellId": "revenue_by_month"}]}}"}}';
+		const obj = parseToolCallObject(raw);
+		expect(obj?.name).toBe('apply_notebook_patch');
+		const params = obj?.parameters as { blueprint: { executableCells: unknown[] } };
+		expect(params.blueprint.executableCells).toHaveLength(1);
+	});
+
 	it('recovers malformed compact calltool syntax from local models', () => {
 		const obj = parseMalformedCalltoolPayload('namelistcells{}');
 		expect(obj).toEqual({ tool: 'list_cells', args: {} });

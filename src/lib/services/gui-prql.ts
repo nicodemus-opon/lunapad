@@ -1420,6 +1420,40 @@ export function mergeParsedWithHiddenStages(
 	return merged;
 }
 
+/** Columns produced after applying one stage to the columns flowing into it. */
+function applyStageToColumns(
+	stage: GUIPipelineStage,
+	cols: string[],
+	tableSchemas: Record<string, string[]>
+): string[] {
+	if (stage.disabled) return cols;
+	switch (stage.type) {
+		case 'from':
+			return tableSchemas[stage.table] ?? [];
+		case 'select':
+			return stage.columns.length ? stage.columns : cols;
+		case 'derive':
+			return [...cols, ...stage.columns.map((c) => c.name).filter(Boolean)];
+		case 'group':
+			if (stage.window) {
+				return [...stage.by, ...stage.window.derives.map((d) => d.name).filter(Boolean)];
+			} else if (stage.take !== undefined) {
+				return [...stage.by];
+			}
+			return [...stage.by, ...stage.aggregations.map((a) => a.name).filter(Boolean)];
+		case 'window':
+			return [...cols, ...stage.derives.map((d) => d.name).filter(Boolean)];
+		case 'join': {
+			const prefix = stage.alias ?? stage.table;
+			const joinCols = (tableSchemas[stage.table] ?? []).map((c) => `${prefix}.${c}`);
+			return [...cols, ...joinCols];
+		}
+		// append, loop, filter, sort, take, raw — pass-through
+		default:
+			return cols;
+	}
+}
+
 /**
  * Returns columns available at `upToIndex` (i.e. produced by all stages before it).
  * `tableSchemas` maps table/view names to their column arrays.
@@ -1431,44 +1465,28 @@ export function getAvailableColumns(
 ): string[] {
 	let cols: string[] = [];
 	for (let i = 0; i < upToIndex && i < stages.length; i++) {
-		const stage = stages[i];
-		if (stage.disabled) continue;
-		switch (stage.type) {
-			case 'from':
-				cols = tableSchemas[stage.table] ?? [];
-				break;
-			case 'append':
-				break;
-			case 'select':
-				cols = stage.columns.length ? stage.columns : cols;
-				break;
-			case 'derive':
-				cols = [...cols, ...stage.columns.map((c) => c.name).filter(Boolean)];
-				break;
-			case 'group':
-				if (stage.window) {
-					cols = [...stage.by, ...stage.window.derives.map((d) => d.name).filter(Boolean)];
-				} else if (stage.take !== undefined) {
-					cols = [...stage.by];
-				} else {
-					cols = [...stage.by, ...stage.aggregations.map((a) => a.name).filter(Boolean)];
-				}
-				break;
-			case 'window':
-				cols = [...cols, ...stage.derives.map((d) => d.name).filter(Boolean)];
-				break;
-			case 'loop':
-				break;
-			case 'join': {
-				const prefix = stage.alias ?? stage.table;
-				const joinCols = (tableSchemas[stage.table] ?? []).map((c) => `${prefix}.${c}`);
-				cols = [...cols, ...joinCols];
-				break;
-			}
-			// filter, sort, take, raw — pass-through
-		}
+		cols = applyStageToColumns(stages[i], cols, tableSchemas);
 	}
 	return cols;
+}
+
+/**
+ * Columns available before each stage, in one pass: entry `i` is what
+ * `getAvailableColumns(stages, tableSchemas, i)` returns, with entry
+ * `stages.length` being the pipeline's final columns. Use this instead of
+ * calling `getAvailableColumns` per stage (O(n²)) when rendering all stages.
+ */
+export function getAvailableColumnsByIndex(
+	stages: GUIPipelineStage[],
+	tableSchemas: Record<string, string[]>
+): string[][] {
+	const out: string[][] = [[]];
+	let cols: string[] = [];
+	for (const stage of stages) {
+		cols = applyStageToColumns(stage, cols, tableSchemas);
+		out.push(cols);
+	}
+	return out;
 }
 
 /** Convenience: all unique columns at index `stages.length` (end of pipeline). */

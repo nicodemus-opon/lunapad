@@ -82,6 +82,11 @@
 
 	const showControls = $derived(controlsVisible || fillHeight || showConfigPanel);
 
+	// Stats scan every row × column on the main thread; sample huge results.
+	const STATS_SAMPLE_MAX = 10_000;
+	const statsRows = $derived(rows.length > STATS_SAMPLE_MAX ? rows.slice(0, STATS_SAMPLE_MAX) : rows);
+	const statsSampled = $derived(rows.length > STATS_SAMPLE_MAX);
+
 	function fmtMs(ms: number): string {
 		return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
 	}
@@ -251,7 +256,14 @@
 				? 'max-h-64 overflow-auto'
 				: ''}"
 		>
-			<StatsView {rows} {columns} {name} {compact} {truncated} {fillHeight} />
+			<StatsView
+				rows={statsRows}
+				{columns}
+				{name}
+				{compact}
+				truncated={truncated || statsSampled}
+				{fillHeight}
+			/>
 		</div>
 	{:else}
 		<div

@@ -48,7 +48,7 @@ function syncTabsStrip(
 	activeIndex: number,
 	onSelect: (index: number) => void
 ) {
-	let strip = dom.querySelector('.md-tabs-strip') as HTMLElement | null;
+	let strip = dom.querySelector(':scope > .md-tabs-strip') as HTMLElement | null;
 	if (!strip) {
 		strip = document.createElement('div');
 		strip.className = 'md-tabs-strip';
@@ -87,7 +87,15 @@ function applyContainerSemantics(
 	tabState?: { activeIndex: number; onTabSelect?: (i: number) => void }
 ) {
 	const attrs = parseAttrsJson(attrsJson);
+	// className reset must not wipe ProseMirror's selection marker mid-update.
+	const wasSelected = dom.classList.contains('ProseMirror-selectednode');
 	dom.className = 'markdoc-container-node group/container';
+	if (wasSelected) dom.classList.add('ProseMirror-selectednode');
+	// A container's own span (e.g. a card inside a grid) lands on the node-view
+	// wrapper, which is the actual grid child in the editor.
+	const ownSpan = Number(attrs.span ?? 1);
+	dom.style.gridColumn =
+		Number.isFinite(ownSpan) && ownSpan > 1 ? `span ${Math.min(ownSpan, 6)}` : '';
 	contentDOM.className = 'markdoc-container-content';
 	contentDOM.style.cssText = '';
 	dom.dataset.tag = tagName;
@@ -121,12 +129,16 @@ function applyContainerSemantics(
 		if (key.startsWith('callout')) delete dom.dataset[key];
 	}
 
-	// Remove dynamic chrome from prior renders
-	dom.querySelector('.md-tabs-strip')?.remove();
-	dom.querySelector('.md-details-summary')?.remove();
-	dom.querySelector('.md-card-title-editor')?.remove();
-	dom.querySelector('.md-callout-icon')?.remove();
-	dom.querySelector('.md-callout-title-editor')?.remove();
+	// Remove dynamic chrome from prior renders. MUST stay scoped to direct children:
+	// an unscoped querySelector matches the same classes inside nested child node
+	// views (a card inside a grid, tabs inside a column, ...) and rips their chrome
+	// out — a childList mutation the child's ProseMirror DOMObserver treats as a
+	// user edit, which can commit real content loss to the document.
+	dom.querySelector(':scope > .md-tabs-strip')?.remove();
+	dom.querySelector(':scope > .md-details-summary')?.remove();
+	dom.querySelector(':scope > .md-card-title-editor')?.remove();
+	dom.querySelector(':scope > .md-callout-icon')?.remove();
+	dom.querySelector(':scope > .md-callout-title-editor')?.remove();
 
 	if (tagName === 'grid') {
 		const cols = Number(attrs.cols ?? 3);
@@ -441,6 +453,8 @@ export const MarkdocContainerExtension = Node.create({
 				let snippet: string | null = null;
 				if (tagName === 'columns') {
 					snippet = '{% column %}\n\n{% /column %}';
+				} else if (tagName === 'grid') {
+					snippet = '{% card %}\n\n{% /card %}';
 				} else if (tagName === 'tabs') {
 					const tabCount = containerNode.content.childCount + 1;
 					snippet = `{% tab label="Tab ${tabCount}" %}\n\n{% /tab %}`;

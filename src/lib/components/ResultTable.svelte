@@ -3,6 +3,7 @@
 	import {
 		type ColumnDef,
 		type ColumnFiltersState,
+		type ColumnSizingInfoState,
 		type PaginationState,
 		type SortingState,
 		getCoreRowModel,
@@ -132,12 +133,26 @@
 	const effectiveColumnWidths = $derived(
 		onColumnWidthsChange ? (columnWidths ?? {}) : internalColumnWidths
 	);
-	const hasResizedColumns = $derived(Object.keys(effectiveColumnWidths).length > 0);
 
 	function setColumnWidths(next: Record<string, number>) {
 		if (onColumnWidthsChange) onColumnWidthsChange(next);
 		else internalColumnWidths = next;
 	}
+
+	// Live sizing during an active resize drag stays local; the controlled path
+	// (notebook cell store write + save schedule) commits ONCE on release instead
+	// of on every mousemove.
+	let draftSizing = $state<Record<string, number> | null>(null);
+	let sizingInfo = $state<ColumnSizingInfoState>({
+		startOffset: null,
+		startSize: null,
+		deltaOffset: null,
+		deltaPercentage: null,
+		isResizingColumn: false,
+		columnSizingStart: []
+	});
+	const liveColumnWidths = $derived(draftSizing ?? effectiveColumnWidths);
+	const hasResizedColumns = $derived(Object.keys(liveColumnWidths).length > 0);
 
 	let filterPopoverCol = $state<string | null>(null);
 	let filterPopoverValue = $state('');
@@ -261,9 +276,13 @@
 	let statsMap = $state<Record<string, ColStats>>({});
 	let formatMap = $state<Record<string, ColumnFormat>>({});
 
+	// Format inference and header stats are O(rows × cols) on the main thread;
+	// sample large results instead of scanning every row.
+	const STATS_SAMPLE_MAX = 10_000;
+
 	$effect(() => {
 		// Capture reactive values before the async gap so the effect re-runs when they change.
-		const localRows = rows;
+		const localRows = rows.length > STATS_SAMPLE_MAX ? rows.slice(0, STATS_SAMPLE_MAX) : rows;
 		const localCols = [...columns];
 		const id = setTimeout(() => {
 			const model = buildReportTableModel(localRows, localCols, {
@@ -328,8 +347,20 @@
 		}))
 	);
 
+	// Debounced mirror of the live search input: filtering re-scans every row, so
+	// don't do it on each keystroke of a fast typist over a large result.
+	let debouncedSearch = $state('');
+	$effect(() => {
+		const value = globalSearch;
+		if (value === untrack(() => debouncedSearch)) return;
+		const id = setTimeout(() => {
+			debouncedSearch = value;
+		}, 150);
+		return () => clearTimeout(id);
+	});
+
 	const effectiveRows = $derived.by(() => {
-		const term = globalSearch.trim().toLowerCase();
+		const term = debouncedSearch.trim().toLowerCase();
 		if (!term) return rows;
 		return rows.filter((r) =>
 			columns.some((col) => {
@@ -361,7 +392,10 @@
 				return columnFilters;
 			},
 			get columnSizing() {
-				return effectiveColumnWidths;
+				return liveColumnWidths;
+			},
+			get columnSizingInfo() {
+				return sizingInfo;
 			}
 		},
 		onPaginationChange(updater) {
@@ -377,8 +411,16 @@
 		},
 		columnResizeMode: 'onChange',
 		onColumnSizingChange(updater) {
-			const next = typeof updater === 'function' ? updater(effectiveColumnWidths) : updater;
-			setColumnWidths(next);
+			// Per-mousemove updates land in the local draft only.
+			draftSizing = typeof updater === 'function' ? updater(liveColumnWidths) : updater;
+		},
+		onColumnSizingInfoChange(updater) {
+			const wasResizing = Boolean(sizingInfo.isResizingColumn);
+			sizingInfo = typeof updater === 'function' ? updater(sizingInfo) : updater;
+			if (wasResizing && !sizingInfo.isResizingColumn && draftSizing) {
+				setColumnWidths(draftSizing);
+				draftSizing = null;
+			}
 		},
 		getCoreRowModel: getCoreRowModel(),
 		getFilteredRowModel: getFilteredRowModel(),

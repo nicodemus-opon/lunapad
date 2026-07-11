@@ -23,6 +23,9 @@ export const SQL_GEN_TOOLS: AIChatToolName[] = [
 	'apply_notebook_patch',
 	'run_query_nodes',
 	'validate_notebook',
+	'pick_chart',
+	'set_chart',
+	'set_view_mode',
 	'query_data',
 	'sample_data',
 	'get_cell_result',
@@ -344,7 +347,7 @@ export function formatReviewFeedback(review: ReviewResult, cycle: number): strin
 			? `\nWarnings (non-blocking): ${review.warnings.slice(0, 2).join('; ')}`
 			: '';
 
-	return `SQL Review cycle ${cycle} — scores: ${scoreStr}\n\nBlocking issues:\n${issueLines}${warnLines}\n\nFix these issues: call update_cell with corrected SQL, then run_cells to verify. Do NOT create new cells.`;
+	return `SQL Review cycle ${cycle} — scores: ${scoreStr}\n\nBlocking issues:\n${issueLines}${warnLines}\n\nFix these issues with apply_notebook_patch, then run_query_nodes to verify. Do NOT create unrelated new cells.`;
 }
 
 export type { DiscoveryResult, ReviewResult };

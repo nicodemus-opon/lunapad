@@ -41,6 +41,15 @@ export const MarkdocWidgetExtension = Node.create({
 			dom.className = 'markdoc-widget-node';
 			dom.contentEditable = 'false';
 
+			// The widget's own span (metric/chart/progress) targets the report's grid,
+			// but in the editor the node-view wrapper is the grid child — apply it here
+			// too so spans render the same in both surfaces.
+			const applySpan = (attrsJson: string) => {
+				const span = Number(parseAttrsJson(attrsJson).span ?? 1);
+				dom.style.gridColumn = Number.isFinite(span) && span > 1 ? `span ${Math.min(span, 6)}` : '';
+			};
+			applySpan(String(node.attrs.attrsJson ?? '{}'));
+
 			// Mounted once with reactive props (mutated in place). Remounting on every
 			// update/select destroys open dropdowns/filter controls mid-interaction.
 			const props = reactiveProps({
@@ -108,6 +117,7 @@ export const MarkdocWidgetExtension = Node.create({
 					props.attrs = parseAttrsJson(String(updatedNode.attrs.attrsJson ?? '{}'));
 					props.selfClosing = Boolean(updatedNode.attrs.selfClosing);
 					props.cells = ctx?.getCells() ?? [];
+					applySpan(String(updatedNode.attrs.attrsJson ?? '{}'));
 					return true;
 				},
 				destroy() {

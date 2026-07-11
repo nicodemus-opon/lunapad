@@ -995,6 +995,17 @@
 		   hide the rail (and null out its tracked node) right as the pointer arrives. */
 		padding-right: calc(var(--notebook-gutter-width) - 0.25rem);
 	}
+	/* The gutter bridge above only covers the rail's own ~1.25rem-tall box; leaving
+	   a tall block leftward at any other height still exits view.dom and the
+	   drag-handle plugin hides the rail instantly. Extend the ProseMirror element's
+	   hit box under the whole rail column (padding cancelled by negative margin, so
+	   layout is unchanged) — the pointer then never leaves view.dom on its way to
+	   the rail, and the plugin's own mousemove tracking keeps the rail on the block
+	   at the pointer's height, Notion-style. */
+	.notebook-document-editor :global(.ProseMirror) {
+		padding-left: var(--notebook-gutter-width);
+		margin-left: calc(-1 * var(--notebook-gutter-width));
+	}
 	:global(.notebook-document-surface) {
 		font-size: var(--text-sm);
 		line-height: 1.65;

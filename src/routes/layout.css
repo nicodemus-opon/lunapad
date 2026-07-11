@@ -491,12 +491,6 @@
 	box-shadow: 0 0 0 2px color-mix(in oklab, var(--sidebar-ring) 30%, transparent);
 }
 
-/* ─── SortableJS ghost ───────────────────────────────────────────────────── */
-/* SortableJS ghost while dragging a notebook cell */
-.cell-sort-ghost {
-	opacity: 0.4;
-}
-
 /* ─── Cell entrance animation ────────────────────────────────────────────── */
 @keyframes cell-enter {
 	from {

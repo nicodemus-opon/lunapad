@@ -146,6 +146,7 @@
 		refreshPresence,
 		sendPresence,
 		setReviewPanelWidth,
+		persistReviewPanelWidth,
 		startCommentsPolling,
 		stopCommentsPolling
 	} from '$lib/stores/comments.svelte';
@@ -213,6 +214,7 @@
 		setAIChatOpen,
 		getAIChatPanelWidth,
 		setAIChatPanelWidth,
+		persistAIChatPanelWidth,
 		getGhostCellIds,
 		addContextCell,
 		setPendingSuggestion,
@@ -424,10 +426,13 @@
 	let isDraggingSidebar = $state(false);
 	let layoutRoot: HTMLDivElement | null = null;
 
-	// AI panel resize
+	// AI panel resize. Width updates are rAF-coalesced (pointermove can fire far
+	// faster than the frame rate) and persisted to localStorage once on release.
 	let isDraggingAIPanel = $state(false);
 	let aiPanelResizeStartX = 0;
 	let aiPanelResizeStartWidth = 0;
+	let aiPanelLatestX = 0;
+	let aiPanelRaf = 0;
 
 	function onAIPanelPointerDown(e: PointerEvent) {
 		isDraggingAIPanel = true;
@@ -438,15 +443,24 @@
 
 	function onAIPanelPointerMove(e: PointerEvent) {
 		if (!isDraggingAIPanel) return;
-		const delta = aiPanelResizeStartX - e.clientX;
-		setAIChatPanelWidth(aiPanelResizeStartWidth + delta);
+		aiPanelLatestX = e.clientX;
+		if (aiPanelRaf) return;
+		aiPanelRaf = requestAnimationFrame(() => {
+			aiPanelRaf = 0;
+			if (!isDraggingAIPanel) return;
+			setAIChatPanelWidth(aiPanelResizeStartWidth + (aiPanelResizeStartX - aiPanelLatestX));
+		});
 	}
 
 	function onAIPanelPointerUp() {
+		if (!isDraggingAIPanel) return;
 		isDraggingAIPanel = false;
+		persistAIChatPanelWidth();
 	}
 
 	let isDraggingReviewPanel = $state(false);
+	let reviewPanelLatestX = 0;
+	let reviewPanelRaf = 0;
 
 	function onReviewPanelPointerDown(e: PointerEvent) {
 		isDraggingReviewPanel = true;
@@ -457,23 +471,39 @@
 
 	function onReviewPanelPointerMove(e: PointerEvent) {
 		if (!isDraggingReviewPanel) return;
-		const delta = reviewPanelResizeStartX - e.clientX;
-		setReviewPanelWidth(reviewPanelResizeStartWidth + delta);
+		reviewPanelLatestX = e.clientX;
+		if (reviewPanelRaf) return;
+		reviewPanelRaf = requestAnimationFrame(() => {
+			reviewPanelRaf = 0;
+			if (!isDraggingReviewPanel) return;
+			setReviewPanelWidth(
+				reviewPanelResizeStartWidth + (reviewPanelResizeStartX - reviewPanelLatestX)
+			);
+		});
 	}
 
 	function onReviewPanelPointerUp() {
+		if (!isDraggingReviewPanel) return;
 		isDraggingReviewPanel = false;
+		persistReviewPanelWidth();
 	}
 
 	function clamp(value: number, min: number, max: number): number {
 		return Math.min(max, Math.max(min, value));
 	}
 
+	// Layout-root left edge, read once per drag (a getBoundingClientRect inside
+	// every pointermove forces a layout pass mid-drag).
+	let sidebarDragRectLeft: number | null = null;
+
 	function updateSidebarFromClientX(clientX: number) {
-		if (!layoutRoot) return;
-		const rect = layoutRoot.getBoundingClientRect();
-		if (rect.width <= 0) return;
-		sidebarWidth = clamp(clientX - rect.left, 220, 460);
+		if (sidebarDragRectLeft === null) {
+			if (!layoutRoot) return;
+			const rect = layoutRoot.getBoundingClientRect();
+			if (rect.width <= 0) return;
+			sidebarDragRectLeft = rect.left;
+		}
+		sidebarWidth = clamp(clientX - sidebarDragRectLeft, 220, 460);
 	}
 
 	function toggleSidebarCollapsed() {
@@ -502,9 +532,17 @@
 	$effect(() => {
 		void activeTabId;
 		tick().then(() => {
-			document
-				.querySelector('[role="tab"][aria-selected="true"]')
-				?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+			const tab = document.querySelector('[role="tab"][aria-selected="true"]');
+			if (!tab) return;
+			// Skip the scroll (and its forced layout) when the tab is already fully
+			// visible inside its scroll container.
+			const bar = tab.closest('[role="tablist"]') ?? tab.parentElement;
+			if (bar) {
+				const t = tab.getBoundingClientRect();
+				const b = bar.getBoundingClientRect();
+				if (t.left >= b.left && t.right <= b.right) return;
+			}
+			tab.scrollIntoView({ behavior: 'auto', inline: 'nearest', block: 'nearest' });
 		});
 	});
 
@@ -522,6 +560,7 @@
 	function onSidebarPointerUp() {
 		if (!isDraggingSidebar) return;
 		isDraggingSidebar = false;
+		sidebarDragRectLeft = null;
 		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
 	}
 
@@ -624,10 +663,13 @@
 		notebookTabsCollapsed = localStorage.getItem(NOTEBOOK_TABS_COLLAPSED_KEY) === 'true';
 		window.addEventListener('pointermove', onSidebarPointerMove);
 		window.addEventListener('pointerup', onSidebarPointerUp);
+		window.addEventListener('pointercancel', onSidebarPointerUp);
 		window.addEventListener('pointermove', onAIPanelPointerMove);
 		window.addEventListener('pointerup', onAIPanelPointerUp);
+		window.addEventListener('pointercancel', onAIPanelPointerUp);
 		window.addEventListener('pointermove', onReviewPanelPointerMove);
 		window.addEventListener('pointerup', onReviewPanelPointerUp);
+		window.addEventListener('pointercancel', onReviewPanelPointerUp);
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		initAIChatWidth();
 		initWorkspaceStandards();
@@ -685,10 +727,13 @@
 	onDestroy(() => {
 		window.removeEventListener('pointermove', onSidebarPointerMove);
 		window.removeEventListener('pointerup', onSidebarPointerUp);
+		window.removeEventListener('pointercancel', onSidebarPointerUp);
 		window.removeEventListener('pointermove', onAIPanelPointerMove);
 		window.removeEventListener('pointerup', onAIPanelPointerUp);
+		window.removeEventListener('pointercancel', onAIPanelPointerUp);
 		window.removeEventListener('pointermove', onReviewPanelPointerMove);
 		window.removeEventListener('pointerup', onReviewPanelPointerUp);
+		window.removeEventListener('pointercancel', onReviewPanelPointerUp);
 		stopCommentsPolling();
 		stopWorkspacePolling();
 	});

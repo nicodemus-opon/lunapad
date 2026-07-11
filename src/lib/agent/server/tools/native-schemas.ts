@@ -81,11 +81,15 @@ const ALL_NATIVE_TOOLS = [
 		function: {
 			name: 'apply_notebook_patch',
 			description:
-				'Atomically patch the notebook PM document. Provide either a full replacement document, a typed notebook blueprint, or node operations. The result is validated before it is committed.',
+				'Atomically patch the current notebook PM document. Use this, not create_notebook, when the user asks to add/query/rename/edit the notebook they are already in. Provide either a full replacement document, a typed notebook blueprint, or node operations. Include executableCells when adding new queryBlock nodes. The result is validated before it is committed.',
 			parameters: {
 				type: 'object',
 				properties: {
 					notebookId: { type: 'string' },
+					title: {
+						type: 'string',
+						description: 'Optional new display name/title for the notebook being patched.'
+					},
 					blueprint: { type: 'object' },
 					document: { type: 'object' },
 					operations: {

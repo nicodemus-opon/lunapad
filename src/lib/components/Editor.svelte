@@ -1,3 +1,24 @@
+<script module lang="ts">
+	// One ResizeObserver shared by every mounted editor. Monaco's automaticLayout
+	// runs its own observer + layout pass per instance — with a notebook full of
+	// cells that's N observers doing redundant work.
+	const editorResizeCallbacks = new WeakMap<Element, () => void>();
+	let sharedEditorResizeObserver: ResizeObserver | null = null;
+
+	function observeEditorContainer(el: Element, cb: () => void): () => void {
+		if (typeof ResizeObserver === 'undefined') return () => {};
+		sharedEditorResizeObserver ??= new ResizeObserver((entries) => {
+			for (const entry of entries) editorResizeCallbacks.get(entry.target)?.();
+		});
+		editorResizeCallbacks.set(el, cb);
+		sharedEditorResizeObserver.observe(el);
+		return () => {
+			editorResizeCallbacks.delete(el);
+			sharedEditorResizeObserver?.unobserve(el);
+		};
+	}
+</script>
+
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import {
@@ -122,6 +143,7 @@
 	let previewLocked = false;
 	let destroyed = false;
 	let layoutFrame: number | null = null;
+	let unobserveContainer: (() => void) | null = null;
 	// focus() can be called before Monaco has finished its async import/create
 	// (e.g. right after a query block expands from "click to edit"). Remember the
 	// request and honor it once the editor exists so the caret actually lands.
@@ -282,7 +304,9 @@
 			readOnly: readonly,
 			minimap: { enabled: false },
 			scrollBeyondLastLine: false,
-			automaticLayout: true,
+			// Layout is driven by the shared module-level ResizeObserver (below) via
+			// the rAF-coalesced scheduleEditorLayoutPass, not per-instance observers.
+			automaticLayout: false,
 			wordWrap: 'off',
 			folding: false,
 			lineNumbers: 'on',
@@ -336,6 +360,7 @@
 		} else {
 			container.style.height = '100%';
 		}
+		unobserveContainer = observeEditorContainer(container, scheduleEditorLayoutPass);
 		scheduleEditorLayoutPass();
 
 		ed.onDidBlurEditorWidget(() => {
@@ -373,6 +398,8 @@
 
 	onDestroy(() => {
 		destroyed = true;
+		unobserveContainer?.();
+		unobserveContainer = null;
 		if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
 		if (model && clearModelCompletions) clearModelCompletions(model);
 		if (model && clearModelDialect) clearModelDialect(model);

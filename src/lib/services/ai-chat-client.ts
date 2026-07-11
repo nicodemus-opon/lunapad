@@ -33,6 +33,8 @@ import {
 	getIsDbtProject,
 	createNotebookFromPmDocument,
 	syncNotebookFromPmDocument,
+	materializeNotebookExecutableCells,
+	renameNotebook,
 	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
@@ -1470,13 +1472,13 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 			if (!cell?.result?.rows?.length) {
 				if (cell?.errors?.length) {
 					const errMsg = cell.errors.map((e) => e.display ?? e.reason).join('\n');
-					const text = `**Cell \`${cell.outputName ?? cellId}\` — error:**\n\`\`\`\n${errMsg}\n\`\`\`\nFix the SQL with update_cell.`;
+					const text = `**Cell \`${cell.outputName ?? cellId}\` — error:**\n\`\`\`\n${errMsg}\n\`\`\`\nFix the SQL with apply_notebook_patch, then run_query_nodes.`;
 					updateMessageText(aiMsgId, `\n\n${text}\n\n`);
 					return text;
 				}
 				if (cell?.status === 'error') {
 					const name = cell.outputName ?? cellId;
-					const text = `**Cell \`${name}\` is in error state (no details stored).** Call run_cells(['${name}']) to reproduce the error, then fix with update_cell.`;
+					const text = `**Cell \`${name}\` is in error state (no details stored).** Call run_query_nodes with this cellId to reproduce the error, then fix with apply_notebook_patch.`;
 					updateMessageText(aiMsgId, `\n\n${text}\n\n`);
 					return text;
 				}
@@ -1643,13 +1645,14 @@ async function executeToolCallWithResult(
 			if (!notebook) return 'apply_notebook_patch: notebook not found';
 			let document: PMDocJSON | null = null;
 			let executableCells = args.executableCells ?? [];
+			let notebookTitle = args.title;
 
 			if (args.blueprint) {
 				const allCells = getAllCellsAcrossNotebooks();
 				const compiled = compileNotebookBlueprint(
 					args.blueprint,
 					allCells.map((cell) => cell.outputName),
-					allCells.map((cell) => cell.id)
+					notebook.cells.map((cell) => cell.id)
 				);
 				if (!compiled.document) {
 					return `apply_notebook_patch: blueprint validation failed; repair these diagnostics: ${compiled.diagnostics
@@ -1659,6 +1662,7 @@ async function executeToolCallWithResult(
 				}
 				document = compiled.document;
 				executableCells = compiled.executableCells;
+				notebookTitle ??= args.blueprint.title;
 			} else if (args.document) {
 				document = normalizePmNodeIds(args.document);
 			} else if (args.operations?.length) {
@@ -1675,7 +1679,13 @@ async function executeToolCallWithResult(
 				document = patched.document;
 			}
 
-			if (!document) return 'apply_notebook_patch: provide blueprint, document, or operations';
+			if (!document) {
+				if (notebookTitle?.trim()) {
+					renameNotebook(notebook.id, notebookTitle.trim());
+					return `Notebook '${notebookTitle.trim()}' renamed`;
+				}
+				return 'apply_notebook_patch: provide blueprint, document, operations, or title';
+			}
 			const diagnostics = validateNotebookPmDocument(document);
 			if (diagnostics.length) {
 				return `apply_notebook_patch: document validation failed; repair these diagnostics: ${diagnostics
@@ -1684,19 +1694,46 @@ async function executeToolCallWithResult(
 					.join('; ')}`;
 			}
 
-			syncNotebookFromPmDocument(notebook.id, document);
+			syncNotebookFromPmDocument(notebook.id, document, {
+				allowNewQueryCellIds: (executableCells ?? []).map((payload) => payload.cellId)
+			});
+			const hasExecutablePayloadCell = (payload: (typeof executableCells)[number]) => {
+				const targetNotebook = getNotebooks().find((entry) => entry.id === notebook.id);
+				return Boolean(
+					targetNotebook?.cells.some(
+						(cell) =>
+							(cell.cellType === 'query' || cell.cellType === 'python') &&
+							(cell.id === payload.cellId || cell.outputName === payload.outputName)
+					)
+				);
+			};
+			materializeNotebookExecutableCells(
+				notebook.id,
+				(executableCells ?? []).filter((payload) => !hasExecutablePayloadCell(payload))
+			);
+			const missingExecutableIds = (executableCells ?? [])
+				.filter((payload) => !hasExecutablePayloadCell(payload))
+				.map((payload) => payload.cellId);
+			if (missingExecutableIds.length) {
+				return `apply_notebook_patch: query nodes were not created for executable cellIds: ${missingExecutableIds.join(', ')}`;
+			}
 			for (const payload of executableCells ?? []) {
 				const existingId = resolveCellId(payload.cellId) ?? resolveCellId(payload.outputName);
 				if (!existingId) continue;
 				if (payload.cellType === 'python') updatePythonCellCode(existingId, payload.code);
 				else updateCellCode(existingId, sanitizeSQL(stripTrailingSemicolons(payload.code)));
 				if (payload.outputName) updateCellName(existingId, payload.outputName);
+				_outputNameToId.set(payload.outputName, existingId);
+				markGhostCell(existingId);
+			}
+			if (notebookTitle?.trim() && notebook.name !== notebookTitle.trim()) {
+				renameNotebook(notebook.id, notebookTitle.trim());
 			}
 			appendActionEvent(aiMsgId, {
 				tool: 'update_cell',
-				label: `Patched notebook \`${notebook.name}\``
+				label: `Patched notebook \`${notebookTitle?.trim() || notebook.name}\``
 			});
-			return `Notebook '${notebook.name}' patched and validated`;
+			return `Notebook '${notebookTitle?.trim() || notebook.name}' patched and validated`;
 		}
 
 		case 'create_cell': {
@@ -1947,7 +1984,7 @@ async function executeToolCallWithResult(
 			if (!cellId) return `pick_chart: cell '${ref}' not found`;
 			const cell = getCells().find((c) => c.id === cellId);
 			if (!cell?.result?.columns?.length) {
-				return `pick_chart: no results yet for '${ref}' — call run_cells first`;
+				return `pick_chart: no results yet for '${ref}' — call run_query_nodes first`;
 			}
 			const chart = inferChartFromColumns(cell.result.columns, cell.result.rows ?? []);
 			if (!chart) {
@@ -2260,9 +2297,9 @@ async function executeToolCallWithResult(
 							const closest = findClosestColumn(failingCol, allSchema);
 							if (closest) {
 								categoryHint = `\n⚠ Column "${failingCol}" not found. Did you mean "${closest.column}" from ${closest.table}?`;
-							}
-						}
-					}
+		}
+	}
+}
 
 					// Detect unquoted spaced column names in the failing SQL and give a direct fix hint
 					const allSpacedCols = [
@@ -2336,7 +2373,7 @@ async function executeToolCallWithResult(
 			const cell = id ? getCells().find((c) => c.id === id) : null;
 			if (!cell) return `validate_result: cell "${cellId}" not found`;
 			if (!cell.result)
-				return `validate_result(${cell.outputName}): no result — call run_cells first`;
+				return `validate_result(${cell.outputName}): no result — call run_query_nodes first`;
 			const rows = cell.result.rows?.length ?? 0;
 			const cols = cell.result.columns ?? [];
 			const checks: string[] = [];
@@ -2366,7 +2403,7 @@ async function executeToolCallWithResult(
 			if (!c1 || !c2)
 				return `compare_cells: cell(s) not found (${!c1 ? cellId1 : ''} ${!c2 ? cellId2 : ''})`.trim();
 			if (!c1.result || !c2.result)
-				return `compare_cells: both cells must have results — call run_cells first`;
+				return `compare_cells: both cells must have results — call run_query_nodes first`;
 			const cols1 = new Set(c1.result.columns ?? []);
 			const cols2 = new Set(c2.result.columns ?? []);
 			const onlyIn1 = [...cols1].filter((c) => !cols2.has(c));
@@ -3331,7 +3368,7 @@ async function runSubagentPipeline(
 				planAssertions
 					.map((a, i) => `${i + 1}. ${a.model} — ${a.description}: ${a.sql}`)
 					.join('\n') +
-				'\nAfter run_cells succeeds, run each assertion. If any returns FALSE or non-zero, fix the model.'
+				'\nAfter run_query_nodes succeeds, run each assertion. If any returns FALSE or non-zero, fix the model with apply_notebook_patch.'
 			: '';
 	const sqlBaseContent = `${userText}\n\n${discSummary}${assertionsBlock}`;
 	let sqlInjection: { role: 'user'; content: string } | null = null;
@@ -3431,17 +3468,17 @@ async function runSubagentPipeline(
 
 			const directive =
 				errorLines.length > 0
-					? `Fix SQL errors — call update_cell then run_cells:\n${errorLines.join('\n')}`
+					? `Fix SQL errors with apply_notebook_patch, then run_query_nodes:\n${errorLines.join('\n')}`
 					: builtQueryCellCount() === 0 && !hasFindingsNow
-						? 'No SQL models created yet. Call create_cell with cellType:"query" and complete SQL, then call run_cells to execute it.'
+						? 'No SQL models created yet. Call create_notebook with executableCells and matching queryBlock blocks, then call run_query_nodes to execute them.'
 						: unrun.length > 0
-							? `Cells created but not yet executed. Call run_cells with cellIds: ${JSON.stringify(unrun)} to validate them, then continue.`
+							? `Query nodes created but not yet executed. Call run_query_nodes with cellIds: ${JSON.stringify(unrun)} to validate them, then continue.`
 							: charts.length > 0 && !hasFindingsNow
-								? `Cells run clean. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") — use \`$outputName.field\` live refs for all key numbers (e.g. \`$orders.count orders processed\`, \`$top.revenue\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) output <done> with follow-up suggestions.`
+								? `Cells run clean. Now: (1) add a findings text block with apply_notebook_patch — use \`$outputName.field\` live refs for all key numbers (e.g. \`$orders.count orders processed\`, \`$top.revenue\`) so the summary stays accurate when data refreshes; (2) call pick_chart for: ${charts.join(', ')}; (3) validate_notebook and output <done> with follow-up suggestions.`
 								: charts.length > 0
 									? `Cells run clean. Call pick_chart for: ${charts.join(', ')}, then output <done> with follow-up suggestions.`
 									: !hasFindingsNow
-										? 'Cells run clean. Write a findings markdown cell (cellType:"markdown", outputName:"findings") — use `$outputName.field` live refs for all key numbers so the summary updates when data refreshes. Then output <done> with follow-up suggestions.'
+										? 'Cells run clean. Add a findings text block with apply_notebook_patch — use `$outputName.field` live refs for all key numbers so the summary updates when data refreshes. Then validate_notebook and output <done> with follow-up suggestions.'
 										: 'All done. Output <done> with follow-up suggestions.';
 			sqlInjection = {
 				role: 'user',
@@ -3462,8 +3499,8 @@ async function runSubagentPipeline(
 			sqlInjection = {
 				role: 'user',
 				content: anyBuiltCellFailing()
-					? 'Cells still have SQL errors. Call update_cell with corrected SQL, then run_cells to verify. Do NOT respond with prose only.'
-					: 'You have not built the model yet. Call create_cell with the SQL, then run_cells to validate. Do NOT respond with prose only.'
+					? 'Cells still have SQL errors. Call apply_notebook_patch with corrected SQL, then run_query_nodes to verify. Do NOT respond with prose only.'
+					: 'You have not built the model yet. Call create_notebook with executableCells and matching queryBlock blocks, then run_query_nodes to validate. Do NOT respond with prose only.'
 			};
 			sqlDepth++;
 			continue;
@@ -3567,7 +3604,7 @@ async function runSubagentPipeline(
 					errLines.length > 0
 						? {
 								role: 'user',
-								content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nFix SQL errors — call update_cell then run_cells:\n${errLines.join('\n')}`
+								content: `Tool results:\n\n${fixResults.join('\n\n---\n\n')}\n\nFix SQL errors with apply_notebook_patch, then run_query_nodes:\n${errLines.join('\n')}`
 							}
 						: {
 								role: 'user',
@@ -3577,7 +3614,7 @@ async function runSubagentPipeline(
 				fixInjection = {
 					role: 'user',
 					content:
-						'Call update_cell with the fix and run_cells to verify. Do NOT respond with prose only.'
+						'Call apply_notebook_patch with the fix and run_query_nodes to verify. Do NOT respond with prose only.'
 				};
 			}
 			fixDepth++;
@@ -3651,7 +3688,7 @@ async function runDebugLoop(
 			const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
 			const runFailedLines = allToolResults.filter((r) => r.includes(': RUN FAILED —'));
 			const getCellErrorLines = allToolResults.filter(
-				(r) => r.includes('— error:') && r.includes('Fix the SQL with update_cell')
+				(r) => r.includes('— error:') && r.includes('Fix the SQL with apply_notebook_patch')
 			);
 			// Exit immediately when run_cells succeeded (no failures) — avoids sending an extra
 			// turn just to emit <done>, which can be very slow with external LLM providers.
@@ -3660,10 +3697,10 @@ async function runDebugLoop(
 			if (signalledDone && runFailedLines.length === 0 && getCellErrorLines.length === 0) break;
 			const directive =
 				runFailedLines.length > 0
-					? `Fix the SQL error — call update_cell with corrected SQL then run_cells:\n${runFailedLines.join('\n')}`
+					? `Fix the SQL error with apply_notebook_patch, then run_query_nodes:\n${runFailedLines.join('\n')}`
 					: getCellErrorLines.length > 0
-						? `The cell has an SQL error. Call update_cell with corrected SQL (use valid column names from the table), then run_cells to verify:\n${getCellErrorLines.join('\n')}`
-						: 'Continue debugging. Call run_cells to verify the fix, then call <done>.';
+						? `The cell has an SQL error. Call apply_notebook_patch with corrected SQL (use valid column names from the table), then run_query_nodes to verify:\n${getCellErrorLines.join('\n')}`
+						: 'Continue debugging. Call run_query_nodes to verify the fix, then call <done>.';
 			injection = {
 				role: 'user',
 				content: `Tool results:\n\n${allToolResults.join('\n\n---\n\n')}\n\n${directive}`
@@ -3679,7 +3716,7 @@ async function runDebugLoop(
 			injection = {
 				role: 'user',
 				content:
-					'Call run_cells on the failing cell to reproduce the SQL error (the run result will contain the error message), then call update_cell with the corrected SQL and run_cells again to verify. Do NOT respond with prose only.'
+					'Call run_query_nodes on the failing cell to reproduce the SQL error (the run result will contain the error message), then call apply_notebook_patch with the corrected SQL and run_query_nodes again to verify. Do NOT respond with prose only.'
 			};
 			depth++;
 			continue;
@@ -4203,7 +4240,7 @@ export async function submitAIMessage(
 						agentInjection = {
 							role: 'user',
 							content:
-								'You described a plan but did not call any tools. Execute it now: call sample_data to investigate the data, then create_cell, run_cells, and pick_chart to build the notebook.'
+								'You described a plan but did not call any tools. Execute it now: call sample_data to investigate the data, then apply_notebook_patch with executableCells and matching queryBlock blocks to edit the active notebook, run_query_nodes, and pick_chart as needed.'
 						};
 						depth++;
 						continue;
@@ -4227,7 +4264,7 @@ export async function submitAIMessage(
 							.map((c) => {
 								const match = lastErrorDetails.find((d) => d.startsWith(`${c.outputName}:`));
 								return (
-									match ?? `${c.outputName}: RUN FAILED — (call run_cells to see current error)`
+									match ?? `${c.outputName}: RUN FAILED — (call run_query_nodes to see current error)`
 								);
 							})
 							.join('\n');
@@ -4237,7 +4274,7 @@ export async function submitAIMessage(
 							.join('\n');
 						agentInjection = {
 							role: 'user',
-							content: `These cells still have SQL errors — fix them by calling update_cell then run_cells:\n${details}\n\nLast errors:\n${errorHint}\n\nCall update_cell(cellId="<outputName>", code="<corrected SQL>") for each failing cell. Do NOT respond with prose only.`
+							content: `These cells still have SQL errors — fix them with apply_notebook_patch, then run_query_nodes:\n${details}\n\nLast errors:\n${errorHint}\n\nPatch each failing query payload by cellId/outputName. Do NOT respond with prose only.`
 						};
 						errorStallRetries++;
 						depth++;
@@ -4281,14 +4318,14 @@ export async function submitAIMessage(
 								);
 							nudgeContent =
 								unchartedNames.length > 0
-									? `You stopped mid-task. Complete these steps in order: (1) call create_cell with cellType:"markdown", outputName:"findings" to write a findings summary, (2) call pick_chart for each query cell: ${unchartedNames.join(', ')}, (3) output <done> with follow-up suggestions. Do not respond with prose only — call the tools now.`
-									: 'You stopped mid-task without signalling completion. Write a findings markdown cell (create_cell cellType:"markdown", outputName:"findings") then output <done> with follow-up suggestions.';
+									? `You stopped mid-task. Complete these steps in order: (1) call apply_notebook_patch to add findings text blocks to the active notebook, (2) call pick_chart for each query cell: ${unchartedNames.join(', ')}, (3) validate_notebook and output <done> with follow-up suggestions. Do not respond with prose only — call the tools now.`
+									: 'You stopped mid-task without signalling completion. Add findings text blocks with apply_notebook_patch, validate_notebook, then output <done> with follow-up suggestions.';
 						} else if (prevHadDataToolCalls) {
 							nudgeContent =
-								'You investigated the source data but have not built any cells yet. Proceed now: call list_cells and search_workspace (Step 1 — Discover), then create_cell for each model (Step 2 — Build), run_cells (Step 4 — Validate), and pick_chart. Do not respond with prose only — call the tools.';
+								'You investigated the source data but have not built any query nodes yet. Proceed now: call list_cells and search_workspace (Step 1 — Discover), then apply_notebook_patch with executableCells and queryBlock blocks, run_query_nodes (Step 4 — Validate), and pick_chart. Do not respond with prose only — call the tools.';
 						} else {
 							nudgeContent =
-								'You have not called any tools. Use the exact <tool_call> format from the instructions — do NOT output raw JSON or prose descriptions of tool calls. Required format:\n<tool_call>{"tool":"query_data","callId":"D1","args":{"sql":"SELECT ..."}}</tool_call>\nCall sample_data or query_data to investigate the data, then create_cell, run_cells, and pick_chart.';
+								'You have not called any tools. Use the exact <tool_call> format from the instructions — do NOT output raw JSON or prose descriptions of tool calls. Required format:\n<tool_call>{"tool":"query_data","callId":"D1","args":{"sql":"SELECT ..."}}</tool_call>\nCall sample_data or query_data to investigate the data, then apply_notebook_patch with executableCells and queryBlock blocks, run_query_nodes, and pick_chart.';
 						}
 						agentInjection = { role: 'user', content: nudgeContent };
 						midTaskStallRetries++;
@@ -4319,14 +4356,14 @@ export async function submitAIMessage(
 				if (allResultsAreInspection && _outputNameToId.size === 0) {
 					directive =
 						'Discovery complete. Now BUILD the analysis: call sample_data on the most relevant table ' +
-						'(or query_data for a quick overview), then create_cell for each model you need, run_cells ' +
+						'(or query_data for a quick overview), then apply_notebook_patch with executableCells and queryBlock blocks, run_query_nodes ' +
 						'to validate, and pick_chart to visualise results. Do not respond with prose only — call the tools now.';
 				} else if (hadDataToolCalls && _outputNameToId.size === 0) {
 					// Data investigation complete but no cells built yet — strong "build now" directive prevents
 					// the model from stalling after sample_data/query_data/profile_column stops the stream.
 					directive =
-						'Data investigation complete. Now build the analysis: call create_cell for each model you need ' +
-						'(using the actual data structure shown above), then run_cells to validate, and pick_chart to visualise. ' +
+						'Data investigation complete. Now build the analysis: call apply_notebook_patch with executableCells and queryBlock blocks ' +
+						'(using the actual data structure shown above), then run_query_nodes to validate, and pick_chart to visualise. ' +
 						'Do not respond with prose only — call the tools now.';
 				} else if (
 					((hadRunCells && !hasRunErrors) || hadGetCellResult) &&
@@ -4342,8 +4379,8 @@ export async function submitAIMessage(
 					const prefix = hadRunCells ? 'Cells ran successfully' : 'Cell data retrieved';
 					directive =
 						uncharted.length > 0
-							? `${prefix}. Now: (1) write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, (2) call pick_chart for: ${uncharted.join(', ')}, (3) output <done> with 3 follow-up suggestions.`
-							: `${prefix}. Now write a findings markdown cell (cellType:"markdown", outputName:"findings") documenting what was built and any data quality observations, then output <done> with 3 follow-up suggestions.`;
+							? `${prefix}. Now: (1) add findings text blocks with apply_notebook_patch documenting what was built and any data quality observations, (2) call pick_chart for: ${uncharted.join(', ')}, (3) validate_notebook and output <done> with 3 follow-up suggestions.`
+							: `${prefix}. Now add findings text blocks with apply_notebook_patch documenting what was built and any data quality observations, validate_notebook, then output <done> with 3 follow-up suggestions.`;
 				} else {
 					directive = 'Continue based on these results.';
 				}
@@ -4352,7 +4389,7 @@ export async function submitAIMessage(
 					// Do not repeat errorLines here — they are already shown in Tool results above.
 					// Redundant SQL/schema blocks in the directive caused the model to interpret
 					// error results as "SQL snippet output" and miss the RUN FAILED signal.
-					directive = `The cells above show RUN FAILED. You MUST fix them:\n1. Call update_cell(cellId="<name>", code="<corrected SQL>") for each failing cell: ${failingNames}\n2. Then call run_cells([${failingNames}]) to verify the fix.\nDo NOT assume a cell works until run_cells reports success rows. Do NOT output <done> until all cells succeed.`;
+					directive = `The cells above show RUN FAILED. You MUST fix them:\n1. Call apply_notebook_patch with corrected executableCells for each failing cell: ${failingNames}\n2. Then call run_query_nodes with those cellIds to verify the fix.\nDo NOT assume a cell works until run_query_nodes reports success rows. Do NOT output <done> until all cells succeed.`;
 					// If the error text contains backticks, hint the model about DuckDB identifier syntax
 					if (errorLines.some((l) => l.includes('`'))) {
 						directive +=
@@ -4364,7 +4401,7 @@ export async function submitAIMessage(
 					const names = [...new Set([...createdButNotRun, ...updatedButNotRun])]
 						.map((id) => getCells().find((c) => c.id === id)?.outputName ?? id)
 						.join(', ');
-					directive = `Cells were created/updated but NOT run: ${names}. Calling update_cell does NOT verify correctness — you MUST call run_cells([${names}]) now to confirm they work.`;
+					directive = `Query nodes were created/updated but NOT run: ${names}. Patching code does NOT verify correctness — you MUST call run_query_nodes with those cellIds now to confirm they work.`;
 				}
 				agentInjection = {
 					role: 'user',
@@ -4485,3 +4522,5 @@ export async function submitAIMessage(
 		void flushAgentTelemetry();
 	}
 }
+
+export { executeToolCallWithResult as __executeToolCallWithResultForTests };

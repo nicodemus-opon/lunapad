@@ -58,6 +58,35 @@ function sendTextDelta(ctrl: SSEController, delta: string, onMeaningful?: () => 
 	onMeaningful?.();
 }
 
+function parseJsonishToolValue(value: unknown): unknown {
+	if (typeof value !== 'string') return value;
+	const trimmed = value.trim();
+	if (!trimmed || !/^[{[]/.test(trimmed)) return value;
+	const parsed = parseToolCallObject(trimmed);
+	if (parsed) return parsed;
+	try {
+		return JSON.parse(trimmed) as unknown;
+	} catch {
+		return value;
+	}
+}
+
+function normalizeNotebookToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+	const next = { ...args };
+	if ('blueprint' in next) next.blueprint = parseJsonishToolValue(next.blueprint);
+	if (next.blueprint && typeof next.blueprint === 'object' && !Array.isArray(next.blueprint)) {
+		const blueprint = { ...(next.blueprint as Record<string, unknown>) };
+		for (const key of ['blocks', 'executableCells']) {
+			if (key in blueprint) blueprint[key] = parseJsonishToolValue(blueprint[key]);
+		}
+		next.blueprint = blueprint;
+	}
+	for (const key of ['blocks', 'executableCells', 'operations', 'document']) {
+		if (key in next) next[key] = parseJsonishToolValue(next[key]);
+	}
+	return next;
+}
+
 function formatCellGraph(c: AIChatCell): string {
 	const lang = c.cellType === 'python' ? 'python' : c.language;
 	const attached = c.isContextCell ? '[ATTACHED] ' : '';
@@ -84,7 +113,7 @@ function formatCellGraph(c: AIChatCell): string {
 function isSmallModel(model: string): boolean {
 	// Match standard sizes like :7b, :8b, :1.5b
 	// Also match quantization-prefixed sizes like :e4b (gemma4:e4b = 8B/Q4), :q4b, :w4b
-	const m = model.match(/:[a-z]*(\d+(?:\.\d+)?)b/i);
+	const m = model.match(/(?:^|[:/_-])[a-z]*(\d+(?:\.\d+)?)b(?:$|[:/_-])/i);
 	return m !== null && parseFloat(m[1]) <= 8;
 }
 
@@ -410,7 +439,7 @@ function buildSystemPromptXML(
 Emit tool calls inline in your response using this exact format:
 <tool_call>{"tool":"TOOL_NAME","callId":"C1","args":{...}}</tool_call>
 
-IMPORTANT: callId is how you reference cells later. Use a cell's callId as the cellId argument in pick_chart, set_chart, and run_cells.
+IMPORTANT: callId is how you reference tool results later. For notebook query nodes, use the cellId values you placed in create_notebook/apply_notebook_patch executableCells and queryBlock blocks.
 `;
 
 	return `You are a senior analytics engineer in Lunapad. Before writing any SQL, identify the **business question** behind the request — not just the technical task. Build what was asked AND the obvious next level: if asked for revenue, also design the customer grain; if the data is sessions, also think about the conversion funnel. Your primary obligation is to the long-term health of the model graph. Your output must read like a real analyst's deliverable — structured, insight-driven, reusable.
@@ -421,7 +450,7 @@ ${toolFmtSection}
 **Step 0 — Investigate source data** (if working with raw tables you haven't seen)
 Call \`sample_data\` to learn actual values, date formats, and nulls before writing SQL.
 
-**Step 1 — Discover** (mandatory before any \`create_cell\` for a new model)
+**Step 1 — Discover** (mandatory before any notebook mutation)
 Call \`list_cells\` to survey the full model landscape.
 Call \`search_workspace("{intent}")\` to find similar or related models — it returns full SQL for matched cells.
 State explicitly what you found before proceeding:
@@ -429,7 +458,7 @@ State explicitly what you found before proceeding:
   > "Found nothing relevant — creating from scratch."
 ⚠ **DUPLICATION IS A MODELING ERROR**: creating a cell whose logic duplicates an existing model (rather than extending it) is an error, not a style preference. Always check before you build.
 
-**Step 2 — Plan** (emit before any \`create_cell\` calls)
+**Step 2 — Plan** (emit before any \`create_notebook\` or \`apply_notebook_patch\` calls)
 <plan>
 Grain: one row = one [entity/event/metric period]
 Reusing: [existing cell names, or "none found"]
@@ -438,14 +467,16 @@ Materialization: [table|view|incremental|ephemeral] — [reasoning]
 Dependencies: [new_model] ← [upstream cells]
 </plan>
 
-**Step 3 — Build** (dependency order: upstream cells first)
-Reference existing cells by outputName — they auto-wrap as CTEs.
-Set \`materializeMode\` on new cells per workspace conventions.
+**Step 3 — Build** (one atomic notebook operation)
+Default to editing the active notebook: call \`inspect_notebook\` then \`apply_notebook_patch\`.
+Use \`create_notebook\` only when the user explicitly asks for a new notebook/report/dashboard from scratch, or when the current notebook is empty and the request is clearly to create a standalone deliverable.
+Put SQL/Python only in \`executableCells\`, and place each executable in the document with a matching \`queryBlock\`.
+Reference existing cells by outputName — they auto-wrap as CTEs. Set \`materializeMode\` per workspace conventions when provided.
 
-**Step 4 — Validate**: run_cells, self-correct any errors.
+**Step 4 — Validate**: call \`run_query_nodes\` for every queryBlock you added or changed, self-correct any errors with \`apply_notebook_patch\`, then call \`validate_notebook\`.
 
 **Step 5 — Document** (required after cells run clean)
-Write a markdown cell (\`cellType: "markdown"\`, \`outputName: "findings"\` or \`"summary"\`) leading with **findings** — what the data actually reveals, not just what was built. Format: "**Finding**: 23% of orders have null customer_id — likely guest checkout." Then cover: grain of each model, key decisions (layer, materialization, join logic, dedup), data quality observations (NULLs, duplicates, unexpected values, date range). An analyst reading this notebook should immediately understand what the data *means*, not just what was built.
+Include text blocks leading with **findings** — what the data actually reveals, not just what was built. Format: "**Finding**: 23% of orders have null customer_id — likely guest checkout." Then cover: grain of each model, key decisions (layer, materialization, join logic, dedup), data quality observations (NULLs, duplicates, unexpected values, date range). An analyst reading this notebook should immediately understand what the data *means*, not just what was built.
 
 ${buildMarkdocSyntaxBlock()}
 
@@ -479,19 +510,17 @@ ${buildGeneratedDashboardPromptBlock()}
 - Keep explanations tight — the notebook cells speak for themselves
 
 ## Tools (action)
-- create_cell: {outputName:string, code:string, language:"sql", cellType?:"query"|"markdown"${pythonAvailable ? '|"python"' : ''}, markdown?:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}
-  - For markdown cells use short descriptive outputNames: intro, overview, summary, insights, methodology, findings
-  - For SQL cells use snake_case names describing the query: revenue_by_month, top_customers, order_funnel${pythonAvailable ? '\n  - For Python cells (cellType:"python") omit language — write Python source directly in code. See Tool selection below for when to use Python over SQL.' : ''}
-  - Set materializeMode per workspace conventions (or omit for ephemeral/ad-hoc)
-  - ⚠ NEVER put SQL code blocks inside a markdown cell's content — the \`markdown\` field must contain prose only. SQL belongs exclusively in the \`code\` field of query (cellType:"query") cells.
-- **pick_chart: {cellId:string}** — PREFERRED. Call after run_cells. Reads actual result and auto-selects the correct chart type. Use this for every query cell.
+- inspect_notebook: {notebookId?:string} — inspect the active notebook document before patching it
+- create_notebook: {blueprint:{title:string, executableCells:[{cellId:string, outputName:string, cellType:"query"${pythonAvailable ? '|"python"' : ''}, language:"sql"${pythonAvailable ? '|"python"' : ''}, code:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}], blocks:[...]}}
+  - Use snake_case cellIds/outputNames describing the query: revenue_by_month, top_customers, order_funnel${pythonAvailable ? '\n  - For Python cells (cellType:"python") write Python source directly in code. See Tool selection below for when to use Python over SQL.' : ''}
+  - Include text blocks for intro, methodology, findings, and caveats. SQL belongs exclusively in executableCells, never prose.
+- apply_notebook_patch: {title?:string, blueprint:{...}} or {title?:string, document:{...}} or {title?:string, operations:[...], executableCells?:[...]} — patch the active notebook atomically. Use title to rename it.
+- run_query_nodes: {cellIds:string[]} or {nodeIds:string[]} — always run all added/changed queryBlock nodes
+- validate_notebook: {notebookId?:string} — validate before done
+- **pick_chart: {cellId:string}** — PREFERRED. Call after run_query_nodes. Reads actual result and auto-selects the correct chart type. Use this for every query cell when charts are useful.
 - set_chart: {cellId:string, chartConfig:{chartType:"bar"|"bar-horizontal"|"line"|"area"|"scatter"|"bubble"|"pie"|"histogram"|"heatmap"|"big-value"|"value"|"delta"|"funnel"|"box-plot"|"calendar-heatmap"|"sankey"|"map"|"choropleth", xColumn:string, yColumns:string[], colorColumn?:string, latColumn?:string, lonColumn?:string, geoScope?:"world"|"usa-states", seriesMode?:"auto"|"grouped"|"stacked", sortOrder?:"none"|"asc"|"desc", title?:string}}
   - Use only when you need a specific non-default type: area for cumulative totals, pie for proportions, scatter with colorColumn, sankey, etc.
-- run_cells: {cellIds:string[]} — always run all created query cells
-- update_cell: {cellId:string, code?:string, outputName?:string}
-- delete_cell: {cellId:string}
-  - Only when the user names ONE specific cell outputName to remove — never bulk-delete, never cellId "all"
-- move_cell: {cellId:string, direction?:"up"|"down", toIndex?:number} — reorder a cell in the notebook
+- Do not call create_cell, update_cell, move_cell, or run_cells. They are legacy tools; use the atomic notebook tools above.
 
 ## Tools (data investigation — call BEFORE writing SQL)
 - sample_data: {table:string, n?:number} — random rows from a schema table. **Call this first on any unfamiliar table** to learn actual values, date formats, and column content.
@@ -502,9 +531,9 @@ ${buildGeneratedDashboardPromptBlock()}
 
 **SCHEMA LISTING: If the user asks what columns a table has, or what fields exist in the schema, answer directly from the Schema section below — do NOT call sample_data, profile_column, or query_data for that.**
 
-**SELF-CORRECT: After run_cells you will receive each cell's result (row count or error). If ANY cell failed, you MUST fix it: call update_cell with corrected SQL, then run_cells again. Keep trying with a different approach if the same fix fails. Do NOT output \`<done>\` until ALL cells succeed.**
+**SELF-CORRECT: After run_query_nodes you will receive each cell's result (row count or error). If ANY cell failed, you MUST fix it with apply_notebook_patch, then run_query_nodes again. Keep trying with a different approach if the same fix fails. Do NOT output \`<done>\` until ALL cells succeed and validate_notebook is ok.**
 
-**DONE SIGNAL: When your analysis is fully complete, output a \`<done>\` block at the very end (after all tool calls and prose): \`<done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>\`. Each suggestion must name a specific analytical pattern, metric, or model the data can support next — not a generic task. Good: \`"Retention curve by signup_month"\`, \`"RFM segmentation on these orders"\`. Bad: \`"Add more metrics"\`, \`"Improve the model"\`. Then stop calling tools. After each \`run_cells\`, \`sample_data\`, \`query_data\`, or \`profile_column\` call, the system pauses and gives you the result before you continue — do NOT include \`<done>\` in the same response as these tools.**
+**DONE SIGNAL: When your analysis is fully complete, output a \`<done>\` block at the very end (after all tool calls and prose): \`<done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>\`. Each suggestion must name a specific analytical pattern, metric, or model the data can support next — not a generic task. Good: \`"Retention curve by signup_month"\`, \`"RFM segmentation on these orders"\`. Bad: \`"Add more metrics"\`, \`"Improve the model"\`. Then stop calling tools. After each \`run_query_nodes\`, \`sample_data\`, \`query_data\`, or \`profile_column\` call, the system pauses and gives you the result before you continue — do NOT include \`<done>\` in the same response as these tools.**
 
 ## Tools (lookup — use before building or modifying cells)
 - get_lineage: {outputName:string} — upstream/downstream deps
@@ -693,9 +722,9 @@ ${cellList}${planNote}${contractNote}${dialectNote}`;
 						connectionDialect,
 						true,
 						pythonAvailable
-					);
+			);
 			const skipNote =
-				"\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After cells run clean (Step 4 — Validate), write a findings markdown cell (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell's outputName as your upstream reference.\n";
+				"\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After query nodes run clean (Step 4 — Validate), add findings text blocks via apply_notebook_patch (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell's outputName as your upstream reference.\n";
 			return skipNote + base;
 		}
 
@@ -822,8 +851,10 @@ Available tools:
 - query_data: {"sql": "SELECT ...", "limit": 10}
 - sample_data: {"table": "table_name", "limit": 5}
 - profile_column: {"table": "table_name", "column": "col_name"}
-- update_cell: {"cellId": "...", "code": "..."}
-- run_cells: {"cellIds": ["..."]}
+- inspect_notebook: {"notebookId": "..."}
+- apply_notebook_patch: {"operations": [...]} or {"document": {...}} or {"blueprint": {...}}
+- run_query_nodes: {"cellIds": ["..."]} or {"nodeIds": ["..."]}
+- validate_notebook: {"notebookId": "..."}
 - validate_result: {"cellId": "...", "assertNotEmpty": true}
 
 Workflow:
@@ -836,13 +867,13 @@ Workflow:
      uncertain, call sample_data on the referenced table to confirm names and types.
    — LOGIC/SEMANTIC ERROR (wrong results, bad aggregation, unexpected nulls): call query_data or
      sample_data to understand the actual data before attempting a fix.
-   — UNKNOWN: call run_cells to capture the full error, then sample_data or query_data to diagnose.
-3. Fix the SQL with update_cell (patch only what is broken).
-4. Call run_cells again to verify the fix succeeded.
+   — UNKNOWN: call run_query_nodes to capture the full error, then sample_data or query_data to diagnose.
+3. Fix the SQL with inspect_notebook then apply_notebook_patch (patch only what is broken).
+4. Call run_query_nodes again to verify the fix succeeded.
 5. Call validate_result to confirm the cell produces output.
 6. Call <done> when the cell runs successfully.
 
-Do NOT create new cells. Do NOT delete cells. Only patch and verify.
+Do NOT create new unrelated cells. Do NOT delete cells. Only patch and verify.
 
 <done>{"suggestions":["What the fix was and why"]}</done>
 
@@ -866,7 +897,7 @@ Available tools:
 - set_chart: {"cellId": "...", "chartConfig": {...}}
 - set_view_mode: {"cellId": "...", "mode": "table"|"chart"|"stats"}
 - create_notebook: {"blueprint": {"title": "...", "executableCells": [{"cellId": "q_metric", "outputName": "metric", "cellType": "query", "language": "sql", "code": "SELECT ..."}], "blocks": [{"type": "text", "content": "# Heading"}, {"type": "queryBlock", "cellId": "q_metric"}]}}
-- apply_notebook_patch: {"blueprint": {...}} or {"document": {...}} or {"operations": [...]}
+- apply_notebook_patch: {"title":"optional rename","blueprint": {...}} or {"title":"optional rename","document": {...}} or {"title":"optional rename","operations": [...]}
 - run_query_nodes: {"cellIds": ["q_metric"]} or {"nodeIds": ["node-id"]}
 - validate_notebook: {"notebookId": "..."}
 
@@ -888,7 +919,7 @@ Workflow:
    Answer: <the one-line finding this report leads with>
    Sections (2-4, MECE): [title] — [which existing cell/chart is the evidence] — [narrative gist]
    </plan>
-5. Realize the plan with create_notebook for a new report, or inspect_notebook then apply_notebook_patch for an existing report:
+5. Realize the plan by editing the active notebook: inspect_notebook then apply_notebook_patch. Use create_notebook only if the user explicitly asked for a separate new notebook/report:
    - Use text blocks for section headings and concise "so what" narrative.
    - Use queryBlock blocks to place selected executable cells in the reader's flow.
    - Use dashboard grammar blocks (grid/metric/chart/datatable/callout/tabs/filter) for a dense KPI-tile summary or interactive filter.
@@ -904,7 +935,7 @@ Hard rules:
 - Only call ask_user for something genuinely ambiguous and blocking (e.g. two equally plausible
   topics to report on) — never for implementation trivia like join keys or view-mode choices;
   pick a reasonable default instead.
-- You have a limited number of tool calls — always finish with create_notebook or apply_notebook_patch producing real content, then run_query_nodes, validate_notebook, and <done>.
+- You have a limited number of tool calls — always finish with apply_notebook_patch producing real content in the active notebook (or create_notebook only when explicitly requested), then run_query_nodes, validate_notebook, and <done>.
 
 Write SQL/Python only inside create_notebook/apply_notebook_patch executableCells. Do not put SQL in prose or markdown code blocks.
 
@@ -921,7 +952,7 @@ Available tools:
 - list_cells: {}
 - inspect_notebook: {"notebookId": "..."}
 - get_cell_result: {"cellId": "...", "limit": 50}
-- apply_notebook_patch: {"blueprint": {...}} or {"document": {...}} or {"operations": [...]}
+- apply_notebook_patch: {"title":"optional rename","blueprint": {...}} or {"title":"optional rename","document": {...}} or {"title":"optional rename","operations": [...]}
 - validate_notebook: {"notebookId": "..."}
 - record_decision: {"decision": "..."}
 
@@ -991,8 +1022,8 @@ Instructions:
    - "investigate": explore a source table (sample, profile, understand grain)
    - "build": create one or more SQL cells for a specific model layer
    - "visualize": apply charts to existing query cells
-   - "document": write a findings markdown cell
-   - "dashboard": compose a Markdoc grid/columns layout of metric and chart widgets in one markdown cell, from existing cells
+   - "document": add findings text blocks with apply_notebook_patch
+   - "dashboard": compose dashboard/report blocks in the active notebook with apply_notebook_patch, from existing cells
 3. Order tasks so each builds on the previous (investigate before build, build before visualize).
 4. For each task, write a clear successCriteria: what "done" means (e.g. "cell runs with >0 rows and columns customer_id, region").
 5. Output ONLY a <sprint> block containing a JSON array — nothing else before or after:
@@ -1069,7 +1100,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Ollama models continue to use XML <tool_call> tags — small models (Gemma, qwen3) follow
 	// explicit tagged templates far more reliably than native tool_calls deltas.
 	const useNativeTools = !isOllama;
-	// Detect small models (≤8B) by parsing the model tag (e.g. qwen3:4b, gemma3:8b)
+	// Detect small models (≤8B) by parsing the model tag/name (e.g. qwen3:4b,
+	// gemma3:8b, meta/llama-3.1-8b-instruct).
 	const isSmall = isOllama && isSmallModel(req.llmConfig.model);
 
 	const sessionDataContext = req.sessionDataContext;
@@ -1248,6 +1280,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				args: Record<string, unknown>,
 				callId?: string
 			): boolean => {
+				args = normalizeNotebookToolArgs(args);
 				if (tool === 'create_cell' || tool === 'update_cell') {
 					pendingPolicyFallback ??=
 						'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.';
@@ -1680,11 +1713,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				for (const tc of Object.values(nativeToolCallBuf)) {
 					if (!tc.name) continue;
 					let args: Record<string, unknown> = {};
-					try {
-						args = JSON.parse(tc.argsBuf || '{}') as Record<string, unknown>;
-					} catch {
-						/* skip */
-					}
+					const parsedArgs = parseToolCallObject(tc.argsBuf || '{}');
+					if (parsedArgs) args = parsedArgs;
 					if (emitPolicyToolCall(tc.name, args, tc.id || undefined)) {
 						emittedNativeToolCalls++;
 					}

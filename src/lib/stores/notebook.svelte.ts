@@ -427,10 +427,12 @@ interface NotebookState {
 }
 
 const GUI_COMPILE_DEBOUNCE_MS = 120;
+const AUTORUN_DEBOUNCE_MS = 2_500;
 const SCHEDULE_POLL_MS = 30_000;
 const MIN_SCHEDULE_INTERVAL_MINUTES = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES = 24 * 60;
 const guiCompileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const autoRunTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const cellRunControllers = new Map<string, AbortController>();
 const cellRunIds = new Map<string, string>(); // cellId → runId for server-side cancel
 const pythonJobByCellId = new Map<string, { notebookId: string; jobId: string }>();
@@ -3246,6 +3248,32 @@ function clearGuiCompileTimer(id: string): void {
 	guiCompileTimers.delete(id);
 }
 
+function clearAutoRunTimer(id: string): void {
+	const timer = autoRunTimers.get(id);
+	if (!timer) return;
+	clearTimeout(timer);
+	autoRunTimers.delete(id);
+}
+
+function scheduleAutoRun(id: string): void {
+	clearAutoRunTimer(id);
+	if (!state.autoRun) return;
+	const timer = setTimeout(() => {
+		autoRunTimers.delete(id);
+		const context = findCellContext(id);
+		if (!context) return;
+		const { cell } = context;
+		if (!isExecutableCell(cell)) return;
+		if (!cell.needsRun || !cell.code.trim()) return;
+		if (cell.status === 'running') {
+			scheduleAutoRun(id);
+			return;
+		}
+		void runCellAndDownstream(id);
+	}, AUTORUN_DEBOUNCE_MS);
+	autoRunTimers.set(id, timer);
+}
+
 function scheduleGuiCompile(id: string): void {
 	clearGuiCompileTimer(id);
 	const timer = setTimeout(() => {
@@ -3362,6 +3390,9 @@ export function getLLMConfig(): LLMConfig {
 
 export function setAutoRun(value: boolean): void {
 	state.autoRun = value;
+	if (!value) {
+		for (const id of autoRunTimers.keys()) clearAutoRunTimer(id);
+	}
 	scheduleSave();
 }
 
@@ -3478,6 +3509,53 @@ export interface CreateNotebookFromPmDocumentOptions {
 		language?: CellLanguage;
 		code: string;
 	}>;
+}
+
+export interface MaterializeNotebookExecutableCellPayload {
+	cellId: string;
+	outputName: string;
+	cellType?: 'query' | 'python';
+	language?: CellLanguage;
+	code: string;
+}
+
+/** Ensure executable payloads referenced by a PM document exist as flat notebook cells. */
+export function materializeNotebookExecutableCells(
+	notebookId: string,
+	payloads: MaterializeNotebookExecutableCellPayload[]
+): string[] {
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb || payloads.length === 0) return [];
+	const next = [...nb.cells];
+	const materialized: string[] = [];
+
+	for (const payload of payloads) {
+		if (
+			next.some(
+				(cell) =>
+					(cell.cellType === 'query' || cell.cellType === 'python') &&
+					(cell.id === payload.cellId || cell.outputName === payload.outputName)
+			)
+		) {
+			continue;
+		}
+		const cell =
+			payload.cellType === 'python'
+				? makePythonCell(payload.code)
+				: makeCell(payload.code, payload.outputName, payload.language ?? 'sql');
+		cell.id = payload.cellId;
+		cell.outputName = payload.outputName;
+		cell.materializeTarget = payload.outputName;
+		cell.display = 'full';
+		next.push(cell);
+		materialized.push(cell.id);
+	}
+
+	if (!materialized.length) return [];
+	replaceNotebookCells(notebookId, next);
+	scheduleSave();
+	if (state.storageMode === 'filesystem') scheduleLunaNotebookSave(notebookId);
+	return materialized;
 }
 
 /** Atomically create a notebook from a validated PM document plus executable payloads. */
@@ -3746,7 +3824,11 @@ function cellsStructureEqual(a: Cell[], b: Cell[]): boolean {
 }
 
 /** Apply a ProseMirror document back to notebook cells (document-order sync). */
-export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): void {
+export function syncNotebookFromPmDocument(
+	notebookId: string,
+	doc: PMDocJSON,
+	opts: { allowNewQueryCellIds?: Iterable<string> } = {}
+): void {
 	const nb = state.notebooks.find((n) => n.id === notebookId);
 	if (!nb) return;
 
@@ -3762,7 +3844,8 @@ export function syncNotebookFromPmDocument(notebookId: string, doc: PMDocJSON): 
 		.filter(Boolean);
 	if (queryBlockIds.length > 0 && nb.cells.length > 0) {
 		const ownIds = new Set(nb.cells.map((c) => c.id));
-		if (!queryBlockIds.some((id) => ownIds.has(id))) return;
+		const allowedNewIds = new Set(opts.allowNewQueryCellIds ?? []);
+		if (!queryBlockIds.some((id) => ownIds.has(id) || allowedNewIds.has(id))) return;
 	}
 
 	const markdownChanged = nextCells.some((c, i) => {
@@ -5508,8 +5591,10 @@ export function updateCellCode(id: string, code: string): void {
 	const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
 	cell.errors = errors;
 	cell.compiledSQL = sql;
+	if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
+	scheduleAutoRun(id);
 }
 
 export function updateCellMarkdown(id: string, markdown: string): void {
@@ -5546,8 +5631,10 @@ export function updatePythonCellCode(id: string, code: string): void {
 		cell.needsRun = true;
 		cell.staleReason = 'code-changed';
 	}
+	if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
+	scheduleAutoRun(id);
 }
 
 export function updateCellUdfBody(id: string, udfBody: string): void {
@@ -5699,9 +5786,11 @@ export function updateGuiStages(id: string, stages: GUIPipelineStage[]): void {
 	// Clear stale diagnostics and compile shortly after to keep stage-add interactions smooth.
 	cell.errors = [];
 	cell.compiledSQL = null;
+	if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
 	scheduleGuiCompile(id);
 	scheduleSave();
 	scheduleFileSave(nb.id, id);
+	scheduleAutoRun(id);
 }
 
 export function setEditMode(id: string, mode: CellEditMode): void {
@@ -6540,15 +6629,16 @@ async function _runDownstreamCells(
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
 			// Only cascade to cells that have been run before; skip brand-new unrun cells
-			if (cell.cellType !== 'query' || !cell.needsRun || !cell.lastRunAt || visited.has(cell.id))
+			if (!isExecutableCell(cell) || !cell.needsRun || !cell.lastRunAt || visited.has(cell.id))
 				continue;
 			// Same-notebook cells that continue a pipeline (don't start with `from`) already
 			// get fresh data when run via CTE chaining — skip them here
-			if (nb.id === sourceNotebookId && !startsWithFrom(cell.code)) continue;
+			if (cell.cellType === 'query' && nb.id === sourceNotebookId && !startsWithFrom(cell.code))
+				continue;
 			const refs = [...refreshedOutputNames].some((name) => reMap.get(name)!.test(cell.code));
 			if (!refs) continue;
 			visited.add(cell.id);
-			await runCell(cell.id);
+			await runExecutableCell(cell.id);
 			const finalStatus = cell.status;
 			if (finalStatus === 'success' && cell.outputName) {
 				nextRound.push({ outputName: cell.outputName, notebookId: nb.id });
@@ -7083,10 +7173,14 @@ export async function runCellAndDownstream(id: string): Promise<void> {
 	const nb = getActiveNotebook();
 	const startIdx = nb.cells.findIndex((c) => c.id === id);
 	if (startIdx === -1) return;
-	const toRun = collectRunnableSegmentCells(nb.cells, startIdx);
+	const start = nb.cells[startIdx];
+	const toRun =
+		start.cellType === 'python'
+			? collectPythonDownstreamChain(nb.cells, startIdx)
+			: collectRunnableSegmentCells(nb.cells, startIdx);
 
 	for (const cell of toRun) {
-		await runCell(cell.id);
+		await runExecutableCell(cell.id);
 	}
 	// runCell already cascades cross-notebook downstream for each cell it runs
 }
@@ -7155,6 +7249,13 @@ function isExecutableCell(cell: Cell): boolean {
 	return cell.cellType === 'query' || cell.cellType === 'python';
 }
 
+async function runExecutableCell(id: string): Promise<void> {
+	const context = findCellContext(id);
+	if (!context) return;
+	if (context.cell.cellType === 'python') await runPythonCell(id);
+	else if (context.cell.cellType === 'query') await runCell(id);
+}
+
 export async function runCellsAbove(cellId: string): Promise<void> {
 	const nb = getActiveNotebook();
 	const idx = nb.cells.findIndex((c) => c.id === cellId);
@@ -7186,14 +7287,14 @@ export function getActiveNotebookRunningCount(): number {
 
 export function getActiveNotebookStaleCount(): number {
 	const nb = getActiveNotebook();
-	return nb.cells.filter((c) => c.cellType === 'query' && c.needsRun).length;
+	return nb.cells.filter((c) => isExecutableCell(c) && c.needsRun).length;
 }
 
 export function getNotebookStaleCellCount(): number {
 	let count = 0;
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
-			if (cell.cellType === 'query' && cell.needsRun) count++;
+			if (isExecutableCell(cell) && cell.needsRun) count++;
 		}
 	}
 	return count;
@@ -7203,11 +7304,11 @@ export async function runAllStale(): Promise<void> {
 	const staleCells: Cell[] = [];
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
-			if (cell.cellType === 'query' && cell.needsRun) staleCells.push(cell);
+			if (isExecutableCell(cell) && cell.needsRun) staleCells.push(cell);
 		}
 	}
 	for (const cell of staleCells) {
-		if (cell.needsRun) await runCell(cell.id);
+		if (cell.needsRun) await runExecutableCell(cell.id);
 	}
 }
 

@@ -404,6 +404,25 @@
 			<p class="nc-lead">{catalog.detail}</p>
 		{/if}
 
+		{#if ['metric', 'progress', 'badge', 'card'].includes(parsed.tagName)}
+			<NodeConfigField label="Grid span" hint="Columns spanned inside a grid">
+				{#snippet control()}
+					<div class="nc-segments">
+						{#each [1, 2, 3, 4] as span (span)}
+							<button
+								type="button"
+								class="nc-segment"
+								class:is-active={Number(parsed.attrs.span ?? 1) === span}
+								onclick={() => setAttr('span', span === 1 ? undefined : span)}
+							>
+								×{span}
+							</button>
+						{/each}
+					</div>
+				{/snippet}
+			</NodeConfigField>
+		{/if}
+
 		{#if parsed.tagName === 'metric'}
 			<div class="nc-stack">
 				<NodeConfigField label="Value">

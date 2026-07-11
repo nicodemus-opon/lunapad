@@ -59,6 +59,87 @@ export function escapeControlCharsInStrings(raw: string): string {
 	return out;
 }
 
+/**
+ * For a (possibly truncated) JSON prefix, compute the characters needed to close any open
+ * string and any open brackets/braces, in the correct (reverse) order. Returns null if the
+ * prefix has no unclosed structure (either it's already balanced, or contains none).
+ */
+function computeClosingSuffix(prefix: string): string | null {
+	const stack: Array<'{' | '['> = [];
+	let inString = false;
+	let escaped = false;
+	let sawOpen = false;
+
+	for (let i = 0; i < prefix.length; i++) {
+		const ch = prefix[i];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+			} else if (ch === '\\') {
+				escaped = true;
+			} else if (ch === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
+		if (ch === '{' || ch === '[') {
+			stack.push(ch);
+			sawOpen = true;
+			continue;
+		}
+		if (ch === '}' || ch === ']') {
+			stack.pop();
+		}
+	}
+
+	if (!sawOpen || (stack.length === 0 && !inString)) return null;
+	let closing = '';
+	if (inString) closing += '"';
+	for (let i = stack.length - 1; i >= 0; i--) {
+		closing += stack[i] === '{' ? '}' : ']';
+	}
+	return closing;
+}
+
+/**
+ * Repair a JSON value that is either truncated mid-structure (model stopped emitting before
+ * closing all open brackets/braces/strings) or has trailing garbage after an otherwise-complete
+ * top-level value (model appended a stray closing quote/brace it thought it owed). Tries the
+ * full string first, then progressively shorter prefixes cut at `}`/`]` boundaries, closing any
+ * remaining open structure at each length — returns the first variant that parses.
+ */
+function repairMalformedJson(raw: string): Record<string, unknown> | null {
+	const candidateEnds = [raw.length];
+	let attempts = 0;
+	for (let i = raw.length - 1; i >= 0 && attempts < 80; i--) {
+		if (raw[i] !== '}' && raw[i] !== ']') continue;
+		attempts++;
+		candidateEnds.push(i + 1);
+	}
+
+	for (const end of candidateEnds) {
+		const prefix = raw.slice(0, end);
+		try {
+			return JSON.parse(prefix) as Record<string, unknown>;
+		} catch {
+			/* try closing open structure, then an earlier cut point */
+		}
+		const suffix = computeClosingSuffix(prefix);
+		if (suffix) {
+			try {
+				return JSON.parse(prefix + suffix) as Record<string, unknown>;
+			} catch {
+				/* try an earlier cut point */
+			}
+		}
+	}
+	return null;
+}
+
 const MALFORMED_CALLTOOL_NAME_MAP: Record<string, string> = {
 	listcells: 'list_cells',
 	getcellresult: 'get_cell_result',
@@ -125,11 +206,13 @@ export function parseToolCallObject(raw: string): Record<string, unknown> | null
 	} catch (err) {
 		const repaired = parseMalformedCalltoolPayload(raw);
 		if (repaired) return repaired;
+		const salvaged = repairMalformedJson(escapeControlCharsInStrings(raw));
+		if (salvaged) return salvaged;
 		console.error(
 			'[ai/chat] dropped unparseable tool call:',
 			err instanceof Error ? err.message : err,
 			'\nPayload:',
-			raw.slice(0, 500)
+			process.env.DEBUG_TOOL_CALL_PARSE ? raw : raw.slice(0, 500)
 		);
 		return null;
 	}

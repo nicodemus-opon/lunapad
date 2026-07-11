@@ -151,7 +151,11 @@ export function getAIChatPanelWidth(): number {
 	return _panelWidth;
 }
 export function setAIChatPanelWidth(w: number): void {
+	// Called per pointermove during a resize drag — no synchronous localStorage
+	// write here; callers persist once on release via persistAIChatPanelWidth.
 	_panelWidth = Math.max(260, Math.min(520, w));
+}
+export function persistAIChatPanelWidth(): void {
 	localStorage.setItem(PANEL_WIDTH_KEY, String(_panelWidth));
 }
 

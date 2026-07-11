@@ -123,6 +123,17 @@
 		expandedTable[key] = !(expandedTable[key] ?? false);
 	}
 
+	// Chunk long expanded levels (a schema with hundreds of tables, a very wide
+	// table) instead of rendering every child row at once.
+	const TREE_CHUNK = 200;
+	let chunkLimits = $state<Record<string, number>>({});
+	function limitFor(key: string): number {
+		return chunkLimits[key] ?? TREE_CHUNK;
+	}
+	function showMore(key: string) {
+		chunkLimits[key] = limitFor(key) + TREE_CHUNK;
+	}
+
 	function fmtRows(n: number): string {
 		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 		if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
@@ -339,6 +350,23 @@
 	</ContextMenu.Root>
 {/snippet}
 
+{#snippet showMoreRow(key: string, total: number, depth: number)}
+	{#if total > limitFor(key)}
+		<button
+			type="button"
+			class="w-full py-0.5 text-left text-2xs text-muted-foreground/80 transition-colors hover:text-foreground {depth ===
+			3
+				? 'pl-14'
+				: 'pl-10'}"
+			onclick={() => showMore(key)}
+		>
+			Show {Math.min(TREE_CHUNK, total - limitFor(key))} more ({(
+				total - limitFor(key)
+			).toLocaleString()} hidden)
+		</button>
+	{/if}
+{/snippet}
+
 <div class="flex h-full flex-col overflow-hidden">
 	<div class="sidebar-tree-scroll">
 		{#if loading}
@@ -383,7 +411,7 @@
 							{#if schema.tables.length === 0}
 								<p class="py-0.5 pl-14 text-2xs text-muted-foreground/70 italic">Empty</p>
 							{/if}
-							{#each schema.tables as table (table.name)}
+							{#each schema.tables.slice(0, limitFor(schemaKey)) as table (table.name)}
 								{@const tableKey = `${schemaKey}.${table.name}`}
 								{@const tableExpanded = expandedTable[tableKey] ?? false}
 								{@const rowCount = uploadedRowCounts.get(table.name)}
@@ -396,11 +424,13 @@
 								)}
 
 								{#if tableExpanded}
-									{#each table.columns as col (col.name)}
+									{#each table.columns.slice(0, limitFor(tableKey)) as col (col.name)}
 										{@render columnRow(col.name, col.type, `${table.name}.${col.name}`)}
 									{/each}
+									{@render showMoreRow(tableKey, table.columns.length, 3)}
 								{/if}
 							{/each}
+							{@render showMoreRow(schemaKey, schema.tables.length, 2)}
 						{/if}
 					{/each}
 				{/if}
@@ -433,7 +463,7 @@
 						)}
 
 						{#if schemaExpanded}
-							{#each schemaTables as table (table.name)}
+							{#each schemaTables.slice(0, limitFor(schemaKey)) as table (table.name)}
 								{@const rawName =
 									table.schema && table.name.startsWith(`${table.schema}.`)
 										? table.name.slice(table.schema.length + 1)
@@ -449,11 +479,13 @@
 								)}
 
 								{#if tableExpanded}
-									{#each table.columns as column, colIdx (column)}
+									{#each table.columns.slice(0, limitFor(tableNodeKey)) as column, colIdx (column)}
 										{@render columnRow(column, table.columnTypes[colIdx], `${rawName}.${column}`)}
 									{/each}
+									{@render showMoreRow(tableNodeKey, table.columns.length, 3)}
 								{/if}
 							{/each}
+							{@render showMoreRow(schemaKey, schemaTables.length, 2)}
 						{/if}
 					{/each}
 				{/if}

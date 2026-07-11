@@ -99,7 +99,12 @@ export function getReviewPanelWidth(): number {
 }
 
 export function setReviewPanelWidth(width: number): void {
+	// Called per pointermove during a resize drag — no synchronous localStorage
+	// write here; callers persist once on release via persistReviewPanelWidth.
 	state.panelWidth = Math.min(520, Math.max(280, width));
+}
+
+export function persistReviewPanelWidth(): void {
 	if (typeof localStorage !== 'undefined') {
 		localStorage.setItem(REVIEW_PANEL_WIDTH_KEY, String(state.panelWidth));
 	}

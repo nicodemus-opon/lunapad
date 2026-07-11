@@ -6,7 +6,7 @@
 	import type { UploadedTable } from '$lib/stores/notebook.svelte';
 	import type { ConnectionType } from '$lib/types/connection';
 	import {
-		getAvailableColumns,
+		getAvailableColumnsByIndex,
 		deriveChipErrors,
 		reconcileStagesAfterSourceChange
 	} from '$lib/services/gui-prql';
@@ -294,8 +294,13 @@
 		}
 	}
 
+	// One prefix table per render instead of getAvailableColumns per stage card
+	// call site (that was O(n²) and produced a fresh array per call, breaking
+	// child prop identity).
+	const colsByIndex = $derived(getAvailableColumnsByIndex(stages, tableSchemas));
+
 	function colsAt(idx: number): string[] {
-		return getAvailableColumns(stages, tableSchemas, idx);
+		return colsByIndex[Math.max(0, Math.min(idx, stages.length))] ?? [];
 	}
 
 	const menuColumns = $derived(colsAt(stages.length));
@@ -309,25 +314,30 @@
 		const nextStages = [...stages];
 		const nextConnectionId = connectionId;
 		const nextCoercionDialect = coercionDialect;
-		void (async () => {
-			const [chips, presets] = await Promise.all([
-				getIntelligentQuickChips({
-					connectionId: nextConnectionId,
-					stages: nextStages,
-					availableColumns: nextColumns,
-					coercionDialect: nextCoercionDialect
-				}),
-				getIntelligentPresetSuggestions({
-					connectionId: nextConnectionId,
-					stages: nextStages,
-					availableColumns: nextColumns,
-					coercionDialect: nextCoercionDialect
-				})
-			]);
-			if (seq !== quickChipLoadSeq) return;
-			intelligentQuickChips = chips;
-			intelligentPresets = presets;
-		})();
+		// Debounced: any stage/chip keystroke retriggers this effect; only fetch
+		// intelligence once the user pauses. quickChipLoadSeq still guards staleness.
+		const timer = setTimeout(() => {
+			void (async () => {
+				const [chips, presets] = await Promise.all([
+					getIntelligentQuickChips({
+						connectionId: nextConnectionId,
+						stages: nextStages,
+						availableColumns: nextColumns,
+						coercionDialect: nextCoercionDialect
+					}),
+					getIntelligentPresetSuggestions({
+						connectionId: nextConnectionId,
+						stages: nextStages,
+						availableColumns: nextColumns,
+						coercionDialect: nextCoercionDialect
+					})
+				]);
+				if (seq !== quickChipLoadSeq) return;
+				intelligentQuickChips = chips;
+				intelligentPresets = presets;
+			})();
+		}, 250);
+		return () => clearTimeout(timer);
 	});
 
 	// ── Stable stage keys for {#each} — prevents Svelte fighting SortableJS ──
@@ -335,6 +345,7 @@
 		return Math.random().toString(36).slice(2, 10);
 	}
 	let stageKeys = $state<string[]>([]);
+	let isSorting = $state(false);
 	let stageUsage = $state<Partial<Record<GUIPipelineStage['type'], number>>>({});
 	let activeStageIndex = $state<number | null>(null);
 	let stageEditorEl = $state<HTMLElement | undefined>();
@@ -347,8 +358,11 @@
 		collapsedStages = next;
 	}
 
-	// Keep stageKeys length in sync when stages are added/removed externally
-	$effect(() => {
+	// Keep stageKeys length in sync when stages are added/removed externally.
+	// $effect.pre so keys are already sized before the keyed {#each} renders —
+	// otherwise the list would key by position for one frame and churn DOM/child
+	// state on reorder.
+	$effect.pre(() => {
 		const n = stages.length;
 		if (stageKeys.length !== n) {
 			stageKeys = Array.from({ length: n }, (_, i) => stageKeys[i] ?? makeKey());
@@ -483,7 +497,15 @@
 			dragClass: 'stage-sort-drag',
 			// Use a body-appended ghost so overflow:hidden on the container doesn't clip it
 			forceFallback: false,
+			onStart() {
+				// Suppress the stage-enter keyframe while sorting so the re-render on
+				// drop doesn't replay it against Sortable's own drop animation.
+				isSorting = true;
+			},
 			onEnd(evt) {
+				requestAnimationFrame(() => {
+					isSorting = false;
+				});
 				const oldIdx = evt.oldIndex ?? 0;
 				const newIdx = evt.newIndex ?? 0;
 				if (oldIdx === newIdx) return;
@@ -518,8 +540,8 @@
 <!-- Pipeline stages -->
 <div bind:this={stageEditorEl} class="stage-editor" role="region" aria-label="Pipeline stages">
 	<div class="stage-wrapper">
-		<div bind:this={stageListEl} class="stage-stack">
-			{#each stages as stage, idx (stageKeys[idx] ?? idx)}
+		<div bind:this={stageListEl} class="stage-stack" class:is-sorting={isSorting}>
+			{#each stages as stage, idx (stageKeys[idx])}
 				{#if idx > 0}
 					<!-- Insert-between zone -->
 					<div class="insert-zone group/insert">
@@ -694,6 +716,12 @@
 		   for position:fixed descendants (chip dropdowns, popovers) */
 		animation: gui-stage-enter var(--motion-medium) var(--motion-ease-flow) backwards;
 		animation-delay: var(--stage-enter-delay, 0ms);
+	}
+
+	/* No enter animation while SortableJS is mid-drag/drop — the reorder re-render
+	   would replay it against Sortable's own drop animation. */
+	.stage-stack.is-sorting .stage-item {
+		animation: none;
 	}
 
 	/* ── Insert-between zone ── */

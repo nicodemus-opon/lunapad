@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	extractLetBindings,
+	getAvailableColumns,
+	getAvailableColumnsByIndex,
 	guiToPreql,
 	loopMiniStagesToBody,
 	mergeParsedWithHiddenStages,
@@ -1611,5 +1613,50 @@ loop (
 				{ type: 'take', n: 5 }
 			]
 		});
+	});
+});
+
+describe('getAvailableColumnsByIndex', () => {
+	const schemas = { orders: ['id', 'amount', 'status'], customers: ['id', 'name'] };
+
+	it('matches getAvailableColumns at every index in one pass', () => {
+		const stages: GUIPipelineStage[] = [
+			{ type: 'from', table: 'orders' },
+			{
+				type: 'derive',
+				columns: [
+					{
+						name: 'amount_taxed',
+						expr: {
+							mode: 'binary',
+							left: { kind: 'column', value: 'amount' },
+							op: '*',
+							right: { kind: 'literal', value: '1.16' }
+						}
+					}
+				]
+			},
+			{ type: 'join', table: 'customers', joinType: 'inner', conditions: [] },
+			{ type: 'select', columns: ['id', 'name'] },
+			{ type: 'take', n: 10 }
+		];
+		const byIndex = getAvailableColumnsByIndex(stages, schemas);
+		expect(byIndex).toHaveLength(stages.length + 1);
+		for (let i = 0; i <= stages.length; i++) {
+			expect(byIndex[i]).toEqual(getAvailableColumns(stages, schemas, i));
+		}
+		expect(byIndex[0]).toEqual([]);
+		expect(byIndex[1]).toEqual(['id', 'amount', 'status']);
+		expect(byIndex[2]).toEqual(['id', 'amount', 'status', 'amount_taxed']);
+		expect(byIndex[5]).toEqual(['id', 'name']);
+	});
+
+	it('skips disabled stages like getAvailableColumns does', () => {
+		const stages: GUIPipelineStage[] = [
+			{ type: 'from', table: 'orders' },
+			{ type: 'select', columns: ['amount'], disabled: true }
+		];
+		const byIndex = getAvailableColumnsByIndex(stages, schemas);
+		expect(byIndex[2]).toEqual(['id', 'amount', 'status']);
 	});
 });

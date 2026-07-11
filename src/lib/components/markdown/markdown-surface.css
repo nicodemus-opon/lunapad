@@ -169,7 +169,7 @@
 /* ── Details ───────────────────────────────────────────────────────────── */
 
 .md-details {
-	border: 1px solid var(--foreground);
+	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	margin: 0.5rem 0;
 	overflow: hidden;
@@ -387,7 +387,7 @@
 }
 
 .md-filter-control:hover {
-	border-color: var(--foreground);
+	border-color: var(--primary);
 }
 
 .md-filter-control:focus-visible {
@@ -811,10 +811,42 @@ textarea.md-control {
 	margin-bottom: 0;
 }
 
+/* Selected container: Jupyter-style solid left bar (no ring halo). ::before keeps
+   it out of layout — .markdoc-container-node is position: relative. */
 .markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg {
-	outline: 1px solid color-mix(in oklab, var(--ring) 45%, transparent);
-	outline-offset: 2px;
+	outline: none;
+}
+.markdown-surface .ProseMirror-selectednode.markdoc-container-node.is-wysiwyg::before {
+	content: '';
+	position: absolute;
+	left: -0.75rem;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--primary);
+}
+
+/* Grid boundaries while editing: .markdoc-container-node exists only in editor
+   node views, so the published report is unaffected. Faint by default, slightly
+   stronger while the pointer is inside the grid. */
+.markdown-surface .markdoc-container-node.is-grid > .markdoc-container-content.md-grid {
+	outline: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+	outline-offset: 4px;
 	border-radius: var(--radius-sm);
+}
+.markdown-surface .markdoc-container-node.is-grid > .markdoc-container-content.md-grid > * {
+	outline: 1px dashed color-mix(in oklab, var(--border) 55%, transparent);
+	border-radius: var(--radius-sm);
+}
+.markdown-surface .markdoc-container-node.is-grid:hover > .markdoc-container-content.md-grid {
+	outline-color: var(--border);
+}
+
+/* Keep container chrome findable while the caret is inside the container, not
+   just while hovering it. */
+.markdown-surface .markdoc-container-node:focus-within > .markdoc-container-chrome .container-chrome {
+	opacity: 1;
 }
 
 /* Re-use container semantics inside editor */
@@ -880,6 +912,11 @@ textarea.md-control {
 
 .markdown-surface .markdoc-container-node.is-callout .markdoc-container-content.md-callout {
 	grid-column: 2;
+	/* Reset the base .md-callout rule's `border: 1px solid` (defaults to
+	   currentColor/foreground) — the accent-colored border already lives on
+	   the outer .markdoc-container-node in the editor's split node/content
+	   structure, so this inner div must not draw a second one. */
+	border: none;
 }
 
 .markdown-surface .markdoc-container-node.md-callout--info {

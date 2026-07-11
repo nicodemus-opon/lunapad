@@ -24,6 +24,7 @@ vi.mock('$lib/services/project-client', async (importOriginal) => {
 });
 
 import type { Notebook } from '$lib/stores/notebook.svelte';
+import type { PMDocJSON } from '$lib/services/markdoc-pm';
 import {
 	__resetStateForTests,
 	addNotebook,
@@ -107,6 +108,31 @@ describe('notebook create roundtrip', () => {
 		expect(reloaded.cells).toHaveLength(1);
 		expect(reloaded.cells[0].id).toBe(originalCellId);
 		expect(reloaded.cells.some((c) => c.id === 'old_cell')).toBe(false);
+	});
+
+	it('allows AI sync to add an explicitly allowed new query block', () => {
+		addNotebook();
+		const notebookId = getActiveTabId();
+		const nb = getNotebooks().find((n) => n.id === notebookId)!;
+
+		const doc: PMDocJSON = {
+			type: 'doc',
+			content: [
+				{ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Revenue' }] },
+				{
+					type: 'queryBlock',
+					attrs: { cellId: 'q_revenue_by_month', cellType: 'query', pinned: true }
+				}
+			]
+		};
+
+		syncNotebookFromPmDocument(nb.id, doc, {
+			allowNewQueryCellIds: ['q_revenue_by_month']
+		});
+
+		const after = getNotebooks().find((n) => n.id === nb.id)!;
+		expect(after.cells.some((c) => c.id === 'q_revenue_by_month')).toBe(true);
+		expect(after.cells.find((c) => c.id === 'q_revenue_by_month')?.cellType).toBe('query');
 	});
 
 	it('loadProjectNotebooks preserves a new notebook before its .luna file appears on disk', async () => {

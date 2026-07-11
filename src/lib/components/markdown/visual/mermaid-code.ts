@@ -1,9 +1,12 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { buildMarkdocVariables } from '$lib/services/markdoc-interp';
+import { buildMarkdocVariables, expandLoopsInSource } from '$lib/services/markdoc-interp';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { parseAttrsJson } from './widget-registry';
 
-/** Extract diagram source from a {% mermaid %} PM container node. */
+/** Extract diagram source from a {% mermaid %} PM container node, resolving bare
+ * `$cell.field` refs and expanding `{% each %}`/`{% group %}` loops the same way
+ * the source/report render path does (markdoc-interp.ts's mermaidTag.transform) —
+ * otherwise the visual editor's live preview shows the literal template text. */
 export function mermaidCodeFromContainerNode(
 	node: ProseMirrorNode,
 	attrsJson: string,
@@ -27,7 +30,8 @@ export function mermaidCodeFromContainerNode(
 	node.forEach((child) => {
 		if (child.type.name === 'codeBlock') text = child.textContent;
 	});
-	return text;
+	if (!text.trim()) return text;
+	return expandLoopsInSource(text, { variables: buildMarkdocVariables(cells) }, {});
 }
 
 const MERMAID_FENCE_RE = /^```mermaid\s*\n([\s\S]*?)```\s*$/im;
