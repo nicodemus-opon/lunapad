@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isChatToolCallAllowed, blockedToolFallbackText } from './chat-tool-policy.js';
+import {
+	isChatToolCallAllowed,
+	blockedToolFallbackText,
+	isNativeToolCallWellFormed
+} from './chat-tool-policy.js';
 
 const ctx = {
 	schemaTableNames: new Set(['orders', 'region_targets']),
@@ -188,5 +192,98 @@ describe('chat-tool-policy', () => {
 		const msg = blockedToolFallbackText('create_cell', args, policyCtx, []);
 		expect(msg).toMatch(/distinct_companies/);
 		expect(msg).toMatch(/total_rows, min_scraped_at/);
+	});
+});
+
+describe('isNativeToolCallWellFormed: apply_notebook_patch', () => {
+	// Regression: the well-formedness gate only accepted blueprint/document/operations,
+	// so a legitimate title-only rename call — {"title": "..."} with none of those set,
+	// which ai-chat-client.ts's apply_notebook_patch handler explicitly supports via its
+	// `if (!document) { if (notebookTitle?.trim()) { renameNotebook(...) } }` branch — was
+	// silently rejected as "not well-formed" before it ever reached the client. The server
+	// then reported "Model returned an empty response" even though the model had emitted a
+	// perfectly valid tool call. Confirmed live: replaying the exact request body against
+	// the raw NVIDIA API returned a clean apply_notebook_patch({title:"Test123"}) call.
+	it('accepts a title-only rename with no blueprint/document/operations', () => {
+		expect(isNativeToolCallWellFormed('apply_notebook_patch', { title: 'Test123' })).toBe(true);
+	});
+
+	it('still accepts a blueprint-based patch', () => {
+		expect(
+			isNativeToolCallWellFormed('apply_notebook_patch', {
+				blueprint: { blocks: [{ type: 'queryBlock', cellId: 'x' }] }
+			})
+		).toBe(true);
+	});
+
+	it('still accepts a document-based patch', () => {
+		expect(
+			isNativeToolCallWellFormed('apply_notebook_patch', { document: { type: 'doc', content: [] } })
+		).toBe(true);
+	});
+
+	it('still accepts an operations-based patch', () => {
+		expect(
+			isNativeToolCallWellFormed('apply_notebook_patch', { operations: [{ op: 'noop' }] })
+		).toBe(true);
+	});
+
+	it('still rejects a call with none of title/blueprint/document/operations', () => {
+		expect(isNativeToolCallWellFormed('apply_notebook_patch', { notebookId: 'nb1' })).toBe(false);
+	});
+
+	it('rejects a blank/whitespace-only title with nothing else set', () => {
+		expect(isNativeToolCallWellFormed('apply_notebook_patch', { title: '   ' })).toBe(false);
+	});
+
+	// Regression: observed live from a real model (meta/llama-3.1-70b-instruct via NVIDIA) —
+	// it sent {"notebookId": "rev-nb-A", "executableCells": [...]} with no wrapping blueprint.
+	// Previously this was silently rejected as "not well-formed", surfacing the same generic
+	// "empty response" error. It should instead reach the handler, which returns the specific
+	// "provide blueprint, document, operations, or title" diagnostic the retry loop is already
+	// built to catch (see dashboard-loop-signals.ts's TERMINAL_TOOL_ERROR_RE).
+	it('accepts a standalone non-empty executableCells array (routes to the handler for a real diagnostic)', () => {
+		expect(
+			isNativeToolCallWellFormed('apply_notebook_patch', {
+				notebookId: 'rev-nb-A',
+				executableCells: [{ cellId: 'x', outputName: 'x', cellType: 'query', code: 'select 1' }]
+			})
+		).toBe(true);
+	});
+
+	it('rejects an empty executableCells array with nothing else set', () => {
+		expect(
+			isNativeToolCallWellFormed('apply_notebook_patch', { notebookId: 'rev-nb-A', executableCells: [] })
+		).toBe(false);
+	});
+});
+
+describe('isNativeToolCallWellFormed: run_query_nodes / run_cells empty-args fallbacks', () => {
+	// Regression: both handlers explicitly support calling with no cellIds/nodeIds at all —
+	// run_query_nodes falls back to every queryBlock cellId in the document (see
+	// queryBlockCellIdsFromDocument: undefined nodeIds → no filter → everything), and
+	// run_cells falls back to every ghost cell created this generation. The well-formedness
+	// gate required a non-empty array for both, so a model correctly calling either tool
+	// with no args (a normal, common pattern right after apply_notebook_patch) had its call
+	// silently dropped and got the generic "Model returned an empty response" instead of
+	// the tool actually running.
+	it('run_query_nodes accepts empty/missing args', () => {
+		expect(isNativeToolCallWellFormed('run_query_nodes', {})).toBe(true);
+		expect(isNativeToolCallWellFormed('run_query_nodes', { cellIds: [] })).toBe(true);
+		expect(isNativeToolCallWellFormed('run_query_nodes', { nodeIds: [] })).toBe(true);
+	});
+
+	it('run_query_nodes still accepts explicit cellIds/nodeIds', () => {
+		expect(isNativeToolCallWellFormed('run_query_nodes', { cellIds: ['x'] })).toBe(true);
+		expect(isNativeToolCallWellFormed('run_query_nodes', { nodeIds: ['n1'] })).toBe(true);
+	});
+
+	it('run_cells accepts empty/missing args', () => {
+		expect(isNativeToolCallWellFormed('run_cells', {})).toBe(true);
+		expect(isNativeToolCallWellFormed('run_cells', { cellIds: [] })).toBe(true);
+	});
+
+	it('run_cells still accepts explicit cellIds', () => {
+		expect(isNativeToolCallWellFormed('run_cells', { cellIds: ['x'] })).toBe(true);
 	});
 });

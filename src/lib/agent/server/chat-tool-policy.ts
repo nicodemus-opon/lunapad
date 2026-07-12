@@ -31,12 +31,34 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 		case 'validate_notebook':
 			return true;
 		case 'apply_notebook_patch':
-			return Boolean(args.blueprint || args.document || args.operations);
-		case 'run_query_nodes':
-			return (
-				(Array.isArray(args.nodeIds) && args.nodeIds.length > 0) ||
-				(Array.isArray(args.cellIds) && args.cellIds.length > 0)
+			// blueprint/document/operations is the normal content-editing path, but the
+			// handler also supports a title-only rename with none of those set (see
+			// ai-chat-client.ts's `if (!document) { if (notebookTitle?.trim()) { ... } }`
+			// branch) — rejecting that here as "not well-formed" silently drops a valid
+			// tool call and falsely surfaces "Model returned an empty response".
+			//
+			// A model that sends `executableCells` without a wrapping blueprint/document
+			// (missing the block placement) is genuinely incomplete, but rejecting it HERE
+			// converts that into the same unhelpful blanket "empty response" — the handler
+			// itself returns a specific, actionable "provide blueprint, document, operations,
+			// or title" message instead, which the self-correction retry loop already knows
+			// how to catch (see dashboard-loop-signals.ts). Let executableCells-only calls
+			// reach the handler so the model gets that real diagnostic to fix itself with.
+			return Boolean(
+				args.blueprint ||
+					args.document ||
+					args.operations ||
+					str(args.title) ||
+					(Array.isArray(args.executableCells) && args.executableCells.length > 0)
 			);
+		case 'run_query_nodes':
+			// The handler explicitly supports omitting both nodeIds and cellIds — it falls
+			// back to queryBlockCellIdsFromDocument(document, undefined), which (undefined
+			// nodeIds → no filter) returns every queryBlock cellId in the notebook, i.e.
+			// "run everything". Rejecting the no-args call here as "not well-formed" drops
+			// that legitimate fallback and falsely surfaces "Model returned an empty
+			// response" for a call the handler was designed to accept.
+			return true;
 		case 'profile_column':
 			return str(args.table) && str(args.column);
 		case 'sample_data':
@@ -67,7 +89,12 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 		case 'delete_cell':
 			return str(args.cellId) || str(args.outputName);
 		case 'run_cells':
-			return Array.isArray(args.cellIds) && args.cellIds.length > 0;
+			// The handler explicitly supports omitting cellIds — it falls back to every
+			// ghost cell created this generation (`[..._outputNameToId.values()]`), i.e.
+			// "run what I just created/patched". Rejecting the no-args call here drops
+			// that legitimate fallback and falsely surfaces "Model returned an empty
+			// response" for a call the handler was designed to accept.
+			return true;
 		case 'pick_chart':
 		case 'set_chart':
 			return str(args.cellId);

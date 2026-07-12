@@ -40,6 +40,8 @@ import {
 	syncNotebookFromPmDocument,
 	materializeNotebookExecutableCells,
 	renameNotebook,
+	openNotebookTab,
+	type Cell,
 	type CellSnapshot,
 	type CellMaterializationMode
 } from '$lib/stores/notebook.svelte.js';
@@ -1655,6 +1657,12 @@ async function executeToolCallWithResult(
 			const args = call.args as ApplyNotebookPatchArgs;
 			const notebook = getNotebookForAiTool(args.notebookId);
 			if (!notebook) return 'apply_notebook_patch: notebook not found';
+			// Focus the target notebook before any mutation. updateCellCode/updateCellName/
+			// updatePythonCellCode/updatePlotCellCode all resolve against getActiveNotebook()
+			// internally (not an explicit notebook id) — if the target isn't already active,
+			// every cell mutation below silently no-ops against the wrong notebook while this
+			// tool still reports success.
+			openNotebookTab(notebook.id);
 			let document: PMDocJSON | null = null;
 			let executableCells = args.executableCells ?? [];
 			let notebookTitle = args.title;
@@ -1730,7 +1738,12 @@ async function executeToolCallWithResult(
 				return `apply_notebook_patch: query nodes were not created for executable cellIds: ${missingExecutableIds.join(', ')}`;
 			}
 			for (const payload of executableCells ?? []) {
-				const existingId = resolveCellId(payload.cellId) ?? resolveCellId(payload.outputName);
+				// Resolve against the *target* notebook's cells, not the active one — the
+				// active tab may be a different notebook entirely (see openNotebookTab call
+				// below, which only switches focus after this loop already ran).
+				const targetCells = getNotebooks().find((entry) => entry.id === notebook.id)?.cells ?? [];
+				const existingId =
+					resolveCellId(payload.cellId, targetCells) ?? resolveCellId(payload.outputName, targetCells);
 				if (!existingId) continue;
 				if (payload.cellType === 'python') updatePythonCellCode(existingId, payload.code);
 				else if (payload.cellType === 'plot') updatePlotCellCode(existingId, payload.code);
@@ -2657,9 +2670,11 @@ function inferChartFromColumns(columns: string[], rows: unknown[]): InferredChar
 	};
 }
 
-function resolveCellId(ref: string): string | null {
-	// Try direct id match
-	const cells = getCells();
+function resolveCellId(ref: string, cellsOverride?: Cell[]): string | null {
+	// Try direct id match. Defaults to the active notebook's cells — callers acting on an
+	// explicitly-targeted (possibly background) notebook must pass that notebook's own
+	// cells, or this silently resolves against the wrong notebook (or finds nothing).
+	const cells = cellsOverride ?? getCells();
 	const byId = cells.find((c) => c.id === ref);
 	if (byId) return byId.id;
 

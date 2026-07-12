@@ -334,6 +334,77 @@ export function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) 
 }
 
 /**
+ * Some models (especially smaller/weaker ones under load) hallucinate a *tool result*
+ * instead of emitting a tool call — e.g. they echo back the shape of an
+ * `inspect_notebook`/`apply_notebook_patch` response (`{"notebookId":...,"document":{...},
+ * "executableCells":[...]}`) as if reporting success, without ever actually calling the
+ * tool. Nothing executes, so the notebook never updates, but the raw JSON would otherwise
+ * render verbatim in the chat as if it were the assistant's prose response — the model
+ * looks like it "did the work" while the UI silently does nothing. Detect and strip these
+ * result-shaped (not call-shaped: no `tool`/`parameters`/`function` key) objects so they
+ * don't leak into the visible response; the existing "no tool call" self-correction retry
+ * then nudges the model to actually call the tool.
+ *
+ * Only strips objects that stand alone at top level in the text — a match immediately
+ * preceded by `:` is a nested value (e.g. a real tool call's `"args":{"notebookId":...}`)
+ * and must be left alone.
+ */
+export function stripHallucinatedToolResultJson(text: string): string {
+	let result = text;
+	let searchFrom = 0;
+	const pattern = /\{"(notebookId|executableCells)"\s*:/g;
+
+	while (true) {
+		pattern.lastIndex = searchFrom;
+		const match = pattern.exec(result);
+		if (!match) break;
+		const matchIdx = match.index;
+
+		let before = matchIdx - 1;
+		while (before >= 0 && /\s/.test(result[before])) before--;
+		if (before >= 0 && result[before] === ':') {
+			searchFrom = matchIdx + 1;
+			continue;
+		}
+
+		let depth = 0,
+			end = -1;
+		for (let i = matchIdx; i < result.length; i++) {
+			if (result[i] === '{') depth++;
+			else if (result[i] === '}') {
+				depth--;
+				if (depth === 0) {
+					end = i;
+					break;
+				}
+			}
+		}
+		if (end === -1) break; // incomplete — leave in buffer for now
+
+		const candidate = result.slice(matchIdx, end + 1);
+		try {
+			const obj = JSON.parse(candidate) as Record<string, unknown>;
+			const looksLikeResult =
+				('notebookId' in obj || 'executableCells' in obj) &&
+				('document' in obj || 'executableCells' in obj) &&
+				!('tool' in obj) &&
+				!('parameters' in obj) &&
+				!('function' in obj);
+			if (looksLikeResult) {
+				result = result.slice(0, matchIdx) + result.slice(end + 1);
+				searchFrom = matchIdx;
+				continue;
+			}
+		} catch {
+			/* not valid JSON — fall through and advance past this match */
+		}
+		searchFrom = matchIdx + 1;
+	}
+
+	return result;
+}
+
+/**
  * Strip bare plan JSON objects (models that skip <plan> tags).
  * Handles any key order and finds objects via balanced-brace scanning.
  * Emits a plan_delta event for each stripped object.

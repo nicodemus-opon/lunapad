@@ -5,8 +5,11 @@ import {
 } from './ai-chat-client.js';
 import {
 	__resetStateForTests,
+	addNotebook,
 	getActiveTabId,
-	getNotebooks
+	getNotebooks,
+	getOpenNotebookTabIds,
+	openNotebookTab
 } from '$lib/stores/notebook.svelte.js';
 import { clearAIToolAuthCache } from '$lib/agent/tools/authorize.js';
 import type { AIChatToolCall } from '$lib/types/ai-chat.js';
@@ -110,6 +113,107 @@ describe('AI notebook patch executor', () => {
 		expect(result).toBe("Notebook 'Renamed Analysis' renamed");
 		expect(getNotebooks()).toHaveLength(beforeCount);
 		expect(getNotebooks().find((entry) => entry.id === notebookId)?.name).toBe('Renamed Analysis');
+	});
+
+	it('opens and focuses the patched notebook tab when it is not already active', async () => {
+		const originalActiveId = getActiveTabId();
+		addNotebook();
+		const backgroundNotebookId = getActiveTabId();
+		expect(backgroundNotebookId).not.toBe(originalActiveId);
+		// Switch focus back so the patched notebook is a background tab.
+		openNotebookTab(originalActiveId);
+		expect(getActiveTabId()).toBe(originalActiveId);
+
+		const call: AIChatToolCall = {
+			callId: 'patch-focus-1',
+			tool: 'apply_notebook_patch',
+			args: {
+				notebookId: backgroundNotebookId,
+				title: 'Background Patch Target'
+			}
+		};
+
+		const result = await __executeToolCallWithResultForTests(call, 'ai-test-message');
+
+		expect(result).toBe("Notebook 'Background Patch Target' renamed");
+		expect(getActiveTabId()).toBe(backgroundNotebookId);
+		expect(getOpenNotebookTabIds()).toContain(backgroundNotebookId);
+	});
+
+	it('updates an existing cell in a background notebook, not the active one', async () => {
+		const activeNotebookId = getActiveTabId();
+
+		// Create a second notebook and give it a query cell via apply_notebook_patch while
+		// it's active.
+		addNotebook();
+		const backgroundNotebookId = getActiveTabId();
+		expect(backgroundNotebookId).not.toBe(activeNotebookId);
+		const createCall: AIChatToolCall = {
+			callId: 'setup-1',
+			tool: 'apply_notebook_patch',
+			args: {
+				title: 'Background Target',
+				blueprint: {
+					executableCells: [
+						{
+							cellId: 'q_target',
+							outputName: 'q_target',
+							cellType: 'query',
+							language: 'sql',
+							code: 'select 1 as stale_value'
+						}
+					],
+					blocks: [{ type: 'queryBlock', cellId: 'q_target' }]
+				}
+			}
+		};
+		await __executeToolCallWithResultForTests(createCall, 'ai-test-message');
+		const backgroundCellBefore = getNotebooks()
+			.find((nb) => nb.id === backgroundNotebookId)
+			?.cells.find((c) => c.id === 'q_target');
+		expect(backgroundCellBefore?.code).toBe('select 1 as stale_value');
+
+		// Switch focus back to the original notebook — the background notebook is no longer
+		// active — then patch its existing cell's code via an explicit notebookId.
+		openNotebookTab(activeNotebookId);
+		expect(getActiveTabId()).toBe(activeNotebookId);
+
+		const activeCellsBefore = getNotebooks()
+			.find((nb) => nb.id === activeNotebookId)
+			?.cells.map((c) => c.code);
+
+		const updateCall: AIChatToolCall = {
+			callId: 'update-1',
+			tool: 'apply_notebook_patch',
+			args: {
+				notebookId: backgroundNotebookId,
+				blueprint: {
+					executableCells: [
+						{
+							cellId: 'q_target',
+							outputName: 'q_target',
+							cellType: 'query',
+							language: 'sql',
+							code: 'select 2 as fresh_value'
+						}
+					],
+					blocks: [{ type: 'queryBlock', cellId: 'q_target' }]
+				}
+			}
+		};
+		const result = await __executeToolCallWithResultForTests(updateCall, 'ai-test-message');
+		expect(result).toMatch(/patched and validated/);
+
+		const backgroundCellAfter = getNotebooks()
+			.find((nb) => nb.id === backgroundNotebookId)
+			?.cells.find((c) => c.id === 'q_target');
+		expect(backgroundCellAfter?.code).toBe('select 2 as fresh_value');
+
+		// The originally-active notebook's cells must be untouched by the background patch.
+		const activeCellsAfter = getNotebooks()
+			.find((nb) => nb.id === activeNotebookId)
+			?.cells.map((c) => c.code);
+		expect(activeCellsAfter).toEqual(activeCellsBefore);
 	});
 
 	it('materializes a complex nested notebook with multiple executable query nodes', async () => {

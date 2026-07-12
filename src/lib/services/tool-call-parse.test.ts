@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
 	parseToolCallObject,
 	escapeControlCharsInStrings,
-	parseMalformedCalltoolPayload
+	parseMalformedCalltoolPayload,
+	convertPythonDictSyntaxToJson
 } from './tool-call-parse.js';
 
 describe('parseToolCallObject', () => {
@@ -76,6 +77,53 @@ describe('parseToolCallObject', () => {
 	it('parseToolCallObject falls back to malformed compact calltool syntax', () => {
 		const obj = parseToolCallObject('namelistcells{}');
 		expect(obj).toEqual({ tool: 'list_cells', args: {} });
+	});
+});
+
+describe('convertPythonDictSyntaxToJson', () => {
+	it('converts single-quoted keys/values and Python literals to JSON', () => {
+		const raw = "{'tool': 'x', 'args': {'a': True, 'b': False, 'c': None}}";
+		expect(JSON.parse(convertPythonDictSyntaxToJson(raw))).toEqual({
+			tool: 'x',
+			args: { a: true, b: false, c: null }
+		});
+	});
+
+	it('leaves already-valid double-quoted JSON unchanged in effect', () => {
+		const raw = '{"tool":"x","args":{"a":1}}';
+		expect(JSON.parse(convertPythonDictSyntaxToJson(raw))).toEqual({ tool: 'x', args: { a: 1 } });
+	});
+
+	it('preserves an apostrophe inside a double-quoted string', () => {
+		const raw = '{"code": "don\'t stop"}';
+		expect(JSON.parse(convertPythonDictSyntaxToJson(raw))).toEqual({ code: "don't stop" });
+	});
+
+	it('handles an escaped single quote inside a single-quoted string', () => {
+		const raw = "{'code': 'don\\'t stop'}";
+		expect(JSON.parse(convertPythonDictSyntaxToJson(raw))).toEqual({ code: "don't stop" });
+	});
+
+	// Regression: this exact payload shape (single-quoted apply_notebook_patch blueprint)
+	// was observed live from a real model and silently dropped before this repair existed.
+	it('recovers a real single-quoted apply_notebook_patch-style payload', () => {
+		const raw =
+			"{'title': 'new_model_2', 'blocks': [{'type': 'queryBlock', 'nodeId': 'tasks', 'cellId': 'tasks', 'outputName': 'tasks', 'cellType': 'query', 'language': 'sql', 'code': 'select 1 as a, 2 as b, 3 as c union all select 4,5,6'}]}";
+		const parsed = JSON.parse(convertPythonDictSyntaxToJson(raw)) as {
+			title: string;
+			blocks: Array<{ code: string }>;
+		};
+		expect(parsed.title).toBe('new_model_2');
+		expect(parsed.blocks[0].code).toBe('select 1 as a, 2 as b, 3 as c union all select 4,5,6');
+	});
+});
+
+describe('parseToolCallObject with Python-dict-style payloads', () => {
+	it('recovers a single-quoted tool call end-to-end', () => {
+		const raw = "{'tool': 'apply_notebook_patch', 'args': {'title': 'Renamed', 'executableCells': []}}";
+		const obj = parseToolCallObject(raw);
+		expect(obj?.tool).toBe('apply_notebook_patch');
+		expect((obj?.args as { title: string }).title).toBe('Renamed');
 	});
 });
 

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { extractRawJsonToolCalls, normalizeToolCallArgs, stripOpenTag } from './sse-helpers.js';
+import {
+	extractRawJsonToolCalls,
+	normalizeToolCallArgs,
+	stripHallucinatedToolResultJson,
+	stripOpenTag
+} from './sse-helpers.js';
 
 describe('stripOpenTag', () => {
 	// Regression: streamed responses arrive in chunks, so a bare-JSON tool call can be split
@@ -102,5 +107,40 @@ describe('normalizeToolCallArgs', () => {
 			parameters: { outputName: 'x' }
 		});
 		expect(args).toEqual({ outputName: 'x' });
+	});
+});
+
+describe('stripHallucinatedToolResultJson', () => {
+	// Regression: a model can hallucinate a *tool result* (e.g. what apply_notebook_patch
+	// would return) instead of actually calling the tool. No mutation happens, but the raw
+	// JSON used to render verbatim in chat as if it were the assistant's prose response —
+	// looking like success while the notebook UI never updated.
+	it('strips a hallucinated apply_notebook_patch-shaped result', () => {
+		const raw =
+			'{"notebookId":"models/staging/new_model_13","name":"new_model_13","document":{"type":"doc","content":[]},"executableCells":[{"cellId":"new_model_13","outputName":"new_model_13","cellType":"query","language":"prql","code":"from x","status":"success","columns":["a"]}]}';
+		expect(stripHallucinatedToolResultJson(raw)).toBe('');
+	});
+
+	it('preserves prose surrounding the hallucinated JSON', () => {
+		const raw = `Done!${'{"notebookId":"nb1","executableCells":[]}'} Let me know if you need anything else.`;
+		expect(stripHallucinatedToolResultJson(raw)).toBe(
+			'Done! Let me know if you need anything else.'
+		);
+	});
+
+	it('does not touch a real tool call (has a "tool" key)', () => {
+		const raw = '{"tool":"apply_notebook_patch","args":{"notebookId":"nb1","executableCells":[]}}';
+		expect(stripHallucinatedToolResultJson(raw)).toBe(raw);
+	});
+
+	it('does not touch plain prose', () => {
+		expect(stripHallucinatedToolResultJson('Here is your dashboard summary.')).toBe(
+			'Here is your dashboard summary.'
+		);
+	});
+
+	it('leaves an incomplete (still-streaming) object in the buffer', () => {
+		const raw = 'Working on it... {"notebookId":"nb1","executableCells":[';
+		expect(stripHallucinatedToolResultJson(raw)).toBe(raw);
 	});
 });

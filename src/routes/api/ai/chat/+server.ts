@@ -33,6 +33,7 @@ import {
 	flushPlanBlocks,
 	flushToolCalls,
 	extractRawJsonToolCalls,
+	stripHallucinatedToolResultJson,
 	stripBarePlanJson,
 	stripThinkBlocks,
 	stripOpenTag,
@@ -1547,6 +1548,7 @@ export const POST: RequestHandler = async ({ request }) => {
 								nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf, (rawJson) => {
 									emitToolCallGuarded(rawJson);
 								});
+								nativeTextBuf = stripHallucinatedToolResultJson(nativeTextBuf);
 								// stripOpenTag also holds back incomplete {"tool":...} at the tail
 								const safeNative = stripOpenTag(nativeTextBuf);
 								if (safeNative.length > 0) {
@@ -1616,6 +1618,7 @@ export const POST: RequestHandler = async ({ request }) => {
 									if (parsedCall?.tool && STOP_AFTER_TOOLS.has(String(parsedCall.tool)))
 										stoppedForResultTool = true;
 								});
+								buffer = stripHallucinatedToolResultJson(buffer);
 								// Extract <done> blocks (agent self-termination + suggestions) AFTER
 								// tool calls so stoppedForResultTool can cut us off first.
 								buffer = flushDoneBlocks(buffer, (suggestions) => {
@@ -1697,6 +1700,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf.trim(), (rawJson) => {
 						emitToolCallGuarded(rawJson);
 					});
+					nativeTextBuf = stripHallucinatedToolResultJson(nativeTextBuf);
 					// Drop any unclosed <tool_call>/partial-JSON fragment left in the buffer —
 					// there's no more stream coming to complete it, so emitting it raw would leak
 					// literal tags (e.g. "<tool_call>") into the visible response.
@@ -1808,6 +1812,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					buffer = extractRawJsonToolCalls(buffer, (rawJson) => {
 						emitToolCallGuarded(rawJson);
 					});
+					buffer = stripHallucinatedToolResultJson(buffer);
 					const finalText = stripOpenTag(buffer).trim();
 					if (finalText) {
 						sendTextDelta(ctrl, finalText, () => {

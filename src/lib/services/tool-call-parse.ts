@@ -140,6 +140,93 @@ function repairMalformedJson(raw: string): Record<string, unknown> | null {
 	return null;
 }
 
+/**
+ * Convert Python-dict-style syntax (`{'tool': 'x', 'args': {'a': True, 'b': None}}`) into
+ * valid JSON. Some models — especially under load or with weaker instruction-following —
+ * emit tool-call payloads using Python literal syntax instead of JSON: single-quoted
+ * strings and `True`/`False`/`None` instead of `true`/`false`/`null`. Without this repair
+ * the payload fails JSON.parse and is silently dropped (see parseToolCallObject), so the
+ * requested mutation just never happens while the model still reports success.
+ *
+ * Single-pass character scan tracking string state so double-quoted string contents are
+ * copied verbatim, single-quoted strings are re-emitted as double-quoted JSON strings
+ * (embedded `"` escaped, `\'` unescaped to a literal `'`), and Python literal keywords are
+ * only substituted when they appear outside any string.
+ */
+export function convertPythonDictSyntaxToJson(raw: string): string {
+	let out = '';
+	let i = 0;
+	const n = raw.length;
+	while (i < n) {
+		const ch = raw[i];
+		if (ch === '"') {
+			out += ch;
+			i++;
+			while (i < n) {
+				out += raw[i];
+				if (raw[i] === '\\' && i + 1 < n) {
+					i++;
+					out += raw[i];
+					i++;
+					continue;
+				}
+				if (raw[i] === '"') {
+					i++;
+					break;
+				}
+				i++;
+			}
+			continue;
+		}
+		if (ch === "'") {
+			out += '"';
+			i++;
+			while (i < n) {
+				const c = raw[i];
+				if (c === '\\' && i + 1 < n) {
+					const next = raw[i + 1];
+					if (next === "'") {
+						out += "'";
+						i += 2;
+						continue;
+					}
+					out += c;
+					out += next;
+					i += 2;
+					continue;
+				}
+				if (c === "'") {
+					i++;
+					break;
+				}
+				if (c === '"') {
+					out += '\\"';
+					i++;
+					continue;
+				}
+				out += c;
+				i++;
+			}
+			out += '"';
+			continue;
+		}
+		if (/[A-Za-z_]/.test(ch)) {
+			let j = i;
+			while (j < n && /[A-Za-z_]/.test(raw[j])) j++;
+			const word = raw.slice(i, j);
+			if (word === 'True') out += 'true';
+			else if (word === 'False') out += 'false';
+			else if (word === 'None') out += 'null';
+			else out += word;
+			i = j;
+			continue;
+		}
+		out += ch;
+		i++;
+	}
+	return out;
+}
+
 const MALFORMED_CALLTOOL_NAME_MAP: Record<string, string> = {
 	listcells: 'list_cells',
 	getcellresult: 'get_cell_result',
@@ -208,6 +295,15 @@ export function parseToolCallObject(raw: string): Record<string, unknown> | null
 		if (repaired) return repaired;
 		const salvaged = repairMalformedJson(escapeControlCharsInStrings(raw));
 		if (salvaged) return salvaged;
+		const pythonConverted = convertPythonDictSyntaxToJson(raw);
+		if (pythonConverted !== raw) {
+			try {
+				return JSON.parse(escapeControlCharsInStrings(pythonConverted)) as Record<string, unknown>;
+			} catch {
+				const pythonSalvaged = repairMalformedJson(escapeControlCharsInStrings(pythonConverted));
+				if (pythonSalvaged) return pythonSalvaged;
+			}
+		}
 		console.error(
 			'[ai/chat] dropped unparseable tool call:',
 			err instanceof Error ? err.message : err,

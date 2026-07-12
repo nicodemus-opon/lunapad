@@ -67,11 +67,15 @@ const ALL_NATIVE_TOOLS = [
 		function: {
 			name: 'inspect_notebook',
 			description:
-				'Inspect the current notebook as a validated PM/Tiptap document plus executable query-node payloads. Use before editing an existing notebook.',
+				'Inspect a notebook as a validated PM/Tiptap document plus executable query-node payloads. Use before editing an existing notebook — including one that is not currently open in the UI. Omit notebookId to inspect the active notebook; pass notebookId (from list_cells/search_workspace) to inspect any other notebook in the workspace, even a background/closed one.',
 			parameters: {
 				type: 'object',
 				properties: {
-					notebookId: { type: 'string' }
+					notebookId: {
+						type: 'string',
+						description:
+							'Id of the notebook to inspect. Omit for the active notebook. Required to inspect a different, non-active notebook.'
+					}
 				}
 			}
 		}
@@ -81,11 +85,15 @@ const ALL_NATIVE_TOOLS = [
 		function: {
 			name: 'apply_notebook_patch',
 			description:
-				'Atomically patch the current notebook PM document. Use this, not create_notebook, when the user asks to add/query/rename/edit the notebook they are already in. Provide either a full replacement document, a typed notebook blueprint, or node operations. Include executableCells when adding new queryBlock nodes. The result is validated before it is committed.',
+				'Atomically patch an EXISTING notebook PM document — the active one, or any other notebook in the workspace by id (including one that is not currently open in the UI). Use this, not create_notebook, whenever the notebook you need to edit already exists — never create a second notebook just because the one you want to edit is not the active tab. Omit notebookId to patch the active notebook; pass notebookId (from list_cells/search_workspace/inspect_notebook) to patch a different, non-active notebook — the UI will switch to it. Provide either a full replacement document, a typed notebook blueprint, or node operations. Include executableCells when adding new queryBlock nodes. The result is validated before it is committed.',
 			parameters: {
 				type: 'object',
 				properties: {
-					notebookId: { type: 'string' },
+					notebookId: {
+						type: 'string',
+						description:
+							'Id of the EXISTING notebook to patch. Omit to patch the active notebook. Set this to edit any other notebook by id, even one that is not currently open — do not call create_notebook instead.'
+					},
 					title: {
 						type: 'string',
 						description: 'Optional new display name/title for the notebook being patched.'
@@ -160,7 +168,11 @@ const ALL_NATIVE_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					notebookId: { type: 'string' },
+					notebookId: {
+						type: 'string',
+						description:
+							'Id of the notebook to validate. Omit for the active notebook; pass the id you just patched with apply_notebook_patch if it was not the active one.'
+					},
 					document: { type: 'object' }
 				}
 			}
