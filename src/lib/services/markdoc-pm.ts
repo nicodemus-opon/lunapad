@@ -988,6 +988,29 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 			.trim();
 		return `- [${checked}] ${inner}`;
 	}
+	if (node.type === 'bulletList' || node.type === 'orderedList') {
+		const start =
+			node.type === 'orderedList' && typeof node.attrs?.start === 'number' ? node.attrs.start : 1;
+		return (node.content ?? [])
+			.map((item, index) => {
+				const marker = node.type === 'orderedList' ? `${start + index}.` : '-';
+				const body = serializeTiptapNode(item, schema);
+				const lines = body.split('\n');
+				const first = lines[0] ?? '';
+				const rest = lines
+					.slice(1)
+					.map((line) => `  ${line}`)
+					.join('\n');
+				return `${marker} ${first}${rest ? `\n${rest}` : ''}`;
+			})
+			.join('\n');
+	}
+	if (node.type === 'listItem') {
+		return (node.content ?? [])
+			.map((child) => serializeTiptapNode(child, schema))
+			.filter(Boolean)
+			.join('\n');
+	}
 	if (node.type === 'table') {
 		const rows = node.content ?? [];
 		const lines: string[] = [];

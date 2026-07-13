@@ -67,7 +67,7 @@
 
 <div
 	bind:this={toolbarEl}
-	class="bubble-toolbar flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md"
+	class="bubble-toolbar flex items-center gap-0.5 rounded-sm border bg-popover px-1 py-0.5 shadow-md"
 >
 	<button
 		type="button"
@@ -190,7 +190,7 @@
 				{#each turnIntoOptions as opt (opt.label)}
 					<button
 						type="button"
-						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						onmousedown={(e) => {
 							e.preventDefault();
 							opt.action();
@@ -210,15 +210,18 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
+		width: 1.65rem;
+		height: 1.65rem;
 		border-radius: var(--radius-sm);
 		color: var(--foreground);
-		transition: background var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition:
+			background var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+			color var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 	}
 	.bubble-btn:hover,
 	.bubble-btn.is-active {
-		background: color-mix(in oklab, var(--accent) 80%, transparent);
+		background: color-mix(in oklab, var(--accent) 78%, transparent);
+		color: var(--accent-foreground);
 	}
 	.bubble-btn:focus-visible {
 		outline: none;

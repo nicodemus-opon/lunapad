@@ -1006,50 +1006,6 @@
 		padding-left: var(--notebook-gutter-width);
 		margin-left: calc(-1 * var(--notebook-gutter-width));
 	}
-	:global(.notebook-document-surface) {
-		font-size: var(--text-sm);
-		line-height: 1.65;
-		color: var(--foreground);
-	}
-	/* Mirrors the report-view type scale (ReportPage.svelte .report-markdown) so the
-	   editor shows the hierarchy the published report will have: display h1,
-	   tracked-caps ruled h2, kicker h3. */
-	:global(.notebook-document-surface h1) {
-		font-size: 2.6rem;
-		font-weight: 800;
-		letter-spacing: -0.03em;
-		line-height: 1.05;
-		margin: 1.25rem 0 0.75rem;
-	}
-	:global(.notebook-document-surface h2) {
-		font-size: 0.95rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		border-top: 3px solid var(--foreground);
-		padding-top: 0.5rem;
-		margin: 1.75rem 0 0.5rem;
-	}
-	:global(.notebook-document-surface h3) {
-		font-size: var(--text-2xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--muted-foreground);
-		margin: 1rem 0 0.3rem;
-	}
-	:global(.notebook-document-surface blockquote) {
-		border: none;
-		margin: 0.5rem 0;
-		padding: 0;
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: 0.85rem;
-		color: var(--muted-foreground);
-	}
-	:global(.notebook-document-surface p) {
-		margin: 0.35rem 0;
-	}
 	.bubble-host {
 		position: absolute;
 		top: 0;

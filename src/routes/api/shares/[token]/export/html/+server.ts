@@ -87,6 +87,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   ${needsKatex ? `<style>${katexCss}</style>` : ''}
   <style>
     :root {
+      --foreground: #171717;
+      --muted-foreground: #5f6368;
+      --border: #d9d9d9;
+      --muted: #f3f4f4;
+      --primary: #0f7490;
+      --success: #15803d;
+      --warning: #b45309;
+      --destructive: #dc2626;
       --table-positive: oklch(0.73 0.17 150);
       --table-negative: oklch(0.67 0.2 25);
       --tag-1: oklch(0.52 0.185 25);
@@ -98,20 +106,35 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       --tag-7: oklch(0.52 0.19 340);
       --tag-8: oklch(0.45 0.03 60);
     }
-    body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 0 auto; padding: 2rem 1.5rem; }
-    h1 { font-size: 1.5rem; }
-    .cell { margin: 1.5rem 0; }
-    .report-markdown { font-size: 0.95rem; line-height: 1.7; }
-    .report-markdown p { margin: 0 0 0.75rem; }
-    .report-markdown h1, .report-markdown h2, .report-markdown h3, .report-markdown h4, .report-markdown h5, .report-markdown h6 { margin: 1.25rem 0 0.5rem; font-weight: 700; }
-    .report-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.85em; }
-    .report-markdown a:not(.markdoc-bookmark, .markdoc-embed-fallback) { color: #2563eb; text-decoration: underline; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 0 auto; padding: 2rem 1.5rem; color: var(--foreground); overflow-wrap: anywhere; }
+    body > h1 { font-size: 1.5rem; line-height: 1.15; margin: 0 0 0.5rem; }
+    .cell { margin: 1.35rem 0; }
+    .report-markdown { font-size: 0.95rem; line-height: 1.62; text-wrap: pretty; }
+    .report-markdown p { margin: 0.45rem 0; }
+    .report-markdown h1, .report-markdown h2, .report-markdown h3, .report-markdown h4, .report-markdown h5, .report-markdown h6 { color: var(--foreground); font-weight: 700; letter-spacing: 0; line-height: 1.18; margin: 1rem 0 0.4rem; text-transform: none; text-wrap: balance; }
+    .report-markdown h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.08; margin: 1.45rem 0 0.7rem; }
+    .report-markdown h2 { font-size: 1.35rem; font-weight: 760; margin: 1.35rem 0 0.55rem; }
+    .report-markdown h3 { font-size: 1.08rem; margin: 1.05rem 0 0.45rem; }
+    .report-markdown h4 { font-size: 0.95rem; font-weight: 680; margin: 0.9rem 0 0.35rem; }
+    .report-markdown h5 { font-size: 0.86rem; font-weight: 660; color: #34373a; margin: 0.8rem 0 0.3rem; }
+    .report-markdown h6 { font-size: 0.78rem; font-weight: 650; color: var(--muted-foreground); margin: 0.75rem 0 0.25rem; }
+    .report-markdown blockquote { margin: 0.65rem 0; padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--muted); color: #34373a; font-size: 0.92em; font-style: normal; }
+    .report-markdown blockquote > :first-child { margin-top: 0; }
+    .report-markdown blockquote > :last-child { margin-bottom: 0; }
+    .report-markdown hr { border: none; border-top: 1px solid var(--border); margin: 1.1rem 0; }
+    .report-markdown :not(pre) > code { border: 1px solid var(--border); border-radius: 0.375rem; background: var(--muted); padding: 0.05rem 0.25rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.86em; font-weight: 500; }
+    .report-markdown a:not(.markdoc-bookmark, .markdoc-embed-fallback) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+    .report-markdown ul, .report-markdown ol { padding-left: 1.35rem; margin: 0.35rem 0; }
+    .report-markdown li { margin: 0.125rem 0; }
+    .report-markdown img { max-width: 100%; border-radius: 0.375rem; border: 1px solid var(--border); background: var(--muted); margin: 0.45rem 0; }
     .report-cell-code { margin: 0 0 0.5rem; padding: 0.5rem 0.65rem; border-radius: 0.375rem; background: #f5f5f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; }
     .python-block { margin: 0 0 0.75rem; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #e5e7eb; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto; }
     .python-block-muted { background: #f8fafc; color: #475569; }
     .python-block-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
     .python-note { margin: 0 0 0.75rem; font-size: 0.8rem; color: #6b7280; }
     .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: auto; }
+    .table-wrap { width: 100%; overflow-x: auto; }
     .report-table th, .report-table td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; vertical-align: top; text-align: left; }
     .report-table th { background: #f5f5f5; font-weight: 600; }
     .report-table .num { text-align: right; }
@@ -131,12 +154,15 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     .markdoc-bookmark-desc { display: block; font-size: 0.8rem; color: #6b7280; }
     .markdoc-bookmark-url { display: block; font-size: 0.75rem; color: #9ca3af; }
     .markdoc-math--display { display: block; margin: 0.5rem 0; overflow-x: auto; text-align: center; }
-    .markdoc-toc { border: 1px solid #ddd; border-radius: 0.375rem; padding: 0.5rem 0.65rem; margin: 0.5rem 0; font-size: 0.8rem; }
-    .markdoc-toc-title { font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; margin: 0 0 0.3rem; }
+    .markdoc-toc { border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.45rem 0.6rem; margin: 0.55rem 0; font-size: 0.8rem; background: var(--muted); }
+    .markdoc-toc-title { font-size: 0.68rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); margin: 0 0 0.3rem; }
     .markdoc-toc ul { list-style: none; margin: 0; padding: 0; }
-    .markdoc-callout { display: flex; gap: 0.55rem; align-items: flex-start; margin: 0.5rem 0; padding: 0.6rem 0.8rem; border-radius: 0.375rem; border: 1px solid; font-size: 0.9em; }
-    .markdoc-callout-icon::before { flex-shrink: 0; margin-top: 0.1rem; font-weight: 700; }
-    .markdoc-callout-title { margin: 0 0 0.15rem; font-weight: 600; }
+    .markdoc-toc li { list-style: none; margin: 0.08rem 0; line-height: 1.45; }
+    .markdoc-toc li::marker { content: ''; }
+    .markdoc-toc li:has(a:empty) { display: none; }
+    .markdoc-callout { display: flex; gap: 0.45rem; align-items: flex-start; margin: 0.55rem 0; padding: 0.45rem 0.6rem; border-radius: 0.375rem; border: 1px solid; font-size: 0.9em; line-height: 1.5; }
+    .markdoc-callout-icon::before { flex-shrink: 0; margin-top: 0.18rem; font-weight: 700; }
+    .markdoc-callout-title { margin: 0 0 0.12rem; font-weight: 650; }
     .markdoc-callout-body > :first-child { margin-top: 0; }
     .markdoc-callout-body > :last-child { margin-bottom: 0; }
     .markdoc-callout--info { background: #eff6ff; border-color: #60a5fa; }
@@ -147,17 +173,25 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     .markdoc-callout--warning .markdoc-callout-icon::before { content: "!"; color: #d97706; }
     .markdoc-callout--error { background: #fef2f2; border-color: #f87171; }
     .markdoc-callout--error .markdoc-callout-icon::before { content: "\u2715"; color: #dc2626; }
-    .markdoc-card { border: 1px solid #ddd; border-radius: 0.375rem; padding: 0.65rem 0.8rem; margin: 0.5rem 0; }
-    .markdoc-card-title { font-weight: 600; margin: 0 0 0.3rem; }
-    .markdoc-grid { display: grid; grid-template-columns: repeat(var(--markdoc-grid-cols, 3), minmax(0, 1fr)); gap: 0.75rem; margin: 0.55rem 0; }
+    .markdoc-card { border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.55rem 0.65rem; margin: 0.6rem 0; }
+    .markdoc-card-title { font-weight: 650; margin: 0 0 0.32rem; }
+    .markdoc-grid { display: grid; grid-template-columns: repeat(var(--markdoc-grid-cols, 3), minmax(0, 1fr)); gap: 0.75rem; margin: 0.65rem 0; }
     .markdoc-columns { display: flex; gap: 1rem; margin: 0.5rem 0; }
     .markdoc-column { flex: 1 1 0%; min-width: 0; }
-    .markdoc-details { border: 1px solid #ddd; border-radius: 0.375rem; margin: 0.5rem 0; padding: 0.6rem 0.8rem; }
-    .markdoc-details summary { cursor: pointer; font-weight: 600; }
-    .markdoc-tabs { border: 1px solid #ddd; border-radius: 0.375rem; margin: 0.5rem 0; }
-    .markdoc-tab { padding: 0.6rem 0.8rem; border-top: 1px solid #eee; }
+    .markdoc-details { border: 1px solid var(--border); border-radius: 0.375rem; margin: 0.6rem 0; padding: 0.45rem 0.6rem; }
+    .markdoc-details summary { cursor: pointer; font-weight: 650; }
+    .markdoc-tabs { border: 1px solid var(--border); border-radius: 0.375rem; margin: 0.6rem 0; }
+    .markdoc-tab { padding: 0.5rem 0.6rem; border-top: 1px solid #eee; }
     .markdoc-tab:first-child { border-top: none; }
-    .markdoc-tab h3 { margin: 0 0 0.4rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; }
+    .markdoc-tab h3 { margin: 0 0 0.4rem; font-size: 0.9rem; color: var(--foreground); }
+    @media (max-width: 640px) {
+      body { max-width: 100%; padding: 1rem; }
+      .markdoc-grid { grid-template-columns: 1fr !important; }
+      .markdoc-columns { flex-direction: column; gap: 0.5rem; }
+      .report-table { min-width: 32rem; }
+      pre, code, .report-cell-code, .python-block { overflow-x: auto; white-space: pre-wrap; }
+      .markdoc-video, .markdoc-embed, .markdoc-bookmark, .markdoc-toc, .markdoc-callout, .markdoc-card, .markdoc-details { max-width: 100%; }
+    }
   </style>
 </head>
 <body>

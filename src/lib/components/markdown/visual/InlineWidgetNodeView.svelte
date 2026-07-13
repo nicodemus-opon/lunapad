@@ -35,9 +35,7 @@
 		onOpenInspector
 	}: Props = $props();
 
-	const source = $derived(
-		serializeMarkdocTag(tagName, attrs, { selfClosing, body: '' })
-	);
+	const source = $derived(serializeMarkdocTag(tagName, attrs, { selfClosing, body: '' }));
 
 	const isElseDivider = $derived(tagName === 'else');
 
@@ -150,12 +148,7 @@
 		</div>
 	{:else}
 		<div class="iw-preview">
-			<MarkdocRenderer
-				content={rendered!.tree}
-				errors={[]}
-				{notebookId}
-				headingSlugPrefix=""
-			/>
+			<MarkdocRenderer content={rendered!.tree} errors={[]} {notebookId} headingSlugPrefix="" />
 		</div>
 		{#if selected}
 			<div class="iw-meta px-1 pb-1 text-3xs text-muted-foreground">{summary}</div>
@@ -168,16 +161,15 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		height: 1.35rem;
+		height: 1.45rem;
 		padding: 0 0.35rem;
-		border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--popover);
 		color: var(--muted-foreground);
 		font-size: var(--text-3xs);
 		font-weight: 500;
 		cursor: pointer;
-		box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 6%, transparent);
 		transition:
 			background var(--motion-fast) var(--motion-ease-out),
 			color var(--motion-fast) var(--motion-ease-out),

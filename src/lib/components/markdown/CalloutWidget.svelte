@@ -18,7 +18,7 @@
 </script>
 
 <div class="md-callout md-callout--{type}">
-	<Icon class="md-callout-icon" size={16} />
+	<Icon class="md-callout-icon" size={14} />
 	<div class="md-callout-body">
 		{#if title}<p class="md-callout-title-text">{title}</p>{/if}
 		<div class="md-callout-content">
@@ -30,12 +30,12 @@
 <style>
 	.md-callout {
 		display: flex;
-		gap: 0.55rem;
+		gap: var(--md-panel-gap, 0.45rem);
 		align-items: flex-start;
 	}
 	:global(.md-callout-icon) {
 		flex-shrink: 0;
-		margin-top: 0.1rem;
+		margin-top: 0.18rem;
 	}
 	.md-callout--info :global(.md-callout-icon) {
 		color: var(--chart-1);
@@ -54,8 +54,8 @@
 		flex: 1;
 	}
 	.md-callout-title-text {
-		margin: 0 0 0.15rem;
-		font-weight: 600;
+		margin: 0 0 0.12rem;
+		font-weight: 650;
 	}
 	.md-callout-content :global(> *:first-child) {
 		margin-top: 0;

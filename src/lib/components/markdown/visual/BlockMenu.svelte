@@ -102,15 +102,13 @@
 </div>
 
 <style>
-	.block-menu-item {
-		border-left: 2px solid transparent;
-	}
 	.block-menu-item:hover,
 	.block-menu-item.is-active {
-		background: color-mix(in oklab, var(--accent) 70%, transparent);
-		border-left-color: var(--primary);
+		background: color-mix(in oklab, var(--accent) 78%, transparent);
+		color: var(--accent-foreground);
 	}
 	.block-menu-item:focus-visible {
 		outline: none;
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 55%, transparent);
 	}
 </style>

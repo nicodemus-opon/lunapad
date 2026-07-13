@@ -1,11 +1,196 @@
 /* Shared Markdoc report + visual-editor surface styles */
 
-/* ── Layout containers ───────────────────────────────────────────────────── */
+/* Prose rhythm */
+
+.markdown-surface,
+.markdown-surface .markdown-body,
+.notion-surface,
+.notebook-document-surface,
+.report-markdown {
+	--md-block-gap: 0.45rem;
+	--md-section-gap: 1.15rem;
+	--md-panel-pad-y: 0.45rem;
+	--md-panel-pad-x: 0.6rem;
+	--md-panel-gap: 0.45rem;
+	font-size: var(--text-sm);
+	line-height: 1.62;
+	color: var(--foreground);
+	text-wrap: pretty;
+}
+
+.markdown-surface p,
+.markdown-surface .markdown-body p,
+.notion-surface p,
+.notebook-document-surface p,
+.report-markdown p {
+	margin: var(--md-block-gap) 0;
+}
+
+.markdown-surface h1,
+.markdown-surface h2,
+.markdown-surface h3,
+.markdown-surface h4,
+.markdown-surface h5,
+.markdown-surface h6,
+.markdown-surface .markdown-body h1,
+.markdown-surface .markdown-body h2,
+.markdown-surface .markdown-body h3,
+.markdown-surface .markdown-body h4,
+.markdown-surface .markdown-body h5,
+.markdown-surface .markdown-body h6,
+.notion-surface h1,
+.notion-surface h2,
+.notion-surface h3,
+.notion-surface h4,
+.notion-surface h5,
+.notion-surface h6,
+.notebook-document-surface h1,
+.notebook-document-surface h2,
+.notebook-document-surface h3,
+.notebook-document-surface h4,
+.notebook-document-surface h5,
+.notebook-document-surface h6,
+.report-markdown h1,
+.report-markdown h2,
+.report-markdown h3,
+.report-markdown h4,
+.report-markdown h5,
+.report-markdown h6 {
+	color: var(--foreground);
+	font-weight: 700;
+	letter-spacing: 0;
+	line-height: 1.18;
+	text-transform: none;
+	text-wrap: balance;
+}
+
+.markdown-surface h1,
+.markdown-surface .markdown-body h1,
+.notion-surface h1,
+.notebook-document-surface h1,
+.report-markdown h1 {
+	font-size: 2rem;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	line-height: 1.08;
+	margin: 1.45rem 0 0.7rem;
+}
+
+.markdown-surface h2,
+.markdown-surface .markdown-body h2,
+.notion-surface h2,
+.notebook-document-surface h2,
+.report-markdown h2 {
+	font-size: 1.35rem;
+	font-weight: 760;
+	margin: 1.35rem 0 0.55rem;
+}
+
+.markdown-surface h3,
+.markdown-surface .markdown-body h3,
+.notion-surface h3,
+.notebook-document-surface h3,
+.report-markdown h3 {
+	font-size: 1.08rem;
+	font-weight: 700;
+	margin: 1.05rem 0 0.45rem;
+}
+
+.markdown-surface h4,
+.markdown-surface .markdown-body h4,
+.notion-surface h4,
+.notebook-document-surface h4,
+.report-markdown h4 {
+	font-size: 0.95rem;
+	font-weight: 680;
+	margin: 0.9rem 0 0.35rem;
+}
+
+.markdown-surface h5,
+.markdown-surface .markdown-body h5,
+.notion-surface h5,
+.notebook-document-surface h5,
+.report-markdown h5 {
+	font-size: 0.86rem;
+	font-weight: 660;
+	color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground));
+	margin: 0.8rem 0 0.3rem;
+}
+
+.markdown-surface h6,
+.markdown-surface .markdown-body h6,
+.notion-surface h6,
+.notebook-document-surface h6,
+.report-markdown h6 {
+	font-size: 0.78rem;
+	font-weight: 650;
+	color: var(--muted-foreground);
+	margin: 0.75rem 0 0.25rem;
+}
+
+.markdown-surface blockquote,
+.markdown-surface .markdown-body blockquote,
+.notion-surface blockquote,
+.notebook-document-surface blockquote,
+.report-markdown blockquote {
+	margin: 0.65rem 0;
+	padding: 0.5rem 0.65rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--muted) 22%, transparent);
+	color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground));
+	font-size: 0.92em;
+	font-style: normal;
+}
+
+.markdown-surface blockquote > :first-child,
+.markdown-surface .markdown-body blockquote > :first-child,
+.notion-surface blockquote > :first-child,
+.notebook-document-surface blockquote > :first-child,
+.report-markdown blockquote > :first-child {
+	margin-top: 0;
+}
+
+.markdown-surface blockquote > :last-child,
+.markdown-surface .markdown-body blockquote > :last-child,
+.notion-surface blockquote > :last-child,
+.notebook-document-surface blockquote > :last-child,
+.report-markdown blockquote > :last-child {
+	margin-bottom: 0;
+}
+
+.markdown-surface :not(pre) > code,
+.markdown-surface .markdown-body :not(pre) > code,
+.notion-surface :not(pre) > code,
+.notebook-document-surface :not(pre) > code,
+.report-markdown :not(pre) > code {
+	border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+	border-radius: var(--radius-sm);
+	background: color-mix(in oklab, var(--muted) 30%, transparent);
+	padding: 0.05rem 0.25rem;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 0.86em;
+	font-weight: 500;
+}
+
+.markdown-surface img:not(.emoji),
+.markdown-surface .markdown-body img:not(.emoji),
+.notion-surface img:not(.emoji),
+.notebook-document-surface img:not(.emoji),
+.report-markdown img:not(.emoji) {
+	max-width: 100%;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	background: color-mix(in oklab, var(--muted) 18%, transparent);
+	margin: 0.45rem 0;
+}
+
+/* Layout containers */
 
 .md-columns {
 	display: flex;
 	gap: var(--md-columns-gap, 1rem);
-	margin: 0.5rem 0;
+	margin: 0.55rem 0;
 }
 
 .md-column {
@@ -17,7 +202,7 @@
 	display: grid;
 	grid-template-columns: repeat(var(--md-grid-cols, 3), minmax(0, 1fr));
 	gap: var(--md-grid-gap, 0.75rem);
-	margin: 0.75rem 0;
+	margin: 0.65rem 0;
 }
 
 /* Alternating row bands for stacked stat rails (grid cols=1 of layout="row" metrics). */
@@ -26,25 +211,26 @@
 	border-radius: var(--radius-sm);
 }
 
-/* ── Section dividers ──────────────────────────────────────────────────── */
+/* Section dividers */
 /* `---` dividers should read as deliberate section breaks, not browser-default rules. */
 
 .markdown-surface hr,
 .report-markdown hr,
 .markdown-surface .markdown-body hr {
 	border: none;
-	border-top: 1px dotted var(--border);
-	margin: 1.75rem 0;
+	border-top: 1px solid var(--border);
+	margin: 1.1rem 0;
 }
 
-/* ── Callouts & cards ──────────────────────────────────────────────────── */
+/* Callouts and cards */
 
 .md-callout {
-	padding: 0.6rem 0.8rem;
+	padding: var(--md-panel-pad-y, 0.45rem) var(--md-panel-pad-x, 0.6rem);
 	border-radius: var(--radius-sm);
 	border: 1px solid;
-	margin: 0.5rem 0;
+	margin: 0.55rem 0;
 	font-size: 0.9em;
+	line-height: 1.5;
 }
 
 .md-callout--info {
@@ -70,8 +256,8 @@
 .md-card {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	padding: 0.65rem 0.8rem;
-	margin: 0.75rem 0;
+	padding: 0.55rem 0.65rem;
+	margin: 0.6rem 0;
 }
 
 /* Accented cards get the same subtle fill callouts use — panels, not just outlines. */
@@ -100,32 +286,31 @@
 	display: flex;
 	align-items: center;
 	gap: 0.35rem;
-	font-weight: 700;
-	font-size: var(--text-2xs);
-	text-transform: uppercase;
-	letter-spacing: 0.07em;
-	color: var(--muted-foreground);
-	margin-bottom: 0.4rem;
+	font-weight: 650;
+	font-size: var(--text-xs);
+	letter-spacing: 0;
+	color: var(--foreground);
+	margin-bottom: 0.32rem;
 }
 
 .md-card-title-icon {
 	flex-shrink: 0;
 }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
+/* Tabs */
 
 .md-tabs {
-	margin: 0.5rem 0;
+	margin: 0.6rem 0;
 }
 
 .md-tabs-strip {
 	display: flex;
-	gap: 0.2rem;
+	gap: 0.15rem;
 	border-bottom: 1px solid var(--border);
 }
 
 .md-tab-btn {
-	padding: 0.4rem 0.75rem;
+	padding: 0.35rem 0.6rem;
 	background: none;
 	border: none;
 	border-bottom: 2px solid transparent;
@@ -166,12 +351,12 @@
 	display: block;
 }
 
-/* ── Details ───────────────────────────────────────────────────────────── */
+/* Details */
 
 .md-details {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	margin: 0.5rem 0;
+	margin: 0.6rem 0;
 	overflow: hidden;
 }
 
@@ -180,7 +365,7 @@
 	align-items: center;
 	gap: 0.4rem;
 	width: 100%;
-	padding: 0.5rem 0.7rem;
+	padding: 0.42rem 0.6rem;
 	background: none;
 	border: none;
 	font-size: 0.85em;
@@ -201,10 +386,10 @@
 }
 
 .md-details-body {
-	padding: 0 0.7rem 0.7rem;
+	padding: 0 0.6rem 0.55rem;
 }
 
-/* ── Metrics ───────────────────────────────────────────────────────────── */
+/* Metrics */
 
 .md-metric {
 	display: inline-flex;
@@ -256,7 +441,7 @@
 	letter-spacing: 0.03em;
 }
 
-/* ── Metric hierarchy (size / layout / icon / pictogram) ───────────────────
+/* Metric hierarchy (size / layout / icon / pictogram)
    hero  = unboxed display numeral — the one number a section is about.
    compact = small support stat for stacked rails beside a chart.
    row   = icon · label · dotted leader · value line item (infographic stat list). */
@@ -357,7 +542,7 @@
 	color: var(--destructive);
 }
 
-/* ── Filters ───────────────────────────────────────────────────────────── */
+/* Filters */
 
 .md-filter {
 	display: inline-flex;
@@ -451,7 +636,7 @@
 	border-color: transparent;
 }
 
-/* ── Badges & progress ─────────────────────────────────────────────────── */
+/* Badges and progress */
 
 .md-badge {
 	display: inline-flex;
@@ -493,7 +678,7 @@
 	transition: width var(--motion-medium) var(--motion-ease-out);
 }
 
-/* ── Charts & tables ───────────────────────────────────────────────────── */
+/* Charts and tables */
 
 .md-chart {
 	width: 100%;
@@ -569,7 +754,7 @@
 	border-radius: var(--radius-sm);
 }
 
-/* ── Inline Markdoc expressions ────────────────────────────────────────── */
+/* Inline Markdoc expressions */
 
 .md-expr {
 	display: inline;
@@ -664,7 +849,7 @@
 	color: color-mix(in oklab, var(--accent-foreground) 70%, transparent);
 }
 
-/* ── Shared editor/report controls ─────────────────────────────────────── */
+/* Shared editor/report controls */
 
 .md-control,
 .md-control-sm {
@@ -755,7 +940,7 @@ textarea.md-control {
 	margin-bottom: 0.5rem;
 }
 
-/* ── Visual editor chrome (selection only) ─────────────────────────────── */
+/* Visual editor chrome (selection only) */
 
 .markdown-surface .inline-widget-view {
 	margin: 0.35rem 0;
@@ -903,24 +1088,25 @@ textarea.md-control {
 .markdown-surface .markdoc-container-node.is-callout {
 	display: grid;
 	grid-template-columns: auto 1fr;
-	column-gap: 0.55rem;
+	column-gap: var(--md-panel-gap, 0.45rem);
 	align-items: start;
-	padding: 0.6rem 0.8rem;
+	padding: var(--md-panel-pad-y, 0.45rem) var(--md-panel-pad-x, 0.6rem);
 	border-radius: var(--radius-sm);
 	border: 1px solid;
 	font-size: 0.9em;
+	line-height: 1.5;
 }
 
 .markdown-surface .markdoc-container-node.is-callout .md-callout-icon {
 	grid-row: 1 / -1;
 	display: flex;
-	margin-top: 0.15rem;
+	margin-top: 0.18rem;
 }
 
 .markdown-surface .markdoc-container-node.is-callout .md-callout-title-editor {
 	grid-column: 2;
-	margin: 0 0 0.15rem;
-	font-weight: 600;
+	margin: 0 0 0.12rem;
+	font-weight: 650;
 }
 
 .markdown-surface .markdoc-container-node.is-callout .markdoc-container-content.md-callout {
@@ -967,7 +1153,7 @@ textarea.md-control {
 .markdown-surface .markdoc-container-content.md-card {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	padding: 0.65rem 0.8rem;
+	padding: 0.55rem 0.65rem;
 }
 
 .markdown-surface .markdoc-container-node.md-card--info .markdoc-container-content.md-card {
@@ -1072,8 +1258,8 @@ textarea.md-control {
 	font-size: var(--text-2xs);
 }
 
-/* ── Prose links (visual editor + report) ───────────────────────────────── */
-/* Plain <a> tags had no styling at all here — indistinguishable from body text. */
+/* Prose links (visual editor + report) */
+/* Plain <a> tags had no styling at all here; they were indistinguishable from body text. */
 
 .markdown-surface a:not(.md-bookmark, .md-embed-fallback, .nc-mode-link, .nc-varchip),
 .markdown-surface .markdown-body a:not(.md-bookmark, .md-embed-fallback),
@@ -1094,11 +1280,13 @@ textarea.md-control {
 	text-decoration-color: var(--primary);
 }
 
-/* ── Prose lists (visual editor + report) ───────────────────────────────── */
+/* Prose lists (visual editor + report) */
 
 .markdown-surface ul:not([data-type='taskList']),
 .markdown-surface .markdown-body ul:not([data-type='taskList']),
-.notion-surface ul:not([data-type='taskList']) {
+.notion-surface ul:not([data-type='taskList']),
+.notebook-document-surface ul:not([data-type='taskList']),
+.report-markdown ul:not([data-type='taskList']) {
 	list-style-type: disc;
 	padding-left: 1.35rem;
 	margin: 0.35rem 0;
@@ -1106,7 +1294,9 @@ textarea.md-control {
 
 .markdown-surface ol,
 .markdown-surface .markdown-body ol,
-.notion-surface ol {
+.notion-surface ol,
+.notebook-document-surface ol,
+.report-markdown ol {
 	list-style-type: decimal;
 	padding-left: 1.35rem;
 	margin: 0.35rem 0;
@@ -1115,13 +1305,17 @@ textarea.md-control {
 
 .markdown-surface li,
 .markdown-surface .markdown-body li,
-.notion-surface li {
+.notion-surface li,
+.notebook-document-surface li,
+.report-markdown li {
 	margin: 0.125rem 0;
 }
 
 .markdown-surface ul[data-type='taskList'],
 .markdown-surface .markdown-body ul[data-type='taskList'],
-.notion-surface ul[data-type='taskList'] {
+.notion-surface ul[data-type='taskList'],
+.notebook-document-surface ul[data-type='taskList'],
+.report-markdown ul[data-type='taskList'] {
 	list-style: none;
 	padding-left: 0;
 	margin: 0.35rem 0;
@@ -1129,7 +1323,9 @@ textarea.md-control {
 
 .markdown-surface li[data-type='taskItem'],
 .markdown-surface .markdown-body li[data-type='taskItem'],
-.notion-surface li[data-type='taskItem'] {
+.notion-surface li[data-type='taskItem'],
+.notebook-document-surface li[data-type='taskItem'],
+.report-markdown li[data-type='taskItem'] {
 	display: flex;
 	align-items: flex-start;
 	gap: 0.45rem;
@@ -1138,7 +1334,9 @@ textarea.md-control {
 
 .markdown-surface li[data-type='taskItem'] > label,
 .markdown-surface .markdown-body li[data-type='taskItem'] > label,
-.notion-surface li[data-type='taskItem'] > label {
+.notion-surface li[data-type='taskItem'] > label,
+.notebook-document-surface li[data-type='taskItem'] > label,
+.report-markdown li[data-type='taskItem'] > label {
 	position: relative;
 	flex: 0 0 auto;
 	margin-top: 0.2rem;
@@ -1147,7 +1345,9 @@ textarea.md-control {
 
 .markdown-surface li[data-type='taskItem'] > label::before,
 .markdown-surface .markdown-body li[data-type='taskItem'] > label::before,
-.notion-surface li[data-type='taskItem'] > label::before {
+.notion-surface li[data-type='taskItem'] > label::before,
+.notebook-document-surface li[data-type='taskItem'] > label::before,
+.report-markdown li[data-type='taskItem'] > label::before {
 	content: '';
 	position: absolute;
 	inset: -0.35rem;
@@ -1155,7 +1355,9 @@ textarea.md-control {
 
 .markdown-surface li[data-type='taskItem'] input[type='checkbox'],
 .markdown-surface .markdown-body li[data-type='taskItem'] input[type='checkbox'],
-.notion-surface li[data-type='taskItem'] input[type='checkbox'] {
+.notion-surface li[data-type='taskItem'] input[type='checkbox'],
+.notebook-document-surface li[data-type='taskItem'] input[type='checkbox'],
+.report-markdown li[data-type='taskItem'] input[type='checkbox'] {
 	width: 0.9rem;
 	height: 0.9rem;
 	margin: 0;
@@ -1165,12 +1367,61 @@ textarea.md-control {
 
 .markdown-surface li[data-type='taskItem'] > div,
 .markdown-surface .markdown-body li[data-type='taskItem'] > div,
-.notion-surface li[data-type='taskItem'] > div {
+.notion-surface li[data-type='taskItem'] > div,
+.notebook-document-surface li[data-type='taskItem'] > div,
+.report-markdown li[data-type='taskItem'] > div {
 	flex: 1 1 auto;
 	min-width: 0;
 }
 
-/* ── GFM tables (TipTap / ProseMirror visual editor) ─────────────────────── */
+/* Table of contents */
+
+.markdown-surface .md-toc,
+.report-markdown .markdoc-toc {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	padding: 0.45rem 0.6rem;
+	margin: 0.55rem 0;
+	font-size: var(--text-2xs);
+	background: color-mix(in oklab, var(--muted) 12%, transparent);
+}
+
+.markdown-surface .md-toc-title,
+.report-markdown .markdoc-toc-title {
+	margin: 0 0 0.3rem;
+	font-size: var(--text-3xs);
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+}
+
+.markdown-surface .md-toc ul,
+.report-markdown .markdoc-toc ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.markdown-surface .md-toc li,
+.report-markdown .markdoc-toc li {
+	list-style: none;
+	margin: 0.08rem 0;
+	padding-left: calc(var(--md-toc-indent, 0) * 0.75rem);
+	line-height: 1.45;
+}
+
+.markdown-surface .md-toc li::marker,
+.report-markdown .markdoc-toc li::marker {
+	content: '';
+}
+
+.markdown-surface .md-toc-item:has(a:empty),
+.report-markdown .markdoc-toc li:has(a:empty) {
+	display: none;
+}
+
+/* GFM tables (TipTap / ProseMirror visual editor) */
 
 .markdown-surface .ProseMirror table:not(.result-table),
 .markdown-surface .markdown-body table:not(.result-table),
@@ -1244,7 +1495,7 @@ textarea.md-control {
 	margin: 0;
 }
 
-/* ── Shared widget shell ───────────────────────────────────────────────── */
+/* Shared widget shell */
 
 .md-widget-shell {
 	border: 1px solid var(--border);

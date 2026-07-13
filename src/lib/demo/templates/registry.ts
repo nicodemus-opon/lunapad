@@ -8,6 +8,7 @@ import { prqlExplorationTemplate } from './prql-exploration';
 import { pythonAnalysisTemplate } from './python-analysis';
 import { blankReportTemplate } from './blank-report';
 import { meetingNotesTemplate } from './meeting-notes';
+import { formattingKitchenSinkTemplate } from './formatting-kitchen-sink';
 import type { DashboardTemplate, TemplateCategoryGroup } from './types';
 
 // Adding a new template: create one file exporting a `DashboardTemplate` (see
@@ -34,7 +35,8 @@ export const TEMPLATE_CATEGORIES: TemplateCategoryGroup[] = [
 			prqlExplorationTemplate,
 			pythonAnalysisTemplate,
 			blankReportTemplate,
-			meetingNotesTemplate
+			meetingNotesTemplate,
+			formattingKitchenSinkTemplate
 		]
 	}
 ];

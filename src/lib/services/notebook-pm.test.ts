@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formattingKitchenSinkTemplate } from '$lib/demo/templates/formatting-kitchen-sink';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import {
 	attachNotebookBlockIds,
@@ -6,6 +7,13 @@ import {
 	pmDocumentToBlocks,
 	extractPagesFromPmDocument
 } from './notebook-pm';
+import type { PMNodeJSON } from './markdoc-pm';
+
+function collectNodeTypes(node: PMNodeJSON | { type: 'doc'; content?: PMNodeJSON[] }): string[] {
+	const types = [node.type];
+	for (const child of node.content ?? []) types.push(...collectNodeTypes(child));
+	return types;
+}
 
 function makeMarkdownCell(id: string, markdown: string): Cell {
 	return {
@@ -221,6 +229,70 @@ describe('notebook-pm', () => {
 		const blocks = pmDocumentToBlocks(doc);
 		const out = blocks.find((b) => b.kind === 'markdown')?.markdown ?? '';
 		expect(out).toContain('| Bob | 30 |');
+	});
+
+	it('keeps the formatting kitchen sink TipTap-compatible for notebook document mode', () => {
+		const notebook = formattingKitchenSinkTemplate.build();
+		const doc = cellsToPmDocument(notebook.cells);
+		const types = collectNodeTypes(doc);
+
+		expect(types).not.toContain('list_item');
+		expect(types).not.toContain('bullet_list');
+		expect(types).not.toContain('ordered_list');
+		expect(types).not.toContain('code_block');
+		expect(types).toContain('listItem');
+		expect(types).toContain('bulletList');
+		expect(types).toContain('taskList');
+	});
+
+	it('serializes TipTap list nodes from notebook document mode back to markdown', () => {
+		const doc: import('./markdoc-pm').PMDocJSON = {
+			type: 'doc',
+			content: [
+				{
+					type: 'bulletList',
+					content: [
+						{
+							type: 'listItem',
+							content: [
+								{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+								{
+									type: 'bulletList',
+									content: [
+										{
+											type: 'listItem',
+											content: [{ type: 'paragraph', content: [{ type: 'text', text: 'nested' }] }]
+										}
+									]
+								}
+							]
+						},
+						{
+							type: 'listItem',
+							content: [{ type: 'paragraph', content: [{ type: 'text', text: 'two' }] }]
+						}
+					]
+				},
+				{
+					type: 'orderedList',
+					attrs: { start: 3 },
+					content: [
+						{
+							type: 'listItem',
+							content: [{ type: 'paragraph', content: [{ type: 'text', text: 'three' }] }]
+						}
+					]
+				}
+			]
+		};
+
+		const blocks = pmDocumentToBlocks(doc);
+		const markdown = blocks.find((block) => block.kind === 'markdown')?.markdown ?? '';
+
+		expect(markdown).toContain('- one');
+		expect(markdown).toContain('  - nested');
+		expect(markdown).toContain('- two');
+		expect(markdown).toContain('3. three');
 	});
 
 	it('reattaches markdown ids around query blocks so sync does not churn cells', () => {
