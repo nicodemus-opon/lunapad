@@ -222,6 +222,7 @@
 		initWorkspaceStandards
 	} from '$lib/stores/ai-chat.svelte';
 	import { submitAIMessage } from '$lib/services/ai-chat-client.js';
+	import { identifyAnalyticsUser, trackEvent } from '$lib/services/analytics';
 	import {
 		mountKeyboardDispatcher,
 		registerPageBridge,
@@ -309,7 +310,10 @@
 		if (cell) openResultTab(cell.id, activeTabId, outputName, 'table');
 	}
 
-	function inferMarkdocColumnType(rows: Record<string, unknown>[], column: string): string | undefined {
+	function inferMarkdocColumnType(
+		rows: Record<string, unknown>[],
+		column: string
+	): string | undefined {
 		for (const row of rows.slice(0, 25)) {
 			const value = row[column];
 			if (value === null || value === undefined) continue;
@@ -399,6 +403,17 @@
 
 	// ── Auth ─────────────────────────────────────────────────────────────────
 	const session = authClient.useSession();
+
+	$effect(() => {
+		identifyAnalyticsUser(
+			$session.data?.user
+				? {
+						id: $session.data.user.id,
+						role: $session.data.user.role
+					}
+				: null
+		);
+	});
 
 	function userInitials(name: string | undefined, email: string | undefined): string {
 		const trimmed = (name ?? '').trim();
@@ -603,8 +618,17 @@
 			await restoreUploadedTables();
 			await refreshTablesFromCatalog();
 			dbReady = true;
+			trackEvent('workspace_runtime_ready', {
+				demo_mode: data.demoMode,
+				storage_mode: getStorageMode(),
+				connection_count: getConnections().length,
+				notebook_count: getNotebooks().length
+			});
 		} catch (err: unknown) {
 			dbError = err instanceof Error ? err.message : String(err);
+			trackEvent('workspace_runtime_failed', {
+				demo_mode: data.demoMode
+			});
 		}
 	}
 
@@ -962,6 +986,12 @@
 		preferredViewMode: 'table' | 'chart' | 'stats' = 'table'
 	) {
 		openResultTab(cellId, notebookId, name, preferredViewMode);
+		trackEvent('result_tab_opened', {
+			view_mode: preferredViewMode,
+			cell_id_present: Boolean(cellId),
+			notebook_id_present: Boolean(notebookId),
+			output_name_present: Boolean(name)
+		});
 	}
 
 	// Auto-focus first cell once per notebook tab, but only after dbReady
@@ -1564,7 +1594,11 @@
 								{#if sidebarNotebookView === 'browse'}
 									{#if favoriteNotebookIds.length > 0}
 										<div class="sidebar-group">
-											{@render groupHeader('Favorites', favoritesCollapsed, () => (favoritesCollapsed = !favoritesCollapsed))}
+											{@render groupHeader(
+												'Favorites',
+												favoritesCollapsed,
+												() => (favoritesCollapsed = !favoritesCollapsed)
+											)}
 											{#if !favoritesCollapsed}
 												{#each favoriteNotebookIds as favId (favId)}
 													{@const fav = allNotebooks.find((n) => n.id === favId)}
@@ -1588,7 +1622,11 @@
 									{/if}
 									{#if recentNotebookIds.length > 0}
 										<div class="sidebar-group">
-											{@render groupHeader('Recent', recentCollapsed, () => (recentCollapsed = !recentCollapsed))}
+											{@render groupHeader(
+												'Recent',
+												recentCollapsed,
+												() => (recentCollapsed = !recentCollapsed)
+											)}
 											{#if !recentCollapsed}
 												{#each recentNotebookIds.slice(0, 6) as recentId (recentId)}
 													{@const recent = allNotebooks.find((n) => n.id === recentId)}
@@ -1647,10 +1685,10 @@
 									<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 										<div class="min-h-0 flex-1 overflow-hidden">
 											<NotebookTree
-											bind:pendingRenameFolderId
-											filterQuery={sidebarSearch}
-											onBrowseTemplates={() => (templateGalleryOpen = true)}
-										/>
+												bind:pendingRenameFolderId
+												filterQuery={sidebarSearch}
+												onBrowseTemplates={() => (templateGalleryOpen = true)}
+											/>
 										</div>
 										{#if isNotebookTab && activeTabId}
 											<NotebookBacklinks notebookId={activeTabId} />

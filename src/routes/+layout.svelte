@@ -7,8 +7,15 @@
 	import { initPlatform, platform, platformOS } from '$lib/services/platform.svelte';
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
+	import AnalyticsConsent from '$lib/components/AnalyticsConsent.svelte';
+	import { initAnalytics, startAnalyticsNavigationTracking } from '$lib/services/analytics';
 
 	let { children } = $props();
+
+	if (browser) {
+		initAnalytics();
+		startAnalyticsNavigationTracking();
+	}
 
 	// app.html already stamps data-platform/data-os and CSS vars before first paint.
 	// This is a belt-and-suspenders fallback for any environment where app.html
@@ -72,4 +79,5 @@
 		</div>
 	</TooltipProvider>
 	<Toaster richColors theme={resolvedTheme === 'dark' ? 'dark' : 'light'} />
+	<AnalyticsConsent />
 </div>
