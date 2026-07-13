@@ -17,10 +17,10 @@ export const GET: RequestHandler = async () => {
 	let memory = false;
 	if (postgres) {
 		try {
-			await query('SELECT 1 FROM ai_memory LIMIT 1');
+			await query('SELECT 1 FROM memory_embeddings LIMIT 1');
 			memory = true;
 		} catch {
-			issues.push('ai_memory table missing — workspace memory disabled');
+			issues.push('memory_embeddings table missing — workspace memory disabled');
 		}
 	}
 

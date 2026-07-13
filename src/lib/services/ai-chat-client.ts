@@ -1408,7 +1408,11 @@ async function executeReadTool(call: AIChatToolCall, aiMsgId: string): Promise<s
 					}
 				: currentNotebookDocument(args.notebookId);
 			if (!current) return 'validate_notebook: notebook not found';
-			const diagnostics = validateNotebookPmDocument(current.document);
+			const targetCells = getNotebooks().find((n) => n.id === current.notebookId)?.cells ?? [];
+			const diagnostics = validateNotebookPmDocument(
+				current.document,
+				targetCells.map((cell) => cell.outputName)
+			);
 			const missingCells = queryBlockCellIdsFromDocument(current.document).filter(
 				(cellId) => !getAllCellsAcrossNotebooks().some((cell) => cell.id === cellId)
 			);
@@ -1619,7 +1623,12 @@ async function executeToolCallWithResult(
 		case 'create_notebook': {
 			const args = call.args as CreateNotebookArgs;
 			const allCells = getAllCellsAcrossNotebooks();
-			const knownRefs = allCells.map((cell) => cell.outputName);
+			// Widget refs ($metric.value, $chart.ref, etc.) must resolve against cells that will
+			// actually live in the new notebook, not any cell anywhere in the workspace — render-time
+			// lookup (markdoc-interp.ts) is scoped to the current notebook only. compileNotebookBlueprint
+			// already unions this with the blueprint's own executableCells' outputNames, so an empty
+			// array here correctly restricts validation to cells this notebook will actually have.
+			const knownRefs: string[] = [];
 			const hydratedBlueprint = {
 				...args.blueprint,
 				executableCells: hydrateExistingExecutableCells(args.blueprint)
@@ -1668,10 +1677,11 @@ async function executeToolCallWithResult(
 			let notebookTitle = args.title;
 
 			if (args.blueprint) {
-				const allCells = getAllCellsAcrossNotebooks();
+				// Scope widget-ref validation to this notebook's own cells (render-time lookup is
+				// notebook-scoped), not every cell in the workspace — see create_notebook above.
 				const compiled = compileNotebookBlueprint(
 					args.blueprint,
-					allCells.map((cell) => cell.outputName),
+					notebook.cells.map((cell) => cell.outputName),
 					notebook.cells.map((cell) => cell.id)
 				);
 				if (!compiled.document) {
@@ -1706,7 +1716,14 @@ async function executeToolCallWithResult(
 				}
 				return 'apply_notebook_patch: provide blueprint, document, operations, or title';
 			}
-			const diagnostics = validateNotebookPmDocument(document);
+			// Scope ref validation to this notebook's own cells plus any new cells this same
+			// call is introducing — the document/operations paths (unlike blueprint) had no
+			// ref checking at all until this point, so a hallucinated $ref would silently pass.
+			const knownRefsForDoc = new Set([
+				...notebook.cells.map((cell) => cell.outputName),
+				...(executableCells ?? []).map((payload) => payload.outputName)
+			]);
+			const diagnostics = validateNotebookPmDocument(document, knownRefsForDoc);
 			if (diagnostics.length) {
 				return `apply_notebook_patch: document validation failed; repair these diagnostics: ${diagnostics
 					.slice(0, 6)

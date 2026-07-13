@@ -295,7 +295,7 @@ export interface CompileDashboardResult {
 	errors: string[];
 }
 
-const CHART_TYPES = new Set([
+export const CHART_TYPES = new Set([
 	'table',
 	'big-value',
 	'delta',
@@ -410,7 +410,7 @@ function pushStringRefs(errors: string[], text: string, knownRoots: Set<string>)
 			errors.push(`Reporting dashboard cannot reference staging cell "${root}".`);
 			continue;
 		}
-		if (knownRoots.size > 0 && !knownRoots.has(root)) {
+		if (!knownRoots.has(root)) {
 			errors.push(`Unknown dashboard ref "${root}".`);
 		}
 	}
@@ -436,7 +436,7 @@ function validateRef(
 		errors.push(`Reporting dashboard cannot reference staging cell "${root}".`);
 		return;
 	}
-	if (knownRoots.size > 0 && !knownRoots.has(root)) {
+	if (!knownRoots.has(root)) {
 		errors.push(`Unknown ${label} ref "${value}".`);
 	}
 }
@@ -470,7 +470,7 @@ function validateSpan(
 	return true;
 }
 
-const PICTOGRAM_MAX_ICONS = 60;
+export const PICTOGRAM_MAX_ICONS = 60;
 
 function renderBlocks(
 	blocks: GeneratedDashboardBlock[],
@@ -517,7 +517,9 @@ function renderBlock(
 				}
 			}
 			if (block.cols !== undefined && block.cols > 4) {
-				errors.push(`Grid cols must be 4 or fewer (got ${block.cols}) — split into multiple sections instead of a wide grid.`);
+				errors.push(
+					`Grid cols must be 4 or fewer (got ${block.cols}) — split into multiple sections instead of a wide grid.`
+				);
 			}
 			// cols=1 grids are vertical stat rails (layout="row" metric lists) — those read
 			// well up to ~8 rows; multi-column grids stay capped at cols×3 tiles.
@@ -839,10 +841,54 @@ function renderBlock(
 	}
 }
 
+// 'markdown' is a natural, common model guess for the prose block type (arguably more intuitive
+// than 'text', since the block literally holds Markdoc/markdown prose) — found live against a
+// real model failing its very first patch on exactly this, via the parallel typed-block compiler
+// in notebook-blueprint.ts. Normalize recursively (at any nesting depth) rather than rejecting,
+// same alias pattern as filter's legacy 'multi' -> 'multi-select'.
+function normalizeBlockTypeAliases(block: GeneratedDashboardBlock): GeneratedDashboardBlock {
+	const normalized =
+		(block as { type?: unknown }).type === 'markdown'
+			? ({ ...(block as object), type: 'text' } as GeneratedDashboardBlock)
+			: block;
+	switch (normalized.type) {
+		case 'grid':
+			return { ...normalized, items: normalized.items.map(normalizeBlockTypeAliases) };
+		case 'columns':
+			return {
+				...normalized,
+				columns: normalized.columns.map((column) => ({
+					...column,
+					blocks: column.blocks.map(normalizeBlockTypeAliases)
+				}))
+			};
+		case 'card':
+		case 'callout':
+		case 'details':
+			return { ...normalized, blocks: normalized.blocks.map(normalizeBlockTypeAliases) };
+		case 'tabs':
+			return {
+				...normalized,
+				tabs: normalized.tabs.map((tab) => ({
+					...tab,
+					blocks: tab.blocks.map(normalizeBlockTypeAliases)
+				}))
+			};
+		default:
+			return normalized;
+	}
+}
+
 export function compileGeneratedDashboard(
-	definition: GeneratedDashboardDefinition,
+	rawDefinition: GeneratedDashboardDefinition,
 	options: CompileDashboardOptions = {}
 ): CompileDashboardResult {
+	const definition: GeneratedDashboardDefinition = {
+		...rawDefinition,
+		blocks: Array.isArray(rawDefinition.blocks)
+			? rawDefinition.blocks.map(normalizeBlockTypeAliases)
+			: rawDefinition.blocks
+	};
 	const knownRoots = new Set((options.knownCells ?? []).map((cell) => cell.outputName));
 	const errors: string[] = [];
 

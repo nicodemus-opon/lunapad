@@ -94,6 +94,8 @@
 		setAllCellsDisplay,
 		setNotebookReportView,
 		getFocusedCellId,
+		getFocusedTarget,
+		clearFocusedCell,
 		getSidebarNotebookView,
 		setSidebarNotebookView,
 		toggleSidebarNotebookView,
@@ -153,10 +155,10 @@
 	import TableView from '$lib/components/TableView.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
 	import DbtLineageView from '$lib/components/DbtLineageView.svelte';
+	import LoadingTips from '$lib/components/LoadingTips.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from 'svelte-sonner';
 	import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
 	import type { GUISourceSchema } from '$lib/types/gui-pipeline';
@@ -167,7 +169,6 @@
 		ChevronDown,
 		ChevronRight,
 		Database,
-		Orbit,
 		X,
 		Table2,
 		BarChart2,
@@ -350,6 +351,27 @@
 			}))
 	);
 	let notebookScrollEl: HTMLElement | undefined = $state();
+
+	// Cells render via QueryBlockNodeView/markdown NodeViews inside the ProseMirror
+	// document (not NotebookCell, which is worksheet-only) — so scrolling to an
+	// outline/backlink target has to happen here against the raw DOM, keyed by the
+	// data-cell-id every cell NodeView renders.
+	$effect(() => {
+		const target = getFocusedTarget();
+		const root = notebookScrollEl;
+		if (!target || !root) return;
+		const cellEl = root.querySelector<HTMLElement>(`[data-cell-id="${CSS.escape(target.cellId)}"]`);
+		if (!cellEl) return;
+		void (async () => {
+			cellEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			if (target.anchorId) {
+				await tick();
+				const anchor = root.querySelector<HTMLElement>(`#${CSS.escape(target.anchorId)}`);
+				anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			}
+			clearFocusedCell();
+		})();
+	});
 	const showDemoCta = $derived(
 		!data.demoMode && isDefaultEmptyNotebook(activeNotebook?.name, cells)
 	);
@@ -975,15 +997,7 @@
 				</div>
 			</div>
 		{:else}
-			<div class="flex items-center gap-3">
-				<Orbit class="h-6 w-6 animate-pulse text-primary" />
-				<span class="text-sm text-muted-foreground">Initializing WASM engines…</span>
-			</div>
-			<div class="w-64 space-y-2">
-				<Skeleton class="h-2 w-full" />
-				<Skeleton class="h-2 w-4/5" />
-				<Skeleton class="h-2 w-3/5" />
-			</div>
+			<LoadingTips />
 		{/if}
 	</div>
 {:else}
@@ -1933,8 +1947,8 @@
 						<Plus class="h-3.5 w-3.5" />
 					</button>
 				</div>
-				{#if isNotebookTab}
-					<div class="flex min-h-0 flex-1 overflow-hidden">
+				<div class="flex min-h-0 flex-1 overflow-hidden">
+					{#if isNotebookTab}
 						<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 							{#if worksheetCell && activeNotebook}
 								<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -2203,85 +2217,85 @@
 								{reportView}
 							/>
 						</div>
-						{#if aiChatOpen}
-							<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
+					{:else if activeExtraTab}
+						{#if activeExtraTab.type === 'lineage'}
+							<!-- Lineage fills the full remaining height with no scroll/padding -->
+							<main class="flex-1 overflow-hidden">
+								<DbtLineageView focusedModelName={activeExtraTab.focusedModelName} />
+							</main>
+						{:else if activeExtraTab.type === 'evidence-preview'}
+							<main class="flex-1 overflow-hidden">
+								<EvidencePreview pagePath={activeExtraTab.pagePath ?? ''} />
+							</main>
+						{:else}
+							<main class="flex-1 overflow-y-auto">
+								<div class="mx-auto max-w-7xl px-4 py-4">
+									{#if activeExtraTab.type === 'table-view'}
+										<TableView
+											tableName={activeExtraTab.tableName}
+											tabId={activeExtraTab.id}
+											viewMode={activeExtraTab.viewMode}
+											chartConfig={activeExtraTab.chartConfig}
+										/>
+									{:else}
+										<ProfileView tableName={activeExtraTab.tableName} />
+									{/if}
+								</div>
+							</main>
 						{/if}
-						{#if collabEnabled && reviewPanelOpen}
-							<ReviewPanel width={reviewPanelWidth} onStartResize={onReviewPanelPointerDown} />
-						{/if}
-					</div>
-				{:else if activeExtraTab}
-					{#if activeExtraTab.type === 'lineage'}
-						<!-- Lineage fills the full remaining height with no scroll/padding -->
-						<main class="flex-1 overflow-hidden">
-							<DbtLineageView focusedModelName={activeExtraTab.focusedModelName} />
-						</main>
-					{:else if activeExtraTab.type === 'evidence-preview'}
-						<main class="flex-1 overflow-hidden">
-							<EvidencePreview pagePath={activeExtraTab.pagePath ?? ''} />
-						</main>
 					{:else}
-						<main class="flex-1 overflow-y-auto">
-							<div class="mx-auto max-w-7xl px-4 py-4">
-								{#if activeExtraTab.type === 'table-view'}
-									<TableView
-										tableName={activeExtraTab.tableName}
-										tabId={activeExtraTab.id}
-										viewMode={activeExtraTab.viewMode}
-										chartConfig={activeExtraTab.chartConfig}
-									/>
-								{:else}
-									<ProfileView tableName={activeExtraTab.tableName} />
-								{/if}
-							</div>
+						{@const resultCell = getCellForResultTab(activeResultTab?.id ?? activeTabId)}
+						<main class="flex flex-1 flex-col overflow-hidden px-4 py-3">
+							{#if resultCell && resultCell.result && resultCell.status === 'success' && activeResultTab}
+								<ResultView
+									tabId={activeResultTab.id}
+									cellId={resultCell.id}
+									notebookId={activeResultTab.notebookId}
+									rows={resultCell.result.rows}
+									columns={resultCell.result.columns}
+									truncated={resultCell.result.truncated ?? false}
+									name={resultCell.outputName || 'result'}
+									viewMode={activeResultTab.viewMode}
+									chartConfig={activeResultTab.chartConfig}
+									onAddSort={resultCell.editMode === 'gui'
+										? (col, dir) =>
+												updateGuiStages(resultCell.id, [
+													...resultCell.guiStages,
+													{ type: 'sort', keys: [{ column: col, dir }] }
+												])
+										: undefined}
+									onAddFilter={resultCell.editMode === 'gui'
+										? (col) =>
+												updateGuiStages(resultCell.id, [
+													...resultCell.guiStages,
+													{
+														type: 'filter',
+														conditions: [{ column: col, op: '==', value: '' }],
+														logic: 'and'
+													}
+												])
+										: undefined}
+								/>
+							{:else if resultCell && resultCell.status === 'running'}
+								<div class="mt-8 flex items-center gap-3 text-sm text-muted-foreground">
+									<Database class="h-4 w-4 animate-pulse" />
+									Running query…
+								</div>
+							{:else}
+								<div class="mt-16 flex flex-col items-center gap-2 text-muted-foreground">
+									<Table2 class="h-8 w-8 opacity-30" />
+									<p class="text-sm">No results available. Run the cell first.</p>
+								</div>
+							{/if}
 						</main>
 					{/if}
-				{:else}
-					{@const resultCell = getCellForResultTab(activeResultTab?.id ?? activeTabId)}
-					<main class="flex flex-1 flex-col overflow-hidden px-4 py-3">
-						{#if resultCell && resultCell.result && resultCell.status === 'success' && activeResultTab}
-							<ResultView
-								tabId={activeResultTab.id}
-								cellId={resultCell.id}
-								notebookId={activeResultTab.notebookId}
-								rows={resultCell.result.rows}
-								columns={resultCell.result.columns}
-								truncated={resultCell.result.truncated ?? false}
-								name={resultCell.outputName || 'result'}
-								viewMode={activeResultTab.viewMode}
-								chartConfig={activeResultTab.chartConfig}
-								onAddSort={resultCell.editMode === 'gui'
-									? (col, dir) =>
-											updateGuiStages(resultCell.id, [
-												...resultCell.guiStages,
-												{ type: 'sort', keys: [{ column: col, dir }] }
-											])
-									: undefined}
-								onAddFilter={resultCell.editMode === 'gui'
-									? (col) =>
-											updateGuiStages(resultCell.id, [
-												...resultCell.guiStages,
-												{
-													type: 'filter',
-													conditions: [{ column: col, op: '==', value: '' }],
-													logic: 'and'
-												}
-											])
-									: undefined}
-							/>
-						{:else if resultCell && resultCell.status === 'running'}
-							<div class="mt-8 flex items-center gap-3 text-sm text-muted-foreground">
-								<Database class="h-4 w-4 animate-pulse" />
-								Running query…
-							</div>
-						{:else}
-							<div class="mt-16 flex flex-col items-center gap-2 text-muted-foreground">
-								<Table2 class="h-8 w-8 opacity-30" />
-								<p class="text-sm">No results available. Run the cell first.</p>
-							</div>
-						{/if}
-					</main>
-				{/if}
+					{#if aiChatOpen}
+						<AIChatPanel width={aiPanelWidth} onStartResize={onAIPanelPointerDown} />
+					{/if}
+					{#if collabEnabled && reviewPanelOpen}
+						<ReviewPanel width={reviewPanelWidth} onStartResize={onReviewPanelPointerDown} />
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>

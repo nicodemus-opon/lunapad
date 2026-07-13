@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	__executeToolCallWithResultForTests,
-	wantsNotebookRendering
-} from './ai-chat-client.js';
+import { __executeToolCallWithResultForTests, wantsNotebookRendering } from './ai-chat-client.js';
 import {
 	__resetStateForTests,
 	addNotebook,
@@ -58,7 +55,8 @@ describe('wantsNotebookRendering', () => {
 describe('AI notebook patch executor', () => {
 	function countNodes(doc: PMDocJSON, predicate: (node: PMNodeJSON) => boolean): number {
 		const visit = (node: PMNodeJSON): number =>
-			(predicate(node) ? 1 : 0) + (node.content ?? []).reduce((sum, child) => sum + visit(child), 0);
+			(predicate(node) ? 1 : 0) +
+			(node.content ?? []).reduce((sum, child) => sum + visit(child), 0);
 		return (doc.content ?? []).reduce((sum, node) => sum + visit(node), 0);
 	}
 
@@ -232,18 +230,29 @@ describe('AI notebook patch executor', () => {
 						label: 'Overview',
 						blocks: [
 							{
-								type: 'grid',
-								cols: 2,
-								items: [
+								// grid items must be small tiles only (metric/badge/progress/card) —
+								// a chart doesn't belong directly inside a grid, so it sits in the
+								// asymmetric columns wrapper alongside the grid instead.
+								type: 'columns',
+								columns: [
 									{
-										type: 'metric',
-										value: '$revenue_by_month.revenue',
-										label: 'Revenue'
+										width: 2,
+										blocks: [{ type: 'chart', ref: '$region_performance', chartType: 'bar' }]
 									},
 									{
-										type: 'chart',
-										ref: '$region_performance',
-										chartType: 'bar'
+										blocks: [
+											{
+												type: 'grid',
+												cols: 1,
+												items: [
+													{
+														type: 'metric',
+														value: '$revenue_by_month.revenue',
+														label: 'Revenue'
+													}
+												]
+											}
+										]
 									}
 								]
 							}
@@ -295,7 +304,7 @@ describe('AI notebook patch executor', () => {
 							outputName: 'revenue_by_month',
 							cellType: 'query',
 							language: 'sql',
-							code: 'select date \'2026-01-01\' as month, 100 as revenue'
+							code: "select date '2026-01-01' as month, 100 as revenue"
 						},
 						{
 							cellId: 'q_region_performance',
@@ -326,9 +335,7 @@ describe('AI notebook patch executor', () => {
 		expect(notebook.cells.map((cell) => cell.outputName)).toEqual(
 			expect.arrayContaining(['revenue_by_month', 'region_performance', 'top_products'])
 		);
-		expect(notebook.cells.find((cell) => cell.id === 'q_top_products')?.code).toContain(
-			'Widget'
-		);
+		expect(notebook.cells.find((cell) => cell.id === 'q_top_products')?.code).toContain('Widget');
 		const doc = cellsToPmDocument(notebook.cells);
 		expect(countNodes(doc, (node) => node.type === 'queryBlock')).toBe(3);
 		expect(

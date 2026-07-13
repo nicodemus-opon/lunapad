@@ -615,4 +615,24 @@ describe('compileGeneratedDashboard', () => {
 		const hotel = compileGeneratedDashboard(REFERENCE_DASHBOARDS.hotelProjection, { knownCells });
 		expect(hotel.markdown).toContain('conditionalFormats=');
 	});
+
+	// Regression: 'markdown' is a natural, common model guess for the prose block type (arguably
+	// more intuitive than 'text', since the block literally holds Markdoc prose) — found live
+	// against a real model via the parallel typed-block compiler in notebook-blueprint.ts.
+	it('accepts "markdown" as an alias for the "text" block type, at any nesting depth', () => {
+		const definition: GeneratedDashboardDefinition = {
+			title: 'T',
+			blocks: [
+				{ type: 'markdown', content: '## Top level' } as never,
+				{
+					type: 'card',
+					blocks: [{ type: 'markdown', content: 'Nested in a card' } as never]
+				}
+			]
+		};
+		const result = compileGeneratedDashboard(definition);
+		expect(result.errors).toEqual([]);
+		expect(result.markdown).toContain('Top level');
+		expect(result.markdown).toContain('Nested in a card');
+	});
 });

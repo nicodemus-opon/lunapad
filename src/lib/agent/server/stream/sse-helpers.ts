@@ -290,8 +290,25 @@ function coerceToolCallShape(obj: Record<string, unknown>): Record<string, unkno
  *
  * Handles flat, nested (args/arguments), and mixed formats.
  * Prose before/after the JSON is preserved.
+ *
+ * @param allowUnbalancedTail When true, a trailing `{...` that never returns to brace-depth 0
+ *   (naive counting, no string-awareness — just enough to find a plausible end) is still handed
+ *   to `parseToolCallObject`, whose repair machinery (`repairMalformedJson`) can recover a
+ *   missing closing brace or stray trailing character. Callers mid-stream must pass false (the
+ *   default) — an unbalanced tail there is legitimately still-streaming and parsing it early
+ *   would truncate a tool call that hasn't finished arriving. Only safe once the stream is known
+ *   to be over (the final flush after the read loop ends), which is exactly when this matters:
+ *   found live against a real model whose completion legitimately ended (`finish_reason: "stop"`)
+ *   one closing brace short of valid JSON — the naive balanced-brace scan below never even
+ *   attempted `parseToolCallObject`, so a tool call that `parseToolCallObject` could parse just
+ *   fine in isolation was silently dropped, surfacing as a false "Model returned an empty
+ *   response" error despite the model having done real, recoverable work.
  */
-export function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) => void): string {
+export function extractRawJsonToolCalls(
+	text: string,
+	onToolCall: (raw: string) => void,
+	allowUnbalancedTail = false
+): string {
 	let result = text;
 
 	while (true) {
@@ -316,7 +333,18 @@ export function extractRawJsonToolCalls(text: string, onToolCall: (raw: string) 
 				}
 			}
 		}
-		if (end === -1) break; // incomplete JSON — leave in buffer
+		if (end === -1) {
+			if (!allowUnbalancedTail) break; // incomplete JSON — leave in buffer, more may arrive
+			const candidate = result.slice(matchIdx);
+			const parsed = parseToolCallObject(candidate);
+			const obj = parsed && coerceToolCallShape(parsed);
+			if (obj && typeof obj.tool === 'string') {
+				obj.args = normalizeToolCallArgs(obj);
+				onToolCall(JSON.stringify(obj));
+				result = result.slice(0, matchIdx);
+			}
+			break; // whether recovered or not, nothing more to find past an unbalanced tail
+		}
 
 		const candidate = result.slice(matchIdx, end + 1);
 		const parsed = parseToolCallObject(candidate);

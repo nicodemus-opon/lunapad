@@ -97,7 +97,7 @@
 </script>
 
 <Dialog.Root open onOpenChange={(v) => !v && onClose()}>
-	<Dialog.Content class="relative max-w-[420px] gap-0 overflow-hidden p-0">
+	<Dialog.Content class="max-w-[420px] gap-0 overflow-hidden p-0">
 		<Dialog.Header>
 			<Dialog.Title>{initial.id ? 'Edit schedule' : 'Add schedule'}</Dialog.Title>
 		</Dialog.Header>

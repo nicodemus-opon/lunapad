@@ -3,7 +3,8 @@ import {
 	parseToolCallObject,
 	escapeControlCharsInStrings,
 	parseMalformedCalltoolPayload,
-	convertPythonDictSyntaxToJson
+	convertPythonDictSyntaxToJson,
+	unescapeIllegalSingleQuotes
 } from './tool-call-parse.js';
 
 describe('parseToolCallObject', () => {
@@ -69,6 +70,24 @@ describe('parseToolCallObject', () => {
 		expect(params.blueprint.executableCells).toHaveLength(1);
 	});
 
+	// Regression: found live against a real model (meta/llama-3.1-8b-instruct via NVIDIA), which
+	// emitted valid double-quoted JSON but reflexively backslash-escaped apostrophes inside a SQL
+	// string literal (`WHERE name IN (\'C2\', \'C4\')`) the way it would in Python/JS source.
+	// `\'` is not a legal JSON escape, so strict JSON.parse rejected it with "Bad escaped
+	// character", and none of the other repair passes handled it — convertPythonDictSyntaxToJson
+	// only rewrites top-level single-quoted syntax; it copies already-double-quoted string
+	// contents (including a stray `\'` inside them) straight through. The tool call was silently
+	// dropped and the model's SQL was lost with no feedback.
+	it("recovers a tool call with illegal \\' escapes inside a double-quoted SQL string", () => {
+		const raw =
+			'{"tool":"apply_notebook_patch","args":{"executableCells":[{"cellId":"stg_customers_ref","outputName":"stg_customers_ref","cellType":"query","language":"sql","code":"SELECT * FROM customers WHERE name IN (\\\'C2\\\', \\\'C4\\\')"}]}}';
+		expect(() => JSON.parse(raw)).toThrow(); // strict parse fails — the original bug
+		const obj = parseToolCallObject(raw);
+		expect(obj?.tool).toBe('apply_notebook_patch');
+		const cells = (obj?.args as { executableCells: Array<{ code: string }> }).executableCells;
+		expect(cells[0].code).toBe("SELECT * FROM customers WHERE name IN ('C2', 'C4')");
+	});
+
 	it('recovers malformed compact calltool syntax from local models', () => {
 		const obj = parseMalformedCalltoolPayload('namelistcells{}');
 		expect(obj).toEqual({ tool: 'list_cells', args: {} });
@@ -120,10 +139,30 @@ describe('convertPythonDictSyntaxToJson', () => {
 
 describe('parseToolCallObject with Python-dict-style payloads', () => {
 	it('recovers a single-quoted tool call end-to-end', () => {
-		const raw = "{'tool': 'apply_notebook_patch', 'args': {'title': 'Renamed', 'executableCells': []}}";
+		const raw =
+			"{'tool': 'apply_notebook_patch', 'args': {'title': 'Renamed', 'executableCells': []}}";
 		const obj = parseToolCallObject(raw);
 		expect(obj?.tool).toBe('apply_notebook_patch');
 		expect((obj?.args as { title: string }).title).toBe('Renamed');
+	});
+});
+
+describe('unescapeIllegalSingleQuotes', () => {
+	it("drops the backslash from an illegal \\' escape inside a double-quoted string", () => {
+		const raw = '{"code": "WHERE name IN (\\\'C2\\\', \\\'C4\\\')"}';
+		expect(JSON.parse(unescapeIllegalSingleQuotes(raw)).code).toBe("WHERE name IN ('C2', 'C4')");
+	});
+
+	it('preserves legal escapes and an already-unescaped apostrophe', () => {
+		const raw =
+			'{"a": "line1\\nline2", "b": "quote:\\"x\\"", "c": "don\'t stop", "d": "back\\\\slash"}';
+		expect(unescapeIllegalSingleQuotes(raw)).toBe(raw);
+		expect(JSON.parse(unescapeIllegalSingleQuotes(raw))).toEqual({
+			a: 'line1\nline2',
+			b: 'quote:"x"',
+			c: "don't stop",
+			d: 'back\\slash'
+		});
 	});
 });
 

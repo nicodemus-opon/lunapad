@@ -60,6 +60,42 @@ export function escapeControlCharsInStrings(raw: string): string {
 }
 
 /**
+ * Drop the backslash from illegal `\'` escapes inside JSON string literals. JSON only allows
+ * escaping `"`, `\`, `/`, and a handful of control-char shorthands — `\'` is not among them, so
+ * `JSON.parse` rejects it with "Bad escaped character in JSON". Models routinely produce this:
+ * SQL/PRQL code bodies are full of single-quoted string literals (`WHERE name = 'C2'`), and a
+ * model reflexively escapes the apostrophe the way it would in Python/JS source, not realizing
+ * JSON string literals don't need it. Found live against a real model, whose tool call was
+ * silently dropped by parseToolCallObject with no other repair path (convertPythonDictSyntaxToJson
+ * only rewrites top-level single-quoted Python-dict syntax; it copies already-double-quoted
+ * string contents — including a stray `\'` inside them — through verbatim).
+ */
+export function unescapeIllegalSingleQuotes(raw: string): string {
+	let out = '';
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+		if (escaped) {
+			if (ch === "'") {
+				out += "'";
+			} else {
+				out += '\\' + ch;
+			}
+			escaped = false;
+			continue;
+		}
+		if (inString && ch === '\\') {
+			escaped = true;
+			continue;
+		}
+		if (ch === '"') inString = !inString;
+		out += ch;
+	}
+	return out;
+}
+
+/**
  * For a (possibly truncated) JSON prefix, compute the characters needed to close any open
  * string and any open brackets/braces, in the correct (reverse) order. Returns null if the
  * prefix has no unclosed structure (either it's already balanced, or contains none).
@@ -246,7 +282,10 @@ const MALFORMED_CALLTOOL_NAME_MAP: Record<string, string> = {
 };
 
 function normalizeMalformedCalltoolName(name: string): string | null {
-	const squashed = name.toLowerCase().replace(/[^a-z_]/g, '').replace(/^name/, '');
+	const squashed = name
+		.toLowerCase()
+		.replace(/[^a-z_]/g, '')
+		.replace(/^name/, '');
 	if (!squashed) return null;
 	if (MALFORMED_CALLTOOL_NAME_MAP[squashed]) return MALFORMED_CALLTOOL_NAME_MAP[squashed];
 	if (squashed.includes('_')) return squashed;
@@ -295,6 +334,20 @@ export function parseToolCallObject(raw: string): Record<string, unknown> | null
 		if (repaired) return repaired;
 		const salvaged = repairMalformedJson(escapeControlCharsInStrings(raw));
 		if (salvaged) return salvaged;
+		// Illegal `\'` escapes (a model over-escaping apostrophes inside SQL/PRQL code strings)
+		// are common enough on their own — not part of Python-dict syntax — to fix as a
+		// dedicated step, composed with the same control-char repair above.
+		try {
+			return JSON.parse(escapeControlCharsInStrings(unescapeIllegalSingleQuotes(raw))) as Record<
+				string,
+				unknown
+			>;
+		} catch {
+			const quoteSalvaged = repairMalformedJson(
+				escapeControlCharsInStrings(unescapeIllegalSingleQuotes(raw))
+			);
+			if (quoteSalvaged) return quoteSalvaged;
+		}
 		const pythonConverted = convertPythonDictSyntaxToJson(raw);
 		if (pythonConverted !== raw) {
 			try {

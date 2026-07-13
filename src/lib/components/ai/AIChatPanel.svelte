@@ -47,7 +47,7 @@
 
 <!-- Panel -->
 <div
-	class="flex shrink-0 flex-col border-l border-border bg-sidebar"
+	class="flex shrink-0 flex-col border-l border-border bg-background"
 	style="width: {width}px;"
 	data-testid="ai-panel"
 >

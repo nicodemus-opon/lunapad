@@ -24,6 +24,7 @@
 				<li>
 					<TreeRow
 						depth={0}
+						class="h-auto items-start py-1.5"
 						onActivate={() => openNotebookTabAtCell(link.sourceNotebookId, link.sourceCellId)}
 					>
 						{#snippet label()}

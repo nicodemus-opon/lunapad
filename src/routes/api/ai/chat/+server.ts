@@ -723,7 +723,7 @@ ${cellList}${planNote}${contractNote}${dialectNote}`;
 						connectionDialect,
 						true,
 						pythonAvailable
-			);
+					);
 			const skipNote =
 				"\n\n> **Note**: Workspace discovery was already completed — skip Step 1 (Discover). Proceed directly to Step 2 (Plan) then Step 3 (Build). Your ONLY job here is to write and validate SQL models. Do NOT describe or plan dashboard creation — dashboard assembly is handled separately after your SQL work is complete. After query nodes run clean (Step 4 — Validate), add findings text blocks via apply_notebook_patch (Step 5 — Document) before calling <done>.\n\n> **CRITICAL — source data rule**: The Schema section lists raw source tables including uploaded files (names often contain timestamps like `table_2026_06_15...`). NEVER reference these raw table names directly in SQL. Always reference them through an existing notebook cell by its outputName (e.g. `FROM new_model_3`) — the cell auto-wraps as a CTE. Writing `FROM de__table_2026...` will fail at runtime because the timestamp changes. If the discovery result identified an existing cell that reads the source, use that cell's outputName as your upstream reference.\n";
 			return skipNote + base;
@@ -1281,15 +1281,26 @@ export const POST: RequestHandler = async ({ request }) => {
 				args: Record<string, unknown>,
 				callId?: string
 			): boolean => {
+				if (process.env.DEBUG_LLM_RAW === '1') {
+					console.error(
+						'[DEBUG_EMIT_POLICY] tool=',
+						tool,
+						'args=',
+						JSON.stringify(args).slice(0, 500)
+					);
+				}
 				args = normalizeNotebookToolArgs(args);
 				if (tool === 'create_cell' || tool === 'update_cell') {
 					pendingPolicyFallback ??=
 						'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.';
+					if (process.env.DEBUG_LLM_RAW === '1') console.error('[DEBUG_REJECT] legacy-cell-tool');
 					return false;
 				}
 				const compiled = compileStructuredMarkdownArgs(tool, args, cells, turnKnownOutputNames);
 				if (compiled.errors.length > 0) {
 					pendingPolicyFallback ??= `Structured notebook UI validation failed: ${compiled.errors.slice(0, 3).join('; ')}.`;
+					if (process.env.DEBUG_LLM_RAW === '1')
+						console.error('[DEBUG_REJECT] compileStructuredMarkdownArgs', compiled.errors);
 					return false;
 				}
 				args = compiled.args;
@@ -1308,7 +1319,11 @@ export const POST: RequestHandler = async ({ request }) => {
 						args = { ...args, code: repairMarkdocTagBalance(args.code) };
 					}
 				}
-				if (isSchemaListingQuestion) return false;
+				if (isSchemaListingQuestion) {
+					if (process.env.DEBUG_LLM_RAW === '1')
+						console.error('[DEBUG_REJECT] isSchemaListingQuestion');
+					return false;
+				}
 				if (
 					req.subagentType === 'dashboard' &&
 					(tool === 'create_cell' || tool === 'update_cell') &&
@@ -1317,20 +1332,29 @@ export const POST: RequestHandler = async ({ request }) => {
 				) {
 					pendingPolicyFallback ??=
 						'Inspect at least one relevant cell result with get_cell_result before creating or updating dashboard markdown.';
+					if (process.env.DEBUG_LLM_RAW === '1')
+						console.error('[DEBUG_REJECT] dashboard-no-result-context');
 					return false;
 				}
 				if (!isChatToolCallAllowed(tool, args, toolPolicyCtx)) {
 					pendingPolicyFallback ??= blockedToolFallbackText(tool, args, toolPolicyCtx, schema);
+					if (process.env.DEBUG_LLM_RAW === '1')
+						console.error('[DEBUG_REJECT] isChatToolCallAllowed=false', pendingPolicyFallback);
 					return false;
 				}
 				const sig = `${tool}:${JSON.stringify(args)}`;
-				if (emittedToolSigs.has(sig)) return false;
+				if (emittedToolSigs.has(sig)) {
+					if (process.env.DEBUG_LLM_RAW === '1') console.error('[DEBUG_REJECT] duplicate-sig');
+					return false;
+				}
 				emittedToolSigs.add(sig);
 				if (req.allowedTools && !req.allowedTools.includes(tool as AIChatToolName)) {
 					pendingPolicyFallback ??=
 						tool === 'create_cell' || tool === 'update_cell' || tool === 'move_cell'
 							? 'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.'
 							: `Tool '${tool}' is not available in this step. Use one of: ${req.allowedTools.join(', ')}.`;
+					if (process.env.DEBUG_LLM_RAW === '1')
+						console.error('[DEBUG_REJECT] not-in-allowedTools');
 					return false;
 				}
 				callCounter++;
@@ -1428,13 +1452,35 @@ export const POST: RequestHandler = async ({ request }) => {
 				const nativeToolCallBuf: Record<number, { id: string; name: string; argsBuf: string }> = {};
 				let wasTruncated = false;
 
+				// A single `reader.read()` call returns whatever bytes happened to arrive over the
+				// network — it has no relationship to SSE line boundaries. A `data: {...}` JSON
+				// payload routinely spans two (or more) reads once the completion is more than a
+				// token or two long. Splitting each read's chunk on '\n' in isolation (the previous
+				// approach) silently dropped every line that got split mid-JSON: `JSON.parse` threw
+				// on the truncated fragment, `continue` discarded it, and the next read started
+				// fresh with no memory of the dropped prefix — losing real content/tool-call deltas
+				// wholesale. Found live: a model generated 811 completion tokens (confirmed via the
+				// response's own `usage` field) but the server only ever successfully parsed one SSE
+				// chunk — the final summary line — because every content-bearing chunk before it got
+				// split across read() boundaries and silently dropped, surfacing as a false "Model
+				// returned an empty response" error. Buffer partial lines across reads instead.
+				let sseLineBuffer = '';
+
 				while (true) {
 					const { done, value } = await reader.read();
-					if (done) break;
+					if (value) sseLineBuffer += dec.decode(value, { stream: true });
+					// The connection can close without a trailing newline after the last SSE frame —
+					// flush the decoder and treat whatever's left as a final, complete line rather
+					// than silently dropping it.
+					if (done) sseLineBuffer += dec.decode();
 
-					const chunk = dec.decode(value, { stream: true });
+					const lines = sseLineBuffer.split('\n');
+					// The last element may be an incomplete line (no trailing '\n' yet) — hold it
+					// back for the next read instead of processing it as if it were complete. Once
+					// the stream is done there's no next read to complete it, so treat it as final.
+					sseLineBuffer = done ? '' : (lines.pop() ?? '');
 
-					for (const line of chunk.split('\n')) {
+					for (const line of lines) {
 						const trimmed = line.trim();
 						if (!trimmed.startsWith('data:')) continue;
 						const data = trimmed.slice(5).trim();
@@ -1445,6 +1491,9 @@ export const POST: RequestHandler = async ({ request }) => {
 							parsed = JSON.parse(data);
 						} catch {
 							continue;
+						}
+						if (process.env.DEBUG_LLM_RAW === '1') {
+							console.error('[DEBUG_LLM_RAW]', data);
 						}
 
 						type DeltaChunk = {
@@ -1645,6 +1694,7 @@ export const POST: RequestHandler = async ({ request }) => {
 						controller.abort();
 						break;
 					}
+					if (done) break;
 				}
 
 				// Flush any remaining native text buffer
@@ -1697,9 +1747,13 @@ export const POST: RequestHandler = async ({ request }) => {
 					nativeTextBuf = flushToolCalls(nativeTextBuf, (rawJson) => {
 						emitToolCallGuarded(rawJson);
 					});
-					nativeTextBuf = extractRawJsonToolCalls(nativeTextBuf.trim(), (rawJson) => {
-						emitToolCallGuarded(rawJson);
-					});
+					nativeTextBuf = extractRawJsonToolCalls(
+						nativeTextBuf.trim(),
+						(rawJson) => {
+							emitToolCallGuarded(rawJson);
+						},
+						true
+					);
 					nativeTextBuf = stripHallucinatedToolResultJson(nativeTextBuf);
 					// Drop any unclosed <tool_call>/partial-JSON fragment left in the buffer —
 					// there's no more stream coming to complete it, so emitting it raw would leak
@@ -1809,9 +1863,13 @@ export const POST: RequestHandler = async ({ request }) => {
 						emitToolCallGuarded(rawJson);
 					});
 					// Also extract bare JSON tool calls left in the buffer
-					buffer = extractRawJsonToolCalls(buffer, (rawJson) => {
-						emitToolCallGuarded(rawJson);
-					});
+					buffer = extractRawJsonToolCalls(
+						buffer,
+						(rawJson) => {
+							emitToolCallGuarded(rawJson);
+						},
+						true
+					);
 					buffer = stripHallucinatedToolResultJson(buffer);
 					const finalText = stripOpenTag(buffer).trim();
 					if (finalText) {
@@ -1827,6 +1885,18 @@ export const POST: RequestHandler = async ({ request }) => {
 					emittedXmlToolCalls === 0 &&
 					!meaningfulTextEmitted
 				) {
+					if (process.env.DEBUG_LLM_RAW === '1') {
+						console.error(
+							'[DEBUG_EMPTY_RESPONSE] pendingPolicyFallback=',
+							pendingPolicyFallback,
+							'emittedXmlToolCalls=',
+							emittedXmlToolCalls,
+							'emittedNativeToolCalls=',
+							emittedNativeToolCalls,
+							'meaningfulTextEmitted=',
+							meaningfulTextEmitted
+						);
+					}
 					send(ctrl, {
 						type: 'error',
 						error:

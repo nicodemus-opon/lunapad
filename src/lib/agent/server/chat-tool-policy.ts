@@ -20,12 +20,19 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 	const str = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
 	switch (tool) {
 		case 'create_notebook':
+			// Only require a real blueprint object — NOT that `blocks` is already a populated
+			// array. Same reasoning as apply_notebook_patch below: compileNotebookBlueprint (run
+			// by the real handler in ai-chat-client.ts) already gives a specific, actionable
+			// diagnostic for a missing/malformed `blocks` (or a model that used `executableCells`
+			// without `blocks`, or nested them under `document`/`operations` instead). Rejecting
+			// here — before the tool call is ever emitted to the client to execute — converts a
+			// repairable, specific compiler diagnostic into a silent drop: blockedToolFallbackText
+			// below has no case for `create_notebook`, so the model gets zero feedback and the
+			// whole turn just surfaces as the generic, unhelpful "Model returned an empty
+			// response" error. Found live against a real model whose blueprint used
+			// `executableCells` but omitted `blocks` entirely.
 			return (
-				!!args.blueprint &&
-				typeof args.blueprint === 'object' &&
-				!Array.isArray(args.blueprint) &&
-				Array.isArray((args.blueprint as { blocks?: unknown }).blocks) &&
-				((args.blueprint as { blocks?: unknown[] }).blocks?.length ?? 0) > 0
+				!!args.blueprint && typeof args.blueprint === 'object' && !Array.isArray(args.blueprint)
 			);
 		case 'inspect_notebook':
 		case 'validate_notebook':
@@ -46,10 +53,10 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 			// reach the handler so the model gets that real diagnostic to fix itself with.
 			return Boolean(
 				args.blueprint ||
-					args.document ||
-					args.operations ||
-					str(args.title) ||
-					(Array.isArray(args.executableCells) && args.executableCells.length > 0)
+				args.document ||
+				args.operations ||
+				str(args.title) ||
+				(Array.isArray(args.executableCells) && args.executableCells.length > 0)
 			);
 		case 'run_query_nodes':
 			// The handler explicitly supports omitting both nodeIds and cellIds — it falls
@@ -190,6 +197,9 @@ export function blockedToolFallbackText(
 	if (tool === 'delete_cell') {
 		return 'I will not delete cells unless you name one specific cell outputName to remove.';
 	}
+	if (tool === 'create_notebook' && !(args.blueprint && typeof args.blueprint === 'object')) {
+		return 'create_notebook requires a `blueprint` object (with a `title` and `blocks` array). Provide one and call create_notebook again.';
+	}
 	if (tool === 'sample_data' || tool === 'query_data') {
 		const table =
 			tool === 'sample_data'
@@ -231,9 +241,13 @@ export function blockedToolFallbackText(
 				if (!root || hinted.has(root)) continue;
 				hinted.add(root);
 				const cols = columnsLower.get(root);
-				if (cols?.length) hints.push(`Cell '${root}' has exactly these columns: ${cols.join(', ')}.`);
+				if (cols?.length)
+					hints.push(`Cell '${root}' has exactly these columns: ${cols.join(', ')}.`);
 			}
-			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. ${hints.join(' ')} Fix Markdoc syntax and $cell refs before creating the cell.`.replace(/\s{2,}/g, ' ');
+			return `Markdown validation failed: ${mdFailures.slice(0, 3).join('; ')}. ${hints.join(' ')} Fix Markdoc syntax and $cell refs before creating the cell.`.replace(
+				/\s{2,}/g,
+				' '
+			);
 		}
 	}
 	return null;

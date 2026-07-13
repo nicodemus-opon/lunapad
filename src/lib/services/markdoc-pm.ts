@@ -65,12 +65,21 @@ export function normalizePmNodeIds(doc: PMDocJSON): PMDocJSON {
 		let counter = 1;
 		while (seen.has(nodeId)) nodeId = `${nodeId}_${counter++}`;
 		seen.add(nodeId);
+		// A content array's ELEMENTS can be malformed (null/undefined/non-object) even when the
+		// array itself is well-formed — e.g. a patch operation's `op.node` arriving as undefined
+		// gets wrapped as `content: [op.node]` by a caller before reaching here. Filtering here,
+		// not just at the array level, protects every caller of this shared utility rather than
+		// requiring each one to defensively pre-validate. Found live: crashed with "Cannot read
+		// properties of undefined (reading 'type')" instead of just dropping the bad entry.
+		const validChildren = (node.content ?? []).filter(
+			(child): child is PMNodeJSON => !!child && typeof child === 'object'
+		);
 		return {
 			...node,
 			attrs: { ...(node.attrs ?? {}), nodeId },
-			...((node.content?.length ?? 0) > 0
+			...(validChildren.length > 0
 				? {
-						content: node.content!.map((child, index) =>
+						content: validChildren.map((child, index) =>
 							normalize(child, `${path}.content.${index}`)
 						) as PMNodeJSON[]
 					}
@@ -352,7 +361,7 @@ function pmNodeJsonToTiptap(node: PMNodeJSON): PMNodeJSON {
 	return { ...node, type, ...(marks ? { marks } : {}), ...(content ? { content } : {}) };
 }
 
-function tiptapNodeJsonToPm(node: PMNodeJSON): PMNodeJSON {
+export function tiptapNodeJsonToPm(node: PMNodeJSON): PMNodeJSON {
 	const type = TIPTAP_TO_PM_NODE[node.type] ?? node.type;
 	const marks = node.marks?.map((m) => ({
 		...m,
