@@ -37,13 +37,28 @@ function invSchema(name: string): (typeof READONLY_INVESTIGATION_TOOLS)[number] 
 	return s;
 }
 
+/** Tools with a real server-side implementation too (notebook-mutation.ts, threaded
+ *  through lunapad-actions.ts/mcp-tools.ts) — client behavior is unchanged, this just
+ *  makes them reachable headlessly via MCP/REST as well. See schemasForMcp() below. */
+const SERVER_CAPABLE_NATIVE_TOOLS = new Set([
+	'query_data',
+	'sample_data',
+	'profile_column',
+	'create_notebook',
+	'apply_notebook_patch',
+	'inspect_notebook',
+	'validate_notebook',
+	'run_query_nodes',
+	'run_cells',
+	'pick_chart',
+	'set_chart'
+]);
+
 /** In-app chat tools (sidebar assistant) */
 const IN_APP_TOOLS: AgentToolDef[] = NATIVE_TOOLS.map((schema) => ({
 	name: schema.function.name,
 	schema,
-	executor: ['query_data', 'sample_data', 'profile_column'].includes(schema.function.name)
-		? 'either'
-		: 'client',
+	executor: SERVER_CAPABLE_NATIVE_TOOLS.has(schema.function.name) ? 'either' : 'client',
 	mutates: MUTATING.has(schema.function.name),
 	stopAfter: STOP_AFTER_TOOLS.has(schema.function.name)
 }));
@@ -252,7 +267,10 @@ export function schemasForChat(allowedTools?: AIChatToolName[]): typeof NATIVE_T
 }
 
 export function schemasForMcp(): AgentToolDef[] {
-	return listAgentTools({ executor: 'server' });
+	// 'either' tools (query_data/sample_data/profile_column plus the notebook-mutation
+	// tools above) have a real server implementation and belong here too — previously
+	// this only returned 'server', silently excluding every 'either' tool from MCP.
+	return [...listAgentTools({ executor: 'server' }), ...listAgentTools({ executor: 'either' })];
 }
 
 export function isStopAfterTool(name: string): boolean {

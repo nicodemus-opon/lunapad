@@ -25,6 +25,7 @@ export interface ApiKeyRecord {
 	lastUsedAt: string | null;
 	expiresAt: string | null;
 	revokedAt: string | null;
+	scopes: string[] | null;
 }
 
 // Mirrors better-auth's own user schema (see auth.ts) so the result can be assigned
@@ -78,6 +79,7 @@ function toRecord(row: {
 	lastUsedAt: string | null;
 	expiresAt: string | null;
 	revokedAt: string | null;
+	scopes: string[] | null;
 }): ApiKeyRecord {
 	return {
 		id: row.id,
@@ -87,7 +89,8 @@ function toRecord(row: {
 		createdAt: row.createdAt,
 		lastUsedAt: row.lastUsedAt,
 		expiresAt: row.expiresAt,
-		revokedAt: row.revokedAt
+		revokedAt: row.revokedAt,
+		scopes: row.scopes
 	};
 }
 
@@ -112,10 +115,11 @@ export async function createApiKey(
 		lastUsedAt: string | null;
 		expiresAt: string | null;
 		revokedAt: string | null;
+		scopes: string[] | null;
 	}>(
 		`INSERT INTO "apiKey" ("id", "userId", "name", "keyHash", "prefix", "expiresAt", "scopes")
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING "id", "userId", "name", "prefix", "createdAt", "lastUsedAt", "expiresAt", "revokedAt"`,
+		 RETURNING "id", "userId", "name", "prefix", "createdAt", "lastUsedAt", "expiresAt", "revokedAt", "scopes"`,
 		[id, userId, name, keyHash, prefix, expiresAt, scopes]
 	);
 
@@ -133,8 +137,9 @@ export async function listApiKeys(userId: string): Promise<ApiKeyRecord[]> {
 		lastUsedAt: string | null;
 		expiresAt: string | null;
 		revokedAt: string | null;
+		scopes: string[] | null;
 	}>(
-		`SELECT "id", "userId", "name", "prefix", "createdAt", "lastUsedAt", "expiresAt", "revokedAt"
+		`SELECT "id", "userId", "name", "prefix", "createdAt", "lastUsedAt", "expiresAt", "revokedAt", "scopes"
 		 FROM "apiKey" WHERE "userId" = $1 ORDER BY "createdAt" DESC`,
 		[userId]
 	);

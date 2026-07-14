@@ -1250,6 +1250,9 @@
 							initialChartConfig={cell.resultChartConfig}
 							controlsVisible={showResultControls}
 							toolbarReserveSpace={!codeHidden}
+							showName={false}
+							showRowCount={worksheet || reportView}
+							executionMs={worksheet || reportView ? cell.executionMs : undefined}
 							fillHeight={worksheet}
 							onViewModeChange={(mode) => setCellResultViewMode(cell.id, mode)}
 							onChartConfigChange={(config) => setCellResultChartConfig(cell.id, config)}
@@ -1264,30 +1267,23 @@
 						>
 							{#snippet toolbarActions()}
 								{#if onOpenResultTab}
-									<div
-										class="flex items-center gap-1 transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showResultControls
-											? 'opacity-100'
-											: 'pointer-events-none opacity-0'}"
-										aria-hidden={!showResultControls}
-									>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant="ghost"
-													size="sm"
-													class="h-6 w-6 p-0"
-													onclick={() =>
-														onOpenResultTab!(
-															cell.id,
-															notebookId,
-															cell.outputName || `result${index + 1}`,
-															cell.resultViewMode
-														)}><ExternalLink class="h-3 w-3" /></Button
-												>
-											</Tooltip.Trigger>
-											<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
-										</Tooltip.Root>
-									</div>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 w-6 p-0"
+												onclick={() =>
+													onOpenResultTab!(
+														cell.id,
+														notebookId,
+														cell.outputName || `result${index + 1}`,
+														cell.resultViewMode
+													)}><ExternalLink class="h-3 w-3" /></Button
+											>
+										</Tooltip.Trigger>
+										<Tooltip.Content><p class="text-xs">Open in full tab</p></Tooltip.Content>
+									</Tooltip.Root>
 								{/if}
 							{/snippet}
 						</InlineResultView>

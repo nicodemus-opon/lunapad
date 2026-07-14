@@ -34,8 +34,21 @@ describe('permissions', () => {
 		).toBe(true);
 	});
 
-	it('treats empty api scopes as full access', () => {
-		expect(hasApiScope(null, 'workspace:write')).toBe(true);
+	it('treats empty/unscoped api keys as read-only, not full access', () => {
+		expect(hasApiScope(null, 'workspace:read')).toBe(true);
+		expect(hasApiScope(null, 'connections:query')).toBe(true);
+		expect(hasApiScope(null, 'workspace:write')).toBe(false);
+		expect(hasApiScope([], 'workspace:write')).toBe(false);
 		expect(hasApiScope(['workspace:read'], 'workspace:write')).toBe(false);
+	});
+
+	it('grants everything via the automation:full scope sentinel', () => {
+		expect(hasApiScope(['automation:full'], 'workspace:write')).toBe(true);
+		expect(hasApiScope(['automation:full'], 'dbt:run')).toBe(true);
+	});
+
+	it('grants an explicitly listed scope', () => {
+		expect(hasApiScope(['workspace:write'], 'workspace:write')).toBe(true);
+		expect(hasApiScope(['workspace:write'], 'dbt:run')).toBe(false);
 	});
 });

@@ -120,7 +120,14 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 	if (pathname.startsWith('/api/v1/dbt')) return 'dbt:run';
 	if (pathname.startsWith('/api/v1/notebooks')) return write ? 'workspace:write' : 'workspace:read';
 	if (pathname.startsWith('/api/v1/prql')) return 'workspace:read';
-	if (pathname.startsWith('/api/mcp')) return 'connections:query';
+	// /api/mcp's per-tool permission is enforced inside createLunapadMcpServer's tool
+	// handlers instead of here — a JSON-RPC POST body's tool name isn't visible to this
+	// path-based router before dispatch, and returning a single fixed action here would
+	// either block every read tool (if action is a write action) or let every write tool
+	// through unscoped (if action is a read action). Authentication (a user must still be
+	// resolved) is still enforced by the !event.locals.user check below; this just skips
+	// the per-action gate specifically for this one path.
+	if (pathname.startsWith('/api/mcp')) return null;
 
 	if (pathname.startsWith('/api/project')) return write ? 'workspace:write' : 'workspace:read';
 
@@ -279,7 +286,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (!can(user, requiredPermission)) {
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
-		if (!hasApiScope(event.locals.apiKeyScopes, requiredPermission)) {
+		// Scope restriction only applies to requests actually authenticated via a bearer
+		// API key (apiKeyId set by the fallback path above) — a normal session-cookie
+		// login always has apiKeyScopes === null too, and must NOT be scope-limited by
+		// that; it's gated by role (can()) alone, same as before scopes existed.
+		if (event.locals.apiKeyId && !hasApiScope(event.locals.apiKeyScopes, requiredPermission)) {
 			return json(
 				{ error: 'Forbidden: API key scope does not allow this action' },
 				{ status: 403 }

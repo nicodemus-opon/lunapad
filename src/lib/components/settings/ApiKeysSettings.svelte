@@ -13,14 +13,61 @@
 		lastUsedAt: string | null;
 		expiresAt: string | null;
 		revokedAt: string | null;
+		scopes?: string[] | null;
 	}
+
+	// Mirrors PermissionAction/ALL_API_SCOPES in $lib/server/permissions.ts — duplicated
+	// here (rather than imported) since that module is server-only and SvelteKit blocks
+	// importing $lib/server/* into client component code. admin:manage is deliberately
+	// NOT offered here — it's never delegable via an API-key scope (see hasApiScope);
+	// admin-level automation (e.g. python-cell execution) requires an admin's own role.
+	const SCOPE_GROUPS: Array<{ label: string; scopes: Array<{ value: string; label: string }> }> = [
+		{
+			label: 'Notebooks',
+			scopes: [
+				{ value: 'workspace:read', label: 'Read notebooks' },
+				{ value: 'workspace:write', label: 'Create/edit/run notebooks' }
+			]
+		},
+		{
+			label: 'Connections',
+			scopes: [
+				{ value: 'connections:query', label: 'Run queries' },
+				{ value: 'connections:manage', label: 'Manage connections' }
+			]
+		},
+		{
+			label: 'dbt',
+			scopes: [
+				{ value: 'dbt:read', label: 'Read manifest/jobs' },
+				{ value: 'dbt:run', label: 'Run/compile models' }
+			]
+		},
+		{
+			label: 'Shares & sites',
+			scopes: [
+				{ value: 'shares:read', label: 'Read shares' },
+				{ value: 'shares:publish', label: 'Publish shares' },
+				{ value: 'sites:manage', label: 'Manage sites' }
+			]
+		}
+	];
+	const READ_ONLY_DEFAULT_SCOPES = new Set(['workspace:read', 'connections:query', 'shares:read', 'dbt:read']);
 
 	let keys = $state<ApiKeyRecord[]>([]);
 	let loading = $state(true);
 	let creating = $state(false);
 	let newKeyName = $state('');
 	let newKeyExpiry = $state<'never' | '30' | '90' | '365'>('never');
+	let newKeyScopes = $state<Set<string>>(new Set(READ_ONLY_DEFAULT_SCOPES));
 	let revealedKey = $state<string | null>(null);
+
+	function toggleScope(scope: string, checked: boolean): void {
+		const next = new Set(newKeyScopes);
+		if (checked) next.add(scope);
+		else next.delete(scope);
+		newKeyScopes = next;
+	}
 
 	$effect(() => {
 		void loadKeys();
@@ -55,7 +102,7 @@
 			const res = await fetch('/api/account/api-keys', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ name, expiresInDays })
+				body: JSON.stringify({ name, expiresInDays, scopes: [...newKeyScopes] })
 			});
 			const body = await res.json();
 			if (!res.ok) {
@@ -65,6 +112,7 @@
 			revealedKey = body.fullKey;
 			newKeyName = '';
 			newKeyExpiry = 'never';
+			newKeyScopes = new Set(READ_ONLY_DEFAULT_SCOPES);
 			await loadKeys();
 		} finally {
 			creating = false;
@@ -151,6 +199,31 @@
 				Create
 			</Button>
 		</div>
+
+		<div class="space-y-1.5 rounded-md border border-border p-2.5">
+			<p class="text-2xs font-medium text-muted-foreground">
+				Scopes — unchecked defaults to read-only. Write/run access requires an explicit scope.
+			</p>
+			<div class="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+				{#each SCOPE_GROUPS as group (group.label)}
+					<div class="space-y-1">
+						<p class="text-2xs font-semibold text-muted-foreground">{group.label}</p>
+						{#each group.scopes as scope (scope.value)}
+							<label class="flex items-center gap-1.5 text-2xs">
+								<input
+									type="checkbox"
+									class="h-3 w-3 rounded border-border"
+									checked={newKeyScopes.has(scope.value)}
+									onchange={(e: Event) =>
+										toggleScope(scope.value, (e.currentTarget as HTMLInputElement).checked)}
+								/>
+								{scope.label}
+							</label>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</div>
 	</div>
 
 	<div class="space-y-1">
@@ -177,6 +250,9 @@
 							{#if key.revokedAt}
 								· Revoked
 							{/if}
+						</p>
+						<p class="text-2xs text-muted-foreground">
+							Scopes: {key.scopes?.length ? key.scopes.join(', ') : 'read-only (unscoped)'}
 						</p>
 					</div>
 					{#if !key.revokedAt}

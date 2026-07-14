@@ -152,12 +152,7 @@
 			</Tooltip.Root>
 		{/if}
 		{#if !collapsed && isQueryCell && revealed}
-			{#if cell.result && cell.status !== 'idle'}
-				<span class="shrink-0 font-mono text-2xs text-muted-foreground/80 tabular-nums">
-					{cell.result.rows.length.toLocaleString()} rows{#if cell.executionMs != null}
-						· {fmtMs(cell.executionMs)}{/if}
-				</span>
-			{:else if cell.status === 'running'}
+			{#if cell.status === 'running'}
 				<span class="shrink-0 text-2xs text-muted-foreground">running…</span>
 			{:else if cell.needsRun}
 				<span class="shrink-0 text-2xs text-warning">stale</span>

@@ -4,11 +4,15 @@ import { NATIVE_TOOLS } from '$lib/agent/server/tools/native-schemas.js';
 import { getAgentTool, listAgentTools, isStopAfterTool } from './registry.js';
 
 describe('agent tool registry', () => {
-	it('includes node-native notebook tools as client mutating tools', () => {
+	it('includes node-native notebook tools as either-executor mutating tools', () => {
+		// 'either' (not 'client') — these now have a real server-side implementation
+		// too (notebook-mutation.ts), reachable headlessly via MCP/REST, in addition
+		// to their original client (browser store) execution path.
 		const t = getAgentTool('apply_notebook_patch');
-		expect(t?.executor).toBe('client');
+		expect(t?.executor).toBe('either');
 		expect(t?.mutates).toBe(true);
 		expect(getAgentTool('create_notebook')?.mutates).toBe(true);
+		expect(getAgentTool('create_notebook')?.executor).toBe('either');
 		expect(getAgentTool('create_cell')).toBeUndefined();
 	});
 
@@ -21,6 +25,14 @@ describe('agent tool registry', () => {
 		const server = listAgentTools({ executor: 'server' });
 		expect(server.every((t) => t.executor === 'server')).toBe(true);
 		expect(server.some((t) => t.name === 'list_connections')).toBe(true);
+	});
+
+	it('schemasForMcp includes both server and either executor tools', async () => {
+		const { schemasForMcp } = await import('./registry.js');
+		const names = new Set(schemasForMcp().map((t) => t.name));
+		expect(names.has('list_connections')).toBe(true); // executor: 'server'
+		expect(names.has('create_notebook')).toBe(true); // executor: 'either'
+		expect(names.has('query_data')).toBe(true); // executor: 'either'
 	});
 
 	it('maps stop-after tools', () => {

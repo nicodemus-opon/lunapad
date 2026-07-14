@@ -9,7 +9,21 @@ import { getCurrentFolder } from './dbt-schedules.js';
 import { spawnDbt, getJob } from './dbt-runner.js';
 import { precompileProjectModels, collectProjectModelNames } from './prql-compiler.js';
 import { loadManifest, type DbtModel } from './dbt.js';
-import { loadWorkspaceState, saveWorkspaceState } from './workspace-store.js';
+import { loadWorkspaceState } from './workspace-store.js';
+import type { ChartConfig } from '$lib/types/gui-pipeline.js';
+import type { NotebookBlueprint, NotebookBlueprintDiagnostic } from '$lib/services/notebook-blueprint.js';
+import {
+	createNotebookFromBlueprintOnDisk,
+	patchNotebookOnDisk,
+	validateNotebookOnDisk,
+	inspectNotebookOnDisk,
+	runNotebookCellsOnDisk,
+	setCellChartConfig,
+	pickChartHeuristic,
+	type McpExecutableCellInput,
+	type NotebookPatchInput,
+	type CellRunResult
+} from './notebook-mutation.js';
 
 /**
  * Plain async functions with no SvelteKit-specific types — the single source of truth
@@ -192,93 +206,139 @@ export async function getDbtManifestAction(
 	return { models: await loadManifest(folder) };
 }
 
-// ── Workspace mutations (headless agent / server executor) ───────────────────
+// ── Notebook authoring (headless agent / MCP / REST — full parity with the
+//    in-app AI chat's create_notebook/apply_notebook_patch/run_cells/etc, just
+//    targeting project-folder .luna files on disk instead of browser state) ──
 
-interface WorkspaceCell {
-	id: string;
-	outputName?: string;
-	code?: string;
-	markdown?: string;
+export interface CreateNotebookInput {
+	folder?: string;
+	notebookId: string;
+	title?: string;
+	executableCells?: McpExecutableCellInput[];
+	blocks: NotebookBlueprint['blocks'];
 }
 
-interface WorkspaceBlob {
-	notebooks?: Array<{
-		id: string;
-		cells?: WorkspaceCell[];
-	}>;
-	activeTabId?: string;
+export interface NotebookMutationOutput {
+	diagnostics: NotebookBlueprintDiagnostic[];
+	notebook?: { id: string; name: string; folderId: string | null; cellCount: number };
 }
 
-function findCellInWorkspace(
-	data: WorkspaceBlob,
-	cellRef: string
-): { notebookId: string; cell: WorkspaceCell } | null {
-	for (const nb of data.notebooks ?? []) {
-		for (const cell of nb.cells ?? []) {
-			if (cell.id === cellRef || cell.outputName === cellRef) {
-				return { notebookId: nb.id, cell };
-			}
-		}
-	}
-	return null;
-}
-
-export interface UpdateWorkspaceCellInput {
-	cellRef: string;
-	code?: string;
-	markdown?: string;
-	userId?: string | null;
-	expectedUpdatedAt?: string | null;
-}
-
-export async function updateWorkspaceCellAction(
-	input: UpdateWorkspaceCellInput
-): Promise<{ ok: true; cellId: string; updatedAt: string }> {
-	const row = await loadWorkspaceState();
-	if (!row?.data) throw new Error('No workspace state on server.');
-	const data = row.data as WorkspaceBlob;
-	const found = findCellInWorkspace(data, input.cellRef);
-	if (!found) throw new Error(`Cell "${input.cellRef}" not found in workspace.`);
-	if (input.code !== undefined) found.cell.code = input.code;
-	if (input.markdown !== undefined) found.cell.markdown = input.markdown;
-	const saved = await saveWorkspaceState(data, input.userId ?? null, {
-		expectedUpdatedAt: input.expectedUpdatedAt ?? row.updatedAt
-	});
-	return { ok: true, cellId: found.cell.id, updatedAt: saved.updatedAt };
-}
-
-export interface CreateWorkspaceCellInput {
-	notebookId?: string;
-	outputName: string;
-	code?: string;
-	markdown?: string;
-	userId?: string | null;
-	expectedUpdatedAt?: string | null;
-}
-
-export async function createWorkspaceCellAction(
-	input: CreateWorkspaceCellInput
-): Promise<{ ok: true; cellId: string; updatedAt: string }> {
-	const row = await loadWorkspaceState();
-	if (!row?.data) throw new Error('No workspace state on server.');
-	const data = row.data as WorkspaceBlob;
-	const nbId = input.notebookId ?? data.activeTabId;
-	const nb = data.notebooks?.find((n) => n.id === nbId);
-	if (!nb) throw new Error(`Notebook "${nbId}" not found.`);
-	const cellId = `cell_${Date.now()}`;
-	const cell = {
-		id: cellId,
-		outputName: input.outputName,
-		code: input.code ?? '',
-		markdown: input.markdown,
-		language: 'sql' as const,
-		cellType: input.markdown ? ('markdown' as const) : ('query' as const)
+function toMutationOutput(result: {
+	diagnostics: NotebookBlueprintDiagnostic[];
+	notebook?: { id: string; name: string; folderId: string | null; cells: unknown[] };
+}): NotebookMutationOutput {
+	return {
+		diagnostics: result.diagnostics,
+		notebook: result.notebook
+			? {
+					id: result.notebook.id,
+					name: result.notebook.name,
+					folderId: result.notebook.folderId,
+					cellCount: result.notebook.cells.length
+				}
+			: undefined
 	};
-	nb.cells = [...(nb.cells ?? []), cell];
-	const saved = await saveWorkspaceState(data, input.userId ?? null, {
-		expectedUpdatedAt: input.expectedUpdatedAt ?? row.updatedAt
+}
+
+export async function createNotebookAction(
+	input: CreateNotebookInput
+): Promise<NotebookMutationOutput> {
+	const folder = resolveFolder(input.folder);
+	const result = await createNotebookFromBlueprintOnDisk(folder, input.notebookId, {
+		title: input.title,
+		executableCells: input.executableCells,
+		blocks: input.blocks
 	});
-	return { ok: true, cellId, updatedAt: saved.updatedAt };
+	return toMutationOutput(result);
+}
+
+export interface PatchNotebookInput extends NotebookPatchInput {
+	folder?: string;
+	notebookId: string;
+}
+
+export async function patchNotebookAction(
+	input: PatchNotebookInput
+): Promise<NotebookMutationOutput> {
+	const folder = resolveFolder(input.folder);
+	const result = await patchNotebookOnDisk(folder, input.notebookId, {
+		blueprint: input.blueprint,
+		document: input.document,
+		operations: input.operations,
+		executableCells: input.executableCells,
+		title: input.title
+	});
+	return toMutationOutput(result);
+}
+
+export interface ValidateNotebookInput {
+	folder?: string;
+	notebookId: string;
+}
+
+export async function validateNotebookAction(
+	input: ValidateNotebookInput
+): Promise<{ ok: boolean; diagnostics: NotebookBlueprintDiagnostic[] }> {
+	const folder = resolveFolder(input.folder);
+	const diagnostics = await validateNotebookOnDisk(folder, input.notebookId);
+	return { ok: diagnostics.length === 0, diagnostics };
+}
+
+export async function inspectNotebookAction(input: ValidateNotebookInput) {
+	const folder = resolveFolder(input.folder);
+	return inspectNotebookOnDisk(folder, input.notebookId);
+}
+
+export interface RunNotebookCellsInput {
+	folder?: string;
+	notebookId: string;
+	cellIds?: string[];
+	allowPython: boolean;
+}
+
+export async function runNotebookCellsAction(
+	input: RunNotebookCellsInput
+): Promise<{ results: CellRunResult[] }> {
+	const folder = resolveFolder(input.folder);
+	const results = await runNotebookCellsOnDisk(folder, input.notebookId, input.cellIds, {
+		allowPython: input.allowPython
+	});
+	return { results };
+}
+
+export interface SetChartInput {
+	folder?: string;
+	notebookId: string;
+	cellId: string;
+	chartConfig: ChartConfig | null;
+}
+
+export async function setChartAction(input: SetChartInput): Promise<NotebookMutationOutput> {
+	const folder = resolveFolder(input.folder);
+	const result = await setCellChartConfig(folder, input.notebookId, input.cellId, input.chartConfig);
+	return toMutationOutput(result);
+}
+
+export interface PickChartInput {
+	folder?: string;
+	notebookId: string;
+	cellId: string;
+}
+
+export async function pickChartAction(input: PickChartInput): Promise<NotebookMutationOutput> {
+	const folder = resolveFolder(input.folder);
+	const runResult = await runNotebookCellsOnDisk(folder, input.notebookId, [input.cellId], {
+		allowPython: false
+	});
+	const cellResult = runResult[0];
+	if (!cellResult || !cellResult.ok) {
+		throw new Error(
+			cellResult?.error ?? `Cell "${input.cellId}" could not be run to inspect its result.`
+		);
+	}
+	const chartConfig = pickChartHeuristic(cellResult.rows ?? [], cellResult.columns ?? []);
+	const result = await setCellChartConfig(folder, input.notebookId, input.cellId, chartConfig);
+	return toMutationOutput(result);
 }
 
 // ── Shares / publishing ──────────────────────────────────────────────────────
@@ -317,8 +377,8 @@ export async function publishNotebookAction(
 
 	const row = await loadWorkspaceState();
 	if (!row?.data) throw new Error('No workspace state on server.');
-	const blob = row.data as WorkspaceBlob & { connections?: Connection[] };
-	const notebook = blob.notebooks?.find((n) => n.id === input.notebookId) as Notebook | undefined;
+	const blob = row.data as { notebooks?: Notebook[]; connections?: Connection[] };
+	const notebook = blob.notebooks?.find((n) => n.id === input.notebookId);
 	if (!notebook) throw new Error(`Notebook "${input.notebookId}" not found in workspace.`);
 
 	const snapshot = buildShareSnapshot(notebook, blob.connections ?? []);

@@ -33,8 +33,12 @@
 		onColumnWidthsChange?: (widths: Record<string, number>) => void;
 		/** Hide non-essential controls until the surrounding cell is focused */
 		controlsVisible?: boolean;
-		/** When false, the hidden toolbar collapses to 0 height instead of reserving a row (used when the cell shows output only) */
+		/** When false, the caption row doesn't reserve height when its static metadata is empty (used when the cell shows output only) */
 		toolbarReserveSpace?: boolean;
+		/** Show the result name in the caption row — omit when a sibling (e.g. the cell header) already shows it */
+		showName?: boolean;
+		/** Show the row count in the caption row — omit when a sibling (e.g. the cell status line) already shows it */
+		showRowCount?: boolean;
 		/** Optional actions rendered on the right side of the toolbar row */
 		toolbarActions?: import('svelte').Snippet;
 		/** Query execution time in milliseconds */
@@ -65,6 +69,8 @@
 		onColumnWidthsChange,
 		controlsVisible = true,
 		toolbarReserveSpace = true,
+		showName = true,
+		showRowCount = true,
 		toolbarActions,
 		executionMs = null,
 		fillHeight = false
@@ -141,75 +147,85 @@
 		lastInitialChartConfig = cfg;
 		onChartConfigChange?.(cfg);
 	}
+
+	const hasMeta = $derived(showName || showRowCount || executionMs != null);
 </script>
+
+{#snippet controlsCluster()}
+	<ResultViewModeSwitcher {viewMode} onSwitch={switchView} />
+	{#if viewMode === 'table'}
+		<label class="group/search relative hidden items-center sm:flex">
+			<Search
+				class="pointer-events-none absolute left-2 h-3 w-3 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
+			/>
+			<input
+				class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border focus:bg-background motion-reduce:transition-none"
+				type="text"
+				placeholder="Search"
+				aria-label="Search table"
+				bind:value={tableSearch}
+			/>
+			{#if tableSearch.trim()}
+				<button
+					type="button"
+					class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+					onclick={() => (tableSearch = '')}
+					aria-label="Clear search"
+					title="Clear search"
+				>
+					<X class="h-2.5 w-2.5" />
+				</button>
+			{/if}
+		</label>
+	{/if}
+	{#if viewMode === 'chart' && activeConfig && !compact}
+		<button
+			class="flex h-6 w-6 items-center justify-center rounded transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showConfigPanel
+				? 'bg-primary/15 text-primary'
+				: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+			title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
+			onclick={() => (showConfigPanel = !showConfigPanel)}
+		>
+			<Settings2 class="h-3.5 w-3.5" />
+		</button>
+	{/if}
+	{#if toolbarActions}
+		{@render toolbarActions()}
+	{/if}
+{/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="notebook-result flex flex-col gap-1.5 {fillHeight ? 'min-h-0 flex-1' : ''}"
 	onmousedown={(e) => e.stopPropagation()}
 >
-	<!-- Observable-style caption row -->
+	<!-- Observable-style caption row: static metadata always visible, controls float over the top-right corner -->
 	<div
-		class="flex shrink-0 items-center justify-between gap-2 overflow-hidden transition-[opacity,height] duration-(--motion-fast) ease-(--motion-ease-out) {showControls
-			? 'h-6 opacity-100'
-			: toolbarReserveSpace
-				? 'pointer-events-none h-6 opacity-0'
-				: 'pointer-events-none h-0 opacity-0'}"
-		aria-hidden={!showControls}
+		class="relative flex shrink-0 items-center gap-2 {toolbarReserveSpace || hasMeta ? 'h-6' : ''}"
 	>
-		<div class="flex min-w-0 items-center gap-2">
-			<span class="truncate font-mono text-2xs text-muted-foreground/80">{name}</span>
-			<span class="hidden font-mono text-2xs text-muted-foreground/60 tabular-nums sm:inline">
-				{rows.length.toLocaleString()} rows
-			</span>
-		</div>
-
-		<div class="flex h-6 min-w-0 shrink-0 items-center justify-end gap-1">
-			<ResultViewModeSwitcher {viewMode} onSwitch={switchView} />
-			{#if viewMode === 'table'}
-				<label class="group/search relative hidden items-center sm:flex">
-					<Search
-						class="pointer-events-none absolute left-2 h-3 w-3 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
-					/>
-					<input
-						class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border focus:bg-background motion-reduce:transition-none"
-						type="text"
-						placeholder="Search"
-						aria-label="Search table"
-						bind:value={tableSearch}
-					/>
-					{#if tableSearch.trim()}
-						<button
-							type="button"
-							class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
-							onclick={() => (tableSearch = '')}
-							aria-label="Clear search"
-							title="Clear search"
-						>
-							<X class="h-2.5 w-2.5" />
-						</button>
-					{/if}
-				</label>
+		<div class="flex min-w-0 items-center gap-2 pr-1">
+			{#if showName}
+				<span class="truncate font-mono text-2xs text-muted-foreground/80">{name}</span>
+			{/if}
+			{#if showRowCount}
+				<span class="hidden font-mono text-2xs text-muted-foreground/60 tabular-nums sm:inline">
+					{rows.length.toLocaleString()} rows
+				</span>
 			{/if}
 			{#if executionMs != null}
 				<span class="font-mono text-2xs text-muted-foreground tabular-nums" title="Query execution time"
 					>{fmtMs(executionMs)}</span
 				>
 			{/if}
-			{#if viewMode === 'chart' && activeConfig && !compact}
-				<button
-					class="flex h-6 w-6 items-center justify-center rounded transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showConfigPanel
-						? 'bg-primary/15 text-primary'
-						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-					title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
-					onclick={() => (showConfigPanel = !showConfigPanel)}
-				>
-					<Settings2 class="h-3.5 w-3.5" />
-				</button>
-			{/if}
-			{#if toolbarActions}
-				{@render toolbarActions()}
-			{/if}
+		</div>
+
+		<div
+			class="absolute top-0 right-0 z-10 flex h-6 min-w-0 items-center gap-1 rounded-md border border-border bg-background/90 px-1.5 shadow-sm backdrop-blur-[2px] transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showControls
+				? 'opacity-100'
+				: 'pointer-events-none opacity-0'}"
+			aria-hidden={!showControls}
+		>
+			{@render controlsCluster()}
 		</div>
 	</div>
 

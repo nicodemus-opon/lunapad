@@ -613,7 +613,8 @@
 							onColumnWidthsChange={(widths) => updateCellColumnWidths(cellId, widths)}
 							controlsVisible={focused || selected || hovered}
 							toolbarReserveSpace={false}
-							executionMs={cell.executionMs}
+							showName={!codeExpanded}
+							executionMs={codeExpanded ? undefined : cell.executionMs}
 							truncated={cell.result.truncated ?? false}
 						/>
 					</div>

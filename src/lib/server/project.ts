@@ -1250,6 +1250,52 @@ export async function readNotebookFile(
 }
 
 /**
+ * Write an arbitrary project file (used for `.luna` notebooks, among others).
+ * Creates parent directories as needed. For `.prql` files in a dbt project,
+ * also stubs a `_models.yml` entry (new files only) and compiles the companion
+ * `.sql` so the file tree stays consistent — same behavior `POST /api/project/write`
+ * has always had, factored out here so MCP/API notebook writes share the one path.
+ */
+export async function writeProjectFile(
+	folder: string,
+	file: string,
+	content: string,
+	opts: { isDbtProject?: boolean } = {}
+): Promise<{ isNew: boolean }> {
+	const filePath = path.join(folder, file);
+	assertSafe(folder, filePath);
+
+	const isNew = await fs.access(filePath).then(
+		() => false,
+		() => true
+	);
+
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
+	await fs.writeFile(filePath, content, 'utf-8');
+
+	if (opts.isDbtProject && file.endsWith('.prql')) {
+		if (isNew) {
+			const modelName = path.basename(file, '.prql');
+			const ymlPath = findSchemaFile(folder, file);
+			const schema = await readSchemaFile(ymlPath);
+			if (!schema.models.find((m) => m.name === modelName)) {
+				const updated = upsertModelEntry(schema, modelName, { description: '' });
+				await writeSchemaFile(ymlPath, updated);
+			}
+		}
+		try {
+			const { compileSingleModel, collectProjectModelNames } = await import('./prql-compiler.js');
+			const knownModels = await collectProjectModelNames(folder);
+			await compileSingleModel(filePath, folder, knownModels);
+		} catch {
+			/* best-effort — dbt compile will catch real errors */
+		}
+	}
+
+	return { isNew };
+}
+
+/**
  * Write a single cell's `.prql` file to disk.
  * Creates parent directories as needed.
  */

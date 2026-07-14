@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { createLunapadMcpServer } from '$lib/server/mcp-tools';
 import { isRateLimited } from '$lib/server/api-rate-limit';
+import { userFromLocals } from '$lib/server/permissions';
 
 // Stateless MCP endpoint: a fresh server + transport per request, no session tracking.
 // All of Lunapad's tools are simple request/response actions (no server-initiated push),
@@ -19,7 +20,16 @@ async function handle({
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 
-	const server = createLunapadMcpServer();
+	// hooks.server.ts deliberately skips its normal per-path permission gate for /api/mcp
+	// (it can't see which JSON-RPC tool is being called before dispatch) — every tool
+	// handler inside createLunapadMcpServer checks its own required permission against
+	// this context instead. locals.user is still required by that same hook (a request
+	// with no resolved session/API-key user never reaches this handler).
+	const server = createLunapadMcpServer({
+		user: userFromLocals(locals.user),
+		apiKeyId: locals.apiKeyId,
+		apiKeyScopes: locals.apiKeyScopes
+	});
 	const transport = new WebStandardStreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,
 		enableJsonResponse: true

@@ -8,17 +8,20 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const sourcePath = resolve(currentDir, './InlineResultView.svelte');
 
 describe('InlineResultView controls visibility', () => {
-	it('supports hiding controls behind a focused-cell gate', () => {
+	it('floats controls in a fading pill instead of hiding the whole caption row', () => {
 		const source = readFileSync(sourcePath, 'utf8');
 
 		expect(source).toContain('controlsVisible?: boolean;');
 		expect(source).toContain('controlsVisible = true');
 		expect(source).toContain('toolbarReserveSpace?: boolean;');
+		expect(source).toContain('showName?: boolean;');
+		expect(source).toContain('showRowCount?: boolean;');
 		expect(source).toContain("toolbarActions?: import('svelte').Snippet;");
-		expect(source).toContain("? 'h-6 opacity-100'");
-		expect(source).toContain("'pointer-events-none h-6 opacity-0'");
-		expect(source).toContain(": 'pointer-events-none h-0 opacity-0'}");
+		expect(source).toContain('{#snippet controlsCluster()}');
+		expect(source).toContain("? 'opacity-100'");
+		expect(source).toContain("'pointer-events-none opacity-0'");
 		expect(source).toContain('{@render toolbarActions()}');
+		expect(source).toContain('{@render controlsCluster()}');
 	});
 
 	it('recomputes chart config when result shape signature changes', () => {

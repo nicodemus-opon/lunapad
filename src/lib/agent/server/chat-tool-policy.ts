@@ -128,7 +128,12 @@ export function tablesReferencedInCode(code: string): string[] {
 	return [...names];
 }
 
-function codeReferencesUnknownTable(code: string, ctx: ChatToolPolicyContext): string | null {
+/** Exported so server-side callers with no live chat turn (MCP/REST notebook
+ *  mutation tools — see notebook-mutation.ts's buildMcpToolPolicyContext) can
+ *  reuse the same unknown-table check the SSE chat loop applies to create_cell/
+ *  update_cell, instead of re-implementing it for create_notebook/apply_notebook_patch's
+ *  executableCells. */
+export function codeReferencesUnknownTable(code: string, ctx: ChatToolPolicyContext): string | null {
 	for (const table of tablesReferencedInCode(code)) {
 		if (!tableKnown(table, ctx)) return table;
 	}
