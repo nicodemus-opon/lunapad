@@ -4,18 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Connection } from '$lib/types/connection';
 
-const { getConnectionMetadataMock, getSecretMock, fetchExternalConnectionSchemaMock } = vi.hoisted(
+const { getConnectionMetadataMock, getSecretMock, fetchExternalConnectionSchemaMock, queryExternalConnectionMock } = vi.hoisted(
 	() => ({
 		getConnectionMetadataMock: vi.fn(),
 		getSecretMock: vi.fn(),
-		fetchExternalConnectionSchemaMock: vi.fn()
+		fetchExternalConnectionSchemaMock: vi.fn(),
+		queryExternalConnectionMock: vi.fn()
 	})
 );
 
 vi.mock('./connections-store.js', () => ({ getConnectionMetadata: getConnectionMetadataMock }));
 vi.mock('./connection-secrets.js', () => ({ getSecret: getSecretMock }));
 vi.mock('./connections.js', () => ({
-	queryExternalConnection: vi.fn(),
+	queryExternalConnection: queryExternalConnectionMock,
 	fetchExternalConnectionSchema: fetchExternalConnectionSchemaMock
 }));
 
@@ -24,6 +25,8 @@ import {
 	patchNotebookOnDisk,
 	validateNotebookOnDisk,
 	inspectNotebookOnDisk,
+	runNotebookCellsOnDisk,
+	deleteNotebookOnDisk,
 	pickChartHeuristic
 } from './notebook-mutation.js';
 
@@ -52,6 +55,7 @@ beforeEach(async () => {
 	fetchExternalConnectionSchemaMock.mockResolvedValue({
 		tables: [{ name: 'orders', columns: [] }]
 	});
+	queryExternalConnectionMock.mockResolvedValue({ rows: [{ id: 1 }], columns: ['id'] });
 });
 
 afterEach(async () => {
@@ -88,8 +92,38 @@ describe('createNotebookFromBlueprintOnDisk', () => {
 
 		const written = await fs.readFile(path.join(dir, 'models/reporting/monthly.luna'), 'utf-8');
 		expect(written).toContain('{% query name="monthly_revenue"');
+		const inspected = await inspectNotebookOnDisk(dir, 'models/reporting/monthly');
+		const cell = inspected.cells.find((c) => c.outputName === 'monthly_revenue');
+		expect(cell?.id).toBe('q1');
 		expect(written).toContain('connection="pg_main"');
 		expect(written).toContain('Monthly Summary');
+	});
+
+	it('rejects duplicate output names instead of silently deconflicting them', async () => {
+		const result = await createNotebookFromBlueprintOnDisk(dir, 'models/dupes', {
+			executableCells: [
+				{
+					cellId: 'q_a',
+					outputName: 'same_output',
+					code: 'select * from orders',
+					language: 'sql',
+					connectionId: 'pg_main'
+				},
+				{
+					cellId: 'q_b',
+					outputName: 'same_output',
+					code: 'select * from orders',
+					language: 'sql',
+					connectionId: 'pg_main'
+				}
+			],
+			blocks: [
+				{ type: 'queryBlock', cellId: 'q_a' },
+				{ type: 'queryBlock', cellId: 'q_b' }
+			]
+		});
+		expect(result.notebook).toBeUndefined();
+		expect(result.diagnostics[0]?.message).toMatch(/Duplicate outputName/);
 	});
 
 	it('refuses to overwrite an existing notebook and returns a repairable diagnostic', async () => {
@@ -207,6 +241,67 @@ describe('validateNotebookOnDisk', () => {
 		});
 		const diagnostics = await validateNotebookOnDisk(dir, 'models/valid');
 		expect(diagnostics).toEqual([]);
+	});
+});
+
+describe('runNotebookCellsOnDisk', () => {
+	it('reports unresolved cell ids instead of returning an empty result set', async () => {
+		await createNotebookFromBlueprintOnDisk(dir, 'models/run', {
+			executableCells: [
+				{
+					cellId: 'q_keep',
+					outputName: 'kept_output',
+					code: 'select * from orders',
+					language: 'sql',
+					connectionId: 'pg_main'
+				}
+			],
+			blocks: [{ type: 'queryBlock', cellId: 'q_keep' }]
+		});
+		const result = await runNotebookCellsOnDisk(dir, 'models/run', ['missing_cell'], {
+			allowPython: false
+		});
+		expect(result.results).toEqual([]);
+		expect(result.diagnostics[0]?.message).toMatch(/missing_cell/);
+		expect(result.execution.validCellIds).toContain('q_keep');
+	});
+
+	it('returns execution metadata for query cells', async () => {
+		await createNotebookFromBlueprintOnDisk(dir, 'models/run_meta', {
+			executableCells: [
+				{
+					cellId: 'q_orders',
+					outputName: 'orders_out',
+					code: 'select * from orders',
+					language: 'sql',
+					connectionId: 'pg_main'
+				}
+			],
+			blocks: [{ type: 'queryBlock', cellId: 'q_orders' }]
+		});
+		const result = await runNotebookCellsOnDisk(dir, 'models/run_meta', ['q_orders'], {
+			allowPython: false
+		});
+		expect(result.diagnostics).toEqual([]);
+		expect(result.results[0]?.cellId).toBe('q_orders');
+		expect(result.results[0]?.outputRef).toBe('output:models/run_meta#orders_out');
+		expect(result.results[0]?.rowCount).toBe(1);
+		expect(result.results[0]?.runtimeSql).toMatch(/orders/i);
+	});
+});
+
+describe('deleteNotebookOnDisk', () => {
+	it('deletes .luna notebooks and rejects flat notebooks', async () => {
+		await createNotebookFromBlueprintOnDisk(dir, 'models/delete_me', {
+			blocks: [{ type: 'text', content: 'bye' }]
+		});
+		const deleted = await deleteNotebookOnDisk(dir, 'models/delete_me');
+		expect(deleted.diagnostics).toEqual([]);
+		await expect(fs.access(path.join(dir, 'models/delete_me.luna'))).rejects.toThrow();
+
+		await fs.writeFile(path.join(dir, 'models/flat_model.sql'), 'select 1', 'utf-8');
+		const flat = await deleteNotebookOnDisk(dir, 'models/flat_model');
+		expect(flat.diagnostics[0]?.message).toMatch(/not a \.luna notebook/i);
 	});
 });
 

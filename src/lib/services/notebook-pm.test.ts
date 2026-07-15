@@ -289,9 +289,9 @@ describe('notebook-pm', () => {
 		const blocks = pmDocumentToBlocks(doc);
 		const markdown = blocks.find((block) => block.kind === 'markdown')?.markdown ?? '';
 
-		expect(markdown).toContain('- one');
-		expect(markdown).toContain('  - nested');
-		expect(markdown).toContain('- two');
+		expect(markdown).toContain('* one');
+		expect(markdown).toContain('  * nested');
+		expect(markdown).toContain('* two');
 		expect(markdown).toContain('3. three');
 	});
 

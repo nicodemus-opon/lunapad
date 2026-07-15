@@ -37,6 +37,25 @@ function invSchema(name: string): (typeof READONLY_INVESTIGATION_TOOLS)[number] 
 	return s;
 }
 
+function mcpOnlyTool(
+	name: string,
+	description: string,
+	parameters: Record<string, unknown> = { type: 'object', properties: {} },
+	opts: { mutates?: boolean; stopAfter?: boolean } = {}
+): AgentToolDef {
+	return {
+		name,
+		schema: {
+			type: 'function',
+			function: { name, description, parameters }
+		},
+		executor: 'server',
+		mutates: opts.mutates ?? false,
+		stopAfter: opts.stopAfter ?? false,
+		mcpAlias: name
+	};
+}
+
 /** Tools with a real server-side implementation too (notebook-mutation.ts, threaded
  *  through lunapad-actions.ts/mcp-tools.ts) — client behavior is unchanged, this just
  *  makes them reachable headlessly via MCP/REST as well. See schemasForMcp() below. */
@@ -65,6 +84,73 @@ const IN_APP_TOOLS: AgentToolDef[] = NATIVE_TOOLS.map((schema) => ({
 
 /** MCP-only server tools (external agents) */
 const MCP_ONLY_TOOLS: AgentToolDef[] = [
+	mcpOnlyTool(
+		'list_capabilities',
+		'List agent API capabilities, resource ref formats, workflow recipes, and visual report grammar metadata.'
+	),
+	mcpOnlyTool(
+		'get_visual_report_grammar',
+		'Return block types, chart types, data roles, style axes, reference-deconstruction guidance, icon names, and generic blueprint seeds for visual reports.'
+	),
+	mcpOnlyTool(
+		'inspect_resource',
+		'Inspect a resource ref such as notebook:<id>, cell:<notebook>#<cellId>, output:<notebook>#<outputName>, connection:<id>, or dbt-job:<id>.',
+		{
+			type: 'object',
+			properties: { folder: { type: 'string' }, resourceRef: { type: 'string' } },
+			required: ['resourceRef']
+		}
+	),
+	mcpOnlyTool(
+		'discover_schema',
+		'Discover tables, columns, types, descriptions, and foreign-key hints for a connection.',
+		{
+			type: 'object',
+			properties: {
+				connectionId: { type: 'string' },
+				schema: { type: 'string' },
+				table: { type: 'string' },
+				limit: { type: 'number' },
+				offset: { type: 'number' }
+			},
+			required: ['connectionId']
+		}
+	),
+	mcpOnlyTool(
+		'validate_workflow',
+		'Dry-run an ordered workflow of agent actions with step refs and per-step envelopes.',
+		{
+			type: 'object',
+			properties: {
+				steps: { type: 'array', items: { type: 'object' } },
+				stopOnError: { type: 'boolean' }
+			},
+			required: ['steps']
+		}
+	),
+	mcpOnlyTool(
+		'run_workflow',
+		'Run ordered agent actions with step refs and per-step envelopes.',
+		{
+			type: 'object',
+			properties: {
+				steps: { type: 'array', items: { type: 'object' } },
+				stopOnError: { type: 'boolean' }
+			},
+			required: ['steps']
+		},
+		{ mutates: true }
+	),
+	mcpOnlyTool(
+		'delete_resource',
+		'Delete supported resources. Currently supports notebook:<notebookId> for .luna notebooks.',
+		{
+			type: 'object',
+			properties: { folder: { type: 'string' }, resourceRef: { type: 'string' } },
+			required: ['resourceRef']
+		},
+		{ mutates: true }
+	),
 	{
 		name: 'list_connections',
 		schema: {
@@ -169,7 +255,7 @@ const MCP_ONLY_TOOLS: AgentToolDef[] = [
 			}
 		},
 		executor: 'server',
-		mutates: false,
+		mutates: true,
 		stopAfter: false,
 		mcpAlias: 'dbt_run'
 	},
@@ -184,7 +270,7 @@ const MCP_ONLY_TOOLS: AgentToolDef[] = [
 			}
 		},
 		executor: 'server',
-		mutates: false,
+		mutates: true,
 		stopAfter: false,
 		mcpAlias: 'dbt_compile'
 	},
@@ -222,6 +308,32 @@ const MCP_ONLY_TOOLS: AgentToolDef[] = [
 		stopAfter: false,
 		mcpAlias: 'get_dbt_manifest'
 	},
+	mcpOnlyTool('list_shares', 'List active published shares.', undefined, { mutates: false }),
+	mcpOnlyTool(
+		'publish_notebook',
+		'Publish a notebook as a read-only share.',
+		{
+			type: 'object',
+			properties: { notebookId: { type: 'string' } },
+			required: ['notebookId']
+		},
+		{ mutates: true }
+	),
+	mcpOnlyTool(
+		'create_site_page',
+		'Add a published share as a page on a site.',
+		{
+			type: 'object',
+			properties: {
+				siteId: { type: 'string' },
+				pageSlug: { type: 'string' },
+				navLabel: { type: 'string' },
+				shareToken: { type: 'string' }
+			},
+			required: ['siteId', 'pageSlug', 'navLabel', 'shareToken']
+		},
+		{ mutates: true }
+	),
 	// Cross-surface: investigation tools available on server via workspace snapshot
 	{
 		name: 'search_workspace',

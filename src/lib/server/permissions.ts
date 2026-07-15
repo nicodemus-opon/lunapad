@@ -181,6 +181,13 @@ export function hasApiScope(
  *  hooks.server.ts route-level gate can't do this itself, since it can't parse
  *  which tool a JSON-RPC /api/mcp POST body is calling before dispatch. */
 export const MCP_TOOL_ACTIONS: Record<string, PermissionAction> = {
+	list_capabilities: 'workspace:read',
+	get_visual_report_grammar: 'workspace:read',
+	inspect_resource: 'workspace:read',
+	discover_schema: 'connections:query',
+	validate_workflow: 'workspace:read',
+	run_workflow: 'workspace:write',
+	delete_resource: 'workspace:write',
 	list_connections: 'connections:query',
 	run_query: 'connections:query',
 	run_prql: 'connections:query',

@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { runQueryAction } from '$lib/server/lunapad-actions';
 import { isRateLimited } from '$lib/server/api-rate-limit';
+import { agentActionResponse } from '$lib/server/agent-rest';
 
 interface RunQueryRequest {
 	connectionId: string;
@@ -18,8 +18,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!body?.connectionId || typeof body.sql !== 'string') {
 			return json({ error: 'connectionId and sql are required.' }, { status: 400 });
 		}
-		const result = await runQueryAction({ connectionId: body.connectionId, sql: body.sql });
-		return json(result);
+		return agentActionResponse({ locals, request }, 'run_query', {
+			connectionId: body.connectionId,
+			sql: body.sql
+		});
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });
 	}

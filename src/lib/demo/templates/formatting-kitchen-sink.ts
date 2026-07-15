@@ -198,7 +198,7 @@ Tabs should have compact triggers and a readable panel.
 
 ## Logic blocks
 
-{% if gt($format_rows.count, 0) %}
+{% if gt($format_summary.active_regions, 0) %}
 {% callout type="success" title="Conditional branch" %}
 The if branch renders because the fixture has rows.
 {% /callout %}

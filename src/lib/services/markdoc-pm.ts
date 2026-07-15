@@ -993,7 +993,7 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 			node.type === 'orderedList' && typeof node.attrs?.start === 'number' ? node.attrs.start : 1;
 		return (node.content ?? [])
 			.map((item, index) => {
-				const marker = node.type === 'orderedList' ? `${start + index}.` : '-';
+				const marker = node.type === 'orderedList' ? `${start + index}.` : '*';
 				const body = serializeTiptapNode(item, schema);
 				const lines = body.split('\n');
 				const first = lines[0] ?? '';

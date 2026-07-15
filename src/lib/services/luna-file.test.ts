@@ -44,7 +44,7 @@ function udfCell(udfBody: string): SerializableCell {
 }
 
 function pythonCell(code: string, outputName = 'py_analysis'): SerializableCell {
-	return { ...queryCell(), cellType: 'python', code, outputName };
+	return { ...queryCell(), id: outputName, cellType: 'python', code, outputName };
 }
 
 describe('parseLunaFile', () => {

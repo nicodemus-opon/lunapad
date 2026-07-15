@@ -18,11 +18,12 @@ import {
 	validateNotebookOnDisk,
 	inspectNotebookOnDisk,
 	runNotebookCellsOnDisk,
+	deleteNotebookOnDisk,
 	setCellChartConfig,
 	pickChartHeuristic,
 	type McpExecutableCellInput,
 	type NotebookPatchInput,
-	type CellRunResult
+	type NotebookRunOutput
 } from './notebook-mutation.js';
 
 /**
@@ -103,7 +104,7 @@ export async function runPrqlAction(input: RunPrqlInput): Promise<RunQueryResult
  * setCurrentFolder (e.g. the PROJECT_FOLDER env var, or the last-opened project in this
  * running instance).
  */
-function resolveFolder(folder: string | undefined): string {
+export function resolveProjectFolder(folder: string | undefined): string {
 	const resolved = folder ?? getCurrentFolder();
 	if (!resolved) {
 		throw new Error(
@@ -124,7 +125,7 @@ export interface ListNotebooksResult {
 }
 
 export async function listNotebooksAction(input: ListNotebooksInput): Promise<ListNotebooksResult> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const { notebooks, folders } = await walkProjectDirectory(folder);
 	return {
 		notebooks: notebooks.map((n) => ({
@@ -143,7 +144,7 @@ export interface GetNotebookInput {
 }
 
 export async function getNotebookAction(input: GetNotebookInput): Promise<{ notebook: Notebook }> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const { notebooks } = await walkProjectDirectory(folder);
 	const notebook = notebooks.find((n) => n.id === input.notebookId);
 	if (!notebook) throw new Error(`Notebook "${input.notebookId}" not found.`);
@@ -168,14 +169,14 @@ async function precompileAndSpawn(folder: string, args: string[]): Promise<DbtJo
 }
 
 export async function dbtRunAction(input: DbtRunInput): Promise<DbtJobResult> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const args = ['run'];
 	if (input.select) args.push('--select', input.select);
 	return precompileAndSpawn(folder, args);
 }
 
 export async function dbtCompileAction(input: DbtRunInput): Promise<DbtJobResult> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	return precompileAndSpawn(folder, ['compile']);
 }
 
@@ -202,7 +203,7 @@ export interface DbtManifestInput {
 export async function getDbtManifestAction(
 	input: DbtManifestInput
 ): Promise<{ models: DbtModel[] }> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	return { models: await loadManifest(folder) };
 }
 
@@ -243,7 +244,7 @@ function toMutationOutput(result: {
 export async function createNotebookAction(
 	input: CreateNotebookInput
 ): Promise<NotebookMutationOutput> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const result = await createNotebookFromBlueprintOnDisk(folder, input.notebookId, {
 		title: input.title,
 		executableCells: input.executableCells,
@@ -260,7 +261,7 @@ export interface PatchNotebookInput extends NotebookPatchInput {
 export async function patchNotebookAction(
 	input: PatchNotebookInput
 ): Promise<NotebookMutationOutput> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const result = await patchNotebookOnDisk(folder, input.notebookId, {
 		blueprint: input.blueprint,
 		document: input.document,
@@ -279,13 +280,13 @@ export interface ValidateNotebookInput {
 export async function validateNotebookAction(
 	input: ValidateNotebookInput
 ): Promise<{ ok: boolean; diagnostics: NotebookBlueprintDiagnostic[] }> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const diagnostics = await validateNotebookOnDisk(folder, input.notebookId);
 	return { ok: diagnostics.length === 0, diagnostics };
 }
 
 export async function inspectNotebookAction(input: ValidateNotebookInput) {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	return inspectNotebookOnDisk(folder, input.notebookId);
 }
 
@@ -298,12 +299,11 @@ export interface RunNotebookCellsInput {
 
 export async function runNotebookCellsAction(
 	input: RunNotebookCellsInput
-): Promise<{ results: CellRunResult[] }> {
-	const folder = resolveFolder(input.folder);
-	const results = await runNotebookCellsOnDisk(folder, input.notebookId, input.cellIds, {
+): Promise<NotebookRunOutput> {
+	const folder = resolveProjectFolder(input.folder);
+	return runNotebookCellsOnDisk(folder, input.notebookId, input.cellIds, {
 		allowPython: input.allowPython
 	});
-	return { results };
 }
 
 export interface SetChartInput {
@@ -314,7 +314,7 @@ export interface SetChartInput {
 }
 
 export async function setChartAction(input: SetChartInput): Promise<NotebookMutationOutput> {
-	const folder = resolveFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder);
 	const result = await setCellChartConfig(folder, input.notebookId, input.cellId, input.chartConfig);
 	return toMutationOutput(result);
 }
@@ -326,11 +326,11 @@ export interface PickChartInput {
 }
 
 export async function pickChartAction(input: PickChartInput): Promise<NotebookMutationOutput> {
-	const folder = resolveFolder(input.folder);
-	const runResult = await runNotebookCellsOnDisk(folder, input.notebookId, [input.cellId], {
+	const folder = resolveProjectFolder(input.folder);
+	const runOutput = await runNotebookCellsOnDisk(folder, input.notebookId, [input.cellId], {
 		allowPython: false
 	});
-	const cellResult = runResult[0];
+	const cellResult = runOutput.results[0];
 	if (!cellResult || !cellResult.ok) {
 		throw new Error(
 			cellResult?.error ?? `Cell "${input.cellId}" could not be run to inspect its result.`
@@ -338,6 +338,19 @@ export async function pickChartAction(input: PickChartInput): Promise<NotebookMu
 	}
 	const chartConfig = pickChartHeuristic(cellResult.rows ?? [], cellResult.columns ?? []);
 	const result = await setCellChartConfig(folder, input.notebookId, input.cellId, chartConfig);
+	return toMutationOutput(result);
+}
+
+export interface DeleteNotebookInput {
+	folder?: string;
+	notebookId: string;
+}
+
+export async function deleteNotebookAction(
+	input: DeleteNotebookInput
+): Promise<NotebookMutationOutput> {
+	const folder = resolveProjectFolder(input.folder);
+	const result = await deleteNotebookOnDisk(folder, input.notebookId);
 	return toMutationOutput(result);
 }
 

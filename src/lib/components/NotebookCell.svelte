@@ -70,6 +70,11 @@
 		getPythonTableHints
 	} from '$lib/stores/notebook.svelte';
 	import InlinePromptBar from './cell/InlinePromptBar.svelte';
+	import {
+		buildInlineAIColumns,
+		buildInlineAITablesContext,
+		inferInlineAISourceTable
+	} from '$lib/services/inline-ai-context';
 	import { updateProjectSchema } from '$lib/services/project-client';
 	import { resolvePlotDataRefs } from '$lib/services/cell-deps';
 	import { buildSandboxGlobalsDts } from '$lib/services/plot-cell';
@@ -230,6 +235,12 @@
 			language: alt.language ?? 'sql'
 		});
 	}
+
+	function openInlinePrompt(): void {
+		if (codeHidden) setCellDisplay(cell.id, 'full');
+		inlinePromptOpen = true;
+	}
+
 	const EDITOR_COMPLETION_LIMIT = 600;
 	const PRQL_KEYWORDS = [
 		'from',
@@ -510,18 +521,8 @@
 	// Coarse "what tables exist" context for the inline AI prompt — not pipeline-resolved
 	// like guiTables below, just enough so the model doesn't invent table/column names.
 	const inlinePromptTables = $derived(
-		[...tables, ...externalSchemaTables]
-			.slice(0, 8)
-			.map((t) => ({ name: t.name, columns: t.columns, columnTypes: t.columnTypes }))
+		buildInlineAITablesContext(tables, externalSchemaTables)
 	);
-
-	function sqlTypeToDataKind(sqlType: string): 'numeric' | 'date' | 'boolean' | 'text' {
-		const t = sqlType.toUpperCase();
-		if (/INT|DECIMAL|NUMERIC|DOUBLE|FLOAT|REAL/.test(t)) return 'numeric';
-		if (/DATE|TIME/.test(t)) return 'date';
-		if (/BOOL/.test(t)) return 'boolean';
-		return 'text';
-	}
 
 	// Best-effort "main table" for this cell's inline AI prompt, parsed from its own FROM
 	// clause — raw text cells have no GUI "from" stage to read this from directly. Lets
@@ -529,27 +530,11 @@
 	// of always falling back to the bare "available tables" list.
 	const inlinePromptSourceTable = $derived.by(() => {
 		if (!isQueryCell) return undefined;
-		const fromRe =
-			cell.language === 'sql' ? /\bFROM\s+([a-zA-Z_][\w."]*)/i : /^\s*from\s+([a-zA-Z_][\w.]*)/im;
-		const match = cell.code.match(fromRe);
-		if (!match) return undefined;
-		const candidate = match[1].replace(/"/g, '');
-		const found = [...tables, ...externalSchemaTables].find(
-			(t) => t.name.toLowerCase() === candidate.toLowerCase()
-		);
-		return found?.name;
+		return inferInlineAISourceTable(cell.code, cell.language, tables, externalSchemaTables);
 	});
 
 	const inlinePromptColumns = $derived.by(() => {
-		const name = inlinePromptSourceTable;
-		if (!name) return [];
-		const found = [...tables, ...externalSchemaTables].find((t) => t.name === name);
-		if (!found) return [];
-		return found.columns.map((col, i) => ({
-			name: col,
-			dataKind: sqlTypeToDataKind(found.columnTypes[i] ?? ''),
-			sqlType: found.columnTypes[i]
-		}));
+		return buildInlineAIColumns(inlinePromptSourceTable, tables, externalSchemaTables);
 	});
 
 	const connectionType = $derived.by(() => {
@@ -826,7 +811,7 @@
 	$effect(() => {
 		if (cellBridgeState.pendingInlinePromptCellId === cell.id) {
 			cellBridgeState.pendingInlinePromptCellId = null;
-			inlinePromptOpen = true;
+			openInlinePrompt();
 		}
 	});
 
@@ -1389,6 +1374,7 @@
 						onModeChange={modeSwitch.setMode}
 						onOverlayChange={handleOverlayChange}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+						onOpenInlinePrompt={canInlinePrompt ? openInlinePrompt : undefined}
 					/>
 				</div>
 			{/if}
@@ -1449,7 +1435,7 @@
 								onOpenPromote={() => (promoteDialogOpen = true)}
 								onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
 								onRunTests={() => void testCell(cell.id)}
-								onOpenInlinePrompt={canInlinePrompt ? () => (inlinePromptOpen = true) : undefined}
+								onOpenInlinePrompt={canInlinePrompt ? openInlinePrompt : undefined}
 								onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
 								{onShareWithAI}
 								{isPlotCell}
@@ -1477,6 +1463,7 @@
 						onModeChange={modeSwitch.setMode}
 						onOverlayChange={handleOverlayChange}
 						onFixWithAI={canInlinePrompt || onFixWithAI ? handleFixWithAI : undefined}
+						onOpenInlinePrompt={canInlinePrompt ? openInlinePrompt : undefined}
 					/>
 				{/if}
 				{@render cellMain()}

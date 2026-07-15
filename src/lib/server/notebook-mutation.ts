@@ -182,13 +182,14 @@ function markdownSerializableCell(markdown: string, id: string): SerializableCel
 }
 
 function newExecutableSerializableCell(
+	cellId: string,
 	outputName: string,
 	bp: McpExecutableCellInput
 ): SerializableCell {
 	const cellType: Extract<CellType, 'query' | 'python' | 'plot'> = bp.cellType ?? 'query';
 	const language: CellLanguage = bp.language ?? 'prql';
 	return {
-		id: outputName,
+		id: cellId,
 		cellType,
 		markdown: '',
 		udfBody: '',
@@ -218,6 +219,67 @@ function newExecutableSerializableCell(
 	};
 }
 
+function diagnostic(path: string, message: string): NotebookBlueprintDiagnostic {
+	return { path, message };
+}
+
+function finalOutputName(bp: McpExecutableCellInput | undefined, existing: Cell | undefined, cellId: string): string {
+	return bp?.outputName || existing?.outputName || cellId;
+}
+
+function validateCellPlacements(
+	document: PMDocJSON,
+	executableCells: McpExecutableCellInput[],
+	existingCells: Cell[]
+): NotebookBlueprintDiagnostic[] {
+	const blocks = pmDocumentToBlocks(document).filter((b) => b.kind === 'query');
+	const executableByCellId = new Map<string, McpExecutableCellInput>();
+	const diagnostics: NotebookBlueprintDiagnostic[] = [];
+	for (const cell of executableCells) {
+		if (executableByCellId.has(cell.cellId)) {
+			diagnostics.push(
+				diagnostic(
+					`executableCells.${cell.cellId}`,
+					`Duplicate executable cellId "${cell.cellId}". Cell ids must be stable and unique.`
+				)
+			);
+		}
+		executableByCellId.set(cell.cellId, cell);
+	}
+
+	const existingById = new Map(existingCells.map((c) => [c.id, c]));
+	const seenCellIds = new Set<string>();
+	const seenOutputNames = new Map<string, string>();
+	for (const block of blocks) {
+		if (seenCellIds.has(block.cellId)) {
+			diagnostics.push(
+				diagnostic(
+					`blocks.${block.cellId}`,
+					`Cell "${block.cellId}" is placed more than once in the notebook document.`
+				)
+			);
+			continue;
+		}
+		seenCellIds.add(block.cellId);
+		const bp = executableByCellId.get(block.cellId);
+		const existing = existingById.get(block.cellId);
+		if (!bp && !existing) continue;
+		const outputName = finalOutputName(bp, existing, block.cellId);
+		const priorCellId = seenOutputNames.get(outputName);
+		if (priorCellId && priorCellId !== block.cellId) {
+			diagnostics.push(
+				diagnostic(
+					`executableCells.${block.cellId}.outputName`,
+					`Duplicate outputName "${outputName}" used by cells "${priorCellId}" and "${block.cellId}". Output names are composable data refs and must be unique.`
+				)
+			);
+		} else {
+			seenOutputNames.set(outputName, block.cellId);
+		}
+	}
+	return diagnostics;
+}
+
 /**
  * Walks a compiled/patched PM document's blocks (markdown runs + queryBlock
  * placements, in document order — same shape the browser store's
@@ -235,7 +297,6 @@ function pmDocumentToSerializableCells(
 	const blocks = pmDocumentToBlocks(document);
 	const executableByCellId = new Map(executableCells.map((c) => [c.cellId, c]));
 	const existingById = new Map(existingCells.map((c) => [c.id, c]));
-	const usedOutputNames = new Set(existingCells.map((c) => c.outputName).filter(Boolean));
 
 	const out: SerializableCell[] = [];
 	let markdownIndex = 0;
@@ -252,11 +313,13 @@ function pmDocumentToSerializableCells(
 		const existing = existingById.get(block.cellId);
 		const bp = executableByCellId.get(block.cellId);
 		if (existing) {
+			const outputName = finalOutputName(bp, existing, block.cellId);
 			out.push(
 				cellToSerializableCell(
 					bp
 						? {
 								...existing,
+								outputName,
 								code: bp.code,
 								language: bp.language ?? existing.language,
 								connectionId: bp.connectionId !== undefined ? bp.connectionId : existing.connectionId,
@@ -272,9 +335,8 @@ function pmDocumentToSerializableCells(
 				`Block references cell "${block.cellId}", which is neither an existing cell in this notebook nor present in executableCells.`
 			);
 		}
-		const outputName = deconflictName(usedOutputNames, bp.outputName || block.cellId);
-		usedOutputNames.add(outputName);
-		out.push(newExecutableSerializableCell(outputName, bp));
+		const outputName = bp.outputName || block.cellId;
+		out.push(newExecutableSerializableCell(block.cellId, outputName, bp));
 	}
 	return out;
 }
@@ -351,7 +413,13 @@ async function checkExecutableCellTables(
 				const { tables } = await fetchExternalConnectionSchema(connection, secret ?? undefined);
 				schemaByConnection.set(
 					connectionId,
-					new Set(tables.flatMap((t) => [t.name, t.name.split('.').pop() ?? t.name]))
+					new Set(
+						tables.flatMap((t) => [
+							t.name,
+							t.schema ? `${t.schema}.${t.name}` : t.name,
+							t.name.split('.').pop() ?? t.name
+						])
+					)
 				);
 			} catch {
 				// Transient schema-fetch failure against a real connection — fail open.
@@ -410,6 +478,12 @@ export async function createNotebookFromBlueprintOnDisk(
 	}
 	const compiled = compileNotebookBlueprint(blueprint);
 	if (!compiled.document) return { diagnostics: compiled.diagnostics };
+	const placementDiagnostics = validateCellPlacements(
+		compiled.document,
+		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
+		[]
+	);
+	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
 	const tableDiagnostics = await checkExecutableCellTables(
 		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
 		[]
@@ -519,6 +593,8 @@ export async function patchNotebookOnDisk(
 	}
 
 	if (!document) return { diagnostics };
+	const placementDiagnostics = validateCellPlacements(document, executableCells, handle.cells);
+	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
 
 	const tableDiagnostics = await checkExecutableCellTables(executableCells, handle.cells);
 	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics };
@@ -550,6 +626,20 @@ export async function inspectNotebookOnDisk(
 ): Promise<{ document: PMDocJSON; cells: Cell[] }> {
 	const handle = await loadServerNotebookHandle(folder, notebookId);
 	return { document: handle.document, cells: handle.cells };
+}
+
+export async function deleteNotebookOnDisk(
+	folder: string,
+	notebookId: string
+): Promise<NotebookMutationResult> {
+	const handle = await loadServerNotebookHandle(folder, notebookId);
+	if (!handle.isLuna) {
+		return {
+			diagnostics: [{ path: 'notebookId', message: `"${notebookId}" is not a .luna notebook.` }]
+		};
+	}
+	await fs.unlink(handle.filePath);
+	return { diagnostics: [] };
 }
 
 export async function setCellChartConfig(
@@ -629,6 +719,10 @@ export interface CellRunResult {
 	rows?: Record<string, unknown>[];
 	columns?: string[];
 	figures?: string[];
+	runtimeSql?: string;
+	rowCount?: number;
+	resourceRef?: string;
+	outputRef?: string;
 }
 
 function compilePrqlToSql(prql: string): string | null {
@@ -646,7 +740,7 @@ function compilePrqlToSql(prql: string): string | null {
 async function runQueryCellOnDisk(
 	cells: Cell[],
 	idx: number
-): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
+): Promise<{ rows: Record<string, unknown>[]; columns: string[]; sql: string }> {
 	const cell = cells[idx];
 	if (!cell.connectionId) {
 		throw new Error(
@@ -663,7 +757,8 @@ async function runQueryCellOnDisk(
 	}
 	const sql = buildSQLExecutionCode(cells, idx, compilePrqlToSql);
 	const secret = await getSecret(connection.id);
-	return queryExternalConnection(connection, secret ?? undefined, sql);
+	const result = await queryExternalConnection(connection, secret ?? undefined, sql);
+	return { ...result, sql };
 }
 
 function waitForPythonJob(jobId: string, timeoutMs = 60_000): Promise<PythonRunResult> {
@@ -769,19 +864,50 @@ export interface RunNotebookCellsOptions {
 	allowPython: boolean;
 }
 
+export interface NotebookRunOutput {
+	results: CellRunResult[];
+	diagnostics: NotebookBlueprintDiagnostic[];
+	execution: {
+		selectedCellIds: string[];
+		unresolvedCellIds: string[];
+		validCellIds: string[];
+	};
+}
+
 export async function runNotebookCellsOnDisk(
 	folder: string,
 	notebookId: string,
 	cellIds: string[] | undefined,
 	opts: RunNotebookCellsOptions
-): Promise<CellRunResult[]> {
+): Promise<NotebookRunOutput> {
 	const handle = await loadServerNotebookHandle(folder, notebookId);
+	const validCellIds = handle.cells
+		.filter((c) => c.cellType === 'query' || c.cellType === 'python' || c.cellType === 'plot')
+		.map((c) => c.id);
 	const targets =
 		cellIds && cellIds.length
 			? handle.cells.filter((c) => cellIds.includes(c.id) || cellIds.includes(c.outputName))
 			: handle.cells.filter(
 					(c) => c.cellType === 'query' || c.cellType === 'python' || c.cellType === 'plot'
 				);
+	const matchedRefs = new Set(targets.flatMap((c) => [c.id, c.outputName]));
+	const unresolvedCellIds = (cellIds ?? []).filter((id) => !matchedRefs.has(id));
+	if (unresolvedCellIds.length) {
+		return {
+			results: [],
+			diagnostics: [
+				{
+					path: 'cellIds',
+					message: `Unknown cell id(s): ${unresolvedCellIds.join(', ')}. Valid cell ids: ${validCellIds.join(', ') || '(none)'}.`
+				}
+			],
+			execution: {
+				selectedCellIds: targets.map((c) => c.id),
+				unresolvedCellIds,
+				validCellIds
+			}
+		};
+	}
 
 	const results: CellRunResult[] = [];
 	const computed = new Map<string, { rows: Record<string, unknown>[]; columns: string[] }>();
@@ -798,7 +924,11 @@ export async function runNotebookCellsOnDisk(
 					cellType: 'query',
 					ok: true,
 					rows: result.rows,
-					columns: result.columns
+					columns: result.columns,
+					runtimeSql: result.sql,
+					rowCount: result.rows.length,
+					resourceRef: `cell:${notebookId}#${cell.id}`,
+					outputRef: `output:${notebookId}#${cell.outputName}`
 				});
 			} else if (cell.cellType === 'python') {
 				if (!opts.allowPython) {
@@ -816,7 +946,10 @@ export async function runNotebookCellsOnDisk(
 					error: result.error ?? undefined,
 					rows: result.dataframe?.rows,
 					columns: result.dataframe?.columns,
-					figures: result.figures
+					figures: result.figures,
+					rowCount: result.dataframe?.rows.length,
+					resourceRef: `cell:${notebookId}#${cell.id}`,
+					outputRef: `output:${notebookId}#${cell.outputName}`
 				});
 			} else if (cell.cellType === 'plot') {
 				const figure = runPlotCellInVm(handle.cells, idx, computed);
@@ -827,7 +960,10 @@ export async function runNotebookCellsOnDisk(
 					ok: true,
 					rows: [],
 					columns: [],
-					figures: [JSON.stringify(figure)]
+					figures: [JSON.stringify(figure)],
+					rowCount: 0,
+					resourceRef: `cell:${notebookId}#${cell.id}`,
+					outputRef: `output:${notebookId}#${cell.outputName}`
 				});
 			}
 		} catch (err) {
@@ -836,11 +972,21 @@ export async function runNotebookCellsOnDisk(
 				outputName: cell.outputName,
 				cellType: cell.cellType,
 				ok: false,
-				error: (err as Error).message
+				error: (err as Error).message,
+				resourceRef: `cell:${notebookId}#${cell.id}`,
+				outputRef: cell.outputName ? `output:${notebookId}#${cell.outputName}` : undefined
 			});
 		}
 	}
-	return results;
+	return {
+		results,
+		diagnostics: [],
+		execution: {
+			selectedCellIds: targets.map((c) => c.id),
+			unresolvedCellIds: [],
+			validCellIds
+		}
+	};
 }
 
 // ── chat-tool-policy.ts context builder ─────────────────────────────────────

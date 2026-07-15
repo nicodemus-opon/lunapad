@@ -28,12 +28,12 @@ function claimOutputName(used: Set<string>, name: string): string {
  *  a (possible) `claimOutputName` rename. No-op for cells with no outputName
  *  (e.g. markdown cells, or UDF/query cells that already fell back to a
  *  crypto.randomUUID() id because their name couldn't be parsed). */
-function claimCellOutputName(used: Set<string>, cell: Cell): void {
+function claimCellOutputName(used: Set<string>, cell: Cell, preserveId = false): void {
 	if (!cell.outputName) return;
 	const claimed = claimOutputName(used, cell.outputName);
 	if (claimed !== cell.outputName) {
 		cell.outputName = claimed;
-		cell.id = claimed;
+		if (!preserveId) cell.id = claimed;
 		cell.materializeTarget = claimed;
 	}
 }
@@ -448,7 +448,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	for (const { targetNotebookId, cell } of secondaryCells) {
 		const targetNb = notebooks.find((n) => n.id === targetNotebookId);
 		if (targetNb) {
-			claimCellOutputName(usedOutputNames, cell);
+			claimCellOutputName(usedOutputNames, cell, true);
 			targetNb.cells.push(cell);
 		}
 		// If the target notebook doesn't exist (e.g. its primary file is missing),
@@ -747,25 +747,25 @@ async function hydrateLunaEntries(
 		}
 		if (entry.kind === 'query') {
 			const cell = buildQueryCellFromLuna(entry);
-			claimCellOutputName(usedOutputNames, cell);
+			claimCellOutputName(usedOutputNames, cell, true);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'udf') {
 			const cell = buildUdfCellFromLuna(entry.udfBody);
-			claimCellOutputName(usedOutputNames, cell);
+			claimCellOutputName(usedOutputNames, cell, true);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'plot') {
-			const cell = buildPlotCellFromLuna(entry.name, entry.code, entry.meta);
-			claimCellOutputName(usedOutputNames, cell);
+			const cell = buildPlotCellFromLuna(entry.name, entry.code, entry.meta, entry.cellId);
+			claimCellOutputName(usedOutputNames, cell, true);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'python') {
-			const cell = buildPythonCellFromLuna(entry.name, entry.code);
-			claimCellOutputName(usedOutputNames, cell);
+			const cell = buildPythonCellFromLuna(entry.name, entry.code, entry.cellId);
+			claimCellOutputName(usedOutputNames, cell, true);
 			cells.push(cell);
 			continue;
 		}
@@ -802,7 +802,7 @@ async function hydrateLunaEntries(
 			meta: {},
 			code: ''
 		});
-		claimCellOutputName(usedOutputNames, stub);
+		claimCellOutputName(usedOutputNames, stub, true);
 		cells.push({ ...stub, promotedModelPath: relPath ?? '' });
 	}
 	// Resolve plotSourceCellName -> id now that every cell's final (deconflicted)
@@ -881,9 +881,14 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 	};
 }
 
-function buildPlotCellFromLuna(name: string, code: string, meta?: LunaPlotMeta): Cell {
+function buildPlotCellFromLuna(
+	name: string,
+	code: string,
+	meta?: LunaPlotMeta,
+	cellId?: string
+): Cell {
 	return {
-		id: name || crypto.randomUUID(),
+		id: cellId || name || crypto.randomUUID(),
 		cellType: 'plot',
 		language: 'prql',
 		connectionId: null,
@@ -944,9 +949,9 @@ function buildPlotCellFromLuna(name: string, code: string, meta?: LunaPlotMeta):
 	};
 }
 
-function buildPythonCellFromLuna(name: string, code: string): Cell {
+function buildPythonCellFromLuna(name: string, code: string, cellId?: string): Cell {
 	return {
-		id: name || crypto.randomUUID(),
+		id: cellId || name || crypto.randomUUID(),
 		cellType: 'python',
 		language: 'prql',
 		connectionId: null,
@@ -1070,7 +1075,7 @@ function buildMarkdownCell(
 
 export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 	return {
-		id: entry.name || crypto.randomUUID(),
+		id: entry.cellId || entry.name || crypto.randomUUID(),
 		cellType: 'query',
 		language: entry.lang,
 		connectionId: entry.connection,

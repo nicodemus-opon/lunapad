@@ -39,8 +39,33 @@ afterEach(async () => {
 const admin: McpAuthContext['user'] = { id: 'u1', role: 'admin' };
 
 describe('createLunapadMcpServer permission gating', () => {
+	it('registers the agent-first composition and visual grammar tools', async () => {
+		const client = await connectedClient({
+			user: admin,
+			apiKeyId: 'key0',
+			apiKeyScopes: ['workspace:read', 'workspace:write', 'connections:query']
+		});
+		const tools = await client.listTools();
+		const names = new Set(tools.tools.map((tool) => tool.name));
+		expect([...names]).toEqual(
+			expect.arrayContaining([
+				'list_capabilities',
+				'get_visual_report_grammar',
+				'inspect_resource',
+				'discover_schema',
+				'validate_workflow',
+				'run_workflow',
+				'delete_resource'
+			])
+		);
+	});
+
 	it('allows a workspace:write-scoped API key to call create_notebook', async () => {
-		const client = await connectedClient({ user: admin, apiKeyId: 'key1', apiKeyScopes: ['workspace:write'] });
+		const client = await connectedClient({
+			user: admin,
+			apiKeyId: 'key1',
+			apiKeyScopes: ['workspace:write']
+		});
 		const result = await client.callTool({
 			name: 'create_notebook',
 			arguments: { folder: dir, notebookId: 'models/a', blocks: [{ type: 'text', content: 'x' }] }
@@ -49,7 +74,11 @@ describe('createLunapadMcpServer permission gating', () => {
 	});
 
 	it('rejects a workspace:read-only-scoped API key from calling create_notebook', async () => {
-		const client = await connectedClient({ user: admin, apiKeyId: 'key2', apiKeyScopes: ['workspace:read'] });
+		const client = await connectedClient({
+			user: admin,
+			apiKeyId: 'key2',
+			apiKeyScopes: ['workspace:read']
+		});
 		const result = await client.callTool({
 			name: 'create_notebook',
 			arguments: { folder: dir, notebookId: 'models/b', blocks: [{ type: 'text', content: 'x' }] }
@@ -97,7 +126,11 @@ describe('createLunapadMcpServer permission gating', () => {
 	});
 
 	it('allows read-only tools (list_notebooks) for a workspace:read-scoped key', async () => {
-		const client = await connectedClient({ user: admin, apiKeyId: 'key5', apiKeyScopes: ['workspace:read'] });
+		const client = await connectedClient({
+			user: admin,
+			apiKeyId: 'key5',
+			apiKeyScopes: ['workspace:read']
+		});
 		const result = await client.callTool({ name: 'list_notebooks', arguments: { folder: dir } });
 		expect(result.isError).toBeFalsy();
 	});

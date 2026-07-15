@@ -18,8 +18,16 @@ import { z } from 'zod';
  */
 
 const executableCellShape = z.object({
-	cellId: z.string().describe('Stable id used by queryBlock nodes, e.g. q_monthly_revenue.'),
-	outputName: z.string().describe('SQL/Python output name, e.g. monthly_revenue.'),
+	cellId: z
+		.string()
+		.describe(
+			'Stable cell id preserved exactly as authored and used by queryBlock nodes, e.g. q_monthly_revenue.'
+		),
+	outputName: z
+		.string()
+		.describe(
+			'Composable SQL/Python output name, e.g. monthly_revenue. Must be unique unless a patch operation explicitly resolves conflicts.'
+		),
 	cellType: z.enum(['query', 'python', 'plot']).optional(),
 	language: z.enum(['sql', 'prql']).optional(),
 	code: z.string(),
@@ -35,12 +43,20 @@ const executableCellShape = z.object({
 	materializeMode: z.enum(['ephemeral', 'view', 'table', 'incremental']).optional()
 });
 
-const blockShape = z.record(z.string(), z.unknown()).describe(
-	'A notebook presentation block: {"type":"queryBlock","cellId":"..."} to place an executable ' +
-		'cell, or a dashboard block ({"type":"text"|"grid"|"columns"|"card"|"metric"|"chart"|' +
-		'"datatable"|"callout"|"tabs"|"filter"|"mermaid"|"each"|"group"|"conditional"|...}). ' +
-		'Container blocks nest child blocks recursively via their own `blocks`/`items`/`columns` field.'
-);
+const blockShape = z
+	.record(z.string(), z.unknown())
+	.describe(
+		'A notebook presentation block: {"type":"queryBlock","cellId":"..."} to place an executable ' +
+			'cell, or a visual report block for infographic/poster/website-like analytical pages ' +
+			'({"type":"text"|"divider"|"grid"|"columns"|"card"|"metric"|"chart"|"datatable"|' +
+			'"badge"|"progress"|"callout"|"details"|"tabs"|"filter"|"mermaid"|"each"|"group"|' +
+			'"conditional"|"toc"|"math"|"video"|"embed"|"bookmark"|...}). Use columns for ' +
+			'asymmetric report layouts, grid for compact tiles, metric size="hero" for big numerals, ' +
+			'metric iconCount/iconTotal for pictogram rows, chart blocks for line/bar/pie/map/choropleth, ' +
+			'and datatable conditionalFormats for dense comparison tables. Container blocks nest child ' +
+			'blocks recursively via their own `blocks`/`items`/`columns` field. Call get_visual_report_grammar ' +
+			'for full block types, data roles, composition patterns, style axes, icon names, and generic blueprint seeds.'
+	);
 
 export const createNotebookShape = {
 	notebookId: z
@@ -52,7 +68,11 @@ export const createNotebookShape = {
 	folder: z.string().optional().describe('Project folder. Omit to use the currently open project.'),
 	title: z.string().optional(),
 	executableCells: z.array(executableCellShape).optional(),
-	blocks: z.array(blockShape)
+	blocks: z
+		.array(blockShape)
+		.describe(
+			'Typed report/page blueprint blocks. Can compose plain notebooks, dense infographic reports, civic posters, forecast reports, and website-like reports.'
+		)
 };
 
 export const applyNotebookPatchShape = {
@@ -60,10 +80,19 @@ export const applyNotebookPatchShape = {
 	folder: z.string().optional(),
 	title: z.string().optional().describe('Rename the notebook (renames its underlying .luna file).'),
 	blueprint: z
-		.object({ title: z.string().optional(), executableCells: z.array(executableCellShape).optional(), blocks: z.array(blockShape) })
+		.object({
+			title: z.string().optional(),
+			executableCells: z.array(executableCellShape).optional(),
+			blocks: z.array(blockShape)
+		})
 		.optional()
-		.describe('Whole-document replacement via the typed blueprint grammar (same shape as create_notebook).'),
-	document: z.record(z.string(), z.unknown()).optional().describe('Raw ProseMirror document replacement.'),
+		.describe(
+			'Whole-document replacement via the typed blueprint grammar (same shape as create_notebook).'
+		),
+	document: z
+		.record(z.string(), z.unknown())
+		.optional()
+		.describe('Raw ProseMirror document replacement.'),
 	operations: z
 		.array(z.record(z.string(), z.unknown()))
 		.optional()
@@ -90,7 +119,9 @@ export const runNotebookCellsShape = {
 	cellIds: z
 		.array(z.string())
 		.optional()
-		.describe('Cell ids or outputNames to run. Omit to run every query/python/plot cell in the notebook.')
+		.describe(
+			'Cell ids or outputNames to run. Omit to run every query/python/plot cell in the notebook.'
+		)
 };
 
 export const pickChartShape = {

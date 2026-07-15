@@ -90,6 +90,7 @@ export interface LunaPlotMeta {
 
 export interface LunaQueryEntry {
 	kind: 'query';
+	cellId?: string;
 	name: string;
 	lang: CellLanguage;
 	connection: string | null;
@@ -105,8 +106,8 @@ export type LunaEntry =
 	| LunaQueryEntry
 	| { kind: 'modelRef'; ref: string }
 	| { kind: 'udf'; udfBody: string }
-	| { kind: 'plot'; name: string; code: string; meta?: LunaPlotMeta }
-	| { kind: 'python'; name: string; code: string };
+	| { kind: 'plot'; cellId?: string; name: string; code: string; meta?: LunaPlotMeta }
+	| { kind: 'python'; cellId?: string; name: string; code: string };
 
 export interface LunaDocument {
 	entries: LunaEntry[];
@@ -226,6 +227,7 @@ export function parseLunaFile(content: string): LunaDocument {
 			}
 			entries.push({
 				kind: 'plot',
+				cellId: attrs.id,
 				name: attrs.name ?? '',
 				code: bodyLines.join('\n').trim(),
 				meta: decodeMeta<LunaPlotMeta>(attrs.meta)
@@ -243,7 +245,12 @@ export function parseLunaFile(content: string): LunaDocument {
 				bodyLines.push(lines[i]);
 				i++;
 			}
-			entries.push({ kind: 'python', name: attrs.name ?? '', code: bodyLines.join('\n').trim() });
+			entries.push({
+				kind: 'python',
+				cellId: attrs.id,
+				name: attrs.name ?? '',
+				code: bodyLines.join('\n').trim()
+			});
 			i++; // skip closing marker (no-op if body ran to EOF unterminated)
 			continue;
 		}
@@ -259,6 +266,7 @@ export function parseLunaFile(content: string): LunaDocument {
 			}
 			entries.push({
 				kind: 'query',
+				cellId: attrs.id,
 				name: attrs.name ?? '',
 				lang: attrs.lang === 'sql' ? 'sql' : 'prql',
 				connection: attrs.connection ?? null,
@@ -373,6 +381,7 @@ function hasNonDefaultMeta(meta: LunaQueryMeta, lang: CellLanguage): boolean {
 
 function serializeQueryBlock(cell: SerializableCell): string {
 	const attrs: string[] = [`name="${cell.outputName}"`, `lang="${cell.language}"`];
+	if (cell.id && cell.id !== cell.outputName) attrs.push(`id="${cell.id}"`);
 	if (cell.connectionId) attrs.push(`connection="${cell.connectionId}"`);
 	if (cell.materializeMode && cell.materializeMode !== 'table')
 		attrs.push(`materialized="${cell.materializeMode}"`);
@@ -428,6 +437,7 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			blocks.push(`{% udf %}\n${cell.udfBody.trim()}\n{% /udf %}`);
 		} else if (cell.cellType === 'plot') {
 			const attrs = [`name="${cell.outputName}"`];
+			if (cell.id && cell.id !== cell.outputName) attrs.push(`id="${cell.id}"`);
 			if (cell.plotMode === 'gui' && cell.plotConfig) {
 				const sourceName = cells.find((c) => c.id === cell.plotSourceCellId)?.outputName ?? null;
 				const meta: LunaPlotMeta = {
@@ -439,7 +449,9 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			}
 			blocks.push(`{% plot ${attrs.join(' ')} %}\n${cell.code.trim()}\n{% /plot %}`);
 		} else if (cell.cellType === 'python') {
-			blocks.push(`{% python name="${cell.outputName}" %}\n${cell.code.trim()}\n{% /python %}`);
+			const attrs = [`name="${cell.outputName}"`];
+			if (cell.id && cell.id !== cell.outputName) attrs.push(`id="${cell.id}"`);
+			blocks.push(`{% python ${attrs.join(' ')} %}\n${cell.code.trim()}\n{% /python %}`);
 		} else if (cell.promotedModelPath) {
 			blocks.push(`{% model ref="${cell.outputName}" /%}`);
 		} else {

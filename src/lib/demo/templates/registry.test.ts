@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TEMPLATE_CATEGORIES, getDashboardTemplate } from './registry';
 import { resolveDependencies } from '$lib/services/cell-deps';
 
-const MARKDOC_REF_RE = /\$([a-z][a-z0-9_]*)/gi;
+const MARKDOC_OUTPUT_REF_RE = /\$([a-z][a-z0-9_]*)\./gi;
 
 describe('template registry', () => {
 	const allTemplates = TEMPLATE_CATEGORIES.flatMap((g) => g.templates);
@@ -62,7 +62,7 @@ describe('template registry', () => {
 				const refs = new Set<string>();
 				for (const cell of notebook.cells) {
 					if (cell.cellType !== 'markdown') continue;
-					for (const match of cell.markdown.matchAll(MARKDOC_REF_RE)) {
+					for (const match of cell.markdown.matchAll(MARKDOC_OUTPUT_REF_RE)) {
 						refs.add(match[1]);
 					}
 				}

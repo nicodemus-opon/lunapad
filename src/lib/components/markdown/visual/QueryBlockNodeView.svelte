@@ -23,6 +23,7 @@
 		getTables,
 		getExternalSchemaTables,
 		getPythonTableHints,
+		getPythonAvailable,
 		getIsDbtProject,
 		testCell,
 		type Cell
@@ -31,9 +32,15 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import GUIEditor from '$lib/components/gui/GUIEditor.svelte';
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
+	import InlinePromptBar from '$lib/components/cell/InlinePromptBar.svelte';
 	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
 	import PlotCellOutput from '$lib/components/PlotCellOutput.svelte';
 	import { resolvePlotDataRefs, isChartableSourceCell } from '$lib/services/cell-deps';
+	import {
+		buildInlineAIColumns,
+		buildInlineAITablesContext,
+		inferInlineAISourceTable
+	} from '$lib/services/inline-ai-context';
 	import CellMenu from '$lib/components/cell/CellMenu.svelte';
 	import CellModeSwitchDialogs from '$lib/components/cell/CellModeSwitchDialogs.svelte';
 	import MaterializeDialog from '$lib/components/MaterializeDialog.svelte';
@@ -45,11 +52,20 @@
 		resolveConnection
 	} from '$lib/types/connection';
 	import { createCellModeSwitch, cellModeOf } from '$lib/services/cell-mode-switch.svelte';
-	import { registerCellMeta } from '$lib/keyboard/cell-bridge.svelte';
+	import { cellBridgeState, registerCellMeta } from '$lib/keyboard/cell-bridge.svelte';
 	import { mapErrorsToStages } from '$lib/services/gui-prql';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import type { GUISourceSchema } from '$lib/types/gui-pipeline';
-	import { Loader2, Pin, PinOff, Play, Maximize2, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
+	import {
+		Loader2,
+		Pin,
+		PinOff,
+		Play,
+		Maximize2,
+		ChevronsDownUp,
+		ChevronsUpDown,
+		Sparkles
+	} from '@lucide/svelte';
 
 	interface Props {
 		cellId: string;
@@ -92,11 +108,12 @@
 
 	let focused = $state(false);
 	let hovered = $state(false);
-	let editorRef = $state<{ focus: () => void } | null>(null);
+	let editorRef: Editor | undefined = $state();
 	let nameDraft = $state('');
 	let nameFocused = $state(false);
 	let menuOpen = $state(false);
 	let sqlExpanded = $state(false);
+	let inlinePromptOpen = $state(false);
 	let materializeDialogOpen = $state(false);
 	let promoteDialogOpen = $state(false);
 	let promoteSeedDialogOpen = $state(false);
@@ -128,6 +145,8 @@
 	);
 	const cellMode = $derived(cell ? cellModeOf(cell) : 'prql');
 	const isGuiMode = $derived(isQueryCell && cell?.editMode === 'gui');
+	const canInlinePrompt = $derived((isQueryCell && cell?.editMode !== 'gui') || isPythonCell);
+	const pythonAvailable = $derived(getPythonAvailable());
 
 	const modeSwitch = createCellModeSwitch(
 		() => cell,
@@ -166,6 +185,16 @@
 		}
 		return merged;
 	});
+	const inlinePromptTables = $derived(
+		buildInlineAITablesContext(tables, externalSchemaTables)
+	);
+	const inlinePromptSourceTable = $derived.by(() => {
+		if (!cell || !isQueryCell) return undefined;
+		return inferInlineAISourceTable(cell.code, cell.language, tables, externalSchemaTables);
+	});
+	const inlinePromptColumns = $derived.by(() =>
+		buildInlineAIColumns(inlinePromptSourceTable, tables, externalSchemaTables)
+	);
 	// Preceding query/python cells (with output names) become upstream schemas.
 	const prevCellSources = $derived<GUISourceSchema[]>(
 		cells
@@ -192,7 +221,7 @@
 		if (!cell || reportView) return;
 		return registerCellMeta({
 			cellId: cell.id,
-			canInlinePrompt: isQueryCell && cell.editMode !== 'gui',
+			canInlinePrompt,
 			isQueryCell,
 			isGuiCell: isQueryCell && cell.editMode === 'gui',
 			isDbtProject,
@@ -201,6 +230,12 @@
 			display: cell.display,
 			outputName: cell.outputName ?? ''
 		});
+	});
+
+	$effect(() => {
+		if (!cell || cellBridgeState.pendingInlinePromptCellId !== cell.id) return;
+		cellBridgeState.pendingInlinePromptCellId = null;
+		openInlinePrompt();
 	});
 
 	function handleGutterClick(e: MouseEvent) {
@@ -225,11 +260,25 @@
 		});
 	}
 
+	function focusEditorSoon() {
+		editorRef?.focus();
+		requestAnimationFrame(() => editorRef?.focus());
+		setTimeout(() => editorRef?.focus(), 30);
+	}
+
 	function handleRun() {
 		if (!cell) return;
 		if (running) cancelCell(cellId);
 		else if (isPythonCell) void runPythonCell(cellId);
 		else void runCell(cellId);
+	}
+
+	function openInlinePrompt() {
+		if (!cell || !canInlinePrompt) return;
+		if (collapsed || !codeExpanded) onSetDisplay('full');
+		focused = true;
+		onFocus();
+		inlinePromptOpen = true;
 	}
 
 	function handleCodeChange(code: string) {
@@ -301,10 +350,10 @@
 		expandCollapsed();
 	}}
 	onkeydown={handleContainerKeydown}
-	onfocusin={() => {
+	onfocusin={(e) => {
 		if (collapsed) return;
 		focused = true;
-		onFocus();
+		if (!(e.target as Element).closest('.monaco-editor')) onFocus();
 	}}
 	onfocusout={(e) => {
 		if (collapsed) return;
@@ -342,6 +391,7 @@
 						onOpenPromote={() => (promoteDialogOpen = true)}
 						onOpenPromoteSeed={() => (promoteSeedDialogOpen = true)}
 						onRunTests={() => void testCell(cell.id)}
+						onOpenInlinePrompt={canInlinePrompt ? openInlinePrompt : undefined}
 						onOpenWorksheet={() => {
 							if (notebookId) openWorksheetView(notebookId, cell.id);
 						}}
@@ -350,6 +400,22 @@
 						onDisplayChange={onSetDisplay}
 					/>
 				</div>
+			{/if}
+			{#if canInlinePrompt && !reportView && !collapsed}
+				<button
+					type="button"
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 {inlinePromptOpen
+						? 'text-primary'
+						: ''}"
+					title="Tell AI what to do"
+					aria-label="Tell AI what to do with this cell"
+					onclick={(e) => {
+						e.stopPropagation();
+						openInlinePrompt();
+					}}
+				>
+					<Sparkles class="h-3.5 w-3.5" />
+				</button>
 			{/if}
 			{#if cell?.cellType === 'query' || cell?.cellType === 'python'}
 				<button
@@ -451,10 +517,31 @@
 						{/if}
 					</div>
 				{:else}
+				{#if canInlinePrompt}
+					<InlinePromptBar
+						bind:open={inlinePromptOpen}
+						cellId={cell.id}
+						cellType={isPythonCell ? 'python' : 'query'}
+						language={isPythonCell ? undefined : cell.language}
+						code={cell.code}
+						outputName={cell.outputName}
+						{pythonAvailable}
+						sourceTable={inlinePromptSourceTable}
+						columns={inlinePromptColumns}
+						otherTables={inlinePromptTables}
+						{editorRef}
+						onApply={handleCodeChange}
+					/>
+				{/if}
 				<!-- Code comes FIRST (like any notebook); output renders below it. -->
 				{#if codeExpanded && (cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot')}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class="qb-code notebook-code-block overflow-hidden rounded-md border border-border bg-muted/15"
+						onpointerdowncapture={(e) => {
+							if ((e.target as Element).closest('input, button, .mode-tabs, .qb-gui')) return;
+							focusEditorSoon();
+						}}
 					>
 						<div class="flex items-center justify-between border-b border-border px-2 py-0.5">
 							<input

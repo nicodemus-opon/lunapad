@@ -1,7 +1,7 @@
-import type { Page } from '@playwright/test';
-
-/** Mock server-backed features so the full walkthrough can be recorded without Postgres. */
-export async function installFullWalkthroughMocks(page: Page): Promise<void> {
+// Mock server-backed features so the full walkthrough can be recorded without a real
+// Postgres/AI backend — these give the AI/Share/Sites/Review beats a real-looking
+// response to react to instead of stalling on a network call that has nowhere to land.
+export async function installFullWalkthroughMocks(page) {
 	await page.route('**/api/ai/chat', async (route) => {
 		const sse = [
 			`data: ${JSON.stringify({ type: 'text', text: 'Here is an updated SQL model that adds a rounded month-over-month percentage column.' })}\n\n`,

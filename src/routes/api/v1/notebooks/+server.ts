@@ -1,16 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listNotebooksAction, createNotebookAction } from '$lib/server/lunapad-actions';
 import { isRateLimited } from '$lib/server/api-rate-limit';
+import { agentActionResponse } from '$lib/server/agent-rest';
 
-export const GET: RequestHandler = async ({ url, locals }) => {
+export const GET: RequestHandler = async ({ url, locals, request }) => {
 	const rateLimitKey = `v1:${locals.apiKeyId ?? locals.user?.id}`;
 	if (isRateLimited(rateLimitKey, 120)) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 	try {
 		const folder = url.searchParams.get('folder') ?? undefined;
-		return json(await listNotebooksAction({ folder }));
+		return agentActionResponse({ locals, request }, 'list_notebooks', { folder });
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });
 	}
@@ -34,15 +34,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!body.notebookId || !Array.isArray(body.blocks)) {
 			return json({ error: 'notebookId and blocks are required' }, { status: 400 });
 		}
-		const result = await createNotebookAction({
+		return agentActionResponse({ locals, request }, 'create_notebook', {
 			folder: body.folder,
 			notebookId: body.notebookId,
 			title: body.title,
 			executableCells: body.executableCells as never,
 			blocks: body.blocks as never
 		});
-		if (result.diagnostics.length) return json(result, { status: 422 });
-		return json(result);
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });
 	}

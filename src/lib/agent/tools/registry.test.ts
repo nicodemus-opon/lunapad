@@ -17,7 +17,13 @@ describe('agent tool registry', () => {
 	});
 
 	it('includes MCP server tools', () => {
+		expect(getAgentTool('list_capabilities')?.executor).toBe('server');
+		expect(getAgentTool('get_visual_report_grammar')?.executor).toBe('server');
+		expect(getAgentTool('run_workflow')?.mutates).toBe(true);
+		expect(getAgentTool('delete_resource')?.mutates).toBe(true);
 		expect(getAgentTool('dbt_run')?.executor).toBe('server');
+		expect(getAgentTool('dbt_run')?.mutates).toBe(true);
+		expect(getAgentTool('publish_notebook')?.mutates).toBe(true);
 		expect(getAgentTool('run_query')?.stopAfter).toBe(true);
 	});
 
@@ -30,6 +36,10 @@ describe('agent tool registry', () => {
 	it('schemasForMcp includes both server and either executor tools', async () => {
 		const { schemasForMcp } = await import('./registry.js');
 		const names = new Set(schemasForMcp().map((t) => t.name));
+		expect(names.has('list_capabilities')).toBe(true);
+		expect(names.has('get_visual_report_grammar')).toBe(true);
+		expect(names.has('validate_workflow')).toBe(true);
+		expect(names.has('run_workflow')).toBe(true);
 		expect(names.has('list_connections')).toBe(true); // executor: 'server'
 		expect(names.has('create_notebook')).toBe(true); // executor: 'either'
 		expect(names.has('query_data')).toBe(true); // executor: 'either'

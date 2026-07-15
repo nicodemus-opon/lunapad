@@ -1,6 +1,7 @@
 /** Server-side guardrails for native chat tool calls before they reach the client. */
 
 import { getCriticalMarkdownFailures } from '$lib/agent/evals/dashboard-grade.js';
+import { tablesReferencedInSql } from '$lib/server/sql-reference-extractor.js';
 
 export interface ChatToolPolicyContext {
 	schemaTableNames: Set<string>;
@@ -121,11 +122,7 @@ function tableKnown(name: string, ctx: ChatToolPolicyContext): boolean {
 
 /** Tables referenced in SQL/PRQL cell code (FROM/JOIN / PRQL from / "table X"). */
 export function tablesReferencedInCode(code: string): string[] {
-	const names = new Set<string>();
-	for (const m of code.matchAll(/\b(?:from|join|table)\s+[`"']?([a-z][a-z0-9_]*)/gi)) {
-		names.add(m[1]);
-	}
-	return [...names];
+	return tablesReferencedInSql(code);
 }
 
 /** Exported so server-side callers with no live chat turn (MCP/REST notebook

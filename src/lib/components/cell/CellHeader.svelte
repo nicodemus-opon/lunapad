@@ -4,7 +4,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
 	import CellStatusChip from '$lib/components/cell/CellStatusChip.svelte';
-	import { Clock, XCircle, EyeOff, BrainCircuit } from '@lucide/svelte';
+	import { Clock, XCircle, EyeOff, BrainCircuit, Sparkles } from '@lucide/svelte';
 	import { updateCellName, setCellDisplay, type Cell } from '$lib/stores/notebook.svelte';
 
 	let {
@@ -22,7 +22,8 @@
 		isMarkdownCell = false,
 		onModeChange,
 		onOverlayChange,
-		onFixWithAI
+		onFixWithAI,
+		onOpenInlinePrompt
 	}: {
 		cell: Cell;
 		isQueryCell: boolean;
@@ -40,6 +41,7 @@
 		onModeChange: (mode: 'prql' | 'visual' | 'sql') => void;
 		onOverlayChange?: (open: boolean) => void;
 		onFixWithAI?: (errorMsg: string) => void;
+		onOpenInlinePrompt?: () => void;
 	} = $props();
 
 	let nameInputValue = $state(untrack(() => cell.outputName));
@@ -251,6 +253,22 @@
 			? 'opacity-100'
 			: 'pointer-events-none opacity-0'}"
 	>
+		{#if onOpenInlinePrompt && !collapsed && !reportView}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+						title="Tell AI what to do"
+						aria-label="Tell AI what to do with this cell"
+						onclick={onOpenInlinePrompt}
+					>
+						<Sparkles class="h-3 w-3" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content><p class="text-xs">Tell AI what to do (⌘⇧K)</p></Tooltip.Content>
+			</Tooltip.Root>
+		{/if}
 		{#if isQueryCell && !collapsed}
 			{#if codeHidden}
 				<button

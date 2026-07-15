@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { dbtCompileAction } from '$lib/server/lunapad-actions';
 import { isRateLimited } from '$lib/server/api-rate-limit';
+import { agentActionResponse } from '$lib/server/agent-rest';
 
 interface DbtCompileRequest {
 	folder?: string;
@@ -14,7 +14,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 	try {
 		const body = (await request.json().catch(() => ({}))) as DbtCompileRequest;
-		return json(await dbtCompileAction({ folder: body.folder }));
+		return agentActionResponse({ locals, request }, 'dbt_compile', { folder: body.folder });
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });
 	}
