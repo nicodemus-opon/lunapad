@@ -19,6 +19,10 @@ export interface MarkdocContainerExtensionContext {
 	/** Report view is read-only: editing chrome (toolbar, grid-cell guides, selection
 	 * indicator) must not appear — only the static-render appearance. */
 	reportView?: () => boolean;
+	/** Subscribe to external cell-data changes (a query cell finishing a run
+	 * elsewhere never touches this node, so nothing else tells the NodeView to
+	 * re-pull getCells() and re-derive its each/group preview or live badges). */
+	onCellsRefresh?: (fn: () => void) => () => void;
 }
 
 /** Matches the icon set CalloutWidget.svelte uses for report/static rendering, kept as raw
@@ -643,6 +647,11 @@ export const MarkdocContainerExtension = Node.create({
 			applyLoopView();
 			renderChrome();
 
+			const unsubscribeCellsRefresh = ctx?.onCellsRefresh?.(() => {
+				applyLoopView();
+				renderChrome();
+			});
+
 			return {
 				dom,
 				contentDOM,
@@ -665,6 +674,7 @@ export const MarkdocContainerExtension = Node.create({
 					if (loopComponent) unmount(loopComponent);
 					tabObserver?.disconnect();
 					if (tabPollHandle) cancelAnimationFrame(tabPollHandle);
+					unsubscribeCellsRefresh?.();
 				},
 				selectNode() {
 					isSelected = true;

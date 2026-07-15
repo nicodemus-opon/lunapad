@@ -65,6 +65,10 @@ export interface BubbleMenuGate {
 export interface NotionEditorExtensionOptions {
 	getCells: () => Cell[];
 	getNotebookId: () => string;
+	/** Subscribe to external cell-data changes (query results, staleness) so
+	 * each/group loop previews, live metric/chart widgets, and orphaned-filter
+	 * badges refresh without a document edit. See MarkdocContainerExtensionContext. */
+	onCellsRefresh?: (fn: () => void) => () => void;
 	/** True while the document is shown in the in-app, read-only report view. */
 	reportView?: () => boolean;
 	refEntries?: () => MarkdownRefEntry[];
@@ -227,11 +231,13 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 		}),
 		createMarkdocWidgetExtension({
 			getCells: opts.getCells,
-			getNotebookId: opts.getNotebookId
+			getNotebookId: opts.getNotebookId,
+			onCellsRefresh: opts.onCellsRefresh
 		}),
 		createMarkdocContainerExtension({
 			getCells: opts.getCells,
-			reportView: opts.reportView
+			reportView: opts.reportView,
+			onCellsRefresh: opts.onCellsRefresh
 		}),
 		createMarkdocExpressionExtension({
 			getCells: opts.getCells,

@@ -16,24 +16,8 @@ const exec = promisify(execFile);
 
 const EASE_SEC = 0.7; // time to push in / ease back out at each end of a beat's hold
 const ZOOM_FACTOR = 1.16; // subtle, fixed push — never tries to "fit" an arbitrary UI element
-
-// A fixed-size crop window (a constant ~16% push-in), centered on the focus point. Earlier
-// this tried to size the crop to *cover* the padded focus rect, which silently degenerated
-// to the full frame (no zoom at all) for any tall element — most notebook cells stack
-// code+result+chart vertically and are taller than the 16:9 frame, so "cover this box while
-// matching frame aspect" always demanded a crop bigger than the frame itself. A real Ken
-// Burns push doesn't try to exactly frame an element — it's a small, consistent move toward
-// a point of interest, regardless of how big or oddly-shaped that element's box is.
-function computeCropWindow(focus, width, height) {
-	if (!focus || focus.width <= 0 || focus.height <= 0) return null;
-	const cw = width / ZOOM_FACTOR;
-	const ch = height / ZOOM_FACTOR;
-	const cx = focus.x + focus.width / 2 - cw / 2;
-	const cy = focus.y + focus.height / 2 - ch / 2;
-	const x = Math.max(0, Math.min(width - cw, cx));
-	const y = Math.max(0, Math.min(height - ch, cy));
-	return { x: Math.round(x), y: Math.round(y), w: Math.round(cw), h: Math.round(ch) };
-}
+const BEAT_XFADE_SEC = 0.35; // crossfade between beats within a chapter (shorter than the
+// 0.6s chapter-to-chapter one — these are more frequent and each beat's hold is tighter)
 
 // Piecewise-linear ramp (ease in from 0, hold at 1, ease out back to 0), then composed with
 // a cubic smoothstep so there's no velocity-discontinuity corner where the ramp meets the
@@ -50,33 +34,55 @@ function easeExpr(t, dur, ease) {
 }
 
 // Builds the filter_complex for one segment: trim, reset timestamps, then (for non-'quick'
-// beats with a focus point) an animated crop that eases toward it and back out. 'quick'
-// beats never zoom — they already layer real cursor motion + the app's own UI transitions,
-// and holding the frame static there is real shot variety, not a missed opportunity.
+// beats with a focus point) an animated push toward it and back out. 'quick' beats never
+// zoom — they already layer real cursor motion + the app's own UI transitions, and holding
+// the frame static there is real shot variety, not a missed opportunity.
+//
+// Scale-then-crop, not crop-then-scale: the earlier version animated `crop`'s own w/h (the
+// crop rectangle's pixel size shrank toward the target, then got rescaled back up to a
+// constant output size) — two stages with time-varying dimensions, and every frame during
+// the ease got resampled from a different pre-scale size than its neighbor, a known source
+// of shimmer in hand-rolled ffmpeg zoom pipelines. Here `scale` (whose whole job is smoothly
+// resizing a frame) carries the *only* time-varying dimension — it grows the whole frame by
+// a zoom factor Z(t) — and `crop` afterward always cuts out a **constant** width×height
+// window, just at a moving position, which is a plain pan, not a resize.
 function segmentFilter(index, seg, width, height) {
 	const dur = seg.end - seg.start;
-	const crop = computeCropWindow(seg.focus, width, height);
 	const label = `s${index}`;
 	const parts = [
 		`trim=start=${seg.start.toFixed(3)}:end=${seg.end.toFixed(3)}`,
 		'setpts=PTS-STARTPTS'
 	];
-	if (crop) {
+	const focus = seg.focus;
+	if (focus && focus.width > 0 && focus.height > 0) {
 		const ease = easeExpr('t', dur, EASE_SEC);
-		const x = `(${crop.x})*(${ease})`;
-		const y = `(${crop.y})*(${ease})`;
-		const w = `${width}-(${width}-${crop.w})*(${ease})`;
-		const h = `${height}-(${height}-${crop.h})*(${ease})`;
-		// crop's x/y/w/h expressions are always evaluated per-frame when they reference
-		// frame-dependent variables like `t` — there's no `eval` option on this filter
-		// (that exists on drawtext/overlay, not crop); passing it is a hard error.
-		parts.push(`crop=w='${w}':h='${h}':x='${x}':y='${y}'`);
-		parts.push(`scale=${width}:${height}`);
+		// Z(t): 1.0 (no zoom) at rest, ZOOM_FACTOR at the peak of the ease.
+		const z = `(1+${(ZOOM_FACTOR - 1).toFixed(4)}*(${ease}))`;
+		// Even-round the scaled frame size (yuv420p needs even dimensions) — the crop clamp
+		// below reuses these exact (rounded) expressions so its bounds match what `scale`
+		// actually produced, not the pre-rounding value.
+		const scaledW = `trunc((${width}*${z})/2)*2`;
+		const scaledH = `trunc((${height}*${z})/2)*2`;
+		const fcx = focus.x + focus.width / 2;
+		const fcy = focus.y + focus.height / 2;
+		// Where the focus point ends up in the enlarged frame, centered in a width×height
+		// window, clamped so the window never runs past the enlarged frame's edge.
+		const x = `max(0,min((${scaledW})-${width},(${fcx})*(${z})-${width}/2))`;
+		const y = `max(0,min((${scaledH})-${height},(${fcy})*(${z})-${height}/2))`;
+		// Unlike crop, scale defaults to evaluating w/h expressions once at init — `t` is
+		// only valid per-frame with an explicit eval=frame.
+		parts.push(`scale=w='${scaledW}':h='${scaledH}':eval=frame`);
+		parts.push(`crop=w=${width}:h=${height}:x='${x}':y='${y}'`);
 	}
-	// concat requires every input to agree on SAR, not just pixel dimensions — a segment
-	// that skipped the crop+scale branch (no focus rect) otherwise carries through
-	// whatever SAR the source stream happened to encode, which concat then rejects.
+	// xfade/concat require every input to agree on SAR, not just pixel dimensions — a
+	// segment that skipped the scale+crop branch (no focus rect) otherwise carries through
+	// whatever SAR the source stream happened to encode, which the stitch step then rejects.
 	parts.push('setsar=1');
+	// xfade also *requires* a constant frame rate on every input it's given — Playwright's
+	// recordVideo produces a variable rate (whatever it actually painted), and a `trim` of
+	// that alone still reports as variable/undefined ("1/0"). Normalize per-segment, not
+	// only once at the very end, or xfade refuses to configure at all.
+	parts.push(`fps=${OUTPUT_FPS}`);
 	return `[0:v]${parts.join(',')}[${label}]`;
 }
 
@@ -105,11 +111,35 @@ export async function renderChapterWithZoom(inputPath, outputPath, segments, { w
 		return;
 	}
 	const chains = segments.map((seg, i) => segmentFilter(i, seg, width, height));
-	const concatInputs = segments.map((_, i) => `[s${i}]`).join('');
-	// Playwright's recordVideo produces a variable, per-chapter frame rate (whatever it
-	// actually painted) — xfade later requires every chapter input to share one constant
-	// rate, so normalize it here rather than at the final stitch step.
-	const filterComplex = `${chains.join(';')};${concatInputs}concat=n=${segments.length}:v=1:a=0,fps=${OUTPUT_FPS}[outv]`;
+	// Crossfade every beat into the next instead of a hard concat — a chapter with 5-9
+	// beats otherwise has 4-8 instant, unblended cuts, which reads as choppy regardless of
+	// how good any individual shot is. Same pairwise-xfade-with-running-offset technique
+	// xfadeChapters already uses for chapter boundaries, just applied one level down: each
+	// `[sN]` here is already an independent labeled stream (from trimming the same source),
+	// which is all xfade needs — it doesn't care that they share an origin file.
+	const stitchParts = [];
+	let prevLabel = 's0';
+	let runningOffset = 0;
+	for (let i = 1; i < segments.length; i++) {
+		const prevDur = segments[i - 1].end - segments[i - 1].start;
+		const curDur = segments[i].end - segments[i].start;
+		// Never let the crossfade eat more than 40% of either adjacent beat's hold —
+		// guards against a pathologically short beat swallowing itself.
+		const xfadeDur = Math.max(0.05, Math.min(BEAT_XFADE_SEC, prevDur * 0.4, curDur * 0.4));
+		runningOffset += prevDur - xfadeDur;
+		// Last xfade in the chain writes directly to [outv]; each segment already carries a
+		// constant fps (added in segmentFilter, since xfade requires it on every input), so
+		// no separate normalization pass is needed here.
+		const outLabel = i === segments.length - 1 ? 'outv' : `x${i}`;
+		stitchParts.push(
+			`[${prevLabel}][s${i}]xfade=transition=fade:duration=${xfadeDur.toFixed(3)}:offset=${runningOffset.toFixed(3)}[${outLabel}]`
+		);
+		prevLabel = outLabel;
+	}
+	const filterComplex =
+		segments.length === 1
+			? `${chains[0]};[s0]copy[outv]`
+			: `${chains.join(';')};${stitchParts.join(';')}`;
 	await exec('ffmpeg', [
 		'-y',
 		'-i',

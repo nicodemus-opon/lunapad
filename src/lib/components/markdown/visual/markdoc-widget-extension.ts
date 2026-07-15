@@ -9,6 +9,9 @@ import { reactiveProps } from './reactive-props.svelte';
 export interface MarkdocWidgetExtensionContext {
 	getCells: () => Cell[];
 	getNotebookId: () => string;
+	/** Subscribe to external cell-data changes — see the same field on
+	 * MarkdocContainerExtensionContext for why this is needed. */
+	onCellsRefresh?: (fn: () => void) => () => void;
 }
 
 export const MarkdocWidgetExtension = Node.create({
@@ -109,6 +112,10 @@ export const MarkdocWidgetExtension = Node.create({
 
 			const component = mount(InlineWidgetNodeView, { target: dom, props });
 
+			const unsubscribeCellsRefresh = ctx?.onCellsRefresh?.(() => {
+				props.cells = ctx?.getCells() ?? [];
+			});
+
 			return {
 				dom,
 				update(updatedNode) {
@@ -122,6 +129,7 @@ export const MarkdocWidgetExtension = Node.create({
 				},
 				destroy() {
 					unmount(component);
+					unsubscribeCellsRefresh?.();
 				},
 				selectNode() {
 					props.selected = true;

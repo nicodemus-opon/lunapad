@@ -659,8 +659,14 @@ function narrativeNodesFromSource(source: string, schema: Schema): PMNodeJSON[] 
 	return injectExpressionsInNodes(nodes);
 }
 
-function narrativeNodesToMarkdown(nodes: PMNodeJSON[], schema: Schema): string {
+function narrativeNodesToMarkdown(nodes: PMNodeJSON[]): string {
 	if (!nodes.length) return '';
+	// tiptapNodeJsonToPm always renames node/mark types to the markdoc-pm schema's
+	// naming (e.g. Tiptap's "bold" mark -> "strong"), so the fragment must always be
+	// rebuilt against getMarkdocPmSchema() here — not whatever schema the caller was
+	// otherwise working with (e.g. a live editor's Tiptap schema, which has no "strong"
+	// mark and throws on nodeFromJSON).
+	const schema = getMarkdocPmSchema();
 	const fragment = nodes.map((n) => schema.nodeFromJSON(tiptapNodeJsonToPm(n)));
 	const doc = schema.nodes.doc.create(null, fragment);
 	return getMarkdownSerializer().serialize(doc).trimEnd();
@@ -744,8 +750,13 @@ function serializeTextNodeWithMarks(node: PMNodeJSON, schema: Schema): string {
 	const trailing = raw.match(/[ \t]+$/)?.[0] ?? '';
 	const core = raw.slice(leading.length, raw.length - trailing.length);
 	if (!core) return raw;
-	const para = schema.nodes.doc.create(null, [
-		schema.nodeFromJSON(
+	// Same reasoning as narrativeNodesToMarkdown: tiptapNodeJsonToPm always renames
+	// marks to the markdoc-pm schema's naming, so this must always deserialize
+	// against getMarkdocPmSchema() — not the `schema` param, which for a live editor
+	// node is the Tiptap schema (no "strong"/"em"/etc. mark names) and throws.
+	const pmSchema = getMarkdocPmSchema();
+	const para = pmSchema.nodes.doc.create(null, [
+		pmSchema.nodeFromJSON(
 			tiptapNodeJsonToPm({
 				type: 'paragraph',
 				content: [{ ...node, text: core }]
@@ -1041,7 +1052,7 @@ function serializeTiptapNode(node: PMNodeJSON, schema: Schema): string {
 	if (node.type === 'horizontalRule') {
 		return '---';
 	}
-	return narrativeNodesToMarkdown([node], schema);
+	return narrativeNodesToMarkdown([node]);
 }
 
 export function serializePmNodeToMarkdown(node: PMNode | PMNodeJSON): string {

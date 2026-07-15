@@ -30,6 +30,7 @@
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import { buildNotionEditorExtensions } from './notion-editor-extensions';
+	import { createRefreshBus } from './nodeview-refresh-bus';
 	import {
 		syncMarkdocNodeSelection,
 		patchMarkdocNodeSelection,
@@ -55,6 +56,8 @@
 	}
 
 	const { value, onchange, cells, notebookId = '', refEntries = [] }: Props = $props();
+
+	const refreshBus = createRefreshBus();
 
 	let editorMount = $state<HTMLDivElement | null>(null);
 	let editor = $state<TipTapEditor | null>(null);
@@ -498,6 +501,7 @@
 				extensions: buildNotionEditorExtensions({
 					getCells: () => cells,
 					getNotebookId: () => notebookId,
+					onCellsRefresh: refreshBus.register,
 					refEntries: () => refEntries,
 					bubbleMenuElement: bubbleHost,
 					bubbleMenuGate: bubbleGate,
@@ -694,6 +698,21 @@
 			syncSelection(editor);
 			bubbleVisible = false;
 		});
+	});
+
+	// Query/python cell results live outside the document (setContent above only
+	// fires on markdown text changes), so each/group loop previews, live widget
+	// data, and orphaned-filter badges need their own poke when a cell finishes
+	// running. Depend on a primitive signature (not `cells` itself, and not raw
+	// property reads inside the effect body) so a parent re-render that hands
+	// down a new `cells` array reference — without anything actually changing —
+	// can't refire this and cascade into a self-sustaining update loop.
+	const cellsResultSignature = $derived(
+		cells.map((c) => `${c.id}:${c.status}:${c.needsRun ? 1 : 0}:${c.lastRunAt ?? 0}`).join('|')
+	);
+	$effect(() => {
+		void cellsResultSignature;
+		untrack(() => refreshBus.notify());
 	});
 </script>
 

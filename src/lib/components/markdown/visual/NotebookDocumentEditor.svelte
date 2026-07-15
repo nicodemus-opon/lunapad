@@ -24,6 +24,7 @@
 		getNotebooks
 	} from '$lib/stores/notebook.svelte';
 	import { buildNotebookDocumentExtensions } from './notebook-document-extensions';
+	import { createRefreshBus } from './nodeview-refresh-bus';
 	import { clampMenuPosition, handleMenuKeyDown } from './menu-utils';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import NodeConfigPopover from './NodeConfigPopover.svelte';
@@ -58,6 +59,8 @@
 	}
 
 	const { notebookId, cells, dark = false, reportView = false, refEntries = [] }: Props = $props();
+
+	const refreshBus = createRefreshBus();
 
 	let editorMount = $state<HTMLDivElement | null>(null);
 	let editor = $state<TipTapEditor | null>(null);
@@ -552,6 +555,7 @@
 				extensions: buildNotebookDocumentExtensions({
 					getCells: () => cells,
 					getNotebookId: () => notebookId,
+					onCellsRefresh: refreshBus.register,
 					reportView: () => reportView,
 					refEntries: () => refEntries,
 					bubbleMenuElement: bubbleHost,
@@ -852,6 +856,22 @@
 			}
 			reconcileFromCells(c);
 		});
+	});
+
+	// reconcileFromCells above only rebuilds the doc when its *serialized structure*
+	// changes — query results never touch that JSON (they're not persisted document
+	// content), so it silently no-ops when a cell finishes running. Each/group loop
+	// previews, live widget data, and orphaned-filter badges need a separate poke.
+	// Depend on a primitive signature (not `cells` itself, and not raw property
+	// reads inside the effect body) so a parent re-render that hands down a new
+	// `cells` array reference — without anything actually changing — can't refire
+	// this and cascade into a self-sustaining update loop.
+	const cellsResultSignature = $derived(
+		cells.map((c) => `${c.id}:${c.status}:${c.needsRun ? 1 : 0}:${c.lastRunAt ?? 0}`).join('|')
+	);
+	$effect(() => {
+		void cellsResultSignature;
+		untrack(() => refreshBus.notify());
 	});
 </script>
 
