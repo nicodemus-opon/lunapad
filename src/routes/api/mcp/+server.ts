@@ -28,7 +28,11 @@ async function handle({
 	const server = createLunapadMcpServer({
 		user: userFromLocals(locals.user),
 		apiKeyId: locals.apiKeyId,
-		apiKeyScopes: locals.apiKeyScopes
+		apiKeyScopes: locals.apiKeyScopes,
+		tenant: locals.organization
+			? { orgId: locals.organization.id, projectId: locals.project?.id }
+			: undefined,
+		entitlements: locals.entitlements
 	});
 	const transport = new WebStandardStreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,

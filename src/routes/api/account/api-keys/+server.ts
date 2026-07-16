@@ -11,7 +11,7 @@ interface CreateApiKeyRequest {
 
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
-	const keys = await listApiKeys(locals.user.id);
+	const keys = await listApiKeys(locals.user.id, locals.organization?.id);
 	return json({ keys });
 };
 
@@ -43,7 +43,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			scopes = body.scopes.length > 0 ? body.scopes : null;
 		}
 
-		const { record, fullKey } = await createApiKey(locals.user.id, name, expiresAt, scopes);
+		const { record, fullKey } = await createApiKey(locals.user.id, name, expiresAt, scopes, {
+			orgId: locals.organization?.id,
+			projectId: locals.project?.id
+		});
 		return json({ key: record, fullKey });
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });

@@ -13,17 +13,21 @@ interface TestConnectionRequest {
 	secret?: ConnectionSecret;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const body = (await request.json()) as Partial<TestConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
 
-		const savedConnection = await getConnectionMetadata(body.connection.id);
+		const savedConnection = await getConnectionMetadata(
+			body.connection.id,
+			locals.organization?.id
+		);
 		const connection = savedConnection ?? body.connection;
-		const secret = body.secret ?? (await getSecret(connection.id)) ?? undefined;
-		const result = await testExternalConnection(connection, secret);
+		const secret =
+			body.secret ?? (await getSecret(connection.id, locals.organization?.id)) ?? undefined;
+		const result = await testExternalConnection(connection, secret, locals.organization?.id);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to test connection.';

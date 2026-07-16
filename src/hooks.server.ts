@@ -1,4 +1,5 @@
 import { json, type Handle } from '@sveltejs/kit';
+import crypto from 'node:crypto';
 import { building } from '$app/environment';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { setCurrentFolder } from '$lib/server/dbt-schedules';
@@ -18,8 +19,20 @@ import {
 	type PermissionAction
 } from '$lib/server/permissions';
 import { startShareRefreshWorker } from '$lib/server/share-refresh-worker';
+import { startTrinoCatalogReconciler } from '$lib/server/trino-reconcile-worker';
+import {
+	createOrganizationForUser,
+	deploymentMode,
+	ensureDefaultTenant,
+	ensureTenantTablesOnce,
+	entitlementsForPlan,
+	resolveTenantContext
+} from '$lib/server/tenancy';
+import { query } from '$lib/server/db';
+import { getSetupStatus } from '$lib/server/onboarding';
 
 startShareRefreshWorker();
+startTrinoCatalogReconciler();
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -56,8 +69,10 @@ const authDisabled = testAuthDisabled || DEMO_MODE;
 const PUBLIC_PREFIXES = [
 	'/api/auth',
 	'/api/setup',
+	'/api/signup',
 	'/api/inngest',
 	'/api/health',
+	'/api/jobs/worker',
 	'/login',
 	'/setup',
 	'/invite',
@@ -66,7 +81,11 @@ const PUBLIC_PREFIXES = [
 ];
 // The live-cell run endpoint a published report's page calls client-side — same
 // public-by-default, per-report-gated reasoning as /r and /s above.
-const PUBLIC_PATH_PATTERNS = [/^\/api\/shares\/[^/]+\/run$/];
+const PUBLIC_PATH_PATTERNS = [
+	/^\/api\/shares\/[^/]+\/run$/,
+	/^\/api\/invitations\/[^/]+\/accept$/,
+	/^\/api\/account\/password-reset\/(request|confirm)$/
+];
 // /api/v1 and /api/mcp reach external connections and the dbt CLI exactly like
 // /api/connections and /api/dbt already do — DEMO_MODE exists specifically to close
 // that door, so they must be blocked here too even though they're a separate surface.
@@ -79,7 +98,9 @@ const DEMO_BLOCKED_PREFIXES = [
 	'/api/dbt',
 	'/api/project',
 	'/api/schedules',
+	'/api/jobs',
 	'/api/workspace',
+	'/api/admin',
 	'/admin',
 	'/api/v1',
 	'/api/mcp'
@@ -147,7 +168,10 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 		if (method === 'DELETE' || method === 'PATCH') return 'comments:resolve';
 		return write ? 'comments:write' : 'comments:read';
 	}
-	if (pathname.startsWith('/api/team/users')) return 'comments:read';
+	if (pathname.startsWith('/api/team/users')) return write ? 'admin:manage' : 'comments:read';
+	if (pathname === '/api/orgs') return 'workspace:read';
+	if (pathname.startsWith('/api/orgs/') && pathname.endsWith('/activate')) return 'workspace:read';
+	if (pathname.startsWith('/api/orgs')) return write ? 'admin:manage' : 'workspace:read';
 	if (pathname.startsWith('/api/presence')) return 'comments:read';
 
 	if (pathname.startsWith('/api/ai/authorize-tool')) return 'ai:read';
@@ -157,6 +181,8 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 	if (pathname.startsWith('/api/llm')) return 'ai:mutate';
 
 	if (pathname.startsWith('/api/schedules')) return 'dbt:run';
+	if (pathname.startsWith('/api/jobs')) return write ? 'dbt:run' : 'dbt:read';
+	if (pathname.startsWith('/api/admin')) return 'admin:manage';
 	if (pathname.startsWith('/api/audit')) return 'admin:manage';
 	if (pathname.startsWith('/api/invitations')) return 'admin:manage';
 	if (pathname.startsWith('/api/account')) return null;
@@ -167,10 +193,20 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	const requestId = event.request.headers.get('X-Request-Id') ?? crypto.randomUUID();
+	event.locals.requestId = requestId;
+	const decorateResponse = (response: Response): Response => {
+		response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+		response.headers.set('X-Request-Id', requestId);
+		response.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+		return response;
+	};
 	if (DEMO_MODE && isDemoBlockedPath(event.url.pathname)) {
-		return event.url.pathname.startsWith('/api/')
+		return decorateResponse(
+			event.url.pathname.startsWith('/api/')
 			? json({ error: 'Not available in demo mode' }, { status: 403 })
-			: new Response('Not available in demo mode', { status: 403 });
+			: new Response('Not available in demo mode', { status: 403 })
+		);
 	}
 
 	if (authDisabled) {
@@ -184,18 +220,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 					name: 'Local Dev',
 					email: 'local-dev@localhost'
 				};
-				return json({
-					user,
-					session: {
-						id: 'local-dev-session',
-						userId: user.id,
-						expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-						createdAt: new Date().toISOString(),
-						updatedAt: new Date().toISOString()
-					}
-				});
+				return decorateResponse(
+					json({
+						user,
+						session: {
+							id: 'local-dev-session',
+							userId: user.id,
+							expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+							createdAt: new Date().toISOString(),
+							updatedAt: new Date().toISOString()
+						}
+					})
+				);
 			}
-			return json({ user: null, session: null });
+			return decorateResponse(json({ user: null, session: null }));
 		}
 
 		// DISABLE_AUTH (dev/e2e) means "act as a fully-authorized user". Without a synthetic
@@ -213,12 +251,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.session = null;
 			event.locals.apiKeyId = null;
 			event.locals.apiKeyScopes = null;
+			const tenant = await ensureDefaultTenant();
+			event.locals.organization = tenant.organization;
+			event.locals.project = tenant.project;
+			event.locals.membership = {
+				orgId: tenant.organization.id,
+				userId: 'local-dev',
+				role: 'admin',
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString()
+			};
+			event.locals.entitlements = entitlementsForPlan(tenant.organization.plan);
 		}
-		return resolve(event);
+		return decorateResponse(await resolve(event));
 	}
 
 	await ensureAuthTablesOnce();
 	await ensureApiKeyTableOnce();
+	await ensureTenantTablesOnce();
 
 	// Email/password sign-up is left enabled in better-auth's own config (disableSignUp
 	// blocks it unconditionally, even from server code — see auth.ts), so it's gated here
@@ -226,8 +276,27 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// completes it is promoted to admin below; from then on only an admin can create
 	// further accounts (via /admin, using the admin plugin's createUser endpoint).
 	const isSignUpAttempt = event.url.pathname === SIGN_UP_PATH && event.request.method === 'POST';
-	if (isSignUpAttempt && (await hasAnyUser())) {
-		return json({ error: 'Sign-up is closed — an admin account already exists.' }, { status: 403 });
+	let signUpProfile: { email?: string; name?: string } | null = null;
+	if (isSignUpAttempt) {
+		try {
+			const body = (await event.request.clone().json()) as { email?: string; name?: string };
+			signUpProfile = {
+				email: typeof body.email === 'string' ? body.email.toLowerCase().trim() : undefined,
+				name: typeof body.name === 'string' ? body.name.trim() : undefined
+			};
+		} catch {
+			signUpProfile = null;
+		}
+	}
+	if (isSignUpAttempt && deploymentMode() === 'self_hosted' && (await hasAnyUser())) {
+		return decorateResponse(
+			json({ error: 'Sign-up is closed — an admin account already exists.' }, { status: 403 })
+		);
+	}
+	if (isSignUpAttempt && deploymentMode() === 'cloud') {
+		return decorateResponse(
+			json({ error: 'Use /api/signup so workspace setup is created atomically.' }, { status: 403 })
+		);
 	}
 
 	const session = await auth.api.getSession({ headers: event.request.headers });
@@ -235,6 +304,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.session = session?.session ?? null;
 	event.locals.apiKeyId = null;
 	event.locals.apiKeyScopes = null;
+	event.locals.organization = null;
+	event.locals.project = null;
+	event.locals.membership = null;
+	event.locals.entitlements = null;
 
 	if (event.locals.user && isUserBanned(event.locals.user)) {
 		event.locals.user = null;
@@ -254,60 +327,109 @@ export const handle: Handle = async ({ event, resolve }) => {
 					event.locals.user = user;
 					event.locals.apiKeyId = verified.apiKeyId;
 					event.locals.apiKeyScopes = verified.scopes;
+					const tenant = await resolveTenantContext(user, verified.projectId, verified.orgId);
+					event.locals.organization = tenant.organization;
+					event.locals.project = tenant.project;
+					event.locals.membership = tenant.membership;
+					event.locals.entitlements = tenant.entitlements;
+					event.locals.user.role = tenant.membership.role;
 				}
 			}
+		}
+	}
+
+	if (event.locals.user && !event.locals.organization) {
+		try {
+			const tenant = await resolveTenantContext(
+				event.locals.user,
+				event.cookies.get('lunapad_project_id'),
+				event.cookies.get('lunapad_org_id')
+			);
+			event.locals.organization = tenant.organization;
+			event.locals.project = tenant.project;
+			event.locals.membership = tenant.membership;
+			event.locals.entitlements = tenant.entitlements;
+			event.locals.user.role = tenant.membership.role;
+		} catch {
+			event.locals.user = null;
+			event.locals.session = null;
+			event.locals.apiKeyId = null;
+			event.locals.apiKeyScopes = null;
+			event.locals.organization = null;
+			event.locals.project = null;
+			event.locals.membership = null;
+			event.locals.entitlements = null;
 		}
 	}
 
 	const path = event.url.pathname;
 	if (!event.locals.user && !isPublicPath(path)) {
 		if (path.startsWith('/api/')) {
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return decorateResponse(json({ error: 'Unauthorized' }, { status: 401 }));
 		}
-		// No account exists yet (fresh instance) — send to /setup instead of /login,
-		// since /login has no signup form and no link to /setup.
-		if (!(await hasAnyUser())) {
-			return new Response(null, { status: 303, headers: { location: '/setup' } });
+		// Fresh or repairable setup goes to /setup instead of /login. A user without
+		// tenant rows cannot log into the product until setup repairs the workspace.
+		const setupStatus = await getSetupStatus();
+		if (setupStatus.mode !== 'closed') {
+			return decorateResponse(new Response(null, { status: 303, headers: { location: '/setup' } }));
 		}
 		const redirectTo = encodeURIComponent(path + event.url.search);
-		return new Response(null, {
-			status: 303,
-			headers: { location: `/login?redirectTo=${redirectTo}` }
-		});
+		return decorateResponse(
+			new Response(null, {
+				status: 303,
+				headers: { location: `/login?redirectTo=${redirectTo}` }
+			})
+		);
 	}
 
 	if (path.startsWith('/admin') && event.locals.user?.role !== 'admin') {
-		return new Response('Forbidden', { status: 403 });
+		return decorateResponse(new Response('Forbidden', { status: 403 }));
 	}
 
 	const requiredPermission = routePermission(path, event.request.method);
 	if (requiredPermission) {
 		const user = userFromLocals(event.locals.user);
 		if (!can(user, requiredPermission)) {
-			return json({ error: 'Forbidden' }, { status: 403 });
+			return decorateResponse(json({ error: 'Forbidden' }, { status: 403 }));
 		}
 		// Scope restriction only applies to requests actually authenticated via a bearer
 		// API key (apiKeyId set by the fallback path above) — a normal session-cookie
 		// login always has apiKeyScopes === null too, and must NOT be scope-limited by
 		// that; it's gated by role (can()) alone, same as before scopes existed.
 		if (event.locals.apiKeyId && !hasApiScope(event.locals.apiKeyScopes, requiredPermission)) {
-			return json(
-				{ error: 'Forbidden: API key scope does not allow this action' },
-				{ status: 403 }
+			return decorateResponse(
+				json(
+					{ error: 'Forbidden: API key scope does not allow this action' },
+					{ status: 403 }
+				)
 			);
 		}
 	}
 
 	const response = await svelteKitHandler({ event, resolve, auth, building });
 
-	if (isSignUpAttempt && response.status === 200) {
-		await promoteSoleUserToAdmin();
+	if (isSignUpAttempt && deploymentMode() === 'self_hosted' && response.status >= 200 && response.status < 300) {
+		if (deploymentMode() === 'self_hosted') {
+			await promoteSoleUserToAdmin();
+		}
+		if (signUpProfile?.email) {
+			const rows = await query<{ id: string; name: string; email: string }>(
+				`SELECT id, name, email FROM "user" WHERE lower(email) = $1 ORDER BY "createdAt" DESC LIMIT 1`,
+				[signUpProfile.email]
+			);
+			const user = rows[0];
+			if (user) {
+				await createOrganizationForUser({
+					userId: user.id,
+					userName: signUpProfile.name || user.name,
+					email: user.email
+				});
+			}
+		}
 	}
 
-	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 	// 'credentialless' (like require-corp) enables crossOriginIsolated/SharedArrayBuffer
 	// but does NOT require CORP headers on same-origin resources (require-corp does, which
 	// blocks Workers served as static files from sirv that bypasses this hook).
-	response.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
-	return response;
+	return decorateResponse(response);
 };

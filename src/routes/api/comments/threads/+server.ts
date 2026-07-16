@@ -12,6 +12,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 	await ensureCommentsTablesOnce();
 	const threads = await listThreads({
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id,
 		notebookId: url.searchParams.get('notebookId'),
 		cellId: url.searchParams.get('cellId'),
 		shareToken: url.searchParams.get('shareToken'),
@@ -34,6 +36,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'anchorType and body are required' }, { status: 400 });
 	}
 	const result = await createThread({
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id,
 		anchorType,
 		anchorKey,
 		body: text,
@@ -43,6 +47,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	});
 	await logAuditEvent({
 		actorId: locals.user.id,
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id,
 		action: 'comment.thread_created',
 		resourceType: 'comment_thread',
 		resourceId: result.thread.id,

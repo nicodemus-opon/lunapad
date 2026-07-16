@@ -8,6 +8,8 @@ import { createApiKey, listApiKeys, revokeApiKey, verifyApiKey, getUserById } fr
 interface FakeApiKeyRow {
 	id: string;
 	userId: string;
+	orgId: string | null;
+	projectId: string | null;
 	name: string;
 	keyHash: string;
 	prefix: string;
@@ -15,6 +17,7 @@ interface FakeApiKeyRow {
 	lastUsedAt: string | null;
 	expiresAt: string | null;
 	revokedAt: string | null;
+	scopes: string[] | null;
 }
 
 interface FakeUserRow {
@@ -57,35 +60,67 @@ beforeEach(() => {
 	queryMock.mockReset();
 	queryMock.mockImplementation(async (sql: string, params: unknown[] = []) => {
 		if (sql.includes('CREATE TABLE') || sql.includes('CREATE INDEX')) return [];
+		if (sql.includes('ALTER TABLE')) return [];
+		if (sql.includes('UPDATE "apiKey" SET "orgId"')) return [];
+		if (sql.includes('INSERT INTO organizations')) {
+			return [
+				{
+					id: 'default',
+					name: 'Default organization',
+					slug: 'default',
+					plan: 'team',
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString()
+				}
+			];
+		}
+		if (sql.includes('INSERT INTO projects')) {
+			return [
+				{
+					id: 'default',
+					org_id: 'default',
+					name: 'Default project',
+					slug: 'default',
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString()
+				}
+			];
+		}
 
 		if (sql.includes('INSERT INTO "apiKey"')) {
-			const [id, userId, name, keyHash, prefix, expiresAt] = params as [
+			const [id, userId, orgId, projectId, name, keyHash, prefix, expiresAt, scopes] = params as [
 				string,
 				string,
 				string,
 				string,
 				string,
-				Date | null
+				string,
+				string,
+				Date | null,
+				string[] | null
 			];
 			const row: FakeApiKeyRow = {
 				id,
 				userId,
+				orgId,
+				projectId,
 				name,
 				keyHash,
 				prefix,
 				createdAt: new Date().toISOString(),
 				lastUsedAt: null,
 				expiresAt: expiresAt ? expiresAt.toISOString() : null,
-				revokedAt: null
+				revokedAt: null,
+				scopes
 			};
 			apiKeyRows.push(row);
 			return [row];
 		}
 
-		if (sql.includes('FROM "apiKey" WHERE "userId" = $1 ORDER BY')) {
-			const [userId] = params as [string];
+		if (sql.includes('FROM "apiKey" WHERE "userId" = $1 AND "orgId" = $2')) {
+			const [userId, orgId] = params as [string, string];
 			return apiKeyRows
-				.filter((r) => r.userId === userId)
+				.filter((r) => r.userId === userId && r.orgId === orgId)
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 		}
 
@@ -95,9 +130,9 @@ beforeEach(() => {
 		}
 
 		if (sql.includes('UPDATE "apiKey" SET "revokedAt"')) {
-			const [keyId, userId] = params as [string, string];
+			const [keyId, userId, orgId] = params as [string, string, string];
 			for (const r of apiKeyRows) {
-				if (r.id === keyId && r.userId === userId && !r.revokedAt) {
+				if (r.id === keyId && r.userId === userId && r.orgId === orgId && !r.revokedAt) {
 					r.revokedAt = new Date().toISOString();
 				}
 			}
@@ -144,7 +179,13 @@ describe('verifyApiKey', () => {
 	it('returns userId + apiKeyId for a freshly created key', async () => {
 		const { record, fullKey } = await createApiKey('user-1', 'test key');
 		const verified = await verifyApiKey(fullKey);
-		expect(verified).toEqual({ userId: 'user-1', apiKeyId: record.id });
+		expect(verified).toEqual({
+			userId: 'user-1',
+			apiKeyId: record.id,
+			scopes: null,
+			orgId: 'default',
+			projectId: 'default'
+		});
 	});
 
 	it('returns null for a garbage string', async () => {
@@ -213,7 +254,7 @@ describe('listApiKeys', () => {
 
 describe('getUserById', () => {
 	it('returns the user row', async () => {
-		expect(await getUserById('user-1')).toEqual(makeUserRow());
+		expect(await getUserById('user-1')).toEqual(userRows[0]);
 	});
 
 	it('returns null for an unknown user', async () => {

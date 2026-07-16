@@ -74,17 +74,9 @@ ORDER BY month`;
 
 export const beats = [
 	// ---------------------------------------------------------------- intro
-	{
-		id: 'title',
-		chapter: 'intro',
-		modes: ['fast', 'full'],
-		pace: 'normal',
-		async run({ o }) {
-			await o.titleCard('Notebooks, not boilerplate SQL', 'PRQL or SQL, your call');
-			await o.pause(2600);
-			await o.hideTitleCard();
-		}
-	},
+	// No full-screen title card — it's unreadable in practice: a full-screen takeover with
+	// no other reference point on screen makes the kinetic text feel like it flashes rather
+	// than reads. Content starts directly on the first real action.
 	{
 		id: 'template-gallery',
 		chapter: 'intro',
@@ -167,12 +159,17 @@ export const beats = [
 		outcome: true,
 		async run({ a, o, holdMs }) {
 			await o.caption('Same result, different lenses: Stats → Table → Chart');
-			const rect = await a.cellFocusRect('orders');
-			await a.switchResultView('orders', 'stats');
+			// Not `orders`: it's raw, unaggregated rows with no chart config in the demo
+			// notebook (its intended view is Stats — the notebook's own closing markdown
+			// says so), so its "Chart" tab falls back to a naive default that renders as a
+			// meaningless tangle of connecting lines across 1000+ random rows. monthly_revenue
+			// is aggregated and has a real, deliberately-configured area chart.
+			const rect = await a.cellFocusRect('monthly_revenue');
+			await a.switchResultView('monthly_revenue', 'stats');
 			await o.pause(INTER_ACTION_MS);
-			await a.switchResultView('orders', 'table');
+			await a.switchResultView('monthly_revenue', 'table');
 			await o.pause(INTER_ACTION_MS);
-			await a.switchResultView('orders', 'chart');
+			await a.switchResultView('monthly_revenue', 'chart');
 			await o.pause(trailingMs(holdMs, 2));
 			return rect;
 		}
@@ -349,6 +346,10 @@ export const beats = [
 			await o.pause(INTER_ACTION_MS);
 			await a.sendAiPrompt('Add month-over-month percent change to growth_analysis');
 			await o.pause(trailingMs(holdMs, 1));
+			// openAiPanel toggles the panel — without closing it here, it stays docked open
+			// (cluttering the frame) through every beat that follows: review-inbox, share,
+			// sites, dbt.
+			await a.openAiPanel();
 			return null;
 		}
 	},
@@ -446,18 +447,9 @@ export const beats = [
 			await o.pause(trailingMs(holdMs));
 			return null;
 		}
-	},
-	{
-		id: 'end-card',
-		chapter: 'closing',
-		modes: ['fast', 'full'],
-		pace: 'normal',
-		async run({ o }) {
-			await o.titleCard('Lunapad', 'SQL notebooks → live dashboards → shared reports');
-			await o.pause(2800);
-			return null;
-		}
 	}
+	// No full-screen end card, same reasoning as the removed intro title card — the video
+	// just ends on the settled report view.
 ];
 
 export function beatsFor(mode, chapter) {

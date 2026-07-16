@@ -32,6 +32,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			try {
 				await logAuditEvent({
 					actorId: locals.user.id,
+					orgId: locals.organization?.id,
+					projectId: locals.project?.id,
 					action: `ai.tool.${ev.tool}`,
 					resourceType: 'ai_session',
 					resourceId: ev.sessionId,

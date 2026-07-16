@@ -1,11 +1,20 @@
 import { query } from './db.js';
+import {
+	DEFAULT_ORG_ID,
+	DEFAULT_PROJECT_ID,
+	ensureDefaultTenant,
+	type TenantRef
+} from './tenancy.js';
 
 let tableReady: Promise<void> | null = null;
 
 async function ensureTable(): Promise<void> {
+	await ensureDefaultTenant();
 	await query(`
 		CREATE TABLE IF NOT EXISTS agent_sessions (
 			id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			org_id        TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}',
+			project_id    TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}',
 			user_id       TEXT NOT NULL,
 			status        TEXT NOT NULL DEFAULT 'active',
 			mode          TEXT NOT NULL DEFAULT 'investigation',
@@ -17,7 +26,16 @@ async function ensureTable(): Promise<void> {
 		)
 	`);
 	await query(
+		`ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}'`
+	);
+	await query(
+		`ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS project_id TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}'`
+	);
+	await query(
 		`CREATE INDEX IF NOT EXISTS agent_sessions_user_id_idx ON agent_sessions (user_id, created_at DESC)`
+	);
+	await query(
+		`CREATE INDEX IF NOT EXISTS agent_sessions_tenant_idx ON agent_sessions (org_id, project_id, created_at DESC)`
 	);
 }
 
@@ -28,6 +46,8 @@ function ensureOnce(): Promise<void> {
 
 export interface AgentSession {
 	id: string;
+	orgId: string;
+	projectId: string;
 	userId: string;
 	status: 'active' | 'completed' | 'failed' | 'cancelled';
 	mode: 'investigation' | 'full';
@@ -39,6 +59,7 @@ export interface AgentSession {
 }
 
 export async function createAgentSession(input: {
+	tenant?: TenantRef | null;
 	userId: string;
 	mode?: 'investigation' | 'full';
 	prompt?: string;
@@ -47,6 +68,8 @@ export async function createAgentSession(input: {
 	await ensureOnce();
 	const rows = await query<{
 		id: string;
+		org_id: string;
+		project_id: string;
 		user_id: string;
 		status: string;
 		mode: string;
@@ -56,10 +79,12 @@ export async function createAgentSession(input: {
 		created_at: string;
 		updated_at: string;
 	}>(
-		`INSERT INTO agent_sessions (user_id, mode, messages, metadata)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, user_id, status, mode, fsm_state, messages, metadata, created_at, updated_at`,
+		`INSERT INTO agent_sessions (org_id, project_id, user_id, mode, messages, metadata)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, org_id, project_id, user_id, status, mode, fsm_state, messages, metadata, created_at, updated_at`,
 		[
+			input.tenant?.orgId ?? DEFAULT_ORG_ID,
+			input.tenant?.projectId ?? DEFAULT_PROJECT_ID,
 			input.userId,
 			input.mode ?? 'investigation',
 			JSON.stringify(input.prompt ? [{ role: 'user', content: input.prompt, at: Date.now() }] : []),
@@ -69,10 +94,16 @@ export async function createAgentSession(input: {
 	return mapRow(rows[0]);
 }
 
-export async function getAgentSession(id: string, userId: string): Promise<AgentSession | null> {
+export async function getAgentSession(
+	id: string,
+	userId: string,
+	tenant?: TenantRef | null
+): Promise<AgentSession | null> {
 	await ensureOnce();
 	const rows = await query<{
 		id: string;
+		org_id: string;
+		project_id: string;
 		user_id: string;
 		status: string;
 		mode: string;
@@ -82,9 +113,10 @@ export async function getAgentSession(id: string, userId: string): Promise<Agent
 		created_at: string;
 		updated_at: string;
 	}>(
-		`SELECT id, user_id, status, mode, fsm_state, messages, metadata, created_at, updated_at
-		 FROM agent_sessions WHERE id = $1 AND user_id = $2`,
-		[id, userId]
+		`SELECT id, org_id, project_id, user_id, status, mode, fsm_state, messages, metadata, created_at, updated_at
+		 FROM agent_sessions
+		 WHERE id = $1 AND user_id = $2 AND org_id = $3 AND project_id = $4`,
+		[id, userId, tenant?.orgId ?? DEFAULT_ORG_ID, tenant?.projectId ?? DEFAULT_PROJECT_ID]
 	);
 	return rows[0] ? mapRow(rows[0]) : null;
 }
@@ -150,6 +182,8 @@ export function completeBridgeWait(
 
 function mapRow(r: {
 	id: string;
+	org_id: string;
+	project_id: string;
 	user_id: string;
 	status: string;
 	mode: string;
@@ -161,6 +195,8 @@ function mapRow(r: {
 }): AgentSession {
 	return {
 		id: r.id,
+		orgId: r.org_id ?? DEFAULT_ORG_ID,
+		projectId: r.project_id ?? DEFAULT_PROJECT_ID,
 		userId: r.user_id,
 		status: r.status as AgentSession['status'],
 		mode: r.mode as AgentSession['mode'],

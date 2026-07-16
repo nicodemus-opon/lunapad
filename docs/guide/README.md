@@ -21,6 +21,8 @@ On a shared deployment, everyone with an account sees the same notebooks, connec
 11. [Self-hosting](11-self-hosting.md): Docker Compose, environment variables, backups, roles
 12. [FAQ and troubleshooting](12-faq-troubleshooting.md)
 13. [Comments and review](13-comments-and-review.md): threads, inbox, team review on cells and shares
+14. [Lunapad Cloud](14-cloud.md): open-source hosted SaaS mode, tenant model, and operator notes
+15. [Cloud hardening ledger](15-cloud-hardening.md): correctness invariants for hosted mode
 
 ## Fastest path
 

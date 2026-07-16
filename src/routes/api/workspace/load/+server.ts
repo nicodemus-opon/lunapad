@@ -2,9 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { loadWorkspaceState, resolveWorkspaceUpdatedBy } from '$lib/server/workspace-store';
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const row = await loadWorkspaceState();
+		const row = await loadWorkspaceState(locals.project?.id);
 		return json({
 			data: row?.data ?? null,
 			updatedAt: row?.updatedAt ?? null,

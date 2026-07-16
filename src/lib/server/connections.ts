@@ -13,6 +13,15 @@ import type {
 	MySQLDataSource,
 	PostgresConnection
 } from '$lib/types/connection';
+import {
+	forTrino,
+	physicalCatalogPrefixFor,
+	rewriteTenantCatalogReferences,
+	tenantTrinoUser,
+	type ExternalConnection
+} from './trino-catalog-isolation.js';
+import { listConnectionsMetadata } from './connections-store.js';
+import { getSecret } from './connection-secrets.js';
 
 // Service-account JSON credentials are shared across all Google-auth connectors
 // (Google Sheets, BigQuery) — each gets its own file, named by suffix, alongside
@@ -49,6 +58,26 @@ async function writeServiceAccountCredentialsFile(
 export type ExternalMaterializationMode = 'table' | 'view' | 'incremental';
 export type ExternalRelationType = 'table' | 'view';
 
+export interface TrinoCatalogSyncStatus {
+	connectionId: string;
+	sourceAlias: string;
+	physicalCatalogName: string;
+	status: 'registered' | 'skipped' | 'failed';
+	message?: string;
+}
+
+export interface TrinoCatalogStatus {
+	connectionId: string;
+	sourceAlias: string;
+	physicalCatalogName: string;
+	trinoUser: string;
+	catalogFile: string | null;
+	catalogFileExists: boolean;
+	accessControlConfigured: boolean;
+	status: 'ready' | 'registering' | 'failed';
+	message?: string;
+}
+
 interface SchemaTable {
 	name: string;
 	schema?: string;
@@ -78,6 +107,115 @@ const TRINO_URL = (process.env.TRINO_URL ?? 'http://trino:8080').replace(/\/$/, 
 // Read at call time (not module init) so tests can override via process.env.
 const getCatalogDir = () => process.env.TRINO_CATALOG_DIR;
 
+const TRINO_ACCESS_CONTROL_FILE = 'lunapad-access-control.json';
+
+type TrinoAccessRuleSet = {
+	catalogs: Array<{ user?: string; catalog?: string; allow: 'all' | 'read-only' | 'none' }>;
+	schemas: Array<{ user?: string; catalog?: string; owner: boolean }>;
+	tables: Array<{
+		user?: string;
+		catalog?: string;
+		privileges: Array<'SELECT' | 'INSERT' | 'DELETE' | 'UPDATE' | 'OWNERSHIP'>;
+	}>;
+	queries: Array<{ user?: string; allow: Array<'execute' | 'view' | 'kill'> }>;
+};
+
+function baseTrinoAccessRules(): TrinoAccessRuleSet {
+	return {
+		catalogs: [{ user: 'lunapad', catalog: '.*', allow: 'all' }],
+		schemas: [{ user: 'lunapad', owner: true }],
+		tables: [
+			{
+				user: 'lunapad',
+				privileges: ['SELECT', 'INSERT', 'DELETE', 'UPDATE', 'OWNERSHIP']
+			}
+		],
+		queries: [{ allow: ['execute'] }]
+	};
+}
+
+const accessControlLocks = new Map<string, Promise<void>>();
+
+async function withAccessControlLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+	const previous = accessControlLocks.get(filePath) ?? Promise.resolve();
+	let release!: () => void;
+	const current = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const chained = previous.then(() => current);
+	accessControlLocks.set(filePath, chained);
+	await previous;
+	try {
+		return await fn();
+	} finally {
+		release();
+		if (accessControlLocks.get(filePath) === chained) accessControlLocks.delete(filePath);
+	}
+}
+
+function getTrinoAccessControlPath(catalogDir: string): string {
+	return process.env.TRINO_ACCESS_CONTROL_RULES_FILE ?? path.join(catalogDir, TRINO_ACCESS_CONTROL_FILE);
+}
+
+function normalizeTrinoAccessRules(value: unknown): TrinoAccessRuleSet {
+	const base = baseTrinoAccessRules();
+	if (!value || typeof value !== 'object') return base;
+	const maybe = value as Partial<TrinoAccessRuleSet>;
+	return {
+		catalogs: Array.isArray(maybe.catalogs) ? maybe.catalogs : base.catalogs,
+		schemas: Array.isArray(maybe.schemas) ? maybe.schemas : base.schemas,
+		tables: Array.isArray(maybe.tables) ? maybe.tables : base.tables,
+		queries: Array.isArray(maybe.queries) ? maybe.queries : base.queries
+	};
+}
+
+async function readTrinoAccessRules(filePath: string): Promise<TrinoAccessRuleSet> {
+	try {
+		return normalizeTrinoAccessRules(JSON.parse(await fs.readFile(filePath, 'utf-8')));
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === 'ENOENT') return baseTrinoAccessRules();
+		throw err;
+	}
+}
+
+async function writeTrinoAccessRules(filePath: string, rules: TrinoAccessRuleSet): Promise<void> {
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
+	const tmp = `${filePath}.tmp`;
+	await fs.writeFile(tmp, `${JSON.stringify(rules, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+	await fs.rename(tmp, filePath);
+}
+
+async function ensureTenantTrinoAccess(orgId?: string | null): Promise<void> {
+	if (!orgId) return;
+	const catalogDir = getCatalogDir();
+	if (!catalogDir) return;
+	const filePath = getTrinoAccessControlPath(catalogDir);
+	const user = tenantTrinoUser(orgId);
+	const catalog = `${physicalCatalogPrefixFor(orgId)}.*`;
+
+	await withAccessControlLock(filePath, async () => {
+		const rules = await readTrinoAccessRules(filePath);
+		let changed = false;
+		if (!rules.catalogs.some((rule) => rule.user === user && rule.catalog === catalog)) {
+			rules.catalogs.push({ user, catalog, allow: 'all' });
+			changed = true;
+		}
+		if (!rules.schemas.some((rule) => rule.user === user && rule.catalog === catalog)) {
+			rules.schemas.push({ user, catalog, owner: true });
+			changed = true;
+		}
+		if (!rules.tables.some((rule) => rule.user === user && rule.catalog === catalog)) {
+			rules.tables.push({
+				user,
+				catalog,
+				privileges: ['SELECT', 'INSERT', 'DELETE', 'UPDATE', 'OWNERSHIP']
+			});
+			changed = true;
+		}
+		if (changed) await writeTrinoAccessRules(filePath, rules);
+	});
+}
+
 // ── Trino HTTP client ─────────────────────────────────────────────────────────
 
 interface TrinoColumn {
@@ -96,22 +234,27 @@ interface TrinoResponse {
 interface TrinoRequestOptions {
 	signal?: AbortSignal;
 	session?: string;
+	trinoUser?: string;
 }
 
 function trinoOptsForConnection(
-	connection: Exclude<Connection, DuckDBWASMConnection>
+	connection: Exclude<Connection, DuckDBWASMConnection>,
+	orgId?: string | null
 ): TrinoRequestOptions {
 	const session = catalogTypeMappingSession(connection.catalogName, connection.type);
-	return session ? { session } : {};
+	return {
+		...(session ? { session } : {}),
+		trinoUser: tenantTrinoUser(orgId)
+	};
 }
 
 function buildTrinoHeaders(
 	catalogName?: string,
 	schema?: string,
-	opts?: Pick<TrinoRequestOptions, 'session'>
+	opts?: Pick<TrinoRequestOptions, 'session' | 'trinoUser'>
 ): Record<string, string> {
 	const headers: Record<string, string> = {
-		'X-Trino-User': 'lunapad',
+		'X-Trino-User': opts?.trinoUser ?? 'lunapad',
 		'Content-Type': 'text/plain; charset=utf-8'
 	};
 	if (catalogName) headers['X-Trino-Catalog'] = catalogName;
@@ -438,13 +581,34 @@ function buildCreateCatalogSQL(catalogName: string, spec: CatalogSpec): string {
 	return `CREATE CATALOG ${quoteTrinoIdent(catalogName)} USING ${spec.connectorName} WITH (${withClause})`;
 }
 
+const catalogLocks = new Map<string, Promise<void>>();
+
+async function withCatalogLock<T>(catalogName: string, fn: () => Promise<T>): Promise<T> {
+	const previous = catalogLocks.get(catalogName) ?? Promise.resolve();
+	let release!: () => void;
+	const current = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const chained = previous.then(() => current);
+	catalogLocks.set(catalogName, chained);
+	await previous;
+	try {
+		return await fn();
+	} finally {
+		release();
+		if (catalogLocks.get(catalogName) === chained) catalogLocks.delete(catalogName);
+	}
+}
+
 export async function registerCatalog(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
-	secret: ConnectionSecret | undefined
+	secret: ConnectionSecret | undefined,
+	orgId?: string | null
 ): Promise<void> {
-	if (!/^[a-z][a-z0-9_]{0,63}$/.test(connection.catalogName)) {
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+	if (!/^[a-z][a-z0-9_]{0,63}$/.test(trinoConnection.catalogName)) {
 		throw new Error(
-			`Invalid source ID "${connection.catalogName}". Must start with a lowercase letter and contain only lowercase letters, digits, and underscores (max 64 chars).`
+			`Invalid source ID "${trinoConnection.catalogName}". Must start with a lowercase letter and contain only lowercase letters, digits, and underscores (max 64 chars).`
 		);
 	}
 
@@ -455,21 +619,43 @@ export async function registerCatalog(
 				'Run `docker compose up` to start Trino, then retry.'
 		);
 	}
+	await ensureTenantTrinoAccess(orgId);
 
-	const spec = await buildCatalogSpec(connection, secret, catalogDir);
+	const spec = await buildCatalogSpec(trinoConnection, secret, catalogDir);
 	const fullSpec: CatalogSpec = {
 		...spec,
-		properties: { ...spec.properties, ...catalogTypeMappingProperties(connection.type) }
+		properties: { ...spec.properties, ...catalogTypeMappingProperties(trinoConnection.type) }
 	};
 
-	// DROP + CREATE so edits to an already-registered catalog (host, port, database,
-	// credentials, ...) actually take effect — see comment above.
-	await trinoRequest(buildDropCatalogSQL(connection.catalogName));
-	await trinoRequest(buildCreateCatalogSQL(connection.catalogName, fullSpec));
+	await withCatalogLock(trinoConnection.catalogName, async () => {
+		// DROP + CREATE so edits to an already-registered catalog (host, port, database,
+		// credentials, ...) actually take effect — see comment above.
+		await trinoRequest(buildDropCatalogSQL(trinoConnection.catalogName), undefined, undefined, {
+			trinoUser: tenantTrinoUser(orgId)
+		});
+		await trinoRequest(
+			buildCreateCatalogSQL(trinoConnection.catalogName, fullSpec),
+			undefined,
+			undefined,
+			{
+				trinoUser: tenantTrinoUser(orgId)
+			}
+		);
+	});
 }
 
-export async function unregisterCatalog(catalogName: string): Promise<void> {
-	await trinoRequest(buildDropCatalogSQL(catalogName)).catch(() => {});
+export async function unregisterCatalog(
+	connectionOrCatalogName: string | Exclude<Connection, DuckDBWASMConnection>,
+	orgId?: string | null
+): Promise<void> {
+	const catalogName =
+		typeof connectionOrCatalogName === 'string'
+			? connectionOrCatalogName
+			: (forTrino(connectionOrCatalogName, orgId) as ExternalConnection).catalogName;
+	await ensureTenantTrinoAccess(orgId);
+	await trinoRequest(buildDropCatalogSQL(catalogName), undefined, undefined, {
+		trinoUser: tenantTrinoUser(orgId)
+	}).catch(() => {});
 
 	// Google-auth connectors write service-account credentials alongside the catalog
 	// file — clean up to avoid orphaned secrets sitting on disk after removal.
@@ -483,6 +669,80 @@ export async function unregisterCatalog(catalogName: string): Promise<void> {
 			}
 		}
 	}
+}
+
+export async function reconcileTrinoCatalogs(orgId: string): Promise<TrinoCatalogSyncStatus[]> {
+	const connections = await listConnectionsMetadata(orgId, { includePhysicalCatalogName: true });
+	const statuses: TrinoCatalogSyncStatus[] = [];
+	for (const connection of connections) {
+		if (connection.type === 'duckdb-wasm') continue;
+		const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+		const physicalCatalogName = trinoConnection.catalogName;
+		try {
+			const secret = await getSecret(connection.id, orgId);
+			await registerCatalog(connection, secret ?? undefined, orgId);
+			statuses.push({
+				connectionId: connection.id,
+				sourceAlias: connection.catalogName,
+				physicalCatalogName,
+				status: 'registered'
+			});
+		} catch (err) {
+			statuses.push({
+				connectionId: connection.id,
+				sourceAlias: connection.catalogName,
+				physicalCatalogName,
+				status: 'failed',
+				message: err instanceof Error ? err.message : 'Failed to register catalog.'
+			});
+		}
+	}
+	return statuses;
+}
+
+export async function getTrinoCatalogStatuses(orgId: string): Promise<TrinoCatalogStatus[]> {
+	const connections = await listConnectionsMetadata(orgId, { includePhysicalCatalogName: true });
+	const catalogDir = getCatalogDir();
+	const accessFile = catalogDir ? getTrinoAccessControlPath(catalogDir) : null;
+	const accessRules = accessFile ? await readTrinoAccessRules(accessFile).catch(() => null) : null;
+	const user = tenantTrinoUser(orgId);
+	const prefix = physicalCatalogPrefixFor(orgId);
+	const hasAccessRule = Boolean(
+		accessRules?.catalogs.some((rule) => rule.user === user && rule.catalog === `${prefix}.*`)
+	);
+
+	const statuses: TrinoCatalogStatus[] = [];
+	for (const connection of connections) {
+		if (connection.type === 'duckdb-wasm') continue;
+		const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+		const physicalCatalogName = trinoConnection.catalogName;
+		const catalogFile = catalogDir ? path.join(catalogDir, `${physicalCatalogName}.properties`) : null;
+		const catalogFileExists = catalogFile
+			? await fs
+					.access(catalogFile)
+					.then(() => true)
+					.catch(() => false)
+			: false;
+		const ready = catalogFileExists && hasAccessRule;
+		statuses.push({
+			connectionId: connection.id,
+			sourceAlias: connection.catalogName,
+			physicalCatalogName,
+			trinoUser: user,
+			catalogFile,
+			catalogFileExists,
+			accessControlConfigured: hasAccessRule,
+			status: ready ? 'ready' : catalogFileExists ? 'registering' : 'failed',
+			...(ready
+				? {}
+				: {
+						message: !catalogFileExists
+							? 'Catalog file is missing; reconcile this workspace.'
+							: 'Tenant access-control rule is missing.'
+					})
+		});
+	}
+	return statuses;
 }
 
 // ── SQL validation ────────────────────────────────────────────────────────────
@@ -559,6 +819,7 @@ function defaultSchema(connection: Exclude<Connection, DuckDBWASMConnection>): s
 
 async function getTrinoRelationType(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
+	orgId: string | undefined | null,
 	targetSchema: string,
 	targetName: string
 ): Promise<ExternalRelationType | null> {
@@ -575,7 +836,7 @@ async function getTrinoRelationType(
 			sql,
 			catalogName,
 			targetSchema,
-			trinoOptsForConnection(connection)
+			trinoOptsForConnection(connection, orgId)
 		);
 		const tableType = String(result.rows[0]?.table_type ?? '').toUpperCase();
 		if (tableType === 'VIEW') return 'view';
@@ -588,6 +849,7 @@ async function getTrinoRelationType(
 
 async function materializeTrinoConnection(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
+	orgId: string | undefined | null,
 	targetSchema: string,
 	targetName: string,
 	sql: string,
@@ -597,10 +859,10 @@ async function materializeTrinoConnection(
 	const ident = quoteTrinoPath(catalogName, targetSchema, targetName);
 	const sourceSQL = normalizeMaterializeSQL(sql);
 	const schema = defaultSchema(connection);
-	const trinoOpts = trinoOptsForConnection(connection);
+	const trinoOpts = trinoOptsForConnection(connection, orgId);
 
 	if (mode === 'view') {
-		const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
+		const existingType = await getTrinoRelationType(connection, orgId, targetSchema, targetName);
 		if (existingType === 'table') {
 			await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		}
@@ -614,7 +876,7 @@ async function materializeTrinoConnection(
 	}
 
 	if (mode === 'table') {
-		const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
+		const existingType = await getTrinoRelationType(connection, orgId, targetSchema, targetName);
 		if (existingType === 'view') {
 			await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 		} else if (existingType === 'table') {
@@ -625,7 +887,7 @@ async function materializeTrinoConnection(
 	}
 
 	// incremental
-	const existingType = await getTrinoRelationType(connection, targetSchema, targetName);
+	const existingType = await getTrinoRelationType(connection, orgId, targetSchema, targetName);
 	if (existingType === 'view') {
 		await trinoExec(`DROP VIEW IF EXISTS ${ident}`, catalogName, schema, trinoOpts);
 	}
@@ -653,26 +915,28 @@ function isCatalogNotFoundError(err: unknown): boolean {
 
 export async function testExternalConnection(
 	connection: Connection,
-	secret?: ConnectionSecret
+	secret?: ConnectionSecret,
+	orgId?: string | null
 ): Promise<{ ok: boolean }> {
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(`Connection type '${connection.type}' is not supported.`);
 	}
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
 	// Register (or re-register) the catalog, then verify connectivity.
 	// Use information_schema.schemata instead of SELECT 1 — Trino evaluates
 	// SELECT 1 in the coordinator without touching the connector, so it passes
 	// even when the underlying database is unreachable.
-	await registerCatalog(connection, secret);
+	await registerCatalog(connection, secret, orgId);
 	// Query a real catalog table so Trino must open a JDBC connection to the
 	// underlying database. SELECT 1 is evaluated in the Trino coordinator and
 	// passes even when the database is completely unreachable. We also check
 	// rows.length because an unreachable DB may cause Trino to silently return
 	// 0 rows instead of throwing.
 	const probe = await trinoRequest(
-		`SELECT 1 FROM ${quoteTrinoIdent(connection.catalogName)}.information_schema.schemata LIMIT 1`,
-		connection.catalogName,
-		defaultSchema(connection),
-		trinoOptsForConnection(connection)
+		`SELECT 1 FROM ${quoteTrinoIdent(trinoConnection.catalogName)}.information_schema.schemata LIMIT 1`,
+		trinoConnection.catalogName,
+		defaultSchema(trinoConnection),
+		trinoOptsForConnection(trinoConnection, orgId)
 	);
 	if (probe.rows.length === 0) {
 		throw new Error(
@@ -687,22 +951,37 @@ export async function queryExternalConnection(
 	connection: Connection,
 	secret: ConnectionSecret | undefined,
 	sql: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	orgId?: string | null,
+	availableConnections: Connection[] = [connection]
 ): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(`Connection type '${connection.type}' is not supported.`);
 	}
 	assertReadableSQL(sql);
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+	const rewrittenSql = rewriteTenantCatalogReferences(sql, orgId, availableConnections);
+	await ensureTenantTrinoAccess(orgId);
 	const trinoOpts = {
-		...trinoOptsForConnection(connection),
+		...trinoOptsForConnection(trinoConnection, orgId),
 		signal
 	};
 	try {
-		return await trinoRequest(sql, connection.catalogName, defaultSchema(connection), trinoOpts);
+		return await trinoRequest(
+			rewrittenSql,
+			trinoConnection.catalogName,
+			defaultSchema(trinoConnection),
+			trinoOpts
+		);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
-			await registerCatalog(connection, secret);
-			return trinoRequest(sql, connection.catalogName, defaultSchema(connection), trinoOpts);
+			await registerCatalog(connection, secret, orgId);
+			return trinoRequest(
+				rewrittenSql,
+				trinoConnection.catalogName,
+				defaultSchema(trinoConnection),
+				trinoOpts
+			);
 		}
 		throw err;
 	}
@@ -752,7 +1031,8 @@ function buildCommentPassthroughQuery(connectionType: 'postgres' | 'clickhouse')
 async function fetchCatalogComments(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
 	catalogName: string,
-	connSchema: string
+	connSchema: string,
+	orgId?: string | null
 ): Promise<CatalogComment[]> {
 	if (connection.type !== 'postgres' && connection.type !== 'clickhouse') return [];
 	try {
@@ -762,7 +1042,7 @@ async function fetchCatalogComments(
 			wrapped,
 			catalogName,
 			connSchema,
-			trinoOptsForConnection(connection)
+			trinoOptsForConnection(connection, orgId)
 		);
 		return result.rows
 			.map((row) => ({
@@ -781,13 +1061,16 @@ async function fetchCatalogComments(
 
 export async function fetchExternalConnectionSchema(
 	connection: Connection,
-	secret?: ConnectionSecret
+	secret?: ConnectionSecret,
+	orgId?: string | null
 ): Promise<{ tables: SchemaTable[] }> {
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(`Connection type '${connection.type}' is not supported.`);
 	}
 
-	const catalogName = connection.catalogName;
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+	const catalogName = trinoConnection.catalogName;
+	await ensureTenantTrinoAccess(orgId);
 
 	// Query the catalog's own information_schema instead of system.jdbc.columns.
 	// system.jdbc.columns opens a fresh JDBC connection to the underlying DB which
@@ -799,14 +1082,14 @@ export async function fetchExternalConnectionSchema(
 		 WHERE table_schema NOT IN ('information_schema', 'pg_catalog', '$internal', 'system', 'performance_schema', 'mysql', 'sys')
 		 ORDER BY table_schema, table_name, ordinal_position`;
 
-	const connSchema = defaultSchema(connection as Exclude<Connection, DuckDBWASMConnection>);
-	const trinoOpts = trinoOptsForConnection(connection as Exclude<Connection, DuckDBWASMConnection>);
+	const connSchema = defaultSchema(trinoConnection);
+	const trinoOpts = trinoOptsForConnection(trinoConnection, orgId);
 	let result: Awaited<ReturnType<typeof trinoRequest>>;
 	try {
 		result = await trinoRequest(schemaQuery, catalogName, connSchema, trinoOpts);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
-			await registerCatalog(connection, secret);
+			await registerCatalog(connection, secret, orgId);
 			result = await trinoRequest(schemaQuery, catalogName, connSchema, trinoOpts);
 		} else {
 			throw err;
@@ -838,9 +1121,10 @@ export async function fetchExternalConnectionSchema(
 	}
 
 	const comments = await fetchCatalogComments(
-		connection as Exclude<Connection, DuckDBWASMConnection>,
+		trinoConnection,
 		catalogName,
-		connSchema
+		connSchema,
+		orgId
 	);
 	for (const c of comments) {
 		const key = `${c.schema}.${c.table}`;
@@ -857,9 +1141,10 @@ export async function fetchExternalConnectionSchema(
 	}
 
 	const foreignKeys = await fetchCatalogForeignKeys(
-		connection as Exclude<Connection, DuckDBWASMConnection>,
+		trinoConnection,
 		catalogName,
-		connSchema
+		connSchema,
+		orgId
 	);
 	for (const fk of foreignKeys) {
 		const key = `${fk.schema}.${fk.table}`;
@@ -907,7 +1192,8 @@ function buildForeignKeyPassthroughQuery(connectionType: 'postgres'): string {
 async function fetchCatalogForeignKeys(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
 	catalogName: string,
-	connSchema: string
+	connSchema: string,
+	orgId?: string | null
 ): Promise<CatalogForeignKey[]> {
 	// Real FK metadata only where passthrough to native information_schema works.
 	if (connection.type !== 'postgres') return [];
@@ -918,7 +1204,7 @@ async function fetchCatalogForeignKeys(
 			wrapped,
 			catalogName,
 			connSchema,
-			trinoOptsForConnection(connection)
+			trinoOptsForConnection(connection, orgId)
 		);
 		return result.rows
 			.map((row) => ({
@@ -975,6 +1261,7 @@ function serializeTrinoValue(value: unknown): string {
 
 async function uploadTrinoTable(
 	connection: Exclude<Connection, DuckDBWASMConnection>,
+	orgId: string | undefined | null,
 	targetSchema: string,
 	targetName: string,
 	columns: { name: string; type: string }[],
@@ -987,7 +1274,7 @@ async function uploadTrinoTable(
 		.map((c) => `${quoteTrinoIdent(c.name)} ${duckdbTypeToTrino(c.type)}`)
 		.join(', ');
 	const colNames = columns.map((c) => quoteTrinoIdent(c.name)).join(', ');
-	const trinoOpts = trinoOptsForConnection(connection);
+	const trinoOpts = trinoOptsForConnection(connection, orgId);
 
 	if (mode === 'replace') {
 		await trinoExec(`DROP TABLE IF EXISTS ${ident}`, catalogName, targetSchema, trinoOpts);
@@ -1018,18 +1305,22 @@ export async function uploadToExternalConnection(
 	schema: string | undefined,
 	columns: { name: string; type: string }[],
 	rows: unknown[][],
-	mode: 'replace' | 'append'
+	mode: 'replace' | 'append',
+	orgId?: string | null
 ): Promise<{ rowsInserted: number }> {
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(`Connection type 'duckdb-wasm' is not supported for server-side upload.`);
 	}
 
 	const normalizedName = normalizeExternalRelationName(tableName);
-	const normalizedSchema = normalizeExternalSchemaName(schema ?? defaultSchema(connection));
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+	const normalizedSchema = normalizeExternalSchemaName(schema ?? defaultSchema(trinoConnection));
+	await ensureTenantTrinoAccess(orgId);
 
 	try {
 		return await uploadTrinoTable(
-			connection,
+			trinoConnection,
+			orgId,
 			normalizedSchema,
 			normalizedName,
 			columns,
@@ -1038,8 +1329,16 @@ export async function uploadToExternalConnection(
 		);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
-			await registerCatalog(connection, secret);
-			return uploadTrinoTable(connection, normalizedSchema, normalizedName, columns, rows, mode);
+			await registerCatalog(connection, secret, orgId);
+			return uploadTrinoTable(
+				trinoConnection,
+				orgId,
+				normalizedSchema,
+				normalizedName,
+				columns,
+				rows,
+				mode
+			);
 		}
 		throw err;
 	}
@@ -1051,33 +1350,40 @@ export async function materializeExternalConnection(
 	targetName: string,
 	targetSchema: string | undefined,
 	sql: string,
-	mode: ExternalMaterializationMode
+	mode: ExternalMaterializationMode,
+	orgId?: string | null,
+	availableConnections: Connection[] = [connection]
 ): Promise<{ name: string; type: ExternalRelationType }> {
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(`Connection type '${connection.type}' is not supported.`);
 	}
 
+	const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
+	const rewrittenSql = rewriteTenantCatalogReferences(sql, orgId, availableConnections);
+	await ensureTenantTrinoAccess(orgId);
 	const normalizedTargetName = normalizeExternalRelationName(targetName);
 	const normalizedTargetSchema = normalizeExternalSchemaName(
-		targetSchema ?? defaultSchema(connection)
+		targetSchema ?? defaultSchema(trinoConnection)
 	);
 
 	try {
 		return await materializeTrinoConnection(
-			connection,
+			trinoConnection,
+			orgId,
 			normalizedTargetSchema,
 			normalizedTargetName,
-			sql,
+			rewrittenSql,
 			mode
 		);
 	} catch (err) {
 		if (isCatalogNotFoundError(err)) {
-			await registerCatalog(connection, secret);
+			await registerCatalog(connection, secret, orgId);
 			return materializeTrinoConnection(
-				connection,
+				trinoConnection,
+				orgId,
 				normalizedTargetSchema,
 				normalizedTargetName,
-				sql,
+				rewrittenSql,
 				mode
 			);
 		}

@@ -3,15 +3,22 @@ import type { RequestHandler } from './$types';
 import { deleteComment, editComment, listComments, toggleReaction } from '$lib/server/comments';
 import { can, canEditComment, userFromLocals } from '$lib/server/permissions';
 
-async function getCommentAuthor(commentId: string): Promise<{
+async function getScopedCommentAuthor(
+	commentId: string,
+	tenant: { orgId?: string | null; projectId?: string | null }
+): Promise<{
 	authorId: string;
 	createdAt: string;
 	threadId: string;
 } | null> {
 	const { query } = await import('$lib/server/db.js');
+	const { DEFAULT_ORG_ID, DEFAULT_PROJECT_ID } = await import('$lib/server/tenancy.js');
 	const rows = await query<{ author_id: string; created_at: string; thread_id: string }>(
-		`SELECT author_id, created_at, thread_id FROM comments WHERE id = $1`,
-		[commentId]
+		`SELECT c.author_id, c.created_at, c.thread_id
+		 FROM comments c
+		 JOIN comment_threads t ON t.id = c.thread_id
+		 WHERE c.id = $1 AND t.org_id = $2 AND t.project_id = $3`,
+		[commentId, tenant.orgId ?? DEFAULT_ORG_ID, tenant.projectId ?? DEFAULT_PROJECT_ID]
 	);
 	const row = rows[0];
 	return row
@@ -21,7 +28,10 @@ async function getCommentAuthor(commentId: string): Promise<{
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
-	const meta = await getCommentAuthor(params.id);
+	const meta = await getScopedCommentAuthor(params.id, {
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id
+	});
 	if (!meta) return json({ error: 'Not found' }, { status: 404 });
 	if (!canEditComment(userFromLocals(locals.user), meta.authorId, meta.createdAt)) {
 		return json({ error: 'Forbidden' }, { status: 403 });
@@ -36,7 +46,10 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
-	const meta = await getCommentAuthor(params.id);
+	const meta = await getScopedCommentAuthor(params.id, {
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id
+	});
 	if (!meta) return json({ error: 'Not found' }, { status: 404 });
 	const user = userFromLocals(locals.user)!;
 	if (meta.authorId !== user.id && !can(user, 'comments:resolve')) {
@@ -54,9 +67,12 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
 	const emoji = typeof body.emoji === 'string' ? body.emoji.trim() : '';
 	if (!emoji) return json({ error: 'emoji is required' }, { status: 400 });
-	await toggleReaction(params.id, locals.user.id, emoji);
-	const meta = await getCommentAuthor(params.id);
+	const meta = await getScopedCommentAuthor(params.id, {
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id
+	});
 	if (!meta) return json({ error: 'Not found' }, { status: 404 });
+	await toggleReaction(params.id, locals.user.id, emoji);
 	const comments = await listComments(meta.threadId);
 	return json({ comment: comments.find((c) => c.id === params.id) });
 };

@@ -60,7 +60,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 	return chunks;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	let body: EmbedSchemaPayload;
 	try {
 		body = (await request.json()) as EmbedSchemaPayload;
@@ -78,15 +78,31 @@ export const POST: RequestHandler = async ({ request }) => {
 		await ensureEmbeddingTables();
 		// Synchronous, full-list cleanup — must happen here (not inside a chunked Inngest job)
 		// since any single chunk only ever sees a subset of the connection's tables.
-		await deleteStaleSchemaEmbeddings(
-			body.connectionId,
-			enriched.map((t) => t.tableName)
-		);
+		const tenant = locals?.organization
+			? { orgId: locals.organization.id, projectId: locals.project?.id }
+			: undefined;
+		if (tenant) {
+			await deleteStaleSchemaEmbeddings(
+				body.connectionId,
+				enriched.map((t) => t.tableName),
+				tenant
+			);
+		} else {
+			await deleteStaleSchemaEmbeddings(
+				body.connectionId,
+				enriched.map((t) => t.tableName)
+			);
+		}
 
 		for (const tablesChunk of chunk(enriched, CHUNK_SIZE)) {
 			await inngest.send({
 				name: 'ai/embed-schema',
-				data: { connectionId: body.connectionId, tables: tablesChunk }
+				data: {
+					orgId: tenant?.orgId,
+					projectId: tenant?.projectId,
+					connectionId: body.connectionId,
+					tables: tablesChunk
+				}
 			});
 		}
 	} catch (err) {

@@ -92,6 +92,7 @@ describe('upsertSchemaEmbedding', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(queryMock.mock.calls[1][0]).toContain('INSERT INTO schema_embeddings');
 		expect(queryMock.mock.calls[1][1]).toEqual([
+			'default',
 			baseInput.connectionId,
 			baseInput.tableName,
 			baseInput.columnNames,
@@ -108,7 +109,7 @@ describe('deleteStaleSchemaEmbeddings', () => {
 		await deleteStaleSchemaEmbeddings('pg-main', ['orders', 'customers']);
 		expect(queryMock).toHaveBeenCalledWith(
 			expect.stringContaining('DELETE FROM schema_embeddings'),
-			['pg-main', ['orders', 'customers']]
+			['pg-main', ['orders', 'customers'], 'default']
 		);
 	});
 
@@ -117,7 +118,7 @@ describe('deleteStaleSchemaEmbeddings', () => {
 		await deleteStaleSchemaEmbeddings('pg-main', []);
 		expect(queryMock).toHaveBeenCalledWith(
 			expect.stringContaining('DELETE FROM schema_embeddings WHERE connection_id = $1'),
-			['pg-main']
+			['pg-main', 'default']
 		);
 	});
 });
@@ -137,6 +138,8 @@ describe('upsertMemoryEmbedding', () => {
 		expect(embeddedText).toBe('decision: Orders grain is one row per line item.');
 		expect(queryMock.mock.calls[0][0]).toContain('INSERT INTO memory_embeddings');
 		expect(queryMock.mock.calls[0][1]).toEqual([
+			'default',
+			'default',
 			'/proj',
 			'orders-grain',
 			'decision',
@@ -164,7 +167,13 @@ describe('searchMemoryEmbeddings', () => {
 		await searchMemoryEmbeddings('what is the grain of orders', '/proj', 5);
 		const [sql, params] = queryMock.mock.calls[0];
 		expect(sql).toContain('WHERE folder = $2');
-		expect(params).toEqual([JSON.stringify(new Array(768).fill(0.1)), '/proj', 5]);
+		expect(params).toEqual([
+			JSON.stringify(new Array(768).fill(0.1)),
+			'/proj',
+			5,
+			'default',
+			'default'
+		]);
 	});
 
 	it('returns an empty array when Ollama is unavailable', async () => {

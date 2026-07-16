@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import fs from 'node:fs';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
 /**
  * SSE endpoint that streams `fs.watch` change events for a project folder.
@@ -9,10 +10,16 @@ import fs from 'node:fs';
  *
  * Event format: `data: {"type":"change","filename":"models/orders.prql"}\n\n`
  */
-export const GET: RequestHandler = async ({ url, request }) => {
-	const folder = url.searchParams.get('folder');
-	if (!folder) {
+export const GET: RequestHandler = async ({ url, request, locals }) => {
+	const requestedFolder = url.searchParams.get('folder');
+	if (!requestedFolder) {
 		return new Response('folder is required', { status: 400 });
+	}
+	let folder: string;
+	try {
+		folder = assertTenantProjectFolder(locals, requestedFolder);
+	} catch (err) {
+		return new Response(err instanceof Error ? err.message : 'Invalid project folder', { status: 400 });
 	}
 
 	const stream = new ReadableStream({

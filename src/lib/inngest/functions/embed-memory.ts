@@ -2,6 +2,8 @@ import { inngest } from '../client';
 import { upsertMemoryEmbedding, ensureEmbeddingTables } from '$lib/server/embeddings.js';
 
 export interface EmbedMemoryEventData {
+	orgId?: string;
+	projectId?: string | null;
 	folder: string;
 	slug: string;
 	type: string;
@@ -17,11 +19,18 @@ export const embedMemoryFunction = inngest.createFunction(
 		rateLimit: { limit: 5, period: '1s' }
 	},
 	async ({ event, step }) => {
-		const { folder, slug, type, description } = event.data as EmbedMemoryEventData;
+		const { orgId, projectId, folder, slug, type, description } =
+			event.data as EmbedMemoryEventData;
 
 		return step.run('embed', async () => {
 			await ensureEmbeddingTables();
-			await upsertMemoryEmbedding({ folder, slug, type, description });
+			await upsertMemoryEmbedding({
+				tenant: orgId ? { orgId, projectId } : undefined,
+				folder,
+				slug,
+				type,
+				description
+			});
 			return { embedded: 1 };
 		});
 	}

@@ -7,6 +7,7 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
+		"worker": "node scripts/cloud-worker.mjs",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "vitest run",
 		"test:e2e": "playwright test --project=mocked",

@@ -7,10 +7,20 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const notebookId = url.searchParams.get('notebookId');
 	const cellId = url.searchParams.get('cellId');
 	if (cellId) {
-		return json({ count: await countOpenThreadsForCell(cellId) });
+		return json({
+			count: await countOpenThreadsForCell(cellId, {
+				orgId: locals.organization?.id,
+				projectId: locals.project?.id
+			})
+		});
 	}
 	if (notebookId) {
-		return json({ count: await countOpenThreadsForNotebook(notebookId) });
+		return json({
+			count: await countOpenThreadsForNotebook(notebookId, {
+				orgId: locals.organization?.id,
+				projectId: locals.project?.id
+			})
+		});
 	}
 	return json({ error: 'notebookId or cellId required' }, { status: 400 });
 };

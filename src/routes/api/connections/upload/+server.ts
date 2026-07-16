@@ -14,7 +14,7 @@ interface UploadConnectionRequest {
 	mode: 'replace' | 'append';
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json()) as Partial<UploadConnectionRequest>;
 
 	if (
@@ -32,9 +32,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	const mode = body.mode === 'append' ? 'append' : 'replace';
 
 	try {
-		const connection = await getConnectionMetadata(body.connection.id);
+		const connection = await getConnectionMetadata(body.connection.id, locals.organization?.id);
 		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
-		const secret = await getSecret(connection.id);
+		const secret = await getSecret(connection.id, locals.organization?.id);
 		const result = await uploadToExternalConnection(
 			connection,
 			secret ?? undefined,
@@ -42,7 +42,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			body.schema,
 			body.columns,
 			body.rows,
-			mode
+			mode,
+			locals.organization?.id
 		);
 		return json({ ok: true, rowsInserted: result.rowsInserted });
 	} catch (err) {

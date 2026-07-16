@@ -65,9 +65,13 @@ export function assertSafe(root: string, target: string): void {
 }
 
 function configuredProjectRoots(): string[] {
+	const fallbackProjectsRoot = process.env.PROJECT_FOLDER
+		? path.join(path.dirname(process.env.PROJECT_FOLDER), 'projects')
+		: undefined;
 	const raw = [
 		process.env.LUNAPAD_PROJECT_ROOTS,
 		process.env.PROJECTS_ROOT,
+		fallbackProjectsRoot,
 		process.env.PROJECT_ROOT,
 		process.env.PROJECT_FOLDER
 	]

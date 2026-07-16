@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { query } from './db.js';
 import type { CommentAnchorType } from './permissions.js';
+import { DEFAULT_ORG_ID, DEFAULT_PROJECT_ID } from './tenancy.js';
 
 let commentsTablesReady: Promise<void> | null = null;
 
@@ -64,6 +65,8 @@ async function ensureCommentsTables(): Promise<void> {
 	await query(`
 		CREATE TABLE IF NOT EXISTS comment_threads (
 			id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			org_id        TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}',
+			project_id    TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}',
 			anchor_type   TEXT NOT NULL,
 			anchor_key    JSONB NOT NULL,
 			notebook_id   TEXT,
@@ -78,6 +81,12 @@ async function ensureCommentsTables(): Promise<void> {
 			resolved_by   TEXT
 		)
 	`);
+	await query(
+		`ALTER TABLE comment_threads ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}'`
+	);
+	await query(
+		`ALTER TABLE comment_threads ADD COLUMN IF NOT EXISTS project_id TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}'`
+	);
 	await query(`
 		CREATE TABLE IF NOT EXISTS comments (
 			id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,6 +117,9 @@ async function ensureCommentsTables(): Promise<void> {
 	`);
 	await query(
 		`CREATE INDEX IF NOT EXISTS comment_threads_notebook_cell_idx ON comment_threads (notebook_id, cell_id)`
+	);
+	await query(
+		`CREATE INDEX IF NOT EXISTS comment_threads_tenant_idx ON comment_threads (org_id, project_id)`
 	);
 	await query(
 		`CREATE INDEX IF NOT EXISTS comment_threads_share_idx ON comment_threads (share_token)`
@@ -163,6 +175,8 @@ function extractMentions(body: string): string[] {
 }
 
 export async function listThreads(opts: {
+	orgId?: string | null;
+	projectId?: string | null;
 	notebookId?: string | null;
 	cellId?: string | null;
 	shareToken?: string | null;
@@ -173,6 +187,10 @@ export async function listThreads(opts: {
 	const conditions: string[] = [];
 	const params: unknown[] = [];
 	let i = 1;
+	conditions.push(`t.org_id = $${i++}`);
+	params.push(opts.orgId ?? DEFAULT_ORG_ID);
+	conditions.push(`t.project_id = $${i++}`);
+	params.push(opts.projectId ?? DEFAULT_PROJECT_ID);
 	if (opts.notebookId) {
 		conditions.push(`t.notebook_id = $${i++}`);
 		params.push(opts.notebookId);
@@ -242,7 +260,8 @@ async function isThreadUnread(userId: string, threadId: string): Promise<boolean
 
 export async function getThread(
 	threadId: string,
-	userId?: string | null
+	userId?: string | null,
+	tenant?: { orgId?: string | null; projectId?: string | null }
 ): Promise<CommentThread | null> {
 	await ensureCommentsTablesOnce();
 	const rows = await query<{
@@ -264,9 +283,9 @@ export async function getThread(
 		`SELECT t.*, COUNT(c.id)::text AS comment_count
 		 FROM comment_threads t
 		 LEFT JOIN comments c ON c.thread_id = t.id AND c.deleted_at IS NULL
-		 WHERE t.id = $1
+		 WHERE t.id = $1 AND t.org_id = $2 AND t.project_id = $3
 		 GROUP BY t.id`,
-		[threadId]
+		[threadId, tenant?.orgId ?? DEFAULT_ORG_ID, tenant?.projectId ?? DEFAULT_PROJECT_ID]
 	);
 	const row = rows[0];
 	if (!row) return null;
@@ -327,6 +346,8 @@ export async function listComments(threadId: string): Promise<Comment[]> {
 }
 
 export async function createThread(input: {
+	orgId?: string | null;
+	projectId?: string | null;
 	anchorType: CommentAnchorType;
 	anchorKey: CommentAnchorKey;
 	body: string;
@@ -342,10 +363,12 @@ export async function createThread(input: {
 
 	await query(
 		`INSERT INTO comment_threads
-		 (id, anchor_type, anchor_key, notebook_id, cell_id, share_token, title, assignee_id, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		 (id, org_id, project_id, anchor_type, anchor_key, notebook_id, cell_id, share_token, title, assignee_id, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		[
 			threadId,
+			input.orgId ?? DEFAULT_ORG_ID,
+			input.projectId ?? DEFAULT_PROJECT_ID,
 			input.anchorType,
 			JSON.stringify(input.anchorKey),
 			input.anchorKey.notebookId ?? null,
@@ -363,7 +386,10 @@ export async function createThread(input: {
 		input.body
 	]);
 	await markThreadsRead(input.authorId, [threadId]);
-	const thread = (await getThread(threadId, input.authorId))!;
+	const thread = (await getThread(threadId, input.authorId, {
+		orgId: input.orgId,
+		projectId: input.projectId
+	}))!;
 	const comments = await listComments(threadId);
 	return { thread, comment: comments[0] };
 }
@@ -392,7 +418,8 @@ export async function updateThread(
 		assigneeId?: string | null;
 		title?: string | null;
 		resolvedBy?: string | null;
-	}
+	},
+	tenant: { orgId?: string | null; projectId?: string | null } = {}
 ): Promise<CommentThread | null> {
 	await ensureCommentsTablesOnce();
 	const sets: string[] = [];
@@ -416,10 +443,17 @@ export async function updateThread(
 		sets.push(`title = $${i++}`);
 		params.push(patch.title);
 	}
-	if (!sets.length) return getThread(threadId);
+	if (!sets.length) return getThread(threadId, null, tenant);
 	params.push(threadId);
-	await query(`UPDATE comment_threads SET ${sets.join(', ')} WHERE id = $${i}`, params);
-	return getThread(threadId);
+	params.push(tenant.orgId ?? DEFAULT_ORG_ID);
+	params.push(tenant.projectId ?? DEFAULT_PROJECT_ID);
+	await query(
+		`UPDATE comment_threads
+		 SET ${sets.join(', ')}
+		 WHERE id = $${i++} AND org_id = $${i++} AND project_id = $${i}`,
+		params
+	);
+	return getThread(threadId, null, tenant);
 }
 
 export async function editComment(commentId: string, body: string): Promise<void> {
@@ -470,18 +504,23 @@ export async function markThreadsRead(userId: string, threadIds: string[]): Prom
 	}
 }
 
-export async function getInbox(userId: string): Promise<InboxItem[]> {
+export async function getInbox(
+	userId: string,
+	tenant: { orgId?: string | null; projectId?: string | null } = {}
+): Promise<InboxItem[]> {
 	await ensureCommentsTablesOnce();
 	const items: InboxItem[] = [];
+	const orgId = tenant.orgId ?? DEFAULT_ORG_ID;
+	const projectId = tenant.projectId ?? DEFAULT_PROJECT_ID;
 
 	const assigned = await query<{ id: string }>(
 		`SELECT id FROM comment_threads
-		 WHERE assignee_id = $1 AND status = 'open'
+		 WHERE assignee_id = $1 AND status = 'open' AND org_id = $2 AND project_id = $3
 		 ORDER BY created_at DESC LIMIT 50`,
-		[userId]
+		[userId, orgId, projectId]
 	);
 	for (const row of assigned) {
-		const thread = await getThread(row.id, userId);
+		const thread = await getThread(row.id, userId, { orgId, projectId });
 		if (!thread) continue;
 		const comments = await listComments(row.id);
 		items.push({
@@ -496,16 +535,16 @@ export async function getInbox(userId: string): Promise<InboxItem[]> {
 		 FROM comments c
 		 JOIN "user" u ON u.id = $1
 		 JOIN comment_threads t ON t.id = c.thread_id
-		 WHERE c.deleted_at IS NULL AND t.status = 'open'
+		 WHERE c.deleted_at IS NULL AND t.status = 'open' AND t.org_id = $2 AND t.project_id = $3
 		   AND (c.body ILIKE '%@' || split_part(u.email, '@', 1) || '%'
 		        OR c.body ILIKE '%@' || u.name || '%')
 		 ORDER BY c.thread_id
 		 LIMIT 50`,
-		[userId]
+		[userId, orgId, projectId]
 	);
 	for (const row of mentionRows) {
 		if (items.some((i) => i.thread.id === row.thread_id)) continue;
-		const thread = await getThread(row.thread_id, userId);
+		const thread = await getThread(row.thread_id, userId, { orgId, projectId });
 		if (!thread) continue;
 		const comments = await listComments(row.thread_id);
 		items.push({
@@ -517,12 +556,13 @@ export async function getInbox(userId: string): Promise<InboxItem[]> {
 
 	const unresolved = await query<{ id: string }>(
 		`SELECT t.id FROM comment_threads t
-		 WHERE t.status = 'open' AND t.share_token IS NOT NULL
-		 ORDER BY t.created_at DESC LIMIT 30`
+		 WHERE t.status = 'open' AND t.share_token IS NOT NULL AND t.org_id = $1 AND t.project_id = $2
+		 ORDER BY t.created_at DESC LIMIT 30`,
+		[orgId, projectId]
 	);
 	for (const row of unresolved) {
 		if (items.some((i) => i.thread.id === row.id)) continue;
-		const thread = await getThread(row.id, userId);
+		const thread = await getThread(row.id, userId, { orgId, projectId });
 		if (!thread) continue;
 		const comments = await listComments(row.id);
 		items.push({
@@ -535,28 +575,37 @@ export async function getInbox(userId: string): Promise<InboxItem[]> {
 	return items;
 }
 
-export async function countOpenThreadsForCell(cellId: string): Promise<number> {
+export async function countOpenThreadsForCell(
+	cellId: string,
+	tenant: { orgId?: string | null; projectId?: string | null } = {}
+): Promise<number> {
 	await ensureCommentsTablesOnce();
 	const rows = await query<{ count: string }>(
 		`SELECT COUNT(*)::text AS count FROM comment_threads
-		 WHERE cell_id = $1 AND status = 'open'`,
-		[cellId]
+		 WHERE cell_id = $1 AND status = 'open' AND org_id = $2 AND project_id = $3`,
+		[cellId, tenant.orgId ?? DEFAULT_ORG_ID, tenant.projectId ?? DEFAULT_PROJECT_ID]
 	);
 	return Number(rows[0]?.count ?? 0);
 }
 
-export async function countOpenThreadsForNotebook(notebookId: string): Promise<number> {
+export async function countOpenThreadsForNotebook(
+	notebookId: string,
+	tenant: { orgId?: string | null; projectId?: string | null } = {}
+): Promise<number> {
 	await ensureCommentsTablesOnce();
 	const rows = await query<{ count: string }>(
 		`SELECT COUNT(*)::text AS count FROM comment_threads
-		 WHERE notebook_id = $1 AND status = 'open'`,
-		[notebookId]
+		 WHERE notebook_id = $1 AND status = 'open' AND org_id = $2 AND project_id = $3`,
+		[notebookId, tenant.orgId ?? DEFAULT_ORG_ID, tenant.projectId ?? DEFAULT_PROJECT_ID]
 	);
 	return Number(rows[0]?.count ?? 0);
 }
 
-export async function countUnreadInbox(userId: string): Promise<number> {
-	const inbox = await getInbox(userId);
+export async function countUnreadInbox(
+	userId: string,
+	tenant: { orgId?: string | null; projectId?: string | null } = {}
+): Promise<number> {
+	const inbox = await getInbox(userId, tenant);
 	return inbox.filter((i) => i.thread.unread).length;
 }
 

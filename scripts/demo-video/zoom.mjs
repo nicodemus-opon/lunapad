@@ -15,21 +15,34 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 
 const EASE_SEC = 0.7; // time to push in / ease back out at each end of a beat's hold
-const ZOOM_FACTOR = 1.16; // subtle, fixed push — never tries to "fit" an arbitrary UI element
-const BEAT_XFADE_SEC = 0.35; // crossfade between beats within a chapter (shorter than the
-// 0.6s chapter-to-chapter one — these are more frequent and each beat's hold is tighter)
+// 1.16 (a ~14% push) read as shaky/random rather than a deliberate move toward something —
+// too small a scale change to register as "zooming toward X" rather than ambient jitter.
+// 1.5 crops to 2/3 linear size (1067×600 of the 1600×900 frame) — big enough that the
+// destination is unambiguous.
+const ZOOM_FACTOR = 1.5;
 
-// Piecewise-linear ramp (ease in from 0, hold at 1, ease out back to 0), then composed with
-// a cubic smoothstep so there's no velocity-discontinuity corner where the ramp meets the
-// hold: smoothstep has zero derivative at both 0 and 1, which (by the chain rule) cancels
-// the incoming ramp's constant velocity at that exact instant regardless of that velocity —
-// true ease-in / hold / ease-out, no linear motion anywhere (motion-design: never linear
-// for spatial movement).
-function easeExpr(t, dur, ease) {
-	const e = Math.min(ease, dur * 0.28); // cap so ease can never eat the whole segment —
+// Piecewise-linear ramp (hold at 0 through an initial delay, ease in to 1, hold at 1, ease
+// back out to 0), then composed with a cubic smoothstep so there's no velocity-discontinuity
+// corner where the ramp meets a hold: smoothstep has zero derivative at both 0 and 1, which
+// (by the chain rule) cancels the incoming ramp's constant velocity at that exact instant
+// regardless of that velocity — true ease-in / hold / ease-out, no linear motion anywhere
+// (motion-design: never linear for spatial movement).
+//
+// The initial `delay` matters as much as the easing curve: `focus` is measured once, at the
+// *end* of a beat's own scroll/action (see beats.mjs), in absolute viewport coordinates. The
+// segment this crop runs over starts *before* that — at the end of the previous beat — so
+// without a delay the crop starts pushing toward those coordinates immediately, while the
+// screen still shows the previous beat's leftover framing or this beat's own mid-scroll
+// transition. That reads as "zooming at random stuff" — the destination is real, but the
+// camera commits to it before the content there is actually what's on screen. Holding at
+// full-frame (crop fraction 0) until the scroll/action has had time to settle avoids that.
+function easeExpr(t, dur, ease, delay) {
+	const effDur = Math.max(0.01, dur - delay);
+	const e = Math.min(ease, effDur * 0.28); // cap so ease can never eat the whole segment —
 	// ≤56% total in ease, ≥44% genuine hold, regardless of segment length
+	const shifted = `max(0,(${t})-${delay.toFixed(3)})`;
 	if (e <= 0.01) return '1';
-	const L = `min(min((${t})/${e.toFixed(3)},1),min((${dur.toFixed(3)}-(${t}))/${e.toFixed(3)},1))`;
+	const L = `min(min((${shifted})/${e.toFixed(3)},1),min((${effDur.toFixed(3)}-(${shifted}))/${e.toFixed(3)},1))`;
 	return `(3*(${L})*(${L})-2*(${L})*(${L})*(${L}))`; // cubic smoothstep: 3L²-2L³
 }
 
@@ -55,7 +68,10 @@ function segmentFilter(index, seg, width, height) {
 	];
 	const focus = seg.focus;
 	if (focus && focus.width > 0 && focus.height > 0) {
-		const ease = easeExpr('t', dur, EASE_SEC);
+		// Give the beat's own scroll/action time to settle before the camera starts moving
+		// toward where it ended up — see the comment on easeExpr for why this matters.
+		const delay = Math.min(0.9, dur * 0.22);
+		const ease = easeExpr('t', dur, EASE_SEC, delay);
 		// Z(t): 1.0 (no zoom) at rest, ZOOM_FACTOR at the peak of the ease.
 		const z = `(1+${(ZOOM_FACTOR - 1).toFixed(4)}*(${ease}))`;
 		// Even-round the scaled frame size (yuv420p needs even dimensions) — the crop clamp
@@ -111,35 +127,13 @@ export async function renderChapterWithZoom(inputPath, outputPath, segments, { w
 		return;
 	}
 	const chains = segments.map((seg, i) => segmentFilter(i, seg, width, height));
-	// Crossfade every beat into the next instead of a hard concat — a chapter with 5-9
-	// beats otherwise has 4-8 instant, unblended cuts, which reads as choppy regardless of
-	// how good any individual shot is. Same pairwise-xfade-with-running-offset technique
-	// xfadeChapters already uses for chapter boundaries, just applied one level down: each
-	// `[sN]` here is already an independent labeled stream (from trimming the same source),
-	// which is all xfade needs — it doesn't care that they share an origin file.
-	const stitchParts = [];
-	let prevLabel = 's0';
-	let runningOffset = 0;
-	for (let i = 1; i < segments.length; i++) {
-		const prevDur = segments[i - 1].end - segments[i - 1].start;
-		const curDur = segments[i].end - segments[i].start;
-		// Never let the crossfade eat more than 40% of either adjacent beat's hold —
-		// guards against a pathologically short beat swallowing itself.
-		const xfadeDur = Math.max(0.05, Math.min(BEAT_XFADE_SEC, prevDur * 0.4, curDur * 0.4));
-		runningOffset += prevDur - xfadeDur;
-		// Last xfade in the chain writes directly to [outv]; each segment already carries a
-		// constant fps (added in segmentFilter, since xfade requires it on every input), so
-		// no separate normalization pass is needed here.
-		const outLabel = i === segments.length - 1 ? 'outv' : `x${i}`;
-		stitchParts.push(
-			`[${prevLabel}][s${i}]xfade=transition=fade:duration=${xfadeDur.toFixed(3)}:offset=${runningOffset.toFixed(3)}[${outLabel}]`
-		);
-		prevLabel = outLabel;
-	}
-	const filterComplex =
-		segments.length === 1
-			? `${chains[0]};[s0]copy[outv]`
-			: `${chains.join(';')};${stitchParts.join(';')}`;
+	// Hard concat between beats within a chapter — a crossfade here was tried and reverted:
+	// at beat-to-beat length (a few seconds each) even a short 0.35s dissolve read as a fast,
+	// hard-to-read flash rather than a smooth transition, especially fighting with the
+	// kinetic caption's own entrance animation. Chapter-to-chapter boundaries (xfadeChapters,
+	// below) are far less frequent and keep their longer crossfade; beat cuts stay plain cuts.
+	const concatInputs = segments.map((_, i) => `[s${i}]`).join('');
+	const filterComplex = `${chains.join(';')};${concatInputs}concat=n=${segments.length}:v=1:a=0[outv]`;
 	await exec('ffmpeg', [
 		'-y',
 		'-i',

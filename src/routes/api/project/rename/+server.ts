@@ -3,8 +3,9 @@ import type { RequestHandler } from './$types';
 import { assertSafe, renameCellFile } from '$lib/server/project';
 import { findSchemaFile, readSchemaFile, renameModelEntry, removeModelEntry, upsertModelEntry, writeSchemaFile } from '$lib/server/dbt-schema';
 import path from 'node:path';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const { folder, oldFile, newFile } = (await request.json()) as {
 			folder?: string;
@@ -14,18 +15,19 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (!folder || !oldFile || !newFile) {
 			return json({ error: 'folder, oldFile, and newFile are required' }, { status: 400 });
 		}
+		const resolvedFolder = assertTenantProjectFolder(locals, folder);
 
-		const oldPath = path.join(folder, oldFile);
-		const newPath = path.join(folder, newFile);
-		assertSafe(folder, oldPath);
-		assertSafe(folder, newPath);
+		const oldPath = path.join(resolvedFolder, oldFile);
+		const newPath = path.join(resolvedFolder, newFile);
+		assertSafe(resolvedFolder, oldPath);
+		assertSafe(resolvedFolder, newPath);
 
 		await renameCellFile(oldPath, newPath);
 
 		// Migrate the _models.yml entry so descriptions/config/columns follow the rename.
 		if (oldFile.endsWith('.prql') && newFile.endsWith('.prql')) {
-			const oldYml = findSchemaFile(folder, oldFile);
-			const newYml = findSchemaFile(folder, newFile);
+			const oldYml = findSchemaFile(resolvedFolder, oldFile);
+			const newYml = findSchemaFile(resolvedFolder, newFile);
 			const oldName = path.basename(oldFile, '.prql');
 			const newName = path.basename(newFile, '.prql');
 

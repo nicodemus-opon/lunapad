@@ -18,6 +18,7 @@ import {
 	listSchemaEmbeddings,
 	searchSchemaEmbeddings
 } from '$lib/server/embeddings.js';
+import type { TenantRef } from '$lib/server/tenancy.js';
 
 export interface SchemaColumn {
 	name: string;
@@ -367,11 +368,16 @@ const RETRIEVAL_LIMIT = 40;
 const TABLE_COUNT_CACHE_TTL_MS = 60_000;
 const _tableCountCache = new Map<string, { count: number; checkedAt: number }>();
 
-async function cachedSchemaEmbeddingCount(connectionIds: string[]): Promise<number> {
-	const key = [...connectionIds].sort().join(',');
+async function cachedSchemaEmbeddingCount(
+	connectionIds: string[],
+	tenant?: TenantRef | null
+): Promise<number> {
+	const key = `${tenant?.orgId ?? 'default'}:${[...connectionIds].sort().join(',')}`;
 	const cached = _tableCountCache.get(key);
 	if (cached && Date.now() - cached.checkedAt < TABLE_COUNT_CACHE_TTL_MS) return cached.count;
-	const count = await countSchemaEmbeddings(connectionIds);
+	const count = tenant
+		? await countSchemaEmbeddings(connectionIds, tenant)
+		: await countSchemaEmbeddings(connectionIds);
 	_tableCountCache.set(key, { count, checkedAt: Date.now() });
 	return count;
 }
@@ -398,15 +404,16 @@ export async function resolveExternalSchema(input: {
 	connectionIds: string[];
 	userQuery: string;
 	fallback: AIChatSchemaTable[];
+	tenant?: TenantRef | null;
 }): Promise<AIChatSchemaTable[]> {
-	const { connectionIds, userQuery, fallback } = input;
+	const { connectionIds, userQuery, fallback, tenant } = input;
 	if (connectionIds.length === 0) return [];
 
 	if (!(await hasPostgres()) || !(await hasOllama())) {
 		return fallback;
 	}
 
-	const tableCount = await cachedSchemaEmbeddingCount(connectionIds);
+	const tableCount = await cachedSchemaEmbeddingCount(connectionIds, tenant);
 	if (tableCount === 0) {
 		// Nothing embedded yet for these connections (first backfill still in flight, or
 		// Postgres/Ollama only just became available) — fall back rather than return empty.
@@ -414,7 +421,9 @@ export async function resolveExternalSchema(input: {
 	}
 
 	if (tableCount < RETRIEVAL_TABLE_COUNT_THRESHOLD) {
-		const rows = await listSchemaEmbeddings(connectionIds);
+		const rows = tenant
+			? await listSchemaEmbeddings(connectionIds, tenant)
+			: await listSchemaEmbeddings(connectionIds);
 		const tables = rows.map(schemaEmbeddingRowToTable);
 		return selectSchemaForPrompt({
 			query: userQuery,
@@ -424,7 +433,9 @@ export async function resolveExternalSchema(input: {
 		});
 	}
 
-	const matches = await searchSchemaEmbeddings(userQuery, RETRIEVAL_LIMIT, connectionIds);
+	const matches = tenant
+		? await searchSchemaEmbeddings(userQuery, RETRIEVAL_LIMIT, connectionIds, tenant)
+		: await searchSchemaEmbeddings(userQuery, RETRIEVAL_LIMIT, connectionIds);
 	if (matches.length === 0) return fallback;
 	return matches.map(schemaEmbeddingRowToTable);
 }

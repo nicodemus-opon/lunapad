@@ -10,6 +10,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 	const limit = Number(url.searchParams.get('limit') ?? 50);
 	const offset = Number(url.searchParams.get('offset') ?? 0);
-	const events = await listAuditEvents({ limit, offset });
+	const events = await listAuditEvents({ limit, offset, orgId: locals.organization?.id });
 	return json({ events });
 };

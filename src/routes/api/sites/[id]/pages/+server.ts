@@ -20,6 +20,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const share = await getShareByToken(body.shareToken);
 	try {
 		const page = await addPageToSite({
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
 			siteId: params.id,
 			pageSlug: body.pageSlug,
 			navLabel: body.navLabel,
@@ -41,6 +42,9 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const body = (await request.json()) as Partial<{ orderedPageIds: number[] }>;
 	if (!Array.isArray(body?.orderedPageIds))
 		return json({ error: 'orderedPageIds is required.' }, { status: 400 });
-	await reorderPages(params.id, body.orderedPageIds);
+	await reorderPages(params.id, body.orderedPageIds, {
+		orgId: locals.organization!.id,
+		projectId: locals.project?.id
+	});
 	return json({ ok: true });
 };

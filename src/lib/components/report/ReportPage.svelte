@@ -70,9 +70,7 @@
 		window.parent.postMessage({ source: 'lunapad-report', type, ...payload }, '*');
 	}
 	const liveCells = $derived(data.cells.filter((c) => c.isLive));
-	const visibleCells = $derived(
-		data.cells.filter((c) => c.cellType !== 'query' || !shouldHideQueryCell(c))
-	);
+	const visibleCells = $derived(data.cells.filter((c) => !shouldHideQueryCell(c)));
 
 	function frozenResultForCell(cell: PublicShareCell) {
 		if (!cell.frozenResult) return null;
@@ -251,13 +249,13 @@
 	<div class="report-cells">
 		{#each visibleCells as cell (cell.id)}
 			{#if cell.cellType === 'markdown'}
-				{#if cell.display !== 'collapsed' && cell.markdown?.trim()}
+				{#if cell.markdown?.trim()}
 					{@const result = renderMarkdocCell(cell.markdown, markdocCells)}
 					<div class="report-markdown report-section">
 						<MarkdocRenderer content={result.tree} errors={result.errors} notebookId="" />
 					</div>
 				{/if}
-			{:else if (cell.cellType === 'query' && !shouldHideQueryCell(cell)) || cell.cellType === 'python'}
+			{:else if cell.cellType === 'query' || cell.cellType === 'python'}
 				<div class="report-section">
 					<ReportCell
 						{cell}

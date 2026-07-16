@@ -32,9 +32,11 @@ Set these on the `app` service. The committed `docker-compose.yml` ships working
 | `TRINO_URL`                                                      | `http://trino:8080`                            | Where the app reaches Trino                                                                                                                                                   |
 | `TRINO_CATALOG_DIR`                                              | `/trino-catalog`                               | Where catalog `.properties` files are written when you add a data source                                                                                                      |
 | `PROJECT_FOLDER`                                                 | `/app/project`                                 | A dbt project folder to auto-open on startup. If it's empty, a starter project is scaffolded into it. Opening a different folder from the UI overrides this on later reloads. |
+| `PROJECTS_ROOT`                                                   | `/app/projects`                                | Parent folder for tenant-owned Lunapad projects created from setup or the project switcher. Each project gets its own dbt-ready subfolder.                                    |
 | `OLLAMA_BASE_URL`                                                | `http://host.docker.internal:11434`            | Reaches an Ollama install running on the host machine, only relevant if you're using Ollama for the AI assistant                                                              |
 | `INNGEST_BASE_URL` / `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | `http://inngest:8288` / `local` / `local`      | Scheduler connection. Omit `INNGEST_BASE_URL` entirely to disable scheduling                                                                                                  |
 | `DEMO_MODE`                                                      | unset                                          | Set to `1` for a public, read-only demo deployment (see below)                                                                                                                |
+| `DEPLOYMENT_MODE`                                                | `self_hosted`                                  | `self_hosted` keeps the one-team default org/project behavior. `cloud` is for hosted multi-tenant operators and requires additional infrastructure.                           |
 
 ## What's stored where
 
@@ -49,6 +51,12 @@ Set these on the `app` service. The committed `docker-compose.yml` ships working
 | Your browser's local storage         | A cache of the workspace for fast load; not the source of truth in full mode                  |
 | Your project folder (if one is open) | Your actual dbt project: model files, `.luna` notebook files, `schema.yml`, `dbt_project.yml` |
 | `./trino/catalog/`                   | One `.properties` file per external data source you've registered                             |
+
+Setup creates the first organization/workspace, admin membership, and starter
+project explicitly. Existing self-hosted installs can still use the legacy
+default organization/project and `/app/project` folder, but new projects created
+from the switcher live under `PROJECTS_ROOT` and are scaffolded as dbt projects
+by default.
 
 Back up the Postgres volume and your project folder. Everything else is reconstructible or derived.
 

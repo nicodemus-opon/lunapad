@@ -1,8 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { writeProjectFile } from '$lib/server/project';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const { folder, file, content, isDbtProject } = (await request.json()) as {
 			folder?: string;
@@ -14,7 +15,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'folder, file, and content are required' }, { status: 400 });
 		}
 
-		await writeProjectFile(folder, file, content, { isDbtProject });
+		await writeProjectFile(assertTenantProjectFolder(locals, folder), file, content, { isDbtProject });
 
 		return json({ ok: true });
 	} catch (err) {

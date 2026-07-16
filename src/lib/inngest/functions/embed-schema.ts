@@ -2,6 +2,8 @@ import { inngest } from '../client';
 import { upsertSchemaEmbedding, ensureEmbeddingTables } from '$lib/server/embeddings.js';
 
 export interface EmbedSchemaEventData {
+	orgId?: string;
+	projectId?: string | null;
 	connectionId: string;
 	tables: Array<{
 		tableName: string;
@@ -25,13 +27,14 @@ export const embedSchemaFunction = inngest.createFunction(
 		rateLimit: { limit: 5, period: '1s' }
 	},
 	async ({ event, step }) => {
-		const { connectionId, tables } = event.data as EmbedSchemaEventData;
+		const { orgId, projectId, connectionId, tables } = event.data as EmbedSchemaEventData;
 
 		return step.run('embed', async () => {
 			await ensureEmbeddingTables();
 			let embedded = 0;
 			for (const t of tables) {
 				await upsertSchemaEmbedding({
+					tenant: orgId ? { orgId, projectId } : undefined,
 					connectionId,
 					tableName: t.tableName,
 					columnNames: t.columnNames,

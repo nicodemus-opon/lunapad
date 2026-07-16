@@ -7,8 +7,9 @@ import {
 	type PythonTableDescriptor
 } from '$lib/server/python-runner';
 import { readPinnedPackages } from '$lib/server/python-packages';
+import { getCloudExecutionAdapter } from '$lib/server/cloud-execution';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const { code, tables, tableDescriptors, notebookId, folder } = (await request.json()) as {
 			code?: string;
@@ -29,8 +30,21 @@ export const POST: RequestHandler = async ({ request }) => {
 			await ensureProjectPinnedPackages(folder, pins);
 		}
 
-		const jobId = spawnPythonCell(notebookId, code, tables ?? {}, tableDescriptors ?? []);
-		return json({ jobId });
+		const execution = await getCloudExecutionAdapter().submit({
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
+			userId: locals.user?.id,
+			kind: 'python',
+			timeoutMs: 120_000,
+			quotaKey: 'python',
+			requestId: locals.requestId,
+			entitlements: locals.entitlements,
+			payload: { notebookId, folder },
+			run: async () => ({
+				jobId: spawnPythonCell(notebookId, code, tables ?? {}, tableDescriptors ?? [])
+			})
+		});
+		if (execution.queued) return json({ job: execution.job }, { status: 202 });
+		return json(execution.result);
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });
 	}

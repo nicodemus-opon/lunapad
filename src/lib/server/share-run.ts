@@ -3,7 +3,7 @@ import { queryExternalConnection } from './connections';
 import { substituteFilterTokens } from '$lib/services/filter-substitution';
 import { BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
 import { getCachedResult, setCachedResult, makeQueryCacheKey } from './result-cache';
-import { isRateLimitedAsync } from './share-rate-limit';
+import { isRateLimitedAsync, shareRateLimitKey } from './share-rate-limit';
 
 export interface ShareRunResult {
 	rows: Record<string, unknown>[];
@@ -16,16 +16,25 @@ export async function runShareLiveCell(
 	token: string,
 	cellId: string,
 	filters: Record<string, string> = {},
-	opts?: { skipRateLimit?: boolean }
+	opts?: { skipRateLimit?: boolean; ip?: string | null }
 ): Promise<ShareRunResult | ShareRunError> {
-	if (!opts?.skipRateLimit && (await isRateLimitedAsync(token))) {
-		return { error: 'Too many requests', status: 429 };
-	}
-
 	const share = await getShareByToken(token);
 	if (!share || share.revoked) return { error: 'Not found', status: 410 };
 	if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
 		return { error: 'This report link has expired.', status: 410 };
+	}
+	if (
+		!opts?.skipRateLimit &&
+		(await isRateLimitedAsync(
+			shareRateLimitKey({
+				token,
+				ip: opts?.ip,
+				orgId: share.orgId,
+				projectId: share.projectId
+			})
+		))
+	) {
+		return { error: 'Too many requests', status: 429 };
 	}
 
 	const cell = share.snapshot.cells.find((c) => c.id === cellId);
@@ -36,13 +45,14 @@ export async function runShareLiveCell(
 		return { error: 'Cell is not live.', status: 400 };
 	}
 
-	const connections = await getShareConnections(token);
+	const tenant = { orgId: share.orgId, projectId: share.projectId };
+	const connections = await getShareConnections(token, tenant);
 	const record = connections.find((c) => c.connectionId === cell.connectionId);
 	if (!record) return { error: 'Connection not found for this share.', status: 400 };
 
 	const sql = substituteFilterTokens(cell.sqlTemplate, filters);
 	const ttlMs = share.pollIntervalMs ?? 300_000;
-	const cacheKey = makeQueryCacheKey(token, cell.id, sql);
+	const cacheKey = makeQueryCacheKey(`${share.orgId}:${token}`, cell.id, sql);
 
 	const cached = await getCachedResult(cacheKey);
 	if (cached && typeof cached === 'object' && cached !== null && 'rows' in cached) {
@@ -53,7 +63,10 @@ export async function runShareLiveCell(
 		const result = await queryExternalConnection(
 			record.connection,
 			record.secret ?? undefined,
-			sql
+			sql,
+			undefined,
+			share.orgId,
+			connections.map((connection) => connection.connection)
 		);
 		await setCachedResult(cacheKey, result, ttlMs);
 		return result;

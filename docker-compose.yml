@@ -27,6 +27,8 @@ services:
       # at file mount paths, causing "not a directory" errors on container start).
       - source: trino_config
         target: /etc/trino/config.properties
+      - source: trino_access_control
+        target: /etc/trino/access-control.properties
     volumes:
       # New sources are registered by writing a .properties file then restarting Trino
       # (Docker restart:unless-stopped brings it back automatically after graceful shutdown).
@@ -104,6 +106,7 @@ services:
       # project if empty) on first load, and used by the Inngest scheduler. Bind-mounted
       # below so it persists on the host and survives `down`/`up`.
       PROJECT_FOLDER: ${PROJECT_FOLDER:-/app/project}
+      PROJECTS_ROOT: ${PROJECTS_ROOT:-/app/projects}
     extra_hosts:
       # On Linux, Docker does not resolve host.docker.internal by default.
       # This maps it to the host gateway so Ollama is reachable from the container.
@@ -111,6 +114,7 @@ services:
     volumes:
       - ./trino/catalog:/trino-catalog
       - ./project:/app/project
+      - ./projects:/app/projects
     healthcheck:
       test: ['CMD-SHELL', 'curl -sf http://localhost:3000/api/health > /dev/null']
       interval: 5s
@@ -155,3 +159,8 @@ configs:
       discovery.uri=http://localhost:8080
       catalog.management=dynamic
       catalog.store=file
+  trino_access_control:
+    content: |
+      access-control.name=file
+      security.config-file=/etc/trino/catalog/lunapad-access-control.json
+      security.refresh-period=5s

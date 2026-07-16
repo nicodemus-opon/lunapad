@@ -9,10 +9,16 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 	if (url.searchParams.get('count') === '1') {
-		const unread = await countUnreadInbox(locals.user.id);
+		const unread = await countUnreadInbox(locals.user.id, {
+			orgId: locals.organization?.id,
+			projectId: locals.project?.id
+		});
 		return json({ unread });
 	}
-	const items = await getInbox(locals.user.id);
+	const items = await getInbox(locals.user.id, {
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id
+	});
 	return json({ items });
 };
 

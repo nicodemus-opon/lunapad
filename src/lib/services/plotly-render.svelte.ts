@@ -5,6 +5,19 @@
 import { resolveCSSColor, resolveChartColorway } from '$lib/utils/theme-colors';
 import type { Data, Layout, Config } from 'plotly.js-dist-min';
 
+// `@types/plotly.js`'s `Layout` omits `coloraxis` (the object heatmap/imshow colorbars
+// are themed through) even though Plotly.js itself has always supported it — patched
+// in locally rather than widening every `Partial<Layout>` call site in this file.
+type ThemedLayout = Partial<Layout> & {
+	coloraxis?: {
+		colorbar?: {
+			outlinecolor?: string;
+			tickfont?: { color?: string };
+			title?: { font?: { color?: string } };
+		};
+	};
+};
+
 let plotlyModule: typeof import('plotly.js-dist-min') | undefined;
 
 /** Lazily imports plotly.js-dist-min once and caches the module reference. */
@@ -43,7 +56,7 @@ export function watchTheme(): number {
 /** Re-resolves the app's OKLCH design tokens into a Plotly layout patch.
  *  `hoverlabel`/`hovermode` theme every chart's tooltip too, replacing the
  *  old `.plot-tip` CSS hack ChartView used for Observable Plot. */
-export function themeLayout(): Partial<Layout> {
+export function themeLayout(): ThemedLayout {
 	void watchTheme();
 	const background = resolveCSSColor('--background');
 	const foreground = resolveCSSColor('--foreground');
@@ -65,6 +78,17 @@ export function themeLayout(): Partial<Layout> {
 			bgcolor: popover,
 			bordercolor: border,
 			font: { color: popoverForeground }
+		},
+		// Heatmap/imshow figures (Python `go.Heatmap`/`px.imshow` and JS plot cells alike) render
+		// their colorbar through `layout.coloraxis`, which none of the properties above touch —
+		// without this it stays on Plotly's default light-template styling (dark outline/ticks)
+		// even in dark mode.
+		coloraxis: {
+			colorbar: {
+				outlinecolor: border,
+				tickfont: { color: mutedForeground },
+				title: { font: { color: foreground } }
+			}
 		},
 		xaxis: {
 			gridcolor: border,
@@ -107,7 +131,8 @@ export async function renderPlotly(
  *  defaults) wholesale clobber a figure's own axis config (categoryarray,
  *  tickangle, title, etc.), so those nested objects are merged one level
  *  deep instead, figure-specific keys winning. */
-export function mergeThemeLayout(layout: Partial<Layout>, height?: number): Partial<Layout> {
+export function mergeThemeLayout(layout: Partial<Layout>, height?: number): ThemedLayout {
+	const themedLayout = layout as ThemedLayout;
 	const theme = themeLayout();
 	return {
 		...theme,
@@ -116,6 +141,11 @@ export function mergeThemeLayout(layout: Partial<Layout>, height?: number): Part
 		yaxis: { ...theme.yaxis, ...layout.yaxis },
 		hoverlabel: { ...theme.hoverlabel, ...layout.hoverlabel },
 		margin: { ...theme.margin, ...layout.margin },
+		coloraxis: {
+			...theme.coloraxis,
+			...themedLayout.coloraxis,
+			colorbar: { ...theme.coloraxis?.colorbar, ...themedLayout.coloraxis?.colorbar }
+		},
 		...(height ? { height } : {})
 	};
 }

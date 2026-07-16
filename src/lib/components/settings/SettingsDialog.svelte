@@ -15,6 +15,11 @@
 	import ConnectionsSettings from './ConnectionsSettings.svelte';
 	import ApiKeysSettings from './ApiKeysSettings.svelte';
 	import PythonPackagesPanel from './PythonPackagesPanel.svelte';
+	import UsageSettings from './UsageSettings.svelte';
+	import JobsSettings from './JobsSettings.svelte';
+	import WorkspaceSettings from './WorkspaceSettings.svelte';
+	import ProjectsSettings from './ProjectsSettings.svelte';
+	import DiagnosticsSettings from './DiagnosticsSettings.svelte';
 	import TeamSettings from '$lib/components/TeamSettings.svelte';
 	import { toast } from 'svelte-sonner';
 	import { getProjectFolder } from '$lib/stores/notebook.svelte';
@@ -23,16 +28,32 @@
 		User,
 		Sparkles,
 		Database,
+		FolderKanban,
 		KeyRound,
 		ShieldUser,
 		Monitor,
 		Sun,
 		Moon,
 		LogOut,
-		PackageSearch
+		PackageSearch,
+		Activity,
+		ListChecks,
+		Wrench
 	} from '@lucide/svelte';
 
-	type SettingsTab = 'general' | 'account' | 'ai' | 'connections' | 'api-keys' | 'python' | 'team';
+	type SettingsTab =
+		| 'general'
+		| 'workspace'
+		| 'projects'
+		| 'account'
+		| 'ai'
+		| 'connections'
+		| 'api-keys'
+		| 'python'
+		| 'usage'
+		| 'jobs'
+		| 'diagnostics'
+		| 'team';
 
 	interface Props {
 		open: boolean;
@@ -60,9 +81,28 @@
 	let newPassword = $state('');
 	let confirmPassword = $state('');
 	let changingPassword = $state(false);
+	let accountSessions = $state<
+		Array<{
+			id: string;
+			createdAt: string;
+			updatedAt: string;
+			expiresAt: string | null;
+			ipAddress: string | null;
+			userAgent: string | null;
+			current: boolean;
+		}>
+	>([]);
+	let loadingSessions = $state(false);
+	let emailVerificationToken = $state('');
+	let requestingEmailVerification = $state(false);
+	let verifyingEmail = $state(false);
 
 	$effect(() => {
 		if (open) accountName = $session.data?.user?.name ?? '';
+	});
+
+	$effect(() => {
+		if (open && tab === 'account') void loadAccountSessions();
 	});
 
 	$effect(() => {
@@ -113,12 +153,94 @@
 		}
 	}
 
+	async function loadAccountSessions(): Promise<void> {
+		loadingSessions = true;
+		try {
+			const res = await fetch('/api/account/sessions');
+			if (res.ok) {
+				const body = await res.json();
+				accountSessions = body.sessions ?? [];
+			}
+		} finally {
+			loadingSessions = false;
+		}
+	}
+
+	async function signOutOtherSessions(): Promise<void> {
+		const res = await fetch('/api/account/sessions', { method: 'DELETE' });
+		const body = await res.json().catch(() => ({}));
+		if (!res.ok) {
+			toast.error(body.error ?? 'Failed to sign out other sessions.');
+			return;
+		}
+		toast.success('Other sessions signed out.');
+		await loadAccountSessions();
+	}
+
+	async function requestEmailVerification(): Promise<void> {
+		requestingEmailVerification = true;
+		try {
+			const res = await fetch('/api/account/email/verify', { method: 'POST' });
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to start email verification.');
+			if (body.token) emailVerificationToken = body.token;
+			toast.success(body.token ? 'Verification token generated.' : 'Verification email requested.');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to start email verification.');
+		} finally {
+			requestingEmailVerification = false;
+		}
+	}
+
+	async function confirmEmailVerification(): Promise<void> {
+		if (!emailVerificationToken.trim()) return;
+		verifyingEmail = true;
+		try {
+			const res = await fetch('/api/account/email/verify', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ token: emailVerificationToken.trim() })
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to verify email.');
+			toast.success('Email verified.');
+			emailVerificationToken = '';
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to verify email.');
+		} finally {
+			verifyingEmail = false;
+		}
+	}
+
+	async function exportAccount(): Promise<void> {
+		const res = await fetch('/api/account/export');
+		const body = await res.json().catch(() => null);
+		if (!res.ok || !body) {
+			toast.error('Failed to export account data.');
+			return;
+		}
+		const url = URL.createObjectURL(
+			new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' })
+		);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'lunapad-account-export.json';
+		a.click();
+		URL.revokeObjectURL(url);
+		toast.success('Account export ready.');
+	}
+
 	const navItems = $derived([
 		{ id: 'general' as const, label: 'General', icon: Settings },
+		{ id: 'workspace' as const, label: 'Workspace', icon: ShieldUser },
+		{ id: 'projects' as const, label: 'Projects', icon: FolderKanban },
 		{ id: 'account' as const, label: 'Account', icon: User },
 		{ id: 'ai' as const, label: 'AI', icon: Sparkles },
 		{ id: 'connections' as const, label: 'Connections', icon: Database },
 		{ id: 'api-keys' as const, label: 'API Keys', icon: KeyRound },
+		{ id: 'usage' as const, label: 'Usage', icon: Activity },
+		{ id: 'jobs' as const, label: 'Jobs', icon: ListChecks },
+		...(isAdmin ? [{ id: 'diagnostics' as const, label: 'Diagnostics', icon: Wrench }] : []),
 		// Python cells (and their packages) only exist in filesystem/project mode.
 		...(getProjectFolder()
 			? [{ id: 'python' as const, label: 'Python', icon: PackageSearch }]
@@ -180,6 +302,10 @@
 							</Button>
 						</div>
 					</div>
+				{:else if tab === 'workspace'}
+					<WorkspaceSettings />
+				{:else if tab === 'projects'}
+					<ProjectsSettings />
 				{:else if tab === 'account'}
 					<div class="space-y-6">
 						<div class="space-y-3">
@@ -256,6 +382,101 @@
 								onclick={changePassword}
 							>
 								{changingPassword ? 'Changing…' : 'Change password'}
+							</Button>
+						</div>
+
+						<div class="space-y-3 border-t border-border pt-4">
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<h2 class="text-sm font-semibold">Email verification</h2>
+									<p class="mt-1 text-xs text-muted-foreground">
+										Request a verification token or paste one you received.
+									</p>
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-8 text-xs"
+									disabled={requestingEmailVerification}
+									onclick={requestEmailVerification}
+								>
+									{requestingEmailVerification ? 'Requesting…' : 'Request'}
+								</Button>
+							</div>
+							<div class="flex gap-1.5">
+								<Input
+									class="h-8 flex-1 font-mono text-xs"
+									placeholder="Verification token"
+									bind:value={emailVerificationToken}
+								/>
+								<Button
+									size="sm"
+									class="h-8 text-xs"
+									disabled={verifyingEmail || !emailVerificationToken.trim()}
+									onclick={confirmEmailVerification}
+								>
+									{verifyingEmail ? 'Verifying…' : 'Verify'}
+								</Button>
+							</div>
+						</div>
+
+						<div class="space-y-3 border-t border-border pt-4">
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<h2 class="text-sm font-semibold">Sessions</h2>
+									<p class="mt-1 text-xs text-muted-foreground">Review active browser sessions.</p>
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-8 text-xs"
+									disabled={loadingSessions}
+									onclick={loadAccountSessions}
+								>
+									Refresh
+								</Button>
+							</div>
+							<div class="space-y-1">
+								{#if loadingSessions && accountSessions.length === 0}
+									<div class="h-8 rounded-md bg-muted/60"></div>
+									<div class="h-8 rounded-md bg-muted/40"></div>
+								{:else if accountSessions.length === 0}
+									<p class="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+										No sessions found.
+									</p>
+								{:else}
+									{#each accountSessions.slice(0, 6) as sessionItem (sessionItem.id)}
+										<div class="rounded-md border border-border px-3 py-2 text-xs">
+											<div class="flex items-center justify-between gap-2">
+												<p class="truncate font-medium">
+													{sessionItem.current ? 'Current session' : 'Signed-in session'}
+												</p>
+												<p class="shrink-0 text-2xs text-muted-foreground">
+													{new Date(sessionItem.updatedAt).toLocaleString()}
+												</p>
+											</div>
+											<p class="mt-1 truncate text-2xs text-muted-foreground">
+												{sessionItem.ipAddress ?? 'Unknown IP'} · {sessionItem.userAgent ?? 'Unknown device'}
+											</p>
+										</div>
+									{/each}
+								{/if}
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								class="text-xs"
+								disabled={accountSessions.filter((item) => !item.current).length === 0}
+								onclick={signOutOtherSessions}
+							>
+								Sign out other sessions
+							</Button>
+						</div>
+
+						<div class="space-y-3 border-t border-border pt-4">
+							<h2 class="text-sm font-semibold">Account data</h2>
+							<Button variant="outline" size="sm" class="text-xs" onclick={exportAccount}>
+								Export account data
 							</Button>
 						</div>
 
@@ -372,6 +593,12 @@
 					<ApiKeysSettings />
 				{:else if tab === 'python'}
 					<PythonPackagesPanel />
+				{:else if tab === 'usage'}
+					<UsageSettings />
+				{:else if tab === 'jobs'}
+					<JobsSettings />
+				{:else if tab === 'diagnostics' && isAdmin}
+					<DiagnosticsSettings />
 				{:else if tab === 'team' && isAdmin}
 					<TeamSettings />
 				{/if}

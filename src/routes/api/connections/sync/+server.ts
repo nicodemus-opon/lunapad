@@ -7,13 +7,13 @@ interface SyncConnectionRequest {
 	connection: Connection;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const body = (await request.json()) as Partial<SyncConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
-		await upsertConnectionMetadata(body.connection);
+		await upsertConnectionMetadata(body.connection, locals.organization?.id);
 		return json({ ok: true });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to sync connection metadata.';

@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getShareByTokenOrSlug, toPublicShareView, type ShareRecord } from './shared-reports';
 import { isShareExpired, prefetchLiveShareResults } from './share-run';
+import { hasOrganizationMembership } from './tenancy';
 
 export interface SharePageLoadResult {
 	share: ReturnType<typeof toPublicShareView>;
@@ -23,6 +24,10 @@ export async function loadSharePage(opts: {
 	const needsAuth = opts.requireAuth ?? share.requireAuth;
 	if (needsAuth && !opts.localsUser) {
 		redirect(303, `/login?redirectTo=${encodeURIComponent(opts.urlPath + opts.urlSearch)}`);
+	}
+	if (needsAuth && opts.localsUser) {
+		const allowed = await hasOrganizationMembership(share.orgId, opts.localsUser.id);
+		if (!allowed) error(403, 'This report is private.');
 	}
 
 	const filters = Object.fromEntries(new URLSearchParams(opts.urlSearch));

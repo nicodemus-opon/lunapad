@@ -9,17 +9,21 @@ interface SchemaConnectionRequest {
 	connection: Connection;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const body = (await request.json()) as Partial<SchemaConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
 
-		const connection = await resolveConnectionMetadata(body.connection);
+		const connection = await resolveConnectionMetadata(body.connection, locals.organization?.id);
 		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
-		const secret = await getSecret(connection.id);
-		const result = await fetchExternalConnectionSchema(connection, secret ?? undefined);
+		const secret = await getSecret(connection.id, locals.organization?.id);
+		const result = await fetchExternalConnectionSchema(
+			connection,
+			secret ?? undefined,
+			locals.organization?.id
+		);
 		return json(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to fetch schema.';

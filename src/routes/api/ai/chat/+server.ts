@@ -234,7 +234,8 @@ function buildSystemPromptOllama(
 		? ''
 		: `
 TOOL CALL FORMAT — args always nested under "args":
-Complete notebook: <tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Revenue Review","executableCells":[{"cellId":"q_monthly_revenue","outputName":"monthly_revenue","cellType":"query","language":"sql","code":"SELECT ..."}],"blocks":[{"type":"text","content":"# Revenue Review"},{"type":"queryBlock","cellId":"q_monthly_revenue"},{"type":"grid","cols":2,"items":[{"type":"metric","value":"$monthly_revenue.revenue","label":"Revenue"}]}]}}}</tool_call>
+Complete notebook: <tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Revenue Review","executableCells":[{"cellId":"q_monthly_revenue","outputName":"monthly_revenue","cellType":"query","language":"sql","code":"SELECT ..."}],"blocks":[{"type":"queryBlock","cellId":"q_monthly_revenue"},{"type":"grid","cols":2,"items":[{"type":"metric","value":"$monthly_revenue.revenue","label":"Revenue"}]}]}}}</tool_call>
+Note: blueprint.title is rendered as the H1 automatically — never add a matching text/heading block in blocks.
 Inspect notebook: <tool_call>{"tool":"inspect_notebook","callId":"I1","args":{}}</tool_call>
 Patch notebook:   <tool_call>{"tool":"apply_notebook_patch","callId":"P1","args":{"operations":[{"op":"patch_attrs","nodeId":"NODE_ID","attrs":{"tagName":"card"}}]}}</tool_call>
 Run query nodes:  <tool_call>{"tool":"run_query_nodes","callId":"R1","args":{"cellIds":["q_monthly_revenue"]}}</tool_call>
@@ -258,7 +259,7 @@ Ask user:        <tool_call>{"tool":"ask_user","callId":"Q1","args":{"question":
 				? '\nDecisions: ' + sessionPlanContext.slice(-3).join('; ')
 				: '';
 		return `TOOL FORMAT — use exactly:
-<tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Sales Review","executableCells":[{"cellId":"q_sales_by_month","outputName":"sales_by_month","cellType":"query","language":"sql","code":"SELECT month, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 1"}],"blocks":[{"type":"text","content":"# Sales Review"},{"type":"queryBlock","cellId":"q_sales_by_month"}]}}}</tool_call>
+<tool_call>{"tool":"create_notebook","callId":"N1","args":{"blueprint":{"title":"Sales Review","executableCells":[{"cellId":"q_sales_by_month","outputName":"sales_by_month","cellType":"query","language":"sql","code":"SELECT month, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 1"}],"blocks":[{"type":"queryBlock","cellId":"q_sales_by_month"}]}}}</tool_call>
 <tool_call>{"tool":"run_query_nodes","callId":"R1","args":{"cellIds":["q_sales_by_month"]}}</tool_call>
 <tool_call>{"tool":"validate_notebook","callId":"V1","args":{}}</tool_call>
 <tool_call>{"tool":"sample_data","callId":"D1","args":{"table":"orders","n":5}}</tool_call>
@@ -291,7 +292,7 @@ RULES:
 1. DISCOVER FIRST (for new models): Call list_cells and search_workspace before creating new query payloads. State what you found. DUPLICATION IS A MODELING ERROR — check before you build.
 2. INVESTIGATE DATA: Call sample_data on unfamiliar tables before writing SQL. Skip if session data context already shows the table.
 3. SCHEMA IS LAW: ONLY use column names listed in the Schema section. Column names shown as "name" (with double-quotes) contain spaces — you MUST write them as "name" in SQL.
-4. NOTEBOOK STRUCTURE: narrative and rich UI belong in the blueprint/PM document blocks, not raw markdown cells.
+4. NOTEBOOK STRUCTURE: narrative and rich UI belong in the blueprint/PM document blocks, not raw markdown cells. blueprint.title is already rendered as the H1 automatically — never add a text/heading block repeating it.
 5. NEVER end SQL with a semicolon (;). Trailing semicolons break CTE chaining.
 6. NEVER write WITH clauses — each cell's outputName is auto-wrapped as a CTE.
 7. MATERIALIZATION: set materializeMode on new model cells (table/view/incremental/ephemeral) per workspace conventions.
@@ -897,7 +898,7 @@ Available tools:
 - pick_chart: {"cellId": "..."}
 - set_chart: {"cellId": "...", "chartConfig": {...}}
 - set_view_mode: {"cellId": "...", "mode": "table"|"chart"|"stats"}
-- create_notebook: {"blueprint": {"title": "...", "executableCells": [{"cellId": "q_metric", "outputName": "metric", "cellType": "query", "language": "sql", "code": "SELECT ..."}], "blocks": [{"type": "text", "content": "# Heading"}, {"type": "queryBlock", "cellId": "q_metric"}]}}
+- create_notebook: {"blueprint": {"title": "...", "executableCells": [{"cellId": "q_metric", "outputName": "metric", "cellType": "query", "language": "sql", "code": "SELECT ..."}], "blocks": [{"type": "queryBlock", "cellId": "q_metric"}]}} — title renders as the H1 automatically; never add a matching text/heading block for it.
 - apply_notebook_patch: {"title":"optional rename","blueprint": {...}} or {"title":"optional rename","document": {...}} or {"title":"optional rename","operations": [...]}
 - run_query_nodes: {"cellIds": ["q_metric"]} or {"nodeIds": ["node-id"]}
 - validate_notebook: {"notebookId": "..."}
@@ -1048,7 +1049,7 @@ ${schemaList}`;
 	}
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	let body: Partial<AIChatRequest>;
 	try {
 		body = (await request.json()) as Partial<AIChatRequest>;
@@ -1119,7 +1120,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const resolvedExternalSchema = await resolveExternalSchema({
 		connectionIds: externalConnectionIds,
 		userQuery: latestUserMessage,
-		fallback: externalSchemaFallback
+		fallback: externalSchemaFallback,
+		tenant: locals.organization
+			? { orgId: locals.organization.id, projectId: locals.project?.id }
+			: undefined
 	});
 	const schema = selectSchemaForPrompt({
 		query: latestUserMessage,

@@ -21,6 +21,7 @@ export interface QueryBlockExtensionContext {
 	reportView?: () => boolean;
 	dark?: () => boolean;
 	onDeleteCell?: (cellId: string) => void;
+	onBeforeControlAction?: () => void;
 }
 
 /** A ProseMirror block move is delete+insert, which destroys and recreates the
@@ -49,6 +50,7 @@ interface QueryBlockProps extends Record<string, unknown> {
 	onTogglePin: () => void;
 	onSetDisplay: (display: CellDisplay) => void;
 	onDelete: () => void;
+	onBeforeControlAction: () => void;
 }
 
 const parkedQueryViews = new Map<string, ParkedQueryView>();
@@ -157,6 +159,7 @@ export const QueryBlockExtension = Node.create({
 						}
 					},
 					onBlur: () => {},
+					onBeforeControlAction: () => ctx?.onBeforeControlAction?.(),
 					onTogglePin: () => {
 						const next = !props.pinned;
 						syncPinnedAttr(next);

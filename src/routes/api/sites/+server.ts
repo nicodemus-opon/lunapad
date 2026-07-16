@@ -7,7 +7,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const denied = requireSitesManage(locals);
 	if (denied) return json({ error: denied.error }, { status: denied.status });
 
-	const sites = await listSites();
+	const sites = await listSites({ orgId: locals.organization!.id, projectId: locals.project?.id });
 	return json({ sites });
 };
 
@@ -24,6 +24,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'slug and name are required.' }, { status: 400 });
 	try {
 		const site = await createSite({
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
 			slug: body.slug,
 			name: body.name,
 			requireAuth: body.requireAuth

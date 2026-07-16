@@ -8,19 +8,19 @@ interface RemoveConnectionRequest {
 	connection: Connection;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const body = (await request.json()) as Partial<RemoveConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });
 		}
-		const connection = await getConnectionMetadata(body.connection.id);
+		const connection = await getConnectionMetadata(body.connection.id, locals.organization?.id);
 		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
 		if (connection.type === 'duckdb-wasm') {
 			return json({ error: 'Cannot remove built-in connection.' }, { status: 400 });
 		}
-		await unregisterCatalog(connection.catalogName);
-		await deleteConnectionMetadata(connection.id);
+		await unregisterCatalog(connection, locals.organization?.id);
+		await deleteConnectionMetadata(connection.id, locals.organization?.id);
 		return json({ ok: true });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to remove source.';

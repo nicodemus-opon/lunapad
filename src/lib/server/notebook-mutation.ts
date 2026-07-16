@@ -16,7 +16,7 @@ import {
 	walkProjectDirectory,
 	writeProjectFile
 } from '$lib/server/project.js';
-import { getConnectionMetadata } from '$lib/server/connections-store.js';
+import { getConnectionMetadata, listConnectionsMetadata } from '$lib/server/connections-store.js';
 import { getSecret } from '$lib/server/connection-secrets.js';
 import { queryExternalConnection, fetchExternalConnectionSchema } from '$lib/server/connections.js';
 import { spawnPythonCell, getPythonJob, type PythonRunResult } from '$lib/server/python-runner.js';
@@ -41,6 +41,7 @@ import {
 	codeReferencesUnknownTable,
 	type ChatToolPolicyContext
 } from '$lib/agent/server/chat-tool-policy.js';
+import type { TenantRef } from './tenancy.js';
 
 /**
  * Server-side bridge between the (already isomorphic) blueprint/PM-document compiler
@@ -375,7 +376,8 @@ async function commitDocumentToLunaFile(
  */
 async function checkExecutableCellTables(
 	executableCells: McpExecutableCellInput[],
-	existingCells: Cell[]
+	existingCells: Cell[],
+	tenant?: TenantRef | null
 ): Promise<NotebookBlueprintDiagnostic[]> {
 	const known = new Set(existingCells.map((c) => c.outputName).filter(Boolean));
 	for (const c of executableCells) known.add(c.outputName);
@@ -392,7 +394,7 @@ async function checkExecutableCellTables(
 			// actionable caller mistake — surface it directly rather than failing open, unlike a
 			// transient fetch error against a connection that DOES exist (network hiccup, bad
 			// creds) where failing open is the safer default (see doc comment above).
-			const connection = await getConnectionMetadata(connectionId);
+			const connection = await getConnectionMetadata(connectionId, tenant?.orgId);
 			if (!connection) {
 				connectionDiagnostics.push({
 					path: `executableCells.connectionId`,
@@ -409,8 +411,12 @@ async function checkExecutableCellTables(
 				return;
 			}
 			try {
-				const secret = await getSecret(connection.id);
-				const { tables } = await fetchExternalConnectionSchema(connection, secret ?? undefined);
+				const secret = await getSecret(connection.id, tenant?.orgId);
+				const { tables } = await fetchExternalConnectionSchema(
+					connection,
+					secret ?? undefined,
+					tenant?.orgId
+				);
 				schemaByConnection.set(
 					connectionId,
 					new Set(
@@ -463,7 +469,8 @@ export interface NotebookMutationResult {
 export async function createNotebookFromBlueprintOnDisk(
 	folder: string,
 	notebookId: string,
-	blueprint: NotebookBlueprint & { executableCells?: McpExecutableCellInput[] }
+	blueprint: NotebookBlueprint & { executableCells?: McpExecutableCellInput[] },
+	tenant?: TenantRef | null
 ): Promise<NotebookMutationResult> {
 	assertAllowedProjectFolder(folder);
 	if (await notebookExists(folder, notebookId)) {
@@ -486,7 +493,8 @@ export async function createNotebookFromBlueprintOnDisk(
 	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
 	const tableDiagnostics = await checkExecutableCellTables(
 		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
-		[]
+		[],
+		tenant
 	);
 	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics };
 	const notebook = await commitDocumentToLunaFile(
@@ -544,7 +552,8 @@ async function renameLunaNotebook(
 export async function patchNotebookOnDisk(
 	folder: string,
 	notebookId: string,
-	patch: NotebookPatchInput
+	patch: NotebookPatchInput,
+	tenant?: TenantRef | null
 ): Promise<NotebookMutationResult> {
 	const handle = await loadServerNotebookHandle(folder, notebookId);
 	if (!handle.isLuna) {
@@ -596,7 +605,7 @@ export async function patchNotebookOnDisk(
 	const placementDiagnostics = validateCellPlacements(document, executableCells, handle.cells);
 	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
 
-	const tableDiagnostics = await checkExecutableCellTables(executableCells, handle.cells);
+	const tableDiagnostics = await checkExecutableCellTables(executableCells, handle.cells, tenant);
 	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics };
 
 	let notebook = await commitDocumentToLunaFile(
@@ -739,7 +748,8 @@ function compilePrqlToSql(prql: string): string | null {
 
 async function runQueryCellOnDisk(
 	cells: Cell[],
-	idx: number
+	idx: number,
+	tenant?: TenantRef | null
 ): Promise<{ rows: Record<string, unknown>[]; columns: string[]; sql: string }> {
 	const cell = cells[idx];
 	if (!cell.connectionId) {
@@ -747,7 +757,7 @@ async function runQueryCellOnDisk(
 			`Cell "${cell.outputName}" has no connection configured — set connectionId when creating/patching the cell.`
 		);
 	}
-	const connection = await getConnectionMetadata(cell.connectionId);
+	const connection = await getConnectionMetadata(cell.connectionId, tenant?.orgId);
 	if (!connection) throw new Error(`Unknown connection id "${cell.connectionId}".`);
 	if (connection.type === 'duckdb-wasm') {
 		throw new Error(
@@ -756,8 +766,22 @@ async function runQueryCellOnDisk(
 		);
 	}
 	const sql = buildSQLExecutionCode(cells, idx, compilePrqlToSql);
-	const secret = await getSecret(connection.id);
-	const result = await queryExternalConnection(connection, secret ?? undefined, sql);
+	const secret = await getSecret(connection.id, tenant?.orgId);
+	if (!tenant?.orgId) {
+		const result = await queryExternalConnection(connection, secret ?? undefined, sql);
+		return { ...result, sql };
+	}
+	const availableConnections = await listConnectionsMetadata(tenant?.orgId, {
+		includePhysicalCatalogName: true
+	});
+	const result = await queryExternalConnection(
+		connection,
+		secret ?? undefined,
+		sql,
+		undefined,
+		tenant?.orgId,
+		availableConnections
+	);
 	return { ...result, sql };
 }
 
@@ -862,6 +886,7 @@ export interface RunNotebookCellsOptions {
 	/** Gate for python-cell execution — callers must check admin:manage before
 	 *  passing true (see permissions.ts's scope map for /api/mcp and /api/v1). */
 	allowPython: boolean;
+	tenant?: TenantRef | null;
 }
 
 export interface NotebookRunOutput {
@@ -916,7 +941,7 @@ export async function runNotebookCellsOnDisk(
 		const idx = handle.cells.indexOf(cell);
 		try {
 			if (cell.cellType === 'query') {
-				const result = await runQueryCellOnDisk(handle.cells, idx);
+				const result = await runQueryCellOnDisk(handle.cells, idx, opts.tenant);
 				computed.set(cell.outputName, result);
 				results.push({
 					cellId: cell.id,

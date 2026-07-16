@@ -206,11 +206,7 @@
 				</CellStatusChip>
 			{/if}
 			{#if errorCount > 0}
-				<CellStatusChip
-					tone="destructive"
-					ariaLabel="Show errors"
-					onOpenChange={onOverlayChange}
-				>
+				<CellStatusChip tone="destructive" ariaLabel="Show errors" onOpenChange={onOverlayChange}>
 					{#snippet label()}
 						<XCircle />
 						{errorCount === 1 ? 'error' : `${errorCount} errors`}
@@ -218,7 +214,8 @@
 					{#snippet content()}
 						<div class="w-auto max-w-96 space-y-2">
 							{#each cell.errors as error (error.display ?? error.reason)}
-								<pre class="font-mono text-xs whitespace-pre-wrap text-destructive">{error.display ??
+								<pre
+									class="font-mono text-xs whitespace-pre-wrap text-destructive">{error.display ??
 										error.reason}</pre>
 							{/each}
 							{#if cell.materializeError}
@@ -280,10 +277,10 @@
 					code hidden
 				</button>
 			{/if}
-			<div class="mode-tabs" role="tablist">
+			<div class="notebook-tabs" role="tablist">
 				<button
 					type="button"
-					class="mode-tab"
+					class="notebook-tab"
 					class:is-active={cellMode === 'prql'}
 					onclick={() => onModeChange('prql')}
 					title="PRQL code mode"
@@ -292,7 +289,7 @@
 				>
 				<button
 					type="button"
-					class="mode-tab"
+					class="notebook-tab"
 					class:is-active={cellMode === 'visual'}
 					onclick={() => onModeChange('visual')}
 					title="Visual pipeline editor"
@@ -301,7 +298,7 @@
 				>
 				<button
 					type="button"
-					class="mode-tab"
+					class="notebook-tab"
 					class:is-active={cellMode === 'sql'}
 					onclick={() => onModeChange('sql')}
 					title="SQL mode"
@@ -314,46 +311,6 @@
 </div>
 
 <style>
-	.mode-tabs {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0 0.125rem;
-	}
-	.mode-tab {
-		position: relative;
-		height: 1.25rem;
-		padding: 0;
-		border: none;
-		background: transparent;
-		font-size: var(--text-2xs);
-		font-weight: 600;
-		color: var(--muted-foreground);
-		cursor: pointer;
-		transition: color var(--motion-fast) var(--motion-ease-out);
-	}
-	.mode-tab:hover {
-		color: var(--foreground);
-	}
-	.mode-tab.is-active {
-		color: var(--foreground);
-	}
-	.mode-tab.is-active::after {
-		position: absolute;
-		right: 0;
-		bottom: -0.18rem;
-		left: 0;
-		height: 2px;
-		border-radius: 999px;
-		background: var(--secondary);
-		content: '';
-	}
-	.mode-tab:focus-visible {
-		outline: none;
-		border-radius: var(--radius-sm);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 35%, transparent);
-	}
-
 	.cell-name-input {
 		border: 1px solid transparent;
 		background: transparent;

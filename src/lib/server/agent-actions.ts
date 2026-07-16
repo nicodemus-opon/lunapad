@@ -40,6 +40,9 @@ import {
 	pickChartShape,
 	setChartShape
 } from '$lib/agent/tools/notebook-tool-schemas.js';
+import type { Entitlements, TenantRef } from './tenancy.js';
+import { getCloudExecutionAdapter } from './cloud-execution.js';
+import type { CloudJobKind } from './cloud-jobs.js';
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'info';
 
@@ -74,6 +77,8 @@ export interface AgentAuthContext {
 	user: PermissionUser | null;
 	apiKeyId: string | null;
 	apiKeyScopes: string[] | null;
+	tenant?: TenantRef | null;
+	entitlements?: Entitlements | null;
 }
 
 export interface ActionContext {
@@ -81,6 +86,7 @@ export interface ActionContext {
 	requestId: string;
 	dryRun: boolean;
 	idempotencyKey?: string;
+	tenant?: TenantRef | null;
 	canRunPython: boolean;
 }
 
@@ -241,6 +247,14 @@ function forbiddenDiagnostic(action: string, permission: PermissionAction): Agen
 	};
 }
 
+function jobKindForAction(def: AgentActionDefinition): CloudJobKind {
+	if (def.permission.startsWith('dbt:')) return 'dbt';
+	if (def.permission.startsWith('ai:')) return 'ai';
+	if (def.name.includes('publish') || def.name.includes('share')) return 'share_refresh';
+	if (def.name.includes('run')) return 'notebook_execution';
+	return 'notebook_execution';
+}
+
 function checkPermission(
 	def: AgentActionDefinition,
 	auth: AgentAuthContext
@@ -277,9 +291,9 @@ function normalizePagination<T>(
 	};
 }
 
-async function discoverSchema(input: Record<string, unknown>) {
+async function discoverSchema(input: Record<string, unknown>, ctx: ActionContext) {
 	const connectionId = String(input.connectionId ?? '');
-	const connection = await getConnectionMetadata(connectionId);
+	const connection = await getConnectionMetadata(connectionId, ctx.auth.tenant?.orgId);
 	if (!connection) {
 		return {
 			diagnostics: [
@@ -301,8 +315,12 @@ async function discoverSchema(input: Record<string, unknown>) {
 			]
 		};
 	}
-	const secret = await getSecret(connection.id);
-	const result = await fetchExternalConnectionSchema(connection, secret ?? undefined);
+	const secret = await getSecret(connection.id, ctx.auth.tenant?.orgId);
+	const result = await fetchExternalConnectionSchema(
+		connection,
+		secret ?? undefined,
+		ctx.auth.tenant?.orgId
+	);
 	const schemaFilter = typeof input.schema === 'string' ? input.schema.toLowerCase() : null;
 	const tableFilter = typeof input.table === 'string' ? input.table.toLowerCase() : null;
 	const tables = result.tables
@@ -328,11 +346,11 @@ function parseResourceRef(ref: string): { type: string; id: string; fragment?: s
 	return { type, id, fragment };
 }
 
-async function inspectResource(input: Record<string, unknown>) {
+async function inspectResource(input: Record<string, unknown>, ctx: ActionContext) {
 	const ref = String(input.resourceRef ?? '');
 	const parsed = parseResourceRef(ref);
 	if (parsed.type === 'connection') {
-		const connection = await getConnectionMetadata(parsed.id);
+		const connection = await getConnectionMetadata(parsed.id, ctx.auth.tenant?.orgId);
 		if (!connection)
 			return {
 				diagnostics: [{ path: 'resourceRef', message: `Connection "${parsed.id}" not found.` }]
@@ -540,7 +558,7 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'connections:query',
 		mutates: false,
 		inputSchema: emptyShape,
-		handler: async () => listConnectionsAction()
+		handler: async (_input, ctx) => listConnectionsAction(ctx.auth.tenant)
 	},
 	{
 		name: 'discover_schema',
@@ -563,8 +581,12 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'connections:query',
 		mutates: false,
 		inputSchema: { connectionId: z.string(), sql: z.string() },
-		handler: async (input) =>
-			runQueryAction({ connectionId: String(input.connectionId), sql: String(input.sql) })
+		handler: async (input, ctx) =>
+			runQueryAction({
+				tenant: ctx.auth.tenant,
+				connectionId: String(input.connectionId),
+				sql: String(input.sql)
+			})
 	},
 	{
 		name: 'run_prql',
@@ -572,8 +594,12 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'connections:query',
 		mutates: false,
 		inputSchema: { connectionId: z.string(), prql: z.string() },
-		handler: async (input) =>
-			runPrqlAction({ connectionId: String(input.connectionId), prql: String(input.prql) })
+		handler: async (input, ctx) =>
+			runPrqlAction({
+				tenant: ctx.auth.tenant,
+				connectionId: String(input.connectionId),
+				prql: String(input.prql)
+			})
 	},
 	{
 		name: 'list_notebooks',
@@ -628,7 +654,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 			description,
 			input: { notebookId: `reports/${name}`, ...blueprint }
 		})),
-		handler: async (input) => createNotebookAction(input as never),
+		handler: async (input, ctx) =>
+			createNotebookAction({ ...(input as Record<string, unknown>), tenant: ctx.auth.tenant } as never),
 		dryRun: async (input) => ({ dryRun: true, wouldCreate: notebookRef(String(input.notebookId)) })
 	},
 	{
@@ -638,7 +665,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:write',
 		mutates: true,
 		inputSchema: applyNotebookPatchShape,
-		handler: async (input) => patchNotebookAction(input as never),
+		handler: async (input, ctx) =>
+			patchNotebookAction({ ...(input as Record<string, unknown>), tenant: ctx.auth.tenant } as never),
 		dryRun: async (input) => ({ dryRun: true, wouldPatch: notebookRef(String(input.notebookId)) })
 	},
 	{
@@ -661,6 +689,7 @@ export const ACTIONS: AgentActionDefinition[] = [
 		inputSchema: runNotebookCellsShape,
 		handler: async (input, ctx) =>
 			runNotebookCellsAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId),
 				cellIds: input.cellIds as string[] | undefined,
@@ -680,6 +709,7 @@ export const ACTIONS: AgentActionDefinition[] = [
 		inputSchema: runNotebookCellsShape,
 		handler: async (input, ctx) =>
 			runNotebookCellsAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId),
 				cellIds: input.cellIds as string[] | undefined,
@@ -697,8 +727,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:write',
 		mutates: true,
 		inputSchema: pickChartShape,
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			pickChartAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId),
 				cellId: String(input.cellId)
@@ -770,7 +801,7 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'shares:read',
 		mutates: false,
 		inputSchema: emptyShape,
-		handler: async () => listSharesAction()
+		handler: async (_input, ctx) => listSharesAction(ctx.auth.tenant)
 	},
 	{
 		name: 'publish_notebook',
@@ -778,7 +809,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'shares:publish',
 		mutates: true,
 		inputSchema: { notebookId: z.string() },
-		handler: async (input) => publishNotebookAction({ notebookId: String(input.notebookId) })
+		handler: async (input, ctx) =>
+			publishNotebookAction({ tenant: ctx.auth.tenant, notebookId: String(input.notebookId) })
 	},
 	{
 		name: 'create_site_page',
@@ -791,8 +823,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 			navLabel: z.string(),
 			shareToken: z.string()
 		},
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			createSitePageAction({
+				tenant: ctx.auth.tenant,
 				siteId: String(input.siteId),
 				pageSlug: String(input.pageSlug),
 				navLabel: String(input.navLabel),
@@ -837,6 +870,7 @@ export function createActionContext(
 		requestId: opts.requestId ?? requestId(),
 		dryRun: opts.dryRun ?? false,
 		idempotencyKey: opts.idempotencyKey,
+		tenant: auth.tenant,
 		canRunPython:
 			can(auth.user, 'admin:manage') &&
 			(!auth.apiKeyId || hasApiScope(auth.apiKeyScopes, 'admin:manage'))
@@ -890,13 +924,31 @@ export async function executeAgentAction(
 			? def.dryRun
 				? await def.dryRun(parsed.data, ctx)
 				: { dryRun: true, wouldRun: name }
-			: await def.handler(parsed.data, ctx);
+			: def.mutates && auth.tenant
+				? await getCloudExecutionAdapter()
+						.submit({
+							tenant: auth.tenant,
+							userId: auth.user?.id,
+							kind: jobKindForAction(def),
+							timeoutMs: 180_000,
+							quotaKey: `agent:${name}`,
+							requestId: reqId,
+							entitlements: auth.entitlements,
+							payload: { action: name, input: parsed.data },
+							run: async () => def.handler(parsed.data, ctx)
+						})
+						.then((execution) =>
+							execution.queued ? { queued: true, job: execution.job } : execution.result
+						)
+				: await def.handler(parsed.data, ctx);
 	const result = envelope(name, started, parsed.data, payload, {
 		requestId: reqId,
 		idempotencyKey,
 		dryRun: opts.dryRun
 	});
-	if (cacheKey && result.ok) idempotencyCache.set(cacheKey, result);
+	if (cacheKey && result.ok && !(result.data && typeof result.data === 'object' && 'queued' in result.data)) {
+		idempotencyCache.set(cacheKey, result);
+	}
 	return result;
 }
 

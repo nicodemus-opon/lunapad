@@ -16,7 +16,8 @@ const ENTER_EXITS_TO_FOLLOWING_PARAGRAPH = new Set(['heading', 'blockquote']);
 /** Remove the "/" trigger left behind when the slash menu is dismissed without
  * picking a command. Deletes only the single trigger character at range.from
  * (preserving any query text the user typed), so it never eats real content.
- * Deferred to the next tick so we don't dispatch inside the suggestion apply. */
+ * Deferred briefly so fast "/prql" typing can place the filter text after the
+ * trigger before cleanup decides whether the slash is actually abandoned. */
 function removeAbandonedSlash(
 	editor: import('@tiptap/core').Editor,
 	range: { from: number }
@@ -27,6 +28,8 @@ function removeAbandonedSlash(
 		const to = from + 1;
 		if (to > editor.state.doc.content.size) return;
 		if (editor.state.doc.textBetween(from, to) !== '/') return;
+		const nextChar = editor.state.doc.textBetween(to, Math.min(to + 1, editor.state.doc.content.size));
+		if (nextChar && !/\s/.test(nextChar)) return;
 		editor
 			.chain()
 			.command(({ tr }) => {
@@ -34,7 +37,7 @@ function removeAbandonedSlash(
 				return true;
 			})
 			.run();
-	}, 0);
+	}, 250);
 }
 
 export interface SlashCommandHandler {

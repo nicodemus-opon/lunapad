@@ -7,9 +7,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const denied = requireSitesManage(locals);
 	if (denied) return json({ error: denied.error }, { status: denied.status });
 
-	const site = await getSiteById(params.id);
+	const tenant = { orgId: locals.organization!.id, projectId: locals.project?.id };
+	const site = await getSiteById(params.id, tenant);
 	if (!site) return json({ error: 'Site not found.' }, { status: 404 });
-	const pages = await listSitePages(params.id);
+	const pages = await listSitePages(params.id, tenant);
 	return json({ site, pages });
 };
 
@@ -27,7 +28,10 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		homePageId: number | null;
 	}>;
 	try {
-		const site = await updateSite(params.id, body);
+		const site = await updateSite(params.id, {
+			...body,
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id }
+		});
 		return json({ site });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to update site.';
@@ -39,6 +43,6 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const denied = requireSitesManage(locals);
 	if (denied) return json({ error: denied.error }, { status: denied.status });
 
-	await deleteSite(params.id);
+	await deleteSite(params.id, { orgId: locals.organization!.id, projectId: locals.project?.id });
 	return json({ ok: true });
 };

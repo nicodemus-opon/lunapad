@@ -24,6 +24,8 @@ interface ConnectionBase {
 	name: string;
 	type: ConnectionType;
 	builtin?: boolean;
+	/** Server-owned Trino catalog name. Internal only; client UI should use catalogName as alias. */
+	physicalCatalogName?: string;
 }
 
 export interface DuckDBWASMConnection extends ConnectionBase {

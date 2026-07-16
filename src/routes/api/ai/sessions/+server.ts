@@ -22,6 +22,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const session = await createAgentSession({
+		tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
 		userId: locals.user.id,
 		mode,
 		prompt: body.prompt,

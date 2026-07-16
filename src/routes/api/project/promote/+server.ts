@@ -12,6 +12,7 @@ import {
 import { compileSingleModel, collectProjectModelNames } from '$lib/server/prql-compiler';
 import { replaceCellWithModelRef } from '$lib/services/luna-file';
 import type { CellLanguage, CellMaterializationMode } from '$lib/stores/notebook.svelte';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
 interface PromotePlanItem {
 	outputName: string;
@@ -34,7 +35,7 @@ interface PromotePlanItem {
  * replacing each promoted cell's `{% query %}` block with a `{% model ref %}`
  * placeholder.
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const { folder, notebookFile, plan } = (await request.json()) as {
 			folder?: string;
@@ -47,9 +48,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				{ status: 400 }
 			);
 		}
+		const resolvedFolder = assertTenantProjectFolder(locals, folder);
 
-		const lunaPath = path.join(folder, notebookFile);
-		assertSafe(folder, lunaPath);
+		const lunaPath = path.join(resolvedFolder, notebookFile);
+		assertSafe(resolvedFolder, lunaPath);
 
 		const promoted: Array<{ outputName: string; relPath: string }> = [];
 		const errors: string[] = [];
@@ -58,8 +60,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			try {
 				const ext = item.language === 'sql' ? '.sql' : '.prql';
 				const relPath = `${item.targetRelPath}${ext}`;
-				const filePath = path.join(folder, relPath);
-				assertSafe(folder, filePath);
+				const filePath = path.join(resolvedFolder, relPath);
+				assertSafe(resolvedFolder, filePath);
 
 				const cell = buildQueryCellFromLuna({
 					kind: 'query',
@@ -73,18 +75,18 @@ export const POST: RequestHandler = async ({ request }) => {
 					code: item.code
 				});
 
-				await writeCellFile(filePath, cell, await collectProjectModelNames(folder));
+				await writeCellFile(filePath, cell, await collectProjectModelNames(resolvedFolder));
 				const compileErr = await compileSingleModel(
 					filePath,
-					folder,
-					await collectProjectModelNames(folder)
+					resolvedFolder,
+					await collectProjectModelNames(resolvedFolder)
 				);
 				if (compileErr) {
 					errors.push(compileErr);
 					continue;
 				}
 
-				const ymlPath = findSchemaFile(folder, relPath);
+				const ymlPath = findSchemaFile(resolvedFolder, relPath);
 				const schema = await readSchemaFile(ymlPath);
 				if (!schema.models.find((m) => m.name === item.outputName)) {
 					await writeSchemaFile(

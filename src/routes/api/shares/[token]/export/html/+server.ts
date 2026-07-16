@@ -5,6 +5,7 @@ import { requireSharesRead } from '$lib/server/share-guards';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { renderMarkdocCellToStaticHtml } from '$lib/services/report-markdoc-static-html';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
+import { shouldHideQueryCell } from '$lib/services/filter-frozen';
 import katexCss from 'katex/dist/katex.min.css?raw';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -39,6 +40,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	);
 
 	const cellsHtml = view.cells
+		.filter((cell) => !shouldHideQueryCell(cell))
 		.map((cell) => {
 			if (cell.cellType === 'markdown' && cell.markdown) {
 				const mdHtml = renderMarkdocCellToStaticHtml(

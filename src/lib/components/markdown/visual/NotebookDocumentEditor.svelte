@@ -411,6 +411,14 @@
 		}, 150);
 	}
 
+	function flushPendingEmit(ed: TipTapEditor, targetNotebookId = editingNotebookId ?? notebookId): boolean {
+		if (!emitTimer) return false;
+		clearTimeout(emitTimer);
+		emitTimer = null;
+		emitNow(ed, targetNotebookId);
+		return true;
+	}
+
 	function resetEditorForNotebookSwitch(nextCells: Cell[]) {
 		if (emitTimer) {
 			clearTimeout(emitTimer);
@@ -615,6 +623,7 @@
 						getNotebookId: () => notebookId,
 						reportView: () => reportView,
 						dark: () => dark,
+						onBeforeControlAction: () => flushPendingEmit(ed),
 						onDeleteCell: (cellId) => removeQueryBlockCell(cellId)
 					}
 				}),
@@ -648,6 +657,12 @@
 							const el =
 								raw instanceof Element ? raw : raw instanceof Text ? raw.parentElement : null;
 							if (
+								el?.closest('[data-testid="query-block"], [data-query-block], .query-block-view')
+							) {
+								const ed = editor;
+								if (ed && !reconcilingFromStore) flushPendingEmit(ed);
+							}
+							if (
 								el?.closest(
 									'[data-slot="select-content"], [data-slot="select-item"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], .column-menu, .node-config-popover, .node-config-backdrop'
 								)
@@ -680,19 +695,14 @@
 					// Flush any debounced edit BEFORE reconciling so blurring quickly
 					// (e.g. clicking a button right after typing) never reverts the
 					// last keystrokes to the pre-debounce store snapshot.
-					let shouldEmit = false;
-					if (emitTimer) {
-						clearTimeout(emitTimer);
-						emitTimer = null;
-						shouldEmit = true;
-					}
+					const shouldEmit = Boolean(emitTimer);
 					const shouldReconcile = pendingReconcile;
 					pendingReconcile = false;
 					if (shouldEmit || shouldReconcile) {
 						blurFlushPending = true;
 						setTimeout(() => {
 							if (destroyed) return;
-							if (shouldEmit) emitNow(e, targetNotebookId);
+							if (shouldEmit) flushPendingEmit(e, targetNotebookId);
 							const reconcileAfterFlush = shouldReconcile || pendingReconcile;
 							pendingReconcile = false;
 							if (reconcileAfterFlush) {

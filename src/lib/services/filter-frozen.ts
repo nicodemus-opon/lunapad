@@ -57,7 +57,6 @@ export function filterFrozenRows(
 }
 
 export function shouldHideQueryCell(cell: PublicShareCell): boolean {
-	if (cell.cellType !== 'query') return false;
 	if (cell.display === 'collapsed') return true;
 	if (cell.publishRole === 'data') return true;
 	return false;

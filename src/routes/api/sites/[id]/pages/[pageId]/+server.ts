@@ -11,7 +11,10 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const pageId = Number(params.pageId);
 	if (!Number.isInteger(pageId)) return json({ error: 'Invalid page id.' }, { status: 400 });
 	try {
-		const page = await updatePage(pageId, body);
+		const page = await updatePage(pageId, {
+			...body,
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id }
+		});
 		return json({ page });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to update page.';
@@ -25,6 +28,9 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 
 	const pageId = Number(params.pageId);
 	if (!Number.isInteger(pageId)) return json({ error: 'Invalid page id.' }, { status: 400 });
-	await removePageFromSite(pageId);
+	await removePageFromSite(pageId, {
+		orgId: locals.organization!.id,
+		projectId: locals.project?.id
+	});
 	return json({ ok: true });
 };

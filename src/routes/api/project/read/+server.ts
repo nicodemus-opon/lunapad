@@ -4,12 +4,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { assertSafe } from '$lib/server/project';
 import { parseCellFile } from '$lib/services/prql-file';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
-		const folder = url.searchParams.get('folder');
+		const requestedFolder = url.searchParams.get('folder');
 		const file = url.searchParams.get('file');
-		if (!folder || !file) return json({ error: 'folder and file are required' }, { status: 400 });
+		if (!requestedFolder || !file) {
+			return json({ error: 'folder and file are required' }, { status: 400 });
+		}
+		const folder = assertTenantProjectFolder(locals, requestedFolder);
 
 		const filePath = path.join(folder, file);
 		assertSafe(folder, filePath);

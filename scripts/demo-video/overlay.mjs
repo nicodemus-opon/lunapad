@@ -1,5 +1,5 @@
 // In-page "director" overlay: animated cursor, click ripples, keycap flashes, and
-// kinetic (not flat-fade) captions/title cards/feature cards/end card. Installed via
+// kinetic (not flat-fade) captions/feature cards. Installed via
 // page.addInitScript so every navigation/reload in a chapter recording re-paints it —
 // this app's dev server does occasional HMR/full reloads that silently wipe
 // directly-appended body children (outside Svelte's tracked tree), so every accessor
@@ -33,19 +33,6 @@ export async function installOverlay(page) {
 				#__demo-keys.show { opacity: 1; transform: translate(-50%, 0); }
 				#__demo-keys span { background: rgba(20,20,24,.9); color: #fff; font: 700 13px/1 -apple-system,sans-serif;
 					padding: 7px 11px; border-radius: 7px; box-shadow: 0 4px 12px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08); }
-
-				#__demo-title { position: fixed; inset: 0; z-index: 1000000; display: flex; align-items: center;
-					justify-content: center; flex-direction: column; gap: 10px; background: linear-gradient(160deg,#0b0b0e 0%,#16161d 55%,#0b0b0e 100%);
-					opacity: 0; pointer-events: none; transition: opacity 260ms ease; font-family: -apple-system,BlinkMacSystemFont,sans-serif; }
-				#__demo-title.show { opacity: 1; }
-				#__demo-title b { font-size: 52px; font-weight: 750; letter-spacing: -.03em; color: #fff;
-					opacity: 0; transform: translateY(18px) scale(.92); transition: opacity 480ms cubic-bezier(.16,1,.3,1) 60ms, transform 480ms cubic-bezier(.16,1,.3,1) 60ms; }
-				#__demo-title .t { margin-top: 4px; font-size: 24px; font-weight: 550; color: rgba(255,255,255,.88);
-					opacity: 0; transform: translateY(14px); transition: opacity 420ms ease 220ms, transform 420ms ease 220ms; }
-				#__demo-title .s { margin-top: 8px; font-size: 15px; color: rgba(255,255,255,.5);
-					opacity: 0; transition: opacity 420ms ease 380ms; }
-				#__demo-title.show b, #__demo-title.show .t { opacity: 1; transform: none; }
-				#__demo-title.show .s { opacity: 1; }
 
 				#__demo-feature { position: fixed; right: 44px; top: 92px; z-index: 999998; width: 400px;
 					background: rgba(248,250,252,.97); color: #0f172a; border: 1px solid rgba(15,23,42,.1);
@@ -100,18 +87,6 @@ export async function installOverlay(page) {
 			el.classList.add('show');
 		};
 
-		window.__demoTitle = (on, title, subtitle) => {
-			const el = ensureEl('__demo-title', (e) => {
-				e.innerHTML = `<b></b><div class="t"></div><div class="s"></div>`;
-			});
-			if (!el) return;
-			if (on) {
-				el.querySelector('b').textContent = title ?? 'Lunapad';
-				el.querySelector('.t').textContent = subtitle ?? '';
-			}
-			el.classList.toggle('show', !!on);
-		};
-
 		window.__demoFeature = (on, title, lines) => {
 			const el = ensureEl('__demo-feature', (e) => {
 				e.innerHTML = `<h4></h4><ul></ul>`;
@@ -149,14 +124,6 @@ const speedFactor = () => Number(process.env.DEMO_VIDEO_SPEED ?? '1');
 export const pause = (page, ms) => page.waitForTimeout(Math.max(30, Math.round(ms * speedFactor())));
 
 export const caption = (page, text) => page.evaluate((t) => window.__demoCaption(t), text);
-
-export const titleCard = (page, title, subtitle) =>
-	page.evaluate(({ title, subtitle }) => window.__demoTitle(true, title, subtitle), {
-		title,
-		subtitle
-	});
-
-export const hideTitleCard = (page) => page.evaluate(() => window.__demoTitle(false));
 
 export const featureCard = (page, title, lines) =>
 	page.evaluate(({ title, lines }) => window.__demoFeature(true, title, lines), { title, lines });

@@ -14,6 +14,11 @@ import type { Connection } from '$lib/types/connection';
 import { getSecret } from '$lib/server/connection-secrets';
 import { requireSharesPublish, requireSharesRead } from '$lib/server/share-guards';
 import { logAuditEvent } from '$lib/server/audit';
+import {
+	assertCountEntitlement,
+	entitlementViolation,
+	EntitlementError
+} from '$lib/server/entitlements';
 
 interface UpsertShareRequest {
 	notebookId: string;
@@ -31,7 +36,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const notebookId = url.searchParams.get('notebookId');
 	if (!notebookId) {
-		const shares = await listActiveShares();
+		const shares = await listActiveShares({
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		});
 		return json({
 			shares: shares.map((s) => ({
 				notebookId: s.notebookId,
@@ -42,7 +50,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			}))
 		});
 	}
-	const share = await getShareByNotebookId(notebookId);
+	const share = await getShareByNotebookId(notebookId, {
+		orgId: locals.organization!.id,
+		projectId: locals.project?.id
+	});
 	if (!share || share.revoked) return json({ share: null });
 	return json({
 		share: {
@@ -75,14 +86,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		);
 	}
 	try {
+		const existingShares = await listActiveShares({
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		});
+		if (!existingShares.some((share) => share.notebookId === body.notebookId)) {
+			assertCountEntitlement({
+				code: 'max_published_shares',
+				limit: locals.entitlements?.maxPublishedShares ?? 0,
+				usage: existingShares.length,
+				label: 'published share(s)'
+			});
+		}
 		const connections = await Promise.all(
 			body.connections.map(async (conn) => ({
 				connectionId: conn.connectionId,
 				connection: conn.connection,
-				secret: await getSecret(conn.connectionId)
+				secret: await getSecret(conn.connectionId, locals.organization?.id)
 			}))
 		);
 		const share = await upsertShare({
+			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
 			notebookId: body.notebookId,
 			notebookName: body.notebookName,
 			snapshot: body.snapshot,
@@ -93,6 +117,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 		await logAuditEvent({
 			actorId: locals.user!.id,
+			orgId: locals.organization?.id,
+			projectId: locals.project?.id,
 			action: 'share.published',
 			resourceType: 'share',
 			resourceId: share.token,
@@ -100,6 +126,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 		return json({ token: share.token, slug: share.slug });
 	} catch (err) {
+		if (err instanceof EntitlementError) {
+			return json(
+				{ error: 'Plan limit reached.', violation: entitlementViolation(err) },
+				{ status: 403 }
+			);
+		}
 		const message = err instanceof Error ? err.message : 'Failed to publish share.';
 		return json({ error: message }, { status: 400 });
 	}
@@ -123,7 +155,10 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 
 	try {
 		if (body.slug !== undefined) {
-			const share = await setShareSlug(body.notebookId, body.slug ?? null);
+			const share = await setShareSlug(body.notebookId, body.slug ?? null, {
+				orgId: locals.organization!.id,
+				projectId: locals.project?.id
+			});
 			if (
 				body.pollIntervalMs === undefined &&
 				body.requireAuth === undefined &&
@@ -134,13 +169,20 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 				return json({ token: share.token, slug: share.slug });
 			}
 		}
-		const share = await updateShareSettings(body.notebookId, {
-			pollIntervalMs: body.pollIntervalMs,
-			requireAuth: body.requireAuth,
-			expiresAt: body.expiresAt,
-			theme: body.theme,
-			description: body.description
-		});
+		const share = await updateShareSettings(
+			body.notebookId,
+			{
+				pollIntervalMs: body.pollIntervalMs,
+				requireAuth: body.requireAuth,
+				expiresAt: body.expiresAt,
+				theme: body.theme,
+				description: body.description
+			},
+			{
+				orgId: locals.organization!.id,
+				projectId: locals.project?.id
+			}
+		);
 		return json({
 			token: share.token,
 			slug: share.slug,
@@ -162,9 +204,14 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 
 	const body = (await request.json()) as Partial<{ notebookId: string }>;
 	if (!body?.notebookId) return json({ error: 'notebookId is required.' }, { status: 400 });
-	await revokeShareByNotebookId(body.notebookId);
+	await revokeShareByNotebookId(body.notebookId, {
+		orgId: locals.organization!.id,
+		projectId: locals.project?.id
+	});
 	await logAuditEvent({
 		actorId: locals.user!.id,
+		orgId: locals.organization?.id,
+		projectId: locals.project?.id,
 		action: 'share.revoked',
 		resourceType: 'share',
 		resourceId: body.notebookId

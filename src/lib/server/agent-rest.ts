@@ -10,14 +10,18 @@ export async function agentActionResponse(
 	opts: { dryRun?: boolean } = {}
 ): Promise<Response> {
 	const idempotencyKey = event.request.headers.get('Idempotency-Key') ?? undefined;
-	const requestId = event.request.headers.get('X-Request-Id') ?? undefined;
+	const requestId = event.locals.requestId;
 	const result = await executeAgentAction(
 		action,
 		input,
 		{
 			user: userFromLocals(event.locals.user),
 			apiKeyId: event.locals.apiKeyId,
-			apiKeyScopes: event.locals.apiKeyScopes
+			apiKeyScopes: event.locals.apiKeyScopes,
+			tenant: event.locals.organization
+				? { orgId: event.locals.organization.id, projectId: event.locals.project?.id }
+				: undefined,
+			entitlements: event.locals.entitlements
 		},
 		{ idempotencyKey, requestId, dryRun: opts.dryRun }
 	);
@@ -25,6 +29,10 @@ export async function agentActionResponse(
 }
 
 export function agentEnvelopeResponse(result: ActionEnvelope): Response {
-	const status = result.ok ? 200 : result.diagnostics.some((d) => d.code === 'FORBIDDEN') ? 403 : 422;
+	const status = result.ok
+		? 200
+		: result.diagnostics.some((d) => d.code === 'FORBIDDEN')
+			? 403
+			: 422;
 	return json(result, { status });
 }

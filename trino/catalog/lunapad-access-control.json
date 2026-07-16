@@ -1,0 +1,26 @@
+{
+  "catalogs": [
+    {
+      "user": "lunapad",
+      "catalog": ".*",
+      "allow": "all"
+    }
+  ],
+  "schemas": [
+    {
+      "user": "lunapad",
+      "owner": true
+    }
+  ],
+  "tables": [
+    {
+      "user": "lunapad",
+      "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP"]
+    }
+  ],
+  "queries": [
+    {
+      "allow": ["execute"]
+    }
+  ]
+}

@@ -5,8 +5,10 @@ import type { PageServerLoad } from './$types';
 // sending a folder the client can't open. demoMode tells notebook.svelte.ts whether to
 // use the Postgres-backed /api/workspace/* endpoints or stick to localStorage only —
 // the client otherwise has no way to see this server-only env var.
-export const load: PageServerLoad = () => {
+export const load: PageServerLoad = ({ locals }) => {
 	const demoMode = process.env.DEMO_MODE === '1';
-	const defaultProjectFolder = demoMode ? null : (process.env.PROJECT_FOLDER ?? null);
+	const defaultProjectFolder = demoMode
+		? null
+		: (locals.project?.projectFolder ?? process.env.PROJECT_FOLDER ?? null);
 	return { defaultProjectFolder, demoMode };
 };

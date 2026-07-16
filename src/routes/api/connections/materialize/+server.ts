@@ -7,6 +7,7 @@ import {
 } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
 import { resolveConnectionMetadata } from '$lib/server/connection-metadata';
+import { listConnectionsMetadata } from '$lib/server/connections-store';
 
 interface MaterializeConnectionRequest {
 	connection: Connection;
@@ -20,7 +21,7 @@ function isMaterializationMode(value: unknown): value is ExternalMaterialization
 	return value === 'table' || value === 'view' || value === 'incremental';
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const body = (await request.json()) as Partial<MaterializeConnectionRequest>;
 		if (!body?.connection || typeof body.targetName !== 'string' || typeof body.sql !== 'string') {
@@ -33,16 +34,21 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Materialization mode is invalid.' }, { status: 400 });
 		}
 
-		const connection = await resolveConnectionMetadata(body.connection);
+		const connection = await resolveConnectionMetadata(body.connection, locals.organization?.id);
 		if (!connection) return json({ error: 'Unknown connection.' }, { status: 404 });
-		const secret = await getSecret(connection.id);
+		const secret = await getSecret(connection.id, locals.organization?.id);
+		const availableConnections = await listConnectionsMetadata(locals.organization!.id, {
+			includePhysicalCatalogName: true
+		});
 		const result = await materializeExternalConnection(
 			connection,
 			secret ?? undefined,
 			body.targetName,
 			typeof body.targetSchema === 'string' ? body.targetSchema : undefined,
 			body.sql,
-			body.mode
+			body.mode,
+			locals.organization?.id,
+			availableConnections
 		);
 		return json(result);
 	} catch (err) {

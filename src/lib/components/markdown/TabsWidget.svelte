@@ -15,12 +15,12 @@
 </script>
 
 <div class="md-tabs">
-	<div class="md-tabs-strip" role="tablist">
+	<div class="md-tabs-strip notebook-tabs" role="tablist">
 		{#each tabs as t, i (i)}
 			<button
 				type="button"
-				class="md-tab-btn"
-				class:active={active === i}
+				class="notebook-tab"
+				class:is-active={active === i}
 				role="tab"
 				aria-selected={active === i}
 				onclick={() => (active = i)}

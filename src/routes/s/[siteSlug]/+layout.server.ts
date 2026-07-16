@@ -1,12 +1,17 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { getSiteWithPages } from '$lib/server/sites';
+import { hasOrganizationMembership } from '$lib/server/tenancy';
 
 export const load: LayoutServerLoad = async ({ params, locals, url }) => {
 	const site = await getSiteWithPages(params.siteSlug);
 	if (!site) error(404, 'This site is not available.');
 	if (site.requireAuth && !locals.user) {
 		redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname + url.search)}`);
+	}
+	if (site.requireAuth && locals.user) {
+		const allowed = await hasOrganizationMembership(site.orgId, locals.user.id);
+		if (!allowed) error(403, 'This site is private.');
 	}
 
 	const activePages = site.pages.filter((p) => !p.revoked);

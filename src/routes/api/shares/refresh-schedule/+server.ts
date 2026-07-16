@@ -18,7 +18,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const schedule = await upsertShareRefreshSchedule(
 		body.notebookId,
 		body.intervalMs,
-		body.enabled ?? true
+		body.enabled ?? true,
+		{ orgId: locals.organization!.id, projectId: locals.project?.id }
 	);
 	return json({ schedule });
 };

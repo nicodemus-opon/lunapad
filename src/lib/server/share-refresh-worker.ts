@@ -77,19 +77,21 @@ export async function runDueShareRefreshes(): Promise<number> {
 	const due = await listDueRefreshSchedules();
 	if (due.length === 0) return 0;
 
-	const workspace = await loadWorkspaceState();
-	if (!workspace?.data) return 0;
-
-	const blob = workspace.data as WorkspaceBlob;
-	const notebooks = blob.notebooks ?? [];
-	const connections = blob.connections ?? [];
-
 	let refreshed = 0;
 	for (const schedule of due) {
+		const tenant = { orgId: schedule.orgId, projectId: schedule.projectId };
+		const workspace = await loadWorkspaceState(schedule.projectId);
+		if (!workspace?.data) {
+			await markRefreshScheduleRun(schedule.notebookId, tenant);
+			continue;
+		}
+		const blob = workspace.data as WorkspaceBlob;
+		const notebooks = blob.notebooks ?? [];
+		const connections = blob.connections ?? [];
 		const notebook = notebooks.find((n) => n.id === schedule.notebookId);
-		const existing = await getShareByNotebookId(schedule.notebookId);
+		const existing = await getShareByNotebookId(schedule.notebookId, tenant);
 		if (!notebook || !existing || existing.revoked) {
-			await markRefreshScheduleRun(schedule.notebookId);
+			await markRefreshScheduleRun(schedule.notebookId, tenant);
 			continue;
 		}
 		try {
@@ -98,10 +100,11 @@ export async function runDueShareRefreshes(): Promise<number> {
 				snapshot.connections.map(async (conn) => ({
 					connectionId: conn.connectionId,
 					connection: conn.connection,
-					secret: await getSecret(conn.connectionId)
+					secret: await getSecret(conn.connectionId, schedule.orgId)
 				}))
 			);
 			await upsertShare({
+				tenant,
 				notebookId: notebook.id,
 				notebookName: notebook.name,
 				snapshot: { cells: snapshot.cells, reportView: snapshot.reportView },
@@ -115,7 +118,7 @@ export async function runDueShareRefreshes(): Promise<number> {
 		} catch (err) {
 			console.error('[share-refresh]', schedule.notebookId, err);
 		}
-		await markRefreshScheduleRun(schedule.notebookId);
+		await markRefreshScheduleRun(schedule.notebookId, tenant);
 	}
 	return refreshed;
 }

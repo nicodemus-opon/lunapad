@@ -180,6 +180,7 @@
 	{/if}
 	{#if viewMode === 'chart' && activeConfig && !compact}
 		<button
+			data-testid="chart-settings"
 			class="flex h-6 w-6 items-center justify-center rounded transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showConfigPanel
 				? 'bg-primary/15 text-primary'
 				: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -242,6 +243,7 @@
 			<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
 				{#if showConfigPanel}
 					<div
+						data-testid="chart-settings-panel"
 						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
@@ -256,6 +258,7 @@
 			<div class="flex overflow-hidden rounded-sm">
 				{#if showConfigPanel}
 					<div
+						data-testid="chart-settings-panel"
 						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
 					>
 						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />

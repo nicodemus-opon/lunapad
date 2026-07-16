@@ -13,31 +13,41 @@ import {
 
 let rows: Map<string, Connection> = new Map();
 
+function rowKey(orgId: string, connectionId: string): string {
+	return `${orgId}:${connectionId}`;
+}
+
 beforeEach(() => {
 	rows = new Map();
 	queryMock.mockReset();
 	queryMock.mockImplementation(async (sql: string, params: unknown[] = []) => {
 		if (sql.includes('CREATE TABLE')) return [];
+		if (sql.includes('ALTER TABLE')) return [];
+		if (sql.includes('CREATE INDEX')) return [];
+		if (sql.includes('CREATE UNIQUE INDEX')) return [];
 
 		if (sql.includes('INSERT INTO connections')) {
-			const [connectionId, data] = params as [string, string];
-			rows.set(connectionId, JSON.parse(data) as Connection);
+			const [orgId, connectionId, data] = params as [string, string, string];
+			rows.set(rowKey(orgId, connectionId), JSON.parse(data) as Connection);
 			return [];
 		}
 
-		if (sql.includes('SELECT data FROM connections ORDER BY')) {
-			return [...rows.values()].map((data) => ({ data }));
+		if (sql.includes('SELECT data FROM connections WHERE org_id')) {
+			const [orgId] = params as [string];
+			return [...rows.entries()]
+				.filter(([key]) => key.startsWith(`${orgId}:`))
+				.map(([, data]) => ({ data }));
 		}
 
 		if (sql.includes('SELECT data FROM connections WHERE connection_id')) {
-			const [connectionId] = params as [string];
-			const data = rows.get(connectionId);
+			const [connectionId, orgId] = params as [string, string];
+			const data = rows.get(rowKey(orgId, connectionId));
 			return data ? [{ data }] : [];
 		}
 
 		if (sql.includes('DELETE FROM connections')) {
-			const [connectionId] = params as [string];
-			rows.delete(connectionId);
+			const [connectionId, orgId] = params as [string, string];
+			rows.delete(rowKey(orgId, connectionId));
 			return [];
 		}
 
@@ -60,7 +70,8 @@ const pgConnection: Connection = {
 describe('upsertConnectionMetadata', () => {
 	it('stores connection metadata, retrievable by id', async () => {
 		await upsertConnectionMetadata(pgConnection);
-		expect(await getConnectionMetadata('pg-main')).toEqual(pgConnection);
+		expect(await getConnectionMetadata('pg-main')).toMatchObject(pgConnection);
+		expect(await getConnectionMetadata('pg-main')).toHaveProperty('physicalCatalogName');
 	});
 
 	it('overwrites on conflict', async () => {
@@ -85,6 +96,16 @@ describe('upsertConnectionMetadata', () => {
 		expect(stored).not.toHaveProperty('password');
 		expect(stored).not.toHaveProperty('token');
 	});
+
+	it('rejects duplicate source aliases inside one org', async () => {
+		await upsertConnectionMetadata(pgConnection, 'org-a');
+		await expect(
+			upsertConnectionMetadata({ ...pgConnection, id: 'pg-copy' }, 'org-a')
+		).rejects.toThrow('already used');
+		await expect(
+			upsertConnectionMetadata({ ...pgConnection, id: 'pg-copy' }, 'org-b')
+		).resolves.toMatchObject({ id: 'pg-copy' });
+	});
 });
 
 describe('listConnectionsMetadata', () => {
@@ -98,6 +119,14 @@ describe('listConnectionsMetadata', () => {
 			secure: false
 		} as Connection);
 		expect(await listConnectionsMetadata()).toHaveLength(2);
+	});
+
+	it('strips physical catalog names unless explicitly requested', async () => {
+		await upsertConnectionMetadata(pgConnection);
+		expect((await listConnectionsMetadata())[0]).not.toHaveProperty('physicalCatalogName');
+		expect((await listConnectionsMetadata('default', { includePhysicalCatalogName: true }))[0]).toHaveProperty(
+			'physicalCatalogName'
+		);
 	});
 });
 

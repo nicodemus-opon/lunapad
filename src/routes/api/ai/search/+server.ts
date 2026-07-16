@@ -7,7 +7,7 @@ import {
 } from '$lib/server/embeddings.js';
 import { searchMemoryLexical } from '$lib/server/ai-memory.js';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	let body: { query?: string; folder?: string };
 	try {
 		body = (await request.json()) as { query?: string; folder?: string };
@@ -20,9 +20,18 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const [cells, tables, memories] = await Promise.all([
-		searchCellEmbeddings(body.query, 5),
-		searchSchemaEmbeddings(body.query, 5),
-		searchMemoryForFolder(body.query, body.folder)
+		searchCellEmbeddings(body.query, 5, {
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		}),
+		searchSchemaEmbeddings(body.query, 5, undefined, {
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		}),
+		searchMemoryForFolder(body.query, body.folder, {
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		})
 	]);
 
 	return json({ cells, tables, memories });
@@ -34,10 +43,11 @@ export const POST: RequestHandler = async ({ request }) => {
 // nothing.
 async function searchMemoryForFolder(
 	query: string,
-	folder: string | undefined
+	folder: string | undefined,
+	tenant: { orgId: string; projectId?: string | null }
 ): Promise<Array<{ slug: string; description: string; type: string; similarity: number }>> {
 	if (!folder) return [];
-	const embedded = await searchMemoryEmbeddings(query, folder, 5);
+	const embedded = await searchMemoryEmbeddings(query, folder, 5, tenant);
 	if (embedded.length > 0) return embedded;
 	return searchMemoryLexical(folder, query, 5);
 }

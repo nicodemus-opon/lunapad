@@ -22,6 +22,10 @@ import {
 	registerCatalog,
 	unregisterCatalog
 } from '$lib/server/connections';
+import {
+	physicalCatalogNameFor,
+	rewriteTenantCatalogReferences
+} from '$lib/server/trino-catalog-isolation';
 
 const postgresConnection: Connection = {
 	id: 'pg-main',
@@ -46,6 +50,38 @@ const clickHouseConnection: Connection = {
 	username: 'default',
 	secure: false
 };
+
+describe('tenant catalog SQL rewriting', () => {
+	it('rewrites org-local catalog aliases to deterministic physical catalogs', () => {
+		const sql = 'SELECT * FROM primary_postgres.public.orders JOIN primary_clickhouse.analytics.events ON true';
+		const rewritten = rewriteTenantCatalogReferences('SELECT * FROM primary_postgres.public.orders JOIN primary_clickhouse.analytics.events ON true', 'org-a', [
+			postgresConnection,
+			clickHouseConnection
+		]);
+		expect(rewritten).toContain(`${physicalCatalogNameFor('org-a', 'pg-main')}.public.orders`);
+		expect(rewritten).toContain(`${physicalCatalogNameFor('org-a', 'ch-main')}.analytics.events`);
+		expect(rewritten).not.toContain('primary_postgres.public.orders');
+		expect(sql).toContain('primary_postgres');
+	});
+
+	it('uses different physical catalogs for different orgs with the same alias', () => {
+		const sql = 'SELECT * FROM primary_postgres.public.orders';
+		const orgA = rewriteTenantCatalogReferences(sql, 'org-a', [postgresConnection]);
+		const orgB = rewriteTenantCatalogReferences(sql, 'org-b', [postgresConnection]);
+		expect(orgA).not.toEqual(orgB);
+		expect(orgA).toContain(physicalCatalogNameFor('org-a', 'pg-main'));
+		expect(orgB).toContain(physicalCatalogNameFor('org-b', 'pg-main'));
+	});
+
+	it('rejects direct physical catalog references', () => {
+		const physical = physicalCatalogNameFor('org-a', 'pg-main');
+		expect(() =>
+			rewriteTenantCatalogReferences(`SELECT * FROM ${physical}.public.orders`, 'org-a', [
+				postgresConnection
+			])
+		).toThrow('Physical Trino catalog names are internal');
+	});
+});
 
 /** Single-page Trino query response (done immediately, no nextUri). */
 function trinoPage(columns: { name: string; type?: string }[], data: unknown[][]): Response {

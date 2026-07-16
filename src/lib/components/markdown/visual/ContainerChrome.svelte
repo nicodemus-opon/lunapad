@@ -238,12 +238,13 @@
 	{/if}
 
 	{#if logicMode !== null && onToggleLogicMode}
-		<div class="flex items-center gap-0 rounded-sm border bg-background/80">
+		<div class="notebook-tabs" role="tablist">
 			<button
 				type="button"
-				class="md-action px-1.5 py-0.5 text-2xs font-medium {logicMode === 'preview'
-					? 'bg-accent text-accent-foreground'
-					: ''}"
+				class="notebook-tab"
+				class:is-active={logicMode === 'preview'}
+				role="tab"
+				aria-selected={logicMode === 'preview'}
 				title="Show live output with real data"
 				onclick={(e) => {
 					e.stopPropagation();
@@ -254,9 +255,10 @@
 			</button>
 			<button
 				type="button"
-				class="md-action px-1.5 py-0.5 text-2xs font-medium {logicMode === 'template'
-					? 'bg-accent text-accent-foreground'
-					: ''}"
+				class="notebook-tab"
+				class:is-active={logicMode === 'template'}
+				role="tab"
+				aria-selected={logicMode === 'template'}
 				title="Edit the repeating template"
 				onclick={(e) => {
 					e.stopPropagation();

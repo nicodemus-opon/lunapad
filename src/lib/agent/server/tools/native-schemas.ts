@@ -16,7 +16,11 @@ const ALL_NATIVE_TOOLS = [
 					blueprint: {
 						type: 'object',
 						properties: {
-							title: { type: 'string' },
+							title: {
+								type: 'string',
+								description:
+									'Notebook display name — rendered automatically as the H1 at the top of the document. Do NOT also add a text/heading block repeating this title in blocks.'
+							},
 							executableCells: {
 								type: 'array',
 								items: {
@@ -24,13 +28,11 @@ const ALL_NATIVE_TOOLS = [
 									properties: {
 										cellId: {
 											type: 'string',
-											description:
-												'Stable id used by queryBlock nodes, e.g. q_monthly_revenue.'
+											description: 'Stable id used by queryBlock nodes, e.g. q_monthly_revenue.'
 										},
 										outputName: {
 											type: 'string',
-											description:
-												'SQL/Python output name, e.g. monthly_revenue.'
+											description: 'SQL/Python output name, e.g. monthly_revenue.'
 										},
 										cellType: { type: 'string', enum: ['query', 'python', 'plot'] },
 										language: { type: 'string', enum: ['sql', 'prql'] },
@@ -118,16 +120,16 @@ const ALL_NATIVE_TOOLS = [
 								},
 								nodeId: { type: 'string' },
 								parentNodeId: {
-								type: 'string',
-								description:
-									'Node to insert/move into. OMIT this to target the document root — there is no literal "root" id.'
-							},
+									type: 'string',
+									description:
+										'Node to insert/move into. OMIT this to target the document root — there is no literal "root" id.'
+								},
 								index: { type: 'number' },
 								node: {
-								type: 'object',
-								description:
-									'A raw PM node, e.g. {"type":"paragraph","content":[{"type":"text","text":"..."}]}. Containers (tabs/columns/grid/card/callout/details) are NOT their own node type — use {"type":"markdocContainer","attrs":{"tagName":"tabs","attrsJson":"{}"},"content":[...]}. Widgets (metric/chart/datatable/...) are {"type":"markdocWidget","attrs":{"tagName":"metric","attrsJson":"{...}","selfClosing":true}}. A thematic break is {"type":"horizontalRule"}. Prefer blueprint or document for anything beyond a single small edit — operations is for surgical one-node tweaks to an existing document.'
-							},
+									type: 'object',
+									description:
+										'A raw PM node, e.g. {"type":"paragraph","content":[{"type":"text","text":"..."}]}. Containers (tabs/columns/grid/card/callout/details) are NOT their own node type — use {"type":"markdocContainer","attrs":{"tagName":"tabs","attrsJson":"{}"},"content":[...]}. Widgets (metric/chart/datatable/...) are {"type":"markdocWidget","attrs":{"tagName":"metric","attrsJson":"{...}","selfClosing":true}}. A thematic break is {"type":"horizontalRule"}. Prefer blueprint or document for anything beyond a single small edit — operations is for surgical one-node tweaks to an existing document.'
+								},
 								attrs: { type: 'object' },
 								document: { type: 'object' }
 							},
@@ -221,7 +223,11 @@ const ALL_NATIVE_TOOLS = [
 						description:
 							'Preferred for AI-authored notebook/report/dashboard markdown. A typed block tree compiled server-side into canonical Markdoc. Use this instead of hand-writing markdown when composing rich notebook UI around existing SQL/Python result cells.',
 						properties: {
-							title: { type: 'string' },
+							title: {
+								type: 'string',
+								description:
+									'Section/dashboard title — rendered automatically as a heading. Do NOT also add a text/heading block repeating this title in blocks.'
+							},
 							statusBadge: {
 								type: 'object',
 								properties: {

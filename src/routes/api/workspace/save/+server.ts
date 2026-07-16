@@ -26,14 +26,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const row = await saveWorkspaceState(body.data, locals.user?.id ?? null, {
 			expectedUpdatedAt: body.expectedUpdatedAt ?? null,
-			force: body.force === true
+			force: body.force === true,
+			projectId: locals.project?.id
 		});
 		if (body.force) {
 			await logAuditEvent({
 				actorId: locals.user?.id,
+				orgId: locals.organization?.id,
+				projectId: locals.project?.id,
 				action: 'workspace.force_save',
 				resourceType: 'workspace',
-				resourceId: 'singleton'
+				resourceId: locals.project?.id ?? 'default'
 			});
 		}
 		return json({

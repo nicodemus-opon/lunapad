@@ -12,6 +12,7 @@
 	let submitting = $state(false);
 
 	onMount(async () => {
+		email = page.url.searchParams.get('email') ?? '';
 		const res = await fetch('/api/setup');
 		const body = (await res.json()) as { needsSetup: boolean };
 		if (body.needsSetup) {
@@ -27,6 +28,16 @@
 			if (error) {
 				toast.error(error.message ?? 'Invalid email or password.');
 				return;
+			}
+			const inviteToken = page.url.searchParams.get('inviteToken');
+			if (inviteToken) {
+				const inviteRes = await fetch(`/api/invitations/${inviteToken}/accept`, { method: 'POST' });
+				const inviteBody = await inviteRes.json();
+				if (!inviteRes.ok) {
+					toast.error(inviteBody.error ?? 'Signed in, but could not accept invitation.');
+				} else {
+					toast.success('Invitation accepted.');
+				}
 			}
 			const redirectTo = page.url.searchParams.get('redirectTo') || '/';
 			await goto(redirectTo);

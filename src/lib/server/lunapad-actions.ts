@@ -11,7 +11,10 @@ import { precompileProjectModels, collectProjectModelNames } from './prql-compil
 import { loadManifest, type DbtModel } from './dbt.js';
 import { loadWorkspaceState } from './workspace-store.js';
 import type { ChartConfig } from '$lib/types/gui-pipeline.js';
-import type { NotebookBlueprint, NotebookBlueprintDiagnostic } from '$lib/services/notebook-blueprint.js';
+import type {
+	NotebookBlueprint,
+	NotebookBlueprintDiagnostic
+} from '$lib/services/notebook-blueprint.js';
 import {
 	createNotebookFromBlueprintOnDisk,
 	patchNotebookOnDisk,
@@ -25,6 +28,7 @@ import {
 	type NotebookPatchInput,
 	type NotebookRunOutput
 } from './notebook-mutation.js';
+import type { TenantRef } from './tenancy.js';
 
 /**
  * Plain async functions with no SvelteKit-specific types — the single source of truth
@@ -34,12 +38,17 @@ import {
 
 // ── Connections ────────────────────────────────────────────────────────────────
 
-export async function listConnectionsAction(): Promise<{ connections: Connection[] }> {
-	return { connections: await listConnectionsMetadata() };
+export async function listConnectionsAction(
+	tenant?: TenantRef | null
+): Promise<{ connections: Connection[] }> {
+	return { connections: await listConnectionsMetadata(tenant?.orgId) };
 }
 
-async function resolveConnectionForQuery(connectionId: string): Promise<Connection> {
-	const connection = await getConnectionMetadata(connectionId);
+async function resolveConnectionForQuery(
+	connectionId: string,
+	tenant?: TenantRef | null
+): Promise<Connection> {
+	const connection = await getConnectionMetadata(connectionId, tenant?.orgId);
 	if (!connection) {
 		throw new Error(
 			`Unknown connection id "${connectionId}". Use list_connections to see available connections.`
@@ -55,6 +64,7 @@ async function resolveConnectionForQuery(connectionId: string): Promise<Connecti
 }
 
 export interface RunQueryInput {
+	tenant?: TenantRef | null;
 	connectionId: string;
 	sql: string;
 }
@@ -65,18 +75,32 @@ export interface RunQueryResult {
 }
 
 export async function runQueryAction(input: RunQueryInput): Promise<RunQueryResult> {
-	const connection = await resolveConnectionForQuery(input.connectionId);
-	const secret = await getSecret(connection.id);
-	return queryExternalConnection(connection, secret ?? undefined, input.sql);
+	const connection = await resolveConnectionForQuery(input.connectionId, input.tenant);
+	const secret = await getSecret(connection.id, input.tenant?.orgId);
+	if (!input.tenant?.orgId) {
+		return queryExternalConnection(connection, secret ?? undefined, input.sql);
+	}
+	const availableConnections = await listConnectionsMetadata(input.tenant.orgId, {
+		includePhysicalCatalogName: true
+	});
+	return queryExternalConnection(
+		connection,
+		secret ?? undefined,
+		input.sql,
+		undefined,
+		input.tenant.orgId,
+		availableConnections
+	);
 }
 
 export interface RunPrqlInput {
+	tenant?: TenantRef | null;
 	connectionId: string;
 	prql: string;
 }
 
 export async function runPrqlAction(input: RunPrqlInput): Promise<RunQueryResult> {
-	const connection = await resolveConnectionForQuery(input.connectionId);
+	const connection = await resolveConnectionForQuery(input.connectionId, input.tenant);
 
 	let sql: string;
 	try {
@@ -90,8 +114,21 @@ export async function runPrqlAction(input: RunPrqlInput): Promise<RunQueryResult
 		throw new Error(`PRQL compile error: ${(err as Error).message}`);
 	}
 
-	const secret = await getSecret(connection.id);
-	return queryExternalConnection(connection, secret ?? undefined, sql);
+	const secret = await getSecret(connection.id, input.tenant?.orgId);
+	if (!input.tenant?.orgId) {
+		return queryExternalConnection(connection, secret ?? undefined, sql);
+	}
+	const availableConnections = await listConnectionsMetadata(input.tenant.orgId, {
+		includePhysicalCatalogName: true
+	});
+	return queryExternalConnection(
+		connection,
+		secret ?? undefined,
+		sql,
+		undefined,
+		input.tenant.orgId,
+		availableConnections
+	);
 }
 
 // ── Notebooks (project-folder mode only — see note below) ──────────────────────
@@ -212,6 +249,7 @@ export async function getDbtManifestAction(
 //    targeting project-folder .luna files on disk instead of browser state) ──
 
 export interface CreateNotebookInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 	title?: string;
@@ -249,11 +287,12 @@ export async function createNotebookAction(
 		title: input.title,
 		executableCells: input.executableCells,
 		blocks: input.blocks
-	});
+	}, input.tenant);
 	return toMutationOutput(result);
 }
 
 export interface PatchNotebookInput extends NotebookPatchInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 }
@@ -268,7 +307,7 @@ export async function patchNotebookAction(
 		operations: input.operations,
 		executableCells: input.executableCells,
 		title: input.title
-	});
+	}, input.tenant);
 	return toMutationOutput(result);
 }
 
@@ -291,6 +330,7 @@ export async function inspectNotebookAction(input: ValidateNotebookInput) {
 }
 
 export interface RunNotebookCellsInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 	cellIds?: string[];
@@ -302,7 +342,8 @@ export async function runNotebookCellsAction(
 ): Promise<NotebookRunOutput> {
 	const folder = resolveProjectFolder(input.folder);
 	return runNotebookCellsOnDisk(folder, input.notebookId, input.cellIds, {
-		allowPython: input.allowPython
+		allowPython: input.allowPython,
+		tenant: input.tenant
 	});
 }
 
@@ -315,11 +356,17 @@ export interface SetChartInput {
 
 export async function setChartAction(input: SetChartInput): Promise<NotebookMutationOutput> {
 	const folder = resolveProjectFolder(input.folder);
-	const result = await setCellChartConfig(folder, input.notebookId, input.cellId, input.chartConfig);
+	const result = await setCellChartConfig(
+		folder,
+		input.notebookId,
+		input.cellId,
+		input.chartConfig
+	);
 	return toMutationOutput(result);
 }
 
 export interface PickChartInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 	cellId: string;
@@ -328,7 +375,8 @@ export interface PickChartInput {
 export async function pickChartAction(input: PickChartInput): Promise<NotebookMutationOutput> {
 	const folder = resolveProjectFolder(input.folder);
 	const runOutput = await runNotebookCellsOnDisk(folder, input.notebookId, [input.cellId], {
-		allowPython: false
+		allowPython: false,
+		tenant: input.tenant
 	});
 	const cellResult = runOutput.results[0];
 	if (!cellResult || !cellResult.ok) {
@@ -356,7 +404,7 @@ export async function deleteNotebookAction(
 
 // ── Shares / publishing ──────────────────────────────────────────────────────
 
-export async function listSharesAction(): Promise<{
+export async function listSharesAction(tenant?: TenantRef | null): Promise<{
 	shares: Array<{
 		notebookId: string;
 		notebookName: string;
@@ -365,7 +413,7 @@ export async function listSharesAction(): Promise<{
 	}>;
 }> {
 	const { listActiveShares } = await import('./shared-reports.js');
-	const shares = await listActiveShares();
+	const shares = await listActiveShares(tenant);
 	return {
 		shares: shares.map((s) => ({
 			notebookId: s.notebookId,
@@ -377,6 +425,7 @@ export async function listSharesAction(): Promise<{
 }
 
 export interface PublishNotebookInput {
+	tenant?: TenantRef | null;
 	notebookId: string;
 }
 
@@ -388,22 +437,23 @@ export async function publishNotebookAction(
 	const { buildShareSnapshot } = await import('$lib/services/share-snapshot');
 	const { getSecret } = await import('./connection-secrets.js');
 
-	const row = await loadWorkspaceState();
+	const row = await loadWorkspaceState(input.tenant?.projectId ?? undefined);
 	if (!row?.data) throw new Error('No workspace state on server.');
 	const blob = row.data as { notebooks?: Notebook[]; connections?: Connection[] };
 	const notebook = blob.notebooks?.find((n) => n.id === input.notebookId);
 	if (!notebook) throw new Error(`Notebook "${input.notebookId}" not found in workspace.`);
 
 	const snapshot = buildShareSnapshot(notebook, blob.connections ?? []);
-	const existing = await getShareByNotebookId(input.notebookId);
+	const existing = await getShareByNotebookId(input.notebookId, input.tenant);
 	const connInputs = await Promise.all(
 		snapshot.connections.map(async (conn) => ({
 			connectionId: conn.connectionId,
 			connection: conn.connection,
-			secret: await getSecret(conn.connectionId)
+			secret: await getSecret(conn.connectionId, input.tenant?.orgId)
 		}))
 	);
 	const share = await upsertShare({
+		tenant: input.tenant,
 		notebookId: notebook.id,
 		notebookName: notebook.name,
 		snapshot: { cells: snapshot.cells, reportView: snapshot.reportView },
@@ -416,6 +466,7 @@ export async function publishNotebookAction(
 }
 
 export interface CreateSitePageInput {
+	tenant?: TenantRef | null;
 	siteId: string;
 	pageSlug: string;
 	navLabel: string;
@@ -429,6 +480,7 @@ export async function createSitePageAction(
 	const { getShareByToken } = await import('./shared-reports.js');
 	const share = await getShareByToken(input.shareToken);
 	const page = await addPageToSite({
+		tenant: input.tenant,
 		siteId: input.siteId,
 		pageSlug: input.pageSlug,
 		navLabel: input.navLabel,

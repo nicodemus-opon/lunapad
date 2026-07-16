@@ -11,9 +11,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json()) as Partial<{ notebookId: string }>;
 	if (!body?.notebookId) return json({ error: 'notebookId is required.' }, { status: 400 });
 	try {
-		const share = await regenerateShareToken(body.notebookId);
+		const share = await regenerateShareToken(body.notebookId, {
+			orgId: locals.organization!.id,
+			projectId: locals.project?.id
+		});
 		await logAuditEvent({
 			actorId: locals.user!.id,
+			orgId: locals.organization?.id,
+			projectId: locals.project?.id,
 			action: 'share.regenerated',
 			resourceType: 'share',
 			resourceId: share.token,

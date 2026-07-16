@@ -8,13 +8,13 @@ interface SetSecretRequest {
 	secret: ConnectionSecret;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json()) as Partial<SetSecretRequest>;
 	if (!body?.connectionId || !body.secret) {
 		return json({ error: 'connectionId and secret are required.' }, { status: 400 });
 	}
 	try {
-		await setSecret(body.connectionId, body.secret);
+		await setSecret(body.connectionId, body.secret, locals.organization?.id);
 		return json({ ok: true });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to store secret.';
@@ -22,11 +22,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 };
 
-export const DELETE: RequestHandler = async ({ request }) => {
+export const DELETE: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json()) as Partial<{ connectionId: string }>;
 	if (!body?.connectionId) {
 		return json({ error: 'connectionId is required.' }, { status: 400 });
 	}
-	await deleteSecret(body.connectionId);
+	await deleteSecret(body.connectionId, locals.organization?.id);
 	return json({ ok: true });
 };

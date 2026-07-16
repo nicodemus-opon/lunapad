@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { query } from './db.js';
 import type { ConnectionSecret } from '$lib/types/connection';
+import { DEFAULT_ORG_ID } from './tenancy.js';
 
 const ALGORITHM = 'aes-256-gcm';
 
@@ -39,11 +40,22 @@ let secretsTableReady: Promise<void> | null = null;
 async function ensureSecretsTable(): Promise<void> {
 	await query(`
 		CREATE TABLE IF NOT EXISTS connection_secrets (
-			connection_id TEXT PRIMARY KEY,
+			org_id        TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}',
+			connection_id TEXT NOT NULL,
 			ciphertext    TEXT NOT NULL,
-			updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+			updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			PRIMARY KEY (org_id, connection_id)
 		)
 	`);
+	await query(
+		`ALTER TABLE connection_secrets ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}'`
+	);
+	await query(
+		`CREATE INDEX IF NOT EXISTS connection_secrets_org_idx ON connection_secrets (org_id)`
+	);
+	await query(
+		`CREATE UNIQUE INDEX IF NOT EXISTS connection_secrets_org_connection_idx ON connection_secrets (org_id, connection_id)`
+	);
 }
 
 function ensureSecretsTableOnce(): Promise<void> {
@@ -51,28 +63,38 @@ function ensureSecretsTableOnce(): Promise<void> {
 	return secretsTableReady;
 }
 
-export async function setSecret(connectionId: string, secret: ConnectionSecret): Promise<void> {
+export async function setSecret(
+	connectionId: string,
+	secret: ConnectionSecret,
+	orgId = DEFAULT_ORG_ID
+): Promise<void> {
 	await ensureSecretsTableOnce();
 	const ciphertext = encrypt(JSON.stringify(secret));
 	await query(
-		`INSERT INTO connection_secrets (connection_id, ciphertext, updated_at)
-		 VALUES ($1, $2, now())
-		 ON CONFLICT (connection_id) DO UPDATE SET ciphertext = $2, updated_at = now()`,
-		[connectionId, ciphertext]
+		`INSERT INTO connection_secrets (org_id, connection_id, ciphertext, updated_at)
+		 VALUES ($1, $2, $3, now())
+		 ON CONFLICT (org_id, connection_id) DO UPDATE SET ciphertext = $3, updated_at = now()`,
+		[orgId, connectionId, ciphertext]
 	);
 }
 
-export async function getSecret(connectionId: string): Promise<ConnectionSecret | null> {
+export async function getSecret(
+	connectionId: string,
+	orgId = DEFAULT_ORG_ID
+): Promise<ConnectionSecret | null> {
 	await ensureSecretsTableOnce();
 	const rows = await query<{ ciphertext: string }>(
-		`SELECT ciphertext FROM connection_secrets WHERE connection_id = $1`,
-		[connectionId]
+		`SELECT ciphertext FROM connection_secrets WHERE connection_id = $1 AND org_id = $2`,
+		[connectionId, orgId]
 	);
 	if (rows.length === 0) return null;
 	return JSON.parse(decrypt(rows[0].ciphertext)) as ConnectionSecret;
 }
 
-export async function deleteSecret(connectionId: string): Promise<void> {
+export async function deleteSecret(connectionId: string, orgId = DEFAULT_ORG_ID): Promise<void> {
 	await ensureSecretsTableOnce();
-	await query(`DELETE FROM connection_secrets WHERE connection_id = $1`, [connectionId]);
+	await query(`DELETE FROM connection_secrets WHERE connection_id = $1 AND org_id = $2`, [
+		connectionId,
+		orgId
+	]);
 }

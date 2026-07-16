@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getSitePageBySlugs } from '$lib/server/sites';
 import { loadSharePage } from '$lib/server/share-page-load';
+import { hasOrganizationMembership } from '$lib/server/tenancy';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const resolved = await getSitePageBySlugs(params.siteSlug, params.pageSlug);
@@ -9,6 +10,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	if (resolved.site.requireAuth && !locals.user) {
 		redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname + url.search)}`);
+	}
+	if (resolved.site.requireAuth && locals.user) {
+		const allowed = await hasOrganizationMembership(resolved.site.orgId, locals.user.id);
+		if (!allowed) error(403, 'This site is private.');
 	}
 
 	const pageData = await loadSharePage({

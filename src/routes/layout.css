@@ -417,7 +417,9 @@
 	text-transform: uppercase;
 	color: var(--muted-foreground);
 	cursor: pointer;
-	transition: background-color var(--motion-fast) var(--motion-ease-out), color var(--motion-fast) var(--motion-ease-out);
+	transition:
+		background-color var(--motion-fast) var(--motion-ease-out),
+		color var(--motion-fast) var(--motion-ease-out);
 }
 
 .sidebar-group-header:hover {
@@ -489,6 +491,64 @@
 .sidebar-inline-search:focus-within {
 	border-color: var(--sidebar-ring);
 	box-shadow: 0 0 0 2px color-mix(in oklab, var(--sidebar-ring) 30%, transparent);
+}
+
+/* ─── Notebook tab switchers ─────────────────────────────────────────────── *
+ * Single shared look for every text-label tab strip inside a notebook cell or
+ * markdoc block — PRQL/Visual/SQL, Table/Chart/Stats, Visual/Source/Preview,
+ * Preview/Template, and {% tabs %} content widgets all read as one system:
+ * underline indicator only, no pill/background, --secondary for the active
+ * indicator (never --primary, which reads as an action/link color here). */
+.notebook-tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0 0.125rem;
+}
+
+.notebook-tabs.is-md .notebook-tab {
+	height: 1.5rem;
+}
+
+.notebook-tab {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	height: 1.25rem;
+	padding: 0;
+	border: none;
+	background: transparent;
+	font-size: var(--text-2xs);
+	font-weight: 600;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	transition: color var(--motion-fast) var(--motion-ease-out);
+}
+
+.notebook-tab:hover {
+	color: var(--foreground);
+}
+
+.notebook-tab.is-active {
+	color: var(--foreground);
+}
+
+.notebook-tab.is-active::after {
+	position: absolute;
+	right: 0;
+	bottom: -0.18rem;
+	left: 0;
+	height: 2px;
+	border-radius: 999px;
+	background: var(--secondary);
+	content: '';
+}
+
+.notebook-tab:focus-visible {
+	outline: none;
+	border-radius: var(--radius-sm);
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 35%, transparent);
 }
 
 /* ─── Cell entrance animation ────────────────────────────────────────────── */

@@ -108,6 +108,7 @@
 		setCellResultViewMode,
 		setNotebookFilterValue
 	} from '$lib/stores/notebook.svelte';
+	import { onProjectChange as listenForProjectChange } from '$lib/stores/project-context';
 	import { isDesktop, platformOS } from '$lib/services/platform.svelte';
 	import WindowControls from '$lib/components/WindowControls.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
@@ -128,6 +129,8 @@
 	import NotebookBreadcrumbs from '$lib/components/notebook/NotebookBreadcrumbs.svelte';
 	import NotebookBacklinks from '$lib/components/notebook/NotebookBacklinks.svelte';
 	import ProjectSection from '$lib/components/ProjectSection.svelte';
+	import ProjectSwitcher from '$lib/components/ProjectSwitcher.svelte';
+	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
@@ -463,6 +466,7 @@
 	let notebookTabsCollapsed = $state(false);
 	let isDraggingSidebar = $state(false);
 	let layoutRoot: HTMLDivElement | null = null;
+	let unsubscribeProjectChange: (() => void) | null = null;
 
 	// AI panel resize. Width updates are rAF-coalesced (pointermove can fire far
 	// faster than the frame rate) and persisted to localStorage once on release.
@@ -632,6 +636,25 @@
 		}
 	}
 
+	async function onProjectChange(detail?: { projectFolder?: string | null }) {
+		try {
+			stopCommentsPolling();
+			stopWorkspacePolling();
+			if (detail?.projectFolder) {
+				await openProject(detail.projectFolder);
+			}
+			await reloadWorkspaceFromServer();
+			clearAllResults();
+			await refreshTablesFromCatalog();
+			if (collabEnabled) {
+				startCommentsPolling(getActiveTabId());
+				startWorkspacePolling();
+			}
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to load project workspace.');
+		}
+	}
+
 	onMount(() => {
 		const unmountKeyboard = mountKeyboardDispatcher();
 		const unregisterPageBridge = registerPageBridge({
@@ -706,6 +729,7 @@
 				sidebarWidth = clamp(parsed, 220, 460);
 			}
 		}
+
 		sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
 		notebookTabsCollapsed = localStorage.getItem(NOTEBOOK_TABS_COLLAPSED_KEY) === 'true';
 		window.addEventListener('pointermove', onSidebarPointerMove);
@@ -717,6 +741,7 @@
 		window.addEventListener('pointermove', onReviewPanelPointerMove);
 		window.addEventListener('pointerup', onReviewPanelPointerUp);
 		window.addEventListener('pointercancel', onReviewPanelPointerUp);
+		unsubscribeProjectChange = listenForProjectChange((detail) => onProjectChange(detail));
 		layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 		initAIChatWidth();
 		initWorkspaceStandards();
@@ -781,6 +806,8 @@
 		window.removeEventListener('pointermove', onReviewPanelPointerMove);
 		window.removeEventListener('pointerup', onReviewPanelPointerUp);
 		window.removeEventListener('pointercancel', onReviewPanelPointerUp);
+		unsubscribeProjectChange?.();
+		unsubscribeProjectChange = null;
 		stopCommentsPolling();
 		stopWorkspacePolling();
 	});
@@ -1045,6 +1072,9 @@
 						<Logo class="h-5 w-5 text-foreground" />
 						<span class="text-sm font-semibold tracking-tight">Lunapad</span>
 					</div>
+					{#if !data.demoMode}
+						<ProjectSwitcher />
+					{/if}
 					<div class="mx-1 h-5 w-px bg-border"></div>
 					<div class="flex items-center gap-0.5">
 						<DropdownMenu.Root>
@@ -1311,54 +1341,52 @@
 						{/if}
 						{#if collabEnabled}
 							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<button
-										class="relative flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {reviewPanelOpen
-											? 'bg-primary/15 text-primary'
-											: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
-										onclick={() => {
-											if (reviewPanelOpen) closeCommentPanel();
-											else openInbox();
-										}}
-										aria-pressed={reviewPanelOpen}
-										aria-label="Open review inbox"
-									>
-										<MessageSquare class="h-3.5 w-3.5" />
-										<span class="hidden sm:inline">Review</span>
-										{#if inboxUnread > 0}
-											<span
-												class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background"
-											></span>
-										{/if}
-									</button>
+								<Tooltip.Trigger
+									class="relative flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {reviewPanelOpen
+										? 'bg-primary/15 text-primary'
+										: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+									onclick={() => {
+										if (reviewPanelOpen) closeCommentPanel();
+										else openInbox();
+									}}
+									aria-pressed={reviewPanelOpen}
+									aria-label="Open review inbox"
+								>
+									<MessageSquare class="h-3.5 w-3.5" />
+									<span class="hidden sm:inline">Review</span>
+									{#if inboxUnread > 0}
+										<span
+											class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background"
+										></span>
+									{/if}
 								</Tooltip.Trigger>
 								<Tooltip.Content side="bottom">Review threads & inbox</Tooltip.Content>
 							</Tooltip.Root>
 						{/if}
 						<Tooltip.Root>
-							<Tooltip.Trigger>
-								<button
-									class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen
-										? 'bg-primary/15 text-primary'
-										: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
-									onclick={() => setAIChatOpen(!getAIChatOpen())}
-									aria-pressed={aiChatOpen}
-									aria-label="Toggle AI chat"
-									data-testid="ai-toggle"
-								>
-									<Sparkles class="h-3.5 w-3.5" />
-									<span class="hidden sm:inline">AI</span>
-								</button>
+							<Tooltip.Trigger
+								class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {aiChatOpen
+									? 'bg-primary/15 text-primary'
+									: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+								onclick={() => setAIChatOpen(!getAIChatOpen())}
+								aria-pressed={aiChatOpen}
+								aria-label="Toggle AI chat"
+								data-testid="ai-toggle"
+							>
+								<Sparkles class="h-3.5 w-3.5" />
+								<span class="hidden sm:inline">AI</span>
 							</Tooltip.Trigger>
 							<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
 						</Tooltip.Root>
 					{/if}
 
 					<Tooltip.Root>
-						<Tooltip.Trigger aria-label="Upload file" onclick={() => (uploadDialogOpen = true)}>
-							<Button variant="outline" size="sm">
-								<Upload class="h-3.5 w-3.5" />Upload
-							</Button>
+						<Tooltip.Trigger
+							class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium whitespace-nowrap shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+							aria-label="Upload file"
+							onclick={() => (uploadDialogOpen = true)}
+						>
+							<Upload class="h-3.5 w-3.5" />Upload
 						</Tooltip.Trigger>
 						<Tooltip.Content side="bottom">Upload file</Tooltip.Content>
 					</Tooltip.Root>
@@ -2027,6 +2055,9 @@
 									<div
 										class="notebook-page mx-auto w-full max-w-[var(--notebook-page-width)] px-[var(--notebook-page-padding)] pt-10 pb-32"
 									>
+										{#if !data.demoMode}
+											<OnboardingChecklist />
+										{/if}
 										<div class="mb-6 flex items-center gap-3">
 											<input
 												class="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"

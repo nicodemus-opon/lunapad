@@ -1,4 +1,5 @@
 import { query } from './db.js';
+import { DEFAULT_PROJECT_ID, ensureDefaultTenant } from './tenancy.js';
 
 // Stores the whole shared-workspace blob (notebooks, cells, tabs, prefs, workspace
 // standards) as a single JSONB row, so Postgres becomes the source of truth for the
@@ -10,14 +11,23 @@ import { query } from './db.js';
 let workspaceTableReady: Promise<void> | null = null;
 
 async function ensureWorkspaceTable(): Promise<void> {
+	await ensureDefaultTenant();
 	await query(`
 		CREATE TABLE IF NOT EXISTS workspace_state (
 			id         TEXT PRIMARY KEY DEFAULT 'singleton',
+			project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
 			data       JSONB NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_by TEXT
 		)
 	`);
+	await query(`ALTER TABLE workspace_state ADD COLUMN IF NOT EXISTS project_id TEXT`);
+	await query(`UPDATE workspace_state SET project_id = $1 WHERE project_id IS NULL`, [
+		DEFAULT_PROJECT_ID
+	]);
+	await query(
+		`CREATE INDEX IF NOT EXISTS workspace_state_project_idx ON workspace_state (project_id)`
+	);
 }
 
 function ensureWorkspaceTableOnce(): Promise<void> {
@@ -55,13 +65,22 @@ export class WorkspaceConflictError extends Error {
 	}
 }
 
-export async function loadWorkspaceState(): Promise<WorkspaceStateRow | null> {
+export async function loadWorkspaceState(
+	projectId = DEFAULT_PROJECT_ID
+): Promise<WorkspaceStateRow | null> {
 	await ensureWorkspaceTableOnce();
 	const rows = await query<{
 		data: unknown;
 		updated_at: string;
 		updated_by: string | null;
-	}>(`SELECT data, updated_at, updated_by FROM workspace_state WHERE id = 'singleton'`);
+	}>(
+		`SELECT data, updated_at, updated_by
+		 FROM workspace_state
+		 WHERE project_id = $1 OR (project_id IS NULL AND id = 'singleton')
+		 ORDER BY CASE WHEN project_id = $1 THEN 0 ELSE 1 END
+		 LIMIT 1`,
+		[projectId]
+	);
 	return rows[0]
 		? { data: rows[0].data, updatedAt: rows[0].updated_at, updatedBy: rows[0].updated_by }
 		: null;
@@ -70,12 +89,13 @@ export async function loadWorkspaceState(): Promise<WorkspaceStateRow | null> {
 export async function saveWorkspaceState(
 	data: unknown,
 	userId: string | null,
-	opts?: { expectedUpdatedAt?: string | null; force?: boolean }
+	opts?: { expectedUpdatedAt?: string | null; force?: boolean; projectId?: string }
 ): Promise<WorkspaceStateRow> {
 	await ensureWorkspaceTableOnce();
+	const projectId = opts?.projectId ?? DEFAULT_PROJECT_ID;
 
 	if (opts?.expectedUpdatedAt && !opts.force) {
-		const current = await loadWorkspaceState();
+		const current = await loadWorkspaceState(projectId);
 		if (
 			current &&
 			new Date(current.updatedAt).getTime() !== new Date(opts.expectedUpdatedAt).getTime()
@@ -85,11 +105,11 @@ export async function saveWorkspaceState(
 	}
 
 	const rows = await query<{ updated_at: string; updated_by: string | null }>(
-		`INSERT INTO workspace_state (id, data, updated_at, updated_by)
-		 VALUES ('singleton', $1, now(), $2)
-		 ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now(), updated_by = $2
+		`INSERT INTO workspace_state (id, project_id, data, updated_at, updated_by)
+		 VALUES ($1, $1, $2, now(), $3)
+		 ON CONFLICT (id) DO UPDATE SET project_id = $1, data = $2, updated_at = now(), updated_by = $3
 		 RETURNING updated_at, updated_by`,
-		[JSON.stringify(data), userId]
+		[projectId, JSON.stringify(data), userId]
 	);
 	return {
 		data,
