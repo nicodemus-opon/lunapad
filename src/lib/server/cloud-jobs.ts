@@ -29,6 +29,7 @@ export interface CloudJob {
 	requestId: string | null;
 	payload: Record<string, unknown> | null;
 	logs: string | null;
+	result: unknown | null;
 	resultPointer: string | null;
 	error: string | null;
 	cancelRequestedAt: string | null;
@@ -73,6 +74,7 @@ type CloudJobRow = {
 	request_id: string | null;
 	payload?: Record<string, unknown> | null;
 	logs?: string | null;
+	result?: unknown | null;
 	result_pointer?: string | null;
 	error?: string | null;
 	cancel_requested_at?: string | null;
@@ -87,13 +89,13 @@ type CloudJobRow = {
 
 const CLOUD_JOB_COLUMNS = `
 	id, org_id, project_id, user_id, kind, status, timeout_ms, quota_key,
-	request_id, payload, logs, result_pointer, error, cancel_requested_at,
+	request_id, payload, logs, result, result_pointer, error, cancel_requested_at,
 	worker_id, lease_expires_at, attempts, created_at, updated_at, started_at, finished_at
 `;
 
 const CLOUD_JOB_COLUMNS_FOR_ALIAS_J = `
 	j.id, j.org_id, j.project_id, j.user_id, j.kind, j.status, j.timeout_ms, j.quota_key,
-	j.request_id, j.payload, j.logs, j.result_pointer, j.error, j.cancel_requested_at,
+	j.request_id, j.payload, j.logs, j.result, j.result_pointer, j.error, j.cancel_requested_at,
 	j.worker_id, j.lease_expires_at, j.attempts, j.created_at, j.updated_at, j.started_at, j.finished_at
 `;
 
@@ -114,6 +116,7 @@ async function ensureCloudJobsTable(): Promise<void> {
 			request_id  TEXT,
 			payload     JSONB,
 			logs        TEXT,
+			result      JSONB,
 			result_pointer TEXT,
 			error       TEXT,
 			cancel_requested_at TIMESTAMPTZ,
@@ -127,11 +130,14 @@ async function ensureCloudJobsTable(): Promise<void> {
 		)
 	`);
 	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS logs TEXT`);
+	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS result JSONB`);
 	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS result_pointer TEXT`);
 	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ`);
 	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS worker_id TEXT`);
 	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`);
-	await query(`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`);
+	await query(
+		`ALTER TABLE cloud_jobs ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`
+	);
 	await query(
 		`CREATE INDEX IF NOT EXISTS cloud_jobs_org_status_idx ON cloud_jobs (org_id, status)`
 	);
@@ -165,6 +171,7 @@ function toCloudJob(row: CloudJobRow): CloudJob {
 		requestId: row.request_id,
 		payload: row.payload ?? null,
 		logs: row.logs ?? null,
+		result: row.result ?? null,
 		resultPointer: row.result_pointer ?? null,
 		error: row.error ?? null,
 		cancelRequestedAt: row.cancel_requested_at ?? null,
@@ -291,6 +298,7 @@ export async function finishCloudJob(input: {
 	workerId?: string | null;
 	status: Extract<CloudJobStatus, 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>;
 	logs?: string | null;
+	result?: unknown | null;
 	resultPointer?: string | null;
 	error?: string | null;
 }): Promise<CloudJob | null> {
@@ -299,14 +307,15 @@ export async function finishCloudJob(input: {
 		`UPDATE cloud_jobs
 		 SET status = $3,
 		     logs = COALESCE($4, logs),
-		     result_pointer = $5,
-		     error = $6,
+		     result = COALESCE($5::jsonb, result),
+		     result_pointer = $6,
+		     error = $7,
 		     lease_expires_at = NULL,
 		     updated_at = now(),
 		     finished_at = now()
 		 WHERE org_id = $1
 		   AND id = $2
-		   AND ($7::text IS NULL OR worker_id = $7)
+		   AND ($8::text IS NULL OR worker_id = $8)
 		   AND status IN ('queued', 'running')
 		 RETURNING ${CLOUD_JOB_COLUMNS}`,
 		[
@@ -314,6 +323,7 @@ export async function finishCloudJob(input: {
 			input.jobId,
 			input.status,
 			input.logs ?? null,
+			input.result === undefined ? null : JSON.stringify(input.result),
 			input.resultPointer ?? null,
 			input.error ?? null,
 			input.workerId ?? null
@@ -366,13 +376,7 @@ export async function appendCloudJobLogs(input: CloudJobLogAppend): Promise<Clou
 		   AND ($5::text IS NULL OR worker_id = $5)
 		   AND status = 'running'
 		 RETURNING ${CLOUD_JOB_COLUMNS}`,
-		[
-			input.orgId ?? DEFAULT_ORG_ID,
-			input.jobId,
-			input.message,
-			maxBytes,
-			input.workerId ?? null
-		]
+		[input.orgId ?? DEFAULT_ORG_ID, input.jobId, input.message, maxBytes, input.workerId ?? null]
 	);
 	return rows[0] ? toCloudJob(rows[0]) : null;
 }
@@ -396,10 +400,12 @@ export async function extendCloudJobLease(input: {
 	return rows[0] ? toCloudJob(rows[0]) : null;
 }
 
-export async function failTimedOutCloudJobs(input: {
-	orgId?: string | null;
-	limit?: number;
-} = {}): Promise<CloudJob[]> {
+export async function failTimedOutCloudJobs(
+	input: {
+		orgId?: string | null;
+		limit?: number;
+	} = {}
+): Promise<CloudJob[]> {
 	await ensureCloudJobsTableOnce();
 	const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
 	const rows = await query<CloudJobRow>(

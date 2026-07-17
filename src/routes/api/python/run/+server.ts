@@ -46,12 +46,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			quotaKey: 'python',
 			requestId: locals.requestId,
 			entitlements: locals.entitlements,
-			payload: { notebookId, folder, code, tables: tables ?? {}, tableDescriptors: tableDescriptors ?? [] },
+			payload: {
+				notebookId,
+				folder,
+				code,
+				tables: tables ?? {},
+				tableDescriptors: tableDescriptors ?? []
+			},
 			run: async () => ({
 				jobId: spawnPythonCell(notebookId, code, tables ?? {}, tableDescriptors ?? [])
 			})
 		});
-		if (execution.queued) return json({ job: execution.job }, { status: 202 });
+		if (execution.queued)
+			return json({ job: execution.job, jobId: execution.job.id }, { status: 202 });
 		return json(execution.result);
 	} catch (err) {
 		return json({ error: (err as Error).message }, { status: 400 });

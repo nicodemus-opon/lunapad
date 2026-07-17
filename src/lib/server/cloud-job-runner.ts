@@ -1,9 +1,15 @@
-import { getCloudJob, type CloudJob } from './cloud-jobs.js';
+import { appendCloudJobLogs, getCloudJob, type CloudJob } from './cloud-jobs.js';
 import { queryExternalConnection } from './connections.js';
 import { getSecret } from './connection-secrets.js';
 import { getConnectionMetadata, listConnectionsMetadata } from './connections-store.js';
 import { spawnDbt } from './dbt-runner.js';
-import { spawnPythonCell, type PythonTable, type PythonTableDescriptor } from './python-runner.js';
+import {
+	getPythonJob,
+	spawnPythonCell,
+	type PythonRunResult,
+	type PythonTable,
+	type PythonTableDescriptor
+} from './python-runner.js';
 
 function assertString(value: unknown, label: string): string {
 	if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
@@ -15,6 +21,33 @@ function assertStringArray(value: unknown, label: string): string[] {
 		throw new Error(`${label} must be an array of strings.`);
 	}
 	return value;
+}
+
+function waitForPythonJob(jobId: string, timeoutMs: number): Promise<PythonRunResult> {
+	return new Promise((resolve, reject) => {
+		const job = getPythonJob(jobId);
+		if (!job) {
+			reject(new Error('Python job not found immediately after spawning it.'));
+			return;
+		}
+		if (job.done) {
+			resolve(
+				job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null }
+			);
+			return;
+		}
+		const timer = setTimeout(() => {
+			job.emitter.off('done', onDone);
+			reject(new Error('Python cell execution timed out.'));
+		}, timeoutMs);
+		const onDone = () => {
+			clearTimeout(timer);
+			resolve(
+				job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null }
+			);
+		};
+		job.emitter.once('done', onDone);
+	});
 }
 
 export function queueWorkerSupportsKind(kind: CloudJob['kind']): boolean {
@@ -41,7 +74,14 @@ export async function runClaimedCloudJob(input: {
 		const availableConnections = await listConnectionsMetadata(job.orgId, {
 			includePhysicalCatalogName: true
 		});
-		return queryExternalConnection(connection, secret ?? undefined, sql, undefined, job.orgId, availableConnections);
+		return queryExternalConnection(
+			connection,
+			secret ?? undefined,
+			sql,
+			undefined,
+			job.orgId,
+			availableConnections
+		);
 	}
 	if (job.kind === 'dbt') {
 		const folder = assertString(payload.folder, 'folder');
@@ -51,14 +91,36 @@ export async function runClaimedCloudJob(input: {
 	if (job.kind === 'python') {
 		const notebookId = assertString(payload.notebookId, 'notebookId');
 		const code = assertString(payload.code, 'code');
-		const tables = (payload.tables && typeof payload.tables === 'object' ? payload.tables : {}) as Record<
-			string,
-			PythonTable
-		>;
+		const tables = (
+			payload.tables && typeof payload.tables === 'object' ? payload.tables : {}
+		) as Record<string, PythonTable>;
 		const tableDescriptors = Array.isArray(payload.tableDescriptors)
 			? (payload.tableDescriptors as PythonTableDescriptor[])
 			: [];
-		return { jobId: spawnPythonCell(notebookId, code, tables, tableDescriptors) };
+		const pythonJobId = spawnPythonCell(notebookId, code, tables, tableDescriptors);
+		const pythonJob = getPythonJob(pythonJobId);
+		if (!pythonJob) throw new Error('Python job not found immediately after spawning it.');
+
+		const logWrites: Promise<unknown>[] = [];
+		const appendLine = (line: string): void => {
+			logWrites.push(
+				appendCloudJobLogs({
+					orgId: job.orgId,
+					jobId: job.id,
+					workerId: input.workerId,
+					message: `${line}\n`
+				})
+			);
+		};
+		for (const line of pythonJob.lines) appendLine(line);
+		pythonJob.emitter.on('line', appendLine);
+		try {
+			const result = await waitForPythonJob(pythonJobId, job.timeoutMs);
+			await Promise.allSettled(logWrites);
+			return result;
+		} finally {
+			pythonJob.emitter.off('line', appendLine);
+		}
 	}
 	throw new Error(`No production worker executor is registered for job kind "${job.kind}".`);
 }

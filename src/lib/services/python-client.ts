@@ -41,9 +41,11 @@ export async function runPython(
 			folder: folder ?? undefined
 		})
 	});
-	const body = (await res.json()) as { error?: string; jobId?: string };
+	const body = (await res.json()) as { error?: string; jobId?: string; job?: { id?: string } };
 	if (!res.ok) throw new Error(body.error ?? 'Failed to run python cell');
-	return body.jobId!;
+	const jobId = body.jobId ?? body.job?.id;
+	if (!jobId) throw new Error('Python run did not return a job id');
+	return jobId;
 }
 
 export interface PythonCompletionItem {

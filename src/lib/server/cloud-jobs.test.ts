@@ -29,6 +29,7 @@ const row = {
 	request_id: null,
 	payload: null,
 	logs: null,
+	result: null,
 	result_pointer: null,
 	error: null,
 	cancel_requested_at: null,
@@ -79,11 +80,12 @@ describe('cloud job storage invariants', () => {
 		const updateCall = mocks.query.mock.calls.find(([sql]) =>
 			String(sql).includes('finished_at = now()')
 		);
-		expect(updateCall?.[0]).toContain('worker_id = $7');
+		expect(updateCall?.[0]).toContain('worker_id = $8');
 		expect(updateCall?.[1]).toEqual([
 			'org-1',
 			'job-1',
 			'succeeded',
+			null,
 			null,
 			null,
 			null,

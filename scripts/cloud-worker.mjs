@@ -6,7 +6,10 @@ const baseUrl = process.env.LUNAPAD_BASE_URL ?? process.env.ORIGIN ?? 'http://lo
 const workerToken = process.env.CLOUD_WORKER_TOKEN;
 const workerId =
 	process.env.CLOUD_WORKER_ID ??
-	`worker-${os.hostname().replace(/[^a-z0-9-]/gi, '-').toLowerCase()}-${process.pid}`;
+	`worker-${os
+		.hostname()
+		.replace(/[^a-z0-9-]/gi, '-')
+		.toLowerCase()}-${process.pid}`;
 const concurrency = Math.max(1, Math.min(Number(process.env.CLOUD_WORKER_CONCURRENCY ?? '1'), 16));
 const leaseMs = Math.max(15_000, Number(process.env.CLOUD_WORKER_LEASE_MS ?? '60000'));
 const pollMs = Math.max(500, Number(process.env.CLOUD_WORKER_POLL_MS ?? '1500'));
@@ -76,7 +79,10 @@ async function heartbeatLoop(lease, signal) {
 
 async function executeLease(lease) {
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(new Error('Job timed out.')), lease.runner.timeoutMs);
+	const timeout = setTimeout(
+		() => controller.abort(new Error('Job timed out.')),
+		lease.runner.timeoutMs
+	);
 	const heartbeat = heartbeatLoop(lease, controller.signal);
 	const scratchPath = lease.runner.tenantScratchPath;
 	try {
@@ -91,8 +97,9 @@ async function executeLease(lease) {
 		const resultPath = path.join(scratchPath, 'result.json');
 		await fs.writeFile(resultPath, JSON.stringify(result.result ?? null, null, 2));
 		await appendLog(lease, `completed ${lease.job.kind} job ${lease.job.id}`);
+		await appendLog(lease, `result: ${resultPath}`);
 		await finish(lease, 'succeeded', {
-			logs: `Result written to ${resultPath}`,
+			result: result.result ?? null,
 			resultPointer: resultPath
 		});
 	} catch (err) {

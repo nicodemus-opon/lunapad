@@ -54,6 +54,7 @@ function job(overrides: Partial<CloudJob> = {}): CloudJob {
 		requestId: null,
 		payload: null,
 		logs: null,
+		result: null,
 		resultPointer: null,
 		error: null,
 		cancelRequestedAt: null,

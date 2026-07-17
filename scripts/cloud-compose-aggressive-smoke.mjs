@@ -22,7 +22,9 @@ function setCookies(headers) {
 	const raw =
 		typeof headers.getSetCookie === 'function'
 			? headers.getSetCookie()
-			: (headers.get('set-cookie') ? [headers.get('set-cookie')] : []);
+			: headers.get('set-cookie')
+				? [headers.get('set-cookie')]
+				: [];
 	for (const header of raw) {
 		for (const part of header.split(/,(?=[^;,]+=)/)) {
 			const [pair] = part.split(';');
@@ -112,10 +114,18 @@ async function waitForJob(jobId, expectedStatus, timeoutMs = 90_000) {
 	while (Date.now() - start < timeoutMs) {
 		latest = await queryJob(jobId);
 		if (latest.status === expectedStatus) return latest;
-		if (expectedStatus !== 'failed' && ['failed', 'cancelled', 'timed_out'].includes(latest.status)) {
-			throw new Error(`Job ${jobId} ended as ${latest.status}: ${latest.error ?? latest.logs ?? ''}`);
+		if (
+			expectedStatus !== 'failed' &&
+			['failed', 'cancelled', 'timed_out'].includes(latest.status)
+		) {
+			throw new Error(
+				`Job ${jobId} ended as ${latest.status}: ${latest.error ?? latest.logs ?? ''}`
+			);
 		}
-		if (expectedStatus === 'failed' && ['succeeded', 'cancelled', 'timed_out'].includes(latest.status)) {
+		if (
+			expectedStatus === 'failed' &&
+			['succeeded', 'cancelled', 'timed_out'].includes(latest.status)
+		) {
 			throw new Error(`Expected job ${jobId} to fail, got ${latest.status}`);
 		}
 		await new Promise((resolve) => setTimeout(resolve, 750));
@@ -150,7 +160,10 @@ async function submitQuery(connection, sql, runId) {
 		method: 'POST',
 		json: { connection, sql, runId }
 	});
-	assert(res.status === 202, `Expected query enqueue 202, got ${res.status}: ${JSON.stringify(body)}`);
+	assert(
+		res.status === 202,
+		`Expected query enqueue 202, got ${res.status}: ${JSON.stringify(body)}`
+	);
 	return body.job.id;
 }
 
@@ -166,7 +179,10 @@ async function submitPython(code, notebookId) {
 		method: 'POST',
 		json: { notebookId, code, tables: {}, tableDescriptors: [] }
 	});
-	assert(res.status === 202, `Expected python enqueue 202, got ${res.status}: ${JSON.stringify(body)}`);
+	assert(
+		res.status === 202,
+		`Expected python enqueue 202, got ${res.status}: ${JSON.stringify(body)}`
+	);
 	return body.job.id;
 }
 
@@ -219,7 +235,10 @@ async function main() {
 	const verify = await request(`/api/account/email/verify?token=${verifyToken}`, {
 		redirect: 'manual'
 	});
-	assert([302, 303].includes(verify.res.status), `Email verify failed ${verify.res.status}: ${verify.text}`);
+	assert(
+		[302, 303].includes(verify.res.status),
+		`Email verify failed ${verify.res.status}: ${verify.text}`
+	);
 	log('email verification link accepted');
 
 	const reset = await request('/api/account/password-reset/request', {
@@ -285,7 +304,9 @@ async function main() {
 	);
 	log('starter concurrent job limit enforced');
 
-	const firstQueryResults = await Promise.all(firstQueryWave.map((jobId) => waitForJob(jobId, 'succeeded')));
+	const firstQueryResults = await Promise.all(
+		firstQueryWave.map((jobId) => waitForJob(jobId, 'succeeded'))
+	);
 	const remainingQueryJob = await submitQuery(
 		connection,
 		`SELECT count(*) AS table_count FROM ${connection.catalogName}.information_schema.tables WHERE table_schema = 'public'`,
@@ -323,7 +344,10 @@ async function main() {
 	log(`ran ${queryJobs.length} sql, ${pythonJobs.length} python, and 1 expected failure`);
 
 	const failedJob = await waitForJob(badQueryJob, 'failed');
-	assert(/definitely_missing_column|cannot be resolved/i.test(failedJob.error ?? ''), failedJob.error);
+	assert(
+		/definitely_missing_column|cannot be resolved/i.test(failedJob.error ?? ''),
+		failedJob.error
+	);
 	log('expected bad SQL failed with a useful error');
 
 	for (const job of successfulJobs.filter((item) => item.kind === 'query')) {
@@ -335,11 +359,14 @@ async function main() {
 
 	for (const job of successfulJobs.filter((item) => item.kind === 'python')) {
 		const result = JSON.parse(await readWorkerFile(job.resultPointer));
-		assert(typeof result.jobId === 'string', `Python queue result missing inner job id for ${job.id}`);
-		const sse = await readPythonSse(result.jobId);
+		assert(
+			result && result.error === null,
+			`Python queue result failed for ${job.id}: ${result?.error}`
+		);
+		const sse = await readPythonSse(job.id);
 		assert(/"type":"done"/.test(sse), `Python job did not finish cleanly: ${sse}`);
 	}
-	log('all queued Python jobs produced done events');
+	log('all queued Python jobs produced results and done events');
 
 	const finalHealth = await request('/api/health', { cookie: false });
 	assert(finalHealth.res.ok && finalHealth.body.ok, `Final health failed: ${finalHealth.text}`);

@@ -3,7 +3,10 @@ import type { RequestHandler } from './$types';
 import { finishCloudJob, type CloudJobStatus } from '$lib/server/cloud-jobs';
 import { requireCloudWorkerAuth } from '$lib/server/cloud-worker-auth';
 
-type FinalCloudJobStatus = Extract<CloudJobStatus, 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>;
+type FinalCloudJobStatus = Extract<
+	CloudJobStatus,
+	'succeeded' | 'failed' | 'timed_out' | 'cancelled'
+>;
 
 const finalStatuses = new Set<FinalCloudJobStatus>([
 	'succeeded',
@@ -25,6 +28,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		workerId?: string;
 		status?: CloudJobStatus;
 		logs?: string | null;
+		result?: unknown | null;
 		resultPointer?: string | null;
 		error?: string | null;
 	};
@@ -39,9 +43,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		workerId,
 		status: body.status,
 		logs: body.logs,
+		result: body.result,
 		resultPointer: body.resultPointer,
 		error: body.error
 	});
-	if (!job) return json({ error: 'Job not found, already finished, or not owned by this worker.' }, { status: 404 });
+	if (!job)
+		return json(
+			{ error: 'Job not found, already finished, or not owned by this worker.' },
+			{ status: 404 }
+		);
 	return json({ job });
 };
