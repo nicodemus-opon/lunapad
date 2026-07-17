@@ -1,11 +1,15 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { completeInitialSetup, getSetupStatus } from '$lib/server/onboarding';
-import { secureCookieEnabled } from '$lib/server/cloud-config';
+import { cloudSignupOpen, secureCookieEnabled } from '$lib/server/cloud-config';
 
 export const GET: RequestHandler = async () => {
 	const status = await getSetupStatus();
-	return json({ ...status, needsSetup: status.mode !== 'closed' });
+	return json({
+		...status,
+		needsSetup: status.mode !== 'closed',
+		cloudSignupOpen: cloudSignupOpen()
+	});
 };
 
 export const POST: RequestHandler = async ({ request, cookies }) => {

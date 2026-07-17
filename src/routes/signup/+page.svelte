@@ -8,19 +8,12 @@
 
 	const steps = [
 		{
-			id: 'workspace',
-			title: 'Workspace',
-			description: 'Name the tenant and starter dbt project.'
-		},
-		{
 			id: 'account',
-			title: 'Admin account',
-			description: 'Create the first workspace admin.'
+			title: 'Create account'
 		},
 		{
-			id: 'review',
-			title: 'Review',
-			description: 'Confirm the workspace before creating it.'
+			id: 'workspace',
+			title: 'Workspace settings'
 		}
 	] as const;
 
@@ -53,7 +46,6 @@
 					!passwordMismatch
 				: true
 	);
-	let progressPercent = $derived(((currentStepIndex + 1) / steps.length) * 100);
 
 	function validateCurrentStep(): boolean {
 		signupError = null;
@@ -100,6 +92,7 @@
 			nextStep();
 			return;
 		}
+		if (!validateCurrentStep()) return;
 		if (password !== confirmPassword) {
 			toast.error('Passwords do not match.');
 			return;
@@ -128,23 +121,13 @@
 <div class="flex min-h-screen items-center justify-center bg-background px-4 py-8">
 	<form
 		onsubmit={handleSubmit}
-		class="grid w-full max-w-4xl overflow-hidden rounded-lg border border-border bg-card shadow-sm md:grid-cols-[17rem_1fr]"
+		class="grid w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-sm md:grid-cols-[15rem_1fr]"
 	>
 		<div class="border-b border-border bg-muted/30 p-5 md:border-r md:border-b-0 md:p-6">
 			<p class="text-2xs tracking-wide text-muted-foreground uppercase">Cloud workspace</p>
-			<h1 class="mt-2 font-serif text-2xl leading-tight">Create your Lunapad workspace</h1>
-			<p class="mt-3 text-sm leading-6 text-muted-foreground">
-				Start a hosted data workspace for notebooks, reports, Python, dbt, and publishing.
-			</p>
+			<h1 class="mt-2 font-serif text-2xl leading-tight">Create workspace</h1>
 
-			<div class="mt-6 h-1.5 overflow-hidden rounded-full bg-border">
-				<div
-					class="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
-					style:width={`${progressPercent}%`}
-				></div>
-			</div>
-
-			<ol class="mt-5 space-y-3">
+			<ol class="mt-6 space-y-3">
 				{#each steps as step, index}
 					<li class="flex gap-3">
 						<div
@@ -172,55 +155,18 @@
 							>
 								{step.title}
 							</p>
-							<p class="mt-0.5 text-xs leading-5 text-muted-foreground">{step.description}</p>
 						</div>
 					</li>
 				{/each}
 			</ol>
 		</div>
 
-		<div class="flex min-h-[31rem] flex-col p-5 sm:p-6">
+		<div class="flex min-h-[27rem] flex-col p-5 sm:p-6">
 			<div class="flex-1">
-				<p class="text-xs text-muted-foreground">Step {currentStepIndex + 1} of {steps.length}</p>
+				<p class="text-xs text-muted-foreground">{currentStepIndex + 1} / {steps.length}</p>
 				<h2 class="mt-1 font-serif text-xl leading-tight">{currentStep.title}</h2>
 
-				{#if currentStepId === 'workspace'}
-					<div class="mt-6 grid gap-5">
-						<div>
-							<label
-								for="signup-workspace"
-								class="mb-1.5 block text-2xs tracking-wide text-muted-foreground uppercase"
-								>Workspace name</label
-							>
-							<Input
-								id="signup-workspace"
-								class="h-10 text-sm"
-								bind:value={workspaceName}
-								required
-								autocomplete="organization"
-								autofocus
-							/>
-						</div>
-						<div>
-							<label
-								for="signup-project"
-								class="mb-1.5 block text-2xs tracking-wide text-muted-foreground uppercase"
-								>Starter project</label
-							>
-							<Input
-								id="signup-project"
-								class="h-10 text-sm"
-								bind:value={projectName}
-								required
-								autocomplete="off"
-							/>
-							<p class="mt-2 text-xs leading-5 text-muted-foreground">
-								Lunapad will scaffold a dbt-ready project so the workspace opens with a useful model
-								layout.
-							</p>
-						</div>
-					</div>
-				{:else if currentStepId === 'account'}
+				{#if currentStepId === 'account'}
 					<div class="mt-6 grid gap-5 sm:grid-cols-2">
 						<div>
 							<label
@@ -234,6 +180,7 @@
 								bind:value={name}
 								required
 								autocomplete="name"
+								autofocus
 							/>
 						</div>
 						<div>
@@ -289,32 +236,34 @@
 						</div>
 					</div>
 				{:else}
-					<div class="mt-6 space-y-4">
-						<div class="rounded-lg border border-border bg-muted/25 p-4">
-							<p class="text-2xs tracking-wide text-muted-foreground uppercase">Workspace</p>
-							<div class="mt-3 grid gap-3 sm:grid-cols-2">
-								<div>
-									<p class="text-xs text-muted-foreground">Workspace name</p>
-									<p class="mt-1 text-sm font-medium">{workspaceName}</p>
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground">Starter project</p>
-									<p class="mt-1 text-sm font-medium">{projectName}</p>
-								</div>
-							</div>
+					<div class="mt-6 grid gap-5">
+						<div>
+							<label
+								for="signup-workspace"
+								class="mb-1.5 block text-2xs tracking-wide text-muted-foreground uppercase"
+								>Workspace name</label
+							>
+							<Input
+								id="signup-workspace"
+								class="h-10 text-sm"
+								bind:value={workspaceName}
+								required
+								autocomplete="organization"
+							/>
 						</div>
-						<div class="rounded-lg border border-border bg-muted/25 p-4">
-							<p class="text-2xs tracking-wide text-muted-foreground uppercase">Admin</p>
-							<div class="mt-3 grid gap-3 sm:grid-cols-2">
-								<div>
-									<p class="text-xs text-muted-foreground">Name</p>
-									<p class="mt-1 text-sm font-medium">{name}</p>
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground">Email</p>
-									<p class="mt-1 text-sm font-medium break-all">{email}</p>
-								</div>
-							</div>
+						<div>
+							<label
+								for="signup-project"
+								class="mb-1.5 block text-2xs tracking-wide text-muted-foreground uppercase"
+								>Starter project</label
+							>
+							<Input
+								id="signup-project"
+								class="h-10 text-sm"
+								bind:value={projectName}
+								required
+								autocomplete="off"
+							/>
 						</div>
 					</div>
 				{/if}

@@ -18,11 +18,21 @@
 		email = page.url.searchParams.get('email') ?? '';
 		try {
 			const res = await fetch('/api/setup');
-			const body = (await res.json()) as { needsSetup: boolean; error?: string };
+			const body = (await res.json()) as {
+				needsSetup: boolean;
+				mode: 'fresh' | 'repair' | 'closed';
+				deploymentMode: 'local' | 'cloud';
+				cloudSignupOpen: boolean;
+				error?: string;
+			};
 			if (!res.ok) throw new Error(body.error ?? 'Failed to check setup status.');
 			if (body.needsSetup) {
-				const redirectTo = page.url.pathname + page.url.search;
-				await goto(`/setup?redirectTo=${encodeURIComponent(redirectTo)}`);
+				const redirectTo = page.url.searchParams.get('redirectTo') || '/';
+				const setupPath =
+					body.deploymentMode === 'cloud' && body.cloudSignupOpen && body.mode === 'fresh'
+						? '/signup'
+						: '/setup';
+				await goto(`${setupPath}?redirectTo=${encodeURIComponent(redirectTo)}`);
 			}
 		} catch (err) {
 			setupError = err instanceof Error ? err.message : 'Failed to check setup status.';
@@ -75,17 +85,23 @@
 		</div>
 
 		{#if checkingSetup}
-			<p class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+			<p
+				class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+			>
 				Checking setup status…
 			</p>
 		{:else if setupError}
-			<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+			<p
+				class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+			>
 				{setupError}
 			</p>
 		{/if}
 
 		{#if loginError}
-			<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+			<p
+				class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+			>
 				{loginError}
 			</p>
 		{/if}
