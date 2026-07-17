@@ -78,9 +78,7 @@ services:
     restart: unless-stopped
 
   storage-init:
-    build:
-      context: .
-      target: runner
+    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
     command: node scripts/storage-init.mjs
     depends_on:
       rustfs:
@@ -99,6 +97,7 @@ services:
     restart: unless-stopped
 
   app:
+    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
     build:
       context: .
       target: runner
@@ -168,9 +167,7 @@ services:
     restart: unless-stopped
 
   worker:
-    build:
-      context: .
-      target: runner
+    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
     command: node scripts/cloud-worker.mjs
     depends_on:
       app:
