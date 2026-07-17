@@ -160,8 +160,9 @@ services:
       INNGEST_BASE_URL: http://inngest:8288
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-local}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-local}
+      INNGEST_SERVE_ORIGIN: http://app:3000
     volumes:
-      - trino-catalog-app:/trino-catalog
+      - trino-catalog:/trino-catalog
       - cloud-project:/app/project
       - cloud-projects:/app/projects
     healthcheck:
@@ -197,7 +198,6 @@ volumes:
   redis-data:
   rustfs-data:
   trino-catalog:
-  trino-catalog-app:
   cloud-project:
   cloud-projects:
 

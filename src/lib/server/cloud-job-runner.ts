@@ -4,12 +4,14 @@ import { getSecret } from './connection-secrets.js';
 import { getConnectionMetadata, listConnectionsMetadata } from './connections-store.js';
 import { spawnDbt } from './dbt-runner.js';
 import {
+	ensureProjectPinnedPackages,
 	getPythonJob,
 	spawnPythonCell,
 	type PythonRunResult,
 	type PythonTable,
 	type PythonTableDescriptor
 } from './python-runner.js';
+import { readPinnedPackages } from './python-packages.js';
 
 function assertString(value: unknown, label: string): string {
 	if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
@@ -97,6 +99,17 @@ export async function runClaimedCloudJob(input: {
 		const tableDescriptors = Array.isArray(payload.tableDescriptors)
 			? (payload.tableDescriptors as PythonTableDescriptor[])
 			: [];
+		const folder =
+			typeof payload.folder === 'string' && payload.folder ? payload.folder : undefined;
+		if (folder) {
+			// Mirror the submission-time sync in api/python/run/+server.ts: it's already
+			// been called once for this folder before the job was enqueued, but that
+			// happened on whichever app instance received the original HTTP request —
+			// re-running it here (cheap no-op after the first time per folder) guarantees
+			// pinned packages are present on whichever instance actually claims the job.
+			const pins = await readPinnedPackages(folder);
+			await ensureProjectPinnedPackages(folder, pins);
+		}
 		const pythonJobId = spawnPythonCell(notebookId, code, tables, tableDescriptors);
 		const pythonJob = getPythonJob(pythonJobId);
 		if (!pythonJob) throw new Error('Python job not found immediately after spawning it.');

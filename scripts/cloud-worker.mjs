@@ -44,12 +44,13 @@ async function api(pathname, body) {
 	return payload;
 }
 
-async function appendLog(lease, message) {
-	await api(new URL(lease.runner.logsUrl).pathname, {
-		orgId: lease.job.orgId,
-		workerId,
-		message: `${new Date().toISOString()} ${message}\n`
-	});
+// Worker-internal trace (claim/scratch/completion bookkeeping) — goes to this
+// process's own stdout (`docker compose logs worker`), never into the job's
+// `logs` field. That field is streamed verbatim to the browser as a Python
+// cell's live output (see /api/python/logs), so operational noise there would
+// show up mixed in with the user's actual print() output.
+function trace(lease, message) {
+	console.log(`${new Date().toISOString()} [${lease.job.id}] ${message}`);
 }
 
 async function finish(lease, status, extra = {}) {
@@ -87,8 +88,8 @@ async function executeLease(lease) {
 	const scratchPath = lease.runner.tenantScratchPath;
 	try {
 		await fs.mkdir(scratchPath, { recursive: true });
-		await appendLog(lease, `claimed ${lease.job.kind} job ${lease.job.id}`);
-		await appendLog(lease, `scratch: ${scratchPath}`);
+		trace(lease, `claimed ${lease.job.kind} job`);
+		trace(lease, `scratch: ${scratchPath}`);
 
 		const result = await api(new URL(lease.runner.runUrl).pathname, {
 			orgId: lease.job.orgId,
@@ -96,8 +97,8 @@ async function executeLease(lease) {
 		});
 		const resultPath = path.join(scratchPath, 'result.json');
 		await fs.writeFile(resultPath, JSON.stringify(result.result ?? null, null, 2));
-		await appendLog(lease, `completed ${lease.job.kind} job ${lease.job.id}`);
-		await appendLog(lease, `result: ${resultPath}`);
+		trace(lease, `completed ${lease.job.kind} job`);
+		trace(lease, `result: ${resultPath}`);
 		await finish(lease, 'succeeded', {
 			result: result.result ?? null,
 			resultPointer: resultPath
@@ -106,9 +107,7 @@ async function executeLease(lease) {
 		if (controller.signal.aborted) {
 			await finish(lease, 'timed_out', { error: 'Job timed out before the runner completed.' });
 		} else {
-			await appendLog(lease, `failed: ${err instanceof Error ? err.message : String(err)}`).catch(
-				() => {}
-			);
+			trace(lease, `failed: ${err instanceof Error ? err.message : String(err)}`);
 			await finish(lease, 'failed', {
 				error: err instanceof Error ? err.message : String(err)
 			});

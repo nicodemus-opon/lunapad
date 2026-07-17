@@ -402,17 +402,22 @@ export async function extendCloudJobLease(input: {
 
 export async function failTimedOutCloudJobs(
 	input: {
+		// undefined (omitted) keeps the historical single-tenant default; pass
+		// `orgId: null` explicitly to sweep every org's stuck jobs (see the
+		// periodic cloud-job-reaper Inngest function, which needs exactly that —
+		// a worker can die mid-job for any tenant, not just the default one).
 		orgId?: string | null;
 		limit?: number;
 	} = {}
 ): Promise<CloudJob[]> {
 	await ensureCloudJobsTableOnce();
 	const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+	const orgId = input.orgId === undefined ? DEFAULT_ORG_ID : input.orgId;
 	const rows = await query<CloudJobRow>(
 		`WITH expired AS (
 			SELECT id
 			FROM cloud_jobs
-			WHERE org_id = $1
+			WHERE ($1::text IS NULL OR org_id = $1)
 			  AND status = 'running'
 			  AND (
 			    lease_expires_at < now()
@@ -430,7 +435,7 @@ export async function failTimedOutCloudJobs(
 		FROM expired
 		WHERE j.id = expired.id
 		RETURNING ${CLOUD_JOB_COLUMNS_FOR_ALIAS_J}`,
-		[input.orgId ?? DEFAULT_ORG_ID, limit]
+		[orgId, limit]
 	);
 	return rows.map(toCloudJob);
 }

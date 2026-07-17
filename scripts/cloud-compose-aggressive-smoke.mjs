@@ -174,10 +174,10 @@ async function submitQueryRaw(connection, sql, runId) {
 	});
 }
 
-async function submitPython(code, notebookId) {
+async function submitPython(code, notebookId, tables = {}, tableDescriptors = []) {
 	const { res, body } = await request('/api/python/run', {
 		method: 'POST',
-		json: { notebookId, code, tables: {}, tableDescriptors: [] }
+		json: { notebookId, code, tables, tableDescriptors }
 	});
 	assert(
 		res.status === 202,
@@ -280,6 +280,23 @@ async function main() {
 	assert(test.res.ok && test.body.ok, `Connection test failed ${test.res.status}: ${test.text}`);
 	log('postgres connection registered and tested');
 
+	// Regression guard: registerCatalog() creates catalogs dynamically via Trino SQL and
+	// never writes a .properties file the app can see unless TRINO_CATALOG_DIR really is
+	// the same bind-mount Trino itself writes to. A working connection with this status
+	// stuck on 'failed' is exactly what happens when that volume wiring breaks again.
+	const trinoStatus = await request('/api/admin/trino/status');
+	assert(
+		trinoStatus.res.ok,
+		`Trino status endpoint failed ${trinoStatus.res.status}: ${trinoStatus.text}`
+	);
+	const ourCatalog = trinoStatus.body.catalogs?.find((c) => c.connectionId === connection.id);
+	assert(ourCatalog, `No trino status entry for connection ${connection.id}`);
+	assert(
+		ourCatalog.status === 'ready',
+		`Expected trino catalog status 'ready', got '${ourCatalog.status}': ${ourCatalog.message ?? ''}`
+	);
+	log('trino catalog status reports ready (catalog dir actually shared with Trino)');
+
 	const firstQueryWave = await Promise.all([
 		submitQuery(
 			connection,
@@ -326,6 +343,78 @@ async function main() {
 		`aggressive-python-c-${stamp}`
 	);
 	const remainingPythonResults = [await waitForJob(remainingPythonJob, 'succeeded')];
+
+	// Regression guard: cloud-worker.mjs's own claim/scratch/completion bookkeeping must
+	// never leak into a job's `logs` field — that field is streamed verbatim as the cell's
+	// live output (see /api/python/logs), so a single print() should produce exactly one
+	// "line" event, not that line buried in worker-internal trace text.
+	const remainingPythonSse = await readPythonSse(remainingPythonJob);
+	const remainingPythonLines = [
+		...remainingPythonSse.matchAll(/"type":"line","text":"([^"]*)"/g)
+	].map((m) => m[1]);
+	assert(
+		remainingPythonLines.length === 1 && remainingPythonLines[0] === 'cloud-worker-ok',
+		`Expected exactly one clean output line, got: ${JSON.stringify(remainingPythonLines)}`
+	);
+	log('python cell output stream contains only real stdout, no worker trace noise');
+
+	// Real pandas usage over an actual cell-bound table, not a bare stdlib print — this is
+	// the shape of a real notebook cell and exercises the DataFrame binding path, not just
+	// that a Python process can run at all.
+	const pandasNotebookId = `aggressive-python-pandas-${stamp}`;
+	const pandasTables = {
+		sales: {
+			rows: [
+				{ region: 'east', amount: 100 },
+				{ region: 'west', amount: 250 },
+				{ region: 'east', amount: 50 }
+			],
+			columns: ['region', 'amount']
+		}
+	};
+	const pandasTableDescriptors = [
+		{
+			dataKey: 'sales',
+			canonicalName: 'sales',
+			source: 'cell',
+			aliases: ['sales'],
+			attributeAlias: null,
+			bindBareGlobal: 'sales',
+			columns: ['region', 'amount'],
+			rowMode: 'full'
+		}
+	];
+	const pandasJob = await submitPython(
+		"df = sales.copy()\nprint(df.groupby('region')['amount'].sum().to_dict())",
+		pandasNotebookId,
+		pandasTables,
+		pandasTableDescriptors
+	);
+	const pandasResult = await waitForJob(pandasJob, 'succeeded');
+	assert(
+		/east.*150|150.*east/is.test(pandasResult.logs ?? ''),
+		`Pandas groupby result missing from logs: ${pandasResult.logs}`
+	);
+	log('pandas cell over a real bound table produced the expected result');
+
+	// A second cell on the *same* notebookId must see `df` from the cell above — this is
+	// the warm-worker contract (module-level state persists across cells in one notebook).
+	const warmReuseJob = await submitPython('print(df.shape)', pandasNotebookId);
+	const warmReuseResult = await waitForJob(warmReuseJob, 'succeeded');
+	assert(
+		/\(3,\s*2\)/.test(warmReuseResult.logs ?? ''),
+		`Warm-worker cell did not see prior cell's DataFrame: ${warmReuseResult.logs}`
+	);
+	log('warm python worker retained state across two cells in the same notebook');
+
+	// A package outside the curated preinstalled set forces the missing-module pip-install
+	// retry path — untested by every other case here since they only use stdlib/pandas.
+	const pipRetryJob = await submitPython(
+		'import requests\nprint(requests.__version__)',
+		`aggressive-python-pip-${stamp}`
+	);
+	const pipRetryResult = await waitForJob(pipRetryJob, 'succeeded');
+	log('missing-module pip-install retry path succeeded for a non-curated package');
 
 	const queryJobs = [...firstQueryWave, remainingQueryJob];
 	const pythonJobs = [...firstPythonWave, remainingPythonJob];
