@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
 import { getInvitationByToken, markInvitationAccepted } from '$lib/server/invitations';
 import { query } from '$lib/server/db.js';
 import { resolveTenantContext, upsertOrganizationMember } from '$lib/server/tenancy';
@@ -8,7 +9,7 @@ const cookieOptions = {
 	path: '/',
 	httpOnly: true,
 	sameSite: 'lax' as const,
-	secure: process.env.NODE_ENV === 'production',
+	secure: secureCookieEnabled(),
 	maxAge: 60 * 60 * 24 * 365
 };
 

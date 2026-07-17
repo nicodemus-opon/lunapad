@@ -7,6 +7,7 @@ import { registerQuery, unregisterQuery } from '$lib/server/query-registry';
 import { resolveConnectionMetadata } from '$lib/server/connection-metadata';
 import { getCloudExecutionAdapter } from '$lib/server/cloud-execution';
 import { listConnectionsMetadata } from '$lib/server/connections-store';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface QueryConnectionRequest {
 	connection: Connection;
@@ -35,6 +36,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { runId } = body;
 	const controller = runId ? registerQuery(runId) : new AbortController();
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Querying a connection');
 		const adapter = getCloudExecutionAdapter();
 		const execution = await adapter.submit({
 			tenant: { orgId: locals.organization!.id, projectId: locals.project?.id },
@@ -44,7 +46,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			quotaKey: 'external_query',
 			requestId: locals.requestId,
 			entitlements: locals.entitlements,
-			payload: { connectionId: body.connection.id, runId },
+			payload: { connectionId: body.connection.id, sql: body.sql, runId },
 			run: async (_job, signal) => {
 				const connection = await resolveConnectionMetadata(
 					body.connection!,

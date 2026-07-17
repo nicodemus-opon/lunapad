@@ -15,7 +15,7 @@ vi.mock('./tenancy.js', () => ({
 	ensureDefaultTenant: mocks.ensureDefaultTenant
 }));
 
-import { finishCloudJob } from './cloud-jobs.js';
+import { claimNextCloudJob, finishCloudJob } from './cloud-jobs.js';
 
 const row = {
 	id: 'job-1',
@@ -51,6 +51,23 @@ beforeEach(() => {
 });
 
 describe('cloud job storage invariants', () => {
+	it('lets trusted workers claim queued jobs across organizations', async () => {
+		mocks.query.mockImplementation(async (sql: string) => {
+			if (sql.includes('UPDATE cloud_jobs j') && sql.includes('FROM candidate')) {
+				return [{ ...row, status: 'running', lease_expires_at: new Date().toISOString() }];
+			}
+			return [];
+		});
+
+		await claimNextCloudJob({ workerId: 'worker-1', leaseMs: 60_000 });
+
+		const claimCall = mocks.query.mock.calls.find(([sql]) =>
+			String(sql).includes('UPDATE cloud_jobs j')
+		);
+		expect(claimCall?.[0]).toContain('WHERE ($1::text IS NULL OR org_id = $1)');
+		expect(claimCall?.[1]).toEqual([null, null, 'worker-1', 60_000]);
+	});
+
 	it('requires matching worker ownership when finishing a claimed job', async () => {
 		await finishCloudJob({
 			orgId: 'org-1',

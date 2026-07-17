@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as Tabs from '$lib/components/ui/tabs';
+
 	interface Props {
 		mode: 'visual' | 'source';
 		preview?: boolean;
@@ -7,46 +9,31 @@
 	}
 
 	const { mode, preview = false, onModeChange, onPreviewChange }: Props = $props();
+
+	const activeTab = $derived(preview ? 'preview' : mode);
+
+	function selectTab(value: string | undefined) {
+		if (value === 'visual' || value === 'source') onModeChange(value);
+		if (value === 'preview') onPreviewChange?.(true);
+	}
 </script>
 
 <div class="markdown-mode-bar" role="toolbar" aria-label="Markdown mode">
-	<div class="notebook-tabs" role="tablist" aria-label="Markdown editor mode">
-		<button
-			type="button"
-			class="notebook-tab"
-			class:is-active={!preview && mode === 'visual'}
-			role="tab"
-			aria-selected={!preview && mode === 'visual'}
-			title="Visual dashboard editor"
-			onclick={() => onModeChange('visual')}
-		>
-			Visual
-		</button>
-		<button
-			type="button"
-			class="notebook-tab"
-			class:is-active={!preview && mode === 'source'}
-			role="tab"
-			aria-selected={!preview && mode === 'source'}
-			title="Markdoc source"
-			onclick={() => onModeChange('source')}
-		>
-			Source
-		</button>
-		{#if onPreviewChange}
-			<button
-				type="button"
-				class="notebook-tab"
-				class:is-active={preview}
-				role="tab"
-				aria-selected={preview}
-				title="Rendered preview"
-				onclick={() => onPreviewChange(true)}
-			>
-				Preview
-			</button>
-		{/if}
-	</div>
+	<Tabs.Root value={activeTab} onValueChange={selectTab}>
+		<Tabs.List class="h-7">
+			<Tabs.Trigger value="visual" title="Visual dashboard editor" class="h-6 px-2 text-xs">
+				Visual
+			</Tabs.Trigger>
+			<Tabs.Trigger value="source" title="Markdoc source" class="h-6 px-2 text-xs">
+				Source
+			</Tabs.Trigger>
+			{#if onPreviewChange}
+				<Tabs.Trigger value="preview" title="Rendered preview" class="h-6 px-2 text-xs">
+					Preview
+				</Tabs.Trigger>
+			{/if}
+		</Tabs.List>
+	</Tabs.Root>
 </div>
 
 <style>

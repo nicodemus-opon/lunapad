@@ -48,7 +48,7 @@ const chartTypeEnum = [...CHART_TYPES, 'sparkline'] as const;
 export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	metric: {
 		detail: 'KPI metric widget',
-		snippet: 'metric value=${1:\\$cell.value} label="${2:Label}" vs=${3:\\$prev.value} /%}',
+		snippet: 'metric value=${1:\\$cell.value} label="${2:value}" vs=${3:\\$prev.value} /%}',
 		slashSnippet: WIDGET_SNIPPETS.metric,
 		selfClosing: true,
 		attributes: {
@@ -136,7 +136,8 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	},
 	progress: {
 		detail: 'Progress bar',
-		snippet: 'progress value=${1:\\$cell.completed} max=${2:\\$cell.total} label="${3:Label}" /%}',
+		snippet:
+			'progress value=${1:\\$cell.completed} max=${2:\\$cell.total} label="${3:completion}" /%}',
 		slashSnippet: WIDGET_SNIPPETS.progress,
 		selfClosing: true,
 		attributes: {
@@ -157,7 +158,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	},
 	column: {
 		detail: 'Single column inside {% columns %}',
-		snippet: 'column %}\n${1:Content.}\n{% /column %}',
+		snippet: 'column %}\n${1:Add column content here.}\n{% /column %}',
 		slashSnippet: WIDGET_SNIPPETS.column,
 		attributes: {
 			width: { detail: 'Column width (number or CSS)' }
@@ -165,7 +166,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	},
 	grid: {
 		detail: 'Responsive grid layout',
-		snippet: 'grid cols=${1:3} %}\n${2:Content.}\n{% /grid %}',
+		snippet: 'grid cols=${1:3} %}\n${2:Add grid content here.}\n{% /grid %}',
 		slashSnippet: WIDGET_SNIPPETS.grid,
 		attributes: {
 			cols: { detail: 'Number of columns' },
@@ -212,7 +213,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	},
 	tab: {
 		detail: 'Single tab inside {% tabs %}',
-		snippet: 'tab label="${1:Tab 1}" %}\n${2:Content.}\n{% /tab %}',
+		snippet: 'tab label="${1:Overview}" %}\n${2:Add tab content here.}\n{% /tab %}',
 		slashSnippet: WIDGET_SNIPPETS.tab,
 		attributes: {
 			label: { detail: 'Tab label', required: true }
@@ -334,7 +335,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 	if: {
 		detail: 'Conditional block',
 		snippet:
-			'if gt(${1:\\$cell.count}, 0) %}\n${2:Content.}\n{% else /%}\n${3:Fallback.}\n{% /if %}',
+			'if gt(${1:\\$cell.count}, 0) %}\n${2:Add conditional content here.}\n{% else /%}\n${3:Add fallback content here.}\n{% /if %}',
 		slashSnippet: WIDGET_SNIPPETS.conditional,
 		attributes: {}
 	},

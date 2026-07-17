@@ -3,11 +3,13 @@ import type { RequestHandler } from './$types';
 import { spawnDbt } from '$lib/server/dbt-runner';
 import { precompileProjectModels, collectProjectModelNames } from '$lib/server/prql-compiler';
 import { getCloudExecutionAdapter } from '$lib/server/cloud-execution';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
-		const { folder } = (await request.json()) as { folder?: string };
-		if (!folder) return json({ error: 'folder is required' }, { status: 400 });
+		const { folder: requestedFolder } = (await request.json()) as { folder?: string };
+		if (!requestedFolder) return json({ error: 'folder is required' }, { status: 400 });
+		const folder = assertTenantProjectFolder(locals, requestedFolder);
 
 		// Compile .prql → .sql so dbt-fusion can process them
 		const knownModels = await collectProjectModelNames(folder);

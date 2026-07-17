@@ -84,9 +84,17 @@ async function executeLease(lease) {
 		await appendLog(lease, `claimed ${lease.job.kind} job ${lease.job.id}`);
 		await appendLog(lease, `scratch: ${scratchPath}`);
 
-		throw new Error(
-			`No cloud worker runner is registered for job kind "${lease.job.kind}" yet. The worker contract is healthy, but this job type still needs an executor implementation.`
-		);
+		const result = await api(new URL(lease.runner.runUrl).pathname, {
+			orgId: lease.job.orgId,
+			workerId
+		});
+		const resultPath = path.join(scratchPath, 'result.json');
+		await fs.writeFile(resultPath, JSON.stringify(result.result ?? null, null, 2));
+		await appendLog(lease, `completed ${lease.job.kind} job ${lease.job.id}`);
+		await finish(lease, 'succeeded', {
+			logs: `Result written to ${resultPath}`,
+			resultPointer: resultPath
+		});
 	} catch (err) {
 		if (controller.signal.aborted) {
 			await finish(lease, 'timed_out', { error: 'Job timed out before the runner completed.' });

@@ -35,6 +35,8 @@
 	import InlinePromptBar from '$lib/components/cell/InlinePromptBar.svelte';
 	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
 	import PlotCellOutput from '$lib/components/PlotCellOutput.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { resolvePlotDataRefs, isChartableSourceCell } from '$lib/services/cell-deps';
 	import {
 		buildInlineAIColumns,
@@ -400,8 +402,10 @@
 				</div>
 			{/if}
 			{#if canInlinePrompt && !reportView && !collapsed}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 {inlinePromptOpen
 						? 'text-primary'
 						: ''}"
@@ -413,11 +417,13 @@
 					}}
 				>
 					<Sparkles class="h-3.5 w-3.5" />
-				</button>
+				</Button>
 			{/if}
 			{#if cell?.cellType === 'query' || cell?.cellType === 'python'}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {running
 						? 'text-primary'
 						: ''}"
@@ -433,11 +439,13 @@
 					{:else}
 						<Play class="h-3.5 w-3.5 fill-current" />
 					{/if}
-				</button>
+				</Button>
 			{/if}
 			{#if !reportView}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					title={collapsed ? 'Expand cell' : 'Collapse cell'}
 					aria-label={collapsed ? 'Expand cell' : 'Collapse cell'}
@@ -451,11 +459,13 @@
 					{:else}
 						<ChevronsDownUp class="h-3.5 w-3.5" />
 					{/if}
-				</button>
+				</Button>
 			{/if}
 			{#if !reportView && !collapsed}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					data-testid="open-worksheet"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 					title="Open in worksheet (rename, language, GUI editor)"
@@ -468,11 +478,13 @@
 					}}
 				>
 					<Maximize2 class="h-3.5 w-3.5" />
-				</button>
+				</Button>
 			{/if}
 			{#if !reportView && !collapsed}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {pinned
 						? 'text-primary'
 						: ''}"
@@ -488,7 +500,7 @@
 					{:else}
 						<Pin class="h-3.5 w-3.5" />
 					{/if}
-				</button>
+				</Button>
 			{/if}
 		</div>
 
@@ -544,8 +556,8 @@
 							}}
 						>
 							<div class="flex items-center justify-between border-b border-border px-2 py-0.5">
-								<input
-									class="h-5 min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-2xs text-muted-foreground outline-none focus:text-foreground"
+								<Input
+									class="h-5 min-w-0 flex-1 rounded-none border-transparent bg-transparent px-0 py-0 font-mono text-2xs text-muted-foreground shadow-none outline-none hover:bg-transparent focus:border-transparent focus:bg-transparent focus:text-foreground focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
 									aria-label="Cell output name"
 									placeholder="model name"
 									value={nameDraft}
@@ -579,41 +591,44 @@
 										role="tablist"
 										onmousedown={(e) => e.stopPropagation()}
 									>
-										<button
+										<Button
 											type="button"
-											class="notebook-tab"
-											class:is-active={cellMode === 'prql'}
+											variant="ghost"
+											size="xs"
+											class="notebook-tab {cellMode === 'prql' ? 'is-active' : ''}"
 											onclick={(e) => {
 												e.stopPropagation();
 												modeSwitch.setMode('prql');
 											}}
 											title="PRQL code mode"
 											role="tab"
-											aria-selected={cellMode === 'prql'}>PRQL</button
+											aria-selected={cellMode === 'prql'}>PRQL</Button
 										>
-										<button
+										<Button
 											type="button"
-											class="notebook-tab"
-											class:is-active={cellMode === 'visual'}
+											variant="ghost"
+											size="xs"
+											class="notebook-tab {cellMode === 'visual' ? 'is-active' : ''}"
 											onclick={(e) => {
 												e.stopPropagation();
 												modeSwitch.setMode('visual');
 											}}
 											title="Visual pipeline editor"
 											role="tab"
-											aria-selected={cellMode === 'visual'}>Visual</button
+											aria-selected={cellMode === 'visual'}>Visual</Button
 										>
-										<button
+										<Button
 											type="button"
-											class="notebook-tab"
-											class:is-active={cellMode === 'sql'}
+											variant="ghost"
+											size="xs"
+											class="notebook-tab {cellMode === 'sql' ? 'is-active' : ''}"
 											onclick={(e) => {
 												e.stopPropagation();
 												modeSwitch.setMode('sql');
 											}}
 											title="SQL mode"
 											role="tab"
-											aria-selected={cellMode === 'sql'}>SQL</button
+											aria-selected={cellMode === 'sql'}>SQL</Button
 										>
 									</div>
 								{/if}
@@ -659,13 +674,15 @@
 							{/if}
 						</div>
 					{:else if !hasVisibleOutput && cell.status !== 'running' && cell.status !== 'error' && !codeExpanded}
-						<button
+						<Button
 							type="button"
+							variant="ghost"
+							size="sm"
 							class="w-full rounded-md border border-dashed border-border px-3 py-2 text-left text-xs text-muted-foreground hover:border-border hover:bg-muted/30"
 							onclick={handleGutterClick}
 						>
 							{cell.outputName || (isPythonCell ? 'Python' : 'Query')} — click to edit
-						</button>
+						</Button>
 					{/if}
 
 					{#if showPythonOutput && cell.pythonOutput}

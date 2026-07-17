@@ -3,17 +3,14 @@
 	import { tick } from 'svelte';
 	import { X } from '@lucide/svelte';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import VisualBlockInspector from './VisualBlockInspector.svelte';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { nodeConfigTitle, type MarkdocSelectedNode } from './markdoc-node-selection';
 	import type { VisualBlock } from '$lib/services/markdoc-ast';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import type { FilterUsage } from '$lib/services/markdoc-visual-analysis';
-	import {
-		clampMenuPosition,
-		editorNodeAnchorRect,
-		type MenuPosition
-	} from './menu-utils';
+	import { clampMenuPosition, editorNodeAnchorRect, type MenuPosition } from './menu-utils';
 
 	interface Props {
 		open: boolean;
@@ -122,30 +119,34 @@
 			aria-label="{title} properties"
 			tabindex={-1}
 		>
-			<header class="flex shrink-0 items-start justify-between gap-2 border-b border-border/80 px-3 py-2.5">
+			<header
+				class="flex shrink-0 items-start justify-between gap-2 border-b border-border/80 px-3 py-2.5"
+			>
 				<div class="min-w-0">
 					<p class="truncate text-sm font-medium text-foreground">{title}</p>
 					<p class="text-2xs text-muted-foreground">Block properties</p>
 				</div>
-				<button
+				<Button
 					type="button"
-					class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+					variant="ghost"
+					size="icon-xs"
+					class="shrink-0 text-muted-foreground hover:text-foreground"
 					title="Close"
 					aria-label="Close properties"
 					onclick={onClose}
 				>
 					<X class="h-3.5 w-3.5" />
-				</button>
+				</Button>
 			</header>
 			<div class="node-config-scroll min-h-0 flex-1 overflow-y-auto px-1 py-2">
 				<VisualBlockInspector
-				{block}
-				{refEntries}
-				{filterUsages}
-				{cells}
-				{onPatch}
-				variant="popover"
-			/>
+					{block}
+					{refEntries}
+					{filterUsages}
+					{cells}
+					{onPatch}
+					variant="popover"
+				/>
 			</div>
 		</div>
 	</BodyPortal>

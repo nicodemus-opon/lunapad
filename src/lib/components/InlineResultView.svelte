@@ -2,11 +2,12 @@
 	import { untrack } from 'svelte';
 	import ResultTable from './ResultTable.svelte';
 	import ChartView from './ChartView.svelte';
-	import ChartConfigPanel from './ChartConfigPanel.svelte';
+	import ChartConfigurator from './ChartConfigurator.svelte';
 	import StatsView from './StatsView.svelte';
 	import ResultViewModeSwitcher from './ResultViewModeSwitcher.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Settings2, Search, X } from '@lucide/svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Search, X } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import type { ChartConfig, ResultViewMode } from '$lib/types/gui-pipeline';
 	import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
@@ -78,7 +79,6 @@
 
 	let viewMode = $state<ResultViewMode>(untrack(() => initialViewMode ?? 'table'));
 	let chartConfig = $state<ChartConfig | null>(untrack(() => initialChartConfig ?? null));
-	let showConfigPanel = $state(false);
 	let lastInitialViewMode = $state<ResultViewMode | undefined>(untrack(() => initialViewMode));
 	let lastInitialChartConfig = $state<ChartConfig | null | undefined>(
 		untrack(() => initialChartConfig)
@@ -86,11 +86,13 @@
 	let lastShapeSignature = $state<string>(untrack(() => computeShapeSignature(columns, rows)));
 	let tableSearch = $state('');
 
-	const showControls = $derived(controlsVisible || fillHeight || showConfigPanel);
+	const showControls = $derived(controlsVisible || fillHeight);
 
 	// Stats scan every row × column on the main thread; sample huge results.
 	const STATS_SAMPLE_MAX = 10_000;
-	const statsRows = $derived(rows.length > STATS_SAMPLE_MAX ? rows.slice(0, STATS_SAMPLE_MAX) : rows);
+	const statsRows = $derived(
+		rows.length > STATS_SAMPLE_MAX ? rows.slice(0, STATS_SAMPLE_MAX) : rows
+	);
 	const statsSampled = $derived(rows.length > STATS_SAMPLE_MAX);
 
 	function fmtMs(ms: number): string {
@@ -158,7 +160,7 @@
 			<Search
 				class="pointer-events-none absolute left-2 h-3 w-3 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
 			/>
-			<input
+			<Input
 				class="h-6 w-28 rounded-md border border-transparent bg-transparent pr-6 pl-6 text-2xs text-foreground transition-[width,background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/35 focus:w-44 focus:border-border focus:bg-background motion-reduce:transition-none"
 				type="text"
 				placeholder="Search"
@@ -166,29 +168,22 @@
 				bind:value={tableSearch}
 			/>
 			{#if tableSearch.trim()}
-				<button
+				<Button
 					type="button"
-					class="absolute right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+					variant="ghost"
+					size="icon"
+					class="absolute right-1.5 h-3.5 w-3.5 rounded-full text-muted-foreground/70 hover:text-foreground"
 					onclick={() => (tableSearch = '')}
 					aria-label="Clear search"
 					title="Clear search"
 				>
 					<X class="h-2.5 w-2.5" />
-				</button>
+				</Button>
 			{/if}
 		</label>
 	{/if}
 	{#if viewMode === 'chart' && activeConfig && !compact}
-		<button
-			data-testid="chart-settings"
-			class="flex h-6 w-6 items-center justify-center rounded transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showConfigPanel
-				? 'bg-primary/15 text-primary'
-				: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-			title={showConfigPanel ? 'Hide chart settings' : 'Show chart settings'}
-			onclick={() => (showConfigPanel = !showConfigPanel)}
-		>
-			<Settings2 class="h-3.5 w-3.5" />
-		</button>
+		<ChartConfigurator config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 	{/if}
 	{#if toolbarActions}
 		{@render toolbarActions()}
@@ -214,8 +209,9 @@
 				</span>
 			{/if}
 			{#if executionMs != null}
-				<span class="font-mono text-2xs text-muted-foreground tabular-nums" title="Query execution time"
-					>{fmtMs(executionMs)}</span
+				<span
+					class="font-mono text-2xs text-muted-foreground tabular-nums"
+					title="Query execution time">{fmtMs(executionMs)}</span
 				>
 			{/if}
 		</div>
@@ -240,33 +236,12 @@
 				<ChartView {rows} {columns} config={activeConfig} />
 			</div>
 		{:else if fillHeight}
-			<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
-				{#if showConfigPanel}
-					<div
-						data-testid="chart-settings-panel"
-						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
-					>
-						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
-					</div>
-				{/if}
-				<div class="min-h-0 min-w-0 flex-1">
-					<ChartView {rows} {columns} config={activeConfig} />
-				</div>
+			<div class="min-h-0 min-w-0 flex-1">
+				<ChartView {rows} {columns} config={activeConfig} />
 			</div>
 		{:else}
-			<!-- Full cell view: left config panel + chart (matches ResultView layout) -->
-			<div class="flex overflow-hidden rounded-sm">
-				{#if showConfigPanel}
-					<div
-						data-testid="chart-settings-panel"
-						class="chart-config-panel w-52 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3"
-					>
-						<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
-					</div>
-				{/if}
-				<div class="min-h-80 min-w-0 flex-1">
-					<ChartView {rows} {columns} config={activeConfig} />
-				</div>
+			<div class="min-h-80 min-w-0 overflow-hidden rounded-sm">
+				<ChartView {rows} {columns} config={activeConfig} />
 			</div>
 		{/if}
 	{:else if viewMode === 'stats'}

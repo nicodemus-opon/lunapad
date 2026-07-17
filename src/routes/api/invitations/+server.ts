@@ -7,6 +7,7 @@ import {
 } from '$lib/server/invitations';
 import { logAuditEvent } from '$lib/server/audit';
 import { can, userFromLocals, type UserRole } from '$lib/server/permissions';
+import { sendEmail } from '$lib/server/email';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
@@ -31,6 +32,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		email,
 		role,
 		createdBy: locals.user.id
+	});
+	await sendEmail({
+		to: email,
+		subject: 'You are invited to Lunapad',
+		text: `You have been invited to join Lunapad as ${role}. Accept the invitation: ${
+			process.env.ORIGIN ?? 'http://localhost:3967'
+		}/invite/${invitation.token}`
 	});
 	await logAuditEvent({
 		actorId: locals.user.id,

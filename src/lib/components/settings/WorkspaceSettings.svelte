@@ -13,17 +13,21 @@
 	let workspaceName = $state('');
 	let loading = $state(true);
 	let saving = $state(false);
+	let loadError = $state<string | null>(null);
 
 	const isAdmin = $derived(current?.membership.role === 'admin');
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const res = await fetch('/api/orgs/current');
-			if (res.ok) {
-				current = (await res.json()) as CurrentOrg;
-				workspaceName = current.organization.name;
-			}
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load workspace.');
+			current = body as CurrentOrg;
+			workspaceName = current.organization.name;
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load workspace.';
 		} finally {
 			loading = false;
 		}
@@ -62,6 +66,11 @@
 
 	{#if loading}
 		<div class="h-8 rounded-md bg-muted/60"></div>
+	{:else if loadError}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+			<p class="text-xs text-destructive">{loadError}</p>
+			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
+		</div>
 	{:else if current}
 		<div class="space-y-3 rounded-md border border-border p-4">
 			<div class="grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -79,6 +88,11 @@
 					<p class="h-8 rounded-md border border-border px-3 py-2 text-xs">{current.organization.plan}</p>
 				</div>
 			</div>
+			{#if !isAdmin}
+				<p class="text-xs text-muted-foreground">
+					Only workspace admins can rename this workspace.
+				</p>
+			{/if}
 			<Button size="sm" class="h-8 text-xs" disabled={!isAdmin || saving} onclick={save}>
 				{saving ? 'Saving…' : 'Save workspace'}
 			</Button>

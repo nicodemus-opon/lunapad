@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { contextualSnippet } from '../components/markdown/visual/slash-command-extension';
+import {
+	contextualSnippet,
+	pmContentFromSnippet
+} from '../components/markdown/visual/slash-command-extension';
 import { MARKDOC_TAG_CATALOG } from './markdoc-catalog';
 import { SLASH_COMMANDS, WIDGET_SNIPPETS } from './markdown-format';
+import { normalizeMarkdocMarkdown, pmDocumentToMarkdown } from './markdoc-pm';
 
 describe('visual dashboard slash commands', () => {
 	it('includes advanced dashboard authoring snippets', () => {
@@ -28,10 +32,74 @@ describe('visual dashboard slash commands', () => {
 		for (const [tagName, tag] of Object.entries(MARKDOC_TAG_CATALOG)) {
 			expect(byId.get(tagName)?.snippet).toBe(tag.slashSnippet);
 		}
-		expect(byId.get('each')?.snippet).toContain('{% each data=[{title:"Example"');
-		expect(byId.get('each')?.snippet).toContain('{% card title="$title" %}');
-		expect(byId.get('group')?.snippet).toContain('{% group data=[{group_column:"A"');
+		expect(byId.get('each')?.snippet).toContain('{% each data=[{"title":"Detail"');
+		expect(byId.get('each')?.snippet).toContain('{% card title=$title %}');
+		expect(byId.get('group')?.snippet).toContain('{% group data=[{"category":"current"');
 		expect(byId.get('group')?.snippet).toContain('{% each data=$items %}');
+	});
+
+	it('keeps every slash command backed by a handler or snippet', () => {
+		const handled = new Set([
+			'sql',
+			'prql',
+			'python',
+			'plot',
+			'plot-bar',
+			'plot-line',
+			'plot-scatter',
+			'plot-pie',
+			'plot-area',
+			'page',
+			'h1',
+			'h2',
+			'h3',
+			'h4',
+			'h5',
+			'h6',
+			'divider',
+			'quote',
+			'code',
+			'task',
+			'table',
+			'link',
+			'image',
+			'video',
+			'bullet',
+			'numbered',
+			'emoji',
+			'report-summary',
+			'report-filtered',
+			'report-grouped',
+			'report-tabs'
+		]);
+
+		for (const command of SLASH_COMMANDS) {
+			expect(
+				handled.has(command.id) || command.snippet.trim().length > 0,
+				`${command.id} has no handler and no snippet`
+			).toBe(true);
+		}
+	});
+
+	it('round-trips every dummy widget snippet through the visual parser', () => {
+		for (const [name, snippet] of Object.entries(WIDGET_SNIPPETS)) {
+			const content = pmContentFromSnippet(snippet);
+			expect(content.length, `${name} produced no PM content`).toBeGreaterThan(0);
+			const markdown = pmDocumentToMarkdown({ doc: { type: 'doc', content }, frontmatter: '' });
+			expect(normalizeMarkdocMarkdown(markdown), `${name} did not round-trip`).toBe(
+				normalizeMarkdocMarkdown(snippet)
+			);
+		}
+	});
+
+	it('keeps dummy snippets free of old toy report data', () => {
+		const joined = Object.values(WIDGET_SNIPPETS).join('\n');
+		expect(joined).not.toContain('category:"A"');
+		expect(joined).not.toContain('category:"B"');
+		expect(joined).not.toContain('value:42');
+		expect(joined).not.toContain('value:27');
+		expect(joined).not.toContain('group_col:"A"');
+		expect(joined).not.toContain('title:"Example"');
 	});
 
 	it('contextualizes loop snippets with existing result refs and columns', () => {

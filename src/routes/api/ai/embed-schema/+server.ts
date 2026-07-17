@@ -4,6 +4,7 @@ import { inngest } from '$lib/inngest/client';
 import { ensureEmbeddingTables, deleteStaleSchemaEmbeddings } from '$lib/server/embeddings.js';
 import { loadManifest } from '$lib/server/dbt.js';
 import { assertSafe } from '$lib/server/project.js';
+import { assertTenantProjectFolder } from '$lib/server/project-folders.js';
 
 interface IncomingTable {
 	tableName: string;
@@ -34,12 +35,14 @@ function bareTableName(tableName: string): string {
  *  warehouse-native comment (Postgres/ClickHouse, fetched client-side) may already be set. */
 async function overlayDbtDescriptions(
 	tables: IncomingTable[],
-	projectFolder: string | null | undefined
+	projectFolder: string | null | undefined,
+	locals: App.Locals
 ): Promise<IncomingTable[]> {
 	if (!projectFolder) return tables;
 	try {
-		assertSafe(projectFolder, projectFolder);
-		const models = await loadManifest(projectFolder);
+		const folder = assertTenantProjectFolder(locals, projectFolder);
+		assertSafe(folder, folder);
+		const models = await loadManifest(folder);
 		if (models.length === 0) return tables;
 
 		const byName = new Map(models.map((m) => [m.name, m]));
@@ -72,7 +75,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'connectionId and tables required' }, { status: 400 });
 	}
 
-	const enriched = await overlayDbtDescriptions(body.tables, body.projectFolder);
+	const enriched = await overlayDbtDescriptions(body.tables, body.projectFolder, locals);
 
 	try {
 		await ensureEmbeddingTables();

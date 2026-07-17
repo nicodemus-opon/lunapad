@@ -3,7 +3,6 @@ import { NodeSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
@@ -26,6 +25,7 @@ import { createSlashCommandExtension, type SlashCommandHandler } from './slash-c
 import { ListKeymapExtension } from './list-keymap-extension';
 import { BlockInsertLineExtension } from './block-insert-line-extension';
 import { rankRefEntries } from './mention-utils';
+import { LunapadTaskItem } from './task-item-extension';
 
 export interface MentionCommandHandler {
 	onStart: (props: {
@@ -138,7 +138,7 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 		Highlight,
 		Link.configure({ openOnClick: false, autolink: true }),
 		TaskList,
-		TaskItem.configure({ nested: true }),
+		LunapadTaskItem.configure({ nested: true }),
 		Table.configure({ resizable: true }),
 		TableRow,
 		TableHeader,

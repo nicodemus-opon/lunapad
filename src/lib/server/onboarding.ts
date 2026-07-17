@@ -14,6 +14,8 @@ import {
 	type Project,
 	type TenantContext
 } from './tenancy.js';
+import { cloudDefaultPlan } from './cloud-config.js';
+import { initializeManualBilling } from './billing.js';
 
 export type SetupMode = 'fresh' | 'repair' | 'closed';
 
@@ -223,6 +225,7 @@ export async function completeCloudSignup(input: SignupInput): Promise<{
 	const userId = crypto.randomUUID();
 	const orgId = crypto.randomUUID();
 	const projectId = crypto.randomUUID();
+	const plan = cloudDefaultPlan();
 	const orgSlug = await uniqueOrgSlug(workspaceName);
 	const projectSlug = await uniqueProjectSlug(orgId, projectName);
 	const projectFolder = projectFolderFor(orgId, projectId);
@@ -243,10 +246,11 @@ export async function completeCloudSignup(input: SignupInput): Promise<{
 			 VALUES ($1, $2, 'credential', $2, $3)`,
 			[crypto.randomUUID(), userId, passwordHash]
 		);
-		await client.query(`INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $2, $3, 'free')`, [
+		await client.query(`INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $2, $3, $4)`, [
 			orgId,
 			workspaceName,
-			orgSlug
+			orgSlug,
+			plan
 		]);
 		await client.query(
 			`INSERT INTO projects (id, org_id, name, slug, project_folder)
@@ -265,6 +269,7 @@ export async function completeCloudSignup(input: SignupInput): Promise<{
 		client.release();
 	}
 
+	await initializeManualBilling({ orgId, plan });
 	await signIn(email, input.password, input.headers);
 	const tenant = await createTenantForExistingUser({
 		userId,

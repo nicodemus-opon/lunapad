@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { deleteComment, editComment, listComments, toggleReaction } from '$lib/server/comments';
 import { can, canEditComment, userFromLocals } from '$lib/server/permissions';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 async function getScopedCommentAuthor(
 	commentId: string,
@@ -28,6 +29,11 @@ async function getScopedCommentAuthor(
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
+	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Editing a comment');
+	} catch (err) {
+		return json({ error: (err as Error).message }, { status: 403 });
+	}
 	const meta = await getScopedCommentAuthor(params.id, {
 		orgId: locals.organization?.id,
 		projectId: locals.project?.id
@@ -46,6 +52,11 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
+	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Deleting a comment');
+	} catch (err) {
+		return json({ error: (err as Error).message }, { status: 403 });
+	}
 	const meta = await getScopedCommentAuthor(params.id, {
 		orgId: locals.organization?.id,
 		projectId: locals.project?.id
@@ -63,6 +74,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
 	if (!can(userFromLocals(locals.user), 'comments:write')) {
 		return json({ error: 'Forbidden' }, { status: 403 });
+	}
+	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Reacting to a comment');
+	} catch (err) {
+		return json({ error: (err as Error).message }, { status: 403 });
 	}
 	const body = await request.json();
 	const emoji = typeof body.emoji === 'string' ? body.emoji.trim() : '';

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import ResultTable from '$lib/components/ResultTable.svelte';
 	import ChartView from '$lib/components/ChartView.svelte';
-	import ChartConfigPanel from '$lib/components/ChartConfigPanel.svelte';
+	import ChartConfigurator from '$lib/components/ChartConfigurator.svelte';
 	import StatsView from '$lib/components/StatsView.svelte';
 	import ResultViewModeSwitcher from '$lib/components/ResultViewModeSwitcher.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Maximize2, X, Download, Settings2 } from '@lucide/svelte';
+	import { Maximize2, X, Download } from '@lucide/svelte';
 	import { inferSmartChartConfig } from '$lib/utils';
 	import {
 		setTabViewMode,
@@ -48,7 +48,6 @@
 
 	let lastShapeSignature = $state('');
 	let expanded = $state(false);
-	let showConfigPanel = $state(false);
 	let chartViewRef: { exportPng: (filename: string) => Promise<void> } | undefined = $state();
 
 	// ── Chart height resize ───────────────────────────────────────────────────
@@ -138,15 +137,7 @@
 
 		{#if viewMode === 'chart' && activeConfig}
 			<div class="flex items-center gap-0.5">
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					class={showConfigPanel ? 'bg-primary/10 text-primary' : ''}
-					title="Chart settings"
-					onclick={() => (showConfigPanel = !showConfigPanel)}
-				>
-					<Settings2 class="h-3.5 w-3.5" />
-				</Button>
+				<ChartConfigurator config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
 
 				<Button variant="ghost" size="icon-sm" title="Download as PNG" onclick={downloadChartPng}>
 					<Download class="h-3.5 w-3.5" />
@@ -175,13 +166,7 @@
 			/>
 		</div>
 	{:else if viewMode === 'chart' && activeConfig}
-		<!-- Split layout: optional left config panel + chart -->
 		<div class="flex min-h-0 flex-1 gap-0 overflow-hidden">
-			{#if showConfigPanel}
-				<div class="w-56 shrink-0 overflow-y-auto border-r border-border bg-muted/10 px-3 py-3">
-					<ChartConfigPanel config={activeConfig} {columns} {rows} onUpdate={onConfigUpdate} />
-				</div>
-			{/if}
 			<div class="flex min-w-0 flex-1 flex-col">
 				<div class="min-h-40 flex-1">
 					<ChartView

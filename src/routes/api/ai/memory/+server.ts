@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { inngest } from '$lib/inngest/client';
+import { assertTenantProjectFolder } from '$lib/server/project-folders.js';
 import {
 	writeEntry,
 	removeEntry,
@@ -10,28 +11,38 @@ import {
 	type MemoryEntryType
 } from '$lib/server/ai-memory.js';
 
-export const GET: RequestHandler = async ({ url }) => {
-	const folder = url.searchParams.get('folder');
-	if (!folder) return json({ error: 'folder is required' }, { status: 400 });
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const requestedFolder = url.searchParams.get('folder');
+	if (!requestedFolder) return json({ error: 'folder is required' }, { status: 400 });
 
-	const [conventions, entries] = await Promise.all([
-		readConventions(folder),
-		readIndexEntries(folder)
-	]);
-	return json({ conventions, entries });
+	try {
+		const folder = assertTenantProjectFolder(locals, requestedFolder);
+		const [conventions, entries] = await Promise.all([
+			readConventions(folder),
+			readIndexEntries(folder)
+		]);
+		return json({ conventions, entries });
+	} catch (err) {
+		return json({ error: (err as Error).message }, { status: 403 });
+	}
 };
 
-export const POST: RequestHandler = async ({ request }) => {
-	const { folder, type, text } = (await request.json()) as {
+export const POST: RequestHandler = async ({ request, locals }) => {
+	const {
+		folder: requestedFolder,
+		type,
+		text
+	} = (await request.json()) as {
 		folder?: string;
 		type?: MemoryEntryType;
 		text?: string;
 	};
-	if (!folder || !text?.trim()) {
+	if (!requestedFolder || !text?.trim()) {
 		return json({ error: 'folder and text are required' }, { status: 400 });
 	}
 
 	try {
+		const folder = assertTenantProjectFolder(locals, requestedFolder);
 		const { slug, entries } = await writeEntry(folder, {
 			type: type === 'discovery' ? 'discovery' : 'decision',
 			text

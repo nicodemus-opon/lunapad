@@ -18,6 +18,7 @@
 		Link,
 		Trash2
 	} from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { scrollMenuItemIntoView } from './menu-utils';
 	import type { BlockMenuGroup } from './block-menu-actions';
 
@@ -75,8 +76,10 @@
 		{#each group.items as item (item.id)}
 			{@const idx = flat.indexOf(item)}
 			{@const Icon = iconMap[item.id]}
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="sm"
 				role="option"
 				aria-selected={idx === selectedIndex}
 				disabled={item.disabled}
@@ -96,18 +99,18 @@
 					<Icon class="h-3.5 w-3.5 shrink-0 opacity-80" />
 				{/if}
 				<span class="truncate">{item.label}</span>
-			</button>
+			</Button>
 		{/each}
 	{/each}
 </div>
 
 <style>
-	.block-menu-item:hover,
-	.block-menu-item.is-active {
+	:global(.block-menu-item:hover),
+	:global(.block-menu-item.is-active) {
 		background: color-mix(in oklab, var(--accent) 78%, transparent);
 		color: var(--accent-foreground);
 	}
-	.block-menu-item:focus-visible {
+	:global(.block-menu-item:focus-visible) {
 		outline: none;
 		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 55%, transparent);
 	}

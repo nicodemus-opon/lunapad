@@ -10,6 +10,7 @@
 		"worker": "node scripts/cloud-worker.mjs",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "vitest run",
+		"test:cloud:aggressive": "node scripts/cloud-compose-aggressive-smoke.mjs",
 		"test:e2e": "playwright test --project=mocked",
 		"test:e2e:mock": "playwright test --project=mocked",
 		"test:e2e:llm": "playwright test --project=llm",

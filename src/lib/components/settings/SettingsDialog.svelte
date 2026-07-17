@@ -96,6 +96,7 @@
 	let emailVerificationToken = $state('');
 	let requestingEmailVerification = $state(false);
 	let verifyingEmail = $state(false);
+	let accountError = $state<string | null>(null);
 
 	$effect(() => {
 		if (open) accountName = $session.data?.user?.name ?? '';
@@ -155,12 +156,14 @@
 
 	async function loadAccountSessions(): Promise<void> {
 		loadingSessions = true;
+		accountError = null;
 		try {
 			const res = await fetch('/api/account/sessions');
-			if (res.ok) {
-				const body = await res.json();
-				accountSessions = body.sessions ?? [];
-			}
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load account sessions.');
+			accountSessions = body.sessions ?? [];
+		} catch (err) {
+			accountError = err instanceof Error ? err.message : 'Failed to load account sessions.';
 		} finally {
 			loadingSessions = false;
 		}
@@ -247,18 +250,19 @@
 			: []),
 		...(isAdmin ? [{ id: 'team' as const, label: 'Team', icon: ShieldUser }] : [])
 	]);
+	const activeNavItem = $derived(navItems.find((item) => item.id === tab) ?? navItems[0]);
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-w-3xl gap-0 overflow-hidden p-0">
+	<Dialog.Content class="max-h-[min(720px,calc(100vh-2rem))] max-w-4xl gap-0 overflow-hidden p-0">
 		<Dialog.Close class="absolute top-3 right-3 z-10" />
-		<div class="flex h-[560px]">
-			<div class="flex w-44 shrink-0 flex-col border-r border-border bg-muted/20 p-2">
+		<div class="grid h-[min(680px,calc(100vh-2rem))] grid-rows-[auto_1fr] sm:grid-cols-[11rem_1fr] sm:grid-rows-1">
+			<div class="min-w-0 border-b border-border bg-muted/20 p-2 sm:border-r sm:border-b-0">
 				<p class="px-2 py-1.5 text-xs font-semibold">Settings</p>
-				<nav class="mt-1 space-y-0.5">
+				<nav class="mt-1 flex gap-1 overflow-x-auto pb-1 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
 					{#each navItems as item (item.id)}
 						<button
-							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors {tab ===
+							class="flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors sm:w-full {tab ===
 							item.id
 								? 'bg-accent text-foreground'
 								: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
@@ -271,7 +275,13 @@
 				</nav>
 			</div>
 
-			<div class="flex-1 overflow-y-auto p-5">
+			<div class="min-h-0 overflow-y-auto p-4 sm:p-5">
+				<div class="mb-5 border-b border-border pb-4 pr-8">
+					<h1 class="text-base font-semibold">{activeNavItem?.label ?? 'Settings'}</h1>
+					<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+						Manage workspace access, product preferences, data sources, and account controls.
+					</p>
+				</div>
 				{#if tab === 'general'}
 					<div class="space-y-4">
 						<h2 class="text-sm font-semibold">Appearance</h2>
@@ -308,6 +318,14 @@
 					<ProjectsSettings />
 				{:else if tab === 'account'}
 					<div class="space-y-6">
+						{#if accountError}
+							<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+								<p class="text-xs text-destructive">{accountError}</p>
+								<Button variant="outline" size="sm" class="h-7 text-xs" onclick={loadAccountSessions}>
+									Retry
+								</Button>
+							</div>
+						{/if}
 						<div class="space-y-3">
 							<h2 class="text-sm font-semibold">Profile</h2>
 							<div class="space-y-1">
@@ -327,10 +345,10 @@
 									<Button
 										size="sm"
 										class="h-8 text-xs"
-										disabled={savingProfile}
+										disabled={savingProfile || !accountName.trim()}
 										onclick={saveProfile}
 									>
-										{savingProfile ? 'Saving…' : 'Save'}
+										{savingProfile ? 'Saving…' : 'Save profile'}
 									</Button>
 								</div>
 							</div>
@@ -338,41 +356,43 @@
 
 						<div class="space-y-3">
 							<h2 class="text-sm font-semibold">Change password</h2>
-							<div class="space-y-1">
-								<label for="account-current-password" class="text-xs text-muted-foreground"
-									>Current password</label
-								>
-								<Input
-									id="account-current-password"
-									type="password"
-									class="h-8 text-xs"
-									bind:value={currentPassword}
-									autocomplete="current-password"
-								/>
-							</div>
-							<div class="space-y-1">
-								<label for="account-new-password" class="text-xs text-muted-foreground"
-									>New password</label
-								>
-								<Input
-									id="account-new-password"
-									type="password"
-									class="h-8 text-xs"
-									bind:value={newPassword}
-									autocomplete="new-password"
-								/>
-							</div>
-							<div class="space-y-1">
-								<label for="account-confirm-password" class="text-xs text-muted-foreground"
-									>Confirm new password</label
-								>
-								<Input
-									id="account-confirm-password"
-									type="password"
-									class="h-8 text-xs"
-									bind:value={confirmPassword}
-									autocomplete="new-password"
-								/>
+							<div class="grid gap-3 sm:grid-cols-3">
+								<div class="space-y-1">
+									<label for="account-current-password" class="text-xs text-muted-foreground"
+										>Current password</label
+									>
+									<Input
+										id="account-current-password"
+										type="password"
+										class="h-8 text-xs"
+										bind:value={currentPassword}
+										autocomplete="current-password"
+									/>
+								</div>
+								<div class="space-y-1">
+									<label for="account-new-password" class="text-xs text-muted-foreground"
+										>New password</label
+									>
+									<Input
+										id="account-new-password"
+										type="password"
+										class="h-8 text-xs"
+										bind:value={newPassword}
+										autocomplete="new-password"
+									/>
+								</div>
+								<div class="space-y-1">
+									<label for="account-confirm-password" class="text-xs text-muted-foreground"
+										>Confirm new password</label
+									>
+									<Input
+										id="account-confirm-password"
+										type="password"
+										class="h-8 text-xs"
+										bind:value={confirmPassword}
+										autocomplete="new-password"
+									/>
+								</div>
 							</div>
 							<Button
 								variant="outline"

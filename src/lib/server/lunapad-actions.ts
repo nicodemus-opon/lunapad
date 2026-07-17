@@ -4,6 +4,7 @@ import type { Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
 import { listConnectionsMetadata, getConnectionMetadata } from './connections-store.js';
 import { getSecret } from './connection-secrets.js';
 import { queryExternalConnection } from './connections.js';
+import path from 'node:path';
 import { assertAllowedProjectFolder, walkProjectDirectory } from './project.js';
 import { getCurrentFolder } from './dbt-schedules.js';
 import { spawnDbt, getJob } from './dbt-runner.js';
@@ -28,7 +29,12 @@ import {
 	type NotebookPatchInput,
 	type NotebookRunOutput
 } from './notebook-mutation.js';
-import type { TenantRef } from './tenancy.js';
+import {
+	assertCloudTenantRef,
+	deploymentMode,
+	projectFolderFor,
+	type TenantRef
+} from './tenancy.js';
 
 /**
  * Plain async functions with no SvelteKit-specific types — the single source of truth
@@ -78,6 +84,7 @@ export async function runQueryAction(input: RunQueryInput): Promise<RunQueryResu
 	const connection = await resolveConnectionForQuery(input.connectionId, input.tenant);
 	const secret = await getSecret(connection.id, input.tenant?.orgId);
 	if (!input.tenant?.orgId) {
+		assertCloudTenantRef(input.tenant ?? { orgId: '' }, 'Running a query');
 		return queryExternalConnection(connection, secret ?? undefined, input.sql);
 	}
 	const availableConnections = await listConnectionsMetadata(input.tenant.orgId, {
@@ -116,6 +123,7 @@ export async function runPrqlAction(input: RunPrqlInput): Promise<RunQueryResult
 
 	const secret = await getSecret(connection.id, input.tenant?.orgId);
 	if (!input.tenant?.orgId) {
+		assertCloudTenantRef(input.tenant ?? { orgId: '' }, 'Running a PRQL query');
 		return queryExternalConnection(connection, secret ?? undefined, sql);
 	}
 	const availableConnections = await listConnectionsMetadata(input.tenant.orgId, {
@@ -141,7 +149,24 @@ export async function runPrqlAction(input: RunPrqlInput): Promise<RunQueryResult
  * setCurrentFolder (e.g. the PROJECT_FOLDER env var, or the last-opened project in this
  * running instance).
  */
-export function resolveProjectFolder(folder: string | undefined): string {
+export function resolveProjectFolder(
+	folder: string | undefined,
+	tenant?: TenantRef | null
+): string {
+	// Cloud/multi-tenant deployments: the folder is never client-controlled. It's derived
+	// deterministically from the caller's active org+project, and any client-supplied
+	// `folder` that doesn't match is rejected — otherwise an API key or MCP client from one
+	// org could read/run/mutate another org's dbt project just by guessing/knowing its path.
+	if (deploymentMode() === 'cloud') {
+		if (!tenant?.orgId || !tenant?.projectId) {
+			throw new Error('An active project is required for this action.');
+		}
+		const canonical = projectFolderFor(tenant.orgId, tenant.projectId);
+		if (folder && path.resolve(folder) !== path.resolve(canonical)) {
+			throw new Error('Project folder does not belong to the active tenant project.');
+		}
+		return canonical;
+	}
 	const resolved = folder ?? getCurrentFolder();
 	if (!resolved) {
 		throw new Error(
@@ -153,6 +178,7 @@ export function resolveProjectFolder(folder: string | undefined): string {
 }
 
 export interface ListNotebooksInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 }
 
@@ -162,7 +188,7 @@ export interface ListNotebooksResult {
 }
 
 export async function listNotebooksAction(input: ListNotebooksInput): Promise<ListNotebooksResult> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const { notebooks, folders } = await walkProjectDirectory(folder);
 	return {
 		notebooks: notebooks.map((n) => ({
@@ -176,12 +202,13 @@ export async function listNotebooksAction(input: ListNotebooksInput): Promise<Li
 }
 
 export interface GetNotebookInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 }
 
 export async function getNotebookAction(input: GetNotebookInput): Promise<{ notebook: Notebook }> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const { notebooks } = await walkProjectDirectory(folder);
 	const notebook = notebooks.find((n) => n.id === input.notebookId);
 	if (!notebook) throw new Error(`Notebook "${input.notebookId}" not found.`);
@@ -191,6 +218,7 @@ export async function getNotebookAction(input: GetNotebookInput): Promise<{ note
 // ── dbt ──────────────────────────────────────────────────────────────────────
 
 export interface DbtRunInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	select?: string;
 }
@@ -206,14 +234,14 @@ async function precompileAndSpawn(folder: string, args: string[]): Promise<DbtJo
 }
 
 export async function dbtRunAction(input: DbtRunInput): Promise<DbtJobResult> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const args = ['run'];
 	if (input.select) args.push('--select', input.select);
 	return precompileAndSpawn(folder, args);
 }
 
 export async function dbtCompileAction(input: DbtRunInput): Promise<DbtJobResult> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	return precompileAndSpawn(folder, ['compile']);
 }
 
@@ -234,13 +262,14 @@ export async function getDbtJobStatusAction(input: DbtJobStatusInput): Promise<D
 }
 
 export interface DbtManifestInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 }
 
 export async function getDbtManifestAction(
 	input: DbtManifestInput
 ): Promise<{ models: DbtModel[] }> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	return { models: await loadManifest(folder) };
 }
 
@@ -282,12 +311,17 @@ function toMutationOutput(result: {
 export async function createNotebookAction(
 	input: CreateNotebookInput
 ): Promise<NotebookMutationOutput> {
-	const folder = resolveProjectFolder(input.folder);
-	const result = await createNotebookFromBlueprintOnDisk(folder, input.notebookId, {
-		title: input.title,
-		executableCells: input.executableCells,
-		blocks: input.blocks
-	}, input.tenant);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
+	const result = await createNotebookFromBlueprintOnDisk(
+		folder,
+		input.notebookId,
+		{
+			title: input.title,
+			executableCells: input.executableCells,
+			blocks: input.blocks
+		},
+		input.tenant
+	);
 	return toMutationOutput(result);
 }
 
@@ -300,18 +334,24 @@ export interface PatchNotebookInput extends NotebookPatchInput {
 export async function patchNotebookAction(
 	input: PatchNotebookInput
 ): Promise<NotebookMutationOutput> {
-	const folder = resolveProjectFolder(input.folder);
-	const result = await patchNotebookOnDisk(folder, input.notebookId, {
-		blueprint: input.blueprint,
-		document: input.document,
-		operations: input.operations,
-		executableCells: input.executableCells,
-		title: input.title
-	}, input.tenant);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
+	const result = await patchNotebookOnDisk(
+		folder,
+		input.notebookId,
+		{
+			blueprint: input.blueprint,
+			document: input.document,
+			operations: input.operations,
+			executableCells: input.executableCells,
+			title: input.title
+		},
+		input.tenant
+	);
 	return toMutationOutput(result);
 }
 
 export interface ValidateNotebookInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 }
@@ -319,13 +359,13 @@ export interface ValidateNotebookInput {
 export async function validateNotebookAction(
 	input: ValidateNotebookInput
 ): Promise<{ ok: boolean; diagnostics: NotebookBlueprintDiagnostic[] }> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const diagnostics = await validateNotebookOnDisk(folder, input.notebookId);
 	return { ok: diagnostics.length === 0, diagnostics };
 }
 
 export async function inspectNotebookAction(input: ValidateNotebookInput) {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	return inspectNotebookOnDisk(folder, input.notebookId);
 }
 
@@ -340,7 +380,7 @@ export interface RunNotebookCellsInput {
 export async function runNotebookCellsAction(
 	input: RunNotebookCellsInput
 ): Promise<NotebookRunOutput> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	return runNotebookCellsOnDisk(folder, input.notebookId, input.cellIds, {
 		allowPython: input.allowPython,
 		tenant: input.tenant
@@ -348,6 +388,7 @@ export async function runNotebookCellsAction(
 }
 
 export interface SetChartInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 	cellId: string;
@@ -355,7 +396,7 @@ export interface SetChartInput {
 }
 
 export async function setChartAction(input: SetChartInput): Promise<NotebookMutationOutput> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const result = await setCellChartConfig(
 		folder,
 		input.notebookId,
@@ -373,7 +414,7 @@ export interface PickChartInput {
 }
 
 export async function pickChartAction(input: PickChartInput): Promise<NotebookMutationOutput> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const runOutput = await runNotebookCellsOnDisk(folder, input.notebookId, [input.cellId], {
 		allowPython: false,
 		tenant: input.tenant
@@ -390,6 +431,7 @@ export async function pickChartAction(input: PickChartInput): Promise<NotebookMu
 }
 
 export interface DeleteNotebookInput {
+	tenant?: TenantRef | null;
 	folder?: string;
 	notebookId: string;
 }
@@ -397,7 +439,7 @@ export interface DeleteNotebookInput {
 export async function deleteNotebookAction(
 	input: DeleteNotebookInput
 ): Promise<NotebookMutationOutput> {
-	const folder = resolveProjectFolder(input.folder);
+	const folder = resolveProjectFolder(input.folder, input.tenant);
 	const result = await deleteNotebookOnDisk(folder, input.notebookId);
 	return toMutationOutput(result);
 }

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { query } from './db.js';
 import { ensureAuthTablesOnce } from './auth.js';
+import { sendEmail } from './email.js';
 
 type TokenKind = 'password_reset' | 'email_verification';
 
@@ -83,6 +84,25 @@ async function createToken(input: {
 		]
 	);
 	const manual = manualTokenDeliveryEnabled();
+	const origin = process.env.ORIGIN ?? 'http://localhost:3967';
+	if (!manual) {
+		const path =
+			input.kind === 'password_reset'
+				? `/reset-password?token=${encodeURIComponent(token)}`
+				: `/api/account/email/verify?token=${encodeURIComponent(token)}`;
+		const url = `${origin}${path}`;
+		await sendEmail({
+			to: input.email,
+			subject:
+				input.kind === 'password_reset'
+					? 'Reset your Lunapad password'
+					: 'Verify your Lunapad email',
+			text:
+				input.kind === 'password_reset'
+					? `Reset your Lunapad password: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
+					: `Verify your Lunapad email: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
+		});
+	}
 	return {
 		ok: true,
 		delivery: manual ? 'manual' : 'email',

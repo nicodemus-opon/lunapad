@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { Maximize2, X } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import ResultTable from '$lib/components/ResultTable.svelte';
 	import { FILTER_CONTEXT_KEY, type FilterContextValue } from './filter-context';
 	import type { ColumnFormatKind } from '$lib/services/column-format';
@@ -129,14 +130,16 @@
 		/>
 		<div class="md-datatable-actions">
 			{#if transformed.rows.length > effectivePageSize}
-				<button
+				<Button
+					variant="ghost"
+					size="icon-xs"
 					class="md-datatable-expand md-action"
 					onclick={() => (fullscreen = true)}
 					title="Expand table"
 					aria-label="Expand table"
 				>
 					<Maximize2 class="h-3 w-3" />
-				</button>
+				</Button>
 			{/if}
 		</div>
 	</div>
@@ -159,9 +162,15 @@
 	<div class="md-datatable-overlay" role="dialog" aria-modal="true">
 		<div class="md-datatable-overlay-header">
 			<span>{data.length} rows</span>
-			<button onclick={() => (fullscreen = false)} title="Close (Esc)" aria-label="Close">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => (fullscreen = false)}
+				title="Close (Esc)"
+				aria-label="Close"
+			>
 				<X class="h-4 w-4" />
-			</button>
+			</Button>
 		</div>
 		<div class="md-datatable-overlay-body">
 			<ResultTable

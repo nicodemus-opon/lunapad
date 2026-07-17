@@ -4,8 +4,10 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { building } from '$app/environment';
 import { getRequestEvent } from '$app/server';
 import { getPool, query } from './db.js';
+import { secureCookieEnabled } from './cloud-config.js';
 
 export const SIGN_UP_PATH = '/api/auth/sign-up/email';
+export const SIGN_IN_PATH = '/api/auth/sign-in/email';
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -42,9 +44,7 @@ export const auth = betterAuth({
 	baseURL: process.env.ORIGIN ?? 'http://localhost:3967',
 	trustedOrigins: [process.env.ORIGIN ?? 'http://localhost:3967'],
 	advanced: {
-		// Deployment runs over plain HTTP with no TLS termination — Secure cookies
-		// (better-auth's default in production) would be silently dropped by browsers.
-		useSecureCookies: false
+		useSecureCookies: secureCookieEnabled()
 	}
 });
 

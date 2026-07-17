@@ -12,6 +12,7 @@
 		Heading2,
 		ChevronDown
 	} from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import LinkPopover from './LinkPopover.svelte';
 
 	interface Props {
@@ -69,8 +70,10 @@
 	bind:this={toolbarEl}
 	class="bubble-toolbar flex items-center gap-0.5 rounded-sm border bg-popover px-1 py-0.5 shadow-md"
 >
-	<button
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('bold') ? 'is-active' : ''}"
 		title="Bold"
 		onmousedown={(e) => {
@@ -79,9 +82,11 @@
 		}}
 	>
 		<Bold class="h-3.5 w-3.5" />
-	</button>
-	<button
+	</Button>
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('italic') ? 'is-active' : ''}"
 		title="Italic"
 		onmousedown={(e) => {
@@ -90,9 +95,11 @@
 		}}
 	>
 		<Italic class="h-3.5 w-3.5" />
-	</button>
-	<button
+	</Button>
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('underline') ? 'is-active' : ''}"
 		title="Underline"
 		onmousedown={(e) => {
@@ -101,9 +108,11 @@
 		}}
 	>
 		<Underline class="h-3.5 w-3.5" />
-	</button>
-	<button
+	</Button>
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('strike') ? 'is-active' : ''}"
 		title="Strikethrough"
 		onmousedown={(e) => {
@@ -112,9 +121,11 @@
 		}}
 	>
 		<Strikethrough class="h-3.5 w-3.5" />
-	</button>
-	<button
+	</Button>
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('code') ? 'is-active' : ''}"
 		title="Code"
 		onmousedown={(e) => {
@@ -123,11 +134,13 @@
 		}}
 	>
 		<Code class="h-3.5 w-3.5" />
-	</button>
+	</Button>
 
 	<div class="relative">
-		<button
+		<Button
 			type="button"
+			variant="ghost"
+			size="icon-xs"
 			class="bubble-btn {editor.isActive('link') || linkOpen ? 'is-active' : ''}"
 			title="Link"
 			onmousedown={(e) => {
@@ -140,7 +153,7 @@
 			}}
 		>
 			<Link class="h-3.5 w-3.5" />
-		</button>
+		</Button>
 		{#if linkOpen}
 			<div class="absolute top-full left-0 z-50 mt-1">
 				<LinkPopover
@@ -152,8 +165,10 @@
 		{/if}
 	</div>
 
-	<button
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="bubble-btn {editor.isActive('highlight') ? 'is-active' : ''}"
 		title="Highlight"
 		onmousedown={(e) => {
@@ -162,13 +177,15 @@
 		}}
 	>
 		<Highlighter class="h-3.5 w-3.5" />
-	</button>
+	</Button>
 
 	<span class="mx-0.5 h-4 w-px bg-border"></span>
 
 	<div class="relative">
-		<button
+		<Button
 			type="button"
+			variant="ghost"
+			size="icon-xs"
 			class="bubble-btn flex items-center gap-0.5 pr-1"
 			title="Turn into"
 			onmousedown={(e) => {
@@ -179,7 +196,7 @@
 		>
 			<Heading2 class="h-3.5 w-3.5" />
 			<ChevronDown class="h-3 w-3 opacity-60" />
-		</button>
+		</Button>
 		{#if turnIntoOpen}
 			<div
 				class="absolute top-full left-0 z-50 mt-1 min-w-36 rounded-md border bg-popover p-1 shadow-lg"
@@ -188,8 +205,10 @@
 				onmousedown={(e) => e.stopPropagation()}
 			>
 				{#each turnIntoOptions as opt (opt.label)}
-					<button
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						onmousedown={(e) => {
 							e.preventDefault();
@@ -198,7 +217,7 @@
 						}}
 					>
 						{opt.label}
-					</button>
+					</Button>
 				{/each}
 			</div>
 		{/if}
@@ -206,7 +225,7 @@
 </div>
 
 <style>
-	.bubble-btn {
+	:global(.bubble-btn) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -218,12 +237,12 @@
 			background var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
 			color var(--motion-fast, 130ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 	}
-	.bubble-btn:hover,
-	.bubble-btn.is-active {
+	:global(.bubble-btn:hover),
+	:global(.bubble-btn.is-active) {
 		background: color-mix(in oklab, var(--accent) 78%, transparent);
 		color: var(--accent-foreground);
 	}
-	.bubble-btn:focus-visible {
+	:global(.bubble-btn:focus-visible) {
 		outline: none;
 		box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 50%, transparent);
 	}

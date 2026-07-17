@@ -4,6 +4,7 @@ import type { Connection, ConnectionSecret } from '$lib/types/connection';
 import { testExternalConnection } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
 import { getConnectionMetadata } from '$lib/server/connections-store';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface TestConnectionRequest {
 	connection: Connection;
@@ -15,6 +16,7 @@ interface TestConnectionRequest {
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Testing a connection');
 		const body = (await request.json()) as Partial<TestConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });

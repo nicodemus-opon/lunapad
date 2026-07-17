@@ -19,6 +19,7 @@ import {
 	entitlementViolation,
 	EntitlementError
 } from '$lib/server/entitlements';
+import { putObject } from '$lib/server/object-storage';
 
 interface UpsertShareRequest {
 	notebookId: string;
@@ -115,6 +116,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			slug: body.slug,
 			connections
 		});
+		if (process.env.OBJECT_STORAGE_PROVIDER === 's3') {
+			await putObject({
+				key: `shares/${locals.organization!.id}/${share.token}/v${share.currentVersion}.json`,
+				body: JSON.stringify(
+					{
+						token: share.token,
+						version: share.currentVersion,
+						notebookId: body.notebookId,
+						notebookName: body.notebookName,
+						snapshot: body.snapshot,
+						publishedAt: new Date().toISOString()
+					},
+					null,
+					2
+				),
+				contentType: 'application/json; charset=utf-8'
+			});
+		}
 		await logAuditEvent({
 			actorId: locals.user!.id,
 			orgId: locals.organization?.id,

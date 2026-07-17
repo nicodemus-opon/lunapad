@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { getNotebooks } from '$lib/stores/notebook.svelte';
 	import { renderMarkdocCell, resolveBareVariablePath } from '$lib/services/markdoc-interp';
@@ -17,7 +19,14 @@
 		onSelect?: () => void;
 	}
 
-	const { source, notebookId = '', cells = [], selected = false, onPatch, onSelect }: Props = $props();
+	const {
+		source,
+		notebookId = '',
+		cells = [],
+		selected = false,
+		onPatch,
+		onSelect
+	}: Props = $props();
 
 	let editing = $state(false);
 	let draft = $state('');
@@ -123,10 +132,9 @@
 
 {#if editing}
 	<span class="md-expr-editwrap">
-		<input
-			bind:this={inputEl}
-			class="md-expr md-expr-input"
-			class:is-error={resolved.error}
+		<Input
+			bind:ref={inputEl}
+			class="md-expr md-expr-input {resolved.error ? 'is-error' : ''}"
 			type="text"
 			bind:value={draft}
 			size={Math.max(8, draft.length + 1)}
@@ -178,12 +186,13 @@
 		{#if acOpen && suggestions.length}
 			<div class="md-expr-ac" role="listbox">
 				{#each suggestions as s, i (s.insert + s.label)}
-					<button
+					<Button
 						type="button"
 						role="option"
 						aria-selected={i === acIndex}
-						class="md-expr-ac-item"
-						class:is-active={i === acIndex}
+						variant="ghost"
+						size="sm"
+						class="md-expr-ac-item {i === acIndex ? 'is-active' : ''}"
 						onmousedown={(e) => {
 							e.preventDefault();
 							applySuggestion(s.insert);
@@ -192,7 +201,7 @@
 					>
 						<span class="md-expr-ac-label">{s.label}</span>
 						<span class="md-expr-ac-detail">{s.detail}</span>
-					</button>
+					</Button>
 				{/each}
 			</div>
 		{/if}

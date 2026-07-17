@@ -17,6 +17,44 @@ Self-hosted installs do not need email, object storage, billing credentials, or 
 worker fleet. Those integrations are only required when operating a public hosted
 service.
 
+## Cloud Docker stack
+
+For a production-shaped cloud deployment on one Docker host:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build
+```
+
+The cloud override enables:
+
+- open signup via `/signup` and `/api/signup`;
+- `BILLING_PROVIDER=manual` with `CLOUD_DEFAULT_PLAN=starter`;
+- queued execution through the bundled `worker` service;
+- Redis-backed signup, API, and public-share rate limits;
+- RustFS as the default S3-compatible object store at `http://rustfs:9000`;
+- a `storage-init` service that creates `lunapad-artifacts` automatically;
+- Mailpit SMTP by default, with the inbox at `http://localhost:8025`.
+
+For a public deployment, replace the default auth/encryption/worker secrets, set
+`ORIGIN` to the public HTTPS URL, and point the SMTP variables at a real provider:
+
+```bash
+ORIGIN=https://your-domain.example
+BETTER_AUTH_SECRET=...
+SECRETS_ENCRYPTION_KEY=... # 32 bytes, base64
+CLOUD_WORKER_TOKEN=...
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASSWORD=...
+EMAIL_FROM=noreply@your-domain.example
+```
+
+RustFS works without extra local configuration. To use external S3-compatible
+storage instead, override `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
+`S3_SECRET_ACCESS_KEY`.
+
 ## Tenant model
 
 Cloud mode uses three top-level records:

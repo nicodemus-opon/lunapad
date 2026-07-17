@@ -40,6 +40,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts
 
 COPY --from=builder /app/build ./build
+COPY scripts ./scripts
 
 ENV PORT=3000
 ENV HOST=0.0.0.0

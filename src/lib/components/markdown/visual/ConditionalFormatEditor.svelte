@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { Plus, Trash2 } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { NativeSelect } from '$lib/components/ui/native-select';
 	import {
 		defaultConditionalRulesForColumn,
 		type ReportTableConditionalRule,
@@ -59,19 +62,20 @@
 		<div class="cf-row">
 			<div class="cf-row-header">
 				<span class="cf-col-name">{entry.column}</span>
-				<button
-					type="button"
+				<Button
+					variant="ghost"
+					size="icon-xs"
 					class="cf-remove"
 					title="Remove rule"
 					aria-label="Remove rule"
 					onclick={() => removeEntry(i)}
 				>
 					<Trash2 class="h-3 w-3" />
-				</button>
+				</Button>
 			</div>
 			{#if rule?.type === 'threshold'}
 				<div class="cf-row-fields">
-					<select
+					<NativeSelect
 						class="cf-select"
 						value={rule.op}
 						onchange={(e) => updateThresholdRule(i, { op: e.currentTarget.value as ThresholdOp })}
@@ -79,8 +83,8 @@
 						{#each THRESHOLD_OPS as op (op)}
 							<option value={op}>{op}</option>
 						{/each}
-					</select>
-					<input
+					</NativeSelect>
+					<Input
 						class="cf-input"
 						value={rule.value ?? ''}
 						placeholder="value"
@@ -90,7 +94,7 @@
 							updateThresholdRule(i, { value: raw.trim() && !Number.isNaN(num) ? num : raw });
 						}}
 					/>
-					<select
+					<NativeSelect
 						class="cf-select"
 						value={rule.tone ?? 'neutral'}
 						onchange={(e) =>
@@ -99,7 +103,7 @@
 						{#each TONES as tone (tone)}
 							<option value={tone}>{tone}</option>
 						{/each}
-					</select>
+					</NativeSelect>
 				</div>
 			{:else}
 				<p class="cf-hint">
@@ -109,15 +113,21 @@
 		</div>
 	{/each}
 	<div class="cf-add-row">
-		<select class="cf-select" bind:value={pendingColumn}>
+		<NativeSelect class="cf-select" bind:value={pendingColumn}>
 			<option value="">Pick a column…</option>
 			{#each columns as col (col)}
 				<option value={col}>{col}</option>
 			{/each}
-		</select>
-		<button type="button" class="cf-add-btn" onclick={addRule} disabled={!columns.length}>
+		</NativeSelect>
+		<Button
+			variant="outline"
+			size="xs"
+			class="cf-add-btn"
+			onclick={addRule}
+			disabled={!columns.length}
+		>
 			<Plus class="h-3 w-3" /> Add rule
-		</button>
+		</Button>
 	</div>
 </div>
 
@@ -142,8 +152,8 @@
 		line-height: 1.45;
 		color: var(--muted-foreground);
 	}
-	.cf-select,
-	.cf-input {
+	:global(.cf-select),
+	:global(.cf-input) {
 		width: 100%;
 		height: 1.55rem;
 		border-radius: var(--radius-sm);
@@ -153,12 +163,12 @@
 		padding: 0 0.4rem;
 		font-size: var(--text-2xs);
 	}
-	.cf-select:hover,
-	.cf-input:hover {
+	:global(.cf-select:hover),
+	:global(.cf-input:hover) {
 		background: color-mix(in oklab, var(--muted) 42%, transparent);
 	}
-	.cf-select:focus-visible,
-	.cf-input:focus-visible {
+	:global(.cf-select:focus-visible),
+	:global(.cf-input:focus-visible) {
 		outline: none;
 		border-color: color-mix(in oklab, var(--ring) 45%, transparent);
 		background: var(--background);
@@ -181,7 +191,7 @@
 		font-size: var(--text-2xs);
 		font-weight: 600;
 	}
-	.cf-remove {
+	:global(.cf-remove) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -190,7 +200,7 @@
 		border-radius: var(--radius-sm);
 		color: var(--muted-foreground);
 	}
-	.cf-remove:hover {
+	:global(.cf-remove:hover) {
 		background: color-mix(in oklab, var(--destructive) 12%, transparent);
 		color: var(--destructive);
 	}
@@ -203,10 +213,10 @@
 		display: flex;
 		gap: 0.3rem;
 	}
-	.cf-add-row .cf-select {
+	.cf-add-row :global(.cf-select) {
 		flex: 1;
 	}
-	.cf-add-btn {
+	:global(.cf-add-btn) {
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
@@ -218,11 +228,11 @@
 		font-size: var(--text-2xs);
 		color: var(--foreground);
 	}
-	.cf-add-btn:hover:not(:disabled) {
+	:global(.cf-add-btn:hover:not(:disabled)) {
 		border-color: var(--primary);
 		background: color-mix(in oklab, var(--primary) 6%, transparent);
 	}
-	.cf-add-btn:disabled {
+	:global(.cf-add-btn:disabled) {
 		opacity: 0.4;
 		cursor: default;
 	}

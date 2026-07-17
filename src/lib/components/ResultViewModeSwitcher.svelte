@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { Table2, TrendingUp, Sigma } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
 
 	interface Props {
@@ -35,26 +37,67 @@
 	}
 </script>
 
-<div
-	class="notebook-tabs {size === 'md' ? 'is-md' : ''}"
-	role="tablist"
-	aria-label="Result view mode"
-	data-testid="result-view-tabs"
->
-	{#each items as item (item.mode)}
-		{@const Icon = item.icon}
-		<button
-			type="button"
-			data-testid={`result-view-${item.mode}`}
-			role="tab"
-			aria-selected={viewMode === item.mode}
-			class="notebook-tab"
-			class:is-active={viewMode === item.mode}
-			onmousedown={(event) => handlePointerDown(event, item.mode)}
-			onclick={(event) => handleClick(event, item.mode)}
-		>
-			<Icon class="h-3 w-3" />
-			{item.label}
-		</button>
-	{/each}
-</div>
+<Tooltip.Provider>
+	<div
+		class="result-view-switcher {size === 'md' ? 'is-md' : ''}"
+		role="toolbar"
+		aria-label="Result view mode"
+		data-testid="result-view-tabs"
+	>
+		{#each items as item (item.mode)}
+			{@const Icon = item.icon}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-xs"
+						data-testid={`result-view-${item.mode}`}
+						aria-label={item.label}
+						aria-pressed={viewMode === item.mode}
+						class="result-view-switcher__button {viewMode === item.mode ? 'is-active' : ''}"
+						onmousedown={(event) => handlePointerDown(event, item.mode)}
+						onclick={(event) => handleClick(event, item.mode)}
+					>
+						<Icon class={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
+					</Button>
+				</Tooltip.Trigger>
+				<Tooltip.Content side="bottom">
+					<p class="text-xs">{item.label}</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+		{/each}
+	</div>
+</Tooltip.Provider>
+
+<style>
+	.result-view-switcher {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.075rem;
+	}
+
+	:global(.result-view-switcher__button) {
+		width: 1.25rem;
+		height: 1.25rem;
+		padding: 0;
+		color: color-mix(in oklab, var(--muted-foreground) 78%, transparent);
+		border-radius: var(--radius-sm);
+	}
+
+	.is-md :global(.result-view-switcher__button) {
+		width: 1.375rem;
+		height: 1.375rem;
+	}
+
+	:global(.result-view-switcher__button:hover) {
+		color: var(--foreground);
+		background: color-mix(in oklab, var(--muted) 45%, transparent);
+	}
+
+	:global(.result-view-switcher__button.is-active) {
+		color: var(--foreground);
+		background: color-mix(in oklab, var(--muted) 62%, transparent);
+		box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border) 72%, transparent);
+	}
+</style>

@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { completeCloudSignup } from '$lib/server/onboarding';
 import { deploymentMode } from '$lib/server/tenancy';
 import { logAuditEvent } from '$lib/server/audit';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
+import { isRateLimitedShared, rateLimitIp } from '$lib/server/redis-rate-limit';
+import { requestEmailVerification } from '$lib/server/account-lifecycle';
 
 function setTenantCookies(
 	cookies: Parameters<RequestHandler>[0]['cookies'],
@@ -13,7 +16,7 @@ function setTenantCookies(
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax' as const,
-		secure: process.env.NODE_ENV === 'production',
+		secure: secureCookieEnabled(),
 		maxAge: 60 * 60 * 24 * 365
 	};
 	cookies.set('lunapad_org_id', orgId, options);
@@ -26,6 +29,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	}
 	if (process.env.PUBLIC_CLOUD_SIGNUP_ENABLED === 'false') {
 		return json({ error: 'Cloud signup is currently closed.' }, { status: 403 });
+	}
+	const ip = rateLimitIp(request);
+	const limit = Number(process.env.SIGNUP_RATE_LIMIT_PER_HOUR ?? '20');
+	if (await isRateLimitedShared(`signup:${ip}`, limit, 60 * 60 * 1000)) {
+		return json({ error: 'Too many signup attempts. Try again later.' }, { status: 429 });
 	}
 	const body = await request.json();
 	try {
@@ -51,12 +59,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			resourceId: result.tenant.organization.id,
 			metadata: { email: result.user.email }
 		});
+		const verification = await requestEmailVerification({
+			userId: result.user.id,
+			email: result.user.email
+		});
 		return json({
 			user: result.user,
 			organization: result.tenant.organization,
 			project: result.tenant.project,
 			membership: result.tenant.membership,
-			entitlements: result.tenant.entitlements
+			entitlements: result.tenant.entitlements,
+			emailVerification: verification
 		}, { status: 201 });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to create workspace.';

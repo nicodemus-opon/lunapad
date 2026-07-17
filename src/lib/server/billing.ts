@@ -1,15 +1,16 @@
 import { query } from './db.js';
 import {
 	DEFAULT_ORG_ID,
-	ensureDefaultTenant,
+	ensureTenantTablesOnce,
 	type BillingProvider,
 	type OrganizationPlan
 } from './tenancy.js';
+import { billingProvider } from './cloud-config.js';
 
 let billingTablesReady: Promise<void> | null = null;
 
 async function ensureBillingTables(): Promise<void> {
-	await ensureDefaultTenant();
+	await ensureTenantTablesOnce();
 	await query(`
 		CREATE TABLE IF NOT EXISTS organization_billing (
 			org_id              TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
@@ -24,7 +25,8 @@ async function ensureBillingTables(): Promise<void> {
 	`);
 	await query(
 		`INSERT INTO organization_billing (org_id, provider, plan, status)
-		 VALUES ($1, 'none', 'team', 'none')
+		 SELECT $1, 'none', 'team', 'none'
+		 WHERE EXISTS (SELECT 1 FROM organizations WHERE id = $1)
 		 ON CONFLICT (org_id) DO NOTHING`,
 		[DEFAULT_ORG_ID]
 	);
@@ -87,4 +89,32 @@ export async function setManualBillingPlan(input: {
 		input.orgId,
 		input.plan
 	]);
+}
+
+export async function initializeManualBilling(input: {
+	orgId: string;
+	plan: OrganizationPlan;
+}): Promise<void> {
+	await ensureBillingTablesOnce();
+	const provider = billingProvider();
+	const status = provider === 'manual' ? 'active' : 'none';
+	await query(
+		`INSERT INTO organization_billing (org_id, provider, plan, status, updated_at)
+		 VALUES ($1, $2, $3, $4, now())
+		 ON CONFLICT (org_id) DO UPDATE
+		 SET provider = EXCLUDED.provider,
+		     plan = EXCLUDED.plan,
+		     status = EXCLUDED.status,
+		     updated_at = now()`,
+		[input.orgId, provider, input.plan, status]
+	);
+	await query(
+		`UPDATE organizations
+		 SET plan = $2,
+		     billing_provider = $3,
+		     billing_status = $4,
+		     updated_at = now()
+		 WHERE id = $1`,
+		[input.orgId, input.plan, provider, status]
+	);
 }

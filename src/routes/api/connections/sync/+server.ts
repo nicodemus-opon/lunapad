@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { Connection } from '$lib/types/connection';
 import { upsertConnectionMetadata } from '$lib/server/connections-store';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface SyncConnectionRequest {
 	connection: Connection;
@@ -9,6 +10,7 @@ interface SyncConnectionRequest {
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Syncing connection metadata');
 		const body = (await request.json()) as Partial<SyncConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });

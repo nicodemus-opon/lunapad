@@ -21,6 +21,7 @@
 
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import {
 		formatDialect,
 		sql as sqlDialectDef,
@@ -228,8 +229,10 @@
 			applyFullReplace(formatted);
 			suppressUpdate = false;
 			onchange(formatted);
-		} catch {
-			// leave as-is if formatter fails
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : 'The formatter could not parse this SQL.';
+			toast.error(`Could not format SQL: ${message}`);
 		}
 		return true;
 	}

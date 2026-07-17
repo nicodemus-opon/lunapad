@@ -4,6 +4,7 @@ import type { Connection } from '$lib/types/connection';
 import { fetchExternalConnectionSchema } from '$lib/server/connections';
 import { getSecret } from '$lib/server/connection-secrets';
 import { resolveConnectionMetadata } from '$lib/server/connection-metadata';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface SchemaConnectionRequest {
 	connection: Connection;
@@ -11,6 +12,7 @@ interface SchemaConnectionRequest {
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Fetching connection schema');
 		const body = (await request.json()) as Partial<SchemaConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });

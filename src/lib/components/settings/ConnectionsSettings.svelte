@@ -108,6 +108,7 @@
 	let saving = $state(false);
 	let testing = $state(false);
 	let loadingSchema = $state(false);
+	let operationError = $state<string | null>(null);
 
 	function emptyForm(type: FormType = 'postgres'): ConnectionForm {
 		return {
@@ -547,13 +548,15 @@
 
 	async function runConnectionTest(): Promise<void> {
 		testing = true;
+		operationError = null;
 		try {
 			const connection = buildConnectionFromForm();
 			// If left blank, the server falls back to the already-saved secret (if any).
 			await testConnection(connection, buildSecretFromForm());
 			toast.success(`Source ready: ${connection.name}`);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Source test failed.');
+			operationError = err instanceof Error ? err.message : 'Source test failed.';
+			toast.error(operationError);
 		} finally {
 			testing = false;
 		}
@@ -561,6 +564,7 @@
 
 	async function runSchemaPreview(): Promise<void> {
 		loadingSchema = true;
+		operationError = null;
 		try {
 			// Schema discovery always reads the secret server-side, so this only works for
 			// an already-saved connection (a brand new one gets its first discovery via Save).
@@ -569,7 +573,8 @@
 			setExternalConnectionSchema(connection.id, connection.name, result.tables);
 			toast.success(`${result.tables.length} tables discovered`);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Table discovery failed.');
+			operationError = err instanceof Error ? err.message : 'Table discovery failed.';
+			toast.error(operationError);
 		} finally {
 			loadingSchema = false;
 		}
@@ -577,6 +582,7 @@
 
 	async function saveConnection(): Promise<void> {
 		saving = true;
+		operationError = null;
 		try {
 			const connection = buildConnectionFromForm();
 			const secret = buildSecretFromForm();
@@ -608,7 +614,8 @@
 				editingId = connection.id;
 			}
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Failed to register source.');
+			operationError = err instanceof Error ? err.message : 'Failed to register source.';
+			toast.error(operationError);
 		} finally {
 			saving = false;
 		}
@@ -616,13 +623,19 @@
 
 	async function deleteCurrentConnection(): Promise<void> {
 		if (!editingId) return;
-		const connection = connections.find((c) => c.id === editingId);
-		if (connection && connection.type !== 'duckdb-wasm') {
-			await removeConnectionSource(connection);
+		operationError = null;
+		try {
+			const connection = connections.find((c) => c.id === editingId);
+			if (connection && connection.type !== 'duckdb-wasm') {
+				await removeConnectionSource(connection);
+			}
+			removeConnection(editingId);
+			toast.success('Source removed');
+			resetForm();
+		} catch (err) {
+			operationError = err instanceof Error ? err.message : 'Failed to remove source.';
+			toast.error(operationError);
 		}
-		removeConnection(editingId);
-		toast.success('Source removed');
-		resetForm();
 	}
 
 	function typeLabel(type: FormType): string {
@@ -659,13 +672,24 @@
 	}
 </script>
 
-<div class="space-y-3">
-	<div class="flex items-center justify-between gap-2">
-		<h2 class="text-sm font-semibold">Data sources</h2>
+<div class="space-y-4">
+	<div class="flex items-start justify-between gap-3">
+		<div>
+			<h2 class="text-sm font-semibold">Data sources</h2>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Add warehouses and files that notebooks can query alongside DuckDB.
+			</p>
+		</div>
 		<Button variant="outline" size="sm" class="h-7 px-2 text-2xs" onclick={resetForm}>
 			Add source
 		</Button>
 	</div>
+
+	{#if operationError}
+		<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+			{operationError}
+		</p>
+	{/if}
 
 	{#if externalConnections.length > 0}
 		<div class="flex flex-wrap gap-1">
@@ -682,11 +706,15 @@
 				</button>
 			{/each}
 		</div>
+	{:else}
+		<p class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+			No external sources yet. DuckDB is always available; add a warehouse when you need live data.
+		</p>
 	{/if}
 
-	<div class="space-y-2 rounded border bg-background p-2">
-		<div class="grid grid-cols-2 gap-2">
-			<div class="col-span-2">
+	<div class="space-y-3 rounded-md border border-border bg-background p-3">
+		<div class="grid gap-2 sm:grid-cols-2">
+			<div class="sm:col-span-2">
 				<label
 					for="connection-type"
 					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Type</label
@@ -736,7 +764,7 @@
 				</Select.Root>
 			</div>
 
-			<div class="col-span-2">
+			<div class="sm:col-span-2">
 				<label
 					for="connection-name"
 					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Name</label
@@ -749,7 +777,7 @@
 				/>
 			</div>
 
-			<div class="col-span-2">
+			<div class="sm:col-span-2">
 				<label
 					for="connection-catalog"
 					class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase">Source ID</label
@@ -777,7 +805,7 @@
 			</div>
 
 			{#if group === 'gsheets'}
-				<div class="col-span-2">
+				<div class="sm:col-span-2">
 					<label
 						for="connection-sheet-id"
 						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
@@ -793,7 +821,7 @@
 						A sheet with columns Table Name, Sheet ID — shared with the service account below.
 					</p>
 				</div>
-				<div class="col-span-2">
+				<div class="sm:col-span-2">
 					<label
 						for="connection-credentials"
 						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
@@ -835,7 +863,7 @@
 						placeholder="my-billing-project"
 					/>
 				</div>
-				<div class="col-span-2">
+				<div class="sm:col-span-2">
 					<label
 						for="connection-credentials"
 						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"
@@ -929,7 +957,7 @@
 					/>
 				</div>
 			{:else if group === 'cassandra'}
-				<div class="col-span-2">
+				<div class="sm:col-span-2">
 					<label
 						for="connection-contact-points"
 						class="mb-1 block text-2xs tracking-wide text-muted-foreground uppercase"

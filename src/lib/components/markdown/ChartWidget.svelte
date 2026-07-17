@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import ChartView from '../ChartView.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import type {
 		ChartConfig,
 		ChartType,
@@ -145,31 +146,37 @@
 		/>
 		<div class="md-chart-actions">
 			{#if drillCell}
-				<button
+				<Button
+					variant="ghost"
+					size="icon-xs"
 					class="md-chart-action md-action"
 					onclick={openDrill}
 					title="View detail rows"
 					aria-label="View detail"
 				>
 					<Table2 class="h-3.5 w-3.5" />
-				</button>
+				</Button>
 			{/if}
-			<button
+			<Button
+				variant="ghost"
+				size="icon-xs"
 				class="md-chart-action md-action"
 				onclick={exportPng}
 				title="Download PNG"
 				aria-label="Download PNG"
 			>
 				<Download class="h-3.5 w-3.5" />
-			</button>
-			<button
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon-xs"
 				class="md-chart-action md-action"
 				onclick={() => (fullscreen = true)}
 				title="Fullscreen"
 				aria-label="Fullscreen"
 			>
 				<Maximize2 class="h-3.5 w-3.5" />
-			</button>
+			</Button>
 		</div>
 	{:else if chartState === 'missing-axis'}
 		<div class="md-chart-empty">Set x and y columns to preview chart</div>
@@ -189,9 +196,15 @@
 	<div class="md-chart-overlay" role="dialog" aria-modal="true">
 		<div class="md-chart-overlay-header">
 			<span>{title ?? 'Chart'}</span>
-			<button onclick={() => (fullscreen = false)} title="Close (Esc)" aria-label="Close">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => (fullscreen = false)}
+				title="Close (Esc)"
+				aria-label="Close"
+			>
 				<X class="h-4 w-4" />
-			</button>
+			</Button>
 		</div>
 		<div class="md-chart-overlay-body">
 			<ChartView

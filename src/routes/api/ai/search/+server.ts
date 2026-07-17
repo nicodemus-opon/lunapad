@@ -6,6 +6,7 @@ import {
 	searchMemoryEmbeddings
 } from '$lib/server/embeddings.js';
 import { searchMemoryLexical } from '$lib/server/ai-memory.js';
+import { assertTenantProjectFolder } from '$lib/server/project-folders.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	let body: { query?: string; folder?: string };
@@ -17,6 +18,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!body.query?.trim()) {
 		return json({ error: 'query required' }, { status: 400 });
+	}
+
+	if (body.folder) {
+		try {
+			body.folder = assertTenantProjectFolder(locals, body.folder);
+		} catch (err) {
+			return json({ error: (err as Error).message }, { status: 403 });
+		}
 	}
 
 	const [cells, tables, memories] = await Promise.all([

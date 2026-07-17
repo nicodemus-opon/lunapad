@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { Database, MoreHorizontal } from '@lucide/svelte';
-	import {
-		MENTION_GROUP_LABEL,
-		type MentionItem
-	} from './mention-utils';
+	import { Button } from '$lib/components/ui/button';
+	import { MENTION_GROUP_LABEL, type MentionItem } from './mention-utils';
 	import { scrollMenuItemIntoView } from './menu-utils';
 
 	interface Props {
@@ -48,17 +46,19 @@
 	{:else}
 		{#each grouped as [group, groupItems] (group)}
 			<p
-				class="px-2 pt-1.5 pb-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground"
+				class="px-2 pt-1.5 pb-0.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
 			>
 				{MENTION_GROUP_LABEL[group]}
 			</p>
 			{#each groupItems as item (item.id)}
 				{@const idx = items.indexOf(item)}
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="sm"
 					role="option"
 					aria-selected={idx === selectedIndex}
-					class="mention-menu-item flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {idx ===
+					class="mention-menu-item flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {idx ===
 					selectedIndex
 						? 'bg-accent text-accent-foreground'
 						: 'hover:bg-muted/60'}"
@@ -79,7 +79,7 @@
 							<span class="block truncate text-2xs text-muted-foreground">{item.meta}</span>
 						{/if}
 					</span>
-				</button>
+				</Button>
 			{/each}
 		{/each}
 		{#if moreCount > 0}

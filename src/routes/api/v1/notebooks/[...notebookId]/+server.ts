@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { isRateLimited } from '$lib/server/api-rate-limit';
+import { isRateLimitedAsync } from '$lib/server/api-rate-limit';
 import { agentActionResponse } from '$lib/server/agent-rest';
+import { publicApiErrorResponse } from '$lib/server/public-api-errors';
 
 // Notebook ids are project-relative paths (e.g. "models/staging/stg_orders"), hence the
 // `[...notebookId]` rest parameter rather than a single dynamic segment. Note this means
@@ -10,7 +11,7 @@ import { agentActionResponse } from '$lib/server/agent-rest';
 // notebooks/run and notebooks/validate routes instead, which take notebookId in the body.
 export const GET: RequestHandler = async ({ params, url, locals, request }) => {
 	const rateLimitKey = `v1:${locals.apiKeyId ?? locals.user?.id}`;
-	if (isRateLimited(rateLimitKey, 120)) {
+	if (await isRateLimitedAsync(rateLimitKey, 120)) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 	try {
@@ -20,7 +21,7 @@ export const GET: RequestHandler = async ({ params, url, locals, request }) => {
 			notebookId: params.notebookId
 		});
 	} catch (err) {
-		return json({ error: (err as Error).message }, { status: 400 });
+		return publicApiErrorResponse(err, { surface: 'v1.notebooks.get' });
 	}
 };
 
@@ -29,7 +30,7 @@ export const GET: RequestHandler = async ({ params, url, locals, request }) => {
 // underlying action as the apply_notebook_patch MCP tool.
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const rateLimitKey = `v1:${locals.apiKeyId ?? locals.user?.id}`;
-	if (isRateLimited(rateLimitKey, 60)) {
+	if (await isRateLimitedAsync(rateLimitKey, 60)) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 	try {
@@ -51,6 +52,6 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			executableCells: body.executableCells as never
 		});
 	} catch (err) {
-		return json({ error: (err as Error).message }, { status: 400 });
+		return publicApiErrorResponse(err, { surface: 'v1.notebooks.patch' });
 	}
 };

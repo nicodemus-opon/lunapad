@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '$lib/components/ui/badge';
 	import { resolveSemanticToken, type SemanticTone } from './semantic-tone';
 
 	interface Props {
@@ -23,12 +24,12 @@
 		return h % CHART_TOKENS.length;
 	}
 
-	const token = $derived(
-		resolveSemanticToken(color, CHART_TOKENS[hashIndex(String(value))])
-	);
+	const token = $derived(resolveSemanticToken(color, CHART_TOKENS[hashIndex(String(value))]));
 </script>
 
-<span
+<Badge
+	variant="outline"
 	class="md-badge"
-	style="--md-badge-token: {token}"
-	style:grid-column={span && span > 1 ? `span ${span}` : undefined}>{value ?? ''}</span>
+	style="--md-badge-token: {token}; {span && span > 1 ? `grid-column: span ${span}` : ''}"
+	>{value ?? ''}</Badge
+>

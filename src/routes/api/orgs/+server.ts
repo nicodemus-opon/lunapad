@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createOrganizationForUser, listOrganizationsForUser } from '$lib/server/tenancy';
 import { logAuditEvent } from '$lib/server/audit';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
 
 function setTenantCookies(
 	cookies: Parameters<RequestHandler>[0]['cookies'],
@@ -12,7 +13,7 @@ function setTenantCookies(
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax' as const,
-		secure: process.env.NODE_ENV === 'production',
+		secure: secureCookieEnabled(),
 		maxAge: 60 * 60 * 24 * 365
 	};
 	cookies.set('lunapad_org_id', orgId, options);

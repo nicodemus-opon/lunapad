@@ -120,18 +120,37 @@ type TrinoAccessRuleSet = {
 	queries: Array<{ user?: string; allow: Array<'execute' | 'view' | 'kill'> }>;
 };
 
+// The shared `lunapad` user (used only when no tenant/orgId is in scope — self-hosted mode,
+// or a request without an active org) must never see tenant-isolated physical catalogs
+// (the `lp_<orghash>_*` namespace from PHYSICAL_PREFIX in trino-catalog-isolation.ts).
+// Per-org users get their own narrower catalog grant appended by ensureTenantTrinoAccess
+// below — this base rule must stay excluded from that namespace so a missing orgId never
+// silently reopens access to every org's catalogs at once.
+const NON_TENANT_CATALOG_PATTERN = '(?!lp_).*';
+const TENANT_CATALOG_PATTERN = 'lp_.*';
+const CATALOG_MANAGER_TRINO_USER =
+	process.env.TRINO_CATALOG_MANAGER_USER ?? 'lunapad_catalog_manager';
+
 function baseTrinoAccessRules(): TrinoAccessRuleSet {
 	return {
-		catalogs: [{ user: 'lunapad', catalog: '.*', allow: 'all' }],
-		schemas: [{ user: 'lunapad', owner: true }],
+		catalogs: [
+			{ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, allow: 'all' },
+			{ user: CATALOG_MANAGER_TRINO_USER, catalog: TENANT_CATALOG_PATTERN, allow: 'all' }
+		],
+		schemas: [{ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, owner: true }],
 		tables: [
 			{
 				user: 'lunapad',
+				catalog: NON_TENANT_CATALOG_PATTERN,
 				privileges: ['SELECT', 'INSERT', 'DELETE', 'UPDATE', 'OWNERSHIP']
 			}
 		],
 		queries: [{ allow: ['execute'] }]
 	};
+}
+
+function catalogManagerTrinoUser(orgId?: string | null): string {
+	return orgId ? CATALOG_MANAGER_TRINO_USER : tenantTrinoUser(orgId);
 }
 
 const accessControlLocks = new Map<string, Promise<void>>();
@@ -154,7 +173,9 @@ async function withAccessControlLock<T>(filePath: string, fn: () => Promise<T>):
 }
 
 function getTrinoAccessControlPath(catalogDir: string): string {
-	return process.env.TRINO_ACCESS_CONTROL_RULES_FILE ?? path.join(catalogDir, TRINO_ACCESS_CONTROL_FILE);
+	return (
+		process.env.TRINO_ACCESS_CONTROL_RULES_FILE ?? path.join(catalogDir, TRINO_ACCESS_CONTROL_FILE)
+	);
 }
 
 function normalizeTrinoAccessRules(value: unknown): TrinoAccessRuleSet {
@@ -181,8 +202,38 @@ async function readTrinoAccessRules(filePath: string): Promise<TrinoAccessRuleSe
 async function writeTrinoAccessRules(filePath: string, rules: TrinoAccessRuleSet): Promise<void> {
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
 	const tmp = `${filePath}.tmp`;
-	await fs.writeFile(tmp, `${JSON.stringify(rules, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+	await fs.writeFile(tmp, `${JSON.stringify(rules, null, 2)}\n`, {
+		encoding: 'utf-8',
+		mode: 0o600
+	});
 	await fs.rename(tmp, filePath);
+}
+
+// Upgrades a stale on-disk rules file written before the base `lunapad` rule was scoped
+// away from tenant catalogs — without this, an already-provisioned deployment would keep
+// its old blanket `catalog: ".*"` grant forever, since this function only ever appends new
+// per-org rules and never otherwise rewrites the base ones.
+function hardenBaseTrinoRules(rules: TrinoAccessRuleSet): boolean {
+	let changed = false;
+	for (const rule of [...rules.catalogs, ...rules.schemas, ...rules.tables]) {
+		if (rule.user === 'lunapad' && (rule.catalog === '.*' || rule.catalog === undefined)) {
+			rule.catalog = NON_TENANT_CATALOG_PATTERN;
+			changed = true;
+		}
+	}
+	if (
+		!rules.catalogs.some(
+			(rule) => rule.user === CATALOG_MANAGER_TRINO_USER && rule.catalog === TENANT_CATALOG_PATTERN
+		)
+	) {
+		rules.catalogs.push({
+			user: CATALOG_MANAGER_TRINO_USER,
+			catalog: TENANT_CATALOG_PATTERN,
+			allow: 'all'
+		});
+		changed = true;
+	}
+	return changed;
 }
 
 async function ensureTenantTrinoAccess(orgId?: string | null): Promise<void> {
@@ -195,7 +246,7 @@ async function ensureTenantTrinoAccess(orgId?: string | null): Promise<void> {
 
 	await withAccessControlLock(filePath, async () => {
 		const rules = await readTrinoAccessRules(filePath);
-		let changed = false;
+		let changed = hardenBaseTrinoRules(rules);
 		if (!rules.catalogs.some((rule) => rule.user === user && rule.catalog === catalog)) {
 			rules.catalogs.push({ user, catalog, allow: 'all' });
 			changed = true;
@@ -631,14 +682,14 @@ export async function registerCatalog(
 		// DROP + CREATE so edits to an already-registered catalog (host, port, database,
 		// credentials, ...) actually take effect — see comment above.
 		await trinoRequest(buildDropCatalogSQL(trinoConnection.catalogName), undefined, undefined, {
-			trinoUser: tenantTrinoUser(orgId)
+			trinoUser: catalogManagerTrinoUser(orgId)
 		});
 		await trinoRequest(
 			buildCreateCatalogSQL(trinoConnection.catalogName, fullSpec),
 			undefined,
 			undefined,
 			{
-				trinoUser: tenantTrinoUser(orgId)
+				trinoUser: catalogManagerTrinoUser(orgId)
 			}
 		);
 	});
@@ -654,7 +705,7 @@ export async function unregisterCatalog(
 			: (forTrino(connectionOrCatalogName, orgId) as ExternalConnection).catalogName;
 	await ensureTenantTrinoAccess(orgId);
 	await trinoRequest(buildDropCatalogSQL(catalogName), undefined, undefined, {
-		trinoUser: tenantTrinoUser(orgId)
+		trinoUser: catalogManagerTrinoUser(orgId)
 	}).catch(() => {});
 
 	// Google-auth connectors write service-account credentials alongside the catalog
@@ -716,7 +767,9 @@ export async function getTrinoCatalogStatuses(orgId: string): Promise<TrinoCatal
 		if (connection.type === 'duckdb-wasm') continue;
 		const trinoConnection = forTrino(connection, orgId) as ExternalConnection;
 		const physicalCatalogName = trinoConnection.catalogName;
-		const catalogFile = catalogDir ? path.join(catalogDir, `${physicalCatalogName}.properties`) : null;
+		const catalogFile = catalogDir
+			? path.join(catalogDir, `${physicalCatalogName}.properties`)
+			: null;
 		const catalogFileExists = catalogFile
 			? await fs
 					.access(catalogFile)
@@ -1120,12 +1173,7 @@ export async function fetchExternalConnectionSchema(
 		});
 	}
 
-	const comments = await fetchCatalogComments(
-		trinoConnection,
-		catalogName,
-		connSchema,
-		orgId
-	);
+	const comments = await fetchCatalogComments(trinoConnection, catalogName, connSchema, orgId);
 	for (const c of comments) {
 		const key = `${c.schema}.${c.table}`;
 		const t = tables.get(key);

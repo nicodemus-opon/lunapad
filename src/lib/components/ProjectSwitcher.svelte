@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { emitProjectChange } from '$lib/stores/project-context';
+	import { flushPendingSave, clearWorkspaceCache } from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
 	import {
 		Archive,
@@ -62,6 +63,8 @@
 	let projectName = $state('');
 	let workspaceName = $state('');
 	let submitting = $state(false);
+	let loadError = $state<string | null>(null);
+	let dialogError = $state<string | null>(null);
 
 	const activeOrg = $derived.by(() => {
 		const state = switcher;
@@ -69,18 +72,27 @@
 			? (state.organizations.find((item) => item.organization.id === state.activeOrgId) ?? null)
 			: null;
 	});
-	const activeProjects = $derived(activeOrg?.projects.filter((project) => !project.archivedAt) ?? []);
+	const activeProjects = $derived(
+		activeOrg?.projects.filter((project) => !project.archivedAt) ?? []
+	);
 	const isAdmin = $derived(current?.membership.role === 'admin');
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const [orgRes, switcherRes] = await Promise.all([
 				fetch('/api/orgs/current'),
 				fetch('/api/orgs')
 			]);
-			if (orgRes.ok) current = (await orgRes.json()) as CurrentOrg;
-			if (switcherRes.ok) switcher = (await switcherRes.json()) as SwitcherState;
+			const orgBody = await orgRes.json().catch(() => ({}));
+			const switcherBody = await switcherRes.json().catch(() => ({}));
+			if (!orgRes.ok) throw new Error(orgBody.error ?? 'Failed to load active workspace.');
+			if (!switcherRes.ok) throw new Error(switcherBody.error ?? 'Failed to load workspaces.');
+			current = orgBody as CurrentOrg;
+			switcher = switcherBody as SwitcherState;
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load workspaces.';
 		} finally {
 			loading = false;
 		}
@@ -90,6 +102,7 @@
 
 	async function afterTenantChange(body: CurrentOrg) {
 		current = body;
+		clearWorkspaceCache();
 		await load();
 		await invalidateAll();
 		emitProjectChange({
@@ -103,6 +116,7 @@
 		if (orgId === current?.organization.id || switching) return;
 		switching = true;
 		try {
+			await flushPendingSave();
 			const res = await fetch(`/api/orgs/${orgId}/activate`, { method: 'POST' });
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error ?? 'Failed to switch workspace.');
@@ -119,6 +133,7 @@
 		if (projectId === current?.project.id || switching) return;
 		switching = true;
 		try {
+			await flushPendingSave();
 			const res = await fetch(`/api/projects/${projectId}/activate`, { method: 'POST' });
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error ?? 'Failed to switch project.');
@@ -131,7 +146,11 @@
 		}
 	}
 
-	function openDialog(mode: DialogMode, opts: { project?: ProjectSummary; org?: OrganizationListItem } = {}) {
+	function openDialog(
+		mode: DialogMode,
+		opts: { project?: ProjectSummary; org?: OrganizationListItem } = {}
+	) {
+		dialogError = null;
 		dialogMode = mode;
 		selectedProject = opts.project ?? null;
 		selectedOrg = opts.org ?? activeOrg;
@@ -148,13 +167,29 @@
 	async function submitDialog(event: SubmitEvent) {
 		event.preventDefault();
 		if (submitting) return;
+		dialogError = null;
 		submitting = true;
 		try {
+			if (
+				(dialogMode === 'create-workspace' || dialogMode === 'rename-workspace') &&
+				!workspaceName.trim()
+			) {
+				throw new Error('Workspace name is required.');
+			}
+			if (
+				(dialogMode === 'create-project' || dialogMode === 'rename-project') &&
+				!projectName.trim()
+			) {
+				throw new Error('Project name is required.');
+			}
 			if (dialogMode === 'create-workspace') {
 				const res = await fetch('/api/orgs', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ workspaceName: workspaceName.trim(), projectName: projectName.trim() })
+					body: JSON.stringify({
+						workspaceName: workspaceName.trim(),
+						projectName: projectName.trim()
+					})
 				});
 				const body = await res.json();
 				if (!res.ok) throw new Error(body.error ?? 'Failed to create workspace.');
@@ -230,25 +265,36 @@
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error ?? 'Failed to archive project.');
 			dialogOpen = false;
-			if (selectedProject.id === current?.project.id && replacement) await activateProject(replacement.id);
+			if (selectedProject.id === current?.project.id && replacement)
+				await activateProject(replacement.id);
 			else {
 				await load();
 				await invalidateAll();
 			}
 			toast.success('Project archived.');
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Workspace action failed.');
+			const message = err instanceof Error ? err.message : 'Workspace action failed.';
+			dialogError = message;
+			toast.error(message);
 		} finally {
 			submitting = false;
 		}
 	}
+
+	const submitDisabled = $derived(
+		submitting ||
+			((dialogMode === 'create-workspace' || dialogMode === 'rename-workspace') &&
+				!workspaceName.trim()) ||
+			((dialogMode === 'create-project' || dialogMode === 'rename-project') &&
+				!projectName.trim())
+	);
 </script>
 
 <DropdownMenu.Root onOpenChange={(open) => open && void load()}>
 	<DropdownMenu.Trigger
 		data-testid="project-switcher"
 		class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-		disabled={loading}
+		disabled={loading || switching}
 	>
 		<FolderKanban class="h-3.5 w-3.5" />
 		<span class="max-w-44 truncate">
@@ -256,11 +302,18 @@
 		</span>
 		<ChevronsUpDown class="h-3 w-3 text-muted-foreground" />
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content align="start" class="w-96">
+	<DropdownMenu.Content align="start" class="w-[min(24rem,calc(100vw-2rem))]">
 		{#if loading && !switcher}
 			<div class="space-y-1 p-2">
 				<div class="h-8 rounded-md bg-muted/60"></div>
 				<div class="h-8 rounded-md bg-muted/40"></div>
+			</div>
+		{:else if loadError}
+			<div class="space-y-2 p-2">
+				<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+					{loadError}
+				</p>
+				<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
 			</div>
 		{:else if switcher}
 			{#each switcher.organizations as item (item.organization.id)}
@@ -268,6 +321,7 @@
 					<div class="flex items-start gap-2">
 						<button
 							class="min-w-0 flex-1 text-left"
+							disabled={switching}
 							onclick={() => activateOrg(item.organization.id)}
 						>
 							<p class="truncate text-xs font-medium">
@@ -298,6 +352,7 @@
 								? activateProject(project.id)
 								: activateOrg(item.organization.id)}
 						class="gap-2 pl-5"
+						disabled={switching}
 					>
 						{#if project.id === current?.project.id}
 							<Check class="h-3.5 w-3.5" />
@@ -310,12 +365,14 @@
 						<div class="flex gap-1 px-12 pb-1">
 							<button
 								class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
+								disabled={switching}
 								onclick={() => openDialog('rename-project', { project })}
 							>
 								<Pencil class="h-3 w-3" /> Rename
 							</button>
 							<button
 								class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
+								disabled={switching}
 								onclick={() => openDialog('archive-project', { project })}
 							>
 								<Archive class="h-3 w-3" /> Archive
@@ -372,11 +429,24 @@
 				</Dialog.Description>
 			</Dialog.Header>
 
+			{#if dialogError}
+				<p class="mx-5 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+					{dialogError}
+				</p>
+			{/if}
+
 			{#if dialogMode === 'create-workspace' || dialogMode === 'rename-workspace'}
 				<div class="space-y-3 px-5 py-4">
 					<div>
-						<label class="mb-1.5 block text-xs font-medium" for="workspace-name">Workspace name</label>
-						<Input id="workspace-name" bind:value={workspaceName} autocomplete="organization" autofocus />
+						<label class="mb-1.5 block text-xs font-medium" for="workspace-name"
+							>Workspace name</label
+						>
+						<Input
+							id="workspace-name"
+							bind:value={workspaceName}
+							autocomplete="organization"
+							autofocus
+						/>
 					</div>
 					{#if dialogMode === 'create-workspace'}
 						<div>
@@ -405,13 +475,13 @@
 			{/if}
 
 			<Dialog.Footer class="gap-2 px-5 pb-5">
-				<Button type="button" variant="outline" onclick={() => (dialogOpen = false)}>
-					Cancel
-				</Button>
+				<Button type="button" variant="outline" onclick={() => (dialogOpen = false)}>Cancel</Button>
 				<Button
 					type="submit"
-					variant={dialogMode === 'archive-project' || dialogMode === 'leave-workspace' ? 'destructive' : 'default'}
-					disabled={submitting}
+					variant={dialogMode === 'archive-project' || dialogMode === 'leave-workspace'
+						? 'destructive'
+						: 'default'}
+					disabled={submitDisabled}
 				>
 					{#if dialogMode === 'create-workspace'}
 						Create workspace

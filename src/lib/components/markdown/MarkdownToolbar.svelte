@@ -27,6 +27,7 @@
 		Plus,
 		ChevronDown
 	} from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import RefPickerMenu from './RefPickerMenu.svelte';
 	import FilterPickerMenu from './FilterPickerMenu.svelte';
@@ -170,15 +171,17 @@
 	<!-- Inline formatting -->
 	<div class="md-toolbar-group">
 		{#each inlineButtons as btn}
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-toolbar-btn"
 				title={btn.title}
 				aria-label={btn.title}
 				onmousedown={fmt(btn.action)}
 			>
 				<btn.icon size={13} />
-			</button>
+			</Button>
 		{/each}
 	</div>
 
@@ -187,15 +190,17 @@
 	<!-- Headings -->
 	<div class="md-toolbar-group">
 		{#each headingButtons as btn}
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-toolbar-btn"
 				title={btn.title}
 				aria-label={btn.title}
 				onmousedown={fmt(btn.action)}
 			>
 				<btn.icon size={13} />
-			</button>
+			</Button>
 		{/each}
 	</div>
 
@@ -204,15 +209,17 @@
 	<!-- Block structure -->
 	<div class="md-toolbar-group">
 		{#each blockButtons as btn}
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-toolbar-btn"
 				title={btn.title}
 				aria-label={btn.title}
 				onmousedown={fmt(btn.action)}
 			>
 				<btn.icon size={13} />
-			</button>
+			</Button>
 		{/each}
 	</div>
 
@@ -260,8 +267,10 @@
 	<!-- Preview (optional — prefer MarkdownModeBar when present) -->
 	{#if onTogglePreview}
 		<div class="md-toolbar-spacer"></div>
-		<button
+		<Button
 			type="button"
+			variant="outline"
+			size="xs"
 			class="md-toolbar-btn md-toolbar-preview-btn"
 			title="Preview (⌘⇧P)"
 			aria-label="Preview"
@@ -272,7 +281,7 @@
 		>
 			<Eye size={13} />
 			<span>Preview</span>
-		</button>
+		</Button>
 	{/if}
 </div>
 
@@ -325,13 +334,13 @@
 		color: var(--primary);
 		background: color-mix(in oklch, var(--primary) 10%, transparent);
 	}
-	.md-toolbar-preview-btn {
+	:global(.md-toolbar-preview-btn) {
 		font-size: 0.7rem;
 		padding: 0.2rem 0.5rem;
 		border: 1px solid var(--border);
 		background: color-mix(in oklch, currentColor 4%, transparent) !important;
 	}
-	.md-toolbar-preview-btn:hover {
+	:global(.md-toolbar-preview-btn:hover) {
 		color: var(--foreground) !important;
 		border-color: var(--border);
 	}

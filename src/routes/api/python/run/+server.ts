@@ -8,10 +8,17 @@ import {
 } from '$lib/server/python-runner';
 import { readPinnedPackages } from '$lib/server/python-packages';
 import { getCloudExecutionAdapter } from '$lib/server/cloud-execution';
+import { assertTenantProjectFolder } from '$lib/server/project-folders';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
-		const { code, tables, tableDescriptors, notebookId, folder } = (await request.json()) as {
+		const {
+			code,
+			tables,
+			tableDescriptors,
+			notebookId,
+			folder: requestedFolder
+		} = (await request.json()) as {
 			code?: string;
 			tables?: Record<string, PythonTable>;
 			tableDescriptors?: PythonTableDescriptor[];
@@ -22,6 +29,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof notebookId !== 'string')
 			return json({ error: 'notebookId is required' }, { status: 400 });
 
+		const folder = requestedFolder ? assertTenantProjectFolder(locals, requestedFolder) : undefined;
 		if (folder) {
 			// One-time (per server process, per project) sync of any extras a
 			// teammate already pinned for this project — cheap no-op on every
@@ -38,7 +46,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			quotaKey: 'python',
 			requestId: locals.requestId,
 			entitlements: locals.entitlements,
-			payload: { notebookId, folder },
+			payload: { notebookId, folder, code, tables: tables ?? {}, tableDescriptors: tableDescriptors ?? [] },
 			run: async () => ({
 				jobId: spawnPythonCell(notebookId, code, tables ?? {}, tableDescriptors ?? [])
 			})

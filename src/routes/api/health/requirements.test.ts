@@ -11,7 +11,8 @@ const envKeys = [
 	'CLOUD_OBJECT_STORAGE_REQUIRED',
 	'OLLAMA_BASE_URL',
 	'AI_ENABLED',
-	'LUNAPAD_AI_ENABLED'
+	'LUNAPAD_AI_ENABLED',
+	'OBJECT_STORAGE_PROVIDER'
 ];
 
 beforeEach(() => {
@@ -53,5 +54,11 @@ describe('health feature requirements', () => {
 
 		expect(_healthFeatureRequirements('self_hosted').aiRequired).toBe(false);
 		expect(_healthFeatureRequirements('cloud').aiRequired).toBe(false);
+	});
+
+	it('requires object storage in cloud mode when S3 storage is selected', () => {
+		process.env.OBJECT_STORAGE_PROVIDER = 's3';
+		expect(_healthFeatureRequirements('cloud').objectStorageRequired).toBe(true);
+		expect(_healthFeatureRequirements('self_hosted').objectStorageRequired).toBe(false);
 	});
 });

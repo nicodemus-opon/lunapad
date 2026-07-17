@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
 import { can, userFromLocals } from '$lib/server/permissions';
 import {
 	leaveOrganization,
@@ -13,7 +14,7 @@ const cookieOptions = {
 	path: '/',
 	httpOnly: true,
 	sameSite: 'lax' as const,
-	secure: process.env.NODE_ENV === 'production',
+	secure: secureCookieEnabled(),
 	maxAge: 60 * 60 * 24 * 365
 };
 

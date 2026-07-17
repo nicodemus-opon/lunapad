@@ -41,7 +41,17 @@
 	}
 
 	function signInForInvite() {
-		window.location.href = `/login?inviteToken=${encodeURIComponent(data.token)}&email=${encodeURIComponent(data.invitation.email)}`;
+		const redirectTo = `/invite/${encodeURIComponent(data.token)}`;
+		window.location.href = `/login?inviteToken=${encodeURIComponent(data.token)}&email=${encodeURIComponent(data.invitation.email)}&redirectTo=${encodeURIComponent(redirectTo)}`;
+	}
+
+	function stateMessage(state: typeof inviteState): string {
+		if (state === 'accepted') return 'This invitation has already been accepted.';
+		if (state === 'expired') return 'This invitation has expired. Ask an admin for a new invite.';
+		if (state === 'revoked') return 'This invitation was revoked by a workspace admin.';
+		if (state === 'wrong_email') return 'Sign in with the email address this invitation was sent to.';
+		if (state === 'login_required') return 'Sign in before accepting this invitation.';
+		return '';
 	}
 </script>
 
@@ -53,19 +63,22 @@
 		}}
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
-		<h1 class="font-serif text-lg">Join the workspace</h1>
-		<p class="text-xs text-muted-foreground">
-			Invited as <span class="font-medium text-foreground">{data.invitation.role}</span> ·
-			{data.invitation.email}
-		</p>
+		<div>
+			<h1 class="font-serif text-lg">Join the workspace</h1>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Invited as <span class="font-medium text-foreground">{data.invitation.role}</span> ·
+				{data.invitation.email}
+			</p>
+		</div>
 
 		{#if inviteState !== 'pending'}
 			<p class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-				This invitation is {inviteState}.
+				{stateMessage(inviteState)}
 			</p>
 		{:else if data.currentUser}
 			<p class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-				Signed in as {data.currentUser.email}. Accepting will switch you to this workspace.
+				Signed in as <span class="font-medium text-foreground">{data.currentUser.email}</span>.
+				Accepting will switch Lunapad to this workspace.
 			</p>
 		{:else}
 			<div>
@@ -103,6 +116,8 @@
 					I already have an account
 				</Button>
 			{/if}
+		{:else if inviteState === 'login_required' || inviteState === 'wrong_email'}
+			<Button type="button" class="w-full" onclick={signInForInvite}>Sign in for this invite</Button>
 		{/if}
 	</form>
 </div>

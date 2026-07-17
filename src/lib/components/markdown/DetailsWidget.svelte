@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
 	import { ChevronRight } from '@lucide/svelte';
+	import * as Collapsible from '$lib/components/ui/collapsible';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -15,26 +15,21 @@
 	let isOpen = $state(open);
 </script>
 
-<div class="md-details" class:is-open={isOpen}>
-	<button
-		type="button"
-		class="md-details-summary"
-		onclick={() => (isOpen = !isOpen)}
-		aria-expanded={isOpen}
-	>
-		<ChevronRight
-			class="md-details-chevron"
-			style={isOpen ? 'transform: rotate(90deg)' : undefined}
-			size={14}
-		/>
-		<span>{summary}</span>
-	</button>
-	{#if isOpen}
-		<div class="md-details-body" transition:slide={{ duration: 220 }}>
+<Collapsible.Root bind:open={isOpen}>
+	<div class="md-details" class:is-open={isOpen}>
+		<Collapsible.Trigger class="md-details-summary" aria-expanded={isOpen}>
+			<ChevronRight
+				class="md-details-chevron"
+				style={isOpen ? 'transform: rotate(90deg)' : undefined}
+				size={14}
+			/>
+			<span>{summary}</span>
+		</Collapsible.Trigger>
+		<Collapsible.Content class="md-details-body">
 			{@render children?.()}
-		</div>
-	{/if}
-</div>
+		</Collapsible.Content>
+	</div>
+</Collapsible.Root>
 
 <style>
 	:global(.md-details-chevron) {

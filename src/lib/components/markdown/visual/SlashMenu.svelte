@@ -42,6 +42,7 @@
 		Sigma,
 		TableOfContents
 	} from '@lucide/svelte';
+	import * as Command from '$lib/components/ui/command';
 	import { scrollMenuItemIntoView } from './menu-utils';
 
 	interface Props {
@@ -136,50 +137,53 @@
 	}
 </script>
 
-<div
-	bind:this={listEl}
-	class="slash-menu z-50 max-h-80 w-72 overflow-y-auto rounded-sm border bg-popover p-1 shadow-lg"
+<Command.Root
+	bind:ref={listEl}
+	class="slash-menu z-50 w-72 rounded-lg"
 	role="listbox"
+	aria-activedescendant={items[selectedIndex]?.id
+		? `slash-command-${items[selectedIndex].id}`
+		: undefined}
 >
 	{#if items.length === 0}
-		<p class="px-2 py-1.5 text-xs text-muted-foreground">No matching commands</p>
+		<Command.Empty>No matching commands</Command.Empty>
 	{:else}
-		{#each grouped as [group, cmds] (group)}
-			<p
-				class="px-2 pt-1.5 pb-0.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
-			>
-				{groupLabel[group] ?? group}
-			</p>
-			{#each cmds as cmd (cmd.id)}
-				{@const idx = items.indexOf(cmd)}
-				{@const Icon = iconFor(cmd)}
-				<button
-					type="button"
-					role="option"
-					aria-selected={idx === selectedIndex}
-					class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {idx ===
-					selectedIndex
-						? 'bg-accent text-accent-foreground'
-						: 'hover:bg-muted/60'}"
-					onmousedown={(e) => {
-						e.preventDefault();
-						onSelect(cmd);
-					}}
-					onmouseenter={() => onHoverIndex?.(idx)}
-				>
-					<span
-						class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border bg-background/80"
-					>
-						<Icon class="h-3.5 w-3.5 opacity-80" />
-					</span>
-					<span class="min-w-0 flex-1">
-						<span class="block truncate text-xs font-medium">{cmd.label}</span>
-						{#if cmd.description}
-							<span class="block truncate text-2xs text-muted-foreground">{cmd.description}</span>
-						{/if}
-					</span>
-				</button>
+		<Command.List>
+			{#each grouped as [group, cmds] (group)}
+				<Command.Group>
+					<Command.GroupHeading>{groupLabel[group] ?? group}</Command.GroupHeading>
+					{#each cmds as cmd (cmd.id)}
+						{@const idx = items.indexOf(cmd)}
+						{@const Icon = iconFor(cmd)}
+						<Command.Item
+							id={`slash-command-${cmd.id}`}
+							role="option"
+							aria-selected={idx === selectedIndex}
+							data-selected={idx === selectedIndex ? 'true' : undefined}
+							class="gap-2.5 py-2"
+							onmousedown={(e) => {
+								e.preventDefault();
+								onSelect(cmd);
+							}}
+							onmouseenter={() => onHoverIndex?.(idx)}
+						>
+							<span
+								class="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background/80 text-muted-foreground"
+							>
+								<Icon class="size-3.5" />
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-xs font-medium">{cmd.label}</span>
+								{#if cmd.description}
+									<span class="block truncate text-2xs text-muted-foreground">
+										{cmd.description}
+									</span>
+								{/if}
+							</span>
+						</Command.Item>
+					{/each}
+				</Command.Group>
 			{/each}
-		{/each}
+		</Command.List>
 	{/if}
-</div>
+</Command.Root>

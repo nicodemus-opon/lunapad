@@ -91,6 +91,12 @@ const CLOUD_JOB_COLUMNS = `
 	worker_id, lease_expires_at, attempts, created_at, updated_at, started_at, finished_at
 `;
 
+const CLOUD_JOB_COLUMNS_FOR_ALIAS_J = `
+	j.id, j.org_id, j.project_id, j.user_id, j.kind, j.status, j.timeout_ms, j.quota_key,
+	j.request_id, j.payload, j.logs, j.result_pointer, j.error, j.cancel_requested_at,
+	j.worker_id, j.lease_expires_at, j.attempts, j.created_at, j.updated_at, j.started_at, j.finished_at
+`;
+
 let cloudJobsTableReady: Promise<void> | null = null;
 
 async function ensureCloudJobsTable(): Promise<void> {
@@ -323,7 +329,7 @@ export async function claimNextCloudJob(input: CloudJobClaim): Promise<CloudJobL
 		`WITH candidate AS (
 			SELECT id
 			FROM cloud_jobs
-			WHERE org_id = $1
+			WHERE ($1::text IS NULL OR org_id = $1)
 			  AND ($2::text IS NULL OR kind = $2)
 			  AND status = 'queued'
 			  AND cancel_requested_at IS NULL
@@ -340,8 +346,8 @@ export async function claimNextCloudJob(input: CloudJobClaim): Promise<CloudJobL
 		    updated_at = now()
 		FROM candidate
 		WHERE j.id = candidate.id
-		RETURNING ${CLOUD_JOB_COLUMNS}`,
-		[input.orgId ?? DEFAULT_ORG_ID, input.kind ?? null, input.workerId, leaseMs]
+		RETURNING ${CLOUD_JOB_COLUMNS_FOR_ALIAS_J}`,
+		[input.orgId ?? null, input.kind ?? null, input.workerId, leaseMs]
 	);
 	const job = rows[0] ? toCloudJob(rows[0]) : null;
 	if (!job || !job.leaseExpiresAt) return null;
@@ -417,7 +423,7 @@ export async function failTimedOutCloudJobs(input: {
 		    finished_at = now()
 		FROM expired
 		WHERE j.id = expired.id
-		RETURNING ${CLOUD_JOB_COLUMNS}`,
+		RETURNING ${CLOUD_JOB_COLUMNS_FOR_ALIAS_J}`,
 		[input.orgId ?? DEFAULT_ORG_ID, limit]
 	);
 	return rows.map(toCloudJob);

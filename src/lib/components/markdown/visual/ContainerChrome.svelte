@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Trash2, Minus, Plus, SlidersHorizontal, Check, X } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { renderMarkdocCell, resolveBareVariablePath } from '$lib/services/markdoc-interp';
 
@@ -180,8 +181,10 @@
 
 	{#if tagName === 'grid' && onPatchAttrs}
 		<div class="flex items-center gap-0.5 rounded-sm border bg-background/80 px-0.5">
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-action"
 				title="Fewer columns"
 				onclick={(e) => {
@@ -190,10 +193,12 @@
 				}}
 			>
 				<Minus class="h-3 w-3" />
-			</button>
+			</Button>
 			<span class="min-w-4 text-center tabular-nums">{gridCols}</span>
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-action"
 				title="More columns"
 				onclick={(e) => {
@@ -202,7 +207,7 @@
 				}}
 			>
 				<Plus class="h-3 w-3" />
-			</button>
+			</Button>
 		</div>
 	{/if}
 
@@ -211,8 +216,10 @@
 			class="flex items-center gap-0.5 rounded-sm border bg-background/80 px-0.5"
 			title="Grid columns this card spans"
 		>
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-action"
 				title="Span fewer columns"
 				onclick={(e) => {
@@ -221,10 +228,12 @@
 				}}
 			>
 				<Minus class="h-3 w-3" />
-			</button>
+			</Button>
 			<span class="min-w-4 text-center tabular-nums">×{cardSpan}</span>
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="icon-xs"
 				class="md-action"
 				title="Span more columns"
 				onclick={(e) => {
@@ -233,16 +242,17 @@
 				}}
 			>
 				<Plus class="h-3 w-3" />
-			</button>
+			</Button>
 		</div>
 	{/if}
 
 	{#if logicMode !== null && onToggleLogicMode}
 		<div class="notebook-tabs" role="tablist">
-			<button
+			<Button
 				type="button"
-				class="notebook-tab"
-				class:is-active={logicMode === 'preview'}
+				variant="ghost"
+				size="xs"
+				class="notebook-tab {logicMode === 'preview' ? 'is-active' : ''}"
 				role="tab"
 				aria-selected={logicMode === 'preview'}
 				title="Show live output with real data"
@@ -252,11 +262,12 @@
 				}}
 			>
 				Preview
-			</button>
-			<button
+			</Button>
+			<Button
 				type="button"
-				class="notebook-tab"
-				class:is-active={logicMode === 'template'}
+				variant="ghost"
+				size="xs"
+				class="notebook-tab {logicMode === 'template' ? 'is-active' : ''}"
 				role="tab"
 				aria-selected={logicMode === 'template'}
 				title="Edit the repeating template"
@@ -266,13 +277,15 @@
 				}}
 			>
 				Template
-			</button>
+			</Button>
 		</div>
 	{/if}
 
 	{#if (tagName === 'grid' || tagName === 'columns') && onPatchAttrs}
-		<button
+		<Button
 			type="button"
+			variant="outline"
+			size="xs"
 			class="md-action rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium capitalize"
 			title="Cycle cell spacing (compact / default / comfortable)"
 			onclick={(e) => {
@@ -281,12 +294,14 @@
 			}}
 		>
 			{gap} gap
-		</button>
+		</Button>
 	{/if}
 
 	{#if (tagName === 'columns' || tagName === 'tabs' || tagName === 'grid') && onAddChild}
-		<button
+		<Button
 			type="button"
+			variant="outline"
+			size="xs"
 			class="md-action rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium"
 			title={tagName === 'columns' ? 'Add column' : tagName === 'tabs' ? 'Add tab' : 'Add cell'}
 			onclick={(e) => {
@@ -295,12 +310,14 @@
 			}}
 		>
 			{tagName === 'columns' ? 'Add column' : tagName === 'tabs' ? 'Add tab' : 'Add cell'}
-		</button>
+		</Button>
 	{/if}
 
 	{#if tagName === 'if' && !hasElse && onAddChild}
-		<button
+		<Button
 			type="button"
+			variant="outline"
+			size="xs"
 			class="md-action rounded-sm border bg-background/80 px-1.5 py-0.5 text-2xs font-medium"
 			title="Add an otherwise branch shown when the condition is false"
 			onclick={(e) => {
@@ -309,12 +326,14 @@
 			}}
 		>
 			Add else
-		</button>
+		</Button>
 	{/if}
 
 	<span class="flex-1"></span>
-	<button
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="md-action"
 		title="Edit properties"
 		onclick={(e) => {
@@ -323,9 +342,11 @@
 		}}
 	>
 		<SlidersHorizontal class="h-3 w-3" />
-	</button>
-	<button
+	</Button>
+	<Button
 		type="button"
+		variant="ghost"
+		size="icon-xs"
 		class="md-action md-action--danger"
 		title="Delete container"
 		onclick={(e) => {
@@ -334,5 +355,5 @@
 		}}
 	>
 		<Trash2 class="h-3 w-3" />
-	</button>
+	</Button>
 </div>

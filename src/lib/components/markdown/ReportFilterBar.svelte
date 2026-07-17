@@ -9,6 +9,8 @@
 		type FilterContextValue
 	} from './filter-context';
 	import { SlidersHorizontal, X } from '@lucide/svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 
 	interface Props {
 		filters: ReportFilterDef[];
@@ -73,38 +75,47 @@
 
 		<div class="report-filter-bar-actions">
 			{#each presets as preset (preset.id)}
-				<button type="button" class="preset-chip" onclick={() => onApplyPreset?.(preset.id)}>
+				<Button
+					variant="outline"
+					size="xs"
+					class="preset-chip"
+					onclick={() => onApplyPreset?.(preset.id)}
+				>
 					{preset.name}
-				</button>
+				</Button>
 			{/each}
 			{#if chips.length > 0}
-				<button type="button" class="ghost-btn clear-all" onclick={clearAll}>Clear</button>
+				<Button variant="ghost" size="xs" class="ghost-btn clear-all" onclick={clearAll}
+					>Clear</Button
+				>
 			{/if}
-			<button
-				type="button"
+			<Button
+				variant="ghost"
+				size="xs"
 				class="ghost-btn collapse-btn"
 				onclick={() => (collapsed = !collapsed)}
 				aria-expanded={!collapsed}
 			>
 				{collapsed ? 'Show' : 'Hide'}
-			</button>
+			</Button>
 		</div>
 
 		{#if chips.length > 0}
 			<div class="active-chips">
 				{#each chips as chip (chip.param)}
-					<span class="active-chip">
+					<Badge variant="primary" class="active-chip">
 						<span class="active-chip-label">{chip.label}</span>
 						<span class="active-chip-value">{chip.value}</span>
-						<button
-							type="button"
+						<Button
+							variant="ghost"
+							size="icon-xs"
 							class="active-chip-clear"
 							aria-label="Clear {chip.label}"
 							onclick={() => clearChip(chip.param)}
 						>
 							<X class="h-3 w-3" />
-						</button>
-					</span>
+						</Button>
+					</Badge>
 				{/each}
 			</div>
 		{/if}
@@ -170,36 +181,12 @@
 		gap: 0.15rem;
 		margin-left: auto;
 	}
-	.ghost-btn,
-	.preset-chip {
+	:global(.ghost-btn),
+	:global(.preset-chip) {
 		font-size: var(--text-2xs);
-		font-weight: 500;
-		line-height: 1;
-		padding: 0.3rem 0.45rem;
-		border-radius: var(--radius-sm);
-		border: 1px solid transparent;
-		background: transparent;
-		color: var(--muted-foreground);
-		cursor: pointer;
-		transition:
-			background var(--motion-fast) ease,
-			color var(--motion-fast) ease,
-			border-color var(--motion-fast) ease;
 	}
-	.ghost-btn:hover {
-		background: color-mix(in oklab, var(--muted) 60%, transparent);
-		color: var(--foreground);
-	}
-	.clear-all:hover {
+	:global(.clear-all:hover) {
 		color: var(--destructive);
-	}
-	.preset-chip {
-		border-color: var(--border);
-	}
-	.preset-chip:hover {
-		background: color-mix(in oklab, var(--primary) 10%, transparent);
-		border-color: var(--primary);
-		color: var(--foreground);
 	}
 	.active-chips {
 		display: flex;
@@ -208,17 +195,9 @@
 		gap: 0.3rem;
 		padding: 0.1rem 0.2rem 0.15rem;
 	}
-	.active-chip {
-		display: inline-flex;
-		align-items: center;
+	:global(.active-chip) {
 		gap: 0.3rem;
-		font-size: var(--text-2xs);
-		line-height: 1;
-		padding: 0.22rem 0.3rem 0.22rem 0.45rem;
-		border-radius: var(--radius-sm);
-		background: color-mix(in oklab, var(--primary) 10%, transparent);
-		border: 1px solid var(--primary);
-		color: var(--foreground);
+		padding-right: 0.1rem;
 	}
 	.active-chip-label {
 		font-weight: 600;
@@ -227,20 +206,8 @@
 	.active-chip-value {
 		font-weight: 500;
 	}
-	.active-chip-clear {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.1rem;
-		border-radius: var(--radius-sm);
-		color: color-mix(in oklab, var(--foreground) 55%, transparent);
-		transition:
-			background var(--motion-fast) ease,
-			color var(--motion-fast) ease;
-	}
-	.active-chip-clear:hover {
-		background: color-mix(in oklab, var(--primary) 20%, transparent);
-		color: var(--foreground);
+	:global(.active-chip-clear) {
+		color: inherit;
 	}
 
 	@media print {

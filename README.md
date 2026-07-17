@@ -22,6 +22,9 @@ docker compose up --build
 # Subsequent starts
 docker compose up -d
 
+# Hosted cloud stack (open signup, RustFS, Mailpit, worker)
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build
+
 # Public read-only demo (no login, auto-loads sample notebook)
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
 ```
@@ -34,6 +37,10 @@ See [docs/guide/11-self-hosting.md](docs/guide/11-self-hosting.md#demo-mode) for
 | Trino      | http://localhost:8080 |
 | Inngest UI | http://localhost:8288 |
 | Postgres   | localhost:5432        |
+
+The cloud override serves Lunapad at `http://localhost:3967`, captures local
+email at `http://localhost:8025`, stores published artifacts in bundled RustFS,
+and runs queued jobs through the bundled worker.
 
 **Startup order:** Postgres → Trino (waits for `starting: false`) → App → Inngest. Trino takes ~60s on first start; the app won't serve until it's ready.
 

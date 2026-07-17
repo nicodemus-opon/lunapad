@@ -12,6 +12,7 @@ import {
 	type Entitlements,
 	type TenantRef
 } from './tenancy.js';
+import { queueWorkerSupportsKind } from './cloud-job-runner.js';
 
 export interface CloudExecutionInput<T> {
 	tenant: TenantRef;
@@ -166,6 +167,11 @@ class QueueExecutionAdapter implements CloudExecutionAdapter {
 		if (!queueWorkersConfigured()) {
 			throw new Error(
 				'Cloud queue execution is not configured. Set CLOUD_QUEUE_WORKER_ENABLED=true only after workers can claim and execute jobs.'
+			);
+		}
+		if (!queueWorkerSupportsKind(input.kind)) {
+			throw new Error(
+				`Cloud queue execution does not yet support "${input.kind}" jobs. Use inline execution or add a worker executor before enabling this job kind.`
 			);
 		}
 		await enforceJobEntitlements(input);

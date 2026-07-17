@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Connection, ConnectionSecret } from '$lib/types/connection';
 
-const { fetchMock, mkdirMock, writeFileMock, unlinkMock } = vi.hoisted(() => ({
+const { fetchMock, mkdirMock, readFileMock, renameMock, writeFileMock, unlinkMock } = vi.hoisted(() => ({
 	fetchMock: vi.fn(),
 	mkdirMock: vi.fn(),
+	readFileMock: vi.fn(),
+	renameMock: vi.fn(),
 	writeFileMock: vi.fn(),
 	unlinkMock: vi.fn()
 }));
 
 vi.mock('node:fs/promises', () => ({
-	default: { mkdir: mkdirMock, writeFile: writeFileMock, unlink: unlinkMock }
+	default: {
+		mkdir: mkdirMock,
+		readFile: readFileMock,
+		rename: renameMock,
+		writeFile: writeFileMock,
+		unlink: unlinkMock
+	}
 }));
 
 vi.stubGlobal('fetch', fetchMock);
@@ -107,11 +115,12 @@ function trinoOK(): Response {
  */
 async function registerAndCapture(
 	conn: Exclude<Connection, { type: 'duckdb-wasm' }>,
-	secret: ConnectionSecret | undefined
+	secret: ConnectionSecret | undefined,
+	orgId?: string
 ): Promise<string> {
 	fetchMock.mockResolvedValueOnce(trinoOK()); // DROP CATALOG IF EXISTS
 	fetchMock.mockResolvedValueOnce(trinoOK()); // CREATE CATALOG ... USING ... WITH (...)
-	await registerCatalog(conn, secret);
+	await registerCatalog(conn, secret, orgId);
 	const createCall = fetchMock.mock.calls.find((c) =>
 		String(c[1]?.body ?? '').startsWith('CREATE CATALOG')
 	);
@@ -121,6 +130,8 @@ async function registerAndCapture(
 beforeEach(() => {
 	fetchMock.mockReset();
 	mkdirMock.mockReset().mockResolvedValue(undefined);
+	readFileMock.mockReset().mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+	renameMock.mockReset().mockResolvedValue(undefined);
 	writeFileMock.mockReset().mockResolvedValue(undefined);
 	unlinkMock.mockReset().mockResolvedValue(undefined);
 	process.env.TRINO_CATALOG_DIR = '/tmp/test-catalog';
@@ -137,6 +148,22 @@ describe('registerCatalog', () => {
 		expect(content).toContain(`"connection-password" = 'pw'`);
 		expect(content).toContain(`"jdbc-types-mapped-to-varchar" = 'bytea'`);
 		expect(content).toContain(`"unsupported-type-handling" = 'CONVERT_TO_VARCHAR'`);
+	});
+
+	it('uses the internal catalog manager user for tenant catalog DDL', async () => {
+		await registerAndCapture(postgresConnection, { password: 'pw' }, 'org-a');
+
+		expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+			'X-Trino-User': 'lunapad_catalog_manager'
+		});
+		expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+			'X-Trino-User': 'lunapad_catalog_manager'
+		});
+		expect(writeFileMock).toHaveBeenCalledWith(
+			expect.stringContaining('lunapad-access-control.json.tmp'),
+			expect.stringContaining('"user": "lunapad_catalog_manager"'),
+			expect.any(Object)
+		);
 	});
 
 	it('rejects invalid catalogName before issuing any SQL', async () => {

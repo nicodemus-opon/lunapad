@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { sanitizeUrl } from '$lib/services/safe-url';
 
 	interface Props {
@@ -51,37 +54,22 @@
 	tabindex="-1"
 	onmousedown={(e) => e.stopPropagation()}
 >
-	<div class="flex gap-1 border-b border-border pb-1.5">
-		<button
-			type="button"
-			class="media-tab {tab === 'url' ? 'is-active' : ''}"
-			onmousedown={(e) => {
-				e.preventDefault();
-				tab = 'url';
-				error = '';
-			}}
-		>
-			URL
-		</button>
-		<button
-			type="button"
-			class="media-tab {tab === 'upload' ? 'is-active' : ''}"
-			onmousedown={(e) => {
-				e.preventDefault();
-				tab = 'upload';
-				error = '';
-			}}
-		>
-			Upload
-		</button>
-	</div>
+	<ToggleGroup.Root
+		bind:value={tab}
+		type="single"
+		class="flex gap-1 border-b border-border pb-1.5"
+		onValueChange={() => (error = '')}
+	>
+		<ToggleGroup.Item value="url">URL</ToggleGroup.Item>
+		<ToggleGroup.Item value="upload">Upload</ToggleGroup.Item>
+	</ToggleGroup.Root>
 
 	{#if tab === 'url'}
 		<div class="flex items-center gap-1">
-			<input
-				bind:this={inputEl}
+			<Input
+				bind:ref={inputEl}
 				type="url"
-				class="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs"
+				class="h-7 min-w-0 flex-1 text-xs"
 				placeholder="https://"
 				bind:value={url}
 				onkeydown={(e) => {
@@ -94,25 +82,28 @@
 					}
 				}}
 			/>
-			<button
+			<Button
 				type="button"
-				class="rounded px-2 py-1 text-xs hover:bg-muted/60"
+				variant="default"
+				size="sm"
+				class="h-7 px-2 text-xs"
 				onmousedown={(e) => {
 					e.preventDefault();
 					applyUrl();
 				}}
 			>
 				Insert
-			</button>
+			</Button>
 		</div>
 	{:else}
-		<button
+		<Button
 			type="button"
-			class="rounded border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground hover:bg-muted/40"
+			variant="outline"
+			class="h-auto border-dashed px-3 py-4 text-xs text-muted-foreground"
 			onclick={() => fileInputEl?.click()}
 		>
 			Choose a {kind} file…
-		</button>
+		</Button>
 		<input
 			bind:this={fileInputEl}
 			type="file"
@@ -126,20 +117,3 @@
 		<p class="text-2xs text-destructive">{error}</p>
 	{/if}
 </div>
-
-<style>
-	.media-tab {
-		border-radius: var(--radius-sm);
-		padding: 0.2rem 0.55rem;
-		font-size: var(--text-2xs);
-		font-weight: 500;
-		color: var(--muted-foreground);
-	}
-	.media-tab:hover {
-		background: color-mix(in oklab, var(--muted) 40%, transparent);
-	}
-	.media-tab.is-active {
-		background: var(--accent);
-		color: var(--accent-foreground);
-	}
-</style>

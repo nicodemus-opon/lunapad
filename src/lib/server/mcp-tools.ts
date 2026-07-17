@@ -7,6 +7,7 @@ import {
 	type AgentAuthContext,
 	type ActionEnvelope
 } from './agent-actions.js';
+import { logPublicApiError, sanitizePublicApiError } from './public-api-errors.js';
 
 export interface McpAuthContext extends AgentAuthContext {
 	user: PermissionUser | null;
@@ -19,8 +20,9 @@ function ok(result: ActionEnvelope): CallToolResult {
 }
 
 function fail(err: unknown): CallToolResult {
+	logPublicApiError('mcp.tool', err);
 	return {
-		content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+		content: [{ type: 'text', text: sanitizePublicApiError(err) }],
 		isError: true
 	};
 }

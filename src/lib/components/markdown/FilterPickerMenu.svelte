@@ -2,6 +2,8 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
+	import { NativeSelect } from '$lib/components/ui/native-select';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { SlidersHorizontal } from '@lucide/svelte';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 
@@ -73,12 +75,12 @@
 	</Popover.Trigger>
 	<Popover.Content class="md-filterpicker-content" align="start">
 		<div class="flex items-center gap-1.5">
-			<select bind:value={kind} class="md-filterpicker-select">
+			<NativeSelect bind:value={kind} class="h-7 text-xs">
 				<option value="dropdown">Dropdown</option>
 				<option value="text-input">Text input</option>
 				<option value="date-range">Date range</option>
 				<option value="button-group">Button group</option>
-			</select>
+			</NativeSelect>
 		</div>
 		<Input
 			bind:value={param}
@@ -89,41 +91,33 @@
 		<Input bind:value={label} placeholder="label (optional)" class="h-7 text-xs" />
 
 		{#if showOptions}
-			<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-				<button
-					type="button"
-					class:md-filterpicker-tab-active={optionsMode === 'static'}
-					class="md-filterpicker-tab"
-					onclick={() => (optionsMode = 'static')}>Static list</button
-				>
-				<button
-					type="button"
-					class:md-filterpicker-tab-active={optionsMode === 'cell'}
-					class="md-filterpicker-tab"
-					onclick={() => (optionsMode = 'cell')}>From cell column</button
-				>
-			</div>
+			<ToggleGroup.Root bind:value={optionsMode} type="single" class="inline-flex gap-1">
+				<ToggleGroup.Item value="static">Static list</ToggleGroup.Item>
+				<ToggleGroup.Item value="cell">From cell column</ToggleGroup.Item>
+			</ToggleGroup.Root>
 			{#if optionsMode === 'static'}
 				<Input bind:value={staticOptions} placeholder="US, EU, APAC" class="h-7 text-xs" />
 			{:else}
-				<select bind:value={optionsCell} class="md-filterpicker-select">
+				<NativeSelect bind:value={optionsCell} class="h-7 text-xs">
 					<option value="">Select cell…</option>
 					{#each entries as entry (entry.cellName)}
 						<option value={entry.cellName}>{entry.cellName}</option>
 					{/each}
-				</select>
+				</NativeSelect>
 				{#if optionsCell}
-					<select bind:value={optionsColumn} class="md-filterpicker-select">
+					<NativeSelect bind:value={optionsColumn} class="h-7 text-xs">
 						<option value="">Select column…</option>
 						{#each cellColumns as col (col.name)}
 							<option value={col.name}>{col.name}</option>
 						{/each}
-					</select>
+					</NativeSelect>
 				{/if}
 			{/if}
 		{/if}
 
-		<Button size="sm" class="w-full" disabled={!param.trim()} onclick={insert}>Insert</Button>
+		<Button variant="default" size="sm" class="w-full" disabled={!param.trim()} onclick={insert}
+			>Insert</Button
+		>
 	</Popover.Content>
 </Popover.Root>
 
@@ -134,25 +128,5 @@
 		gap: 0.4rem;
 		padding: 0.4rem;
 		width: 16rem;
-	}
-	.md-filterpicker-select {
-		width: 100%;
-		height: 1.75rem;
-		border-radius: 0.35rem;
-		border: 1px solid var(--border);
-		background: color-mix(in oklch, currentColor 3%, transparent);
-		padding: 0 0.4rem;
-		font-size: 0.78rem;
-	}
-	.md-filterpicker-tab {
-		padding: 0.15rem 0.4rem;
-		border-radius: 0.3rem;
-		border: 1px solid transparent;
-		background: none;
-		cursor: pointer;
-	}
-	.md-filterpicker-tab-active {
-		border-color: var(--border);
-		color: var(--foreground);
 	}
 </style>

@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
 import { auth } from '$lib/server/auth';
 import { query } from '$lib/server/db.js';
 import {
@@ -15,7 +16,7 @@ const cookieOptions = {
 	path: '/',
 	httpOnly: true,
 	sameSite: 'lax' as const,
-	secure: process.env.NODE_ENV === 'production',
+	secure: secureCookieEnabled(),
 	maxAge: 60 * 60 * 24 * 365
 };
 
@@ -97,7 +98,7 @@ export const POST: RequestHandler = async ({ params, request, locals, cookies })
 		return json({
 			state: 'login_required',
 			email: invitation.email,
-			loginUrl: `/login?inviteToken=${encodeURIComponent(params.token)}&email=${encodeURIComponent(invitation.email)}`
+			loginUrl: `/login?inviteToken=${encodeURIComponent(params.token)}&email=${encodeURIComponent(invitation.email)}&redirectTo=${encodeURIComponent(`/invite/${params.token}`)}`
 		}, { status: 409 });
 	}
 

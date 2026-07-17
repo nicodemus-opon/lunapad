@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { completeInitialSetup, getSetupStatus } from '$lib/server/onboarding';
+import { secureCookieEnabled } from '$lib/server/cloud-config';
 
 export const GET: RequestHandler = async () => {
 	const status = await getSetupStatus();
@@ -28,14 +29,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
-			secure: process.env.NODE_ENV === 'production',
+			secure: secureCookieEnabled(),
 			maxAge: 60 * 60 * 24 * 365
 		});
 		cookies.set('lunapad_project_id', result.tenant.project.id, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
-			secure: process.env.NODE_ENV === 'production',
+			secure: secureCookieEnabled(),
 			maxAge: 60 * 60 * 24 * 365
 		});
 		return json({

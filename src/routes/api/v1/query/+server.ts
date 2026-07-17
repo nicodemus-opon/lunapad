@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { isRateLimited } from '$lib/server/api-rate-limit';
+import { isRateLimitedAsync } from '$lib/server/api-rate-limit';
 import { agentActionResponse } from '$lib/server/agent-rest';
+import { publicApiErrorResponse } from '$lib/server/public-api-errors';
 
 interface RunQueryRequest {
 	connectionId: string;
@@ -10,7 +11,7 @@ interface RunQueryRequest {
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const rateLimitKey = `v1:${locals.apiKeyId ?? locals.user?.id}`;
-	if (isRateLimited(rateLimitKey, 120)) {
+	if (await isRateLimitedAsync(rateLimitKey, 120)) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 	try {
@@ -23,6 +24,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			sql: body.sql
 		});
 	} catch (err) {
-		return json({ error: (err as Error).message }, { status: 400 });
+		return publicApiErrorResponse(err, { surface: 'v1.query' });
 	}
 };

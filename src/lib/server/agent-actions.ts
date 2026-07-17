@@ -359,6 +359,7 @@ async function inspectResource(input: Record<string, unknown>, ctx: ActionContex
 	}
 	if (parsed.type === 'notebook') {
 		const notebook = await inspectNotebookAction({
+			tenant: ctx.auth.tenant,
 			folder: input.folder as string | undefined,
 			notebookId: parsed.id
 		});
@@ -366,6 +367,7 @@ async function inspectResource(input: Record<string, unknown>, ctx: ActionContex
 	}
 	if (parsed.type === 'cell' || parsed.type === 'output') {
 		const notebook = await inspectNotebookAction({
+			tenant: ctx.auth.tenant,
 			folder: input.folder as string | undefined,
 			notebookId: parsed.id
 		});
@@ -382,7 +384,7 @@ async function inspectResource(input: Record<string, unknown>, ctx: ActionContex
 	return { diagnostics: [{ path: 'resourceRef', message: `Unsupported resource ref "${ref}".` }] };
 }
 
-async function deleteResource(input: Record<string, unknown>) {
+async function deleteResource(input: Record<string, unknown>, ctx: ActionContext) {
 	const ref = String(input.resourceRef ?? '');
 	const parsed = parseResourceRef(ref);
 	if (parsed.type !== 'notebook') {
@@ -396,6 +398,7 @@ async function deleteResource(input: Record<string, unknown>) {
 		};
 	}
 	const result = await deleteNotebookAction({
+		tenant: ctx.auth.tenant,
 		folder: input.folder as string | undefined,
 		notebookId: parsed.id
 	});
@@ -607,7 +610,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:read',
 		mutates: false,
 		inputSchema: folderShape,
-		handler: async (input) => listNotebooksAction({ folder: input.folder as string | undefined })
+		handler: async (input, ctx) =>
+			listNotebooksAction({ tenant: ctx.auth.tenant, folder: input.folder as string | undefined })
 	},
 	{
 		name: 'get_notebook',
@@ -615,8 +619,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:read',
 		mutates: false,
 		inputSchema: notebookIdShape,
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			getNotebookAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId)
 			})
@@ -636,8 +641,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:read',
 		mutates: false,
 		inputSchema: inspectNotebookShape,
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			inspectNotebookAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId)
 			})
@@ -655,7 +661,10 @@ export const ACTIONS: AgentActionDefinition[] = [
 			input: { notebookId: `reports/${name}`, ...blueprint }
 		})),
 		handler: async (input, ctx) =>
-			createNotebookAction({ ...(input as Record<string, unknown>), tenant: ctx.auth.tenant } as never),
+			createNotebookAction({
+				...(input as Record<string, unknown>),
+				tenant: ctx.auth.tenant
+			} as never),
 		dryRun: async (input) => ({ dryRun: true, wouldCreate: notebookRef(String(input.notebookId)) })
 	},
 	{
@@ -666,7 +675,10 @@ export const ACTIONS: AgentActionDefinition[] = [
 		mutates: true,
 		inputSchema: applyNotebookPatchShape,
 		handler: async (input, ctx) =>
-			patchNotebookAction({ ...(input as Record<string, unknown>), tenant: ctx.auth.tenant } as never),
+			patchNotebookAction({
+				...(input as Record<string, unknown>),
+				tenant: ctx.auth.tenant
+			} as never),
 		dryRun: async (input) => ({ dryRun: true, wouldPatch: notebookRef(String(input.notebookId)) })
 	},
 	{
@@ -675,8 +687,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:read',
 		mutates: false,
 		inputSchema: validateNotebookShape,
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			validateNotebookAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId)
 			})
@@ -741,8 +754,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:write',
 		mutates: true,
 		inputSchema: setChartShape,
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			setChartAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				notebookId: String(input.notebookId),
 				cellId: String(input.cellId),
@@ -756,7 +770,7 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'workspace:write',
 		mutates: true,
 		inputSchema: { folder: z.string().optional(), resourceRef: z.string() },
-		handler: deleteResource,
+		handler: async (input, ctx) => deleteResource(input, ctx),
 		dryRun: async (input) => ({ dryRun: true, wouldDelete: input.resourceRef })
 	},
 	{
@@ -765,8 +779,9 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'dbt:run',
 		mutates: true,
 		inputSchema: { folder: z.string().optional(), select: z.string().optional() },
-		handler: async (input) =>
+		handler: async (input, ctx) =>
 			dbtRunAction({
+				tenant: ctx.auth.tenant,
 				folder: input.folder as string | undefined,
 				select: input.select as string | undefined
 			})
@@ -777,7 +792,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'dbt:run',
 		mutates: true,
 		inputSchema: folderShape,
-		handler: async (input) => dbtCompileAction({ folder: input.folder as string | undefined })
+		handler: async (input, ctx) =>
+			dbtCompileAction({ tenant: ctx.auth.tenant, folder: input.folder as string | undefined })
 	},
 	{
 		name: 'get_dbt_job_status',
@@ -793,7 +809,8 @@ export const ACTIONS: AgentActionDefinition[] = [
 		permission: 'dbt:read',
 		mutates: false,
 		inputSchema: folderShape,
-		handler: async (input) => getDbtManifestAction({ folder: input.folder as string | undefined })
+		handler: async (input, ctx) =>
+			getDbtManifestAction({ tenant: ctx.auth.tenant, folder: input.folder as string | undefined })
 	},
 	{
 		name: 'list_shares',
@@ -946,7 +963,11 @@ export async function executeAgentAction(
 		idempotencyKey,
 		dryRun: opts.dryRun
 	});
-	if (cacheKey && result.ok && !(result.data && typeof result.data === 'object' && 'queued' in result.data)) {
+	if (
+		cacheKey &&
+		result.ok &&
+		!(result.data && typeof result.data === 'object' && 'queued' in result.data)
+	) {
 		idempotencyCache.set(cacheKey, result);
 	}
 	return result;

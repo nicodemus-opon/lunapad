@@ -16,6 +16,7 @@
 	let items = $state<ChecklistItem[]>([]);
 	let loading = $state(false);
 	let hidden = $state(false);
+	let error = $state<string | null>(null);
 
 	const visibleItems = $derived(items.filter((item) => !item.dismissed));
 	const remaining = $derived(visibleItems.filter((item) => !item.done).length);
@@ -23,28 +24,38 @@
 
 	async function loadChecklist(): Promise<void> {
 		loading = true;
+		error = null;
 		try {
 			const res = await fetch('/api/onboarding/checklist');
-			if (res.ok) {
-				const body = await res.json();
-				items = body.items ?? [];
-			}
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load workspace setup.');
+			items = body.items ?? [];
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load workspace setup.';
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function dismiss(itemId: string): Promise<void> {
+		error = null;
+		const previousItems = items;
 		items = items.map((item) => (item.id === itemId ? { ...item, dismissed: true } : item));
-		await fetch(`/api/onboarding/checklist/${encodeURIComponent(itemId)}/dismiss`, {
-			method: 'POST'
-		});
+		try {
+			const res = await fetch(`/api/onboarding/checklist/${encodeURIComponent(itemId)}/dismiss`, {
+				method: 'POST'
+			});
+			if (!res.ok) throw new Error('Failed to dismiss checklist item.');
+		} catch (err) {
+			items = previousItems;
+			error = err instanceof Error ? err.message : 'Failed to dismiss checklist item.';
+		}
 	}
 
 	onMount(loadChecklist);
 </script>
 
-{#if !hidden && !loading && visibleItems.length > 0 && !complete}
+{#if !hidden && !loading && (visibleItems.length > 0 || error) && !complete}
 	<section
 		class="mb-5 rounded-md border border-border bg-muted/25 px-3 py-2.5"
 		aria-label="Workspace onboarding checklist"
@@ -63,6 +74,12 @@
 				</Button>
 			</div>
 		</div>
+		{#if error}
+			<div class="mb-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
+				<p class="text-2xs text-destructive">{error}</p>
+				<Button variant="outline" size="sm" class="h-6 text-2xs" onclick={loadChecklist}>Retry</Button>
+			</div>
+		{/if}
 		<div class="grid gap-1.5 sm:grid-cols-2">
 			{#each visibleItems as item (item.id)}
 				<div class="flex items-start gap-2 rounded-md bg-background/70 px-2 py-2">

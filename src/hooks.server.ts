@@ -8,6 +8,7 @@ import {
 	ensureAuthTablesOnce,
 	hasAnyUser,
 	promoteSoleUserToAdmin,
+	SIGN_IN_PATH,
 	SIGN_UP_PATH
 } from '$lib/server/auth';
 import { ensureApiKeyTableOnce, verifyApiKey, getUserById } from '$lib/server/api-keys';
@@ -30,9 +31,13 @@ import {
 } from '$lib/server/tenancy';
 import { query } from '$lib/server/db';
 import { getSetupStatus } from '$lib/server/onboarding';
+import { cloudSignupOpen } from '$lib/server/cloud-config';
+import { assertCloudEnv } from '$lib/server/cloud-readiness';
+import { isRateLimitedShared, rateLimitIp } from '$lib/server/redis-rate-limit';
 
 startShareRefreshWorker();
 startTrinoCatalogReconciler();
+if (!building) assertCloudEnv();
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -74,6 +79,8 @@ const PUBLIC_PREFIXES = [
 	'/api/health',
 	'/api/jobs/worker',
 	'/login',
+	'/signup',
+	'/reset-password',
 	'/setup',
 	'/invite',
 	'/r',
@@ -84,7 +91,8 @@ const PUBLIC_PREFIXES = [
 const PUBLIC_PATH_PATTERNS = [
 	/^\/api\/shares\/[^/]+\/run$/,
 	/^\/api\/invitations\/[^/]+\/accept$/,
-	/^\/api\/account\/password-reset\/(request|confirm)$/
+	/^\/api\/account\/password-reset\/(request|confirm)$/,
+	/^\/api\/account\/email\/verify$/
 ];
 // /api/v1 and /api/mcp reach external connections and the dbt CLI exactly like
 // /api/connections and /api/dbt already do — DEMO_MODE exists specifically to close
@@ -192,6 +200,24 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 	return null;
 }
 
+function requiresVerifiedEmail(pathname: string, method: string): boolean {
+	if (deploymentMode() !== 'cloud') return false;
+	if (method === 'GET' || method === 'HEAD') return false;
+	return (
+		pathname.startsWith('/api/account/api-keys') ||
+		pathname.startsWith('/api/invitations') ||
+		pathname.startsWith('/api/shares') ||
+		pathname.startsWith('/api/sites') ||
+		pathname.startsWith('/api/connections') ||
+		pathname.startsWith('/api/orgs') ||
+		pathname.startsWith('/api/projects')
+	);
+}
+
+function emailVerified(user: App.Locals['user']): boolean {
+	return Boolean((user as unknown as { emailVerified?: boolean })?.emailVerified);
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	const requestId = event.request.headers.get('X-Request-Id') ?? crypto.randomUUID();
 	event.locals.requestId = requestId;
@@ -276,6 +302,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// completes it is promoted to admin below; from then on only an admin can create
 	// further accounts (via /admin, using the admin plugin's createUser endpoint).
 	const isSignUpAttempt = event.url.pathname === SIGN_UP_PATH && event.request.method === 'POST';
+	const isSignInAttempt = event.url.pathname === SIGN_IN_PATH && event.request.method === 'POST';
 	let signUpProfile: { email?: string; name?: string } | null = null;
 	if (isSignUpAttempt) {
 		try {
@@ -297,6 +324,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return decorateResponse(
 			json({ error: 'Use /api/signup so workspace setup is created atomically.' }, { status: 403 })
 		);
+	}
+	if (isSignInAttempt && deploymentMode() === 'cloud') {
+		const ip = rateLimitIp(event.request);
+		if (await isRateLimitedShared(`login:${ip}`, 30, 60 * 60 * 1000)) {
+			return decorateResponse(json({ error: 'Too many login attempts.' }, { status: 429 }));
+		}
 	}
 
 	const session = await auth.api.getSession({ headers: event.request.headers });
@@ -371,7 +404,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 		// tenant rows cannot log into the product until setup repairs the workspace.
 		const setupStatus = await getSetupStatus();
 		if (setupStatus.mode !== 'closed') {
+			if (deploymentMode() === 'cloud' && cloudSignupOpen() && setupStatus.mode === 'fresh') {
+				return decorateResponse(new Response(null, { status: 303, headers: { location: '/signup' } }));
+			}
 			return decorateResponse(new Response(null, { status: 303, headers: { location: '/setup' } }));
+		}
+		if (deploymentMode() === 'cloud' && cloudSignupOpen()) {
+			return decorateResponse(new Response(null, { status: 303, headers: { location: '/signup' } }));
 		}
 		const redirectTo = encodeURIComponent(path + event.url.search);
 		return decorateResponse(
@@ -387,6 +426,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const requiredPermission = routePermission(path, event.request.method);
+	if (event.locals.user && requiresVerifiedEmail(path, event.request.method) && !emailVerified(event.locals.user)) {
+		return decorateResponse(
+			json({ error: 'Verify your email before using this cloud feature.' }, { status: 403 })
+		);
+	}
 	if (requiredPermission) {
 		const user = userFromLocals(event.locals.user);
 		if (!can(user, requiredPermission)) {

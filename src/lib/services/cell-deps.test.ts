@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
 	resolveDependencies,
+	resolveGlobalDependencies,
 	buildSQLExecutionCode,
-	buildSQLGlobalExecutionCode
+	buildSQLGlobalExecutionCode,
+	CircularCellDependencyError
 } from './cell-deps.js';
 import type { Cell } from '$lib/stores/notebook.svelte';
 
@@ -67,6 +69,30 @@ describe('buildSQLExecutionCode with UDF deps', () => {
 		];
 		const sql = buildSQLExecutionCode(cells, 1, () => null);
 		expect(sql).toBe('SELECT double_it(1)');
+	});
+});
+
+describe('circular cell dependencies', () => {
+	it('throws a clear error for a same-notebook cycle instead of silently truncating it', () => {
+		const cells = [
+			queryCell('a', 'SELECT * FROM b'),
+			queryCell('b', 'SELECT * FROM a'),
+			queryCell('result', 'SELECT * FROM a')
+		];
+		expect(() => resolveDependencies(cells, 2)).toThrow(CircularCellDependencyError);
+	});
+
+	it('throws a clear error for a cross-notebook cycle via the global registry', () => {
+		const a = queryCell('a', 'SELECT * FROM b');
+		const b = queryCell('b', 'SELECT * FROM a');
+		const cells = [queryCell('result', 'SELECT * FROM a')];
+		const globalRegistry = new Map([
+			['a', a],
+			['b', b]
+		]);
+		expect(() => resolveGlobalDependencies(cells, 0, globalRegistry)).toThrow(
+			CircularCellDependencyError
+		);
 	});
 });
 

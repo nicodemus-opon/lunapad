@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import type { Connection } from '$lib/types/connection';
 import { unregisterCatalog } from '$lib/server/connections';
 import { deleteConnectionMetadata, getConnectionMetadata } from '$lib/server/connections-store';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface RemoveConnectionRequest {
 	connection: Connection;
@@ -10,6 +11,7 @@ interface RemoveConnectionRequest {
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Removing a connection');
 		const body = (await request.json()) as Partial<RemoveConnectionRequest>;
 		if (!body?.connection) {
 			return json({ error: 'Connection payload is required.' }, { status: 400 });

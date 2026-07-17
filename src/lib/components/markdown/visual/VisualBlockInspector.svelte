@@ -2,6 +2,11 @@
 	import NodeConfigField from './NodeConfigField.svelte';
 	import ConditionalFormatEditor from './ConditionalFormatEditor.svelte';
 	import Editor from '$lib/components/Editor.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Input } from '$lib/components/ui/input';
+	import { NativeSelect } from '$lib/components/ui/native-select';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import { CUSTOM_CHART_GLOBALS_DTS } from '$lib/services/plot-cell';
 	import { DEFAULT_CUSTOM_CHART_CODE } from '$lib/utils';
 	import type { VisualBlock } from '$lib/services/markdoc-ast';
@@ -387,11 +392,11 @@
 {:else if block.kind === 'fence'}
 	<div class="nc-stack">
 		<p class="nc-section-label">Source</p>
-		<textarea
+		<Textarea
 			class="nc-textarea font-mono"
 			value={block.source}
 			oninput={(e) => onPatch({ source: e.currentTarget.value })}
-		></textarea>
+		></Textarea>
 	</div>
 {:else if !parsed}
 	<div class="nc-empty">
@@ -409,14 +414,14 @@
 				{#snippet control()}
 					<div class="nc-segments">
 						{#each [1, 2, 3, 4] as span (span)}
-							<button
+							<Button
 								type="button"
-								class="nc-segment"
-								class:is-active={Number(parsed.attrs.span ?? 1) === span}
+								variant="ghost"
+								class="nc-segment {Number(parsed.attrs.span ?? 1) === span ? 'is-active' : ''}"
 								onclick={() => setAttr('span', span === 1 ? undefined : span)}
 							>
 								×{span}
-							</button>
+							</Button>
 						{/each}
 					</div>
 				{/snippet}
@@ -427,7 +432,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="Value">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.value)}
 							placeholder="$cell.value"
@@ -437,7 +442,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Label">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.label)}
 							oninput={(e) => setAttr('label', e.currentTarget.value)}
@@ -446,7 +451,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Compare to" hint="Optional trend">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.vs)}
 							placeholder="$prev.value"
@@ -458,14 +463,16 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each metricFormats as fmt (fmt)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.format, 'number') === fmt}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.format, 'number') === fmt
+										? 'is-active'
+										: ''}"
 									onclick={() => setAttr('format', fmt)}
 								>
 									{fmt}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -477,17 +484,17 @@
 					{#snippet control()}
 						<div class="nc-segments nc-segments--wrap">
 							{#each quickChartTypes as type (type)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.type, 'bar') === type}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.type, 'bar') === type ? 'is-active' : ''}"
 									onclick={() => setAttr('type', type)}
 								>
 									{humanize(type)}
-								</button>
+								</Button>
 							{/each}
 						</div>
-						<select
+						<NativeSelect
 							class="nc-select mt-1.5"
 							value={attr(parsed.attrs.type, 'bar')}
 							onchange={(e) => setAttr('type', e.currentTarget.value)}
@@ -495,13 +502,13 @@
 							{#each chartTypes as type (type)}
 								<option value={type}>{humanize(type)}</option>
 							{/each}
-						</select>
+						</NativeSelect>
 					{/snippet}
 				</NodeConfigField>
 
 				<NodeConfigField label="Data">
 					{#snippet control()}
-						<select
+						<NativeSelect
 							class="nc-select"
 							value={attr(parsed.attrs.data)}
 							onchange={(e) => setAttr('data', e.currentTarget.value)}
@@ -510,13 +517,13 @@
 							{#each rowRefOptions as r (r)}
 								<option value={r}>{r}</option>
 							{/each}
-						</select>
+						</NativeSelect>
 					{/snippet}
 				</NodeConfigField>
 
 				<NodeConfigField label="Inherit from cell" hint="Reuse saved chart settings">
 					{#snippet control()}
-						<select
+						<NativeSelect
 							class="nc-select"
 							value={attr(parsed.attrs.ref)}
 							onchange={(e) => {
@@ -528,13 +535,13 @@
 							{#each cellRefOptions as r (r)}
 								<option value={r}>{r}</option>
 							{/each}
-						</select>
+						</NativeSelect>
 					{/snippet}
 				</NodeConfigField>
 
 				<NodeConfigField label="X axis">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							list="visual-columns"
 							value={attr(parsed.attrs.x)}
@@ -544,7 +551,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Y axis">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							list="visual-columns"
 							value={attr(parsed.attrs.y)}
@@ -554,7 +561,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Title">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.title)}
 							oninput={(e) => setAttr('title', e.currentTarget.value)}
@@ -580,7 +587,7 @@
 							{#each BOX_LABELS as blabel, idx (blabel)}
 								<NodeConfigField label={blabel}>
 									{#snippet control()}
-										<select
+										<NativeSelect
 											class="nc-select"
 											value={((parsed.attrs.yColumns as string[] | undefined) ?? [])[idx] ?? ''}
 											onchange={(e) => setBoxPlotCol(idx, e.currentTarget.value)}
@@ -589,7 +596,7 @@
 											{#each availableColumns as col (col)}
 												<option value={col}>{col}</option>
 											{/each}
-										</select>
+										</NativeSelect>
 									{/snippet}
 								</NodeConfigField>
 							{/each}
@@ -597,7 +604,7 @@
 						{#if attr(parsed.attrs.type, 'bar') === 'histogram'}
 							<NodeConfigField label="Histogram bins">
 								{#snippet control()}
-									<input
+									<Input
 										class="nc-input"
 										type="number"
 										min="1"
@@ -616,7 +623,7 @@
 						{#if attr(parsed.attrs.type, 'bar') === 'map'}
 							<NodeConfigField label="Latitude column">
 								{#snippet control()}
-									<input
+									<Input
 										class="nc-input"
 										list="visual-columns"
 										value={attr(parsed.attrs.lat)}
@@ -626,7 +633,7 @@
 							</NodeConfigField>
 							<NodeConfigField label="Longitude column">
 								{#snippet control()}
-									<input
+									<Input
 										class="nc-input"
 										list="visual-columns"
 										value={attr(parsed.attrs.lon)}
@@ -640,21 +647,26 @@
 								{#snippet control()}
 									<div class="nc-segments">
 										{#each ['world', 'usa-states'] as scope (scope)}
-											<button
+											<Button
 												type="button"
-												class="nc-segment"
-												class:is-active={attr(parsed.attrs.geoScope, 'world') === scope}
+												variant="ghost"
+												class="nc-segment {attr(parsed.attrs.geoScope, 'world') === scope
+													? 'is-active'
+													: ''}"
 												onclick={() => setAttr('geoScope', scope)}
 											>
 												{humanize(scope)}
-											</button>
+											</Button>
 										{/each}
 									</div>
 								{/snippet}
 							</NodeConfigField>
-							<NodeConfigField label="Region column" hint="Column with country/state names or codes">
+							<NodeConfigField
+								label="Region column"
+								hint="Column with country/state names or codes"
+							>
 								{#snippet control()}
-									<input
+									<Input
 										class="nc-input"
 										list="visual-columns"
 										value={attr(parsed.attrs.x)}
@@ -665,7 +677,7 @@
 						{/if}
 						<NodeConfigField label="Y columns (JSON)">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={parsed.attrs.yColumns ? JSON.stringify(parsed.attrs.yColumns) : ''}
 									oninput={(e) => setJsonArrayAttr('yColumns', e.currentTarget.value)}
@@ -674,7 +686,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Secondary Y (JSON)">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={parsed.attrs.yColumnsSecondary
 										? JSON.stringify(parsed.attrs.yColumnsSecondary)
@@ -685,7 +697,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Color column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.colorColumn)}
@@ -695,7 +707,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Size column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.sizeColumn)}
@@ -705,7 +717,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Series mode">
 							{#snippet control()}
-								<select
+								<NativeSelect
 									class="nc-select"
 									value={attr(parsed.attrs.seriesMode, 'auto')}
 									onchange={(e) => setAttr('seriesMode', e.currentTarget.value)}
@@ -713,12 +725,12 @@
 									{#each ['auto', 'grouped', 'stacked'] as mode (mode)}
 										<option value={mode}>{mode}</option>
 									{/each}
-								</select>
+								</NativeSelect>
 							{/snippet}
 						</NodeConfigField>
 						<NodeConfigField label="Sort">
 							{#snippet control()}
-								<select
+								<NativeSelect
 									class="nc-select"
 									value={attr(parsed.attrs.sortOrder, 'none')}
 									onchange={(e) => setAttr('sortOrder', e.currentTarget.value)}
@@ -726,12 +738,12 @@
 									{#each ['none', 'asc', 'desc'] as order (order)}
 										<option value={order}>{order === 'none' ? 'Data order' : order}</option>
 									{/each}
-								</select>
+								</NativeSelect>
 							{/snippet}
 						</NodeConfigField>
 						<NodeConfigField label="Click filter param">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									value={attr(parsed.attrs.filterParam)}
 									oninput={(e) => setAttr('filterParam', e.currentTarget.value || undefined)}
@@ -740,7 +752,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Filter column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.filterColumn)}
@@ -750,7 +762,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Drill cell">
 							{#snippet control()}
-								<select
+								<NativeSelect
 									class="nc-select"
 									value={attr(parsed.attrs.drillCell)}
 									onchange={(e) => setAttr('drillCell', e.currentTarget.value || undefined)}
@@ -759,12 +771,12 @@
 									{#each cellRefOptions as r (r)}
 										<option value={r.replace('$', '')}>{r.replace('$', '')}</option>
 									{/each}
-								</select>
+								</NativeSelect>
 							{/snippet}
 						</NodeConfigField>
 						<NodeConfigField label="Height">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									type="number"
 									value={Number(parsed.attrs.height ?? 280)}
@@ -781,14 +793,14 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each ['raw', 'summary', 'pivot'] as mode (mode)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={tableMode === mode}
+									variant="ghost"
+									class="nc-segment {tableMode === mode ? 'is-active' : ''}"
 									onclick={() => setDatatableMode(mode as 'raw' | 'summary' | 'pivot')}
 								>
 									{mode}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -796,7 +808,7 @@
 
 				<NodeConfigField label="Data">
 					{#snippet control()}
-						<select
+						<NativeSelect
 							class="nc-select"
 							value={attr(parsed.attrs.data)}
 							onchange={(e) => setAttr('data', e.currentTarget.value)}
@@ -805,13 +817,13 @@
 							{#each rowRefOptions as r (r)}
 								<option value={r}>{r}</option>
 							{/each}
-						</select>
+						</NativeSelect>
 					{/snippet}
 				</NodeConfigField>
 
 				<NodeConfigField label="Rows shown">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							type="number"
 							value={Number(parsed.attrs.limit ?? 10)}
@@ -822,7 +834,7 @@
 
 				<NodeConfigField label="Page size">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							type="number"
 							value={Number(parsed.attrs.pageSize ?? 10)}
@@ -835,14 +847,16 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each ['compact', 'full'] as style (style)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.headerInsights, 'compact') === style}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.headerInsights, 'compact') === style
+										? 'is-active'
+										: ''}"
 									onclick={() => setAttr('headerInsights', style)}
 								>
 									{style}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -853,7 +867,7 @@
 					<div class="nc-stack nc-stack--nested">
 						<NodeConfigField label="Columns (JSON)">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={parsed.attrs.cols ? JSON.stringify(parsed.attrs.cols) : ''}
 									oninput={(e) => setJsonArrayAttr('cols', e.currentTarget.value)}
@@ -862,7 +876,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Group by (JSON)">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={parsed.attrs.index ? JSON.stringify(parsed.attrs.index) : ''}
 									oninput={(e) => setJsonArrayAttr('index', e.currentTarget.value)}
@@ -871,7 +885,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Pivot column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.pivotBy)}
@@ -881,7 +895,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Value column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.valueCol)}
@@ -891,7 +905,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Aggregation">
 							{#snippet control()}
-								<select
+								<NativeSelect
 									class="nc-select"
 									value={attr(parsed.attrs.agg, 'sum')}
 									onchange={(e) => setAttr('agg', e.currentTarget.value)}
@@ -899,12 +913,12 @@
 									{#each aggOptions as a (a)}
 										<option value={a}>{a}</option>
 									{/each}
-								</select>
+								</NativeSelect>
 							{/snippet}
 						</NodeConfigField>
 						<NodeConfigField label="Round" hint="Decimal places">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									type="number"
 									min="0"
@@ -920,7 +934,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Value format">
 							{#snippet control()}
-								<select
+								<NativeSelect
 									class="nc-select"
 									value={attr(parsed.attrs.valueFormatKind)}
 									onchange={(e) => setAttr('valueFormatKind', e.currentTarget.value || undefined)}
@@ -929,24 +943,25 @@
 									{#each valueFormatKinds as fmt (fmt)}
 										<option value={fmt}>{humanize(fmt)}</option>
 									{/each}
-								</select>
+								</NativeSelect>
 							{/snippet}
 						</NodeConfigField>
 						{#if parsed.attrs.valueFormatKind === 'currency'}
 							<NodeConfigField label="Currency symbol">
 								{#snippet control()}
-									<input
+									<Input
 										class="nc-input"
 										value={attr(parsed.attrs.valueCurrencySymbol, '$')}
-										maxlength="3"
-										oninput={(e) => setAttr('valueCurrencySymbol', e.currentTarget.value || undefined)}
+										maxlength={3}
+										oninput={(e) =>
+											setAttr('valueCurrencySymbol', e.currentTarget.value || undefined)}
 									/>
 								{/snippet}
 							</NodeConfigField>
 						{/if}
 						<NodeConfigField label="Linked filter">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									value={attr(parsed.attrs.linkedFilter)}
 									oninput={(e) => setAttr('linkedFilter', e.currentTarget.value)}
@@ -957,7 +972,9 @@
 				</details>
 				<ConditionalFormatEditor
 					columns={availableColumns}
-					value={Array.isArray(parsed.attrs.conditionalFormats) ? parsed.attrs.conditionalFormats : []}
+					value={Array.isArray(parsed.attrs.conditionalFormats)
+						? parsed.attrs.conditionalFormats
+						: []}
 					onChange={(next) => setAttr('conditionalFormats', next.length ? next : undefined)}
 				/>
 			</div>
@@ -966,7 +983,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="Param" hint="Used in ${param || 'name'}">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input font-mono"
 							value={attr(parsed.attrs.param)}
 							oninput={(e) => setAttr('param', e.currentTarget.value)}
@@ -975,7 +992,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Label">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.label)}
 							oninput={(e) => setAttr('label', e.currentTarget.value)}
@@ -986,17 +1003,19 @@
 					{#snippet control()}
 						<div class="nc-segments nc-segments--wrap">
 							{#each quickFilterKinds as kind (kind)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.kind, 'dropdown') === kind}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.kind, 'dropdown') === kind
+										? 'is-active'
+										: ''}"
 									onclick={() => setAttr('kind', kind)}
 								>
 									{humanize(kind)}
-								</button>
+								</Button>
 							{/each}
 						</div>
-						<select
+						<NativeSelect
 							class="nc-select mt-1.5"
 							value={attr(parsed.attrs.kind, 'dropdown')}
 							onchange={(e) => setAttr('kind', e.currentTarget.value)}
@@ -1004,12 +1023,12 @@
 							{#each filterKinds as k (k)}
 								<option value={k}>{humanize(k)}</option>
 							{/each}
-						</select>
+						</NativeSelect>
 					{/snippet}
 				</NodeConfigField>
 				<NodeConfigField label="Default">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.default ?? parsed.attrs.defaultValue)}
 							oninput={(e) => setAttr('default', e.currentTarget.value || undefined)}
@@ -1022,7 +1041,7 @@
 					<div class="nc-stack nc-stack--nested">
 						<NodeConfigField label="Options">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={Array.isArray(parsed.attrs.options)
 										? JSON.stringify(parsed.attrs.options)
@@ -1038,7 +1057,7 @@
 						</NodeConfigField>
 						<NodeConfigField label="Options column">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input"
 									list="visual-columns"
 									value={attr(parsed.attrs.optionsColumn)}
@@ -1052,7 +1071,7 @@
 				{#if parsed.attrs.kind === 'relative-date' || parsed.attrs.kind === 'date-range'}
 					<NodeConfigField label="Start param">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input font-mono"
 								value={attr(parsed.attrs.startParam)}
 								oninput={(e) => setAttr('startParam', e.currentTarget.value || undefined)}
@@ -1061,7 +1080,7 @@
 					</NodeConfigField>
 					<NodeConfigField label="End param">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input font-mono"
 								value={attr(parsed.attrs.endParam)}
 								oninput={(e) => setAttr('endParam', e.currentTarget.value || undefined)}
@@ -1072,7 +1091,7 @@
 				{#if parsed.attrs.kind === 'numeric-range'}
 					<NodeConfigField label="Min param">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input font-mono"
 								value={attr(parsed.attrs.minParam)}
 								oninput={(e) => setAttr('minParam', e.currentTarget.value || undefined)}
@@ -1081,7 +1100,7 @@
 					</NodeConfigField>
 					<NodeConfigField label="Max param">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input font-mono"
 								value={attr(parsed.attrs.maxParam)}
 								oninput={(e) => setAttr('maxParam', e.currentTarget.value || undefined)}
@@ -1111,7 +1130,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="Value">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.value)}
 							oninput={(e) => setAttr('value', e.currentTarget.value)}
@@ -1122,14 +1141,14 @@
 					{#snippet control()}
 						<div class="nc-segments nc-segments--wrap">
 							{#each ['info', 'success', 'warning', 'error', 'neutral'] as c (c)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.color, 'info') === c}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.color, 'info') === c ? 'is-active' : ''}"
 									onclick={() => setAttr('color', c)}
 								>
 									{c}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -1139,7 +1158,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="Value">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.value)}
 							oninput={(e) => setAttr('value', e.currentTarget.value)}
@@ -1148,7 +1167,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Max">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							type="number"
 							value={Number(parsed.attrs.max ?? 100)}
@@ -1158,7 +1177,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Label">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.label)}
 							oninput={(e) => setAttr('label', e.currentTarget.value)}
@@ -1169,14 +1188,14 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each ['info', 'success', 'warning', 'error'] as c (c)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.color, 'info') === c}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.color, 'info') === c ? 'is-active' : ''}"
 									onclick={() => setAttr('color', c)}
 								>
 									{c}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -1186,7 +1205,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="Source" hint="Video file URL">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.src)}
 							placeholder="https://example.com/clip.mp4"
@@ -1196,7 +1215,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Poster" hint="Preview image shown before playback">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.poster)}
 							placeholder="https://example.com/poster.jpg"
@@ -1205,18 +1224,16 @@
 					{/snippet}
 				</NodeConfigField>
 				<label class="nc-check">
-					<input
-						type="checkbox"
+					<Checkbox
 						checked={Boolean(parsed.attrs.loop)}
-						onchange={(e) => setAttr('loop', e.currentTarget.checked || undefined)}
+						onCheckedChange={(checked) => setAttr('loop', checked || undefined)}
 					/>
 					<span>Loop playback</span>
 				</label>
 				<label class="nc-check">
-					<input
-						type="checkbox"
+					<Checkbox
 						checked={Boolean(parsed.attrs.muted)}
-						onchange={(e) => setAttr('muted', e.currentTarget.checked || undefined)}
+						onCheckedChange={(checked) => setAttr('muted', checked || undefined)}
 					/>
 					<span>Start muted</span>
 				</label>
@@ -1228,7 +1245,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="URL" hint="YouTube, Vimeo, or Loom link">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.url)}
 							placeholder="https://www.youtube.com/watch?v=…"
@@ -1240,14 +1257,16 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each ['16:9', '4:3', '1:1'] as ratio (ratio)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.aspect, '16:9') === ratio}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.aspect, '16:9') === ratio
+										? 'is-active'
+										: ''}"
 									onclick={() => setAttr('aspect', ratio)}
 								>
 									{ratio}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -1270,7 +1289,7 @@
 			<div class="nc-stack">
 				<NodeConfigField label="URL">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.url)}
 							placeholder="https://example.com"
@@ -1280,7 +1299,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Title" hint="Defaults to the URL">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.title)}
 							oninput={(e) => setAttr('title', e.currentTarget.value || undefined)}
@@ -1289,7 +1308,7 @@
 				</NodeConfigField>
 				<NodeConfigField label="Description">
 					{#snippet control()}
-						<input
+						<Input
 							class="nc-input"
 							value={attr(parsed.attrs.description)}
 							oninput={(e) => setAttr('description', e.currentTarget.value || undefined)}
@@ -1304,33 +1323,33 @@
 			<div class="nc-stack">
 				<NodeConfigField label="LaTeX">
 					{#snippet control()}
-						<textarea
+						<Textarea
 							class="nc-textarea font-mono"
 							value={attr(parsed.attrs.latex)}
 							placeholder="E = mc^2"
 							oninput={(e) => setAttr('latex', e.currentTarget.value)}
-						></textarea>
+						></Textarea>
 					{/snippet}
 				</NodeConfigField>
 				<NodeConfigField label="Layout">
 					{#snippet control()}
 						<div class="nc-segments">
-							<button
+							<Button
 								type="button"
-								class="nc-segment"
-								class:is-active={!parsed.attrs.display}
+								variant="ghost"
+								class="nc-segment {!parsed.attrs.display ? 'is-active' : ''}"
 								onclick={() => setAttr('display', undefined)}
 							>
 								Inline
-							</button>
-							<button
+							</Button>
+							<Button
 								type="button"
-								class="nc-segment"
-								class:is-active={Boolean(parsed.attrs.display)}
+								variant="ghost"
+								class="nc-segment {Boolean(parsed.attrs.display) ? 'is-active' : ''}"
 								onclick={() => setAttr('display', true)}
 							>
 								Display block
-							</button>
+							</Button>
 						</div>
 					{/snippet}
 				</NodeConfigField>
@@ -1361,14 +1380,14 @@
 					{#snippet control()}
 						<div class="nc-segments">
 							{#each ['compact', 'default', 'comfortable'] as g (g)}
-								<button
+								<Button
 									type="button"
-									class="nc-segment"
-									class:is-active={attr(parsed.attrs.gap, 'default') === g}
+									variant="ghost"
+									class="nc-segment {attr(parsed.attrs.gap, 'default') === g ? 'is-active' : ''}"
 									onclick={() => setAttr('gap', g)}
 								>
 									{humanize(g)}
-								</button>
+								</Button>
 							{/each}
 						</div>
 					{/snippet}
@@ -1379,7 +1398,7 @@
 				{#if parsed.tagName === 'grid'}
 					<NodeConfigField label="Columns">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								type="number"
 								min="1"
@@ -1393,14 +1412,14 @@
 						{#snippet control()}
 							<div class="nc-segments">
 								{#each ['compact', 'default', 'comfortable'] as g (g)}
-									<button
+									<Button
 										type="button"
-										class="nc-segment"
-										class:is-active={attr(parsed.attrs.gap, 'default') === g}
+										variant="ghost"
+										class="nc-segment {attr(parsed.attrs.gap, 'default') === g ? 'is-active' : ''}"
 										onclick={() => setAttr('gap', g)}
 									>
 										{humanize(g)}
-									</button>
+									</Button>
 								{/each}
 							</div>
 						{/snippet}
@@ -1408,7 +1427,7 @@
 				{:else if parsed.tagName === 'column'}
 					<NodeConfigField label="Width">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								value={attr(parsed.attrs.width)}
 								placeholder="300px, 40%, 1fr"
@@ -1419,7 +1438,7 @@
 				{:else if parsed.tagName === 'tab'}
 					<NodeConfigField label="Tab label">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								value={attr(parsed.attrs.label)}
 								oninput={(e) => setAttr('label', e.currentTarget.value)}
@@ -1429,7 +1448,7 @@
 				{:else if parsed.tagName === 'details'}
 					<NodeConfigField label="Summary">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								value={attr(parsed.attrs.summary)}
 								oninput={(e) => setAttr('summary', e.currentTarget.value)}
@@ -1437,10 +1456,9 @@
 						{/snippet}
 					</NodeConfigField>
 					<label class="nc-check">
-						<input
-							type="checkbox"
+						<Checkbox
 							checked={Boolean(parsed.attrs.open)}
-							onchange={(e) => setAttr('open', e.currentTarget.checked)}
+							onCheckedChange={(checked) => setAttr('open', Boolean(checked))}
 						/>
 						<span>Open by default</span>
 					</label>
@@ -1450,7 +1468,7 @@
 					{#if !conditionCustom && (simple !== null || currentCondition.trim() === '')}
 						<NodeConfigField label="Left side">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									list="visual-condition-refs"
 									value={simple?.operand ?? ''}
@@ -1471,10 +1489,10 @@
 							{#snippet control()}
 								<div class="nc-segments">
 									{#each CONDITION_OPERATORS as op (op.fn)}
-										<button
+										<Button
 											type="button"
-											class="nc-segment"
-											class:is-active={(simple?.fn ?? 'gt') === op.fn}
+											variant="ghost"
+											class="nc-segment {(simple?.fn ?? 'gt') === op.fn ? 'is-active' : ''}"
 											title={op.fn}
 											onclick={() =>
 												setAttr(
@@ -1483,14 +1501,14 @@
 												)}
 										>
 											{op.label}
-										</button>
+										</Button>
 									{/each}
 								</div>
 							{/snippet}
 						</NodeConfigField>
 						<NodeConfigField label="Right side">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={simple?.value ?? ''}
 									placeholder="0"
@@ -1506,16 +1524,22 @@
 								/>
 							{/snippet}
 						</NodeConfigField>
-						<button type="button" class="nc-mode-link" onclick={() => (conditionCustom = true)}>
+						<Button
+							type="button"
+							variant="link"
+							size="xs"
+							class="nc-mode-link"
+							onclick={() => (conditionCustom = true)}
+						>
 							Edit as custom expression
-						</button>
+						</Button>
 						<datalist id="visual-condition-refs">
 							{#each refOptions() as r (r)}<option value={r}></option>{/each}
 						</datalist>
 					{:else}
 						<NodeConfigField label="Condition">
 							{#snippet control()}
-								<input
+								<Input
 									class="nc-input font-mono"
 									value={currentCondition}
 									placeholder="gt($orders.count, 0)"
@@ -1524,9 +1548,15 @@
 							{/snippet}
 						</NodeConfigField>
 						{#if simple !== null || currentCondition.trim() === ''}
-							<button type="button" class="nc-mode-link" onclick={() => (conditionCustom = false)}>
+							<Button
+								type="button"
+								variant="link"
+								size="xs"
+								class="nc-mode-link"
+								onclick={() => (conditionCustom = false)}
+							>
 								Use simple builder
-							</button>
+							</Button>
 						{:else}
 							<p class="nc-lead">
 								Comparisons: equals, gt, gte, lt, lte — e.g. gt($orders.count, 0)
@@ -1536,7 +1566,7 @@
 				{:else if parsed.tagName === 'group'}
 					<NodeConfigField label="Data">
 						{#snippet control()}
-							<select
+							<NativeSelect
 								class="nc-select"
 								value={attr(parsed.attrs.data)}
 								onchange={(e) => setAttr('data', e.currentTarget.value)}
@@ -1545,12 +1575,12 @@
 								{#each rowRefOptions as r (r)}
 									<option value={r}>{r}</option>
 								{/each}
-							</select>
+							</NativeSelect>
 						{/snippet}
 					</NodeConfigField>
 					<NodeConfigField label="Group by">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								list="visual-columns"
 								value={attr(parsed.attrs.by)}
@@ -1561,14 +1591,26 @@
 					<div class="nc-varhint">
 						<span class="nc-varhint-label">Available inside each group — click to copy</span>
 						<div class="nc-varchips">
-							<button type="button" class="nc-varchip" onclick={() => copyVariable('$key')}
-								>$key</button
+							<Button
+								type="button"
+								variant="outline"
+								size="xs"
+								class="nc-varchip"
+								onclick={() => copyVariable('$key')}>$key</Button
 							>
-							<button type="button" class="nc-varchip" onclick={() => copyVariable('$keyId')}
-								>$keyId</button
+							<Button
+								type="button"
+								variant="outline"
+								size="xs"
+								class="nc-varchip"
+								onclick={() => copyVariable('$keyId')}>$keyId</Button
 							>
-							<button type="button" class="nc-varchip" onclick={() => copyVariable('$items')}
-								>$items</button
+							<Button
+								type="button"
+								variant="outline"
+								size="xs"
+								class="nc-varchip"
+								onclick={() => copyVariable('$items')}>$items</Button
 							>
 						</div>
 						{#if loopColumns.length}
@@ -1577,8 +1619,12 @@
 							</span>
 							<div class="nc-varchips">
 								{#each loopColumns as col (col)}
-									<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${col}`)}
-										>${col}</button
+									<Button
+										type="button"
+										variant="outline"
+										size="xs"
+										class="nc-varchip"
+										onclick={() => copyVariable(`$${col}`)}>${col}</Button
 									>
 								{/each}
 							</div>
@@ -1591,19 +1637,23 @@
 									{#each orderList as key, i (key)}
 										<div class="nc-orderrow">
 											<span class="nc-orderkey">{key}</span>
-											<button
+											<Button
 												type="button"
+												variant="outline"
+												size="icon-xs"
 												class="nc-orderbtn"
 												disabled={i === 0}
 												title="Move up"
-												onclick={() => moveOrderKey(i, -1)}>↑</button
+												onclick={() => moveOrderKey(i, -1)}>↑</Button
 											>
-											<button
+											<Button
 												type="button"
+												variant="outline"
+												size="icon-xs"
 												class="nc-orderbtn"
 												disabled={i === orderList.length - 1}
 												title="Move down"
-												onclick={() => moveOrderKey(i, 1)}>↓</button
+												onclick={() => moveOrderKey(i, 1)}>↓</Button
 											>
 										</div>
 									{/each}
@@ -1614,7 +1664,7 @@
 				{:else if parsed.tagName === 'each'}
 					<NodeConfigField label="Data">
 						{#snippet control()}
-							<select
+							<NativeSelect
 								class="nc-select"
 								value={attr(parsed.attrs.data, '$items')}
 								onchange={(e) => setAttr('data', e.currentTarget.value)}
@@ -1623,15 +1673,19 @@
 								{#each rowRefOptions as r (r)}
 									<option value={r}>{r}</option>
 								{/each}
-							</select>
+							</NativeSelect>
 						{/snippet}
 					</NodeConfigField>
 					<div class="nc-varhint">
 						<span class="nc-varhint-label">Current item aliases — click to copy</span>
 						<div class="nc-varchips">
 							{#each eachAliases as alias (alias)}
-								<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${alias}`)}
-									>${alias}</button
+								<Button
+									type="button"
+									variant="outline"
+									size="xs"
+									class="nc-varchip"
+									onclick={() => copyVariable(`$${alias}`)}>${alias}</Button
 								>
 							{/each}
 						</div>
@@ -1641,8 +1695,12 @@
 							<span class="nc-varhint-label">Available in the body — click to copy</span>
 							<div class="nc-varchips">
 								{#each loopColumns as col (col)}
-									<button type="button" class="nc-varchip" onclick={() => copyVariable(`$${col}`)}
-										>${col}</button
+									<Button
+										type="button"
+										variant="outline"
+										size="xs"
+										class="nc-varchip"
+										onclick={() => copyVariable(`$${col}`)}>${col}</Button
 									>
 								{/each}
 							</div>
@@ -1653,13 +1711,15 @@
 								<div class="nc-varchips">
 									{#each eachAliases as alias (alias)}
 										{#each loopColumns as col (`${alias}.${col}`)}
-											<button
+											<Button
 												type="button"
+												variant="outline"
+												size="xs"
 												class="nc-varchip"
 												onclick={() => copyVariable(`$${alias}.${col}`)}
 											>
 												{alias}.{col}
-											</button>
+											</Button>
 										{/each}
 									{/each}
 								</div>
@@ -1670,7 +1730,7 @@
 					<p class="nc-lead">Edit the diagram in the canvas, or pick a code reference.</p>
 					<NodeConfigField label="Code ref">
 						{#snippet control()}
-							<select
+							<NativeSelect
 								class="nc-select"
 								value={attr(parsed.attrs.code)}
 								onchange={(e) => setAttr('code', e.currentTarget.value || undefined)}
@@ -1679,7 +1739,7 @@
 								{#each refOptions() as r (r)}
 									<option value={r}>{r}</option>
 								{/each}
-							</select>
+							</NativeSelect>
 						{/snippet}
 					</NodeConfigField>
 				{:else}
@@ -1691,7 +1751,7 @@
 				{#if parsed.tagName === 'card'}
 					<NodeConfigField label="Title">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								value={attr(parsed.attrs.title)}
 								oninput={(e) => setAttr('title', e.currentTarget.value)}
@@ -1702,14 +1762,16 @@
 						{#snippet control()}
 							<div class="nc-segments nc-segments--wrap">
 								{#each ['neutral', 'info', 'success', 'warning', 'error'] as a (a)}
-									<button
+									<Button
 										type="button"
-										class="nc-segment"
-										class:is-active={attr(parsed.attrs.accent, 'neutral') === a}
+										variant="ghost"
+										class="nc-segment {attr(parsed.attrs.accent, 'neutral') === a
+											? 'is-active'
+											: ''}"
 										onclick={() => setAttr('accent', a)}
 									>
 										{a}
-									</button>
+									</Button>
 								{/each}
 							</div>
 						{/snippet}
@@ -1719,21 +1781,21 @@
 						{#snippet control()}
 							<div class="nc-segments">
 								{#each ['info', 'success', 'warning', 'error'] as t (t)}
-									<button
+									<Button
 										type="button"
-										class="nc-segment"
-										class:is-active={attr(parsed.attrs.type, 'info') === t}
+										variant="ghost"
+										class="nc-segment {attr(parsed.attrs.type, 'info') === t ? 'is-active' : ''}"
 										onclick={() => setAttr('type', t)}
 									>
 										{t}
-									</button>
+									</Button>
 								{/each}
 							</div>
 						{/snippet}
 					</NodeConfigField>
 					<NodeConfigField label="Title" hint="Optional heading above the body">
 						{#snippet control()}
-							<input
+							<Input
 								class="nc-input"
 								value={attr(parsed.attrs.title)}
 								oninput={(e) => setAttr('title', e.currentTarget.value || undefined)}
@@ -1745,11 +1807,11 @@
 		{:else}
 			<div class="nc-stack">
 				<p class="nc-section-label">Source</p>
-				<textarea
+				<Textarea
 					class="nc-textarea font-mono"
 					value={block.source}
 					oninput={(e) => onPatch({ source: e.currentTarget.value })}
-				></textarea>
+				></Textarea>
 			</div>
 		{/if}
 
@@ -1803,9 +1865,9 @@
 		font-size: var(--text-2xs);
 		color: var(--muted-foreground);
 	}
-	.nc-input,
-	.nc-select,
-	.nc-textarea {
+	:global(.nc-input),
+	:global(.nc-select),
+	:global(.nc-textarea) {
 		width: 100%;
 		border-radius: var(--radius-sm);
 		border: 1px solid transparent;
@@ -1816,24 +1878,24 @@
 			border-color var(--motion-fast) var(--motion-ease-out),
 			background var(--motion-fast) var(--motion-ease-out);
 	}
-	.nc-input,
-	.nc-select {
+	:global(.nc-input),
+	:global(.nc-select) {
 		height: 1.65rem;
 		padding: 0 0.45rem;
 	}
-	.nc-textarea {
+	:global(.nc-textarea) {
 		min-height: 5rem;
 		padding: 0.45rem;
 		resize: vertical;
 	}
-	.nc-input:hover,
-	.nc-select:hover,
-	.nc-textarea:hover {
+	:global(.nc-input:hover),
+	:global(.nc-select:hover),
+	:global(.nc-textarea:hover) {
 		background: color-mix(in oklab, var(--muted) 42%, transparent);
 	}
-	.nc-input:focus-visible,
-	.nc-select:focus-visible,
-	.nc-textarea:focus-visible {
+	:global(.nc-input:focus-visible),
+	:global(.nc-select:focus-visible),
+	:global(.nc-textarea:focus-visible) {
 		outline: none;
 		border-color: color-mix(in oklab, var(--ring) 45%, transparent);
 		background: var(--background);
@@ -1847,7 +1909,7 @@
 	.nc-segments--wrap {
 		flex-wrap: wrap;
 	}
-	.nc-segment {
+	:global(.nc-segment) {
 		flex: 1 1 auto;
 		min-width: 0;
 		height: 1.5rem;
@@ -1863,16 +1925,16 @@
 			background var(--motion-fast) var(--motion-ease-out),
 			color var(--motion-fast) var(--motion-ease-out);
 	}
-	.nc-segment:hover {
+	:global(.nc-segment:hover) {
 		background: color-mix(in oklab, var(--muted) 55%, transparent);
 		color: var(--foreground);
 	}
-	.nc-segment.is-active {
+	:global(.nc-segment.is-active) {
 		background: color-mix(in oklab, var(--secondary) 22%, transparent);
 		color: var(--foreground);
 		box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--secondary) 35%, transparent);
 	}
-	.nc-mode-link {
+	:global(.nc-mode-link) {
 		align-self: flex-start;
 		border: none;
 		background: none;
@@ -1883,7 +1945,7 @@
 		text-underline-offset: 2px;
 		cursor: pointer;
 	}
-	.nc-mode-link:hover {
+	:global(.nc-mode-link:hover) {
 		color: var(--foreground);
 	}
 	.nc-varhint {
@@ -1905,7 +1967,7 @@
 		flex-wrap: wrap;
 		gap: 0.25rem;
 	}
-	.nc-varchip {
+	:global(.nc-varchip) {
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--background);
@@ -1918,7 +1980,7 @@
 			border-color var(--motion-fast) var(--motion-ease-out),
 			background var(--motion-fast) var(--motion-ease-out);
 	}
-	.nc-varchip:hover {
+	:global(.nc-varchip:hover) {
 		border-color: var(--primary);
 		background: color-mix(in oklab, var(--primary) 8%, transparent);
 	}
@@ -1941,7 +2003,7 @@
 		white-space: nowrap;
 		font-size: var(--text-2xs);
 	}
-	.nc-orderbtn {
+	:global(.nc-orderbtn) {
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--background);
@@ -1951,10 +2013,10 @@
 		color: var(--foreground);
 		cursor: pointer;
 	}
-	.nc-orderbtn:hover:not(:disabled) {
+	:global(.nc-orderbtn:hover:not(:disabled)) {
 		border-color: var(--primary);
 	}
-	.nc-orderbtn:disabled {
+	:global(.nc-orderbtn:disabled) {
 		opacity: 0.35;
 		cursor: default;
 	}

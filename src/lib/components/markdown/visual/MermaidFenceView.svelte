@@ -1,6 +1,7 @@
 <script lang="ts">
 	import MarkdownModeBar from '../MarkdownModeBar.svelte';
 	import MermaidDiagram from '../MermaidDiagram.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { Trash2 } from '@lucide/svelte';
 	import { mermaidCodeFromFenceSource } from './mermaid-code';
 
@@ -19,47 +20,49 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-		class="mermaid-fence-view group/mdf relative rounded-sm border transition-colors duration-(--motion-fast) {selected
-			? 'border-ring bg-muted/10'
-			: 'border-transparent hover:border-border hover:bg-muted/15'}"
-		role="button"
-		tabindex="0"
-		onclick={(e) => {
-			if ((e.target as HTMLElement).closest('.markdown-mode-bar, .mdf-chrome')) return;
-			onSelect?.();
-		}}
-		onkeydown={(e) => {
-			if (e.key !== 'Enter' && e.key !== ' ') return;
-			e.preventDefault();
-			onSelect?.();
-		}}
+	class="mermaid-fence-view group/mdf relative rounded-sm border transition-colors duration-(--motion-fast) {selected
+		? 'border-ring bg-muted/10'
+		: 'border-transparent hover:border-border hover:bg-muted/15'}"
+	role="button"
+	tabindex="0"
+	onclick={(e) => {
+		if ((e.target as HTMLElement).closest('.markdown-mode-bar, .mdf-chrome')) return;
+		onSelect?.();
+	}}
+	onkeydown={(e) => {
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		e.preventDefault();
+		onSelect?.();
+	}}
+>
+	<div
+		class="mdf-chrome absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-focus-within/mdf:opacity-100 group-hover/mdf:opacity-100 {selected
+			? 'opacity-100'
+			: ''}"
 	>
-		<div
-			class="mdf-chrome absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-hover/mdf:opacity-100 group-focus-within/mdf:opacity-100 {selected
-				? 'opacity-100'
-				: ''}"
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="md-action md-action--danger"
+			title="Delete block"
+			onclick={(e) => {
+				e.stopPropagation();
+				onDelete?.();
+			}}
 		>
-			<button
-				type="button"
-				class="md-action md-action--danger"
-				title="Delete block"
-				onclick={(e) => {
-					e.stopPropagation();
-					onDelete?.();
-				}}
-			>
-				<Trash2 class="h-3 w-3" />
-			</button>
-		</div>
-		<div class="px-1 py-0.5">
-			<MarkdownModeBar {mode} onModeChange={(m) => (mode = m)} />
-			{#if mode === 'visual'}
-				<MermaidDiagram {code} />
-			{:else}
-				<pre class="mermaid-fence-source">{source.trimEnd()}</pre>
-			{/if}
-		</div>
+			<Trash2 class="h-3 w-3" />
+		</Button>
 	</div>
+	<div class="px-1 py-0.5">
+		<MarkdownModeBar {mode} onModeChange={(m) => (mode = m)} />
+		{#if mode === 'visual'}
+			<MermaidDiagram {code} />
+		{:else}
+			<pre class="mermaid-fence-source">{source.trimEnd()}</pre>
+		{/if}
+	</div>
+</div>
 
 <style>
 	.mermaid-fence-view {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -24,13 +25,18 @@
 				needsSetup: boolean;
 				mode: 'fresh' | 'repair' | 'closed';
 				repairReason?: string;
+				error?: string;
 			};
+			if (!res.ok) throw new Error(body.error ?? 'Failed to check setup status.');
 			setupMode = body.mode;
 			repairReason = body.repairReason ?? null;
 			if (!body.needsSetup) {
 				await goto('/login');
 				return;
 			}
+		} catch (err) {
+			setupMode = 'closed';
+			setupError = err instanceof Error ? err.message : 'Failed to check setup status.';
 		} finally {
 			checkingSetup = false;
 		}
@@ -53,7 +59,7 @@
 			const body = (await res.json()) as { error?: string };
 			if (!res.ok) throw new Error(body.error ?? 'Failed to complete setup.');
 			toast.success(setupMode === 'repair' ? 'Workspace repaired.' : 'Workspace created.');
-			await goto('/');
+			await goto(page.url.searchParams.get('redirectTo') || '/');
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Failed to complete setup.';
 			setupError = message;
@@ -67,6 +73,14 @@
 <div class="flex min-h-screen items-center justify-center bg-background px-4 py-8">
 	{#if checkingSetup}
 		<p class="text-sm text-muted-foreground">Checking setup status…</p>
+	{:else if setupError && setupMode === 'closed'}
+		<div class="w-full max-w-xl rounded-lg border border-destructive/30 bg-card p-6 shadow-sm">
+			<h1 class="font-serif text-2xl">Setup unavailable</h1>
+			<p class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+				{setupError}
+			</p>
+			<Button class="mt-4" onclick={() => goto('/login')}>Go to sign in</Button>
+		</div>
 	{:else}
 		<form
 			onsubmit={handleSubmit}

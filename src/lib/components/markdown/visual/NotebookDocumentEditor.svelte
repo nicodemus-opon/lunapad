@@ -876,10 +876,10 @@
 	// reads inside the effect body) so a parent re-render that hands down a new
 	// `cells` array reference — without anything actually changing — can't refire
 	// this and cascade into a self-sustaining update loop.
-	const cellsResultSignature = $derived(
-		cells.map((c) => `${c.id}:${c.status}:${c.needsRun ? 1 : 0}:${c.lastRunAt ?? 0}`).join('|')
-	);
 	$effect(() => {
+		const cellsResultSignature = cells
+			.map((c) => `${c.id}:${c.status}:${c.needsRun ? 1 : 0}:${c.lastRunAt ?? 0}`)
+			.join('|');
 		void cellsResultSignature;
 		untrack(() => refreshBus.notify());
 	});

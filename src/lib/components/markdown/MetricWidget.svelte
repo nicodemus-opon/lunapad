@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { copyToClipboard } from '$lib/services/widget-export';
 	import { Clipboard } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { resolveDashboardIcon } from './icon-map';
 	import { resolveSemanticToken, type SemanticTone } from './semantic-tone';
 
@@ -122,15 +123,16 @@
 		{/if}
 		<span class="md-metric-row">
 			<span class="md-metric-value">{displayValue}</span>
-			<button
-				type="button"
+			<Button
+				variant="ghost"
+				size="icon-xs"
 				class="md-metric-copy"
 				onclick={copyValue}
 				title="Copy value"
 				aria-label="Copy value"
 			>
 				<Clipboard class="h-3 w-3" />
-			</button>
+			</Button>
 		</span>
 		{#if label}<span class="md-metric-label">{label}</span>{/if}
 		{#if trend && deltaPct != null}

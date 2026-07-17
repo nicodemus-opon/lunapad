@@ -11,6 +11,7 @@
 
 	let usage = $state<UsageSummary | null>(null);
 	let loading = $state(true);
+	let loadError = $state<string | null>(null);
 
 	const rows = $derived(
 		usage
@@ -49,9 +50,14 @@
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const res = await fetch('/api/usage');
-			if (res.ok) usage = ((await res.json()) as { usage: UsageSummary }).usage;
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load usage.');
+			usage = (body as { usage?: UsageSummary }).usage ?? null;
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load usage.';
 		} finally {
 			loading = false;
 		}
@@ -85,9 +91,18 @@
 			<div class="h-8 rounded-md bg-muted/40"></div>
 			<div class="h-8 rounded-md bg-muted/30"></div>
 		</div>
+	{:else if loadError}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+			<p class="text-xs text-destructive">{loadError}</p>
+			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
+		</div>
+	{:else if !usage}
+		<p class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+			Usage is not available for this workspace yet.
+		</p>
 	{:else}
-		<div class="overflow-hidden rounded-md border border-border">
-			<table class="w-full text-xs">
+		<div class="overflow-x-auto rounded-md border border-border">
+			<table class="w-full min-w-[34rem] text-xs">
 				<thead class="bg-muted/40 text-muted-foreground">
 					<tr>
 						<th class="px-3 py-2 text-left font-medium">Metric</th>

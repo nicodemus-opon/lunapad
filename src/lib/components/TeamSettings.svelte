@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { toast } from 'svelte-sonner';
-	import { Trash2 } from '@lucide/svelte';
+	import { Copy, RefreshCw, Trash2 } from '@lucide/svelte';
 
 	type Role = 'admin' | 'editor' | 'viewer';
 	type TeamUser = { id: string; name: string; email: string; role: Role; mention: string };
@@ -24,18 +24,26 @@
 	let creating = $state(false);
 	let email = $state('');
 	let role = $state<Role>('editor');
+	let loadError = $state<string | null>(null);
+	let updatingUserId = $state<string | null>(null);
+	let revokingInvitationId = $state<string | null>(null);
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const [usersRes, invitesRes] = await Promise.all([
 				fetch('/api/team/users'),
 				fetch('/api/invitations')
 			]);
-			if (usersRes.ok) users = ((await usersRes.json()) as { users: TeamUser[] }).users;
-			if (invitesRes.ok) {
-				invitations = ((await invitesRes.json()) as { invitations: Invitation[] }).invitations;
-			}
+			const usersBody = await usersRes.json().catch(() => ({}));
+			const invitesBody = await invitesRes.json().catch(() => ({}));
+			if (!usersRes.ok) throw new Error(usersBody.error ?? 'Failed to load team members.');
+			if (!invitesRes.ok) throw new Error(invitesBody.error ?? 'Failed to load invitations.');
+			users = (usersBody as { users?: TeamUser[] }).users ?? [];
+			invitations = (invitesBody as { invitations?: Invitation[] }).invitations ?? [];
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load team settings.';
 		} finally {
 			loading = false;
 		}
@@ -67,31 +75,41 @@
 	}
 
 	async function updateRole(user: TeamUser, nextRole: Role) {
-		const res = await fetch('/api/team/users', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ userId: user.id, role: nextRole })
-		});
-		const body = await res.json();
-		if (!res.ok) {
-			toast.error(body.error ?? 'Failed to update role.');
-			return;
+		updatingUserId = user.id;
+		try {
+			const res = await fetch('/api/team/users', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId: user.id, role: nextRole })
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				toast.error(body.error ?? 'Failed to update role.');
+				return;
+			}
+			toast.success('Role updated.');
+			await load();
+		} finally {
+			updatingUserId = null;
 		}
-		toast.success('Role updated.');
-		await load();
 	}
 
 	async function revoke(invitation: Invitation) {
-		const res = await fetch(`/api/invitations?id=${encodeURIComponent(invitation.id)}`, {
-			method: 'DELETE'
-		});
-		const body = await res.json();
-		if (!res.ok) {
-			toast.error(body.error ?? 'Failed to revoke invitation.');
-			return;
+		revokingInvitationId = invitation.id;
+		try {
+			const res = await fetch(`/api/invitations?id=${encodeURIComponent(invitation.id)}`, {
+				method: 'DELETE'
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				toast.error(body.error ?? 'Failed to revoke invitation.');
+				return;
+			}
+			toast.success('Invitation revoked.');
+			await load();
+		} finally {
+			revokingInvitationId = null;
 		}
-		toast.success('Invitation revoked.');
-		await load();
 	}
 
 	function invitationState(invitation: Invitation): 'accepted' | 'revoked' | 'expired' | 'pending' {
@@ -102,22 +120,38 @@
 	}
 
 	async function copyInvite(invitation: Invitation) {
-		await navigator.clipboard.writeText(`${window.location.origin}/invite/${invitation.token}`);
-		toast.success('Invite link copied.');
+		try {
+			await navigator.clipboard.writeText(`${window.location.origin}/invite/${invitation.token}`);
+			toast.success('Invite link copied.');
+		} catch {
+			toast.error('Could not copy invite link.');
+		}
 	}
 </script>
 
 <div class="space-y-6">
-	<div>
-		<h1 class="text-sm font-semibold">Team</h1>
-		<p class="mt-1 text-xs text-muted-foreground">
-			Org roles apply across every project in this workspace.
-		</p>
+	<div class="flex items-start justify-between gap-3">
+		<div>
+			<h2 class="text-sm font-semibold">Team</h2>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Workspace roles apply to every project, shared report, comment, and data source here.
+			</p>
+		</div>
+		<Button variant="outline" size="sm" class="h-8 gap-1.5 text-xs" disabled={loading} onclick={load}>
+			<RefreshCw class="h-3.5 w-3.5" /> Refresh
+		</Button>
 	</div>
+
+	{#if loadError}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+			<p class="text-xs text-destructive">{loadError}</p>
+			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
+		</div>
+	{/if}
 
 	<form onsubmit={invite} class="space-y-3 rounded-md border border-border bg-card p-4">
 		<h2 class="text-xs font-semibold">Invite teammate</h2>
-		<div class="grid grid-cols-[1fr_8rem_auto] gap-2">
+		<div class="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
 			<Input
 				class="h-8 text-xs"
 				type="email"
@@ -152,8 +186,8 @@
 				No members yet. Invite your data team to share notebooks, comments, connections, and published work.
 			</p>
 		{:else}
-			<div class="overflow-hidden rounded-md border border-border">
-				<table class="w-full text-xs">
+			<div class="overflow-x-auto rounded-md border border-border">
+				<table class="w-full min-w-[34rem] text-xs">
 					<thead class="bg-muted/40 text-muted-foreground">
 						<tr>
 							<th class="px-3 py-2 text-left font-medium">Name</th>
@@ -170,6 +204,7 @@
 									<select
 										value={user.role}
 										class="h-7 rounded-md border border-input bg-background px-2 text-xs"
+										disabled={updatingUserId === user.id}
 										onchange={(e) =>
 											updateRole(user, (e.currentTarget as HTMLSelectElement).value as Role)}
 									>
@@ -208,10 +243,10 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 text-xs"
+								class="h-7 gap-1.5 text-xs"
 								onclick={() => copyInvite(invitation)}
 							>
-								Copy link
+								<Copy class="h-3.5 w-3.5" /> Copy link
 							</Button>
 							<Button
 								variant="ghost"
@@ -226,6 +261,7 @@
 								variant="ghost"
 								size="icon"
 								class="size-6"
+								disabled={revokingInvitationId === invitation.id}
 								title="Revoke invitation"
 								onclick={() => revoke(invitation)}
 							>

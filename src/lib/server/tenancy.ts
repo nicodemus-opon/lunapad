@@ -4,7 +4,7 @@ import { query } from './db.js';
 import { scaffoldDbtProject } from './project.js';
 
 export type DeploymentMode = 'self_hosted' | 'cloud';
-export type OrganizationPlan = 'free' | 'team' | 'business';
+export type OrganizationPlan = 'free' | 'starter' | 'free_beta' | 'team' | 'business';
 export type OrganizationRole = 'admin' | 'editor' | 'viewer';
 export type BillingProvider = 'none' | 'manual' | 'lemonsqueezy';
 
@@ -130,6 +130,20 @@ export function entitlementsForPlan(plan: OrganizationPlan): Entitlements {
 			maxApiRequestsPerMinute: 300,
 			maxPublicShareRunsPerMinute: 120,
 			maxStorageMb: 25_000
+		};
+	}
+	if (plan === 'starter' || plan === 'free_beta') {
+		return {
+			plan,
+			maxProjects: 3,
+			maxExternalConnections: 5,
+			maxPublishedShares: 20,
+			maxConcurrentJobs: 2,
+			monthlyAiTokens: 150_000,
+			maxSchedules: 5,
+			maxApiRequestsPerMinute: 120,
+			maxPublicShareRunsPerMinute: 60,
+			maxStorageMb: 5_000
 		};
 	}
 	return {
@@ -481,6 +495,7 @@ export async function createOrganizationForUser(input: {
 	email?: string | null;
 	orgName?: string | null;
 	projectName?: string | null;
+	plan?: OrganizationPlan;
 }): Promise<TenantContext> {
 	await ensureTenantTablesOnce();
 	const orgId = crypto.randomUUID();
@@ -491,10 +506,11 @@ export async function createOrganizationForUser(input: {
 	const projectName = input.projectName?.trim() || 'Starter project';
 	const projectFolder = projectFolderFor(orgId, projectId);
 	await scaffoldDbtProject(projectFolder, dbtProjectName(projectName));
-	await query(`INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $2, $3, 'free')`, [
+	await query(`INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $2, $3, $4)`, [
 		orgId,
 		orgName,
-		orgSlug
+		orgSlug,
+		input.plan ?? 'free'
 	]);
 	await query(
 		`INSERT INTO projects (id, org_id, name, slug, project_folder)

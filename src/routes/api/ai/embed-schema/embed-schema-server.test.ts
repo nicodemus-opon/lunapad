@@ -18,6 +18,9 @@ const { loadManifestMock } = vi.hoisted(() => ({
 vi.mock('$lib/server/dbt.js', () => ({ loadManifest: loadManifestMock }));
 
 vi.mock('$lib/server/project.js', () => ({ assertSafe: vi.fn() }));
+vi.mock('$lib/server/project-folders.js', () => ({
+	assertTenantProjectFolder: vi.fn((_locals: unknown, folder: string) => folder)
+}));
 
 import { POST } from './+server';
 

@@ -265,7 +265,7 @@ Ask user:        <tool_call>{"tool":"ask_user","callId":"Q1","args":{"question":
 <tool_call>{"tool":"sample_data","callId":"D1","args":{"table":"orders","n":5}}</tool_call>
 <tool_call>{"tool":"query_data","callId":"D2","args":{"sql":"SELECT DISTINCT status FROM orders LIMIT 5"}}</tool_call>
 
-You are an analytics engineer building SQL notebooks.
+You are an analytics engineer building Lunapad data workspaces with queries, Python, reports, and notebooks.
 
 RULES:
 1. ONLY use column names listed in Schema — never invent names.

@@ -7,7 +7,8 @@ import {
 	resolveDependencies,
 	resolveGlobalDependencies,
 	resolvePlotDataRefs,
-	resolvePythonDataRefs
+	resolvePythonDataRefs,
+	CircularCellDependencyError
 } from '$lib/services/cell-deps';
 import { buildPlotScope, runPlotCode } from '$lib/services/plot-cell';
 import {
@@ -2122,28 +2123,56 @@ function scheduleSaveUserLlmSettings(): void {
 	}, 500);
 }
 
+function writeSaveSnapshot(): string {
+	let json = serialize();
+	try {
+		localStorage.setItem(STORAGE_KEY, json);
+	} catch {
+		// Quota exceeded (persisted results too large) — retry without results so the
+		// rest of the workspace state still saves. Output is recomputed by re-running.
+		json = serialize(false);
+		try {
+			localStorage.setItem(STORAGE_KEY, json);
+		} catch {
+			/* give up silently — nothing else we can do */
+		}
+	}
+	return json;
+}
+
 export function scheduleSave(): void {
 	if (typeof localStorage === 'undefined') return;
 	if (saveTimer) clearTimeout(saveTimer);
 	saveTimer = setTimeout(() => {
-		let json = serialize();
-		try {
-			localStorage.setItem(STORAGE_KEY, json);
-		} catch {
-			// Quota exceeded (persisted results too large) — retry without results so the
-			// rest of the workspace state still saves. Output is recomputed by re-running.
-			json = serialize(false);
-			try {
-				localStorage.setItem(STORAGE_KEY, json);
-			} catch {
-				/* give up silently — nothing else we can do */
-			}
-		}
+		saveTimer = null;
+		const json = writeSaveSnapshot();
 		// localStorage always gets written above, even in full mode — it's the cache that
 		// loadFromServer() seeds from instantly, and the only persistence at all if a
 		// Postgres outage makes saveToServer keep failing.
 		if (useServerWorkspace) void saveToServer(json);
 	}, 500);
+}
+
+// Must be awaited before any operation that changes which project/org the server considers
+// active (e.g. switching workspaces) — otherwise a save debounced from the *previous* project
+// can land after the switch and silently overwrite the newly-active project's saved workspace
+// with stale data. Flushing synchronously (rather than just cancelling) makes sure the edit
+// that was in flight isn't lost either.
+export async function flushPendingSave(): Promise<void> {
+	if (!saveTimer) return;
+	clearTimeout(saveTimer);
+	saveTimer = null;
+	const json = writeSaveSnapshot();
+	if (useServerWorkspace) await saveToServer(json);
+}
+
+// Called right after a tenant switch is confirmed server-side, before the new project's data
+// has been fetched — removes the previous project's cached snapshot so a hard refresh (or any
+// failure of the subsequent reload) can never paint about-to-be-stale data from the project the
+// user just left. reloadWorkspaceFromServer() re-primes this cache once the new data lands.
+export function clearWorkspaceCache(): void {
+	if (typeof localStorage === 'undefined') return;
+	localStorage.removeItem(STORAGE_KEY);
 }
 
 let workspaceSaveRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2185,7 +2214,7 @@ export async function loadUserLlmSettings(
 	}
 }
 
-async function loadConnectionsFromServer(): Promise<void> {
+export async function loadConnectionsFromServer(): Promise<void> {
 	if (!useServerWorkspace) return;
 	try {
 		const res = await fetch('/api/connections');
@@ -3587,7 +3616,9 @@ export function materializeNotebookExecutableCells(
 }
 
 /** Atomically create a notebook from a validated PM document plus executable payloads. */
-export function createNotebookFromPmDocument(opts: CreateNotebookFromPmDocumentOptions): string | null {
+export function createNotebookFromPmDocument(
+	opts: CreateNotebookFromPmDocumentOptions
+): string | null {
 	let folderId: string;
 	if (state.storageMode === 'filesystem') {
 		const stagingFolder = state.folders.find((f) => f.id === 'models/staging');
@@ -3962,7 +3993,9 @@ export function duplicateQueryBlockCell(cellId: string, notebookId?: string): st
 
 	pushHistoryCheckpoint(nb.id);
 	const source = nb.cells[idx];
-	const newOutputName = source.outputName ? deconflictOutputName(source.outputName) : source.outputName;
+	const newOutputName = source.outputName
+		? deconflictOutputName(source.outputName)
+		: source.outputName;
 	const clone: Cell = {
 		...source,
 		id: makeId(),
@@ -6280,6 +6313,27 @@ function makeUdfError(reason: string): PRQLError {
 	};
 }
 
+function makeCircularDependencyError(reason: string): PRQLError {
+	return {
+		kind: 'circular-dependency',
+		code: null,
+		reason,
+		hint: "Remove the cyclical reference between these cells' outputNames.",
+		span: null,
+		display: reason,
+		location: null
+	};
+}
+
+function applyCircularDependencyError(cell: Cell, err: CircularCellDependencyError): void {
+	cell.errors = [makeCircularDependencyError(err.message)];
+	cell.status = 'error';
+	cell.needsRun = false;
+	cell.staleReason = null;
+	cell.staleSources = [];
+	cell.lastRunAt = Date.now();
+}
+
 /**
  * Trino's Python UDFs only exist as an inline `WITH FUNCTION` fragment spliced
  * into a SQL WITH clause — they aren't relations, so a PRQL cell can't bind one
@@ -6323,9 +6377,17 @@ function getCompiledCellSQL(
 	const cell = cells[idx];
 	if (!cell || cell.cellType !== 'query') return { sql: null, errors: [] };
 	const connection = getCellConnection(cell);
-	const udfError = checkUdfCompatibility(cells, idx, connection);
-	if (udfError) return { sql: null, errors: [udfError] };
-	const fullCode = getExecutionCode(cells, idx);
+	let fullCode: string;
+	try {
+		const udfError = checkUdfCompatibility(cells, idx, connection);
+		if (udfError) return { sql: null, errors: [udfError] };
+		fullCode = getExecutionCode(cells, idx);
+	} catch (err) {
+		if (err instanceof CircularCellDependencyError) {
+			return { sql: null, errors: [makeCircularDependencyError(err.message)] };
+		}
+		throw err;
+	}
 	if (cell.language === 'sql') return { sql: fullCode, errors: [] };
 	return compilePRQLCached(fullCode, getPRQLTargetForConnection(connection));
 }
@@ -6746,12 +6808,6 @@ export async function runCell(id: string): Promise<void> {
 	if (idx === -1) return;
 	const cell = nb.cells[idx];
 	if (cell.cellType !== 'query') return;
-	const udfError = checkUdfCompatibility(nb.cells, idx, getCellConnection(cell));
-	if (udfError) {
-		cell.errors = [udfError];
-		cell.status = 'error';
-		return;
-	}
 	// One controller per cell — any previous run for this cell is superseded.
 	cellRunControllers.get(id)?.abort();
 	const controller = new AbortController();
@@ -6759,6 +6815,12 @@ export async function runCell(id: string): Promise<void> {
 	cellRunControllers.set(id, controller);
 	cellRunIds.set(id, runId);
 	try {
+		const udfError = checkUdfCompatibility(nb.cells, idx, getCellConnection(cell));
+		if (udfError) {
+			cell.errors = [udfError];
+			cell.status = 'error';
+			return;
+		}
 		// Mark running immediately so the UI responds before cross-notebook upstream pre-runs complete
 		cell.status = 'running';
 		// Auto-run stale upstream cells in other notebooks before executing this cell
@@ -6771,6 +6833,12 @@ export async function runCell(id: string): Promise<void> {
 		if ((nb.cells[idx] as Cell).status === 'success' && cell.outputName) {
 			await _runDownstreamCells(new Set([cell.outputName]), nb.id, new Set([cell.id]));
 		}
+	} catch (err) {
+		if (err instanceof CircularCellDependencyError) {
+			applyCircularDependencyError(cell, err);
+			return;
+		}
+		throw err;
 	} finally {
 		if (cellRunControllers.get(id) === controller) cellRunControllers.delete(id);
 		if (cellRunIds.get(id) === runId) cellRunIds.delete(id);
@@ -7312,13 +7380,22 @@ export async function runAll(): Promise<void> {
 	for (let i = 0; i < nb.cells.length; i++) {
 		const cell = nb.cells[i];
 		if (cell.cellType !== 'query') continue;
-		const udfError = checkUdfCompatibility(nb.cells, i, getCellConnection(cell));
-		if (udfError) {
-			cell.errors = [udfError];
-			cell.status = 'error';
-			continue;
+		let fullCode: string;
+		try {
+			const udfError = checkUdfCompatibility(nb.cells, i, getCellConnection(cell));
+			if (udfError) {
+				cell.errors = [udfError];
+				cell.status = 'error';
+				continue;
+			}
+			fullCode = getExecutionCode(nb.cells, i);
+		} catch (err) {
+			if (err instanceof CircularCellDependencyError) {
+				applyCircularDependencyError(cell, err);
+				continue;
+			}
+			throw err;
 		}
-		const fullCode = getExecutionCode(nb.cells, i);
 		const prevName = prevViewNameForIndex(nb.cells, i);
 		await _runCell(cell, fullCode, prevName);
 	}

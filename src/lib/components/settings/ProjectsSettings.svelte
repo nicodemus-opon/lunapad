@@ -17,16 +17,19 @@
 	let newProjectName = $state('');
 	let loading = $state(true);
 	let creating = $state(false);
+	let loadError = $state<string | null>(null);
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const res = await fetch('/api/projects');
-			if (res.ok) {
-				const body = (await res.json()) as { projects: ProjectSummary[]; activeProjectId: string | null };
-				projects = body.projects;
-				activeProjectId = body.activeProjectId;
-			}
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load projects.');
+			projects = (body as { projects?: ProjectSummary[] }).projects ?? [];
+			activeProjectId = (body as { activeProjectId?: string | null }).activeProjectId ?? null;
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load projects.';
 		} finally {
 			loading = false;
 		}
@@ -81,13 +84,18 @@
 			<div class="h-8 rounded-md bg-muted/60"></div>
 			<div class="h-8 rounded-md bg-muted/40"></div>
 		</div>
+	{:else if loadError}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+			<p class="text-xs text-destructive">{loadError}</p>
+			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
+		</div>
 	{:else if projects.length === 0}
 		<p class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-			No projects yet. Create one to start a notebook workspace.
+			No projects yet. Create one to start a data workspace.
 		</p>
 	{:else}
-		<div class="overflow-hidden rounded-md border border-border">
-			<table class="w-full text-xs">
+		<div class="overflow-x-auto rounded-md border border-border">
+			<table class="w-full min-w-[34rem] text-xs">
 				<thead class="bg-muted/40 text-muted-foreground">
 					<tr>
 						<th class="px-3 py-2 text-left font-medium">Name</th>

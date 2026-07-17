@@ -15,6 +15,9 @@
 		formatRelativeDateFilterValue,
 		type RelativeDatePreset
 	} from '$lib/services/filter-relatives';
+	import { Input } from '$lib/components/ui/input';
+	import { NativeSelect } from '$lib/components/ui/native-select';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import type { FilterWidgetKind } from '$lib/services/report-filters';
 
 	interface Props {
@@ -98,17 +101,6 @@
 		else if (param) onChange(vals.range ?? '');
 	}
 
-	function toggleMulti(opt: string) {
-		const current = value
-			? value
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean)
-			: [];
-		const next = current.includes(opt) ? current.filter((x) => x !== opt) : [...current, opt];
-		onChange(next.join(','));
-	}
-
 	function onNumericRange(min: string, max: string) {
 		if (minParam && maxParam) applyValues({ [minParam]: min, [maxParam]: max });
 		else onChange(`${min},${max}`);
@@ -135,6 +127,8 @@
 		const [min, max] = value ? value.split(',') : ['', ''];
 		return { min: min ?? '', max: max ?? '' };
 	});
+
+	const multiSelectedValues = $derived(Array.from(multiSelected));
 </script>
 
 {#if !suppressInline}
@@ -143,15 +137,15 @@
 
 		{#if kind === 'dropdown' || kind === 'searchable-dropdown'}
 			{#if kind === 'searchable-dropdown'}
-				<input
+				<Input
 					type="search"
-					class="md-filter-control md-filter-search"
+					class="md-filter-control md-filter-search h-7"
 					placeholder="Search…"
 					bind:value={searchQuery}
 				/>
 			{/if}
-			<select
-				class="md-filter-control"
+			<NativeSelect
+				class="md-filter-control h-7"
 				aria-label={label}
 				{value}
 				onchange={(e) => onChange((e.target as HTMLSelectElement).value)}
@@ -160,11 +154,11 @@
 				{#each kind === 'searchable-dropdown' ? filteredSearchOptions : effectiveOptions as opt (opt)}
 					<option value={opt}>{opt}</option>
 				{/each}
-			</select>
+			</NativeSelect>
 		{:else if kind === 'text-input'}
-			<input
+			<Input
 				type="text"
-				class="md-filter-control"
+				class="md-filter-control h-7"
 				{value}
 				oninput={(e) => handleTextInput((e.target as HTMLInputElement).value)}
 				placeholder={defaultValue ?? `Filter ${label ?? param}…`}
@@ -172,45 +166,51 @@
 		{:else if kind === 'date-range'}
 			{@const [startVal, endVal] = value ? value.split(',') : ['', '']}
 			<span class="md-filter-daterange">
-				<input
+				<Input
 					type="date"
-					class="md-filter-control"
+					class="md-filter-control h-7"
 					value={startVal ?? ''}
 					onchange={(e) => onChange(`${(e.target as HTMLInputElement).value},${endVal ?? ''}`)}
 				/>
 				<span>–</span>
-				<input
+				<Input
 					type="date"
-					class="md-filter-control"
+					class="md-filter-control h-7"
 					value={endVal ?? ''}
 					onchange={(e) => onChange(`${startVal ?? ''},${(e.target as HTMLInputElement).value}`)}
 				/>
 			</span>
 		{:else if kind === 'button-group'}
-			<span class="md-filter-buttons">
+			<ToggleGroup.Root
+				type="single"
+				{value}
+				onValueChange={(next) => {
+					if (next) onChange(next);
+				}}
+				class="md-filter-buttons"
+			>
 				{#each effectiveOptions as opt (opt)}
-					<button
-						type="button"
-						class="md-filter-btn"
-						class:active={value === opt}
-						onclick={() => onChange(opt)}>{opt}</button
+					<ToggleGroup.Item value={opt} class="md-filter-btn" aria-label={opt}
+						>{opt}</ToggleGroup.Item
 					>
 				{/each}
-			</span>
+			</ToggleGroup.Root>
 		{:else if kind === 'multi-select'}
-			<span class="md-filter-multiselect">
+			<ToggleGroup.Root
+				type="multiple"
+				value={multiSelectedValues}
+				onValueChange={(next) => onChange(next.join(','))}
+				class="md-filter-multiselect"
+			>
 				{#each effectiveOptions as opt (opt)}
-					<button
-						type="button"
-						class="md-filter-btn"
-						class:active={multiSelected.has(opt)}
-						onclick={() => toggleMulti(opt)}>{opt}</button
+					<ToggleGroup.Item value={opt} class="md-filter-btn" aria-label={opt}
+						>{opt}</ToggleGroup.Item
 					>
 				{/each}
-			</span>
+			</ToggleGroup.Root>
 		{:else if kind === 'relative-date'}
-			<select
-				class="md-filter-control"
+			<NativeSelect
+				class="md-filter-control h-7"
 				aria-label={label ?? 'Date range'}
 				onchange={(e) =>
 					onRelativeDate((e.target as HTMLSelectElement).value as RelativeDatePreset)}
@@ -219,20 +219,20 @@
 				{#each RELATIVE_DATE_PRESETS as p (p.id)}
 					<option value={p.id}>{p.label}</option>
 				{/each}
-			</select>
+			</NativeSelect>
 		{:else if kind === 'numeric-range'}
 			<span class="md-filter-daterange">
-				<input
+				<Input
 					type="number"
-					class="md-filter-control md-filter-num"
+					class="md-filter-control md-filter-num h-7"
 					placeholder="Min"
 					value={numericParts.min}
 					onchange={(e) => onNumericRange((e.target as HTMLInputElement).value, numericParts.max)}
 				/>
 				<span>–</span>
-				<input
+				<Input
 					type="number"
-					class="md-filter-control md-filter-num"
+					class="md-filter-control md-filter-num h-7"
 					placeholder="Max"
 					value={numericParts.max}
 					onchange={(e) => onNumericRange(numericParts.min, (e.target as HTMLInputElement).value)}

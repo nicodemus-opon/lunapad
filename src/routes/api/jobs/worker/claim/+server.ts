@@ -58,6 +58,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				cancellationUrl: `${url.origin}/api/jobs/${lease.job.id}/cancel`,
 				heartbeatUrl: `${url.origin}/api/jobs/worker/${lease.job.id}/heartbeat`,
 				logsUrl: `${url.origin}/api/jobs/worker/${lease.job.id}/logs`,
+				runUrl: `${url.origin}/api/jobs/worker/${lease.job.id}/run`,
 				finishUrl: `${url.origin}/api/jobs/worker/${lease.job.id}/finish`,
 				payload: redactPayload(lease.job.payload)
 			}

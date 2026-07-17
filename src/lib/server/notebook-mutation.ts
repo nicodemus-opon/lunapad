@@ -41,7 +41,7 @@ import {
 	codeReferencesUnknownTable,
 	type ChatToolPolicyContext
 } from '$lib/agent/server/chat-tool-policy.js';
-import type { TenantRef } from './tenancy.js';
+import { assertCloudTenantRef, type TenantRef } from './tenancy.js';
 
 /**
  * Server-side bridge between the (already isomorphic) blueprint/PM-document compiler
@@ -224,7 +224,11 @@ function diagnostic(path: string, message: string): NotebookBlueprintDiagnostic 
 	return { path, message };
 }
 
-function finalOutputName(bp: McpExecutableCellInput | undefined, existing: Cell | undefined, cellId: string): string {
+function finalOutputName(
+	bp: McpExecutableCellInput | undefined,
+	existing: Cell | undefined,
+	cellId: string
+): string {
 	return bp?.outputName || existing?.outputName || cellId;
 }
 
@@ -323,7 +327,8 @@ function pmDocumentToSerializableCells(
 								outputName,
 								code: bp.code,
 								language: bp.language ?? existing.language,
-								connectionId: bp.connectionId !== undefined ? bp.connectionId : existing.connectionId,
+								connectionId:
+									bp.connectionId !== undefined ? bp.connectionId : existing.connectionId,
 								materializeMode: bp.materializeMode ?? existing.materializeMode
 							}
 						: existing
@@ -385,7 +390,9 @@ async function checkExecutableCellTables(
 	const queryCells = executableCells.filter(
 		(c) => (c.cellType ?? 'query') === 'query' && c.code.trim()
 	);
-	const connectionIds = [...new Set(queryCells.map((c) => c.connectionId).filter((id): id is string => !!id))];
+	const connectionIds = [
+		...new Set(queryCells.map((c) => c.connectionId).filter((id): id is string => !!id))
+	];
 	const schemaByConnection = new Map<string, Set<string>>();
 	const connectionDiagnostics: NotebookBlueprintDiagnostic[] = [];
 	await Promise.all(
@@ -545,7 +552,8 @@ async function renameLunaNotebook(
 		await fs.rename(oldFilePath, newFilePath);
 	}
 	const notebook = await getNotebookById(folder, newNotebookId);
-	if (!notebook) throw new Error(`Renamed to "${newNotebookId}.luna" but could not re-read it back.`);
+	if (!notebook)
+		throw new Error(`Renamed to "${newNotebookId}.luna" but could not re-read it back.`);
 	return notebook;
 }
 
@@ -585,7 +593,11 @@ export async function patchNotebookOnDisk(
 	let executableCells: McpExecutableCellInput[] = patch.executableCells ?? [];
 
 	if (patch.blueprint) {
-		const compiled = compileNotebookBlueprint(patch.blueprint, handle.knownRefs, handle.knownCellIds);
+		const compiled = compileNotebookBlueprint(
+			patch.blueprint,
+			handle.knownRefs,
+			handle.knownCellIds
+		);
 		document = compiled.document;
 		diagnostics = compiled.diagnostics;
 		executableCells = [
@@ -669,7 +681,11 @@ export async function setCellChartConfig(
 	}
 	const nextCells = handle.cells.map((c) =>
 		c === cell
-			? { ...c, resultChartConfig: chartConfig, resultViewMode: chartConfig ? 'chart' : c.resultViewMode }
+			? {
+					...c,
+					resultChartConfig: chartConfig,
+					resultViewMode: chartConfig ? 'chart' : c.resultViewMode
+				}
 			: c
 	) as Cell[];
 	const content = serializeLunaFile(nextCells.map(cellToSerializableCell));
@@ -768,6 +784,7 @@ async function runQueryCellOnDisk(
 	const sql = buildSQLExecutionCode(cells, idx, compilePrqlToSql);
 	const secret = await getSecret(connection.id, tenant?.orgId);
 	if (!tenant?.orgId) {
+		assertCloudTenantRef(tenant ?? { orgId: '' }, 'Running a cell against an external connection');
 		const result = await queryExternalConnection(connection, secret ?? undefined, sql);
 		return { ...result, sql };
 	}
@@ -793,7 +810,9 @@ function waitForPythonJob(jobId: string, timeoutMs = 60_000): Promise<PythonRunR
 			return;
 		}
 		if (job.done) {
-			resolve(job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null });
+			resolve(
+				job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null }
+			);
 			return;
 		}
 		const timer = setTimeout(() => {
@@ -802,7 +821,9 @@ function waitForPythonJob(jobId: string, timeoutMs = 60_000): Promise<PythonRunR
 		}, timeoutMs);
 		const onDone = () => {
 			clearTimeout(timer);
-			resolve(job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null });
+			resolve(
+				job.result ?? { error: 'No result', missingModule: null, figures: [], dataframe: null }
+			);
 		};
 		job.emitter.once('done', onDone);
 	});

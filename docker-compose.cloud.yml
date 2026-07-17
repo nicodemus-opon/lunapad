@@ -1,0 +1,115 @@
+# Production-shaped cloud stack.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build
+
+services:
+  rustfs-permissions:
+    image: alpine:3.20
+    command: sh -c "mkdir -p /data && chown -R 10001:10001 /data"
+    volumes:
+      - rustfs-data:/data
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    depends_on:
+      rustfs-permissions:
+        condition: service_completed_successfully
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-lunapad}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-lunapad-local-secret}
+    command: /data
+    volumes:
+      - rustfs-data:/data
+    restart: unless-stopped
+
+  storage-init:
+    build:
+      context: .
+      target: runner
+    command: node scripts/storage-init.mjs
+    depends_on:
+      rustfs:
+        condition: service_started
+    environment:
+      S3_ENDPOINT: http://rustfs:9000
+      S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
+      S3_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-lunapad}
+      S3_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-lunapad-local-secret}
+      S3_FORCE_PATH_STYLE: 'true'
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - '127.0.0.1:8025:8025'
+    restart: unless-stopped
+
+  app:
+    depends_on:
+      db:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    environment:
+      DEPLOYMENT_MODE: cloud
+      PUBLIC_CLOUD_SIGNUP_ENABLED: ${PUBLIC_CLOUD_SIGNUP_ENABLED:-true}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-bHVuYXBhZC1sb2NhbC1kZXYtc2VjcmV0LTMyLWJ5dGU=}
+      BILLING_PROVIDER: ${BILLING_PROVIDER:-manual}
+      CLOUD_DEFAULT_PLAN: ${CLOUD_DEFAULT_PLAN:-starter}
+      CLOUD_EXECUTION_ADAPTER: queue
+      CLOUD_QUEUE_WORKER_ENABLED: 'true'
+      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-change-me-cloud-worker-token}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@localhost}
+      OBJECT_STORAGE_PROVIDER: s3
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://rustfs:9000}
+      S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
+      S3_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-lunapad}
+      S3_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-lunapad-local-secret}
+      S3_FORCE_PATH_STYLE: 'true'
+      SIGNUP_RATE_LIMIT_PER_HOUR: ${SIGNUP_RATE_LIMIT_PER_HOUR:-20}
+      TRINO_ACCESS_CONTROL_RULES_FILE: /tmp/lunapad-access-control.json
+    volumes:
+      - trino-cloud-catalog-app:/trino-catalog
+      - cloud-project:/app/project
+      - cloud-projects:/app/projects
+
+  trino:
+    volumes:
+      - trino-cloud-catalog:/etc/trino/catalog
+
+  worker:
+    build:
+      context: .
+      target: runner
+    command: node scripts/cloud-worker.mjs
+    depends_on:
+      app:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      ORIGIN: ${ORIGIN:-http://localhost:3967}
+      LUNAPAD_BASE_URL: http://app:3000
+      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-change-me-cloud-worker-token}
+      CLOUD_WORKER_CONCURRENCY: ${CLOUD_WORKER_CONCURRENCY:-2}
+    restart: unless-stopped
+
+volumes:
+  rustfs-data:
+  cloud-project:
+  cloud-projects:
+  trino-cloud-catalog:
+  trino-cloud-catalog-app:
+
+configs:
+  trino_access_control:
+    content: |
+      access-control.name=allow-all

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Progress } from '$lib/components/ui/progress';
+
 	interface Props {
 		value?: number;
 		max?: number;
@@ -28,8 +30,6 @@
 	style:grid-column={span && span > 1 ? `span ${span}` : undefined}
 >
 	{#if label}<div class="md-progress-label">{label}</div>{/if}
-	<div class="md-progress-track">
-		<div class="md-progress-fill" style="width: {pct}%"></div>
-	</div>
+	<Progress value={pct} max={100} class="md-progress-track" />
 	<div class="md-progress-value">{pct.toFixed(0)}%</div>
 </div>

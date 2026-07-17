@@ -123,6 +123,24 @@ describe('CloudExecutionAdapter', () => {
 		expect(mocks.createCloudJob).toHaveBeenCalledTimes(1);
 	});
 
+	it('blocks queued job kinds without a production worker executor', async () => {
+		process.env.CLOUD_EXECUTION_ADAPTER = 'queue';
+		process.env.CLOUD_QUEUE_WORKER_ENABLED = 'true';
+		mocks.deploymentMode.mockReturnValue('cloud');
+
+		const adapter = getCloudExecutionAdapter();
+		await expect(
+			adapter.submit({
+				tenant: { orgId: 'org-1', projectId: 'project-1' },
+				kind: 'notebook_execution',
+				timeoutMs: 1000,
+				entitlements,
+				run: async () => ({ ok: true })
+			})
+		).rejects.toThrow('does not yet support "notebook_execution"');
+		expect(mocks.createCloudJob).not.toHaveBeenCalled();
+	});
+
 	it('marks inline jobs as timed out when execution exceeds the job timeout', async () => {
 		vi.useFakeTimers();
 		mocks.createCloudJob.mockResolvedValue(job());

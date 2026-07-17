@@ -49,6 +49,7 @@
 		getWorkspaceSyncStatus,
 		getWorkspaceConflictInfo,
 		reloadWorkspaceFromServer,
+		loadConnectionsFromServer,
 		forceSaveWorkspace,
 		startWorkspacePolling,
 		stopWorkspacePolling,
@@ -644,6 +645,7 @@
 				await openProject(detail.projectFolder);
 			}
 			await reloadWorkspaceFromServer();
+			await loadConnectionsFromServer();
 			clearAllResults();
 			await refreshTablesFromCatalog();
 			if (collabEnabled) {

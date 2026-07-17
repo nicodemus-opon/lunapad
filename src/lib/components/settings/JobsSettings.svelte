@@ -17,26 +17,38 @@
 
 	let jobs = $state<CloudJob[]>([]);
 	let loading = $state(true);
+	let loadError = $state<string | null>(null);
+	let cancellingJobId = $state<string | null>(null);
 
 	async function load() {
 		loading = true;
+		loadError = null;
 		try {
 			const res = await fetch('/api/jobs?allProjects=1');
-			if (res.ok) jobs = ((await res.json()) as { jobs: CloudJob[] }).jobs;
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.error ?? 'Failed to load jobs.');
+			jobs = (body as { jobs?: CloudJob[] }).jobs ?? [];
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load jobs.';
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function cancel(job: CloudJob) {
-		const res = await fetch(`/api/jobs/${job.id}/cancel`, { method: 'POST' });
-		const body = await res.json();
-		if (!res.ok) {
-			toast.error(body.error ?? 'Failed to cancel job.');
-			return;
+		cancellingJobId = job.id;
+		try {
+			const res = await fetch(`/api/jobs/${job.id}/cancel`, { method: 'POST' });
+			const body = await res.json();
+			if (!res.ok) {
+				toast.error(body.error ?? 'Failed to cancel job.');
+				return;
+			}
+			toast.success('Job cancelled.');
+			await load();
+		} finally {
+			cancellingJobId = null;
 		}
-		toast.success('Job cancelled.');
-		await load();
 	}
 
 	onMount(load);
@@ -64,13 +76,18 @@
 			<div class="h-8 rounded-md bg-muted/60"></div>
 			<div class="h-8 rounded-md bg-muted/40"></div>
 		</div>
+	{:else if loadError}
+		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+			<p class="text-xs text-destructive">{loadError}</p>
+			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
+		</div>
 	{:else if jobs.length === 0}
 		<p class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
 			No jobs yet. Hosted work appears here when you run queries, dbt, Python, AI indexing, or share refreshes.
 		</p>
 	{:else}
-		<div class="overflow-hidden rounded-md border border-border">
-			<table class="w-full text-xs">
+		<div class="overflow-x-auto rounded-md border border-border">
+			<table class="w-full min-w-[42rem] text-xs">
 				<thead class="bg-muted/40 text-muted-foreground">
 					<tr>
 						<th class="px-3 py-2 text-left font-medium">Kind</th>
@@ -100,6 +117,7 @@
 										variant="ghost"
 										size="icon"
 										class="size-6"
+										disabled={cancellingJobId === job.id}
 										title="Cancel job"
 										onclick={() => cancel(job)}
 									>

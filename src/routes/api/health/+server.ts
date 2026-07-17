@@ -4,6 +4,10 @@ import { query } from '$lib/server/db';
 import { ensureCloudJobsTableOnce } from '$lib/server/cloud-jobs';
 import { getOllamaBaseUrl } from '$lib/server/embeddings';
 import { getCloudExecutionAdapterHealth } from '$lib/server/cloud-execution';
+import { insecureCloudEnv, requiredCloudEnv } from '$lib/server/cloud-readiness';
+import { checkEmailHealth } from '$lib/server/email';
+import { checkObjectStorageHealth } from '$lib/server/object-storage';
+import { checkRedisHealth } from '$lib/server/redis-rate-limit';
 import { deploymentMode } from '$lib/server/tenancy';
 
 export type HealthCheckStatus = 'ok' | 'degraded' | 'missing' | 'failed';
@@ -77,7 +81,7 @@ export function _healthFeatureRequirements(mode: string) {
 		objectStorageRequired: enabled(
 			'PUBLISHING_OBJECT_STORAGE_REQUIRED',
 			'CLOUD_OBJECT_STORAGE_REQUIRED'
-		),
+		) || (cloud && process.env.OBJECT_STORAGE_PROVIDER === 's3'),
 		aiRequired: enabled('AI_ENABLED', 'LUNAPAD_AI_ENABLED', 'AI_PROVIDER_REQUIRED')
 	};
 }
@@ -93,7 +97,26 @@ export const GET: RequestHandler = async () => {
 	} = _healthFeatureRequirements(mode);
 	const execution = getCloudExecutionAdapterHealth();
 	const checks = await Promise.all([
+		check(
+			'cloudEnv',
+			async () => {
+				const missing = requiredCloudEnv();
+				if (missing.length > 0) throw new Error(`Missing: ${missing.join(', ')}`);
+				const insecure = insecureCloudEnv();
+				if (insecure.length > 0) throw new Error(`Replace placeholder values: ${insecure.join(', ')}`);
+			},
+			{
+				required: mode === 'cloud',
+				requiredBecause: mode === 'cloud' ? 'cloud mode requires explicit production config' : undefined,
+				feature: 'core'
+			}
+		),
 		check('database', async () => query(`SELECT 1`), { required: true, feature: 'core' }),
+		check('redis', async () => checkRedisHealth(), {
+			required: mode === 'cloud',
+			requiredBecause: mode === 'cloud' ? 'cloud rate limits require Redis' : undefined,
+			feature: 'core'
+		}),
 		check('workerQueue', async () => ensureCloudJobsTableOnce(), {
 			required: queueExecutionRequired,
 			requiredBecause: queueExecutionRequired ? 'CLOUD_EXECUTION_ADAPTER=queue' : undefined,
@@ -134,15 +157,21 @@ export const GET: RequestHandler = async () => {
 		),
 		check(
 			'objectStorage',
-			async () => {
-				if (!process.env.S3_BUCKET && !process.env.OBJECT_STORAGE_BUCKET) return 'not_configured';
-			},
+			async () => checkObjectStorageHealth(),
 			{
 				required: objectStorageRequired,
 				requiredBecause: objectStorageRequired ? 'published artifacts require object storage' : undefined,
 				feature: 'publishing'
 			}
 		),
+		check('email', async () => checkEmailHealth(), {
+			required: mode === 'cloud' && process.env.EMAIL_PROVIDER === 'smtp',
+			requiredBecause:
+				mode === 'cloud' && process.env.EMAIL_PROVIDER === 'smtp'
+					? 'cloud email delivery is enabled'
+					: undefined,
+			feature: 'core'
+		}),
 		check(
 			'aiProvider',
 			async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Popover from '$lib/components/ui/popover';
+	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { AtSign } from '@lucide/svelte';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
@@ -49,15 +50,17 @@
 			{/if}
 			{#each filtered as entry (entry.cellName)}
 				{#each entry.columns as column (column.name)}
-					<button
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="md-refpicker-item"
 						onclick={() => pick(entry.cellName, column.name)}
 					>
 						<span class="md-refpicker-cell">{entry.cellName}</span><span class="md-refpicker-dot"
 							>.</span
 						><span class="md-refpicker-col">{column.name}</span>
-					</button>
+					</Button>
 				{/each}
 			{/each}
 		</div>
@@ -103,7 +106,7 @@
 		opacity: 0.6;
 		padding: 0.4rem 0.3rem;
 	}
-	.md-refpicker-item {
+	:global(.md-refpicker-item) {
 		display: flex;
 		align-items: baseline;
 		gap: 0;
@@ -116,7 +119,7 @@
 		border: none;
 		cursor: pointer;
 	}
-	.md-refpicker-item:hover {
+	:global(.md-refpicker-item:hover) {
 		background: color-mix(in oklch, currentColor 6%, transparent);
 	}
 	.md-refpicker-cell {

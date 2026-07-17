@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { untrack } from 'svelte';
 
 	interface Props {
@@ -26,10 +28,10 @@
 	tabindex="-1"
 	onmousedown={(e) => e.stopPropagation()}
 >
-	<input
-		bind:this={inputEl}
+	<Input
+		bind:ref={inputEl}
 		type="url"
-		class="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs"
+		class="h-7 min-w-0 flex-1 text-xs"
 		placeholder="https://"
 		bind:value={url}
 		onkeydown={(e) => {
@@ -42,14 +44,16 @@
 			}
 		}}
 	/>
-	<button
+	<Button
 		type="button"
-		class="rounded px-2 py-1 text-xs hover:bg-muted/60"
+		variant="ghost"
+		size="sm"
+		class="h-7 px-2 text-xs"
 		onmousedown={(e) => {
 			e.preventDefault();
 			onApply(url.trim());
 		}}
 	>
 		Apply
-	</button>
+	</Button>
 </div>

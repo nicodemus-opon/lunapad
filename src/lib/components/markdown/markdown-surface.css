@@ -304,8 +304,7 @@
 }
 
 .md-tabs-strip {
-	border-bottom: 1px solid var(--border);
-	padding-bottom: 0.3rem;
+	margin-bottom: 0.3rem;
 }
 
 .md-tabs-panel,
@@ -581,17 +580,8 @@
 
 .md-filter-btn {
 	height: 1.65rem;
-	padding: 0 0.55rem;
 	border-radius: var(--radius-sm);
-	border: 1px solid var(--border);
 	font-size: 0.75rem;
-	font-weight: 500;
-	color: var(--foreground);
-	background: var(--background);
-	cursor: pointer;
-	transition:
-		border-color var(--motion-fast) var(--motion-ease-out),
-		background var(--motion-fast) var(--motion-ease-out);
 }
 
 .md-filter-btn:hover {
@@ -605,7 +595,8 @@
 	box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 22%, transparent);
 }
 
-.md-filter-btn.active {
+.md-filter-btn.active,
+.md-filter-btn[data-state='on'] {
 	background: var(--primary);
 	color: var(--primary-foreground);
 	border-color: transparent;
@@ -651,6 +642,10 @@
 	border-radius: var(--radius-sm);
 	background: color-mix(in oklab, var(--md-progress-token) 70%, transparent);
 	transition: width var(--motion-medium) var(--motion-ease-out);
+}
+
+.md-progress-track [data-slot='progress-indicator'] {
+	background: color-mix(in oklab, var(--md-progress-token) 70%, transparent);
 }
 
 /* Charts and tables */
@@ -1301,52 +1296,112 @@ textarea.md-control {
 .notion-surface li[data-type='taskItem'],
 .notebook-document-surface li[data-type='taskItem'],
 .report-markdown li[data-type='taskItem'] {
-	display: flex;
+	display: grid;
+	grid-template-columns: 1rem minmax(0, 1fr);
 	align-items: flex-start;
-	gap: 0.45rem;
+	column-gap: 0.45rem;
 	list-style: none;
+	margin: 0.18rem 0;
 }
 
-.markdown-surface li[data-type='taskItem'] > label,
-.markdown-surface .markdown-body li[data-type='taskItem'] > label,
-.notion-surface li[data-type='taskItem'] > label,
-.notebook-document-surface li[data-type='taskItem'] > label,
-.report-markdown li[data-type='taskItem'] > label {
-	position: relative;
-	flex: 0 0 auto;
-	margin-top: 0.2rem;
-	cursor: pointer;
+.markdown-surface li[data-type='taskItem'] > .md-task-checkbox-slot,
+.markdown-surface .markdown-body li[data-type='taskItem'] > .md-task-checkbox-slot,
+.notion-surface li[data-type='taskItem'] > .md-task-checkbox-slot,
+.notebook-document-surface li[data-type='taskItem'] > .md-task-checkbox-slot,
+.report-markdown li[data-type='taskItem'] > .md-task-checkbox-slot {
+	display: flex;
+	justify-content: center;
+	width: 1rem;
+	padding-top: 0.27rem;
 }
 
-.markdown-surface li[data-type='taskItem'] > label::before,
-.markdown-surface .markdown-body li[data-type='taskItem'] > label::before,
-.notion-surface li[data-type='taskItem'] > label::before,
-.notebook-document-surface li[data-type='taskItem'] > label::before,
-.report-markdown li[data-type='taskItem'] > label::before {
-	content: '';
-	position: absolute;
-	inset: -0.35rem;
-}
-
-.markdown-surface li[data-type='taskItem'] input[type='checkbox'],
-.markdown-surface .markdown-body li[data-type='taskItem'] input[type='checkbox'],
-.notion-surface li[data-type='taskItem'] input[type='checkbox'],
-.notebook-document-surface li[data-type='taskItem'] input[type='checkbox'],
-.report-markdown li[data-type='taskItem'] input[type='checkbox'] {
-	width: 0.9rem;
-	height: 0.9rem;
+.markdown-surface .md-task-checkbox,
+.notion-surface .md-task-checkbox,
+.notebook-document-surface .md-task-checkbox,
+.report-markdown .md-task-checkbox {
+	width: 1rem;
+	height: 1rem;
+	min-width: 1rem;
 	margin: 0;
-	accent-color: var(--primary);
+	padding: 0;
+	border: 1px solid var(--input);
+	border-radius: min(var(--radius-sm), 4px);
+	background: var(--background);
+	color: var(--primary-foreground);
 	cursor: pointer;
+	transition:
+		background var(--motion-fast) var(--motion-ease-out),
+		border-color var(--motion-fast) var(--motion-ease-out),
+		box-shadow var(--motion-fast) var(--motion-ease-out);
 }
 
-.markdown-surface li[data-type='taskItem'] > div,
-.markdown-surface .markdown-body li[data-type='taskItem'] > div,
-.notion-surface li[data-type='taskItem'] > div,
-.notebook-document-surface li[data-type='taskItem'] > div,
-.report-markdown li[data-type='taskItem'] > div {
+.markdown-surface .md-task-checkbox[data-state='checked'],
+.notion-surface .md-task-checkbox[data-state='checked'],
+.notebook-document-surface .md-task-checkbox[data-state='checked'],
+.report-markdown .md-task-checkbox[data-state='checked'] {
+	border-color: var(--primary);
+	background: var(--primary);
+}
+
+.markdown-surface .md-task-checkbox:focus-visible,
+.notion-surface .md-task-checkbox:focus-visible,
+.notebook-document-surface .md-task-checkbox:focus-visible,
+.report-markdown .md-task-checkbox:focus-visible {
+	outline: none;
+	border-color: var(--ring);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 45%, transparent);
+}
+
+.markdown-surface .md-task-checkbox:disabled,
+.notion-surface .md-task-checkbox:disabled,
+.notebook-document-surface .md-task-checkbox:disabled,
+.report-markdown .md-task-checkbox:disabled {
+	cursor: default;
+	opacity: 0.85;
+}
+
+.markdown-surface .md-task-checkbox[data-state='checked'] .md-task-checkbox-indicator::before,
+.notion-surface .md-task-checkbox[data-state='checked'] .md-task-checkbox-indicator::before,
+.notebook-document-surface
+	.md-task-checkbox[data-state='checked']
+	.md-task-checkbox-indicator::before,
+.report-markdown .md-task-checkbox[data-state='checked'] .md-task-checkbox-indicator::before {
+	display: block;
+	width: 0.55rem;
+	height: 0.55rem;
+	background: currentColor;
+	clip-path: polygon(14% 44%, 0 59%, 38% 100%, 100% 18%, 84% 5%, 36% 68%);
+	content: '';
+}
+
+.markdown-surface li[data-type='taskItem'] > .md-task-content,
+.markdown-surface .markdown-body li[data-type='taskItem'] > .md-task-content,
+.notion-surface li[data-type='taskItem'] > .md-task-content,
+.notebook-document-surface li[data-type='taskItem'] > .md-task-content,
+.report-markdown li[data-type='taskItem'] > .md-task-content,
+.markdown-surface li[data-type='taskItem'] > div:not(.md-task-checkbox-slot),
+.markdown-surface .markdown-body li[data-type='taskItem'] > div:not(.md-task-checkbox-slot),
+.notion-surface li[data-type='taskItem'] > div:not(.md-task-checkbox-slot),
+.notebook-document-surface li[data-type='taskItem'] > div:not(.md-task-checkbox-slot),
+.report-markdown li[data-type='taskItem'] > div:not(.md-task-checkbox-slot) {
 	flex: 1 1 auto;
 	min-width: 0;
+}
+
+.markdown-surface li[data-type='taskItem'] > .md-task-content > p:first-child,
+.markdown-surface .markdown-body li[data-type='taskItem'] > .md-task-content > p:first-child,
+.notion-surface li[data-type='taskItem'] > .md-task-content > p:first-child,
+.notebook-document-surface li[data-type='taskItem'] > .md-task-content > p:first-child,
+.report-markdown li[data-type='taskItem'] > .md-task-content > p:first-child {
+	margin-top: 0;
+}
+
+.markdown-surface li[data-type='taskItem'] > .md-task-content > p:last-child,
+.markdown-surface .markdown-body li[data-type='taskItem'] > .md-task-content > p:last-child,
+.notion-surface li[data-type='taskItem'] > .md-task-content > p:last-child,
+.notebook-document-surface li[data-type='taskItem'] > .md-task-content > p:last-child,
+.report-markdown li[data-type='taskItem'] > .md-task-content > p:last-child {
+	margin-bottom: 0;
 }
 
 /* Table of contents */

@@ -5,6 +5,7 @@
 	import VisualBlockInspector from './VisualBlockInspector.svelte';
 	import SlashMenu from './SlashMenu.svelte';
 	import MentionMenu from './MentionMenu.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import type { MentionItem } from './mention-utils';
 	import BubbleToolbar from './BubbleToolbar.svelte';
 	import LinkPopover from './LinkPopover.svelte';
@@ -737,14 +738,15 @@
 				</p>
 				<div class="mt-3 grid gap-2 sm:grid-cols-3">
 					{#each dashboardTemplates as tpl (tpl.id)}
-						<button
+						<Button
 							type="button"
+							variant="outline"
 							class="rounded-md border bg-background p-3 text-left transition-colors hover:bg-muted/40"
 							onclick={() => loadTemplate(tpl.source)}
 						>
 							<span class="block text-xs font-semibold">{tpl.label}</span>
 							<span class="mt-1 block text-2xs text-muted-foreground">{tpl.description}</span>
-						</button>
+						</Button>
 					{/each}
 				</div>
 			</div>
@@ -857,8 +859,10 @@
 					class="fixed z-50 min-w-40 rounded-md border bg-popover p-1 shadow-lg"
 					style="top: {ctxMenuPos.top}px; left: {ctxMenuPos.left}px;"
 				>
-					<button
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 						onclick={() => {
 							moveBlockAt(ctxMenu!.pos, 'up');
@@ -866,9 +870,11 @@
 						}}
 					>
 						<ArrowUp class="h-3.5 w-3.5" /> Move up
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 						onclick={() => {
 							moveBlockAt(ctxMenu!.pos, 'down');
@@ -876,9 +882,11 @@
 						}}
 					>
 						<ArrowDown class="h-3.5 w-3.5" /> Move down
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 						onclick={() => {
 							duplicateBlockAt(ctxMenu!.pos);
@@ -886,9 +894,11 @@
 						}}
 					>
 						<Copy class="h-3.5 w-3.5" /> Duplicate
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/60"
 						onclick={() => {
 							insertBlockBelow(ctxMenu!.pos);
@@ -896,9 +906,11 @@
 						}}
 					>
 						<Plus class="h-3.5 w-3.5" /> Add below
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
+						variant="ghost"
+						size="sm"
 						class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
 						onclick={() => {
 							deleteBlockAt(ctxMenu!.pos);
@@ -906,7 +918,7 @@
 						}}
 					>
 						<Trash2 class="h-3.5 w-3.5" /> Delete
-					</button>
+					</Button>
 				</div>
 			</BodyPortal>
 		{/if}
@@ -921,8 +933,10 @@
 					<span class="text-sm font-medium text-foreground">Properties</span>
 					<p class="text-2xs text-muted-foreground">Block settings</p>
 				</div>
-				<button
+				<Button
 					type="button"
+					variant="ghost"
+					size="icon-xs"
 					class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 					title="Close"
 					aria-label="Close inspector"
@@ -932,7 +946,7 @@
 					}}
 				>
 					<X class="h-3.5 w-3.5" />
-				</button>
+				</Button>
 			</div>
 			<div class="max-h-[calc(100vh-12rem)] overflow-y-auto py-2">
 				<VisualBlockInspector

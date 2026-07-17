@@ -4,6 +4,7 @@
 	import { markdocAttrToDisplay as attr, serializeMarkdocTag } from '$lib/services/markdoc-ast';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import type { Cell } from '$lib/stores/notebook.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { Trash2, SlidersHorizontal, TriangleAlert } from '@lucide/svelte';
 
 	interface Props {
@@ -108,8 +109,10 @@
 			: ''}"
 	>
 		{#if onOpenInspector}
-			<button
+			<Button
 				type="button"
+				variant="ghost"
+				size="xs"
 				class="iw-action"
 				title="Edit properties"
 				onclick={(e) => {
@@ -119,10 +122,12 @@
 			>
 				<SlidersHorizontal class="h-3 w-3" />
 				<span class="iw-action-label">Properties</span>
-			</button>
+			</Button>
 		{/if}
-		<button
+		<Button
 			type="button"
+			variant="ghost"
+			size="xs"
 			class="iw-action iw-action--danger"
 			title="Delete block"
 			onclick={(e) => {
@@ -131,7 +136,7 @@
 			}}
 		>
 			<Trash2 class="h-3 w-3" />
-		</button>
+		</Button>
 	</div>
 
 	{#if hasErrors}
@@ -157,7 +162,7 @@
 </div>
 
 <style>
-	.iw-action {
+	:global(.iw-action) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
@@ -175,11 +180,11 @@
 			color var(--motion-fast) var(--motion-ease-out),
 			border-color var(--motion-fast) var(--motion-ease-out);
 	}
-	.iw-action:hover {
+	:global(.iw-action:hover) {
 		background: var(--muted);
 		color: var(--foreground);
 	}
-	.iw-action--danger:hover {
+	:global(.iw-action--danger:hover) {
 		background: color-mix(in oklab, var(--destructive) 10%, transparent);
 		color: var(--destructive);
 		border-color: color-mix(in oklab, var(--destructive) 25%, transparent);

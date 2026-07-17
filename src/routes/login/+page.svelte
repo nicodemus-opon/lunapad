@@ -10,23 +10,36 @@
 	let email = $state('');
 	let password = $state('');
 	let submitting = $state(false);
+	let checkingSetup = $state(true);
+	let setupError = $state<string | null>(null);
+	let loginError = $state<string | null>(null);
 
 	onMount(async () => {
 		email = page.url.searchParams.get('email') ?? '';
-		const res = await fetch('/api/setup');
-		const body = (await res.json()) as { needsSetup: boolean };
-		if (body.needsSetup) {
-			await goto('/setup');
+		try {
+			const res = await fetch('/api/setup');
+			const body = (await res.json()) as { needsSetup: boolean; error?: string };
+			if (!res.ok) throw new Error(body.error ?? 'Failed to check setup status.');
+			if (body.needsSetup) {
+				const redirectTo = page.url.pathname + page.url.search;
+				await goto(`/setup?redirectTo=${encodeURIComponent(redirectTo)}`);
+			}
+		} catch (err) {
+			setupError = err instanceof Error ? err.message : 'Failed to check setup status.';
+		} finally {
+			checkingSetup = false;
 		}
 	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
+		loginError = null;
 		submitting = true;
 		try {
 			const { error } = await authClient.signIn.email({ email, password });
 			if (error) {
-				toast.error(error.message ?? 'Invalid email or password.');
+				loginError = error.message ?? 'Invalid email or password.';
+				toast.error(loginError);
 				return;
 			}
 			const inviteToken = page.url.searchParams.get('inviteToken');
@@ -34,7 +47,9 @@
 				const inviteRes = await fetch(`/api/invitations/${inviteToken}/accept`, { method: 'POST' });
 				const inviteBody = await inviteRes.json();
 				if (!inviteRes.ok) {
-					toast.error(inviteBody.error ?? 'Signed in, but could not accept invitation.');
+					const message = inviteBody.error ?? 'Signed in, but could not accept invitation.';
+					loginError = message;
+					toast.error(message);
 				} else {
 					toast.success('Invitation accepted.');
 				}
@@ -47,12 +62,33 @@
 	}
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-background px-4">
+<div class="flex min-h-screen items-center justify-center bg-background px-4 py-8">
 	<form
 		onsubmit={handleSubmit}
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
-		<h1 class="font-serif text-lg">Sign in to Lunapad</h1>
+		<div>
+			<h1 class="font-serif text-lg">Sign in to Lunapad</h1>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Open your data workspace, shared reports, automations, and team settings.
+			</p>
+		</div>
+
+		{#if checkingSetup}
+			<p class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+				Checking setup status…
+			</p>
+		{:else if setupError}
+			<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+				{setupError}
+			</p>
+		{/if}
+
+		{#if loginError}
+			<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+				{loginError}
+			</p>
+		{/if}
 
 		<div>
 			<label
@@ -83,7 +119,7 @@
 			/>
 		</div>
 
-		<Button type="submit" class="w-full" disabled={submitting}>
+		<Button type="submit" class="w-full" disabled={submitting || checkingSetup}>
 			{submitting ? 'Signing in…' : 'Sign in'}
 		</Button>
 	</form>

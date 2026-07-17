@@ -5,6 +5,45 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+export class CircularCellDependencyError extends Error {
+	constructor(public readonly cycle: string[]) {
+		super(`Circular cell dependency: ${cycle.join(' -> ')}`);
+		this.name = 'CircularCellDependencyError';
+	}
+}
+
+/**
+ * Shared post-order DFS for dependency resolution. `byName`/`reMap` restrict which
+ * cells are reachable; the caller decides that. Detects genuine cycles (two cells
+ * whose code mutually references each other's outputName, directly or transitively)
+ * via an in-progress "gray" stack. Without this, the plain visited-Set guard alone
+ * would just silently break the cycle at an arbitrary point and hand back an
+ * incomplete/misordered CTE chain with no indication anything was wrong.
+ */
+function topoVisit(
+	byName: Map<string, Cell>,
+	reMap: Map<string, RegExp>,
+	ordered: Cell[],
+	visited: Set<string>,
+	visiting: Cell[],
+	cell: Cell
+): void {
+	if (visited.has(cell.id)) return;
+	const cycleStart = visiting.findIndex((c) => c.id === cell.id);
+	if (cycleStart !== -1) {
+		const cycle = [...visiting.slice(cycleStart), cell].map((c) => c.outputName || c.id);
+		throw new CircularCellDependencyError(cycle);
+	}
+	visiting.push(cell);
+	for (const [name, depCell] of byName) {
+		if (reMap.get(name)!.test(cell.code))
+			topoVisit(byName, reMap, ordered, visited, visiting, depCell);
+	}
+	visiting.pop();
+	visited.add(cell.id);
+	ordered.push(cell);
+}
+
 /** A finished, nameable result a plot cell / GUI chart builder / Python cell
  *  can bind to by outputName — query cells (SQL/PRQL) and Python cells both
  *  expose `.result.rows/columns` in the same shape. */
@@ -135,23 +174,12 @@ export function resolveDependencies(cells: Cell[], idx: number): Cell[] {
 
 	const ordered: Cell[] = [];
 	const visited = new Set<string>();
-
-	function visit(cell: Cell): void {
-		if (visited.has(cell.id)) return;
-		visited.add(cell.id);
-		// Recurse into this cell's own dependencies first (post-order = topological)
-		for (const [name, depCell] of byName) {
-			if (reMap.get(name)!.test(cell.code)) {
-				visit(depCell);
-			}
-		}
-		ordered.push(cell);
-	}
+	const visiting: Cell[] = [];
 
 	// Seed from the target cell's direct dependencies
 	for (const [name, depCell] of byName) {
 		if (reMap.get(name)!.test(target.code)) {
-			visit(depCell);
+			topoVisit(byName, reMap, ordered, visited, visiting, depCell);
 		}
 	}
 
@@ -347,18 +375,11 @@ export function resolveGlobalDependencies(
 
 	const ordered: Cell[] = [];
 	const visited = new Set<string>();
-
-	function visit(cell: Cell): void {
-		if (visited.has(cell.id)) return;
-		visited.add(cell.id);
-		for (const [name, depCell] of byName) {
-			if (reMap.get(name)!.test(cell.code)) visit(depCell);
-		}
-		ordered.push(cell);
-	}
+	const visiting: Cell[] = [];
 
 	for (const [name, depCell] of byName) {
-		if (reMap.get(name)!.test(target.code)) visit(depCell);
+		if (reMap.get(name)!.test(target.code))
+			topoVisit(byName, reMap, ordered, visited, visiting, depCell);
 	}
 
 	return ordered;

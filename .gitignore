@@ -36,6 +36,13 @@ artifacts/demo-videos/*.webm
 artifacts/demo-videos/*.mp4
 e2e/*
 !e2e/ai-ollama-dashboard.llm.spec.ts
+!e2e/chart-switch-debug.mock.spec.ts
+!e2e/demo-recreate-full.mock.spec.ts
+!e2e/demo-recreate.mock.spec.ts
+!e2e/gui-prql-switch-debug.mock.spec.ts
+!e2e/inline-typing-repro.mock.spec.ts
+!e2e/mock-browser-defaults.ts
+!e2e/saas-flows.mock.spec.ts
 
 # Temp/scratch files
 .tmp-*.json
@@ -53,6 +60,7 @@ src-tauri/
 demo-assets/
 FEATURES.md
 project/
+projects/
 .pnpm-store/
 graphify-out/
 artifacts/

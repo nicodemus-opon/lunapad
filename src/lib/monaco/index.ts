@@ -68,18 +68,11 @@ export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from 
 let initialized = false;
 const SETUP_KEY = '__lunapad_monaco_setup__';
 
-const workerBlobUrls = new Map<string, string>();
-
-/** COEP-isolated pages cannot spawn network workers unless the script has COEP. */
-async function createCoepSafeWorker(moduleUrl: string): Promise<Worker> {
+/** Vite emits Monaco workers as ESM modules; start them as module workers so
+ * the dev-client imports and bundled dependencies execute correctly. */
+function createMonacoWorker(moduleUrl: string): Worker {
 	const scriptUrl = new URL(moduleUrl, globalThis.location.href).href;
-	let blobUrl = workerBlobUrls.get(scriptUrl);
-	if (!blobUrl) {
-		const script = await fetch(scriptUrl).then((r) => r.text());
-		blobUrl = URL.createObjectURL(new Blob([script], { type: 'text/javascript' }));
-		workerBlobUrls.set(scriptUrl, blobUrl);
-	}
-	return new Worker(blobUrl, { type: 'classic' });
+	return new Worker(scriptUrl, { type: 'module' });
 }
 
 // Dialect → Monaco language ID mapping.
@@ -130,7 +123,7 @@ export function setupMonaco(): typeof monaco {
 		getWorker: (_workerId: string, label: string) => {
 			const isTs = label === 'typescript' || label === 'javascript';
 			if (useBlobWorkers) {
-				return createCoepSafeWorker(isTs ? TSWorkerUrl : EditorWorkerUrl);
+				return createMonacoWorker(isTs ? TSWorkerUrl : EditorWorkerUrl);
 			}
 			return isTs ? new TSWorker() : new EditorWorker();
 		}

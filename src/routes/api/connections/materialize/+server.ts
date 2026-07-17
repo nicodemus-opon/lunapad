@@ -8,6 +8,7 @@ import {
 import { getSecret } from '$lib/server/connection-secrets';
 import { resolveConnectionMetadata } from '$lib/server/connection-metadata';
 import { listConnectionsMetadata } from '$lib/server/connections-store';
+import { assertCloudTenantRef } from '$lib/server/tenancy';
 
 interface MaterializeConnectionRequest {
 	connection: Connection;
@@ -23,6 +24,7 @@ function isMaterializationMode(value: unknown): value is ExternalMaterialization
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		assertCloudTenantRef({ orgId: locals.organization?.id ?? '' }, 'Materializing a relation');
 		const body = (await request.json()) as Partial<MaterializeConnectionRequest>;
 		if (!body?.connection || typeof body.targetName !== 'string' || typeof body.sql !== 'string') {
 			return json(
