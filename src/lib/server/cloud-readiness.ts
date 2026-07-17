@@ -1,4 +1,5 @@
 import { deploymentMode } from './tenancy.js';
+import { publicOrigin, publicOriginEnvPresent } from './cloud-config.js';
 
 function missing(name: string): string | null {
 	const value = process.env[name];
@@ -8,7 +9,6 @@ function missing(name: string): string | null {
 export function requiredCloudEnv(): string[] {
 	if (deploymentMode() !== 'cloud') return [];
 	const required = [
-		'ORIGIN',
 		'DATABASE_URL',
 		'BETTER_AUTH_SECRET',
 		'SECRETS_ENCRYPTION_KEY',
@@ -29,7 +29,11 @@ export function requiredCloudEnv(): string[] {
 			'S3_SECRET_ACCESS_KEY'
 		);
 	}
-	return required.map(missing).filter((value): value is string => Boolean(value));
+	const missingEnv = required.map(missing).filter((value): value is string => Boolean(value));
+	if (!publicOriginEnvPresent()) {
+		missingEnv.unshift('ORIGIN or SERVICE_URL_APP_3000/COOLIFY_URL');
+	}
+	return missingEnv;
 }
 
 export function assertCloudEnv(): void {
@@ -55,7 +59,7 @@ export function assertCloudEnv(): void {
 
 export function insecureCloudEnv(): string[] {
 	if (deploymentMode() !== 'cloud') return [];
-	const origin = process.env.ORIGIN ?? '';
+	const origin = publicOrigin();
 	if (origin.includes('localhost') || origin.includes('127.0.0.1')) return [];
 	const insecure: string[] = [];
 	for (const [name, value] of [

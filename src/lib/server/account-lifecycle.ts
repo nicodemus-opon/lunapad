@@ -3,6 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { query } from './db.js';
 import { ensureAuthTablesOnce } from './auth.js';
 import { sendEmail } from './email.js';
+import { publicOrigin } from './cloud-config.js';
 
 type TokenKind = 'password_reset' | 'email_verification';
 
@@ -84,7 +85,7 @@ async function createToken(input: {
 		]
 	);
 	const manual = manualTokenDeliveryEnabled();
-	const origin = process.env.ORIGIN ?? 'http://localhost:3967';
+	const origin = publicOrigin();
 	if (!manual) {
 		const path =
 			input.kind === 'password_reset'

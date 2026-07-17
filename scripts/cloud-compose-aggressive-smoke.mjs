@@ -60,7 +60,7 @@ async function request(path, opts = {}) {
 }
 
 async function compose(args, options = {}) {
-	const baseArgs = ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.cloud.yml'];
+	const baseArgs = ['compose', '-f', 'docker-compose.cloud.yml'];
 	const { stdout, stderr } = await execFileAsync('docker', [...baseArgs, ...args], {
 		maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024
 	});

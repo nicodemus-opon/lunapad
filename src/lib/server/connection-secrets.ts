@@ -5,14 +5,19 @@ import { DEFAULT_ORG_ID } from './tenancy.js';
 
 const ALGORITHM = 'aes-256-gcm';
 
+export function parseEncryptionKey(raw: string): Buffer {
+	if (/^[0-9a-f]{64}$/i.test(raw)) return Buffer.from(raw, 'hex');
+	return Buffer.from(raw, 'base64');
+}
+
 function getEncryptionKey(): Buffer {
 	const raw = process.env.SECRETS_ENCRYPTION_KEY;
 	if (!raw) {
 		throw new Error('SECRETS_ENCRYPTION_KEY is not set — required to store connection secrets.');
 	}
-	const key = Buffer.from(raw, 'base64');
+	const key = parseEncryptionKey(raw);
 	if (key.length !== 32) {
-		throw new Error('SECRETS_ENCRYPTION_KEY must decode to exactly 32 bytes (base64-encoded).');
+		throw new Error('SECRETS_ENCRYPTION_KEY must be a 32-byte base64 value or 64-character hex value.');
 	}
 	return key;
 }

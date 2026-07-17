@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cloudDefaultPlan, billingProvider } from './cloud-config.js';
+import { billingProvider, cloudDefaultPlan, publicOrigin, publicOriginEnvPresent } from './cloud-config.js';
 import { entitlementsForPlan } from './tenancy.js';
 
 beforeEach(() => {
+	delete process.env.ORIGIN;
+	delete process.env.SERVICE_URL_APP_3000;
+	delete process.env.SERVICE_FQDN_APP_3000;
+	delete process.env.COOLIFY_URL;
+	delete process.env.COOLIFY_FQDN;
 	delete process.env.CLOUD_DEFAULT_PLAN;
 	delete process.env.BETA_DEFAULT_PLAN;
 	delete process.env.BILLING_PROVIDER;
@@ -23,5 +28,16 @@ describe('cloud defaults', () => {
 		expect(billingProvider()).toBe('manual');
 		process.env.BILLING_PROVIDER = 'none';
 		expect(billingProvider()).toBe('none');
+	});
+
+	it('accepts Coolify generated public URLs as the app origin', () => {
+		process.env.SERVICE_URL_APP_3000 = 'https://lunapad.example.com';
+		expect(publicOriginEnvPresent()).toBe(true);
+		expect(publicOrigin()).toBe('https://lunapad.example.com');
+	});
+
+	it('normalizes Coolify generated FQDNs when no scheme is present', () => {
+		process.env.SERVICE_FQDN_APP_3000 = 'lunapad.example.com:3000';
+		expect(publicOrigin()).toBe('https://lunapad.example.com:3000');
 	});
 });

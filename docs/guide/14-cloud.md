@@ -22,7 +22,7 @@ service.
 For a production-shaped cloud deployment on one Docker host:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build
+docker compose -f docker-compose.cloud.yml up --build
 ```
 
 The cloud override enables:
@@ -41,7 +41,7 @@ For a public deployment, replace the default auth/encryption/worker secrets, set
 ```bash
 ORIGIN=https://your-domain.example
 BETTER_AUTH_SECRET=...
-SECRETS_ENCRYPTION_KEY=... # 32 bytes, base64
+SECRETS_ENCRYPTION_KEY=... # 32 bytes base64, or 64-character hex
 CLOUD_WORKER_TOKEN=...
 EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
@@ -54,6 +54,60 @@ EMAIL_FROM=noreply@your-domain.example
 RustFS works without extra local configuration. To use external S3-compatible
 storage instead, override `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
 `S3_SECRET_ACCESS_KEY`.
+
+## Coolify deployment
+
+Use `docker-compose.cloud.yml` as the Compose file in Coolify. Do not stack it
+with `docker-compose.yml`; the cloud file already includes the full app, worker,
+Postgres, Redis, Trino, Inngest, RustFS, and storage initializer.
+
+The same cloud compose file is shaped for both local Docker and Coolify:
+
+- no host bind mounts;
+- no public Postgres, Redis, Trino, or RustFS ports;
+- `app` exposes port `3000` for Coolify's proxy and binds to
+  `127.0.0.1:3967` by default for local Docker;
+- RustFS stays internal and stores artifacts in a named volume;
+- Coolify-generated service passwords are accepted for Postgres, auth, worker
+  auth, RustFS, and the secret encryption key;
+- `SERVICE_URL_APP_3000`, `SERVICE_FQDN_APP_3000`, `COOLIFY_URL`, or
+  `COOLIFY_FQDN` can provide the public app origin automatically.
+
+Set these Coolify variables before deploying:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_STARTTLS=true
+EMAIL_FROM=noreply@your-domain.example
+```
+
+Optional overrides:
+
+```bash
+ORIGIN=https://your-domain.example
+PUBLIC_CLOUD_SIGNUP_ENABLED=true
+CLOUD_DEFAULT_PLAN=starter
+SIGNUP_RATE_LIMIT_PER_HOUR=20
+RUSTFS_ACCESS_KEY=lunapad
+S3_BUCKET=lunapad-artifacts
+```
+
+The app accepts `SECRETS_ENCRYPTION_KEY` as either a 32-byte base64 value or a
+64-character hex value, so Coolify-generated hex secrets work without a manual
+conversion step. If you bring your own key, keep it stable; changing it makes
+stored connection secrets undecryptable.
+
+After deploy, check:
+
+```bash
+/api/health
+```
+
+The health response should show the cloud env, database, Redis, worker queue,
+object storage, and SMTP email checks as healthy.
 
 ## Tenant model
 

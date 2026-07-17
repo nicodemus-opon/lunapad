@@ -4,7 +4,7 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { building } from '$app/environment';
 import { getRequestEvent } from '$app/server';
 import { getPool, query } from './db.js';
-import { secureCookieEnabled } from './cloud-config.js';
+import { publicOrigin, secureCookieEnabled } from './cloud-config.js';
 
 export const SIGN_UP_PATH = '/api/auth/sign-up/email';
 export const SIGN_IN_PATH = '/api/auth/sign-in/email';
@@ -41,8 +41,8 @@ export const auth = betterAuth({
 	// which would fail `pnpm build`. This module is never evaluated at request-serving time
 	// while `building` is true, so the placeholder is never actually used to sign anything.
 	secret: building ? 'build-time-placeholder-unused-at-runtime' : process.env.BETTER_AUTH_SECRET,
-	baseURL: process.env.ORIGIN ?? 'http://localhost:3967',
-	trustedOrigins: [process.env.ORIGIN ?? 'http://localhost:3967'],
+	baseURL: publicOrigin(),
+	trustedOrigins: [publicOrigin()],
 	advanced: {
 		useSecureCookies: secureCookieEnabled()
 	}

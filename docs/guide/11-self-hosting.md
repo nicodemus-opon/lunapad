@@ -119,9 +119,9 @@ In a normal (non-demo) install, first-time visitors see a welcome dialog; they c
 ## Other ways to run it
 
 - **Desktop app.** A native Tauri build, if you'd rather not run Docker at all.
-- **Hosted cloud stack.** Use `docker-compose.cloud.yml` with the base compose file to
+- **Hosted cloud stack.** Use `docker-compose.cloud.yml` to
   run cloud mode with open signup, a worker, RustFS storage, and Mailpit SMTP:
-  `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build`.
+  `docker compose -f docker-compose.cloud.yml up --build`.
 - **Outside Docker.** Possible, but you're then responsible for running Postgres, Trino, and (optionally) Inngest yourself and pointing the same environment variables at them. See the repository's main `README.md` for the local development setup.
 
 ## Next
