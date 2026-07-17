@@ -55,15 +55,20 @@ services:
 
   rustfs-permissions:
     image: alpine:3.20
-    command: sh -c "mkdir -p /data && chown -R 10001:10001 /data"
+    command: sh -c "mkdir -p /data && chown -R 10001:10001 /data && tail -f /dev/null"
     volumes:
       - rustfs-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'stat -c %u:%g /data | grep -qx 10001:10001']
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
   rustfs:
     image: rustfs/rustfs:latest
     depends_on:
       rustfs-permissions:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-lunapad}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}
@@ -109,7 +114,7 @@ services:
       redis:
         condition: service_healthy
       storage-init:
-        condition: service_completed_successfully
+        condition: service_started
     environment:
       SERVICE_URL_APP_3000: ${SERVICE_URL_APP_3000:-}
       SERVICE_FQDN_APP_3000: ${SERVICE_FQDN_APP_3000:-}
@@ -170,8 +175,6 @@ services:
     depends_on:
       app:
         condition: service_healthy
-      storage-init:
-        condition: service_completed_successfully
     environment:
       ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_FQDN_APP_3000:-http://localhost:3967}}}
       LUNAPAD_BASE_URL: http://app:3000
