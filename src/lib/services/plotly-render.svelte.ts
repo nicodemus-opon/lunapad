@@ -53,17 +53,25 @@ export function watchTheme(): number {
 	return themeTick;
 }
 
+/** Workspace brand themes (src/lib/services/workspace-theme.svelte.ts) apply by
+ *  swapping a <style> tag's content rather than touching <html>'s class
+ *  attribute, so the MutationObserver above never fires for them — callers of
+ *  applyWorkspaceTheme() call this explicitly to force a re-resolve. */
+export function bumpThemeVersion(): void {
+	themeTick++;
+}
+
 /** Re-resolves the app's OKLCH design tokens into a Plotly layout patch.
  *  `hoverlabel`/`hovermode` theme every chart's tooltip too, replacing the
  *  old `.plot-tip` CSS hack ChartView used for Observable Plot. */
-export function themeLayout(): ThemedLayout {
+export function themeLayout(ssrOverrides?: Record<string, string>): ThemedLayout {
 	void watchTheme();
-	const background = resolveCSSColor('--background');
-	const foreground = resolveCSSColor('--foreground');
-	const border = resolveCSSColor('--border');
-	const mutedForeground = resolveCSSColor('--muted-foreground');
-	const popover = resolveCSSColor('--popover');
-	const popoverForeground = resolveCSSColor('--popover-foreground');
+	const background = resolveCSSColor('--background', ssrOverrides);
+	const foreground = resolveCSSColor('--foreground', ssrOverrides);
+	const border = resolveCSSColor('--border', ssrOverrides);
+	const mutedForeground = resolveCSSColor('--muted-foreground', ssrOverrides);
+	const popover = resolveCSSColor('--popover', ssrOverrides);
+	const popoverForeground = resolveCSSColor('--popover-foreground', ssrOverrides);
 	return {
 		paper_bgcolor: background,
 		plot_bgcolor: background,
@@ -72,7 +80,7 @@ export function themeLayout(): ThemedLayout {
 			family: 'IBM Plex Sans, ui-sans-serif, system-ui, sans-serif',
 			size: 11
 		},
-		colorway: resolveChartColorway(),
+		colorway: resolveChartColorway(ssrOverrides),
 		hovermode: 'closest',
 		hoverlabel: {
 			bgcolor: popover,

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Table2, TrendingUp, Sigma } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
 
 	interface Props {
@@ -37,38 +36,30 @@
 	}
 </script>
 
-<Tooltip.Provider>
-	<div
-		class="result-view-switcher {size === 'md' ? 'is-md' : ''}"
-		role="toolbar"
-		aria-label="Result view mode"
-		data-testid="result-view-tabs"
-	>
-		{#each items as item (item.mode)}
-			{@const Icon = item.icon}
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						data-testid={`result-view-${item.mode}`}
-						aria-label={item.label}
-						aria-pressed={viewMode === item.mode}
-						class="result-view-switcher__button {viewMode === item.mode ? 'is-active' : ''}"
-						onmousedown={(event) => handlePointerDown(event, item.mode)}
-						onclick={(event) => handleClick(event, item.mode)}
-					>
-						<Icon class={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
-					</Button>
-				</Tooltip.Trigger>
-				<Tooltip.Content side="bottom">
-					<p class="text-xs">{item.label}</p>
-				</Tooltip.Content>
-			</Tooltip.Root>
-		{/each}
-	</div>
-</Tooltip.Provider>
+<div
+	class="result-view-switcher {size === 'md' ? 'is-md' : ''}"
+	role="toolbar"
+	aria-label="Result view mode"
+	data-testid="result-view-tabs"
+>
+	{#each items as item (item.mode)}
+		{@const Icon = item.icon}
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			data-testid={`result-view-${item.mode}`}
+			aria-label={item.label}
+			aria-pressed={viewMode === item.mode}
+			title={item.label}
+			class="result-view-switcher__button {viewMode === item.mode ? 'is-active' : ''}"
+			onmousedown={(event) => handlePointerDown(event, item.mode)}
+			onclick={(event) => handleClick(event, item.mode)}
+		>
+			<Icon class={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
+		</Button>
+	{/each}
+</div>
 
 <style>
 	.result-view-switcher {

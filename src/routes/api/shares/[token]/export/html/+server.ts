@@ -2,11 +2,36 @@ import type { RequestHandler } from './$types';
 import { getShareByTokenOrSlug, toPublicShareView } from '$lib/server/shared-reports';
 import { isShareExpired } from '$lib/server/share-run';
 import { requireSharesRead } from '$lib/server/share-guards';
+import { getOrganizationTheme } from '$lib/server/tenancy';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { renderMarkdocCellToStaticHtml } from '$lib/services/report-markdoc-static-html';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
 import { shouldHideQueryCell } from '$lib/services/filter-frozen';
 import katexCss from 'katex/dist/katex.min.css?raw';
+
+// Fallback token values for exports with no workspace brand theme configured —
+// a workspace brand theme's `light` tokens (src/lib/types/theme.ts) override
+// these by key, so an export always reflects the org's actual brand colors.
+const DEFAULT_EXPORT_TOKENS: Record<string, string> = {
+	'--foreground': '#171717',
+	'--muted-foreground': '#5f6368',
+	'--border': '#d9d9d9',
+	'--muted': '#f3f4f4',
+	'--primary': '#0f7490',
+	'--success': '#15803d',
+	'--warning': '#b45309',
+	'--destructive': '#dc2626',
+	'--table-positive': 'oklch(0.73 0.17 150)',
+	'--table-negative': 'oklch(0.67 0.2 25)',
+	'--tag-1': 'oklch(0.52 0.185 25)',
+	'--tag-2': 'oklch(0.53 0.15 70)',
+	'--tag-3': 'oklch(0.51 0.14 140)',
+	'--tag-4': 'oklch(0.52 0.13 195)',
+	'--tag-5': 'oklch(0.49 0.17 255)',
+	'--tag-6': 'oklch(0.49 0.19 300)',
+	'--tag-7': 'oklch(0.52 0.19 340)',
+	'--tag-8': 'oklch(0.45 0.03 60)'
+};
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const denied = requireSharesRead(locals);
@@ -17,6 +42,11 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (isShareExpired(share)) return new Response('This report link has expired.', { status: 410 });
 
 	const view = toPublicShareView(share);
+	const brandTheme = await getOrganizationTheme(share.orgId).catch(() => null);
+	const exportTokens = { ...DEFAULT_EXPORT_TOKENS, ...(brandTheme?.light ?? {}) };
+	const rootCss = Object.entries(exportTokens)
+		.map(([key, value]) => `      ${key}: ${value};`)
+		.join('\n');
 
 	// Markdoc uses `$outputName` variables backed by query results. The shared export
 	// needs to provide those variables so `{% datatable %}` and other widgets render.
@@ -89,24 +119,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   ${needsKatex ? `<style>${katexCss}</style>` : ''}
   <style>
     :root {
-      --foreground: #171717;
-      --muted-foreground: #5f6368;
-      --border: #d9d9d9;
-      --muted: #f3f4f4;
-      --primary: #0f7490;
-      --success: #15803d;
-      --warning: #b45309;
-      --destructive: #dc2626;
-      --table-positive: oklch(0.73 0.17 150);
-      --table-negative: oklch(0.67 0.2 25);
-      --tag-1: oklch(0.52 0.185 25);
-      --tag-2: oklch(0.53 0.15 70);
-      --tag-3: oklch(0.51 0.14 140);
-      --tag-4: oklch(0.52 0.13 195);
-      --tag-5: oklch(0.49 0.17 255);
-      --tag-6: oklch(0.49 0.19 300);
-      --tag-7: oklch(0.52 0.19 340);
-      --tag-8: oklch(0.45 0.03 60);
+${rootCss}
     }
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 0 auto; padding: 2rem 1.5rem; color: var(--foreground); overflow-wrap: anywhere; }

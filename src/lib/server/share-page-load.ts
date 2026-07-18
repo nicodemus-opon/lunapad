@@ -1,13 +1,15 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getShareByTokenOrSlug, toPublicShareView, type ShareRecord } from './shared-reports';
 import { isShareExpired, prefetchLiveShareResults } from './share-run';
-import { hasOrganizationMembership } from './tenancy';
+import { hasOrganizationMembership, getOrganizationTheme } from './tenancy';
+import type { WorkspaceTheme } from '../types/theme';
 
 export interface SharePageLoadResult {
 	share: ReturnType<typeof toPublicShareView>;
 	initialLiveResults: Record<string, { rows: Record<string, unknown>[]; columns: string[] } | null>;
 	isAuthenticated: boolean;
 	embed: boolean;
+	brandTheme: WorkspaceTheme | null;
 }
 
 export async function loadSharePage(opts: {
@@ -32,11 +34,13 @@ export async function loadSharePage(opts: {
 
 	const filters = Object.fromEntries(new URLSearchParams(opts.urlSearch));
 	const initialLiveResults = await prefetchLiveShareResults(share as ShareRecord, filters);
+	const brandTheme = await getOrganizationTheme(share.orgId).catch(() => null);
 
 	return {
 		share: toPublicShareView(share),
 		initialLiveResults,
 		isAuthenticated: Boolean(opts.localsUser),
-		embed: new URLSearchParams(opts.urlSearch).get('embed') === '1'
+		embed: new URLSearchParams(opts.urlSearch).get('embed') === '1',
+		brandTheme
 	};
 }

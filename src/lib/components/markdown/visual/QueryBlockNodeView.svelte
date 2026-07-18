@@ -372,7 +372,7 @@
 				? 'opacity-100'
 				: ''}"
 		>
-			{#if cell}
+			{#if cell && !reportView}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div onmousedown={(e) => e.stopPropagation()}>
 					<CellMenu
@@ -419,7 +419,7 @@
 					<Sparkles class="h-3.5 w-3.5" />
 				</Button>
 			{/if}
-			{#if cell?.cellType === 'query' || cell?.cellType === 'python'}
+			{#if !reportView && (cell?.cellType === 'query' || cell?.cellType === 'python')}
 				<Button
 					type="button"
 					variant="ghost"
@@ -719,7 +719,7 @@
 								onChartConfigChange={(config) => setCellResultChartConfig(cellId, config)}
 								columnWidths={cell.columnWidths}
 								onColumnWidthsChange={(widths) => updateCellColumnWidths(cellId, widths)}
-								controlsVisible={focused || selected || hovered}
+								controlsVisible={!reportView && (focused || selected || hovered)}
 								toolbarReserveSpace={false}
 								showName={!codeExpanded}
 								executionMs={codeExpanded ? undefined : cell.executionMs}

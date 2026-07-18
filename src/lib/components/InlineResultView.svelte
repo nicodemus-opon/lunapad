@@ -48,6 +48,9 @@
 		truncated?: boolean;
 		/** Fill parent height — used in worksheet view */
 		fillHeight?: boolean;
+		/** Resolved workspace brand-theme token values for server-rendered
+		 *  contexts (the shared report page) — forwarded to ChartView. */
+		ssrThemeOverrides?: Record<string, string>;
 	}
 
 	let {
@@ -74,7 +77,8 @@
 		showRowCount = true,
 		toolbarActions,
 		executionMs = null,
-		fillHeight = false
+		fillHeight = false,
+		ssrThemeOverrides
 	}: Props = $props();
 
 	let viewMode = $state<ResultViewMode>(untrack(() => initialViewMode ?? 'table'));
@@ -233,15 +237,15 @@
 		{#if compact}
 			<!-- Compact stage preview: just the chart, no config panel -->
 			<div class="max-h-52 min-h-40 overflow-hidden">
-				<ChartView {rows} {columns} config={activeConfig} />
+				<ChartView {rows} {columns} config={activeConfig} {ssrThemeOverrides} />
 			</div>
 		{:else if fillHeight}
 			<div class="min-h-0 min-w-0 flex-1">
-				<ChartView {rows} {columns} config={activeConfig} />
+				<ChartView {rows} {columns} config={activeConfig} {ssrThemeOverrides} />
 			</div>
 		{:else}
 			<div class="min-h-80 min-w-0 overflow-hidden rounded-sm">
-				<ChartView {rows} {columns} config={activeConfig} />
+				<ChartView {rows} {columns} config={activeConfig} {ssrThemeOverrides} />
 			</div>
 		{/if}
 	{:else if viewMode === 'stats'}

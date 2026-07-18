@@ -253,6 +253,13 @@
 				dialogOpen = false;
 				await load();
 				await invalidateAll();
+				if (current && selectedProject.id === current.project.id) {
+					emitProjectChange({
+						projectId: current.project.id,
+						projectName: current.project.name,
+						projectFolder: current.project.projectFolder ?? null
+					});
+				}
 				toast.success('Project renamed.');
 				return;
 			}
@@ -362,7 +369,7 @@
 						<span class="min-w-0 flex-1 truncate">{project.name}</span>
 					</DropdownMenu.Item>
 					{#if item.organization.id === current?.organization.id && isAdmin}
-						<div class="flex gap-1 px-12 pb-1">
+						<div class="flex gap-1 py-1 pr-2 pl-[2.625rem]">
 							<button
 								class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
 								disabled={switching}

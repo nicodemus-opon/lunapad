@@ -17,4 +17,5 @@
 	initialLiveResults={data.initialLiveResults}
 	isAuthenticated={data.isAuthenticated}
 	embed={data.embed}
+	brandTheme={data.brandTheme}
 />

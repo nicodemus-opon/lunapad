@@ -17,6 +17,8 @@
 	import ShareReviewSidebar from './ShareReviewSidebar.svelte';
 	import type { PublicShareView, PublicShareCell } from '$lib/server/shared-reports';
 	import type { Cell } from '$lib/stores/notebook.svelte';
+	import type { WorkspaceTheme } from '$lib/types/theme';
+	import { buildThemeOverrideCss } from '$lib/services/workspace-theme.svelte';
 
 	interface Props {
 		data: PublicShareView;
@@ -26,9 +28,25 @@
 		>;
 		isAuthenticated?: boolean;
 		embed?: boolean;
+		/** Org's workspace brand theme, if configured (src/lib/types/theme.ts). */
+		brandTheme?: WorkspaceTheme | null;
 	}
 
-	const { data, initialLiveResults = {}, isAuthenticated = false, embed = false }: Props = $props();
+	const {
+		data,
+		initialLiveResults = {},
+		isAuthenticated = false,
+		embed = false,
+		brandTheme = null
+	}: Props = $props();
+
+	// Server-rendered HTML never has the `.dark` class applied yet (that's
+	// toggled client-side in onMount below, after `data.theme` is known) — so
+	// the light-mode token set is what's actually visible during SSR. Threaded
+	// into ChartView's resolveCSSColor calls, which can't read a live
+	// `document` during SSR. See src/lib/utils/theme-colors.ts.
+	const ssrThemeOverrides = $derived(brandTheme?.light);
+	const themeOverrideCss = $derived(buildThemeOverrideCss(brandTheme));
 
 	const DEFAULT_POLL_MS = 300_000;
 
@@ -217,6 +235,12 @@
 	});
 </script>
 
+<svelte:head>
+	{#if themeOverrideCss}
+		<style>{themeOverrideCss}</style>
+	{/if}
+</svelte:head>
+
 <div class="report-page" class:report-page--embed={embed}>
 	{#if !embed}
 		<header class="report-header">
@@ -270,6 +294,7 @@
 						error={liveErrors[cell.id] ?? null}
 						exportEnabled={true}
 						oncomment={() => reviewSidebar?.openForCell(cell.id)}
+						{ssrThemeOverrides}
 					/>
 				</div>
 			{/if}

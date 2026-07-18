@@ -678,6 +678,25 @@ select {
 	@apply font-sans;
 }
 
+/* Smooth recolor when a workspace brand theme (src/lib/types/theme.ts) is
+ * applied or switched, instead of a hard repaint — scoped to the major surface
+ * tokens rather than a blanket `*` transition, which would fight the more
+ * specific per-component transitions declared above and add unwanted lag to
+ * hover/focus states. Respects prefers-reduced-motion via --motion-fast. */
+body,
+.bg-background,
+.bg-card,
+.bg-popover,
+.bg-sidebar,
+.bg-muted,
+.text-foreground,
+.border-border {
+	transition:
+		background-color var(--motion-fast) var(--motion-ease-out),
+		color var(--motion-fast) var(--motion-ease-out),
+		border-color var(--motion-fast) var(--motion-ease-out);
+}
+
 /* AI ghost cell — cell being streamed in by the AI */
 @keyframes ai-typing-cursor {
 	0%,

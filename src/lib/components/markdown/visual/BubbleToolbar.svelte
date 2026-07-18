@@ -10,7 +10,10 @@
 		Link,
 		Highlighter,
 		Heading2,
-		ChevronDown
+		ChevronDown,
+		Rows3,
+		Columns3,
+		Trash2
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import LinkPopover from './LinkPopover.svelte';
@@ -21,9 +24,57 @@
 
 	const { editor }: Props = $props();
 
+	// The toolbar is mounted once when the editor boots, so `editor.isActive(...)`
+	// calls in the template would otherwise be frozen at their initial (pre-selection)
+	// values. Bump this on every transaction so active-state highlighting and the
+	// table-controls section stay in sync with the current selection.
+	let version = $state(0);
+	const isTable = $derived.by(() => {
+		void version;
+		return editor.isActive('table');
+	});
+	const isBold = $derived.by(() => {
+		void version;
+		return editor.isActive('bold');
+	});
+	const isItalic = $derived.by(() => {
+		void version;
+		return editor.isActive('italic');
+	});
+	const isUnderline = $derived.by(() => {
+		void version;
+		return editor.isActive('underline');
+	});
+	const isStrike = $derived.by(() => {
+		void version;
+		return editor.isActive('strike');
+	});
+	const isCode = $derived.by(() => {
+		void version;
+		return editor.isActive('code');
+	});
+	const isLink = $derived.by(() => {
+		void version;
+		return editor.isActive('link');
+	});
+	const isHighlight = $derived.by(() => {
+		void version;
+		return editor.isActive('highlight');
+	});
+
 	let turnIntoOpen = $state(false);
 	let linkOpen = $state(false);
 	let toolbarEl = $state<HTMLDivElement | null>(null);
+
+	onMount(() => {
+		const bump = () => {
+			version += 1;
+		};
+		editor.on('transaction', bump);
+		return () => {
+			editor.off('transaction', bump);
+		};
+	});
 
 	function openLinkPopover() {
 		linkOpen = true;
@@ -74,7 +125,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('bold') ? 'is-active' : ''}"
+		class="bubble-btn {isBold ? 'is-active' : ''}"
 		title="Bold"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -87,7 +138,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('italic') ? 'is-active' : ''}"
+		class="bubble-btn {isItalic ? 'is-active' : ''}"
 		title="Italic"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -100,7 +151,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('underline') ? 'is-active' : ''}"
+		class="bubble-btn {isUnderline ? 'is-active' : ''}"
 		title="Underline"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -113,7 +164,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('strike') ? 'is-active' : ''}"
+		class="bubble-btn {isStrike ? 'is-active' : ''}"
 		title="Strikethrough"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -126,7 +177,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('code') ? 'is-active' : ''}"
+		class="bubble-btn {isCode ? 'is-active' : ''}"
 		title="Code"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -141,7 +192,7 @@
 			type="button"
 			variant="ghost"
 			size="icon-xs"
-			class="bubble-btn {editor.isActive('link') || linkOpen ? 'is-active' : ''}"
+			class="bubble-btn {isLink || linkOpen ? 'is-active' : ''}"
 			title="Link"
 			onmousedown={(e) => {
 				e.preventDefault();
@@ -169,7 +220,7 @@
 		type="button"
 		variant="ghost"
 		size="icon-xs"
-		class="bubble-btn {editor.isActive('highlight') ? 'is-active' : ''}"
+		class="bubble-btn {isHighlight ? 'is-active' : ''}"
 		title="Highlight"
 		onmousedown={(e) => {
 			e.preventDefault();
@@ -222,6 +273,75 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if isTable}
+		<span class="mx-0.5 h-4 w-px bg-border"></span>
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="bubble-btn"
+			title="Insert row below"
+			onmousedown={(e) => {
+				e.preventDefault();
+				editor.chain().focus().addRowAfter().run();
+			}}
+		>
+			<Rows3 class="h-3.5 w-3.5" />
+		</Button>
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="bubble-btn"
+			title="Insert column right"
+			onmousedown={(e) => {
+				e.preventDefault();
+				editor.chain().focus().addColumnAfter().run();
+			}}
+		>
+			<Columns3 class="h-3.5 w-3.5" />
+		</Button>
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="bubble-btn"
+			title="Delete row"
+			onmousedown={(e) => {
+				e.preventDefault();
+				editor.chain().focus().deleteRow().run();
+			}}
+		>
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="bubble-btn"
+			title="Delete column"
+			onmousedown={(e) => {
+				e.preventDefault();
+				editor.chain().focus().deleteColumn().run();
+			}}
+		>
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon-xs"
+			class="bubble-btn"
+			title="Delete table"
+			onmousedown={(e) => {
+				e.preventDefault();
+				editor.chain().focus().deleteTable().run();
+			}}
+		>
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+	{/if}
 </div>
 
 <style>

@@ -258,11 +258,17 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 				if (gate.isSlashOpen()) return false;
 				if (gate.isMentionOpen?.()) return false;
 				if (gate.isContextMenuOpen()) return false;
-				if (from === to) return false;
 				if (state.selection instanceof NodeSelection) return false;
 				if (editor.isActive('codeBlock')) return false;
-				const text = state.doc.textBetween(from, to, ' ');
-				if (!text.trim()) return false;
+				// Table row/column controls should stay reachable even with a collapsed
+				// selection (just a caret in a cell). Everything else needs a real
+				// text selection.
+				const inTable = editor.isActive('table');
+				if (from === to) return inTable;
+				if (!inTable) {
+					const text = state.doc.textBetween(from, to, ' ');
+					if (!text.trim()) return false;
+				}
 				return true;
 			},
 			options: {

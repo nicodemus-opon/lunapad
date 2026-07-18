@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { query } from './db.js';
 import { scaffoldDbtProject } from './project.js';
+import type { WorkspaceTheme } from '../types/theme.js';
 
 export type DeploymentMode = 'self_hosted' | 'cloud';
 export type OrganizationPlan = 'free' | 'starter' | 'free_beta' | 'team' | 'business';
@@ -18,6 +19,9 @@ export interface Organization {
 	plan: OrganizationPlan;
 	createdAt: string;
 	updatedAt: string;
+	/** Workspace brand theme (src/lib/types/theme.ts) — null/undefined means
+	 *  no brand theme configured, falls back to layout.css's built-in tokens. */
+	theme?: WorkspaceTheme | null;
 }
 
 export interface Project {
@@ -172,6 +176,7 @@ async function ensureTenantTables(): Promise<void> {
 			billing_provider TEXT NOT NULL DEFAULT 'none',
 			billing_status TEXT NOT NULL DEFAULT 'none',
 			billing_renews_at TIMESTAMPTZ,
+			theme      JSONB,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)
@@ -183,6 +188,7 @@ async function ensureTenantTables(): Promise<void> {
 		`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS billing_status TEXT NOT NULL DEFAULT 'none'`
 	);
 	await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS billing_renews_at TIMESTAMPTZ`);
+	await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS theme JSONB`);
 	await query(`
 		CREATE TABLE IF NOT EXISTS organization_members (
 			org_id     TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -212,10 +218,10 @@ async function ensureTenantTables(): Promise<void> {
 	await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_folder TEXT`);
 	await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
 	if (process.env.PROJECT_FOLDER) {
-		await query(`UPDATE projects SET project_folder = $1 WHERE id = $2 AND project_folder IS NULL`, [
-			process.env.PROJECT_FOLDER,
-			DEFAULT_PROJECT_ID
-		]);
+		await query(
+			`UPDATE projects SET project_folder = $1 WHERE id = $2 AND project_folder IS NULL`,
+			[process.env.PROJECT_FOLDER, DEFAULT_PROJECT_ID]
+		);
 	}
 	await query(`CREATE INDEX IF NOT EXISTS projects_org_idx ON projects (org_id)`);
 }
@@ -232,6 +238,7 @@ function toOrganization(row: {
 	plan: string;
 	created_at: string;
 	updated_at: string;
+	theme?: WorkspaceTheme | null;
 }): Organization {
 	return {
 		id: row.id,
@@ -239,7 +246,8 @@ function toOrganization(row: {
 		slug: row.slug,
 		plan: row.plan as OrganizationPlan,
 		createdAt: row.created_at,
-		updatedAt: row.updated_at
+		updatedAt: row.updated_at,
+		theme: row.theme ?? null
 	};
 }
 
@@ -286,7 +294,9 @@ function dbtProjectName(input: string): string {
 	return name || 'lunapad_project';
 }
 
-export async function ensureProjectScaffold(project: Pick<Project, 'name' | 'projectFolder'>): Promise<void> {
+export async function ensureProjectScaffold(
+	project: Pick<Project, 'name' | 'projectFolder'>
+): Promise<void> {
 	if (!project.projectFolder) return;
 	await scaffoldDbtProject(project.projectFolder, dbtProjectName(project.name));
 }
@@ -319,11 +329,12 @@ export async function ensureDefaultTenant(): Promise<{
 		plan: string;
 		created_at: string;
 		updated_at: string;
+		theme: WorkspaceTheme | null;
 	}>(
 		`INSERT INTO organizations (id, name, slug, plan)
 		 VALUES ($1, 'Default organization', 'default', 'team')
 		 ON CONFLICT (id) DO UPDATE SET updated_at = organizations.updated_at
-		 RETURNING id, name, slug, plan, created_at, updated_at`,
+		 RETURNING id, name, slug, plan, created_at, updated_at, theme`,
 		[DEFAULT_ORG_ID]
 	);
 	const projectRows = await query<{
@@ -389,6 +400,7 @@ export async function resolveTenantContext(
 		organization_plan: string;
 		organization_created_at: string;
 		organization_updated_at: string;
+		organization_theme: WorkspaceTheme | null;
 		project_id: string;
 		project_org_id: string;
 		project_name: string;
@@ -402,7 +414,7 @@ export async function resolveTenantContext(
 		        m.updated_at AS membership_updated_at,
 		        o.id AS organization_id, o.name AS organization_name, o.slug AS organization_slug,
 		        o.plan AS organization_plan, o.created_at AS organization_created_at,
-		        o.updated_at AS organization_updated_at,
+		        o.updated_at AS organization_updated_at, o.theme AS organization_theme,
 		        p.id AS project_id, p.org_id AS project_org_id, p.name AS project_name,
 		        p.project_folder AS project_folder,
 		        p.slug AS project_slug, p.archived_at AS project_archived_at,
@@ -440,7 +452,8 @@ export async function resolveTenantContext(
 		slug: row.organization_slug,
 		plan: row.organization_plan,
 		created_at: row.organization_created_at,
-		updated_at: row.organization_updated_at
+		updated_at: row.organization_updated_at,
+		theme: row.organization_theme
 	});
 	const project = toProject({
 		id: row.project_id,
@@ -542,12 +555,13 @@ export async function listOrganizationsForUser(
 		organization_plan: string;
 		organization_created_at: string;
 		organization_updated_at: string;
+		organization_theme: WorkspaceTheme | null;
 	}>(
 		`SELECT m.org_id, m.user_id, m.role, m.created_at AS membership_created_at,
 		        m.updated_at AS membership_updated_at,
 		        o.id AS organization_id, o.name AS organization_name, o.slug AS organization_slug,
 		        o.plan AS organization_plan, o.created_at AS organization_created_at,
-		        o.updated_at AS organization_updated_at
+		        o.updated_at AS organization_updated_at, o.theme AS organization_theme
 		 FROM organization_members m
 		 JOIN organizations o ON o.id = m.org_id
 		 WHERE m.user_id = $1
@@ -568,7 +582,8 @@ export async function listOrganizationsForUser(
 				slug: row.organization_slug,
 				plan: row.organization_plan,
 				created_at: row.organization_created_at,
-				updated_at: row.organization_updated_at
+				updated_at: row.organization_updated_at,
+				theme: row.organization_theme
 			}),
 			membership: toMembership({
 				org_id: row.org_id,
@@ -586,11 +601,12 @@ export async function listOrganizationsForUser(
 
 export async function updateOrganization(
 	orgId: string,
-	input: { name?: string }
+	input: { name?: string; theme?: WorkspaceTheme | null }
 ): Promise<Organization | null> {
 	await ensureTenantTablesOnce();
 	const name = input.name?.trim();
-	if (!name) return null;
+	const hasTheme = 'theme' in input;
+	if (!name && !hasTheme) return null;
 	const rows = await query<{
 		id: string;
 		name: string;
@@ -598,17 +614,35 @@ export async function updateOrganization(
 		plan: string;
 		created_at: string;
 		updated_at: string;
+		theme: WorkspaceTheme | null;
 	}>(
 		`UPDATE organizations
-		 SET name = $2, updated_at = now()
+		 SET name = COALESCE($2, name),
+		     theme = CASE WHEN $3 THEN $4::jsonb ELSE theme END,
+		     updated_at = now()
 		 WHERE id = $1
-		 RETURNING id, name, slug, plan, created_at, updated_at`,
-		[orgId, name]
+		 RETURNING id, name, slug, plan, created_at, updated_at, theme`,
+		[orgId, name ?? null, hasTheme, hasTheme ? JSON.stringify(input.theme) : null]
 	);
 	return rows[0] ? toOrganization(rows[0]) : null;
 }
 
-export async function leaveOrganization(input: { orgId: string; userId: string }): Promise<boolean> {
+/** Public read of just an org's brand theme — no membership/auth check, since
+ *  this is used to color publicly shared report pages (src/lib/server/share-page-load.ts)
+ *  for visitors who aren't necessarily members of the org. */
+export async function getOrganizationTheme(orgId: string): Promise<WorkspaceTheme | null> {
+	await ensureTenantTablesOnce();
+	const rows = await query<{ theme: WorkspaceTheme | null }>(
+		`SELECT theme FROM organizations WHERE id = $1`,
+		[orgId]
+	);
+	return rows[0]?.theme ?? null;
+}
+
+export async function leaveOrganization(input: {
+	orgId: string;
+	userId: string;
+}): Promise<boolean> {
 	await ensureTenantTablesOnce();
 	const membershipRows = await query<{ role: string }>(
 		`SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2 LIMIT 1`,
@@ -823,10 +857,12 @@ export async function upsertOrganizationMember(input: {
 	return toMembership(rows[0]);
 }
 
-export async function getTenantRepairWarnings(input: {
-	activeOrgId?: string | null;
-	activeProjectId?: string | null;
-} = {}): Promise<TenantRepairWarning[]> {
+export async function getTenantRepairWarnings(
+	input: {
+		activeOrgId?: string | null;
+		activeProjectId?: string | null;
+	} = {}
+): Promise<TenantRepairWarning[]> {
 	await ensureTenantTablesOnce();
 	const warnings: TenantRepairWarning[] = [];
 	const usersWithoutMembership = await query<{ id: string; email: string }>(

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { FolderOpen, FolderX, FolderCode, ExternalLink, ChevronRight } from '@lucide/svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -12,9 +13,27 @@
 		closeProject
 	} from '$lib/stores/notebook.svelte';
 	import { revealInFinder, scaffoldProject } from '$lib/services/project-client';
+	import { onProjectChange } from '$lib/stores/project-context';
 
 	const projectFolder = $derived(getProjectFolder());
 	const isDbtProject = $derived(getIsDbtProject());
+
+	// Tenancy-managed projects live on disk under an opaque org/project id folder
+	// (see projectFolderFor() in tenancy.ts) — that id is not something a user
+	// should ever see. Only substitute the real project name when it actually
+	// describes the folder that's currently open (self-hosted/demo tenants can
+	// have no projectFolder on record and still let a user open an arbitrary
+	// local folder through this same panel).
+	let tenantProjectName = $state<string | null>(null);
+	let tenantProjectFolder = $state<string | null>(null);
+	const displayName = $derived(
+		tenantProjectName && tenantProjectFolder && tenantProjectFolder === projectFolder
+			? tenantProjectName
+			: (projectFolder ? folderDisplayName(projectFolder) : '')
+	);
+	const tooltipText = $derived(
+		tenantProjectName && tenantProjectFolder === projectFolder ? tenantProjectName : projectFolder
+	);
 
 	let dialog = $state<'none' | 'open' | 'new'>('none');
 	let dialogOpen = $state(false);
@@ -26,6 +45,25 @@
 	function folderDisplayName(folder: string): string {
 		return folder.replace(/\\/g, '/').split('/').at(-1) || folder;
 	}
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/orgs/current');
+			if (res.ok) {
+				const body = await res.json();
+				tenantProjectName = body?.project?.name ?? null;
+				tenantProjectFolder = body?.project?.projectFolder ?? null;
+			}
+		} catch {
+			// No tenancy (local/demo mode) — fall back to the folder name.
+		}
+	});
+
+	const unsubscribeProjectChange = onProjectChange((detail) => {
+		tenantProjectName = detail.projectName ?? null;
+		tenantProjectFolder = detail.projectFolder ?? null;
+	});
+	onDestroy(unsubscribeProjectChange);
 
 	async function handleOpen() {
 		const folder = folderInput.trim();
@@ -85,9 +123,9 @@
 		<FolderCode class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
 		<span
 			class="min-w-0 flex-1 truncate text-xs font-medium text-foreground/80"
-			title={projectFolder}
+			title={tooltipText}
 		>
-			{folderDisplayName(projectFolder)}
+			{displayName}
 		</span>
 		{#if isDbtProject}
 			<span

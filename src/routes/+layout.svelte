@@ -9,12 +9,26 @@
 	import { onMount } from 'svelte';
 	import AnalyticsConsent from '$lib/components/AnalyticsConsent.svelte';
 	import { initAnalytics, startAnalyticsNavigationTracking } from '$lib/services/analytics';
+	import {
+		applyWorkspaceTheme,
+		cacheWorkspaceTheme,
+		fetchWorkspaceThemeResult,
+		readCachedWorkspaceTheme
+	} from '$lib/services/workspace-theme.svelte';
 
 	let { children } = $props();
 
 	if (browser) {
 		initAnalytics();
 		startAnalyticsNavigationTracking();
+	}
+
+	// app.html already injects the cached workspace brand theme's override
+	// <style> tag before first paint (see the early-paint script there). This is
+	// a belt-and-suspenders fallback for any environment where app.html didn't
+	// run (e.g. tests, storybook, direct component import).
+	if (browser && !document.getElementById('workspace-theme-override')) {
+		applyWorkspaceTheme(readCachedWorkspaceTheme());
 	}
 
 	// app.html already stamps data-platform/data-os and CSS vars before first paint.
@@ -62,6 +76,15 @@
 
 		void initPlatform().catch(() => {
 			// Tauri OS plugin unavailable; navigator-based detection stays in effect
+		});
+
+		// Reconcile the early-painted cached theme with the server's current
+		// value. This cannot depend on isServerWorkspaceMode(): +page.svelte
+		// initializes that flag after this root layout has already mounted.
+		void fetchWorkspaceThemeResult().then((result) => {
+			if (!result.ok) return;
+			applyWorkspaceTheme(result.theme);
+			cacheWorkspaceTheme(result.theme);
 		});
 
 		return () => colorScheme.removeEventListener('change', onColorSchemeChange);

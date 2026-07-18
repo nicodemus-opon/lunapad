@@ -24,6 +24,7 @@ import { startTrinoCatalogReconciler } from '$lib/server/trino-reconcile-worker'
 import {
 	createOrganizationForUser,
 	deploymentMode,
+	ensureDefaultMembership,
 	ensureDefaultTenant,
 	ensureTenantTablesOnce,
 	entitlementsForPlan,
@@ -230,8 +231,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (DEMO_MODE && isDemoBlockedPath(event.url.pathname)) {
 		return decorateResponse(
 			event.url.pathname.startsWith('/api/')
-			? json({ error: 'Not available in demo mode' }, { status: 403 })
-			: new Response('Not available in demo mode', { status: 403 })
+				? json({ error: 'Not available in demo mode' }, { status: 403 })
+				: new Response('Not available in demo mode', { status: 403 })
 		);
 	}
 
@@ -278,15 +279,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.apiKeyId = null;
 			event.locals.apiKeyScopes = null;
 			const tenant = await ensureDefaultTenant();
+			const membership = await ensureDefaultMembership('local-dev', 'admin');
 			event.locals.organization = tenant.organization;
 			event.locals.project = tenant.project;
-			event.locals.membership = {
-				orgId: tenant.organization.id,
-				userId: 'local-dev',
-				role: 'admin',
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString()
-			};
+			event.locals.membership = membership;
 			event.locals.entitlements = entitlementsForPlan(tenant.organization.plan);
 		}
 		return decorateResponse(await resolve(event));
@@ -405,12 +401,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 		const setupStatus = await getSetupStatus();
 		if (setupStatus.mode !== 'closed') {
 			if (deploymentMode() === 'cloud' && cloudSignupOpen() && setupStatus.mode === 'fresh') {
-				return decorateResponse(new Response(null, { status: 303, headers: { location: '/signup' } }));
+				return decorateResponse(
+					new Response(null, { status: 303, headers: { location: '/signup' } })
+				);
 			}
 			return decorateResponse(new Response(null, { status: 303, headers: { location: '/setup' } }));
 		}
 		if (deploymentMode() === 'cloud' && cloudSignupOpen()) {
-			return decorateResponse(new Response(null, { status: 303, headers: { location: '/signup' } }));
+			return decorateResponse(
+				new Response(null, { status: 303, headers: { location: '/signup' } })
+			);
 		}
 		const redirectTo = encodeURIComponent(path + event.url.search);
 		return decorateResponse(
@@ -426,7 +426,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const requiredPermission = routePermission(path, event.request.method);
-	if (event.locals.user && requiresVerifiedEmail(path, event.request.method) && !emailVerified(event.locals.user)) {
+	if (
+		event.locals.user &&
+		requiresVerifiedEmail(path, event.request.method) &&
+		!emailVerified(event.locals.user)
+	) {
 		return decorateResponse(
 			json({ error: 'Verify your email before using this cloud feature.' }, { status: 403 })
 		);
@@ -442,17 +446,19 @@ export const handle: Handle = async ({ event, resolve }) => {
 		// that; it's gated by role (can()) alone, same as before scopes existed.
 		if (event.locals.apiKeyId && !hasApiScope(event.locals.apiKeyScopes, requiredPermission)) {
 			return decorateResponse(
-				json(
-					{ error: 'Forbidden: API key scope does not allow this action' },
-					{ status: 403 }
-				)
+				json({ error: 'Forbidden: API key scope does not allow this action' }, { status: 403 })
 			);
 		}
 	}
 
 	const response = await svelteKitHandler({ event, resolve, auth, building });
 
-	if (isSignUpAttempt && deploymentMode() === 'self_hosted' && response.status >= 200 && response.status < 300) {
+	if (
+		isSignUpAttempt &&
+		deploymentMode() === 'self_hosted' &&
+		response.status >= 200 &&
+		response.status < 300
+	) {
 		if (deploymentMode() === 'self_hosted') {
 			await promoteSoleUserToAdmin();
 		}

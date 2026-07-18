@@ -48,9 +48,14 @@ const SSR_TOKEN_FALLBACKS: Record<string, string> = {
 };
 
 /** Reads a CSS custom property off `:root`, or an SSR-safe fallback when the DOM
- *  isn't available (server render of the shared report page). */
-function readCSSVar(varName: string): string {
-	if (!isBrowser) return SSR_TOKEN_FALLBACKS[varName] ?? '';
+ *  isn't available (server render of the shared report page). `overrides` lets a
+ *  caller inject a resolved workspace brand theme's token values for that SSR
+ *  pass — e.g. a shared report page rendering under a custom brand theme, where
+ *  there's no live `document` to read the (client-only) override <style> tag
+ *  from. Ignored in the browser, where getComputedStyle already reflects
+ *  whatever theme is applied. */
+function readCSSVar(varName: string, overrides?: Record<string, string>): string {
+	if (!isBrowser) return overrides?.[varName] ?? SSR_TOKEN_FALLBACKS[varName] ?? '';
 	return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
@@ -62,13 +67,15 @@ function readCSSVar(varName: string): string {
  *  what dev serves unminified) or as a percentage (`oklch(74.6% .16 232.661)`,
  *  what the production CSS minifier rewrites it to) — both are valid oklch()
  *  syntax, so the regex has to accept the optional `%` and rescale. */
-export function resolveCSSColor(varName: string): string {
-	const raw = readCSSVar(varName);
+export function resolveCSSColor(varName: string, overrides?: Record<string, string>): string {
+	const raw = readCSSVar(varName, overrides);
 	const m = raw.match(/^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+([\d.]+)/);
 	if (m) {
 		const l = parseFloat(m[1]) / (m[2] ? 100 : 1);
 		return oklchToRgb(l, parseFloat(m[3]), parseFloat(m[4]));
 	}
+	// Not an oklch() triple — either a plain color (hex/rgb/hsl, e.g. from a
+	// pasted workspace brand theme) or empty; pass through as-is either way.
 	return raw;
 }
 
@@ -106,8 +113,8 @@ export const CHART_COLORWAY_VARS = [
 /** The app's default series color cycle, resolved to concrete colors —
  *  matches CHART_COLOR_RANGE in ChartView.svelte, for engines (like Plotly)
  *  that can't take live `var()` references for a colorway. */
-export function resolveChartColorway(): string[] {
-	return CHART_COLORWAY_VARS.map(resolveCSSColor);
+export function resolveChartColorway(overrides?: Record<string, string>): string[] {
+	return CHART_COLORWAY_VARS.map((v) => resolveCSSColor(v, overrides));
 }
 
 /** `var(--chart-N)` strings for discrete fill/stroke channels that *can* take

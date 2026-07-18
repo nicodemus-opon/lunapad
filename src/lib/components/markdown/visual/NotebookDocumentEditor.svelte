@@ -890,6 +890,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="notebook-document-editor markdown-surface relative min-w-0 flex-1"
+	class:report-view={reportView}
 	onpointerdown={onContainerPointerDown}
 >
 	{#if initError}
@@ -1016,6 +1017,9 @@
 </div>
 
 <style>
+	.notebook-document-editor.report-view :global(.notion-drag-gutter) {
+		display: none;
+	}
 	.notebook-document-editor :global(.notion-drag-gutter) {
 		margin-left: calc(-1 * var(--notebook-gutter-width) + 0.25rem);
 		/* Bridge the gap this shift creates between the rail and the block edge with

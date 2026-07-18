@@ -470,6 +470,13 @@ export function initWorkspaceMode(demoMode: boolean): void {
 	useServerWorkspace = !demoMode;
 }
 
+/** Whether the app is backed by Postgres/auth (vs. pure demo mode, which has no
+ *  org/user context) — the workspace brand-theme feature needs this since it's
+ *  stored per-organization and has nothing to persist to in demo mode. */
+export function isServerWorkspaceMode(): boolean {
+	return useServerWorkspace;
+}
+
 function clampScheduleIntervalMinutes(value: number): number {
 	if (!Number.isFinite(value)) return MIN_SCHEDULE_INTERVAL_MINUTES;
 	const normalized = Math.round(value);

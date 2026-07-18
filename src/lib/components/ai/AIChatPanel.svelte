@@ -5,7 +5,6 @@
 	import AIChatInput from './AIChatInput.svelte';
 	import AIChatAgentStatus from './AIChatAgentStatus.svelte';
 	import WorkspaceStandards from './WorkspaceStandards.svelte';
-	import ContextHealthChip from './ContextHealthChip.svelte';
 	import {
 		setAIChatOpen,
 		clearMessages,
@@ -94,8 +93,6 @@
 	</div>
 
 	<WorkspaceStandards bind:open={standardsOpen} />
-
-	<ContextHealthChip />
 
 	<!-- Thread -->
 	<AIChatThread />

@@ -18,6 +18,7 @@
 	import UsageSettings from './UsageSettings.svelte';
 	import JobsSettings from './JobsSettings.svelte';
 	import WorkspaceSettings from './WorkspaceSettings.svelte';
+	import BrandThemeSection from './BrandThemeSection.svelte';
 	import ProjectsSettings from './ProjectsSettings.svelte';
 	import DiagnosticsSettings from './DiagnosticsSettings.svelte';
 	import TeamSettings from '$lib/components/TeamSettings.svelte';
@@ -311,6 +312,7 @@
 								<Moon class="h-3.5 w-3.5" /> Dark
 							</Button>
 						</div>
+						<BrandThemeSection />
 					</div>
 				{:else if tab === 'workspace'}
 					<WorkspaceSettings />

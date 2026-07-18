@@ -15,9 +15,14 @@
 		onPlotClick?: (event: {
 			points?: Array<{ x?: unknown; y?: unknown; label?: unknown; customdata?: unknown }>;
 		}) => void;
+		// Resolved workspace brand-theme token values for server-rendered contexts
+		// (the shared report page) where there's no live `document` for
+		// resolveCSSColor to read from. Ignored in the browser. See
+		// src/lib/utils/theme-colors.ts.
+		ssrThemeOverrides?: Record<string, string>;
 	}
 
-	const { rows, columns, config, height = 384, onPlotClick }: Props = $props();
+	const { rows, columns, config, height = 384, onPlotClick, ssrThemeOverrides }: Props = $props();
 
 	type Figure = PlotCellFigure;
 
@@ -518,7 +523,7 @@
 	// other CSS, no JS-side resolution needed.
 	const resolvedChartColors = $derived.by(() => {
 		void watchTheme(); // re-resolve when the theme toggles
-		return resolveChartColorway();
+		return resolveChartColorway(ssrThemeOverrides);
 	});
 
 	function areaFillColor(resolvedColor: string, alpha = 0.2): string {
@@ -587,8 +592,8 @@
 		const { cells, xLabels, yLabels, minVal, maxVal } = heatmapData;
 		if (cells.length === 0) return null;
 		void watchTheme(); // re-resolve colors when the theme toggles
-		const colorLow = resolveCSSColor('--background');
-		const colorHigh = resolveCSSColor('--chart-1');
+		const colorLow = resolveCSSColor('--background', ssrThemeOverrides);
+		const colorHigh = resolveCSSColor('--chart-1', ssrThemeOverrides);
 		const rotateHeatmapX = xLabels.length > 8 || xLabels.some((l) => l.length > 12);
 		const customdata = cells.map(
 			(c) => `${c.x} / ${c.y}: ${c.value != null ? fmtNum(c.value) : 'N/A'}`
@@ -953,10 +958,10 @@
 		if (years.length === 0) return null;
 		const cells = calendarCells(pairs);
 		void watchTheme(); // re-resolve colors when the theme toggles
-		const colorLow = resolveCSSColor('--background');
-		const colorHigh = resolveCSSColor('--chart-1');
-		const border = resolveCSSColor('--border');
-		const mutedForeground = resolveCSSColor('--muted-foreground');
+		const colorLow = resolveCSSColor('--background', ssrThemeOverrides);
+		const colorHigh = resolveCSSColor('--chart-1', ssrThemeOverrides);
+		const border = resolveCSSColor('--border', ssrThemeOverrides);
+		const mutedForeground = resolveCSSColor('--muted-foreground', ssrThemeOverrides);
 
 		const traces: Data[] = years.map((year, i) => {
 			const cellsForYear = cells.filter((c) => c.year === year);
@@ -1084,9 +1089,9 @@
 
 	function themedGeoLayout(scope: 'world' | 'usa'): Partial<Layout> {
 		void watchTheme();
-		const background = resolveCSSColor('--background');
-		const border = resolveCSSColor('--border');
-		const muted = resolveCSSColor('--muted');
+		const background = resolveCSSColor('--background', ssrThemeOverrides);
+		const border = resolveCSSColor('--border', ssrThemeOverrides);
+		const muted = resolveCSSColor('--muted', ssrThemeOverrides);
 		return {
 			geo: {
 				scope,
@@ -1126,8 +1131,8 @@
 		if (points.length === 0) return null;
 
 		void watchTheme();
-		const colorLow = resolveCSSColor('--background');
-		const colorHigh = resolveCSSColor('--chart-1');
+		const colorLow = resolveCSSColor('--background', ssrThemeOverrides);
+		const colorHigh = resolveCSSColor('--chart-1', ssrThemeOverrides);
 
 		const hasNumericColor = valueCol && points.some((p) => p.value !== null);
 		const values = hasNumericColor ? points.map((p) => p.value ?? 0) : undefined;
@@ -1195,8 +1200,8 @@
 		if (entries.length === 0) return null;
 
 		void watchTheme();
-		const colorLow = resolveCSSColor('--background');
-		const colorHigh = resolveCSSColor('--chart-1');
+		const colorLow = resolveCSSColor('--background', ssrThemeOverrides);
+		const colorHigh = resolveCSSColor('--chart-1', ssrThemeOverrides);
 		const plotScope = geoScope === 'usa-states' ? 'usa' : 'world';
 
 		return {

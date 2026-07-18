@@ -53,10 +53,8 @@
 								class="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-primary/5"
 								onclick={() => pick(template.id)}
 							>
-								<div
-									class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"
-								>
-									<Icon class="h-4 w-4 text-primary" />
+								<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent">
+									<Icon class="h-4 w-4 text-accent-foreground" />
 								</div>
 								<div class="min-w-0">
 									<p class="text-sm font-medium text-foreground">{template.name}</p>

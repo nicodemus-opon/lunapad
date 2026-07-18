@@ -14,6 +14,9 @@
 		error?: string | null;
 		exportEnabled?: boolean;
 		oncomment?: () => void;
+		/** Resolved workspace brand-theme token values, for chart color
+		 *  resolution during SSR of this page (see theme-colors.ts). */
+		ssrThemeOverrides?: Record<string, string>;
 	}
 
 	const {
@@ -24,7 +27,8 @@
 		loading = false,
 		error = null,
 		exportEnabled = false,
-		oncomment
+		oncomment,
+		ssrThemeOverrides
 	}: Props = $props();
 
 	const hasTabularData = $derived(Boolean(rows && columns));
@@ -91,6 +95,7 @@
 					columnWidths={cell.columnWidths}
 					controlsVisible={exportEnabled}
 					toolbarReserveSpace={false}
+					{ssrThemeOverrides}
 				/>
 			</div>
 		{/if}

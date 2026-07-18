@@ -9,6 +9,30 @@ import {
 	updateOrganization
 } from '$lib/server/tenancy';
 import { logAuditEvent } from '$lib/server/audit';
+import { ALL_THEME_TOKEN_KEYS, type WorkspaceTheme } from '$lib/types/theme';
+
+function sanitizeThemeTokens(input: unknown): Record<string, string> {
+	if (!input || typeof input !== 'object') return {};
+	const allowed = new Set<string>(ALL_THEME_TOKEN_KEYS);
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+		if (allowed.has(key) && typeof value === 'string' && value.trim()) {
+			out[key] = value.trim().slice(0, 200);
+		}
+	}
+	return out;
+}
+
+function sanitizeTheme(input: unknown): WorkspaceTheme | null {
+	if (!input || typeof input !== 'object') return null;
+	const raw = input as Record<string, unknown>;
+	const id = typeof raw.id === 'string' ? raw.id.slice(0, 100) : 'custom';
+	const name = typeof raw.name === 'string' ? raw.name.slice(0, 100) : 'Custom';
+	const light = sanitizeThemeTokens(raw.light);
+	const dark = sanitizeThemeTokens(raw.dark);
+	if (Object.keys(light).length === 0 && Object.keys(dark).length === 0) return null;
+	return { id, name, light, dark };
+}
 
 const cookieOptions = {
 	path: '/',
@@ -25,9 +49,17 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
 	const body = await request.json();
-	const name = typeof body.name === 'string' ? body.name.trim() : '';
-	if (!name) return json({ error: 'Workspace name is required.' }, { status: 400 });
-	const organization = await updateOrganization(params.id, { name });
+	const hasName = typeof body.name === 'string';
+	const name = hasName ? body.name.trim() : '';
+	if (hasName && !name) return json({ error: 'Workspace name is required.' }, { status: 400 });
+	const hasTheme = 'theme' in body;
+	if (!hasName && !hasTheme) {
+		return json({ error: 'Nothing to update.' }, { status: 400 });
+	}
+	const update: { name?: string; theme?: WorkspaceTheme | null } = {};
+	if (hasName) update.name = name;
+	if (hasTheme) update.theme = body.theme === null ? null : sanitizeTheme(body.theme);
+	const organization = await updateOrganization(params.id, update);
 	if (!organization) return json({ error: 'Workspace not found.' }, { status: 404 });
 	await logAuditEvent({
 		actorId: locals.user.id,
@@ -36,7 +68,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		action: 'organization.updated',
 		resourceType: 'organization',
 		resourceId: organization.id,
-		metadata: { name: organization.name }
+		metadata: hasTheme ? { themeId: organization.theme?.id ?? null } : { name: organization.name }
 	});
 	return json({ organization });
 };
