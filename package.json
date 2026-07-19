@@ -19,6 +19,7 @@
 		"record:demo:full": "node scripts/demo-video/record.mjs --mode=full",
 		"record:demo": "node scripts/demo-video/record.mjs --mode=fast && node scripts/demo-video/record.mjs --mode=full",
 		"record:demo:smoke": "node scripts/demo-video/record.mjs --mode=fast --smoke",
+		"record:demo:raw": "DEMO_VIDEO_RAW=1 node scripts/demo-video/record.mjs --mode=full",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check .",

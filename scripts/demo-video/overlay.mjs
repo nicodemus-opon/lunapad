@@ -5,8 +5,15 @@
 // directly-appended body children (outside Svelte's tracked tree), so every accessor
 // below looks its element up fresh by id and recreates it on demand rather than
 // caching a reference in a closure.
-export async function installOverlay(page) {
-	await page.addInitScript(() => {
+//
+// `raw` mode (DEMO_VIDEO_RAW=1, see record.mjs) is for footage a Remotion composition will
+// caption/zoom itself: caption/keyflash/feature-card calls stop touching the DOM and instead
+// log their content to `window.__demoLog` and burn a single-frame corner-marker flash into the
+// actual recorded video at that exact instant — ground truth for a later frame-accurate detection
+// pass (detect-markers.mjs), instead of estimating timing from Node-side wall-clock deltas. Cursor
+// + click-ripple are unaffected by `raw` — they're real interaction, baked in either way.
+export async function installOverlay(page, { raw = false } = {}) {
+	await page.addInitScript((raw) => {
 		function ensureStyle() {
 			if (document.getElementById('__demo-style')) return;
 			const style = document.createElement('style');
@@ -43,6 +50,10 @@ export async function installOverlay(page) {
 				#__demo-feature.show { opacity: 1; transform: none; }
 				#__demo-feature h4 { margin: 0 0 10px; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
 				#__demo-feature ul { margin: 0; padding-left: 18px; font-size: 14.5px; line-height: 1.55; }
+
+				#__demo-marker { position: fixed; top: 0; left: 0; z-index: 2147483647; width: 12px; height: 12px;
+					background: transparent; pointer-events: none; }
+				#__demo-marker.show { background: #ff00ff; }
 			`;
 			(document.head || document.documentElement).appendChild(style);
 		}
@@ -60,7 +71,39 @@ export async function installOverlay(page) {
 			return el;
 		}
 
+		window.__demoLog = [];
+		function logEvent(type, payload) {
+			window.__demoLog.push({ type, payload: payload ?? null });
+		}
+
+		// Held well past a single frame at 30fps so the flash always survives Playwright's
+		// video-capture cadence regardless of frame-timing jitter (observed: heavier beats —
+		// dialogs opening/closing, panel animations — can momentarily slow frame capture enough
+		// that a too-short gap gets swallowed and two adjacent flashes merge into one detected
+		// run); detect-markers.mjs takes the *first* frame of each contiguous marked run as that
+		// event's ground-truth frame.
+		function flashMarker() {
+			const el = ensureEl('__demo-marker');
+			if (!el) return Promise.resolve();
+			el.classList.add('show');
+			return new Promise((resolve) => {
+				setTimeout(() => {
+					el.classList.remove('show');
+					// Guaranteed unmarked gap before the *next* flash can possibly start, so two
+					// events logged back-to-back (no real delay between them, e.g. two captions
+					// either side of a fast action) still produce two visually separate marked
+					// runs instead of merging into one in the video.
+					setTimeout(resolve, 180);
+				}, 120);
+			});
+		}
+
 		window.__demoCaption = (text) => {
+			if (raw) {
+				if (!text) return Promise.resolve();
+				logEvent('caption', text);
+				return flashMarker();
+			}
 			const el = ensureEl('__demo-caption');
 			if (!el) return;
 			if (!text) {
@@ -77,6 +120,11 @@ export async function installOverlay(page) {
 		};
 
 		window.__demoKeys = (labels) => {
+			if (raw) {
+				if (!labels) return Promise.resolve();
+				logEvent('keyflash', labels);
+				return flashMarker();
+			}
 			const el = ensureEl('__demo-keys');
 			if (!el) return;
 			if (!labels) {
@@ -88,6 +136,13 @@ export async function installOverlay(page) {
 		};
 
 		window.__demoFeature = (on, title, lines) => {
+			if (raw) {
+				if (on) {
+					logEvent('featureCard', { title, lines });
+					return flashMarker();
+				}
+				return Promise.resolve();
+			}
 			const el = ensureEl('__demo-feature', (e) => {
 				e.innerHTML = `<h4></h4><ul></ul>`;
 			});
@@ -97,6 +152,14 @@ export async function installOverlay(page) {
 				el.querySelector('ul').innerHTML = (lines ?? []).map((l) => `<li>${l}</li>`).join('');
 			}
 			el.classList.toggle('show', !!on);
+		};
+
+		// Marks the instant a beat resolves its focus rect — the real moment its on-camera
+		// action actually settled, for the Ken-Burns ease-in to key off instead of a guess.
+		window.__demoMarkFocus = (payload) => {
+			if (!raw) return Promise.resolve();
+			logEvent('focus', payload);
+			return flashMarker();
 		};
 
 		window.addEventListener('mousemove', (e) => {
@@ -115,7 +178,7 @@ export async function installOverlay(page) {
 			document.body.appendChild(r);
 			setTimeout(() => r.remove(), 650);
 		});
-	});
+	}, raw);
 }
 
 // DEMO_VIDEO_SPEED scales every hold in this file — record.mjs sets it well below 1 in
@@ -147,6 +210,22 @@ export async function keyflash(page, labels, comboKeys) {
 	await pause(page, 420);
 	await page.evaluate(() => window.__demoKeys(null));
 }
+
+// Raw-mode only (no-op otherwise): flashes the corner marker + logs a 'focus' event at the
+// exact instant a beat resolves its focus rect, so detect-markers.mjs can find the real frame
+// the Ken-Burns ease-in should key off — see installOverlay's `raw` mode.
+export const mark = (page, payload) =>
+	page.evaluate((p) => (window.__demoMarkFocus ? window.__demoMarkFocus(p) : null), payload ?? null);
+
+// Drains this chapter's accumulated raw-mode event log (caption/keyflash/featureCard/focus),
+// in the order they were logged — record.mjs zips this 1:1 against detect-markers.mjs's ordered
+// list of detected corner-flash frames.
+export const drainLog = (page) =>
+	page.evaluate(() => {
+		const log = window.__demoLog ?? [];
+		window.__demoLog = [];
+		return log;
+	});
 
 // Move the synthetic cursor smoothly to an element's center instead of teleporting.
 export async function moveTo(page, locator, opts = {}) {

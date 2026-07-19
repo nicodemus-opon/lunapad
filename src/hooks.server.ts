@@ -1,4 +1,4 @@
-import { json, type Handle } from '@sveltejs/kit';
+import { json, type Handle, type RequestEvent } from '@sveltejs/kit';
 import crypto from 'node:crypto';
 import { building } from '$app/environment';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
@@ -201,9 +201,29 @@ function routePermission(pathname: string, method: string): PermissionAction | n
 	return null;
 }
 
-function requiresVerifiedEmail(pathname: string, method: string): boolean {
+async function isThemeOnlyOrgPatch(event: RequestEvent): Promise<boolean> {
+	const { pathname } = event.url;
+	if (event.request.method !== 'PATCH') return false;
+	if (!/^\/api\/orgs\/[^/]+$/.test(pathname)) return false;
+
+	try {
+		const body = (await event.request.clone().json()) as unknown;
+		if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+		const keys = Object.keys(body);
+		return keys.length === 1 && keys[0] === 'theme';
+	} catch {
+		return false;
+	}
+}
+
+async function requiresVerifiedEmail(event: RequestEvent): Promise<boolean> {
+	const { pathname } = event.url;
+	const method = event.request.method;
 	if (deploymentMode() !== 'cloud') return false;
 	if (method === 'GET' || method === 'HEAD') return false;
+	// Workspace theme changes are an admin-only visual preference. Keep broader
+	// workspace/admin writes gated, but do not block theme persistence on email verification.
+	if (await isThemeOnlyOrgPatch(event)) return false;
 	return (
 		pathname.startsWith('/api/account/api-keys') ||
 		pathname.startsWith('/api/invitations') ||
@@ -428,7 +448,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const requiredPermission = routePermission(path, event.request.method);
 	if (
 		event.locals.user &&
-		requiresVerifiedEmail(path, event.request.method) &&
+		(await requiresVerifiedEmail(event)) &&
 		!emailVerified(event.locals.user)
 	) {
 		return decorateResponse(

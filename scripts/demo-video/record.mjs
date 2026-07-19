@@ -4,6 +4,13 @@
 // crossfades the chapters together into one finished mp4.
 //
 //   node scripts/demo-video/record.mjs --mode=fast|full [--smoke] [--print-script]
+//
+// DEMO_VIDEO_RAW=1 switches to raw-capture mode for the Remotion trailer: overlay.mjs stops
+// burning captions/keyflash/feature-cards into the DOM and instead logs them + flashes a
+// frame-accurate corner marker (see overlay.mjs, detect-markers.mjs); this script skips the
+// ffmpeg Ken-Burns/xfade steps entirely (Remotion owns that now) and instead writes one clean
+// per-chapter mp4 + one beats.json (real detected frame numbers, not wall-clock estimates) per
+// chapter. Every branch below is additive and gated on RAW so the default path is unchanged.
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -13,13 +20,15 @@ import * as overlay from './overlay.mjs';
 import { installFullWalkthroughMocks } from './mocks.mjs';
 import { beatsFor, CHAPTERS, computeHoldMs } from './beats.mjs';
 import { convertWebmToMp4, renderChapterWithZoom, xfadeChapters, contactSheet } from './zoom.mjs';
+import { detectMarkerFrames, zipEventsWithFrames, probeFps } from './detect-markers.mjs';
 
 const args = process.argv.slice(2);
 const mode = args.includes('--mode=full') ? 'full' : 'fast';
 const smoke = args.includes('--smoke');
 const printScript = args.includes('--print-script');
+const RAW = process.env.DEMO_VIDEO_RAW === '1';
 
-const VIDEO = { width: 1600, height: 900 };
+const VIDEO = { width: 1920, height: 1080 };
 const PORT = process.env.DEMO_VIDEO_PORT ?? (mode === 'full' ? '5898' : '5897');
 const BASE = `http://localhost:${PORT}`;
 const OUT = actions.ARTIFACTS_DIR;
@@ -174,7 +183,7 @@ async function recordChapter(browser, chapterName, beatList) {
 	});
 	const page = await context.newPage();
 	page.on('pageerror', (err) => console.log(`  [${chapterName} pageerror]`, err.message));
-	await overlay.installOverlay(page);
+	await overlay.installOverlay(page, { raw: RAW });
 	const t0 = Date.now();
 
 	if (chapterName === 'power') await installFullWalkthroughMocks(page);
@@ -213,9 +222,18 @@ async function recordChapter(browser, chapterName, beatList) {
 		// plus the app's own UI transition, and holding the frame static there is
 		// deliberate shot variety, not a missed zoom.
 		const focus = beat.pace === 'quick' ? null : rawFocus;
-		const end = (Date.now() - beatClockStart) / 1000;
-		segments.push({ start: cursor, end, focus: focus ?? null });
-		cursor = end;
+		if (RAW) {
+			// No wall-clock timing here at all — see this file's top comment and
+			// detect-markers.mjs for why. `log` is this beat's slice of caption/keyflash/
+			// featureCard/focus events, in order; frame numbers get attached in encodeChapter
+			// once the chapter's video (and its corner-marker flashes) actually exists.
+			const log = await overlay.drainLog(page);
+			segments.push({ id: beat.id, captions: beat.captions ?? [], focus: focus ?? null, log });
+		} else {
+			const end = (Date.now() - beatClockStart) / 1000;
+			segments.push({ start: cursor, end, focus: focus ?? null });
+			cursor = end;
+		}
 	}
 
 	const video = page.video();
@@ -229,6 +247,37 @@ async function recordChapter(browser, chapterName, beatList) {
 }
 
 async function encodeChapter({ chapterName, webm, segments, loadingTrimSec }) {
+	if (RAW) {
+		const cleanMp4 = path.join(OUT, `${mode}-${chapterName}.clean.mp4`);
+		await convertWebmToMp4(webm, cleanMp4, loadingTrimSec);
+
+		// Detection runs once on the whole chapter's video; the flat, ordered list of detected
+		// frames gets zipped against the flat, ordered concatenation of every beat's log (both
+		// orderings come from the same beat-list run), then re-sliced back into per-beat groups.
+		const flatLog = segments.flatMap((s) => s.log);
+		const fps = await probeFps(cleanMp4);
+		const frames = await detectMarkerFrames(cleanMp4);
+		const zipped = zipEventsWithFrames(flatLog, frames);
+		let cursor = 0;
+		const beats = segments.map((s) => {
+			const events = zipped.slice(cursor, cursor + s.log.length);
+			cursor += s.log.length;
+			return { id: s.id, captions: s.captions, focus: s.focus, events };
+		});
+
+		const beatsJsonPath = path.join(OUT, `${mode}-${chapterName}.beats.json`);
+		fs.writeFileSync(
+			beatsJsonPath,
+			JSON.stringify(
+				{ chapterName, video: path.basename(cleanMp4), width: VIDEO.width, height: VIDEO.height, fps, beats },
+				null,
+				2
+			)
+		);
+		console.log(`  wrote ${beatsJsonPath}`);
+		return cleanMp4;
+	}
+
 	const rawMp4 = path.join(OUT, `${mode}-${chapterName}.raw.mp4`);
 	const finalMp4 = path.join(OUT, `${mode}-${chapterName}.mp4`);
 	await convertWebmToMp4(webm, rawMp4, loadingTrimSec);
@@ -261,7 +310,9 @@ async function main() {
 			}
 		}
 
+		const onlyChapter = process.env.DEMO_VIDEO_CHAPTER;
 		let chapterNames = smoke ? ['intro', 'core'] : CHAPTERS.filter((c) => c !== 'power' || mode === 'full');
+		if (onlyChapter) chapterNames = chapterNames.filter((c) => c === onlyChapter);
 		const recordings = [];
 		for (const chapterName of chapterNames) {
 			let list = beatsFor(mode, chapterName);
@@ -279,6 +330,13 @@ async function main() {
 		const chapterPaths = [];
 		for (const recording of recordings) {
 			chapterPaths.push(await encodeChapter(recording));
+		}
+
+		if (RAW) {
+			// Remotion owns chapter-to-chapter assembly now — no combined mp4 from this pipeline.
+			console.log(`\nWrote ${chapterPaths.length} raw chapters:`);
+			for (const p of chapterPaths) console.log(`  ${p}`);
+			return;
 		}
 
 		const outName = mode === 'full' ? 'full-walkthrough.mp4' : 'fast-demo.mp4';

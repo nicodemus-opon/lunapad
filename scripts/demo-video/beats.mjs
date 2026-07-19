@@ -126,6 +126,7 @@ export const beats = [
 			await o.caption('Run all cells: tables, charts, stats, dashboard widgets');
 			await a.runAllCells();
 			const rect = await a.cellFocusRect('orders');
+			await o.mark(rect);
 			await o.pause(trailingMs(holdMs));
 			return rect;
 		}
@@ -140,11 +141,15 @@ export const beats = [
 		outcome: true,
 		async run({ a, o, holdMs }) {
 			await o.caption('Standard SQL — cells reference each other by name');
-			const rect = await a.cellFocusRect('growth_analysis');
+			// editCellCode scrolls to the cell internally — compute the focus rect only after
+			// that scroll happens, or boundingBox() reports coordinates for wherever the cell
+			// sat before scrolling (often far outside the viewport in a long notebook).
 			await a.editCellCode('growth_analysis', GROWTH_SQL);
+			const rect = await a.cellFocusRect('growth_analysis');
 			await o.caption('Live-edit + rerun');
 			await o.pause(INTER_ACTION_MS);
 			await a.runCellByName('growth_analysis');
+			await o.mark(rect);
 			await o.pause(trailingMs(holdMs, 1));
 			return rect;
 		}
@@ -164,12 +169,15 @@ export const beats = [
 			// says so), so its "Chart" tab falls back to a naive default that renders as a
 			// meaningless tangle of connecting lines across 1000+ random rows. monthly_revenue
 			// is aggregated and has a real, deliberately-configured area chart.
-			const rect = await a.cellFocusRect('monthly_revenue');
+			// switchResultView scrolls to the cell internally — compute the focus rect only
+			// after that first scroll happens, same reasoning as sql-live-edit above.
 			await a.switchResultView('monthly_revenue', 'stats');
+			const rect = await a.cellFocusRect('monthly_revenue');
 			await o.pause(INTER_ACTION_MS);
 			await a.switchResultView('monthly_revenue', 'table');
 			await o.pause(INTER_ACTION_MS);
 			await a.switchResultView('monthly_revenue', 'chart');
+			await o.mark(rect);
 			await o.pause(trailingMs(holdMs, 2));
 			return rect;
 		}
@@ -193,8 +201,10 @@ export const beats = [
 			await cell.getByRole('tab', { name: 'PRQL' }).click();
 			await o.pause(INTER_ACTION_MS);
 			await cell.getByRole('tab', { name: 'Visual' }).click();
+			const rect = await a.focusRect(cell);
+			await o.mark(rect);
 			await o.pause(trailingMs(holdMs, 1));
-			return a.focusRect(cell);
+			return rect;
 		}
 	},
 	{
@@ -216,8 +226,10 @@ export const beats = [
 			await o.pause(INTER_ACTION_MS);
 			await a.changeRegionFilter('West');
 			const select = page.locator('.md-filter').filter({ hasText: 'Region' }).first();
+			const rect = await a.focusRect(select);
+			await o.mark(rect);
 			await o.pause(trailingMs(holdMs, 1));
-			return a.focusRect(select);
+			return rect;
 		}
 	},
 
@@ -320,7 +332,9 @@ export const beats = [
 					]);
 					await o.pause(trailingMs(holdMs, 1));
 					await o.hideFeatureCard();
-					return a.focusRect(cell);
+					const rect = await a.focusRect(cell);
+					await o.mark(rect);
+					return rect;
 				}
 			}
 			await o.featureCard('Python cells, gated intentionally', [

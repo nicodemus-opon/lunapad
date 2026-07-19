@@ -171,8 +171,12 @@ export async function switchResultView(page, outputName, mode) {
 	// aria-hidden subtrees entirely, so the tab doesn't exist to Playwright until the
 	// cell is actually hovered first.
 	await cell.hover();
-	const tabName = mode === 'table' ? 'Table' : mode === 'chart' ? 'Chart' : 'Stats';
-	await cell.getByRole('tab', { name: tabName }).click();
+	// ResultViewModeSwitcher.svelte's wrapper is role="toolbar" and its buttons carry no
+	// ARIA role at all (just aria-label) — getByRole('tab', ...) can never match them, which
+	// is a real, deterministic selector bug (not a load-related flake): it was guaranteed to
+	// time out regardless of how fast the render settles. data-testid is the switcher's actual
+	// intended test hook (`result-view-table` / `result-view-chart` / `result-view-stats`).
+	await cell.getByTestId(`result-view-${mode}`).click();
 }
 
 export async function setReportView(page, enabled) {

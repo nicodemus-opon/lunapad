@@ -534,7 +534,7 @@
 
 .md-filter-control {
 	height: 1.65rem;
-	border-radius: var(--radius-sm);
+	border-radius: var(--radius);
 	border: 1px solid var(--border);
 	background: var(--background);
 	color: var(--foreground);
@@ -543,6 +543,11 @@
 	transition:
 		border-color var(--motion-fast) var(--motion-ease-out),
 		box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+select.md-filter-control {
+	padding-right: 1.6rem;
+	appearance: none;
 }
 
 .md-filter-control:hover {

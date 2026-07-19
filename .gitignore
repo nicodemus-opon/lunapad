@@ -44,6 +44,17 @@ e2e/*
 !e2e/mock-browser-defaults.ts
 !e2e/saas-flows.mock.spec.ts
 
+# Demo video / YouTube upload artifacts
+/scripts/demo-video/remotion/
+/scripts/demo-video/detect-markers.mjs
+/scripts/demo-video/**/*.mp4
+/scripts/demo-video/**/*.webm
+/scripts/demo-video/**/*.mov
+/scripts/demo-video/**/*.m4v
+/scripts/demo-video/**/*.png
+/scripts/demo-video/**/*youtube*
+/scripts/demo-video/**/*yt*
+
 # Temp/scratch files
 .tmp-*.json
 .vitest-*.json

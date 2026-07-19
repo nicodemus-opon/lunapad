@@ -133,7 +133,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#0ea5e9',
 			'--chart-3': '#06b6d4',
 			'--chart-4': '#6366f1',
-			'--chart-5': '#8b5cf6'
+			'--chart-5': '#8b5cf6',
+			'--sidebar-primary': '#2563eb',
+			'--sidebar-primary-foreground': '#ffffff',
+			'--sidebar-accent': '#dbeafe',
+			'--sidebar-accent-foreground': '#1e3a8a',
+			'--sidebar-ring': '#93c5fd'
 		},
 		dark: {
 			'--primary': '#60a5fa',
@@ -147,7 +152,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#38bdf8',
 			'--chart-3': '#22d3ee',
 			'--chart-4': '#818cf8',
-			'--chart-5': '#a78bfa'
+			'--chart-5': '#a78bfa',
+			'--sidebar-primary': '#60a5fa',
+			'--sidebar-primary-foreground': '#0b1220',
+			'--sidebar-accent': '#1e3a8a',
+			'--sidebar-accent-foreground': '#dbeafe',
+			'--sidebar-ring': '#3b82f6'
 		}
 	},
 	{
@@ -165,7 +175,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#0d9488',
 			'--chart-3': '#84cc16',
 			'--chart-4': '#14b8a6',
-			'--chart-5': '#22c55e'
+			'--chart-5': '#22c55e',
+			'--sidebar-primary': '#059669',
+			'--sidebar-primary-foreground': '#ffffff',
+			'--sidebar-accent': '#d1fae5',
+			'--sidebar-accent-foreground': '#065f46',
+			'--sidebar-ring': '#6ee7b7'
 		},
 		dark: {
 			'--primary': '#34d399',
@@ -179,7 +194,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#2dd4bf',
 			'--chart-3': '#a3e635',
 			'--chart-4': '#5eead4',
-			'--chart-5': '#4ade80'
+			'--chart-5': '#4ade80',
+			'--sidebar-primary': '#34d399',
+			'--sidebar-primary-foreground': '#062017',
+			'--sidebar-accent': '#065f46',
+			'--sidebar-accent-foreground': '#d1fae5',
+			'--sidebar-ring': '#10b981'
 		}
 	},
 	{
@@ -197,7 +217,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#f59e0b',
 			'--chart-3': '#dc2626',
 			'--chart-4': '#d97706',
-			'--chart-5': '#e11d48'
+			'--chart-5': '#e11d48',
+			'--sidebar-primary': '#ea580c',
+			'--sidebar-primary-foreground': '#ffffff',
+			'--sidebar-accent': '#ffedd5',
+			'--sidebar-accent-foreground': '#7c2d12',
+			'--sidebar-ring': '#fdba74'
 		},
 		dark: {
 			'--primary': '#fb923c',
@@ -211,7 +236,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#fbbf24',
 			'--chart-3': '#f87171',
 			'--chart-4': '#fbbf24',
-			'--chart-5': '#fb7185'
+			'--chart-5': '#fb7185',
+			'--sidebar-primary': '#fb923c',
+			'--sidebar-primary-foreground': '#1f0e02',
+			'--sidebar-accent': '#7c2d12',
+			'--sidebar-accent-foreground': '#ffedd5',
+			'--sidebar-ring': '#f97316'
 		}
 	},
 	{
@@ -229,7 +259,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#64748b',
 			'--chart-3': '#0f172a',
 			'--chart-4': '#94a3b8',
-			'--chart-5': '#475569'
+			'--chart-5': '#475569',
+			'--sidebar-primary': '#334155',
+			'--sidebar-primary-foreground': '#ffffff',
+			'--sidebar-accent': '#e2e8f0',
+			'--sidebar-accent-foreground': '#1e293b',
+			'--sidebar-ring': '#94a3b8'
 		},
 		dark: {
 			'--primary': '#cbd5e1',
@@ -243,7 +278,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#94a3b8',
 			'--chart-3': '#e2e8f0',
 			'--chart-4': '#64748b',
-			'--chart-5': '#f1f5f9'
+			'--chart-5': '#f1f5f9',
+			'--sidebar-primary': '#cbd5e1',
+			'--sidebar-primary-foreground': '#0f172a',
+			'--sidebar-accent': '#334155',
+			'--sidebar-accent-foreground': '#f1f5f9',
+			'--sidebar-ring': '#64748b'
 		}
 	},
 	{
@@ -261,7 +301,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#88c0d0',
 			'--chart-3': '#a3be8c',
 			'--chart-4': '#b48ead',
-			'--chart-5': '#d08770'
+			'--chart-5': '#d08770',
+			'--sidebar-primary': '#5e81ac',
+			'--sidebar-primary-foreground': '#eceff4',
+			'--sidebar-accent': '#d8dee9',
+			'--sidebar-accent-foreground': '#2e3440',
+			'--sidebar-ring': '#88c0d0'
 		},
 		dark: {
 			'--primary': '#88c0d0',
@@ -279,7 +324,12 @@ export const PRESET_THEMES: WorkspaceTheme[] = [
 			'--chart-2': '#81a1c1',
 			'--chart-3': '#a3be8c',
 			'--chart-4': '#b48ead',
-			'--chart-5': '#d08770'
+			'--chart-5': '#d08770',
+			'--sidebar-primary': '#88c0d0',
+			'--sidebar-primary-foreground': '#2e3440',
+			'--sidebar-accent': '#434c5e',
+			'--sidebar-accent-foreground': '#eceff4',
+			'--sidebar-ring': '#81a1c1'
 		}
 	}
 ];
