@@ -2468,6 +2468,61 @@ async function executeToolCallWithResult(
 			return `run_cells result:\n${resultLines.join('\n')}`;
 		}
 
+		case 'render_notebook_screenshot': {
+			const args = call.args as { notebookId?: string };
+			const notebookId = args.notebookId ?? getActiveTabId();
+			if (!notebookId) return 'render_notebook_screenshot: no active notebook';
+
+			appendActionEvent(aiMsgId, {
+				tool: 'render_notebook_screenshot',
+				label: 'Rendering notebook screenshot…'
+			});
+
+			try {
+				const res = await fetch('/api/v1/actions', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						action: 'render_notebook_screenshot',
+						input: { notebookId }
+					})
+				});
+				const envelope = (await res.json()) as {
+					ok: boolean;
+					data?: {
+						ok: boolean;
+						notebookName: string;
+						cellCount: number;
+						cellsRun: number;
+						cellErrors: Array<{ outputName: string; error: string }>;
+						segments: Array<{ index: number }>;
+						warning?: string;
+					};
+					diagnostics?: Array<{ code: string; message: string }>;
+				};
+				if (!envelope.ok || !envelope.data) {
+					const message = envelope.diagnostics?.[0]?.message ?? 'render failed';
+					return `render_notebook_screenshot: failed — ${message}`;
+				}
+				// Never forward image bytes here — the in-app chat LLM has no vision
+				// plumbing, only MCP clients receive the actual images (see mcp-tools.ts).
+				const { notebookName, cellCount, cellsRun, cellErrors, segments, warning } = envelope.data;
+				const summary =
+					`render_notebook_screenshot: "${notebookName}" — ${cellsRun}/${cellCount} cells ran, ` +
+					`${cellErrors.length} error(s), ${segments.length} screenshot segment(s) captured` +
+					(cellErrors.length
+						? `\nErrors: ${cellErrors.map((e) => `${e.outputName}: ${e.error}`).join('; ')}`
+						: '') +
+					(warning ? `\nWarning: ${warning}` : '');
+				updateLastActionEvent(aiMsgId, {
+					label: `Rendered "${notebookName}" (${cellsRun}/${cellCount} cells, ${cellErrors.length} error(s))`
+				});
+				return summary;
+			} catch (err) {
+				return `render_notebook_screenshot: failed — ${err instanceof Error ? err.message : 'unknown error'}`;
+			}
+		}
+
 		case 'validate_result': {
 			const { cellId, expectedRowCount, minRowCount, expectedColumns, assertNotEmpty } =
 				call.args as import('$lib/types/ai-chat.js').ValidateResultArgs;

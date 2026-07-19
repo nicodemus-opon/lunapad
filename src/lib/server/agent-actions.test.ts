@@ -28,6 +28,21 @@ describe('agent action registry', () => {
 		expect(names).toContain('validate_workflow');
 		expect(names).toContain('run_workflow');
 		expect(names).toContain('delete_resource');
+		expect(names).toContain('render_notebook_screenshot');
+	});
+
+	it('gates render_notebook_screenshot behind shares:publish', async () => {
+		const action = listAgentActions().find((a) => a.name === 'render_notebook_screenshot');
+		expect(action?.permission).toBe('shares:publish');
+		expect(action?.mutates).toBe(true);
+
+		const result = await executeAgentAction(
+			'render_notebook_screenshot',
+			{ notebookId: 'models/x' },
+			viewerAuth
+		);
+		expect(result.ok).toBe(false);
+		expect(result.diagnostics[0]?.code).toBe('FORBIDDEN');
 	});
 
 	it('returns the standard envelope for capabilities', async () => {

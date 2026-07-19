@@ -389,6 +389,27 @@ const ALL_NATIVE_TOOLS = [
 	{
 		type: 'function',
 		function: {
+			name: 'render_notebook_screenshot',
+			description:
+				"Run the notebook's cells and render the result headlessly to verify what it " +
+				'actually looks like (chart type, empty tables, layout, cell errors) — use this ' +
+				'to check your own work after building/editing charts or dashboards. You will ' +
+				'only receive text diagnostics (cell/error counts, warnings), not the image ' +
+				'itself; external MCP clients calling this same tool do receive the image.',
+			parameters: {
+				type: 'object',
+				properties: {
+					notebookId: {
+						type: 'string',
+						description: 'Id of the notebook to render. Omit for the active notebook.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'update_cell',
 			description:
 				'Edit an existing cell. For SQL/Python cells, provide code. For markdown/dashboard cells, provide markdown. Use this instead of create_cell when revising an existing summary/dashboard cell.',

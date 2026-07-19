@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeNotebookToolArgs } from './+server';
+import { normalizeNotebookToolArgs } from './notebook-tool-normalize';
 
 describe('AI chat notebook tool normalization', () => {
 	it('repairs minor blueprint issues before emitting notebook tool calls', () => {

@@ -15,7 +15,32 @@ export interface McpAuthContext extends AgentAuthContext {
 	apiKeyScopes: string[] | null;
 }
 
-function ok(result: ActionEnvelope): CallToolResult {
+/** Exported for direct unit testing (mcp-tools.test.ts) — the image-block lifting logic
+ *  is otherwise only reachable by driving a real screenshot render through the full MCP
+ *  protocol, which needs a working headless Chromium and is too heavy for a unit test. */
+export function ok(result: ActionEnvelope): CallToolResult {
+	const data = result.data as
+		| { segments?: Array<{ index: number; base64: string; mimeType: string }> }
+		| undefined;
+	if (data?.segments?.length) {
+		// Lift each rendered segment (src/lib/server/notebook-render.ts) into a real MCP
+		// image block, in scroll order, so the client can "read down the page". The
+		// accompanying text block has the base64 stripped out to avoid ~2x payload size.
+		const strippedSegments = data.segments.map(({ base64: _base64, ...rest }) => rest);
+		return {
+			content: [
+				...data.segments.map((s) => ({
+					type: 'image' as const,
+					data: s.base64,
+					mimeType: s.mimeType
+				})),
+				{
+					type: 'text',
+					text: JSON.stringify({ ...result, data: { ...data, segments: strippedSegments } })
+				}
+			]
+		};
+	}
 	return { content: [{ type: 'text', text: JSON.stringify(result) }] };
 }
 

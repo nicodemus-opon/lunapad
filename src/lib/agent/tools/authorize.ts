@@ -29,6 +29,7 @@ export async function authorizeAITool(tool: AIChatToolName | string): Promise<bo
 			'update_cell',
 			'delete_cell',
 			'run_cells',
+			'render_notebook_screenshot',
 			'move_cell',
 			'set_chart',
 			'pick_chart',

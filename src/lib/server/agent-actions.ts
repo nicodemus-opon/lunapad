@@ -24,7 +24,8 @@ import {
 	setChartAction,
 	pickChartAction,
 	deleteNotebookAction,
-	resolveProjectFolder
+	resolveProjectFolder,
+	renderNotebookScreenshotAction
 } from './lunapad-actions.js';
 import { getConnectionMetadata } from './connections-store.js';
 import { getSecret } from './connection-secrets.js';
@@ -933,6 +934,27 @@ export const ACTIONS: AgentActionDefinition[] = [
 		inputSchema: { notebookId: z.string() },
 		handler: async (input, ctx) =>
 			publishNotebookAction({ tenant: ctx.auth.tenant, notebookId: String(input.notebookId) })
+	},
+	{
+		name: 'render_notebook_screenshot',
+		description:
+			"Run a notebook's cells, then render the result headlessly (via a hidden, " +
+			'short-lived share link + Chromium) and return the rendered output as PNG ' +
+			'screenshots, so the caller can visually verify charts/tables or debug broken ' +
+			'output. MCP clients receive the actual images as content blocks; other callers ' +
+			'get text-only diagnostics (cell/error counts) with the image bytes stripped out.',
+		permission: 'shares:publish',
+		// Genuinely mutates: it (re-)runs the notebook's cells and persists fresh results
+		// before rendering (see renderNotebookScreenshotAction) — not just a read.
+		mutates: true,
+		inputSchema: { notebookId: z.string(), folder: z.string().optional() },
+		handler: async (input, ctx) =>
+			renderNotebookScreenshotAction({
+				tenant: ctx.auth.tenant,
+				folder: input.folder as string | undefined,
+				notebookId: String(input.notebookId),
+				allowPython: ctx.canRunPython
+			})
 	},
 	{
 		name: 'create_site_page',

@@ -528,6 +528,169 @@ export async function publishNotebookAction(
 	return { token: share.token, slug: share.slug };
 }
 
+// ── AI screenshot rendering ──────────────────────────────────────────────────
+
+export interface RenderNotebookScreenshotInput {
+	tenant?: TenantRef | null;
+	folder?: string;
+	notebookId: string;
+	allowPython: boolean;
+}
+
+export interface RenderNotebookScreenshotOutput {
+	ok: boolean;
+	notebookId: string;
+	notebookName: string;
+	cellCount: number;
+	cellsRun: number;
+	cellErrors: Array<{ cellId: string; outputName: string; error: string }>;
+	segments: Array<{ index: number; offsetY: number; base64: string; mimeType: string }>;
+	warning?: string;
+}
+
+const EXECUTABLE_CELL_TYPES = new Set(['query', 'python', 'plot']);
+
+/**
+ * Renders a notebook's current output headlessly for AI verification/debugging. Frozen
+ * share snapshots (buildShareSnapshot) only reflect whatever's already on `cell.result` —
+ * they never re-run anything — so a naive render risks screenshotting an empty/stale
+ * notebook. To avoid that, cells are (re-)run first when server-side execution is possible
+ * (a dbt project folder is open — see resolveProjectFolder's doc comment: ad hoc
+ * browser-tab-only notebooks are not reachable headlessly), and the fresh in-memory results
+ * are merged directly onto the notebook before snapshotting, rather than round-tripping
+ * through the Postgres workspace-state blob (which `runNotebookCellsOnDisk` never writes
+ * to — on-disk notebooks store only source code, not a persisted result cache).
+ */
+export async function renderNotebookScreenshotAction(
+	input: RenderNotebookScreenshotInput
+): Promise<RenderNotebookScreenshotOutput> {
+	const { isScreenshotRenderingAvailable, screenshotShareToken } =
+		await import('./notebook-render.js');
+	if (!(await isScreenshotRenderingAvailable())) {
+		throw new Error('Screenshot rendering is not available on this deployment.');
+	}
+
+	const { isRateLimitedAsync } = await import('./api-rate-limit.js');
+	const rateLimitKey = `render_notebook_screenshot:${input.tenant?.orgId ?? 'default'}`;
+	if (await isRateLimitedAsync(rateLimitKey, 10, 60 * 60 * 1000)) {
+		throw new Error(
+			'Rate limit exceeded for render_notebook_screenshot (10/hour). Try again later.'
+		);
+	}
+
+	const { buildShareSnapshot } = await import('$lib/services/share-snapshot');
+	const { createInternalRenderShare, deleteInternalRenderShare } =
+		await import('./shared-reports.js');
+
+	let folder: string | null;
+	try {
+		folder = resolveProjectFolder(input.folder, input.tenant);
+	} catch {
+		folder = null;
+	}
+
+	let notebook: Notebook | undefined;
+	let connections: Connection[] = [];
+	let cellsRun = 0;
+	const cellErrors: Array<{ cellId: string; outputName: string; error: string }> = [];
+	let executionWarning: string | undefined;
+
+	if (folder) {
+		const { notebooks } = await walkProjectDirectory(folder);
+		notebook = notebooks.find((n) => n.id === input.notebookId);
+	}
+
+	if (notebook && folder) {
+		connections = await listConnectionsMetadata(input.tenant?.orgId);
+		const runOutput = await runNotebookCellsOnDisk(folder, input.notebookId, undefined, {
+			allowPython: input.allowPython,
+			tenant: input.tenant
+		});
+		const resultByOutputName = new Map(runOutput.results.map((r) => [r.outputName, r]));
+		const mergedCells = notebook.cells.map((cell) => {
+			const result = resultByOutputName.get(cell.outputName);
+			if (!result) return cell;
+			if (!result.ok) {
+				cellErrors.push({
+					cellId: cell.id,
+					outputName: cell.outputName,
+					error: result.error ?? 'Unknown error running this cell.'
+				});
+				return cell;
+			}
+			cellsRun++;
+			if (cell.cellType === 'query') {
+				return { ...cell, result: { rows: result.rows ?? [], columns: result.columns ?? [] } };
+			}
+			if (cell.cellType === 'python') {
+				return {
+					...cell,
+					result: result.rows ? { rows: result.rows, columns: result.columns ?? [] } : cell.result,
+					pythonOutput: { stdout: '', figures: result.figures ?? [], error: null }
+				};
+			}
+			return cell;
+		});
+		notebook = { ...notebook, cells: mergedCells };
+	} else {
+		// Fallback: notebook only exists in the browser's persisted workspace state (no dbt
+		// project folder open) — server-side execution isn't reachable for it, so we can
+		// only snapshot whatever the browser last computed and cached.
+		const row = await loadWorkspaceState(input.tenant?.projectId ?? undefined);
+		const blob = row?.data as { notebooks?: Notebook[]; connections?: Connection[] } | undefined;
+		notebook = blob?.notebooks?.find((n) => n.id === input.notebookId);
+		connections = blob?.connections ?? [];
+		if (!notebook) throw new Error(`Notebook "${input.notebookId}" not found.`);
+
+		const neverRun = notebook.cells.filter(
+			(c) => EXECUTABLE_CELL_TYPES.has(c.cellType) && c.cellType !== 'plot' && !c.result
+		);
+		executionWarning =
+			`Server-side cell execution is unavailable for this notebook (no dbt project ` +
+			`folder is open) — showing the last results cached in the browser.` +
+			(neverRun.length
+				? ` ${neverRun.length} cell(s) have never been run and have no cached result: ` +
+					`open this notebook in the app, run it, then retry.`
+				: '');
+	}
+
+	const cellCount = notebook.cells.filter((c) => EXECUTABLE_CELL_TYPES.has(c.cellType)).length;
+
+	const snapshot = buildShareSnapshot(notebook, connections);
+	const connInputs = await Promise.all(
+		snapshot.connections.map(async (conn) => ({
+			connectionId: conn.connectionId,
+			connection: conn.connection,
+			secret: await getSecret(conn.connectionId, input.tenant?.orgId)
+		}))
+	);
+
+	const { token } = await createInternalRenderShare({
+		tenant: input.tenant,
+		notebookId: notebook.id,
+		notebookName: notebook.name,
+		snapshot: { cells: snapshot.cells, reportView: snapshot.reportView },
+		connections: connInputs
+	});
+
+	try {
+		const result = await screenshotShareToken(token);
+		const warning = [executionWarning, result.warning].filter(Boolean).join(' ') || undefined;
+		return {
+			ok: result.ok,
+			notebookId: notebook.id,
+			notebookName: notebook.name,
+			cellCount,
+			cellsRun,
+			cellErrors,
+			segments: result.segments,
+			warning
+		};
+	} finally {
+		await deleteInternalRenderShare(token);
+	}
+}
+
 export interface CreateSitePageInput {
 	tenant?: TenantRef | null;
 	siteId: string;

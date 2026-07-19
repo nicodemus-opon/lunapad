@@ -114,6 +114,7 @@
 		"monaco-sql-languages": "^1.1.0",
 		"node-sql-parser": "^5.4.0",
 		"pg": "^8.21.0",
+		"playwright-core": "^1.60.0",
 		"plotly.js-dist-min": "^3.6.0",
 		"posthog-js": "^1.399.2",
 		"prosemirror-markdown": "^1.13.4",

@@ -106,7 +106,8 @@ export const AI_MUTATING_TOOLS = new Set([
 	'move_cell',
 	'set_chart',
 	'pick_chart',
-	'set_view_mode'
+	'set_view_mode',
+	'render_notebook_screenshot'
 ]);
 
 export function canUseAITool(user: PermissionUser | null, tool: string): boolean {
@@ -212,6 +213,7 @@ export const MCP_TOOL_ACTIONS: Record<string, PermissionAction> = {
 	get_dbt_manifest: 'dbt:read',
 	list_shares: 'shares:read',
 	publish_notebook: 'shares:publish',
+	render_notebook_screenshot: 'shares:publish',
 	create_site_page: 'sites:manage',
 	search_workspace: 'workspace:read',
 	get_lineage: 'workspace:read'

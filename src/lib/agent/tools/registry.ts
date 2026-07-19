@@ -70,7 +70,8 @@ const SERVER_CAPABLE_NATIVE_TOOLS = new Set([
 	'run_query_nodes',
 	'run_cells',
 	'pick_chart',
-	'set_chart'
+	'set_chart',
+	'render_notebook_screenshot'
 ]);
 
 /** In-app chat tools (sidebar assistant) */

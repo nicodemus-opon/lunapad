@@ -147,7 +147,15 @@ export async function ensureSharedReportTables(): Promise<void> {
 			`ALTER TABLE shared_reports ADD COLUMN IF NOT EXISTS project_id TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}'`
 		);
 		await query(
-			`ALTER TABLE shared_reports DROP CONSTRAINT IF EXISTS shared_reports_notebook_id_key`
+			// CASCADE: on databases old enough to still have the pre-multi-tenant
+			// share_refresh_schedules_notebook_id_fkey (a FK onto this constraint's index,
+			// not declared anywhere in this file's current CREATE TABLE for
+			// share_refresh_schedules — pure legacy leftover), a plain DROP CONSTRAINT
+			// fails with "other objects depend on it", which — since every statement in
+			// this function shares one try/catch — silently aborted everything after it,
+			// including any newly added table below this line. Discovered via manual
+			// verification of render_notebook_screenshot against a long-lived dev DB.
+			`ALTER TABLE shared_reports DROP CONSTRAINT IF EXISTS shared_reports_notebook_id_key CASCADE`
 		);
 		await query(
 			`ALTER TABLE shared_reports ADD COLUMN IF NOT EXISTS require_auth BOOLEAN NOT NULL DEFAULT FALSE`
@@ -232,6 +240,38 @@ export async function ensureSharedReportTables(): Promise<void> {
 		await query(
 			`CREATE UNIQUE INDEX IF NOT EXISTS share_refresh_schedules_project_notebook_idx ON share_refresh_schedules (project_id, notebook_id)`
 		);
+		// AI-render-only tables: ephemeral, hidden share tokens minted by
+		// render_notebook_screenshot for headless Playwright rendering. Never listed in
+		// listActiveShares(), never versioned, never reused across calls — see
+		// createInternalRenderShare(). Deliberately separate from shared_reports so a
+		// render can never clobber a user's real published share (upsertShare's
+		// (project_id, notebook_id) unique index would otherwise collide with it).
+		await query(`
+			CREATE TABLE IF NOT EXISTS internal_notebook_renders (
+				token         TEXT PRIMARY KEY,
+				org_id        TEXT NOT NULL DEFAULT '${DEFAULT_ORG_ID}',
+				project_id    TEXT NOT NULL DEFAULT '${DEFAULT_PROJECT_ID}',
+				notebook_id   TEXT NOT NULL,
+				notebook_name TEXT NOT NULL,
+				snapshot      JSONB NOT NULL,
+				theme         TEXT NOT NULL DEFAULT 'system',
+				expires_at    TIMESTAMPTZ NOT NULL,
+				created_at    TIMESTAMPTZ DEFAULT NOW()
+			)
+		`);
+		await query(`
+			CREATE TABLE IF NOT EXISTS internal_notebook_render_connections (
+				id            SERIAL PRIMARY KEY,
+				token         TEXT NOT NULL REFERENCES internal_notebook_renders(token) ON DELETE CASCADE,
+				connection_id TEXT NOT NULL,
+				connection    JSONB NOT NULL,
+				secret        JSONB
+			)
+		`);
+		// Defense-in-depth backstop for orphaned rows (e.g. process crash between create
+		// and the render's `finally` cleanup) — piggybacks on every table-ensure call
+		// rather than needing its own scheduled job.
+		await query(`DELETE FROM internal_notebook_renders WHERE expires_at < NOW()`);
 	} catch {
 		// Postgres not available — silently skip
 	}
@@ -286,7 +326,8 @@ export async function getShareByToken(token: string): Promise<ShareRecord | null
 	const rows = await query<SharedReportRow>(`SELECT * FROM shared_reports WHERE token = $1`, [
 		token
 	]).catch(() => []);
-	return rows[0] ? rowToRecord(rows[0]) : null;
+	if (rows[0]) return rowToRecord(rows[0]);
+	return getInternalRenderShare(token);
 }
 
 /** All non-revoked shares, for pickers like the site-builder's "add an existing report as a page". */
@@ -341,11 +382,130 @@ export async function getShareConnections(
 		 WHERE token = $1 AND org_id = $2 AND project_id = $3`,
 		[token, tenant?.orgId ?? DEFAULT_ORG_ID, tenant?.projectId ?? DEFAULT_PROJECT_ID]
 	).catch(() => []);
+	if (rows.length) {
+		return rows.map((r) => ({
+			connectionId: r.connection_id,
+			connection: r.connection,
+			secret: r.secret
+		}));
+	}
+	return getInternalRenderShareConnections(token);
+}
+
+const INTERNAL_RENDER_TTL_MS = 5 * 60 * 1000;
+
+interface InternalRenderRow {
+	token: string;
+	org_id: string;
+	project_id: string;
+	notebook_id: string;
+	notebook_name: string;
+	snapshot: ShareSnapshot;
+	theme: ShareTheme;
+	expires_at: string;
+	created_at: string;
+}
+
+function internalRenderRowToRecord(row: InternalRenderRow): ShareRecord {
+	return {
+		token: row.token,
+		orgId: row.org_id ?? DEFAULT_ORG_ID,
+		projectId: row.project_id ?? DEFAULT_PROJECT_ID,
+		slug: null,
+		notebookId: row.notebook_id,
+		notebookName: row.notebook_name,
+		snapshot: row.snapshot,
+		pollIntervalMs: null,
+		// Must stay false: the headless renderer navigates with no session cookie, so a
+		// requireAuth share would redirect to /login and the render would capture that
+		// instead. Security instead rests on the token's entropy + short TTL + revoke-on-use.
+		requireAuth: false,
+		theme: row.theme ?? 'system',
+		description: null,
+		expiresAt: row.expires_at,
+		currentVersion: 1,
+		revoked: false,
+		createdAt: row.created_at,
+		updatedAt: row.created_at
+	};
+}
+
+/**
+ * Mints a short-lived, unlisted share token purely for headless screenshot rendering
+ * (render_notebook_screenshot). Deliberately NOT `upsertShare` — that would clobber or
+ * version-bump a user's real published share (unique on project_id+notebook_id), count
+ * against their share-count entitlement, and appear in listActiveShares()/the Shares UI.
+ * Callers must always revoke via deleteInternalRenderShare() in a `finally`, even on error.
+ */
+export async function createInternalRenderShare(input: {
+	tenant?: TenantRef | null;
+	notebookId: string;
+	notebookName: string;
+	snapshot: ShareSnapshot;
+	theme?: ShareTheme;
+	connections: ShareConnectionRecord[];
+}): Promise<{ token: string; expiresAt: string }> {
+	await ensureSharedReportTables();
+	const tenant = input.tenant ?? { orgId: DEFAULT_ORG_ID, projectId: DEFAULT_PROJECT_ID };
+	const token = generateToken();
+	const expiresAt = new Date(Date.now() + INTERNAL_RENDER_TTL_MS).toISOString();
+
+	await query(
+		`INSERT INTO internal_notebook_renders (token, org_id, project_id, notebook_id, notebook_name, snapshot, theme, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+		[
+			token,
+			tenant.orgId,
+			tenant.projectId ?? DEFAULT_PROJECT_ID,
+			input.notebookId,
+			input.notebookName,
+			JSON.stringify(input.snapshot),
+			input.theme ?? 'system',
+			expiresAt
+		]
+	);
+	for (const conn of input.connections) {
+		await query(
+			`INSERT INTO internal_notebook_render_connections (token, connection_id, connection, secret)
+			 VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
+			[
+				token,
+				conn.connectionId,
+				JSON.stringify(conn.connection),
+				conn.secret ? JSON.stringify(conn.secret) : null
+			]
+		);
+	}
+	return { token, expiresAt };
+}
+
+export async function getInternalRenderShare(token: string): Promise<ShareRecord | null> {
+	const rows = await query<InternalRenderRow>(
+		`SELECT * FROM internal_notebook_renders WHERE token = $1 AND expires_at > NOW()`,
+		[token]
+	).catch(() => []);
+	return rows[0] ? internalRenderRowToRecord(rows[0]) : null;
+}
+
+async function getInternalRenderShareConnections(token: string): Promise<ShareConnectionRecord[]> {
+	const rows = await query<{
+		connection_id: string;
+		connection: Connection;
+		secret: ConnectionSecret | null;
+	}>(
+		`SELECT connection_id, connection, secret FROM internal_notebook_render_connections WHERE token = $1`,
+		[token]
+	).catch(() => []);
 	return rows.map((r) => ({
 		connectionId: r.connection_id,
 		connection: r.connection,
 		secret: r.secret
 	}));
+}
+
+/** Hard delete — no history/versioning wanted for ephemeral render tokens. */
+export async function deleteInternalRenderShare(token: string): Promise<void> {
+	await query(`DELETE FROM internal_notebook_renders WHERE token = $1`, [token]).catch(() => {});
 }
 
 /** Upserts a share by notebookId, preserving the existing token (and slug) across re-publishes. */

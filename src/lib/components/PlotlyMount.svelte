@@ -15,10 +15,16 @@
 
 	let el: HTMLDivElement | undefined = $state();
 	let Plotly: typeof import('plotly.js-dist-min') | undefined;
+	// Marks the mount div `[data-plot-ready]` once painted, so a headless renderer
+	// (src/lib/server/notebook-render.ts) can wait for every chart on the page to finish
+	// drawing before screenshotting, instead of racing Plotly's async render.
+	let ready = $state(false);
 
 	async function render(): Promise<void> {
 		if (!el || !figure) return;
+		ready = false;
 		Plotly = await renderPlotly(el, figure.data, figure.layout);
+		ready = true;
 		if (onPlotClick) {
 			const plotEl = el as unknown as {
 				removeAllListeners?: (ev: string) => void;
@@ -79,7 +85,12 @@
 </script>
 
 <div class="relative h-full w-full">
-	<div bind:this={el} style="width:100%;height:100%"></div>
+	<div
+		bind:this={el}
+		data-plot
+		data-plot-ready={ready ? true : undefined}
+		style="width:100%;height:100%"
+	></div>
 	{#if errorText}
 		<div
 			class="absolute inset-0 overflow-auto bg-background p-4 text-sm whitespace-pre-wrap text-destructive"

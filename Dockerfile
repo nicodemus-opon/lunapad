@@ -39,6 +39,11 @@ RUN sed -i '/^store-dir/d' .npmrc
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts
 
+# Chromium for headless notebook-screenshot rendering (src/lib/server/notebook-render.ts).
+# playwright-core is a runtime dependency but its browser binary isn't fetched by
+# --ignore-scripts, so install it explicitly here.
+RUN npx --yes playwright-core install --with-deps chromium
+
 COPY --from=builder /app/build ./build
 COPY scripts ./scripts
 
@@ -73,6 +78,9 @@ RUN sed -i '/^store-dir/d' .npmrc
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile && \
     cp -r /root/.local/share/pnpm/store /pnpm-store
+
+# Chromium for headless notebook-screenshot rendering (src/lib/server/notebook-render.ts).
+RUN npx --yes playwright-core install --with-deps chromium
 
 EXPOSE 5173
 

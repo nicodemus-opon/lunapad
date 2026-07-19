@@ -134,6 +134,7 @@ export type AIChatToolName =
 	| 'set_view_mode'
 	| 'delete_cell'
 	| 'run_cells'
+	| 'render_notebook_screenshot'
 	| 'move_cell'
 	| 'get_lineage'
 	| 'list_cells'

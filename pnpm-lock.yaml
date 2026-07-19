@@ -137,6 +137,9 @@ importers:
       pg:
         specifier: ^8.21.0
         version: 8.21.0
+      playwright-core:
+        specifier: ^1.60.0
+        version: 1.60.0
       plotly.js-dist-min:
         specifier: ^3.6.0
         version: 3.6.0

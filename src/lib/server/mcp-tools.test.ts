@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createLunapadMcpServer, type McpAuthContext } from './mcp-tools.js';
+import { createLunapadMcpServer, ok, type McpAuthContext } from './mcp-tools.js';
+import type { ActionEnvelope } from './agent-actions.js';
 
 /**
  * Exercises createLunapadMcpServer through the real MCP client/server protocol
@@ -138,5 +139,44 @@ describe('createLunapadMcpServer permission gating', () => {
 		});
 		const result = await client.callTool({ name: 'list_notebooks', arguments: { folder: dir } });
 		expect(result.isError).toBeFalsy();
+	});
+});
+
+describe('ok() image content lifting', () => {
+	const baseEnvelope: ActionEnvelope = {
+		ok: true,
+		data: {},
+		diagnostics: [],
+		meta: { requestId: 'r1', action: 'render_notebook_screenshot', timingMs: 0 }
+	};
+
+	it('emits one image block per segment, in order, plus a text block with no base64', () => {
+		const result = ok({
+			...baseEnvelope,
+			data: {
+				notebookName: 'demo',
+				segments: [
+					{ index: 0, offsetY: 0, base64: 'AAA', mimeType: 'image/png' },
+					{ index: 1, offsetY: 900, base64: 'BBB', mimeType: 'image/png' }
+				]
+			}
+		});
+		expect(result.content).toHaveLength(3);
+		expect(result.content[0]).toEqual({ type: 'image', data: 'AAA', mimeType: 'image/png' });
+		expect(result.content[1]).toEqual({ type: 'image', data: 'BBB', mimeType: 'image/png' });
+		const text = (result.content[2] as { type: string; text: string }).text;
+		expect(text).not.toContain('AAA');
+		expect(text).not.toContain('BBB');
+		expect(JSON.parse(text).data.segments).toEqual([
+			{ index: 0, offsetY: 0, mimeType: 'image/png' },
+			{ index: 1, offsetY: 900, mimeType: 'image/png' }
+		]);
+	});
+
+	it('falls back to a plain text block when there are no segments', () => {
+		const result = ok({ ...baseEnvelope, data: { notebookId: 'x' } });
+		expect(result.content).toEqual([
+			{ type: 'text', text: JSON.stringify({ ...baseEnvelope, data: { notebookId: 'x' } }) }
+		]);
 	});
 });
