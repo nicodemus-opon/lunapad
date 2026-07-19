@@ -771,6 +771,7 @@ function takeSnapshot(): NotebookSnapshot {
 					code: c.code,
 					markdown: c.markdown,
 					udfBody: c.udfBody,
+					controlConfig: c.controlConfig,
 					language: c.language,
 					cellType: c.cellType,
 					display: c.display,
@@ -1739,7 +1740,9 @@ async function executeToolCallWithResult(
 				return Boolean(
 					targetNotebook?.cells.some(
 						(cell) =>
-							(cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot') &&
+							(cell.cellType === 'query' ||
+								cell.cellType === 'python' ||
+								cell.cellType === 'plot') &&
 							(cell.id === payload.cellId || cell.outputName === payload.outputName)
 					)
 				);
@@ -1760,7 +1763,8 @@ async function executeToolCallWithResult(
 				// below, which only switches focus after this loop already ran).
 				const targetCells = getNotebooks().find((entry) => entry.id === notebook.id)?.cells ?? [];
 				const existingId =
-					resolveCellId(payload.cellId, targetCells) ?? resolveCellId(payload.outputName, targetCells);
+					resolveCellId(payload.cellId, targetCells) ??
+					resolveCellId(payload.outputName, targetCells);
 				if (!existingId) continue;
 				if (payload.cellType === 'python') updatePythonCellCode(existingId, payload.code);
 				else if (payload.cellType === 'plot') updatePlotCellCode(existingId, payload.code);
@@ -2395,9 +2399,9 @@ async function executeToolCallWithResult(
 							const closest = findClosestColumn(failingCol, allSchema);
 							if (closest) {
 								categoryHint = `\n⚠ Column "${failingCol}" not found. Did you mean "${closest.column}" from ${closest.table}?`;
-		}
-	}
-}
+							}
+						}
+					}
 
 					// Detect unquoted spaced column names in the failing SQL and give a direct fix hint
 					const allSpacedCols = [
@@ -3206,7 +3210,9 @@ async function runSprintLoop(
 				}
 
 				const hadRunCells = allToolResults.some((r) => r.startsWith('run_cells result:'));
-				const hadRunQueryNodes = allToolResults.some((r) => r.startsWith('run_query_nodes result:'));
+				const hadRunQueryNodes = allToolResults.some((r) =>
+					r.startsWith('run_query_nodes result:')
+				);
 				const directive =
 					errorLines.length > 0
 						? `Fix SQL errors with apply_notebook_patch, then run_query_nodes:\n${errorLines.join('\n')}`
@@ -4364,7 +4370,8 @@ export async function submitAIMessage(
 							.map((c) => {
 								const match = lastErrorDetails.find((d) => d.startsWith(`${c.outputName}:`));
 								return (
-									match ?? `${c.outputName}: RUN FAILED — (call run_query_nodes to see current error)`
+									match ??
+									`${c.outputName}: RUN FAILED — (call run_query_nodes to see current error)`
 								);
 							})
 							.join('\n');

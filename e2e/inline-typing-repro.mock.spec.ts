@@ -127,7 +127,7 @@ test.describe('inline document editing repro', () => {
 		await worksheetLines.click({ position: { x: 30, y: 10 } });
 		await page.keyboard.type('SELECT 1 AS order_id, 2 AS quantity', { delay: 10 });
 		await page.getByLabel('Run cell').click();
-		await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByTestId('result-view-table')).toBeVisible({ timeout: 30_000 });
 		await expect(page.getByRole('button', { name: 'order_id', exact: true })).toBeVisible();
 
 		await page.getByLabel('Exit worksheet view').click();

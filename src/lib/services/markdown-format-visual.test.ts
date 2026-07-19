@@ -4,6 +4,7 @@ import {
 	pmContentFromSnippet
 } from '../components/markdown/visual/slash-command-extension';
 import { MARKDOC_TAG_CATALOG } from './markdoc-catalog';
+import { SLASH_COMPONENT_CATALOG } from './component-capabilities';
 import { SLASH_COMMANDS, WIDGET_SNIPPETS } from './markdown-format';
 import { normalizeMarkdocMarkdown, pmDocumentToMarkdown } from './markdoc-pm';
 
@@ -31,6 +32,9 @@ describe('visual dashboard slash commands', () => {
 		const byId = new Map(SLASH_COMMANDS.map((cmd) => [cmd.id, cmd]));
 		for (const [tagName, tag] of Object.entries(MARKDOC_TAG_CATALOG)) {
 			expect(byId.get(tagName)?.snippet).toBe(tag.slashSnippet);
+		}
+		for (const entry of SLASH_COMPONENT_CATALOG) {
+			expect(byId.get(entry.id)?.snippet).toBe(entry.snippet);
 		}
 		expect(byId.get('each')?.snippet).toContain('{% each data=[{"title":"Detail"');
 		expect(byId.get('each')?.snippet).toContain('{% card title=$title %}');

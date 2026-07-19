@@ -40,7 +40,11 @@
 		Film,
 		Bookmark,
 		Sigma,
-		TableOfContents
+		TableOfContents,
+		TextCursorInput,
+		CalendarDays,
+		MousePointerClick,
+		MapPinned
 	} from '@lucide/svelte';
 	import * as Command from '$lib/components/ui/command';
 	import { scrollMenuItemIntoView } from './menu-utils';
@@ -59,7 +63,10 @@
 		heading: 'Headings',
 		structure: 'Basic blocks',
 		widget: 'Widgets & layouts',
-		query: 'Query & pages'
+		query: 'Query & pages',
+		input: 'Inputs',
+		data: 'Data displays',
+		ai: 'AI'
 	};
 
 	const iconMap: Record<string, Component> = {
@@ -111,7 +118,16 @@
 		embed: Film,
 		bookmark: Bookmark,
 		math: Sigma,
-		toc: TableOfContents
+		toc: TableOfContents,
+		'input-text': TextCursorInput,
+		'input-number': Sigma,
+		'input-date-range': CalendarDays,
+		'input-select': Filter,
+		'input-multiselect': ListChecks,
+		'input-button-group': PanelTop,
+		map: MapPinned,
+		'single-value': Gauge,
+		agent: MousePointerClick
 	};
 
 	const grouped = $derived.by(() => {

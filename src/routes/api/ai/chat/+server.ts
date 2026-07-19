@@ -11,6 +11,9 @@ import { parseToolCallObject } from '$lib/services/tool-call-parse.js';
 import { buildMarkdocSyntaxBlock } from '$lib/services/markdoc-prompt.js';
 import { repairMarkdocTagBalance } from '$lib/services/markdoc-interp.js';
 import { buildGeneratedDashboardPromptBlock } from '$lib/services/generated-dashboard.js';
+import { buildComponentCapabilityPromptBlock } from '$lib/services/component-capabilities.js';
+import { repairNotebookBlueprint } from '$lib/services/notebook-app-planner.js';
+import type { NotebookBlueprint } from '$lib/services/notebook-blueprint.js';
 import {
 	compileStructuredMarkdownArgs,
 	hasDashboardResultContextFromMessages
@@ -72,7 +75,10 @@ function parseJsonishToolValue(value: unknown): unknown {
 	}
 }
 
-function normalizeNotebookToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+export function normalizeNotebookToolArgs(
+	tool: string,
+	args: Record<string, unknown>
+): Record<string, unknown> {
 	const next = { ...args };
 	if ('blueprint' in next) next.blueprint = parseJsonishToolValue(next.blueprint);
 	if (next.blueprint && typeof next.blueprint === 'object' && !Array.isArray(next.blueprint)) {
@@ -84,6 +90,19 @@ function normalizeNotebookToolArgs(args: Record<string, unknown>): Record<string
 	}
 	for (const key of ['blocks', 'executableCells', 'operations', 'document']) {
 		if (key in next) next[key] = parseJsonishToolValue(next[key]);
+	}
+	if ((tool === 'create_notebook' || tool === 'apply_notebook_patch') && next.blueprint) {
+		const repaired = repairNotebookBlueprint(next.blueprint as NotebookBlueprint, {
+			autoRepair:
+				(next.blueprint as { autoRepair?: 'off' | 'safe' | 'aggressive' }).autoRepair ?? 'safe'
+		});
+		next.blueprint = repaired.blueprint;
+	}
+	if (tool === 'create_notebook' && !next.blueprint && Array.isArray(next.blocks)) {
+		const repaired = repairNotebookBlueprint(next as unknown as NotebookBlueprint, {
+			autoRepair: (next as { autoRepair?: 'off' | 'safe' | 'aggressive' }).autoRepair ?? 'safe'
+		});
+		Object.assign(next, repaired.blueprint);
 	}
 	return next;
 }
@@ -306,9 +325,10 @@ RULES:
 15. MODELING LAYERS: stg_ = staging — REQUIRED: cast types, coalesce NULLs, deduplicate, AND extract features (date parts like day_of_week/month/quarter, text splits like email_domain, CASE tier buckets like price_tier/churn_risk) so fct_/mart_ never re-derive them. dim_ = entity tables (one row per entity). fct_ = fact events (one row per event, must have timestamp + FK to dims). mart_ = reporting (SELECT only from fct_/dim_, no raw tables). State grain (1 row = 1 what?) before writing any cell.
 16. DOCUMENT YOUR WORK: include findings, data quality notes, and key decisions as narrative blocks in the PM document.
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
-18. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
-19. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
-20. ASK ONLY WHEN GENUINELY BLOCKED: call ask_user only when an ambiguity cannot be resolved by investigating data (sample_data/query_data/profile_column) and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, or unclear whether to reuse an existing cell vs create a new one). Prefer a stated default over asking — pick the more common convention, note the assumption, and proceed. Never ask about anything answerable from the Schema or Cells sections above. Provide options only for a naturally short discrete choice (2-4 items); omit options otherwise. At most once per task unless the answer creates a new ambiguity.
+18. SELF-DESCRIBING DATA APP UI: ${buildComponentCapabilityPromptBlock()}
+19. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
+20. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
+21. ASK ONLY WHEN GENUINELY BLOCKED: call ask_user only when an ambiguity cannot be resolved by investigating data (sample_data/query_data/profile_column) and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, or unclear whether to reuse an existing cell vs create a new one). Prefer a stated default over asking — pick the more common convention, note the assumption, and proceed. Never ask about anything answerable from the Schema or Cells sections above. Provide options only for a naturally short discrete choice (2-4 items); omit options otherwise. At most once per task unless the answer creates a new ambiguity.
 
 You MAY write 1–2 sentences of explanation before tool calls.
 
@@ -482,6 +502,8 @@ Include text blocks leading with **findings** — what the data actually reveals
 
 ${buildMarkdocSyntaxBlock()}
 
+${buildComponentCapabilityPromptBlock()}
+
 ${buildGeneratedDashboardPromptBlock()}
 
 **Step 6 — Done**: output the \`<done>\` signal.
@@ -513,10 +535,10 @@ ${buildGeneratedDashboardPromptBlock()}
 
 ## Tools (action)
 - inspect_notebook: {notebookId?:string} — inspect the active notebook document before patching it
-- create_notebook: {blueprint:{title:string, executableCells:[{cellId:string, outputName:string, cellType:"query"${pythonAvailable ? '|"python"' : ''}, language:"sql"${pythonAvailable ? '|"python"' : ''}, code:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}], blocks:[...]}}
+- create_notebook: {blueprint:{title:string, planningIntent?:object, qualityTarget?:"valid"|"polished"|"publication", autoRepair?:"off"|"safe"|"aggressive", executableCells:[{cellId:string, outputName:string, cellType:"query"${pythonAvailable ? '|"python"' : ''}, language:"sql"${pythonAvailable ? '|"python"' : ''}, code:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}], blocks:[...]}}
   - Use snake_case cellIds/outputNames describing the query: revenue_by_month, top_customers, order_funnel${pythonAvailable ? '\n  - For Python cells (cellType:"python") write Python source directly in code. See Tool selection below for when to use Python over SQL.' : ''}
   - Include text blocks for intro, methodology, findings, and caveats. SQL belongs exclusively in executableCells, never prose.
-- apply_notebook_patch: {title?:string, blueprint:{...}} or {title?:string, document:{...}} or {title?:string, operations:[...], executableCells?:[...]} — patch the active notebook atomically. Use title to rename it.
+- apply_notebook_patch: {title?:string, blueprint:{title?:string, planningIntent?:object, qualityTarget?:"valid"|"polished"|"publication", autoRepair?:"off"|"safe"|"aggressive", executableCells?:[...], blocks:[...]}} or {title?:string, document:{...}} or {title?:string, operations:[...], executableCells?:[...]} — patch the active notebook atomically. Use title to rename it.
 - run_query_nodes: {cellIds:string[]} or {nodeIds:string[]} — always run all added/changed queryBlock nodes
 - validate_notebook: {notebookId?:string} — validate before done
 - **pick_chart: {cellId:string}** — PREFERRED. Call after run_query_nodes. Reads actual result and auto-selects the correct chart type. Use this for every query cell when charts are useful.
@@ -1293,7 +1315,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						JSON.stringify(args).slice(0, 500)
 					);
 				}
-				args = normalizeNotebookToolArgs(args);
+				args = normalizeNotebookToolArgs(tool, args);
 				if (tool === 'create_cell' || tool === 'update_cell') {
 					pendingPolicyFallback ??=
 						'Legacy cell tools are disabled. Use inspect_notebook, apply_notebook_patch, run_query_nodes, and validate_notebook.';

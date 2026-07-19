@@ -24,6 +24,7 @@
 		<Settings2 class="h-3.5 w-3.5" />
 	</Popover.Trigger>
 	<Popover.Content
+		data-testid="chart-settings-panel"
 		class="max-h-[min(78vh,34rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-3"
 		sideOffset={6}
 		align="end"

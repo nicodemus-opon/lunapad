@@ -19,6 +19,10 @@ describe('agent tool registry', () => {
 	it('includes MCP server tools', () => {
 		expect(getAgentTool('list_capabilities')?.executor).toBe('server');
 		expect(getAgentTool('get_visual_report_grammar')?.executor).toBe('server');
+		expect(getAgentTool('get_component_capabilities')?.executor).toBe('server');
+		expect(getAgentTool('get_notebook_app_grammar')?.executor).toBe('server');
+		expect(getAgentTool('plan_notebook_app')?.executor).toBe('server');
+		expect(getAgentTool('repair_notebook_blueprint')?.mutates).toBe(false);
 		expect(getAgentTool('run_workflow')?.mutates).toBe(true);
 		expect(getAgentTool('delete_resource')?.mutates).toBe(true);
 		expect(getAgentTool('dbt_run')?.executor).toBe('server');
@@ -38,6 +42,11 @@ describe('agent tool registry', () => {
 		const names = new Set(schemasForMcp().map((t) => t.name));
 		expect(names.has('list_capabilities')).toBe(true);
 		expect(names.has('get_visual_report_grammar')).toBe(true);
+		expect(names.has('get_component_capabilities')).toBe(true);
+		expect(names.has('get_notebook_app_grammar')).toBe(true);
+		expect(names.has('plan_notebook_app')).toBe(true);
+		expect(names.has('repair_notebook_blueprint')).toBe(true);
+		expect(names.has('score_notebook_blueprint')).toBe(true);
 		expect(names.has('validate_workflow')).toBe(true);
 		expect(names.has('run_workflow')).toBe(true);
 		expect(names.has('list_connections')).toBe(true); // executor: 'server'

@@ -93,6 +93,53 @@ const MCP_ONLY_TOOLS: AgentToolDef[] = [
 		'Return block types, chart types, data roles, style axes, reference-deconstruction guidance, icon names, and generic blueprint seeds for visual reports.'
 	),
 	mcpOnlyTool(
+		'get_component_capabilities',
+		'Return the self-describing AI-authorable component registry shared by prompts, planner, editor, validation, and MCP clients.'
+	),
+	mcpOnlyTool(
+		'get_notebook_app_grammar',
+		'Return the generic data-app-to-notebook grammar, primitive view skeletons, fail-soft diagnostics, and component capabilities.'
+	),
+	mcpOnlyTool(
+		'plan_notebook_app',
+		'Plan a general data app as notebook IR primitives using the component capability registry.',
+		{
+			type: 'object',
+			properties: {
+				prompt: { type: 'string' },
+				availableOutputNames: { type: 'array', items: { type: 'string' } }
+			},
+			required: ['prompt']
+		}
+	),
+	mcpOnlyTool(
+		'repair_notebook_blueprint',
+		'Run deterministic fail-soft repair on a notebook blueprint without mutating files.',
+		{
+			type: 'object',
+			properties: {
+				blueprint: { type: 'object' },
+				autoRepair: { type: 'string', enum: ['off', 'safe', 'aggressive'] },
+				knownRefs: { type: 'array', items: { type: 'string' } }
+			},
+			required: ['blueprint']
+		}
+	),
+	mcpOnlyTool(
+		'score_notebook_blueprint',
+		'Score a notebook blueprint for validity, layout, interaction, data-view coverage, recovery, and narrative usefulness.',
+		{
+			type: 'object',
+			properties: {
+				blueprint: { type: 'object' },
+				target: { type: 'string', enum: ['valid', 'polished', 'publication'] },
+				autoRepair: { type: 'string', enum: ['off', 'safe', 'aggressive'] },
+				knownRefs: { type: 'array', items: { type: 'string' } }
+			},
+			required: ['blueprint']
+		}
+	),
+	mcpOnlyTool(
 		'inspect_resource',
 		'Inspect a resource ref such as notebook:<id>, cell:<notebook>#<cellId>, output:<notebook>#<outputName>, connection:<id>, or dbt-job:<id>.',
 		{

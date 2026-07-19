@@ -34,10 +34,12 @@ import type {
 	CellEditMode,
 	CellLanguage,
 	CellMaterializationMode,
+	CellType,
 	CellScheduleScope
 } from '$lib/stores/notebook.svelte';
 import type { ChartConfig, GUIPipelineStage, ResultViewMode } from '$lib/types/gui-pipeline';
 import type { ColumnConditionalRules } from '$lib/services/report-table-conditional-format';
+import type { ControlCellConfig } from '$lib/services/control-cells';
 
 const QUERY_OPEN_RE = /^\{%\s*query\s+([^%]*?)\s*%\}\s*$/;
 const QUERY_CLOSE_RE = /^\{%\s*\/query\s*%\}\s*$/;
@@ -48,6 +50,7 @@ const PLOT_OPEN_RE = /^\{%\s*plot\s+([^%]*?)\s*%\}\s*$/;
 const PLOT_CLOSE_RE = /^\{%\s*\/plot\s*%\}\s*$/;
 const PYTHON_OPEN_RE = /^\{%\s*python\s+([^%]*?)\s*%\}\s*$/;
 const PYTHON_CLOSE_RE = /^\{%\s*\/python\s*%\}\s*$/;
+const CONTROL_RE = /^\{%\s*control\s+([^%]*?)\s*\/%\}\s*$/;
 // Forces a markdown-cell boundary that would otherwise be invisible: between two
 // adjacent markdown cells (which would silently merge into one prose blob), or
 // in place of a markdown cell whose content is empty (which would otherwise be
@@ -107,7 +110,14 @@ export type LunaEntry =
 	| { kind: 'modelRef'; ref: string }
 	| { kind: 'udf'; udfBody: string }
 	| { kind: 'plot'; cellId?: string; name: string; code: string; meta?: LunaPlotMeta }
-	| { kind: 'python'; cellId?: string; name: string; code: string };
+	| { kind: 'python'; cellId?: string; name: string; code: string }
+	| {
+			kind: 'control';
+			cellId?: string;
+			name: string;
+			cellType: CellType;
+			config: ControlCellConfig;
+	  };
 
 export interface LunaDocument {
 	entries: LunaEntry[];
@@ -184,6 +194,7 @@ export function parseLunaFile(content: string): LunaDocument {
 		const udfOpenMatch = line.match(UDF_OPEN_RE);
 		const plotOpenMatch = line.match(PLOT_OPEN_RE);
 		const pythonOpenMatch = line.match(PYTHON_OPEN_RE);
+		const controlMatch = line.match(CONTROL_RE);
 
 		const mdModeMatch = line.match(MD_MODE_RE);
 		if (mdModeMatch) {
@@ -294,6 +305,23 @@ export function parseLunaFile(content: string): LunaDocument {
 			continue;
 		}
 
+		if (controlMatch) {
+			flushProse();
+			const attrs = parseAttrs(controlMatch[1]);
+			const config = decodeMeta<ControlCellConfig>(attrs.meta);
+			if (config) {
+				entries.push({
+					kind: 'control',
+					cellId: attrs.id,
+					name: attrs.name ?? config.name ?? '',
+					cellType: (attrs.cellType as CellType) || 'input',
+					config
+				});
+			}
+			i++;
+			continue;
+		}
+
 		prose.push(line);
 		i++;
 	}
@@ -308,10 +336,11 @@ export function parseLunaFile(content: string): LunaDocument {
  *  `Cell` type so this module has no runtime dependency on notebook.svelte.ts. */
 export interface SerializableCell {
 	id: string;
-	cellType: 'query' | 'markdown' | 'udf' | 'plot' | 'python';
+	cellType: CellType;
 	markdown: string;
 	markdownEditMode?: 'visual' | 'source';
 	udfBody: string;
+	controlConfig: ControlCellConfig | null;
 	outputName: string;
 	language: CellLanguage;
 	code: string;
@@ -452,6 +481,14 @@ export function serializeLunaFile(cells: SerializableCell[]): string {
 			const attrs = [`name="${cell.outputName}"`];
 			if (cell.id && cell.id !== cell.outputName) attrs.push(`id="${cell.id}"`);
 			blocks.push(`{% python ${attrs.join(' ')} %}\n${cell.code.trim()}\n{% /python %}`);
+		} else if (cell.controlConfig) {
+			const attrs = [
+				`name="${cell.outputName}"`,
+				`cellType="${cell.cellType}"`,
+				`meta="${encodeMeta(cell.controlConfig)}"`
+			];
+			if (cell.id && cell.id !== cell.outputName) attrs.push(`id="${cell.id}"`);
+			blocks.push(`{% control ${attrs.join(' ')} /%}`);
 		} else if (cell.promotedModelPath) {
 			blocks.push(`{% model ref="${cell.outputName}" /%}`);
 		} else {

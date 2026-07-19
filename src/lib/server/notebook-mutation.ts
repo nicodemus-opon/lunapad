@@ -38,6 +38,10 @@ import {
 	type NotebookPatchOperation
 } from '$lib/services/notebook-blueprint.js';
 import {
+	repairNotebookBlueprint,
+	type RepairLogEntry
+} from '$lib/services/notebook-app-planner.js';
+import {
 	codeReferencesUnknownTable,
 	type ChatToolPolicyContext
 } from '$lib/agent/server/chat-tool-policy.js';
@@ -123,6 +127,7 @@ function cellToSerializableCell(cell: Cell): SerializableCell {
 		markdown: cell.markdown,
 		markdownEditMode: cell.markdownEditMode,
 		udfBody: cell.udfBody,
+		controlConfig: cell.controlConfig,
 		outputName: cell.outputName,
 		language: cell.language,
 		code: cell.code,
@@ -156,6 +161,7 @@ function markdownSerializableCell(markdown: string, id: string): SerializableCel
 		cellType: 'markdown',
 		markdown,
 		udfBody: '',
+		controlConfig: null,
 		outputName: '',
 		language: 'prql',
 		code: '',
@@ -194,6 +200,7 @@ function newExecutableSerializableCell(
 		cellType,
 		markdown: '',
 		udfBody: '',
+		controlConfig: null,
 		outputName,
 		language,
 		code: bp.code,
@@ -470,6 +477,7 @@ async function checkExecutableCellTables(
 
 export interface NotebookMutationResult {
 	diagnostics: NotebookBlueprintDiagnostic[];
+	repairLog?: RepairLogEntry[];
 	notebook?: Notebook;
 }
 
@@ -490,28 +498,35 @@ export async function createNotebookFromBlueprintOnDisk(
 			]
 		};
 	}
-	const compiled = compileNotebookBlueprint(blueprint);
-	if (!compiled.document) return { diagnostics: compiled.diagnostics };
+	const repaired =
+		blueprint.autoRepair === 'off'
+			? { blueprint, repairLog: [] }
+			: repairNotebookBlueprint(blueprint, { autoRepair: blueprint.autoRepair ?? 'safe' });
+	const compiled = compileNotebookBlueprint(repaired.blueprint);
+	if (!compiled.document)
+		return { diagnostics: compiled.diagnostics, repairLog: repaired.repairLog };
 	const placementDiagnostics = validateCellPlacements(
 		compiled.document,
-		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
+		(repaired.blueprint.executableCells as McpExecutableCellInput[]) ?? [],
 		[]
 	);
-	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
+	if (placementDiagnostics.length)
+		return { diagnostics: placementDiagnostics, repairLog: repaired.repairLog };
 	const tableDiagnostics = await checkExecutableCellTables(
-		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
+		(repaired.blueprint.executableCells as McpExecutableCellInput[]) ?? [],
 		[],
 		tenant
 	);
-	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics };
+	if (tableDiagnostics.length)
+		return { diagnostics: tableDiagnostics, repairLog: repaired.repairLog };
 	const notebook = await commitDocumentToLunaFile(
 		folder,
 		notebookId,
 		compiled.document,
-		(blueprint.executableCells as McpExecutableCellInput[]) ?? [],
+		(repaired.blueprint.executableCells as McpExecutableCellInput[]) ?? [],
 		[]
 	);
-	return { diagnostics: [], notebook };
+	return { diagnostics: [], notebook, repairLog: repaired.repairLog };
 }
 
 export interface NotebookPatchInput {
@@ -591,10 +606,19 @@ export async function patchNotebookOnDisk(
 	let document: PMDocJSON | null = null;
 	let diagnostics: NotebookBlueprintDiagnostic[] = [];
 	let executableCells: McpExecutableCellInput[] = patch.executableCells ?? [];
+	let repairLog: RepairLogEntry[] = [];
 
 	if (patch.blueprint) {
+		const repaired =
+			patch.blueprint.autoRepair === 'off'
+				? { blueprint: patch.blueprint, repairLog: [] }
+				: repairNotebookBlueprint(patch.blueprint, {
+						autoRepair: patch.blueprint.autoRepair ?? 'safe',
+						knownRefs: handle.knownRefs
+					});
+		repairLog = repaired.repairLog;
 		const compiled = compileNotebookBlueprint(
-			patch.blueprint,
+			repaired.blueprint,
 			handle.knownRefs,
 			handle.knownCellIds
 		);
@@ -613,12 +637,12 @@ export async function patchNotebookOnDisk(
 		diagnostics = result.diagnostics;
 	}
 
-	if (!document) return { diagnostics };
+	if (!document) return { diagnostics, repairLog };
 	const placementDiagnostics = validateCellPlacements(document, executableCells, handle.cells);
-	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics };
+	if (placementDiagnostics.length) return { diagnostics: placementDiagnostics, repairLog };
 
 	const tableDiagnostics = await checkExecutableCellTables(executableCells, handle.cells, tenant);
-	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics };
+	if (tableDiagnostics.length) return { diagnostics: tableDiagnostics, repairLog };
 
 	let notebook = await commitDocumentToLunaFile(
 		folder,
@@ -630,7 +654,7 @@ export async function patchNotebookOnDisk(
 	if (patch.title?.trim()) {
 		notebook = await renameLunaNotebook(folder, notebookId, patch.title.trim());
 	}
-	return { diagnostics: [], notebook };
+	return { diagnostics: [], notebook, repairLog };
 }
 
 export async function validateNotebookOnDisk(

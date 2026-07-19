@@ -30,6 +30,14 @@ import { getConnectionMetadata } from './connections-store.js';
 import { getSecret } from './connection-secrets.js';
 import { fetchExternalConnectionSchema } from './connections.js';
 import { VISUAL_REPORT_GRAMMAR } from './visual-report-grammar.js';
+import { getComponentCapabilityCatalog } from '$lib/services/component-capabilities.js';
+import {
+	getNotebookAppGrammar,
+	planNotebookApp,
+	repairNotebookBlueprint,
+	scoreNotebookBlueprint
+} from '$lib/services/notebook-app-planner.js';
+import type { NotebookBlueprint } from '$lib/services/notebook-blueprint.js';
 import type { ChartConfig } from '$lib/types/gui-pipeline.js';
 import {
 	createNotebookShape,
@@ -269,6 +277,9 @@ function checkPermission(
 const emptyShape = {};
 const folderShape = { folder: z.string().optional() };
 const notebookIdShape = { folder: z.string().optional(), notebookId: z.string() };
+const notebookBlueprintShape = z
+	.record(z.string(), z.unknown())
+	.describe('Notebook blueprint object. Deep validation and repair happen in the compiler.');
 const workflowStepShape = z.object({
 	id: z.string(),
 	action: z.string(),
@@ -406,6 +417,7 @@ async function deleteResource(input: Record<string, unknown>, ctx: ActionContext
 }
 
 function capabilities() {
+	const componentCatalog = getComponentCapabilityCatalog();
 	return {
 		actions: ACTIONS.map((action) => ({
 			name: action.name,
@@ -425,11 +437,32 @@ function capabilities() {
 			'site:<id>'
 		],
 		recipes: [
+			'get_component_capabilities -> plan_notebook_app -> repair_notebook_blueprint -> create_notebook -> validate_notebook',
+			'get_notebook_app_grammar -> discover_schema -> create_notebook -> run_cells -> validate_notebook',
 			'get_visual_report_grammar -> discover_schema -> create_notebook -> run_cells -> validate_notebook',
 			'discover_schema -> create_notebook -> run_cells -> validate_notebook',
 			'inspect_resource -> apply_notebook_patch -> run_workflow',
 			'validate_workflow(dryRun) -> run_workflow'
 		],
+		componentCapabilities: {
+			action: 'get_component_capabilities',
+			version: componentCatalog.version,
+			hash: componentCatalog.hash,
+			aiAuthorableComponents: componentCatalog.aiAuthorableComponentIds,
+			count: componentCatalog.components.length
+		},
+		notebookAppGrammar: {
+			action: 'get_notebook_app_grammar',
+			planner: 'plan_notebook_app',
+			mutationTools: ['create_notebook', 'apply_notebook_patch', 'validate_notebook'],
+			helperTools: [
+				'get_component_capabilities',
+				'get_notebook_app_grammar',
+				'plan_notebook_app',
+				'repair_notebook_blueprint',
+				'score_notebook_blueprint'
+			]
+		},
 		visualReportGrammar: {
 			action: 'get_visual_report_grammar',
 			purpose: VISUAL_REPORT_GRAMMAR.purpose,
@@ -554,6 +587,78 @@ export const ACTIONS: AgentActionDefinition[] = [
 			}
 		],
 		handler: async () => VISUAL_REPORT_GRAMMAR
+	},
+	{
+		name: 'get_component_capabilities',
+		description:
+			'Return the self-describing AI-authorable component registry shared by prompts, planner, editor, validation, and MCP clients.',
+		permission: 'workspace:read',
+		mutates: false,
+		inputSchema: emptyShape,
+		handler: async () => getComponentCapabilityCatalog()
+	},
+	{
+		name: 'get_notebook_app_grammar',
+		description:
+			'Return the generic data-app-to-notebook grammar: intent fields, primitive view skeletons, fail-soft diagnostics, and component capabilities.',
+		permission: 'workspace:read',
+		mutates: false,
+		inputSchema: emptyShape,
+		handler: async () => getNotebookAppGrammar()
+	},
+	{
+		name: 'plan_notebook_app',
+		description:
+			'Plan a general data app as notebook IR primitives using the component capability registry; labels such as dashboard or infographic are hints, not separate creation tools.',
+		permission: 'workspace:read',
+		mutates: false,
+		inputSchema: {
+			prompt: z.string(),
+			availableOutputNames: z.array(z.string()).optional()
+		},
+		handler: async (input) =>
+			planNotebookApp({
+				prompt: String(input.prompt),
+				availableOutputNames: input.availableOutputNames as string[] | undefined
+			})
+	},
+	{
+		name: 'repair_notebook_blueprint',
+		description:
+			'Run deterministic fail-soft repair on a notebook blueprint without mutating files; repairable/downgradable fixes are returned with a repair log.',
+		permission: 'workspace:read',
+		mutates: false,
+		inputSchema: {
+			blueprint: notebookBlueprintShape,
+			autoRepair: z.enum(['off', 'safe', 'aggressive']).optional(),
+			knownRefs: z.array(z.string()).optional()
+		},
+		handler: async (input) => ({
+			result: repairNotebookBlueprint(input.blueprint as NotebookBlueprint, {
+				autoRepair: input.autoRepair as 'off' | 'safe' | 'aggressive' | undefined,
+				knownRefs: input.knownRefs as string[] | undefined
+			})
+		})
+	},
+	{
+		name: 'score_notebook_blueprint',
+		description:
+			'Score a notebook blueprint for validity, layout, interaction, data-view coverage, recovery, and narrative usefulness without mutating files.',
+		permission: 'workspace:read',
+		mutates: false,
+		inputSchema: {
+			blueprint: notebookBlueprintShape,
+			target: z.enum(['valid', 'polished', 'publication']).optional(),
+			autoRepair: z.enum(['off', 'safe', 'aggressive']).optional(),
+			knownRefs: z.array(z.string()).optional()
+		},
+		handler: async (input) => ({
+			result: scoreNotebookBlueprint(input.blueprint as NotebookBlueprint, {
+				target: input.target as 'valid' | 'polished' | 'publication' | undefined,
+				autoRepair: input.autoRepair as 'off' | 'safe' | 'aggressive' | undefined,
+				knownRefs: input.knownRefs as string[] | undefined
+			})
+		})
 	},
 	{
 		name: 'list_connections',

@@ -58,6 +58,21 @@ const blockShape = z
 			'for full block types, data roles, composition patterns, style axes, icon names, and generic blueprint seeds.'
 	);
 
+const planningIntentShape = z
+	.record(z.string(), z.unknown())
+	.optional()
+	.describe('Optional Data App IR intent metadata produced by plan_notebook_app.');
+
+const qualityTargetShape = z
+	.enum(['valid', 'polished', 'publication'])
+	.optional()
+	.describe('Validation/polish target for the notebook compiler.');
+
+const autoRepairShape = z
+	.enum(['off', 'safe', 'aggressive'])
+	.optional()
+	.describe('Whether deterministic fail-soft notebook blueprint repair should run before compile.');
+
 export const createNotebookShape = {
 	notebookId: z
 		.string()
@@ -67,6 +82,9 @@ export const createNotebookShape = {
 		),
 	folder: z.string().optional().describe('Project folder. Omit to use the currently open project.'),
 	title: z.string().optional(),
+	planningIntent: planningIntentShape,
+	qualityTarget: qualityTargetShape,
+	autoRepair: autoRepairShape,
 	executableCells: z.array(executableCellShape).optional(),
 	blocks: z
 		.array(blockShape)
@@ -82,6 +100,9 @@ export const applyNotebookPatchShape = {
 	blueprint: z
 		.object({
 			title: z.string().optional(),
+			planningIntent: planningIntentShape,
+			qualityTarget: qualityTargetShape,
+			autoRepair: autoRepairShape,
 			executableCells: z.array(executableCellShape).optional(),
 			blocks: z.array(blockShape)
 		})

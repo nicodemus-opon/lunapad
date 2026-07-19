@@ -163,7 +163,8 @@ return {
       x: data.rows.map(r => weekOf(r.date)),
       y: data.rows.map(r => dayOf(r.date)),
       z: data.rows.map(r => r.value),
-      colorscale: "Blues"
+      // Skips Blues' near-white low stops (bad contrast against a dark theme background)
+      colorscale: [[0, "#c6dbef"], [0.5, "#4292c6"], [1, "#08306b"]]
     }
   ],
   layout: { margin: { l: 40 } }

@@ -10,6 +10,7 @@ import {
 } from '$lib/services/luna-file';
 import { parseUdfSignature } from '$lib/services/udf';
 import type { Cell, CellLanguage, Notebook, NotebookFolder } from '$lib/stores/notebook.svelte';
+import { normalizeControlCellConfig } from '$lib/services/control-cells';
 import { readSchemaFile, findSchemaFile, upsertModelEntry, writeSchemaFile } from './dbt-schema.js';
 import { deconflictName } from '$lib/utils/deconflict';
 
@@ -35,6 +36,7 @@ function claimCellOutputName(used: Set<string>, cell: Cell, preserveId = false):
 		cell.outputName = claimed;
 		if (!preserveId) cell.id = claimed;
 		cell.materializeTarget = claimed;
+		if (cell.controlConfig) cell.controlConfig = { ...cell.controlConfig, name: claimed };
 	}
 }
 
@@ -565,6 +567,7 @@ async function loadMissingModelsFromManifest(
 			status: 'idle',
 			result: null,
 			pythonOutput: null,
+			controlConfig: null,
 			errors: [],
 			compiledSQL: null,
 			executionMs: null,
@@ -773,6 +776,12 @@ async function hydrateLunaEntries(
 			cells.push(cell);
 			continue;
 		}
+		if (entry.kind === 'control') {
+			const cell = buildControlCellFromLuna(entry);
+			claimCellOutputName(usedOutputNames, cell, true);
+			cells.push(cell);
+			continue;
+		}
 		// modelRef: hydrate the real cell from its promoted model file. This
 		// intentionally mirrors the same outputName/id as the standalone model
 		// cell elsewhere in the project — it's the same logical model, not a
@@ -840,6 +849,7 @@ function buildUdfCellFromLuna(udfBody: string): Cell {
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -905,6 +915,7 @@ function buildPlotCellFromLuna(
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -968,6 +979,7 @@ function buildPythonCellFromLuna(name: string, code: string, cellId?: string): C
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -1013,6 +1025,23 @@ function buildPythonCellFromLuna(name: string, code: string, cellId?: string): C
 	};
 }
 
+function buildControlCellFromLuna(entry: Extract<LunaEntry, { kind: 'control' }>): Cell {
+	const config = normalizeControlCellConfig(entry.config, entry.config.kind, entry.name);
+	const cell = buildPythonCellFromLuna(entry.name, '', entry.cellId);
+	cell.cellType = entry.cellType;
+	cell.language = 'sql';
+	cell.outputName = entry.name || config.name;
+	cell.materializeTarget = cell.outputName;
+	cell.controlConfig = config;
+	cell.display = 'output';
+	cell.status = 'success';
+	cell.result =
+		config.kind === 'table-input' && config.tableData
+			? { rows: config.tableData.rows, columns: config.tableData.columns }
+			: { rows: [{ name: config.name, value: config.value }], columns: ['name', 'value'] };
+	return cell;
+}
+
 function buildMarkdownCell(
 	markdown: string,
 	entryIndex: number,
@@ -1032,6 +1061,7 @@ function buildMarkdownCell(
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -1092,6 +1122,7 @@ export function buildQueryCellFromLuna(entry: LunaQueryEntry): Cell {
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -1187,6 +1218,7 @@ async function readCellFile(
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,

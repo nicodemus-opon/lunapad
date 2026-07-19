@@ -81,6 +81,7 @@
 	import { PLOT_TEMPLATES } from '$lib/services/plot-templates';
 	import PlotCellOutput from './PlotCellOutput.svelte';
 	import PythonCellOutput from './PythonCellOutput.svelte';
+	import ControlCellView from './ControlCellView.svelte';
 
 	import type { GUIPipelineStage, GUISourceSchema } from '$lib/types/gui-pipeline';
 	import type { ResultViewMode } from '$lib/types/gui-pipeline';
@@ -260,6 +261,7 @@
 	const isMarkdownCell = $derived(cell.cellType === 'markdown');
 	const isPlotCell = $derived(cell.cellType === 'plot');
 	const isPythonCell = $derived(cell.cellType === 'python');
+	const isControlCell = $derived(Boolean(cell.controlConfig));
 	const pythonTableHints = $derived(getPythonTableHints(cell.code, notebookId));
 	// Raw-code editor cells the inline "Tell AI what to do" prompt supports — GUI-mode
 	// query cells have their own AI entry via AddStageMenu instead.
@@ -292,6 +294,18 @@
 	);
 	const headerCodeHidden = $derived(isMarkdownCell ? markdownEditorHidden : codeHidden);
 	const supportsWorksheet = $derived(isQueryCell || isPythonCell || isPlotCell);
+	const controlSourceCell = $derived.by(() => {
+		if (!isControlCell) return null;
+		const cells = getCells();
+		const idx = cells.findIndex((c) => c.id === cell.id);
+		const configuredId = cell.controlConfig?.source.cellId;
+		if (configuredId) return cells.find((c) => c.id === configuredId && c.result) ?? null;
+		for (let i = idx - 1; i >= 0; i--) {
+			const candidate = cells[i];
+			if (candidate?.result?.rows?.length) return candidate;
+		}
+		return null;
+	});
 	const editorLayout = $derived(worksheet ? ('fill' as const) : ('auto' as const));
 
 	function handleOpenWorksheet() {
@@ -417,7 +431,10 @@
 		isMarkdownCell && extractMarkdocRefs(cell.markdown ?? '').length > 0
 	);
 
-	function inferMarkdocColumnType(rows: Record<string, unknown>[], column: string): string | undefined {
+	function inferMarkdocColumnType(
+		rows: Record<string, unknown>[],
+		column: string
+	): string | undefined {
 		for (const row of rows.slice(0, 25)) {
 			const value = row[column];
 			if (value === null || value === undefined) continue;
@@ -520,9 +537,7 @@
 
 	// Coarse "what tables exist" context for the inline AI prompt — not pipeline-resolved
 	// like guiTables below, just enough so the model doesn't invent table/column names.
-	const inlinePromptTables = $derived(
-		buildInlineAITablesContext(tables, externalSchemaTables)
-	);
+	const inlinePromptTables = $derived(buildInlineAITablesContext(tables, externalSchemaTables));
 
 	// Best-effort "main table" for this cell's inline AI prompt, parsed from its own FROM
 	// clause — raw text cells have no GUI "from" stage to read this from directly. Lets
@@ -1018,6 +1033,13 @@
 					<code>fig</code>, to surface a table or Plotly chart.
 				</p>
 			{/if}
+		{:else if isControlCell}
+			<ControlCellView
+				{cell}
+				sourceRows={controlSourceCell?.result?.rows ?? []}
+				sourceColumns={controlSourceCell?.result?.columns ?? []}
+				{reportView}
+			/>
 		{:else if !isQueryCell}
 			<div class="group/markdown relative" bind:this={markdownEditContainerEl}>
 				{#if !worksheet && !reportView && !collapsed}
@@ -1184,16 +1206,16 @@
 		{#if isPlotCell}
 			<div in:fade={{ duration: 220 }} class={worksheet ? 'min-h-0 flex-1' : 'min-h-64'}>
 				<PlotCellOutput
-				{cell}
-				deps={plotDeps}
-				allCells={getCells()}
-				onPlotSourceCellChange={(sourceCellId) => setPlotSourceCellId(cell.id, sourceCellId)}
-				onPlotConfigChange={(config) => setPlotConfig(cell.id, config)}
-				onEjectToCode={(code) => {
-					updatePlotCellCode(cell.id, code);
-					setPlotMode(cell.id, 'code');
-				}}
-			/>
+					{cell}
+					deps={plotDeps}
+					allCells={getCells()}
+					onPlotSourceCellChange={(sourceCellId) => setPlotSourceCellId(cell.id, sourceCellId)}
+					onPlotConfigChange={(config) => setPlotConfig(cell.id, config)}
+					onEjectToCode={(code) => {
+						updatePlotCellCode(cell.id, code);
+						setPlotMode(cell.id, 'code');
+					}}
+				/>
 			</div>
 		{/if}
 
@@ -1207,7 +1229,7 @@
 		{/if}
 
 		<!-- Results -->
-		{#if !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
+		{#if !isControlCell && !cell.hideResult && cell.result && (cell.status === 'success' || cell.status === 'running')}
 			<div
 				in:fade={{ duration: 220 }}
 				class="relative transition-opacity duration-(--motion-slow) {worksheet
@@ -1225,7 +1247,11 @@
 				{#if cell.result.rows.length === 0}
 					<p class="text-xs text-muted-foreground italic">Query returned 0 rows.</p>
 				{:else}
-					<div class="notebook-output-block {worksheet ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : ''}">
+					<div
+						class="notebook-output-block {worksheet
+							? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+							: ''}"
+					>
 						<InlineResultView
 							rows={cell.result.rows}
 							columns={cell.result.columns}
@@ -1280,25 +1306,25 @@
 		{#if hasStatusLine}
 			<div class={worksheet ? 'shrink-0' : ''}>
 				<CellStatusLine
-				{cell}
-				{showResult}
-				{running}
-				{intelligenceSummary}
-				connectionName={cellConnectionName}
-				{isDbtProject}
-				onOpenMaterialize={() => (materializeDialogOpen = true)}
-				onShowSql={() => (sqlExpanded = true)}
-				onRunTests={() => void testCell(cell.id)}
-				onOverlayChange={handleOverlayChange}
-				onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
-					? () =>
-							onOpenResultTab!(
-								cell.id,
-								notebookId,
-								cell.outputName || `result${index + 1}`,
-								'table'
-							)
-					: undefined}
+					{cell}
+					{showResult}
+					{running}
+					{intelligenceSummary}
+					connectionName={cellConnectionName}
+					{isDbtProject}
+					onOpenMaterialize={() => (materializeDialogOpen = true)}
+					onShowSql={() => (sqlExpanded = true)}
+					onRunTests={() => void testCell(cell.id)}
+					onOverlayChange={handleOverlayChange}
+					onOpenFull={onOpenResultTab && cell.result && cell.result.rows.length > 50
+						? () =>
+								onOpenResultTab!(
+									cell.id,
+									notebookId,
+									cell.outputName || `result${index + 1}`,
+									'table'
+								)
+						: undefined}
 				/>
 			</div>
 		{/if}

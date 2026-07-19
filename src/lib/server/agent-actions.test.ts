@@ -18,6 +18,11 @@ describe('agent action registry', () => {
 		const names = new Set(listAgentActions().map((a) => a.name));
 		expect(names).toContain('list_capabilities');
 		expect(names).toContain('get_visual_report_grammar');
+		expect(names).toContain('get_component_capabilities');
+		expect(names).toContain('get_notebook_app_grammar');
+		expect(names).toContain('plan_notebook_app');
+		expect(names).toContain('repair_notebook_blueprint');
+		expect(names).toContain('score_notebook_blueprint');
 		expect(names).toContain('inspect_resource');
 		expect(names).toContain('discover_schema');
 		expect(names).toContain('validate_workflow');
@@ -32,6 +37,14 @@ describe('agent action registry', () => {
 		expect(result.meta.action).toBe('list_capabilities');
 		expect(result.data).toMatchObject({
 			resourceRefs: expect.any(Array),
+			componentCapabilities: {
+				action: 'get_component_capabilities',
+				aiAuthorableComponents: expect.arrayContaining(['metric', 'chart', 'filter'])
+			},
+			notebookAppGrammar: {
+				action: 'get_notebook_app_grammar',
+				mutationTools: expect.arrayContaining(['create_notebook', 'apply_notebook_patch'])
+			},
 			visualReportGrammar: {
 				action: 'get_visual_report_grammar',
 				blockTypes: expect.arrayContaining(['metric', 'chart', 'columns']),
@@ -39,6 +52,63 @@ describe('agent action registry', () => {
 				styleAxes: expect.arrayContaining([expect.objectContaining({ name: 'density' })])
 			}
 		});
+	});
+
+	it('returns component capabilities and generic notebook app grammar', async () => {
+		const capabilities = await executeAgentAction('get_component_capabilities', {}, adminAuth);
+		expect(capabilities.ok).toBe(true);
+		expect(capabilities.data).toMatchObject({
+			version: expect.stringMatching(/^component-capabilities\.v1\./),
+			aiAuthorableComponentIds: expect.arrayContaining(['chart', 'datatable', 'filter'])
+		});
+
+		const grammar = await executeAgentAction('get_notebook_app_grammar', {}, adminAuth);
+		expect(grammar.ok).toBe(true);
+		expect(grammar.data).toMatchObject({
+			compileTarget: 'notebook',
+			mutationTools: expect.arrayContaining(['create_notebook', 'apply_notebook_patch']),
+			failSoftDiagnostics: expect.arrayContaining(['repairable', 'downgradable', 'fatal'])
+		});
+	});
+
+	it('plans and repairs notebook app blueprints through read-only helper actions', async () => {
+		const plan = await executeAgentAction(
+			'plan_notebook_app',
+			{ prompt: 'Build a simulator with bounded filters, charts, tables, and Q&A lineage' },
+			adminAuth
+		);
+		expect(plan.ok).toBe(true);
+		expect(plan.data).toMatchObject({
+			compileTarget: 'notebook',
+			intent: {
+				primaryWorkflow: 'simulate',
+				componentIds: expect.arrayContaining(['chart', 'datatable', 'filter'])
+			}
+		});
+
+		const repair = await executeAgentAction(
+			'repair_notebook_blueprint',
+			{
+				blueprint: {
+					blocks: [
+						{
+							type: 'grid',
+							cols: 9,
+							items: [{ type: 'chart', chartType: 'radar', data: '$rows.rows' }]
+						}
+					]
+				}
+			},
+			adminAuth
+		);
+		expect(repair.ok).toBe(true);
+		expect(
+			(repair.data as { result: { repairLog: Array<{ action: string }> } }).result.repairLog
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ action: 'large grid item -> sibling block' })
+			])
+		);
 	});
 
 	it('returns visual report grammar for open-ended composition', async () => {

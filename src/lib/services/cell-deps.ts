@@ -48,7 +48,11 @@ function topoVisit(
  *  can bind to by outputName — query cells (SQL/PRQL) and Python cells both
  *  expose `.result.rows/columns` in the same shape. */
 export function isChartableSourceCell(cell: Cell): boolean {
-	return (cell.cellType === 'query' || cell.cellType === 'python') && !!cell.outputName;
+	return (
+		(cell.cellType === 'query' || cell.cellType === 'python' || !!cell.controlConfig) &&
+		!!cell.outputName &&
+		(cell.cellType === 'query' || cell.cellType === 'python' || !!cell.result)
+	);
 }
 
 function indent(code: string): string {
@@ -63,6 +67,30 @@ function indent(code: string): string {
 const SQL_REF_RE = /\{\{\s*ref\('([^']+)'\)\s*\}\}/g;
 function stripSqlRefs(code: string): string {
 	return code.replace(SQL_REF_RE, '$1');
+}
+
+function sqlLiteral(value: unknown): string {
+	if (value === null || value === undefined) return 'NULL';
+	if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
+	if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+	return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function quoteIdent(name: string): string {
+	return `"${name.replace(/"/g, '""')}"`;
+}
+
+function resultRowsSql(cell: Cell): string | null {
+	const result = cell.result;
+	if (!result || !result.columns.length) return null;
+	const columns = result.columns;
+	const rows = result.rows.length
+		? result.rows
+		: [Object.fromEntries(columns.map((col) => [col, null]))];
+	const values = rows
+		.map((row) => `(${columns.map((col) => sqlLiteral(row[col])).join(', ')})`)
+		.join(', ');
+	return `SELECT * FROM (VALUES ${values}) AS ${quoteIdent(cell.outputName || 'control')} (${columns.map(quoteIdent).join(', ')})`;
 }
 
 /**
@@ -161,7 +189,7 @@ export function resolveDependencies(cells: Cell[], idx: number): Cell[] {
 	const byName = new Map<string, Cell>();
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if ((c.cellType === 'query' || c.cellType === 'udf') && c.outputName) {
+		if ((c.cellType === 'query' || c.cellType === 'udf' || !!c.controlConfig) && c.outputName) {
 			byName.set(c.outputName, c);
 		}
 	}
@@ -205,6 +233,10 @@ export function hasDependencies(cells: Cell[], idx: number): boolean {
  */
 function prqlCteForDep(dep: Cell): string {
 	if (dep.cellType === 'udf') return '';
+	if (dep.controlConfig) {
+		const sql = resultRowsSql(dep);
+		return sql ? `let ${dep.outputName} = (s"${sql.replace(/"/g, '""')}")` : '';
+	}
 	if (dep.language === 'sql') {
 		// Escape any embedded double-quotes by doubling them (PRQL s-string escaping)
 		const escaped = stripSqlRefs(dep.code.trim()).replace(/"/g, '""');
@@ -261,7 +293,9 @@ export function buildSQLExecutionCode(
 			continue;
 		}
 		let depSQL: string | null;
-		if (dep.language === 'sql') {
+		if (dep.controlConfig) {
+			depSQL = resultRowsSql(dep);
+		} else if (dep.language === 'sql') {
 			depSQL = stripSqlRefs(dep.code.trim());
 		} else {
 			// Build the dep's own code with its own deps resolved
@@ -353,14 +387,14 @@ export function resolveGlobalDependencies(
 	// Same-notebook preceding cells take priority
 	for (let i = 0; i < idx; i++) {
 		const c = cells[i];
-		if ((c.cellType === 'query' || c.cellType === 'udf') && c.outputName)
+		if ((c.cellType === 'query' || c.cellType === 'udf' || !!c.controlConfig) && c.outputName)
 			byName.set(c.outputName, c);
 	}
 	// Fill in cross-notebook cells not already covered
 	for (const [name, cell] of globalRegistry) {
 		if (
 			!byName.has(name) &&
-			(cell.cellType === 'query' || cell.cellType === 'udf') &&
+			(cell.cellType === 'query' || cell.cellType === 'udf' || !!cell.controlConfig) &&
 			cell.id !== target.id
 		) {
 			byName.set(name, cell);
@@ -429,7 +463,9 @@ export function buildSQLGlobalExecutionCode(
 			continue;
 		}
 		let depSQL: string | null;
-		if (dep.language === 'sql') {
+		if (dep.controlConfig) {
+			depSQL = resultRowsSql(dep);
+		} else if (dep.language === 'sql') {
 			depSQL = stripSqlRefs(dep.code.trim());
 		} else {
 			// Resolve dep's own global deps, then compile the combined PRQL

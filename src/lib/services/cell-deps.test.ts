@@ -7,6 +7,7 @@ import {
 	CircularCellDependencyError
 } from './cell-deps.js';
 import type { Cell } from '$lib/stores/notebook.svelte';
+import { defaultControlCellConfig } from './control-cells.js';
 
 function queryCell(outputName: string, code: string, language: 'prql' | 'sql' = 'sql'): Cell {
 	return { id: outputName, cellType: 'query', outputName, code, language } as unknown as Cell;
@@ -14,6 +15,25 @@ function queryCell(outputName: string, code: string, language: 'prql' | 'sql' = 
 
 function udfCell(udfBody: string, outputName: string): Cell {
 	return { id: outputName, cellType: 'udf', outputName, code: '', udfBody } as unknown as Cell;
+}
+
+function tableInputCell(outputName: string): Cell {
+	const rows = [
+		{ key: 'current', value: 12 },
+		{ key: 'comparison', value: 8 }
+	];
+	return {
+		id: outputName,
+		cellType: 'table-input',
+		outputName,
+		code: '',
+		language: 'sql',
+		controlConfig: {
+			...defaultControlCellConfig('table-input', outputName),
+			tableData: { columns: ['key', 'value'], rows }
+		},
+		result: { columns: ['key', 'value'], rows }
+	} as unknown as Cell;
 }
 
 const DOUBLE_UDF = 'def double_it(x: int) -> int:\n    return x * 2\n';
@@ -72,6 +92,22 @@ describe('buildSQLExecutionCode with UDF deps', () => {
 	});
 });
 
+describe('buildSQLExecutionCode with control deps', () => {
+	it('turns a table input result into a SQL CTE', () => {
+		const cells = [
+			tableInputCell('thresholds'),
+			queryCell('result', "SELECT key, value FROM thresholds WHERE key = 'current'")
+		];
+		const sql = buildSQLExecutionCode(cells, 1, () => null);
+		expect(sql).toBe(
+			`WITH thresholds AS (\n` +
+				`  SELECT * FROM (VALUES ('current', 12), ('comparison', 8)) AS "thresholds" ("key", "value")\n` +
+				`)\n` +
+				`SELECT key, value FROM thresholds WHERE key = 'current'`
+		);
+	});
+});
+
 describe('circular cell dependencies', () => {
 	it('throws a clear error for a same-notebook cycle instead of silently truncating it', () => {
 		const cells = [
@@ -103,5 +139,17 @@ describe('buildSQLGlobalExecutionCode with UDF deps', () => {
 		const globalRegistry = new Map([['double_it', udf]]);
 		const sql = buildSQLGlobalExecutionCode(cells, 0, globalRegistry, () => null);
 		expect(sql).toBe(`WITH ${DOUBLE_FRAGMENT}\nSELECT double_it(1)`);
+	});
+
+	it('resolves a cross-notebook control reference via the global registry', () => {
+		const cells = [queryCell('result', 'SELECT * FROM thresholds')];
+		const globalRegistry = new Map([['thresholds', tableInputCell('thresholds')]]);
+		const sql = buildSQLGlobalExecutionCode(cells, 0, globalRegistry, () => null);
+		expect(sql).toBe(
+			`WITH thresholds AS (\n` +
+				`  SELECT * FROM (VALUES ('current', 12), ('comparison', 8)) AS "thresholds" ("key", "value")\n` +
+				`)\n` +
+				`SELECT * FROM thresholds`
+		);
 	});
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { can, canResolveThread, normalizeRole, hasApiScope } from './permissions';
+import { MCP_TOOL_ACTIONS, can, canResolveThread, normalizeRole, hasApiScope } from './permissions';
 
 describe('permissions', () => {
 	it('normalizes legacy user role to editor', () => {
@@ -50,5 +50,13 @@ describe('permissions', () => {
 	it('grants an explicitly listed scope', () => {
 		expect(hasApiScope(['workspace:write'], 'workspace:write')).toBe(true);
 		expect(hasApiScope(['workspace:write'], 'dbt:run')).toBe(false);
+	});
+
+	it('marks data-app registry helpers as read-only MCP tools', () => {
+		expect(MCP_TOOL_ACTIONS.get_component_capabilities).toBe('workspace:read');
+		expect(MCP_TOOL_ACTIONS.get_notebook_app_grammar).toBe('workspace:read');
+		expect(MCP_TOOL_ACTIONS.plan_notebook_app).toBe('workspace:read');
+		expect(MCP_TOOL_ACTIONS.repair_notebook_blueprint).toBe('workspace:read');
+		expect(MCP_TOOL_ACTIONS.score_notebook_blueprint).toBe('workspace:read');
 	});
 });

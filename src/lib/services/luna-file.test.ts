@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseLunaFile, serializeLunaFile, type SerializableCell } from './luna-file.js';
+import { defaultControlCellConfig } from './control-cells.js';
 
 function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell {
 	return {
@@ -7,6 +8,7 @@ function queryCell(overrides: Partial<SerializableCell> = {}): SerializableCell 
 		cellType: 'query',
 		markdown: '',
 		udfBody: '',
+		controlConfig: null,
 		outputName: 'stg_orders',
 		language: 'prql',
 		code: 'from orders\nfilter status == "completed"',
@@ -224,6 +226,43 @@ describe('serializeLunaFile', () => {
 		]);
 		const doc = parseLunaFile(content);
 		expect(doc.entries.map((e) => e.kind)).toEqual(['markdown', 'python', 'query']);
+	});
+
+	it('round-trips a configured control cell', () => {
+		const controlConfig = {
+			...defaultControlCellConfig('text-input', 'search_param'),
+			label: 'Search',
+			value: 'completed',
+			defaultValue: 'completed',
+			description: 'Search parameter'
+		};
+		const content = serializeLunaFile([
+			queryCell({
+				id: 'input_search',
+				cellType: 'input',
+				outputName: 'search_param',
+				language: 'sql',
+				code: '',
+				controlConfig
+			})
+		]);
+
+		expect(content).toContain('{% control name="search_param" cellType="input"');
+		const doc = parseLunaFile(content);
+		expect(doc.entries).toHaveLength(1);
+		expect(doc.entries[0]).toMatchObject({
+			kind: 'control',
+			cellId: 'input_search',
+			name: 'search_param',
+			cellType: 'input',
+			config: {
+				kind: 'text-input',
+				name: 'search_param',
+				label: 'Search',
+				value: 'completed',
+				defaultValue: 'completed'
+			}
+		});
 	});
 
 	it('serializes a promoted cell as a model ref placeholder', () => {

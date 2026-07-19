@@ -2,8 +2,17 @@
 	import { Plus } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import type { Cell } from '$lib/stores/notebook.svelte';
+	import type { ControlCellKind } from '$lib/services/control-cells';
 
-	type AddKind = 'default' | 'prql' | 'sql' | 'markdown' | 'udf' | 'plot' | 'python';
+	type AddKind =
+		| 'default'
+		| 'prql'
+		| 'sql'
+		| 'markdown'
+		| 'udf'
+		| 'plot'
+		| 'python'
+		| ControlCellKind;
 
 	let {
 		onAdd,
@@ -42,7 +51,24 @@
 		markdown: 'Markdown cell',
 		udf: 'Python UDF cell',
 		plot: 'Plot cell',
-		python: 'Python cell'
+		python: 'Python cell',
+		'text-input': 'Text input',
+		'number-input': 'Number input',
+		slider: 'Slider',
+		'date-input': 'Date input',
+		'date-range': 'Date range',
+		checkbox: 'Checkbox',
+		select: 'Select',
+		multiselect: 'Multiselect',
+		'run-button': 'Run button',
+		'file-upload': 'File upload',
+		'table-input': 'Editable table',
+		map: 'Map',
+		'table-display': 'Rich table',
+		pivot: 'Pivot',
+		'single-value': 'Single value',
+		writeback: 'Writeback',
+		agent: 'Agent block'
 	};
 
 	const allKinds = $derived(
@@ -60,6 +86,27 @@
 
 	const otherKinds = $derived(allKinds.filter((k) => !suggested.includes(k)));
 	const visible = $derived(persistent || menuOpen || hovered);
+	const inputKinds: ControlCellKind[] = [
+		'text-input',
+		'number-input',
+		'slider',
+		'date-input',
+		'date-range',
+		'checkbox',
+		'select',
+		'multiselect',
+		'run-button',
+		'file-upload'
+	];
+	const dataKinds: ControlCellKind[] = [
+		'table-input',
+		'table-display',
+		'pivot',
+		'map',
+		'single-value',
+		'writeback',
+		'agent'
+	];
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -93,6 +140,16 @@
 					{/if}
 				{/if}
 				{#each otherKinds as kind (kind)}
+					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
+				{/each}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Label class="text-2xs text-muted-foreground">Inputs</DropdownMenu.Label>
+				{#each inputKinds as kind (kind)}
+					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
+				{/each}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Label class="text-2xs text-muted-foreground">Data & AI</DropdownMenu.Label>
+				{#each dataKinds as kind (kind)}
 					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
 				{/each}
 				{#if !suggested.includes('default')}

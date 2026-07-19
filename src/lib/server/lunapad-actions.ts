@@ -282,21 +282,39 @@ export interface CreateNotebookInput {
 	folder?: string;
 	notebookId: string;
 	title?: string;
+	planningIntent?: NotebookBlueprint['planningIntent'];
+	qualityTarget?: NotebookBlueprint['qualityTarget'];
+	autoRepair?: NotebookBlueprint['autoRepair'];
 	executableCells?: McpExecutableCellInput[];
 	blocks: NotebookBlueprint['blocks'];
 }
 
 export interface NotebookMutationOutput {
 	diagnostics: NotebookBlueprintDiagnostic[];
+	repairLog?: Array<{
+		path: string;
+		class: string;
+		action: string;
+		before?: unknown;
+		after?: unknown;
+	}>;
 	notebook?: { id: string; name: string; folderId: string | null; cellCount: number };
 }
 
 function toMutationOutput(result: {
 	diagnostics: NotebookBlueprintDiagnostic[];
+	repairLog?: Array<{
+		path: string;
+		class: string;
+		action: string;
+		before?: unknown;
+		after?: unknown;
+	}>;
 	notebook?: { id: string; name: string; folderId: string | null; cells: unknown[] };
 }): NotebookMutationOutput {
 	return {
 		diagnostics: result.diagnostics,
+		repairLog: result.repairLog,
 		notebook: result.notebook
 			? {
 					id: result.notebook.id,
@@ -317,6 +335,9 @@ export async function createNotebookAction(
 		input.notebookId,
 		{
 			title: input.title,
+			planningIntent: input.planningIntent,
+			qualityTarget: input.qualityTarget,
+			autoRepair: input.autoRepair,
 			executableCells: input.executableCells,
 			blocks: input.blocks
 		},

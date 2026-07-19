@@ -13,6 +13,7 @@
 	import { markdocAttrToDisplay as attr, parseBlockWidget } from '$lib/services/markdoc-ast';
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import { MARKDOC_TAG_CATALOG } from '$lib/services/markdoc-catalog';
+	import { EDITOR_INSPECTOR_CATALOG } from '$lib/services/component-capabilities';
 	import type { TableAggKind } from '$lib/services/report-table-summary';
 	import {
 		buildVisualRefOptions,
@@ -154,66 +155,13 @@
 	});
 
 	const aggOptions: TableAggKind[] = ['sum', 'avg', 'min', 'max', 'count'];
-	const chartTypes = [
-		'table',
-		'big-value',
-		'delta',
-		'value',
-		'line',
-		'bar',
-		'bar-horizontal',
-		'area',
-		'scatter',
-		'bubble',
-		'pie',
-		'histogram',
-		'heatmap',
-		'calendar-heatmap',
-		'funnel',
-		'box-plot',
-		'sankey',
-		'map',
-		'choropleth',
-		'custom',
-		'sparkline'
-	] as const;
-	const quickChartTypes = ['line', 'bar', 'area', 'pie', 'table', 'sparkline'] as const;
-	const formatKinds = [
-		'number',
-		'currency',
-		'percentage',
-		'compact',
-		'date',
-		'datetime',
-		'text',
-		'category',
-		'boolean'
-	] as const;
-	const metricFormats = ['number', 'currency', 'compact', 'percent'] as const;
-	const valueFormatKinds = [
-		'number',
-		'currency',
-		'percentage',
-		'boolean',
-		'id',
-		'email',
-		'url',
-		'datetime',
-		'date',
-		'category',
-		'text'
-	] as const;
-	const filterKinds = [
-		'dropdown',
-		'text-input',
-		'date-range',
-		'button-group',
-		'multi-select',
-		'relative-date',
-		'numeric-range',
-		'searchable-dropdown'
-	] as const;
-	const quickFilterKinds = ['dropdown', 'text-input', 'date-range', 'button-group'] as const;
+	const chartTypes = EDITOR_INSPECTOR_CATALOG.chartTypes;
+	const quickChartTypes = EDITOR_INSPECTOR_CATALOG.quickChartTypes;
+	const formatKinds = EDITOR_INSPECTOR_CATALOG.formatKinds;
+	const metricFormats = EDITOR_INSPECTOR_CATALOG.metricFormats;
+	const valueFormatKinds = EDITOR_INSPECTOR_CATALOG.valueFormatKinds;
+	const filterKinds = EDITOR_INSPECTOR_CATALOG.filterKinds;
+	const quickFilterKinds = EDITOR_INSPECTOR_CATALOG.quickFilterKinds;
 	const BOX_LABELS = ['Min', 'Q1 (25th)', 'Median', 'Q3 (75th)', 'Max'] as const;
 
 	function setBoxPlotCol(idx: number, col: string) {

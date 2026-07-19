@@ -67,11 +67,15 @@
 	let toolbarEl = $state<HTMLDivElement | null>(null);
 
 	onMount(() => {
+		let mounted = true;
 		const bump = () => {
-			version += 1;
+			queueMicrotask(() => {
+				if (mounted) version += 1;
+			});
 		};
 		editor.on('transaction', bump);
 		return () => {
+			mounted = false;
 			editor.off('transaction', bump);
 		};
 	});

@@ -1,4 +1,4 @@
-import { MARKDOC_TAG_CATALOG } from '$lib/services/markdoc-catalog';
+import { SLASH_COMPONENT_CATALOG } from '$lib/services/component-capabilities';
 export { WIDGET_SNIPPETS } from '$lib/services/markdoc-snippets';
 import { WIDGET_SNIPPETS } from '$lib/services/markdoc-snippets';
 
@@ -179,7 +179,7 @@ export interface SlashCommand {
 	label: string;
 	description: string;
 	snippet: string;
-	group: 'heading' | 'structure' | 'widget' | 'query' | 'report';
+	group: 'heading' | 'structure' | 'widget' | 'query' | 'report' | 'input' | 'data' | 'ai';
 	/** Extra search terms that match this command in the slash menu (e.g. "hr" for divider). */
 	aliases?: string[];
 }
@@ -203,22 +203,22 @@ function labelForMarkdocTag(tagName: string): string {
 	);
 }
 
-function commandFromMarkdocTag([tagName, entry]: [
-	string,
-	(typeof MARKDOC_TAG_CATALOG)[string]
-]): SlashCommand {
+function commandFromComponentCatalog(
+	entry: (typeof SLASH_COMPONENT_CATALOG)[number]
+): SlashCommand {
 	return {
-		id: tagName,
-		label: labelForMarkdocTag(tagName),
-		description: entry.detail,
-		snippet: entry.slashSnippet,
+		id: entry.id,
+		label: labelForMarkdocTag(entry.id),
+		description: entry.description,
+		snippet: entry.snippet,
 		group: 'widget',
 		aliases: entry.aliases
 	};
 }
 
-const MARKDOC_SLASH_COMMANDS: SlashCommand[] =
-	Object.entries(MARKDOC_TAG_CATALOG).map(commandFromMarkdocTag);
+const MARKDOC_SLASH_COMMANDS: SlashCommand[] = SLASH_COMPONENT_CATALOG.map(
+	commandFromComponentCatalog
+);
 
 const MARKDOC_REPORT_COMMANDS: SlashCommand[] = [
 	{
@@ -252,6 +252,76 @@ const MARKDOC_REPORT_COMMANDS: SlashCommand[] = [
 ];
 
 const MARKDOC_PRESET_SLASH_COMMANDS: SlashCommand[] = [
+	{
+		id: 'input-text',
+		label: 'Text input',
+		description: 'Report parameter text box',
+		snippet: '{% filter kind="text-input" param="search" label="Search" /%}',
+		group: 'input',
+		aliases: ['parameter', 'control']
+	},
+	{
+		id: 'input-number',
+		label: 'Number input',
+		description: 'Min/max numeric parameter',
+		snippet:
+			'{% filter kind="numeric-range" label="Value range" minParam="min_value" maxParam="max_value" /%}',
+		group: 'input',
+		aliases: ['numeric', 'range']
+	},
+	{
+		id: 'input-date-range',
+		label: 'Date range input',
+		description: 'Start and end date parameters',
+		snippet:
+			'{% filter kind="date-range" label="Date range" startParam="start_date" endParam="end_date" /%}',
+		group: 'input',
+		aliases: ['date', 'calendar']
+	},
+	{
+		id: 'input-select',
+		label: 'Select input',
+		description: 'Dropdown report parameter',
+		snippet:
+			'{% filter kind="dropdown" param="status" label="Status" options=["active","pending"] /%}',
+		group: 'input',
+		aliases: ['dropdown']
+	},
+	{
+		id: 'input-multiselect',
+		label: 'Multiselect input',
+		description: 'Multi-choice report parameter',
+		snippet:
+			'{% filter kind="multi-select" param="status" label="Status" options=["active","pending","archived"] /%}',
+		group: 'input',
+		aliases: ['multi-select', 'checkboxes']
+	},
+	{
+		id: 'input-button-group',
+		label: 'Button group input',
+		description: 'Segmented report parameter',
+		snippet:
+			'{% filter kind="button-group" param="period" label="Period" options=["week","month","quarter"] /%}',
+		group: 'input',
+		aliases: ['buttons', 'segments', 'tabs']
+	},
+	{
+		id: 'map',
+		label: 'Map',
+		description: 'Map chart from latitude and longitude',
+		snippet:
+			'{% chart type="map" data=[{"city":"Nairobi","lat":-1.2921,"lon":36.8219,"value":12}] x="city" y="value" lat="lat" lon="lon" /%}',
+		group: 'data',
+		aliases: ['geo', 'latitude', 'longitude']
+	},
+	{
+		id: 'single-value',
+		label: 'Single value',
+		description: 'Big-number metric widget',
+		snippet: '{% metric value=12 label="value" vs=8 format="compact" /%}',
+		group: 'data',
+		aliases: ['big number', 'kpi']
+	},
 	{
 		id: 'conditional',
 		label: 'Conditional',

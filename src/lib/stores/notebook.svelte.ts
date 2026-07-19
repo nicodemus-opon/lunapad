@@ -141,13 +141,33 @@ import {
 	type PythonTableHint,
 	type PythonTableDescriptor as PythonRuntimeTableDescriptor
 } from '$lib/services/python-tables';
+import {
+	defaultControlCellConfig,
+	isControlCellKind,
+	normalizeControlCellConfig,
+	type ControlCellConfig,
+	type ControlCellKind
+} from '$lib/services/control-cells';
 
 export type CellStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellEditMode = 'gui' | 'prql';
 export type MarkdownEditMode = 'visual' | 'source';
 // 'plot' cells are never promotable to dbt models — getPromotionChain already
 // guards on `cellType !== 'query'`, so this is automatic, not something to "fix".
-export type CellType = 'query' | 'markdown' | 'udf' | 'plot' | 'python';
+export type CellType =
+	| 'query'
+	| 'markdown'
+	| 'udf'
+	| 'plot'
+	| 'python'
+	| 'input'
+	| 'table-input'
+	| 'pivot'
+	| 'table-display'
+	| 'map'
+	| 'single-value'
+	| 'writeback'
+	| 'agent';
 export type CellMaterializationMode = DBMaterializationMode | 'ephemeral';
 export type CellMaterializationStatus = 'idle' | 'running' | 'success' | 'error';
 export type CellScheduleStatus = 'idle' | 'running' | 'success' | 'error';
@@ -192,6 +212,7 @@ export interface Cell {
 	// JSON specs (one per fig.show() call), and a traceback on failure. Not
 	// persisted (see SerializedCell), regenerated on each run like `errors`.
 	pythonOutput: { stdout: string; figures: string[]; error: string | null } | null;
+	controlConfig: ControlCellConfig | null;
 	errors: PRQLError[];
 	compiledSQL: string | null;
 	executionMs: number | null;
@@ -603,6 +624,7 @@ function makeCell(code = '', outputName = '', language: CellLanguage = 'prql'): 
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -707,6 +729,52 @@ function makePythonCell(code = DEFAULT_PYTHON_CODE): Cell {
 		cellType: 'python',
 		editMode: 'prql'
 	};
+}
+
+function makeControlCell(
+	kind: ControlCellKind,
+	outputName = deconflictOutputName(controlNameForKind(kind))
+): Cell {
+	const controlConfig = defaultControlCellConfig(kind, outputName);
+	return {
+		...makeCell('', outputName, 'sql'),
+		cellType: cellTypeForControlKind(kind),
+		editMode: 'prql',
+		display: 'output',
+		controlConfig,
+		result: initialControlResult(kind, controlConfig)
+	};
+}
+
+function cellTypeForControlKind(kind: ControlCellKind): CellType {
+	if (kind === 'table-input') return 'table-input';
+	if (kind === 'pivot') return 'pivot';
+	if (kind === 'table-display') return 'table-display';
+	if (kind === 'map') return 'map';
+	if (kind === 'single-value') return 'single-value';
+	if (kind === 'writeback') return 'writeback';
+	if (kind === 'agent') return 'agent';
+	return 'input';
+}
+
+function controlNameForKind(kind: ControlCellKind): string {
+	return kind.replace(/-input$/, '').replace(/-/g, '_');
+}
+
+function initialControlResult(kind: ControlCellKind, config: ControlCellConfig): Cell['result'] {
+	if (kind === 'table-input' && config.tableData) {
+		return {
+			rows: config.tableData.rows,
+			columns: config.tableData.columns
+		};
+	}
+	if (config.name) {
+		return {
+			rows: [{ name: config.name, value: config.value }],
+			columns: ['name', 'value']
+		};
+	}
+	return null;
 }
 
 function makeNotebook(name: string, cells?: Cell[]): Notebook {
@@ -1352,9 +1420,45 @@ function deserializeCell(c: Cell, i: number): Cell {
 		persistedCellType === 'markdown' ||
 		persistedCellType === 'udf' ||
 		persistedCellType === 'python' ||
-		persistedCellType === 'plot'
+		persistedCellType === 'plot' ||
+		persistedCellType === 'input' ||
+		persistedCellType === 'table-input' ||
+		persistedCellType === 'pivot' ||
+		persistedCellType === 'table-display' ||
+		persistedCellType === 'map' ||
+		persistedCellType === 'single-value' ||
+		persistedCellType === 'writeback' ||
+		persistedCellType === 'agent'
 			? persistedCellType
 			: 'query';
+	const rawControlConfig = (c as Partial<Cell>).controlConfig;
+	const fallbackControlKind: ControlCellKind =
+		rawControlConfig && isControlCellKind(rawControlConfig.kind)
+			? rawControlConfig.kind
+			: cellType === 'table-input'
+				? 'table-input'
+				: cellType === 'pivot'
+					? 'pivot'
+					: cellType === 'table-display'
+						? 'table-display'
+						: cellType === 'map'
+							? 'map'
+							: cellType === 'single-value'
+								? 'single-value'
+								: cellType === 'writeback'
+									? 'writeback'
+									: cellType === 'agent'
+										? 'agent'
+										: 'text-input';
+	const isControlCell =
+		cellType === 'input' ||
+		cellType === 'table-input' ||
+		cellType === 'pivot' ||
+		cellType === 'table-display' ||
+		cellType === 'map' ||
+		cellType === 'single-value' ||
+		cellType === 'writeback' ||
+		cellType === 'agent';
 	const markdown =
 		typeof (c as Partial<Cell>).markdown === 'string'
 			? ((c as Partial<Cell>).markdown as string)
@@ -1381,6 +1485,13 @@ function deserializeCell(c: Cell, i: number): Cell {
 		markdownPreview,
 		markdownEditMode,
 		udfBody,
+		controlConfig: isControlCell
+			? normalizeControlCellConfig(
+					rawControlConfig,
+					fallbackControlKind,
+					c.outputName || `control${i + 1}`
+				)
+			: null,
 		language,
 		guiStages,
 		editMode,
@@ -2962,7 +3073,10 @@ function getGlobalOutputRegistry(): Map<string, { cell: Cell; notebookId: string
 	const registry = new Map<string, { cell: Cell; notebookId: string }>();
 	for (const nb of state.notebooks) {
 		for (const cell of nb.cells) {
-			if ((cell.cellType === 'query' || cell.cellType === 'udf') && cell.outputName) {
+			if (
+				(cell.cellType === 'query' || cell.cellType === 'udf' || !!cell.controlConfig) &&
+				cell.outputName
+			) {
 				registry.set(cell.outputName, { cell, notebookId: nb.id });
 			}
 		}
@@ -4089,6 +4203,7 @@ export function getExpandedNotebookIds(): string[] {
 }
 
 function isCellUntouched(cell: Cell): boolean {
+	if (cell.controlConfig) return false;
 	if (cell.cellType === 'markdown') return !cell.markdown?.trim();
 	if (cell.cellType === 'udf') return !cell.udfBody?.trim();
 	// query / python / plot cells
@@ -5010,6 +5125,61 @@ export function addPythonCell(): string | null {
 	return cell.id;
 }
 
+export function canAddControlCell(): boolean {
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		const nb = getActiveNotebook();
+		return nb.format === 'luna';
+	}
+	return true;
+}
+
+export function addControlCell(kind: ControlCellKind): string | null {
+	if (!canAddControlCell()) return null;
+	const nb = getActiveNotebook();
+	const notebookId = nb.id;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeControlCell(kind);
+	replaceNotebookCells(notebookId, [...nb.cells, cell]);
+	focusInsertedCell(cell.id);
+	scheduleSave();
+	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
+}
+
+export function insertControlCellAfter(id: string, kind: ControlCellKind): string | null {
+	if (!canAddControlCell()) return null;
+	const nb = getActiveNotebook();
+	const notebookId = nb.id;
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return null;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeControlCell(kind);
+	const cells = [...nb.cells];
+	cells.splice(idx + 1, 0, cell);
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
+	scheduleSave();
+	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
+}
+
+export function insertControlCellBefore(id: string, kind: ControlCellKind): string | null {
+	if (!canAddControlCell()) return null;
+	const nb = getActiveNotebook();
+	const notebookId = nb.id;
+	const idx = nb.cells.findIndex((c) => c.id === id);
+	if (idx === -1) return null;
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeControlCell(kind);
+	const cells = [...nb.cells];
+	cells.splice(idx, 0, cell);
+	replaceNotebookCells(notebookId, cells);
+	focusInsertedCell(cell.id);
+	scheduleSave();
+	scheduleFileSave(notebookId, cell.id);
+	return cell.id;
+}
+
 /** Dev/test-only helper used by browser automation to exercise AI + document-editor
  * flows against a real python-typed result cell without requiring filesystem mode. */
 export function injectTestPythonResultCell(input: {
@@ -5309,6 +5479,7 @@ export interface CellSnapshot {
 	code: string;
 	markdown: string;
 	udfBody: string;
+	controlConfig: ControlCellConfig | null;
 	language: CellLanguage;
 	cellType: CellType;
 	display: CellDisplay;
@@ -5344,6 +5515,7 @@ function cellToSnapshot(cell: Cell): CellSnapshot {
 		code: cell.code,
 		markdown: cell.markdown,
 		udfBody: cell.udfBody,
+		controlConfig: cell.controlConfig,
 		language: cell.language,
 		cellType: cell.cellType,
 		display: cell.display,
@@ -5388,6 +5560,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 				code: snap.code,
 				markdown: snap.markdown,
 				udfBody: snap.udfBody,
+				controlConfig: snap.controlConfig,
 				language: snap.language,
 				cellType: snap.cellType,
 				display: snap.display,
@@ -5415,6 +5588,7 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 			cellType: snap.cellType,
 			markdown: snap.markdown,
 			udfBody: snap.udfBody,
+			controlConfig: snap.controlConfig,
 			display: snap.display,
 			hideResult: snap.hideResult ?? false,
 			hideInReport: snap.hideInReport ?? false,
@@ -5574,6 +5748,13 @@ export function duplicateCell(id: string): string {
 		...source,
 		id: makeId(),
 		outputName,
+		controlConfig: source.controlConfig
+			? normalizeControlCellConfig(
+					{ ...source.controlConfig, name: outputName },
+					source.controlConfig.kind,
+					outputName
+				)
+			: null,
 		materializeTarget: outputName || source.materializeTarget,
 		// A duplicate isn't the model that was promoted — it's a fresh, unpromoted copy.
 		promotedModelPath: null,
@@ -5582,6 +5763,8 @@ export function duplicateCell(id: string): string {
 		scheduleEnabled: false,
 		scheduleNextRunAt: null
 	};
+	if (clone.controlConfig)
+		clone.result = initialControlResult(clone.controlConfig.kind, clone.controlConfig);
 	const cells = [...nb.cells];
 	cells.splice(idx + 1, 0, clone);
 	nb.cells = cells;
@@ -5639,16 +5822,29 @@ export async function pasteCellAfter(afterId: string | null): Promise<string> {
 	if (!snap) return '';
 	pushHistoryCheckpoint(nb.id);
 	const outputName = deconflictOutputName(snap.outputName);
+	const pastedControlConfig = snap.controlConfig
+		? normalizeControlCellConfig(
+				{ ...snap.controlConfig, name: outputName },
+				snap.controlConfig.kind,
+				outputName
+			)
+		: null;
 	const newCell: Cell = {
 		...makeCell(snap.code, outputName, snap.language),
 		cellType: snap.cellType,
 		markdown: snap.markdown,
+		controlConfig: pastedControlConfig,
 		display: snap.display,
 		hideResult: snap.hideResult ?? false,
 		hideInReport: snap.hideInReport ?? false,
 		guiStages: snap.guiStages,
 		editMode: snap.editMode,
 		connectionId: snap.connectionId,
+		result:
+			snap.result ??
+			(pastedControlConfig
+				? initialControlResult(pastedControlConfig.kind, pastedControlConfig)
+				: null),
 		materializeMode: snap.materializeMode,
 		materializeTarget: outputName || snap.materializeTarget,
 		description: snap.description,
@@ -5788,6 +5984,80 @@ export function updateCellUdfBody(id: string, udfBody: string): void {
 	scheduleFileSave(nb.id, id);
 }
 
+export function updateControlCellConfig(id: string, patch: Partial<ControlCellConfig>): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || !cell.controlConfig) return;
+	checkpointCoalesced(nb.id, id, 'controlConfig');
+	const next = normalizeControlCellConfig(
+		{
+			...cell.controlConfig,
+			...patch,
+			source: patch.source
+				? { ...cell.controlConfig.source, ...patch.source }
+				: cell.controlConfig.source,
+			validation: patch.validation
+				? { ...cell.controlConfig.validation, ...patch.validation }
+				: cell.controlConfig.validation,
+			display: patch.display
+				? { ...cell.controlConfig.display, ...patch.display }
+				: cell.controlConfig.display
+		},
+		cell.controlConfig.kind,
+		cell.outputName || cell.controlConfig.name
+	);
+	cell.controlConfig = next;
+	cell.outputName = next.name;
+	cell.materializeTarget = next.name;
+	cell.result = initialControlResult(next.kind, next);
+	cell.status = next.status === 'error' ? 'error' : 'success';
+	cell.needsRun = false;
+	if (next.name) markDownstreamStale(next.name, 'upstream-changed', new Set(), cell.id);
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+}
+
+export function updateControlCellValue(id: string, value: unknown): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || !cell.controlConfig) return;
+	cell.controlConfig = {
+		...cell.controlConfig,
+		value,
+		status: 'valid',
+		error: null
+	};
+	cell.result = initialControlResult(cell.controlConfig.kind, cell.controlConfig);
+	cell.status = 'success';
+	cell.needsRun = false;
+	if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+	if (cell.controlConfig.autoRun) scheduleAutoRun(id);
+}
+
+export function updateControlTableData(
+	id: string,
+	tableData: NonNullable<ControlCellConfig['tableData']>
+): void {
+	const nb = getActiveNotebook();
+	const cell = nb.cells.find((c) => c.id === id);
+	if (!cell || !cell.controlConfig) return;
+	checkpointCoalesced(nb.id, id, 'tableData');
+	cell.controlConfig = {
+		...cell.controlConfig,
+		tableData,
+		status: tableData.rows.length ? 'valid' : 'empty-data',
+		error: null
+	};
+	cell.result = { rows: tableData.rows, columns: tableData.columns };
+	cell.status = 'success';
+	cell.needsRun = false;
+	if (cell.outputName) markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+	scheduleSave();
+	scheduleFileSave(nb.id, id);
+}
+
 export function setCellMarkdownPreview(id: string, preview: boolean): void {
 	const nb = getActiveNotebook();
 	const cell = nb.cells.find((c) => c.id === id);
@@ -5878,6 +6148,10 @@ export function updateCellName(
 		pushHistoryCheckpoint(nb.id);
 		cell.outputName = name;
 		cell.materializeTarget = name;
+	}
+	if (cell.controlConfig) {
+		cell.controlConfig = { ...cell.controlConfig, name };
+		cell.result = initialControlResult(cell.controlConfig.kind, cell.controlConfig);
 	}
 	// Old dependents referenced the old name — they're now broken
 	if (oldName && oldName !== name)
@@ -7799,6 +8073,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 		updateGuiStages,
 		setCellDisplay,
 		insertQueryBlockCell,
+		addControlCell,
+		updateControlCellValue,
+		updateControlCellConfig,
 		removeQueryBlockCell,
 		addCell,
 		setNotebookFilterValue,

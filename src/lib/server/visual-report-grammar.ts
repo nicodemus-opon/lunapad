@@ -4,6 +4,7 @@ import {
 	SUPPORTED_BLOCK_TYPES
 } from '$lib/services/generated-dashboard.js';
 import { DASHBOARD_ICON_NAMES } from '$lib/services/dashboard-icons.js';
+import { getComponentCapabilityCatalog } from '$lib/services/component-capabilities.js';
 
 const BLOCK_GROUPS = {
 	structure: ['text', 'divider', 'columns', 'grid', 'toc'],
@@ -390,6 +391,11 @@ const BLUEPRINT_EXAMPLES = [
 export const VISUAL_REPORT_GRAMMAR = {
 	purpose:
 		'Describe a flexible visual composition language for agent-authored notebooks, reports, infographic-style pages, operational dashboards, and website-like analytical stories. The examples are seeds, not templates to imitate.',
+	componentCatalog: {
+		version: getComponentCapabilityCatalog().version,
+		hash: getComponentCapabilityCatalog().hash,
+		aiAuthorableComponents: getComponentCapabilityCatalog().aiAuthorableComponentIds
+	},
 	blockTypes: [...SUPPORTED_BLOCK_TYPES],
 	blockGroups: BLOCK_GROUPS,
 	chartTypes: [...CHART_TYPES],

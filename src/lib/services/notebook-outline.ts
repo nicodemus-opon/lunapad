@@ -62,6 +62,7 @@ function parseMarkdownHeadings(cellId: string, markdown: string): OutlineEntry[]
 
 function isNamedExecutableCell(cell: Cell): boolean {
 	if (cell.promotedModelPath) return false;
+	if (cell.controlConfig) return Boolean(cell.outputName.trim());
 	if (cell.cellType === 'query' || cell.cellType === 'python' || cell.cellType === 'plot') {
 		return Boolean(cell.outputName.trim());
 	}

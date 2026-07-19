@@ -86,6 +86,8 @@
 		insertPlotCellBefore,
 		canAddPlotCell,
 		addPythonCell,
+		addControlCell,
+		canAddControlCell,
 		injectTestPythonResultCell,
 		insertPythonCellBefore,
 		canAddPythonCell,
@@ -777,6 +779,7 @@
 				setNotebookFilterValue,
 				canAddPythonCell,
 				addPythonCell,
+				addControlCell,
 				injectTestPythonResultCell,
 				runPythonCell,
 				updatePythonCellCode,
@@ -1112,6 +1115,24 @@
 								{#if canAddPythonCell()}
 									<DropdownMenu.Item onclick={() => addPythonCell()}>
 										<FileCode2 class="h-3.5 w-3.5" /> New Python cell
+									</DropdownMenu.Item>
+								{/if}
+								{#if canAddControlCell()}
+									<DropdownMenu.Separator />
+									<DropdownMenu.Item onclick={() => addControlCell('text-input')}>
+										<Info class="h-3.5 w-3.5" /> New text input
+									</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => addControlCell('select')}>
+										<ChevronsUpDown class="h-3.5 w-3.5" /> New select input
+									</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => addControlCell('run-button')}>
+										<Play class="h-3.5 w-3.5" /> New run button
+									</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => addControlCell('table-input')}>
+										<Table2 class="h-3.5 w-3.5" /> New editable table
+									</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => addControlCell('pivot')}>
+										<Network class="h-3.5 w-3.5" /> New pivot cell
 									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator />
@@ -2207,6 +2228,17 @@
 														Add Markdown Cell
 														<span class="ml-auto font-mono text-2xs opacity-60">⌘⇧M</span>
 													</Button>
+													{#if canAddControlCell()}
+														<Button
+															variant="outline"
+															size="sm"
+															class="h-8 w-full gap-2 text-xs"
+															onclick={() => addControlCell('text-input')}
+														>
+															<ChevronsUpDown class="h-3.5 w-3.5" />
+															Add Input Control
+														</Button>
+													{/if}
 												</div>
 												<div class="space-y-0.5 text-2xs text-muted-foreground">
 													<p>

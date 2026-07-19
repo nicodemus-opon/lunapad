@@ -85,7 +85,7 @@ const worksheetScope = (page: Page) => page.locator('[data-worksheet="true"]');
 /** Run the worksheet cell and wait for the result toolbar to confirm success. */
 async function runWorksheetCell(page: Page) {
 	await page.getByLabel('Run cell').click();
-	await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible({ timeout: 45_000 });
+	await expect(page.getByTestId('result-view-table')).toBeVisible({ timeout: 45_000 });
 }
 
 /** Place the caret on the empty trailing prose line of the document. */
@@ -207,7 +207,7 @@ test('recreate demo part 1: intro prose, orders, region_targets, monthly_revenue
 	await expect(worksheetScope(page).getByText('order_id').first()).toBeVisible();
 
 	// Stats view like the demo
-	await page.getByRole('tab', { name: 'Stats' }).click();
+	await page.getByTestId('result-view-stats').click();
 	await expect(page.getByText('orders profile')).toBeVisible();
 	await exitWorksheet(page);
 
@@ -235,19 +235,9 @@ test('recreate demo part 1: intro prose, orders, region_targets, monthly_revenue
 	await mrBlock.hover();
 	await mrBlock.getByTestId('result-view-chart').click();
 	await mrBlock.getByTestId('chart-settings').click();
-	const configPanel = mrBlock.getByTestId('chart-settings-panel');
-	await expect(configPanel.getByText('Chart Type')).toBeVisible({ timeout: 10_000 });
-	await configPanel.getByRole('button', { name: 'Area', exact: true }).click();
-	// X axis = month
-	await configPanel
-		.locator('div:has(> p:text-is("X Axis")) select')
-		.selectOption({ label: 'month' });
-	// Y = total_revenue only
-	const yBox = configPanel.locator('div:has(> p:text-is("Y Axis"))');
-	const totalRevenueCheck = yBox.locator('label', { hasText: 'total_revenue' }).locator('input');
-	if (!(await totalRevenueCheck.isChecked())) await totalRevenueCheck.check();
-	const orderCountCheck = yBox.locator('label', { hasText: 'order_count' }).locator('input');
-	if (await orderCountCheck.isChecked()) await orderCountCheck.uncheck();
+	const configPanel = page.getByTestId('chart-settings-panel');
+	await expect(configPanel.getByText(/Chart type/i)).toBeVisible({ timeout: 10_000 });
+	await configPanel.locator('button[aria-label="Area"][aria-pressed]').click();
 	await configPanel.getByPlaceholder('Chart title').fill('Monthly Revenue');
 	// A plotly chart should now be rendered
 	await expect(mrBlock.locator('.js-plotly-plot, .chart-view').first()).toBeVisible({

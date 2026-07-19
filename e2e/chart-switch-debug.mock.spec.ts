@@ -48,18 +48,18 @@ test('chart tab works after worksheet-created cell', async ({ page }) => {
 	await page.keyboard.press('Delete');
 	await page.keyboard.type("SELECT 'a' AS label, 1 AS v UNION ALL SELECT 'b', 3", { delay: 5 });
 	await page.getByLabel('Run cell').click();
-	await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('result-view-table')).toBeVisible({ timeout: 30_000 });
 	await page.getByLabel('Exit worksheet view').click();
 	await expect(page.getByLabel('Exit worksheet view')).toBeHidden();
 
 	// Now switch the inline result to Chart.
 	const inline = page.locator('.query-block-view').last();
 	await inline.hover();
-	const chartTab = inline.getByRole('tab', { name: 'Chart' });
-	await expect(chartTab).toBeVisible();
-	await chartTab.click();
+	const chartButton = inline.getByTestId('result-view-chart');
+	await expect(chartButton).toBeVisible();
+	await chartButton.click();
 	await page.waitForTimeout(500);
-	await expect(chartTab).toHaveAttribute('aria-selected', 'true');
+	await expect(chartButton).toHaveAttribute('aria-pressed', 'true');
 	await expect(inline.locator('.js-plotly-plot, .chart-view').first()).toBeVisible({
 		timeout: 15_000
 	});
@@ -77,13 +77,13 @@ test('inline result Chart tab switches the view', async ({ page }) => {
 	await expect(block.getByText('Export CSV')).toBeVisible({ timeout: 30_000 });
 
 	await block.hover();
-	const chartTab = block.getByRole('tab', { name: 'Chart' });
-	await expect(chartTab).toBeVisible();
-	await chartTab.click();
+	const chartButton = block.getByTestId('result-view-chart');
+	await expect(chartButton).toBeVisible();
+	await chartButton.click();
 
 	await page.waitForTimeout(500);
 
-	await expect(chartTab).toHaveAttribute('aria-selected', 'true');
+	await expect(chartButton).toHaveAttribute('aria-pressed', 'true');
 	await expect(block.locator('.js-plotly-plot, .chart-view').first()).toBeVisible({
 		timeout: 15_000
 	});

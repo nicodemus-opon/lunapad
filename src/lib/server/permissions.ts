@@ -183,6 +183,11 @@ export function hasApiScope(
 export const MCP_TOOL_ACTIONS: Record<string, PermissionAction> = {
 	list_capabilities: 'workspace:read',
 	get_visual_report_grammar: 'workspace:read',
+	get_component_capabilities: 'workspace:read',
+	get_notebook_app_grammar: 'workspace:read',
+	plan_notebook_app: 'workspace:read',
+	repair_notebook_blueprint: 'workspace:read',
+	score_notebook_blueprint: 'workspace:read',
 	inspect_resource: 'workspace:read',
 	discover_schema: 'connections:query',
 	validate_workflow: 'workspace:read',

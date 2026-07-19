@@ -137,7 +137,7 @@ pivot = orders.pivot_table(
 fig = px.imshow(
     pivot,
     labels=dict(x='Customer segment', y='Category', color='Revenue'),
-    color_continuous_scale='Blues',
+    color_continuous_scale=px.colors.sequential.Blues[2:],
     title='Revenue by category × customer segment'
 )
 

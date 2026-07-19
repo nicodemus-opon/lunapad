@@ -4,14 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Connection } from '$lib/types/connection';
 
-const { getConnectionMetadataMock, getSecretMock, fetchExternalConnectionSchemaMock, queryExternalConnectionMock } = vi.hoisted(
-	() => ({
-		getConnectionMetadataMock: vi.fn(),
-		getSecretMock: vi.fn(),
-		fetchExternalConnectionSchemaMock: vi.fn(),
-		queryExternalConnectionMock: vi.fn()
-	})
-);
+const {
+	getConnectionMetadataMock,
+	getSecretMock,
+	fetchExternalConnectionSchemaMock,
+	queryExternalConnectionMock
+} = vi.hoisted(() => ({
+	getConnectionMetadataMock: vi.fn(),
+	getSecretMock: vi.fn(),
+	fetchExternalConnectionSchemaMock: vi.fn(),
+	queryExternalConnectionMock: vi.fn()
+}));
 
 vi.mock('./connections-store.js', () => ({ getConnectionMetadata: getConnectionMetadataMock }));
 vi.mock('./connection-secrets.js', () => ({ getSecret: getSecretMock }));
@@ -175,7 +178,7 @@ describe('createNotebookFromBlueprintOnDisk', () => {
 
 	it('does not write anything when the blueprint fails to compile', async () => {
 		const result = await createNotebookFromBlueprintOnDisk(dir, 'models/c', {
-			blocks: [{ type: 'grid', items: 'not-an-array' } as never]
+			blocks: [{ type: 'unsupported-data-view' } as never]
 		});
 		expect(result.notebook).toBeUndefined();
 		expect(result.diagnostics.length).toBeGreaterThan(0);
@@ -222,7 +225,9 @@ describe('patchNotebookOnDisk', () => {
 		const result = await patchNotebookOnDisk(dir, 'models/base', { title: 'Renamed Notebook' });
 		expect(result.diagnostics).toEqual([]);
 		expect(result.notebook?.id).toBe('models/renamed_notebook');
-		await expect(fs.access(path.join(dir, 'models/renamed_notebook.luna'))).resolves.toBeUndefined();
+		await expect(
+			fs.access(path.join(dir, 'models/renamed_notebook.luna'))
+		).resolves.toBeUndefined();
 		await expect(fs.access(path.join(dir, 'models/base.luna'))).rejects.toThrow();
 	});
 

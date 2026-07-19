@@ -83,6 +83,7 @@ export function stubCellsForRefs(
 			markdownPreview: false,
 			markdownEditMode: 'source' as const,
 			udfBody: '',
+			controlConfig: null,
 			language: 'sql' as const,
 			status: 'success' as const,
 			result: {
@@ -177,7 +178,9 @@ export function getCriticalMarkdownFailures(
 	// the refs used while phantom cell roots still fail. Strictness applies only when the real
 	// columns are known.
 	const RESERVED_VAR_FIELDS = new Set(['rows', 'count', 'rowCount', 'columns', 'chartConfig']);
-	const referencedPaths = [...normalizedMarkdown.matchAll(/\$([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)/g)];
+	const referencedPaths = [
+		...normalizedMarkdown.matchAll(/\$([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)/g)
+	];
 	for (const stub of stubs) {
 		if (lowercasedColumns?.get(stub.outputName.toLowerCase())?.length) continue;
 		if (!stub.result?.rows?.length) continue;
@@ -417,7 +420,12 @@ export function gradeDashboard(markdown: string, cells: Cell[]): DashboardGrade 
 			'Flat KPI wall — no hero stat; promote the key figure to size="hero" and demote the rest to "compact"'
 		);
 	}
-	if (structure.hasGrid && metricCount >= 4 && !structure.hasAsymmetry && !structure.hasRowMetrics) {
+	if (
+		structure.hasGrid &&
+		metricCount >= 4 &&
+		!structure.hasAsymmetry &&
+		!structure.hasRowMetrics
+	) {
 		warnings.push(
 			'Uniform tile grid — use an asymmetric columns split (width=2 vs 1), span=, or a layout="row" stat rail to create hierarchy'
 		);

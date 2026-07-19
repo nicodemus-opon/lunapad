@@ -51,6 +51,11 @@ describe('createLunapadMcpServer permission gating', () => {
 			expect.arrayContaining([
 				'list_capabilities',
 				'get_visual_report_grammar',
+				'get_component_capabilities',
+				'get_notebook_app_grammar',
+				'plan_notebook_app',
+				'repair_notebook_blueprint',
+				'score_notebook_blueprint',
 				'inspect_resource',
 				'discover_schema',
 				'validate_workflow',

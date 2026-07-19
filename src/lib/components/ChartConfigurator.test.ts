@@ -28,5 +28,6 @@ describe('ChartConfigurator recommendations panel', () => {
 		const configurator = readFileSync(configuratorPath, 'utf8');
 		expect(configurator).toContain('ChartConfigPanel');
 		expect(configurator).toContain('Popover');
+		expect(configurator).toContain('data-testid="chart-settings-panel"');
 	});
 });

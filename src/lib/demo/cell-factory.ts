@@ -25,6 +25,7 @@ export function makeDemoCell(
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,
@@ -83,7 +84,11 @@ export function makeDemoMarkdownCell(markdown = '', overrides: Partial<Cell> = {
 	};
 }
 
-export function makeDemoPythonCell(code = '', outputName = '', overrides: Partial<Cell> = {}): Cell {
+export function makeDemoPythonCell(
+	code = '',
+	outputName = '',
+	overrides: Partial<Cell> = {}
+): Cell {
 	return {
 		...makeDemoCell(code, outputName, 'prql'),
 		cellType: 'python',

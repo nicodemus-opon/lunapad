@@ -25,6 +25,10 @@ export interface NotebookExecutableBlueprint {
 	code: string;
 }
 
+export type NotebookBlueprintQualityTarget = 'valid' | 'polished' | 'publication';
+export type NotebookBlueprintAutoRepair = 'off' | 'safe' | 'aggressive';
+export type NotebookBlueprintPlanningIntent = Record<string, unknown>;
+
 export type NotebookBlueprintBlock =
 	| GeneratedDashboardBlock
 	| {
@@ -37,6 +41,9 @@ export type NotebookBlueprintBlock =
 export interface NotebookBlueprint {
 	title?: string;
 	executableCells?: NotebookExecutableBlueprint[];
+	planningIntent?: NotebookBlueprintPlanningIntent;
+	qualityTarget?: NotebookBlueprintQualityTarget;
+	autoRepair?: NotebookBlueprintAutoRepair;
 	blocks: NotebookBlueprintBlock[];
 }
 

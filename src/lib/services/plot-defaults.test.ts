@@ -20,6 +20,7 @@ function makeCell(partial: Partial<Cell> & Pick<Cell, 'id' | 'cellType' | 'outpu
 		status: 'idle',
 		result: null,
 		pythonOutput: null,
+		controlConfig: null,
 		errors: [],
 		compiledSQL: null,
 		executionMs: null,

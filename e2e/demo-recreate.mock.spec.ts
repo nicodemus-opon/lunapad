@@ -43,7 +43,11 @@ async function openQueryBlockInWorksheet(page: Page, nameHint?: string | RegExp)
 		typeof nameHint === 'string'
 			? page.locator(`[data-testid="query-block"][data-output-name="${nameHint}"]`).first()
 			: nameHint
-				? blocks.filter({ has: page.getByRole('textbox', { name: /model name/ }).filter({ hasText: nameHint }) }).first()
+				? blocks
+						.filter({
+							has: page.getByRole('textbox', { name: /model name/ }).filter({ hasText: nameHint })
+						})
+						.first()
 				: blocks.last();
 	await block.hover();
 	await block.getByTestId('open-worksheet').click();
@@ -87,14 +91,12 @@ test.describe('manual demo recreation workflow', () => {
 		);
 
 		await page.getByLabel('Run cell').click();
-		await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByTestId('result-view-table')).toBeVisible({ timeout: 30_000 });
 		const resultTable = page.locator('[data-worksheet="true"] table');
-		await expect(
-			resultTable.getByRole('button', { name: 'order_id', exact: true })
-		).toBeVisible();
+		await expect(resultTable.getByRole('button', { name: 'order_id', exact: true })).toBeVisible();
 		await expect(resultTable.getByText('North', { exact: true })).toBeVisible();
 
-		await page.getByRole('tab', { name: 'Stats' }).click();
+		await page.getByTestId('result-view-stats').click();
 		await expect(page.getByText('orders profile')).toBeVisible();
 		await expect(page.getByText('Rows', { exact: true })).toBeVisible();
 		await expect(page.getByText('Columns', { exact: true })).toBeVisible();
@@ -105,7 +107,7 @@ test.describe('manual demo recreation workflow', () => {
 		await page.getByRole('tab', { name: 'SQL' }).click();
 		await typeIntoVisibleMonaco(page, `SELECT 'North' AS target_region, 150000.0 AS quota`);
 		await page.getByLabel('Run cell').click();
-		await expect(page.getByRole('tab', { name: 'Table' })).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByTestId('result-view-table')).toBeVisible({ timeout: 30_000 });
 		await expect(
 			page
 				.locator('[data-worksheet="true"] table')
