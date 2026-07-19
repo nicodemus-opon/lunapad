@@ -17,6 +17,7 @@ import DragHandle from '@tiptap/extension-drag-handle';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 import type { PlotStarterKind } from '$lib/services/plot-defaults';
+import type { ControlCellKind } from '$lib/services/control-cells';
 import { createMarkdocBlockExtension } from './markdoc-block-extension';
 import { createMarkdocWidgetExtension } from './markdoc-widget-extension';
 import { createMarkdocContainerExtension } from './markdoc-container-extension';
@@ -80,6 +81,7 @@ export interface NotionEditorExtensionOptions {
 		plotKind?: PlotStarterKind
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
+	insertControlCell?: (kind: ControlCellKind, editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
 	bubbleMenuElement: HTMLElement;
@@ -247,6 +249,7 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 			refEntries,
 			insertQueryBlock: opts.insertQueryBlock,
 			insertPage: opts.insertPage,
+			insertControlCell: opts.insertControlCell,
 			onRequestLink: opts.onRequestLink,
 			onRequestMedia: opts.onRequestMedia
 		}),

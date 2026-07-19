@@ -9,6 +9,7 @@ import { SLASH_COMMANDS, type SlashCommand } from '$lib/services/markdown-format
 import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 import { markdownToPmDocument } from '$lib/services/markdoc-pm';
 import type { PlotStarterKind } from '$lib/services/plot-defaults';
+import type { ControlCellKind } from '$lib/services/control-cells';
 
 export const slashCommandPluginKey = new PluginKey('slashCommand');
 const ENTER_EXITS_TO_FOLLOWING_PARAGRAPH = new Set(['heading', 'blockquote']);
@@ -28,7 +29,10 @@ function removeAbandonedSlash(
 		const to = from + 1;
 		if (to > editor.state.doc.content.size) return;
 		if (editor.state.doc.textBetween(from, to) !== '/') return;
-		const nextChar = editor.state.doc.textBetween(to, Math.min(to + 1, editor.state.doc.content.size));
+		const nextChar = editor.state.doc.textBetween(
+			to,
+			Math.min(to + 1, editor.state.doc.content.size)
+		);
 		if (nextChar && !/\s/.test(nextChar)) return;
 		editor
 			.chain()
@@ -59,9 +63,30 @@ export interface SlashCommandExtensionOptions {
 		plotKind?: PlotStarterKind
 	) => void;
 	insertPage?: (editor: import('@tiptap/core').Editor) => void;
+	insertControlCell?: (kind: ControlCellKind, editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
 }
+
+const CONTROL_COMMAND_KIND: Record<string, ControlCellKind> = {
+	'control-text-input': 'text-input',
+	'control-number-input': 'number-input',
+	'control-slider': 'slider',
+	'control-date-input': 'date-input',
+	'control-date-range': 'date-range',
+	'control-checkbox': 'checkbox',
+	'control-select': 'select',
+	'control-multiselect': 'multiselect',
+	'control-run-button': 'run-button',
+	'control-file-upload': 'file-upload',
+	'control-table-input': 'table-input',
+	'control-table-display': 'table-display',
+	'control-pivot': 'pivot',
+	'control-map': 'map',
+	'control-single-value': 'single-value',
+	'control-writeback': 'writeback',
+	'control-agent': 'agent'
+};
 
 export function contextualSnippet(item: SlashCommand, entries: MarkdownRefEntry[]): string {
 	return buildContextualMarkdocSnippet(item.id, entries) || item.snippet;
@@ -75,31 +100,32 @@ export function filterCommands(query: string, entries: MarkdownRefEntry[] = []):
 		: SLASH_COMMANDS.filter((cmd) => cmd.group !== 'report');
 	if (!q) return availableCommands.slice(0, 32);
 
-	const scored = availableCommands.map((cmd) => {
-		const aliases = cmd.aliases ?? [];
-		const aliasExact = aliases.some((a) => a.toLowerCase() === q);
-		const aliasStarts = aliases.some((a) => a.toLowerCase().startsWith(q));
-		const aliasIncludes = aliases.some((a) => a.toLowerCase().includes(q));
+	const scored = availableCommands
+		.map((cmd) => {
+			const aliases = cmd.aliases ?? [];
+			const aliasExact = aliases.some((a) => a.toLowerCase() === q);
+			const aliasStarts = aliases.some((a) => a.toLowerCase().startsWith(q));
+			const aliasIncludes = aliases.some((a) => a.toLowerCase().includes(q));
 
-		let score = 0;
-		if (cmd.id.toLowerCase() === q) score += 100;
-		else if (aliasExact) score += 90;
-		else if (cmd.label.toLowerCase().startsWith(q)) score += 60;
-		else if (cmd.id.toLowerCase().startsWith(q)) score += 50;
-		else if (aliasStarts) score += 45;
-		else if (cmd.label.toLowerCase().includes(q)) score += 30;
-		else if (aliasIncludes) score += 20;
-		else if (cmd.description.toLowerCase().includes(q)) score += 15;
-		else if (
-			!cmd.id.toLowerCase().includes(q) &&
-			!cmd.label.toLowerCase().includes(q) &&
-			!cmd.description.toLowerCase().includes(q) &&
-			!aliasIncludes
-		) {
-			return null;
-		}
-		return { cmd, score };
-	})
+			let score = 0;
+			if (cmd.id.toLowerCase() === q) score += 100;
+			else if (aliasExact) score += 90;
+			else if (cmd.label.toLowerCase().startsWith(q)) score += 60;
+			else if (cmd.id.toLowerCase().startsWith(q)) score += 50;
+			else if (aliasStarts) score += 45;
+			else if (cmd.label.toLowerCase().includes(q)) score += 30;
+			else if (aliasIncludes) score += 20;
+			else if (cmd.description.toLowerCase().includes(q)) score += 15;
+			else if (
+				!cmd.id.toLowerCase().includes(q) &&
+				!cmd.label.toLowerCase().includes(q) &&
+				!cmd.description.toLowerCase().includes(q) &&
+				!aliasIncludes
+			) {
+				return null;
+			}
+			return { cmd, score };
+		})
 		.filter((x): x is { cmd: SlashCommand; score: number } => x !== null)
 		.sort((a, b) => b.score - a.score || a.cmd.label.localeCompare(b.cmd.label));
 
@@ -129,12 +155,21 @@ function insertSlashItem(
 	item: SlashCommand,
 	opts?: Pick<
 		SlashCommandExtensionOptions,
-		'insertQueryBlock' | 'insertPage' | 'refEntries' | 'onRequestLink' | 'onRequestMedia'
+		| 'insertQueryBlock'
+		| 'insertPage'
+		| 'insertControlCell'
+		| 'refEntries'
+		| 'onRequestLink'
+		| 'onRequestMedia'
 	>
 ): void {
 	const { id, group } = item;
 	const snippet = contextualSnippet(item, opts?.refEntries?.() ?? []);
 
+	if (id in CONTROL_COMMAND_KIND) {
+		opts?.insertControlCell?.(CONTROL_COMMAND_KIND[id], editor);
+		return;
+	}
 	if (id === 'sql' || id === 'prql' || id === 'python') {
 		opts?.insertQueryBlock?.(id, editor);
 		return;
@@ -298,10 +333,18 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 		const handler = this.options.handler;
 		const insertQueryBlock = this.options.insertQueryBlock;
 		const insertPage = this.options.insertPage;
+		const insertControlCell = this.options.insertControlCell;
 		const refEntries = this.options.refEntries;
 		const onRequestLink = this.options.onRequestLink;
 		const onRequestMedia = this.options.onRequestMedia;
-		const slashOpts = { insertQueryBlock, insertPage, refEntries, onRequestLink, onRequestMedia };
+		const slashOpts = {
+			insertQueryBlock,
+			insertPage,
+			insertControlCell,
+			refEntries,
+			onRequestLink,
+			onRequestMedia
+		};
 		// Guards the onExit cleanup: when a command runs it already deleteRange()s the
 		// trigger, so onExit must NOT delete again (that would eat real content).
 		let commandExecuted = false;
@@ -366,7 +409,12 @@ export function createSlashCommandExtension(
 	handler: SlashCommandHandler,
 	opts?: Pick<
 		SlashCommandExtensionOptions,
-		'insertQueryBlock' | 'insertPage' | 'refEntries' | 'onRequestLink' | 'onRequestMedia'
+		| 'insertQueryBlock'
+		| 'insertPage'
+		| 'insertControlCell'
+		| 'refEntries'
+		| 'onRequestLink'
+		| 'onRequestMedia'
 	>
 ) {
 	return SlashCommandExtension.configure({ handler, ...opts });

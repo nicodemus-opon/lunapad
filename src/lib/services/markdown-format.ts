@@ -251,6 +251,145 @@ const MARKDOC_REPORT_COMMANDS: SlashCommand[] = [
 	}
 ];
 
+const NOTEBOOK_CONTROL_SLASH_COMMANDS: SlashCommand[] = [
+	{
+		id: 'control-text-input',
+		label: 'Text input',
+		description: 'Text variable cell',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook text input', 'text control', 'parameter', 'variable']
+	},
+	{
+		id: 'control-number-input',
+		label: 'Number input',
+		description: 'Numeric variable cell',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook number input', 'number control', 'numeric']
+	},
+	{
+		id: 'control-slider',
+		label: 'Slider',
+		description: 'Bounded numeric variable',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook slider', 'range']
+	},
+	{
+		id: 'control-date-input',
+		label: 'Date input',
+		description: 'Date variable cell',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook date input', 'calendar']
+	},
+	{
+		id: 'control-date-range',
+		label: 'Date range',
+		description: 'Start and end date variable',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook date range']
+	},
+	{
+		id: 'control-checkbox',
+		label: 'Checkbox',
+		description: 'Boolean variable cell',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook checkbox', 'boolean']
+	},
+	{
+		id: 'control-select',
+		label: 'Select',
+		description: 'Single-choice variable',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook select', 'dropdown']
+	},
+	{
+		id: 'control-multiselect',
+		label: 'Multiselect',
+		description: 'Multi-choice variable',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook multiselect', 'multi-select', 'checkboxes']
+	},
+	{
+		id: 'control-run-button',
+		label: 'Run button',
+		description: 'Explicit run control',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook run button', 'submit', 'run control']
+	},
+	{
+		id: 'control-file-upload',
+		label: 'File upload',
+		description: 'File metadata variable',
+		snippet: '',
+		group: 'input',
+		aliases: ['notebook file upload', 'upload']
+	},
+	{
+		id: 'control-table-input',
+		label: 'Editable table',
+		description: 'Editable table variable',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook editable table', 'table input']
+	},
+	{
+		id: 'control-table-display',
+		label: 'Rich table',
+		description: 'Filterable table display',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook rich table']
+	},
+	{
+		id: 'control-pivot',
+		label: 'Pivot',
+		description: 'Interactive pivot display',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook pivot', 'pivot table']
+	},
+	{
+		id: 'control-map',
+		label: 'Map',
+		description: 'Geographic display',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook map', 'geo', 'latitude', 'longitude']
+	},
+	{
+		id: 'control-single-value',
+		label: 'Single value',
+		description: 'Big-number metric',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook single value', 'big number', 'kpi']
+	},
+	{
+		id: 'control-writeback',
+		label: 'Writeback',
+		description: 'Guarded write action',
+		snippet: '',
+		group: 'data',
+		aliases: ['notebook writeback', 'write back']
+	},
+	{
+		id: 'control-agent',
+		label: 'Agent block',
+		description: 'Scoped AI instruction',
+		snippet: '',
+		group: 'ai',
+		aliases: ['notebook agent block', 'ai step']
+	}
+];
+
 const MARKDOC_PRESET_SLASH_COMMANDS: SlashCommand[] = [
 	{
 		id: 'input-text',
@@ -546,6 +685,7 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 export const SLASH_COMMANDS: SlashCommand[] = [
 	...BASE_SLASH_COMMANDS.slice(0, 4),
 	...MARKDOC_REPORT_COMMANDS,
+	...NOTEBOOK_CONTROL_SLASH_COMMANDS,
 	...BASE_SLASH_COMMANDS.slice(4),
 	...MARKDOC_SLASH_COMMANDS,
 	...MARKDOC_PRESET_SLASH_COMMANDS

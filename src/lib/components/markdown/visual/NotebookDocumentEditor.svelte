@@ -16,9 +16,11 @@
 	import type { MarkdownRefEntry } from '$lib/services/markdoc-catalog';
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import type { PlotStarterKind } from '$lib/services/plot-defaults';
+	import type { ControlCellKind } from '$lib/services/control-cells';
 	import {
 		syncNotebookFromPmDocument,
 		insertQueryBlockCell,
+		insertControlBlockCell,
 		removeQueryBlockCell,
 		duplicateQueryBlockCell,
 		getNotebooks
@@ -56,9 +58,17 @@
 		dark?: boolean;
 		reportView?: boolean;
 		refEntries?: MarkdownRefEntry[];
+		onInsertControlCell?: (kind: ControlCellKind) => void;
 	}
 
-	const { notebookId, cells, dark = false, reportView = false, refEntries = [] }: Props = $props();
+	const {
+		notebookId,
+		cells,
+		dark = false,
+		reportView = false,
+		refEntries = [],
+		onInsertControlCell
+	}: Props = $props();
 
 	const refreshBus = createRefreshBus();
 
@@ -327,6 +337,44 @@
 		emitNow(ed, notebookId);
 	}
 
+	function insertControlBlock(kind: ControlCellKind, ed: TipTapEditor) {
+		if (emitTimer) {
+			clearTimeout(emitTimer);
+			emitTimer = null;
+		}
+		emitNow(ed, notebookId);
+		const anchorId = findAnchorCellId(ed);
+		const cellId = insertControlBlockCell(anchorId, kind, notebookId);
+		if (!cellId) {
+			onInsertControlCell?.(kind);
+			slashOpen = false;
+			return;
+		}
+		const insertedCell = getNotebooks()
+			.find((n) => n.id === notebookId)
+			?.cells.find((cell) => cell.id === cellId);
+		ed.chain()
+			.focus()
+			.insertContent([
+				{
+					type: 'queryBlock',
+					attrs: {
+						cellId,
+						cellType: insertedCell?.cellType ?? 'input',
+						pinned: false
+					}
+				},
+				{ type: 'paragraph' }
+			])
+			.run();
+		if (emitTimer) {
+			clearTimeout(emitTimer);
+			emitTimer = null;
+		}
+		emitNow(ed, notebookId);
+		slashOpen = false;
+	}
+
 	// The drag-gutter "+" (and empty-line trigger) opens the slash menu by dropping a
 	// "/" paragraph. It must insert *after* the current block — never at the raw
 	// selection — because when a queryBlock is node-selected (e.g. right after the
@@ -411,7 +459,10 @@
 		}, 150);
 	}
 
-	function flushPendingEmit(ed: TipTapEditor, targetNotebookId = editingNotebookId ?? notebookId): boolean {
+	function flushPendingEmit(
+		ed: TipTapEditor,
+		targetNotebookId = editingNotebookId ?? notebookId
+	): boolean {
 		if (!emitTimer) return false;
 		clearTimeout(emitTimer);
 		emitTimer = null;
@@ -572,6 +623,7 @@
 					onDragHandleNodeChange: ({ node, pos }) => gutter.setHoveredPos(node ? pos : null),
 					insertQueryBlock: (lang, e, plotKind) => insertQueryBlock(lang, e, plotKind),
 					insertPage,
+					insertControlCell: (kind, e) => insertControlBlock(kind, e),
 					onRequestLink: (e) => onRequestLink(e),
 					onRequestMedia: (kind, e) => onRequestMedia(kind, e),
 					slashHandler: {

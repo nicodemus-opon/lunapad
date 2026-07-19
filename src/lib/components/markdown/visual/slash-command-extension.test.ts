@@ -37,6 +37,16 @@ describe('slash-command-extension filterCommands', () => {
 		expect(results[0]?.id).toBe('columns');
 	});
 
+	it('shows control cells in the visible slash menu with short labels', () => {
+		expect(filterCommands('slider')[0]?.id).toBe('control-slider');
+		expect(filterCommands('editable table')[0]?.id).toBe('control-table-input');
+		expect(filterCommands('agent')[0]?.id).toBe('control-agent');
+	});
+
+	it('keeps notebook as a discoverability alias without forcing users to type it', () => {
+		expect(filterCommands('notebook slider')[0]?.id).toBe('control-slider');
+	});
+
 	it('still matches by exact id over aliases', () => {
 		const results = filterCommands('link');
 		expect(results[0]?.id).toBe('link');

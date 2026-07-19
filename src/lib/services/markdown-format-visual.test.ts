@@ -79,7 +79,9 @@ describe('visual dashboard slash commands', () => {
 
 		for (const command of SLASH_COMMANDS) {
 			expect(
-				handled.has(command.id) || command.snippet.trim().length > 0,
+				handled.has(command.id) ||
+					command.id.startsWith('control-') ||
+					command.snippet.trim().length > 0,
 				`${command.id} has no handler and no snippet`
 			).toBe(true);
 		}

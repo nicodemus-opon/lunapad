@@ -8,6 +8,7 @@ import {
 	extractPagesFromPmDocument
 } from './notebook-pm';
 import type { PMNodeJSON } from './markdoc-pm';
+import { defaultControlCellConfig } from './control-cells';
 
 function collectNodeTypes(node: PMNodeJSON | { type: 'doc'; content?: PMNodeJSON[] }): string[] {
 	const types = [node.type];
@@ -67,6 +68,26 @@ function makePythonCell(id: string, code = 'print("ok")'): Cell {
 	} as unknown as Cell;
 }
 
+function makeControlCell(id: string): Cell {
+	const controlConfig = defaultControlCellConfig('slider', 'slider');
+	return {
+		id,
+		cellType: 'input',
+		markdown: '',
+		outputName: 'slider',
+		code: '',
+		guiStages: [{ type: 'from', table: '' }],
+		editMode: 'prql',
+		language: 'sql',
+		status: 'idle',
+		errors: [],
+		display: 'output',
+		hideResult: false,
+		controlConfig,
+		result: { rows: [{ name: 'slider', value: 50 }], columns: ['name', 'value'] }
+	} as unknown as Cell;
+}
+
 describe('notebook-pm', () => {
 	it('maps markdown + query cells to a single PM document', () => {
 		const cells = [
@@ -114,6 +135,21 @@ describe('notebook-pm', () => {
 		expect(blocks).toEqual(
 			expect.arrayContaining([
 				{ kind: 'query', cellId: 'py1', cellType: 'python' },
+				expect.objectContaining({ kind: 'markdown', markdown: expect.stringContaining('Intro') })
+			])
+		);
+	});
+
+	it('renders control cells as document atoms with cellType preserved', () => {
+		const cells = [makeMarkdownCell('md1', 'Intro'), makeControlCell('slider1')];
+		const doc = cellsToPmDocument(cells);
+		const qb = (doc.content ?? []).find((n) => n.type === 'queryBlock');
+		expect(qb?.attrs?.cellId).toBe('slider1');
+		expect(qb?.attrs?.cellType).toBe('input');
+		const blocks = pmDocumentToBlocks(doc);
+		expect(blocks).toEqual(
+			expect.arrayContaining([
+				{ kind: 'query', cellId: 'slider1', cellType: 'input' },
 				expect.objectContaining({ kind: 'markdown', markdown: expect.stringContaining('Intro') })
 			])
 		);

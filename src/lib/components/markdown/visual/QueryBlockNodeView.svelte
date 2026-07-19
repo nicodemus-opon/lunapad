@@ -35,6 +35,7 @@
 	import InlinePromptBar from '$lib/components/cell/InlinePromptBar.svelte';
 	import PythonCellOutput from '$lib/components/PythonCellOutput.svelte';
 	import PlotCellOutput from '$lib/components/PlotCellOutput.svelte';
+	import ControlCellView from '$lib/components/ControlCellView.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { resolvePlotDataRefs, isChartableSourceCell } from '$lib/services/cell-deps';
@@ -105,6 +106,7 @@
 	const isQueryCell = $derived(cell?.cellType === 'query');
 	const isPythonCell = $derived(cell?.cellType === 'python');
 	const isPlotCell = $derived(cell?.cellType === 'plot');
+	const isControlCell = $derived(Boolean(cell?.controlConfig));
 	const pythonTableHints = $derived(cell ? getPythonTableHints(cell.code, notebookId) : []);
 	const connections = $derived(getConnections());
 	const isDbtProject = $derived(getIsDbtProject());
@@ -136,6 +138,17 @@
 	);
 	const plotDeps = $derived(cell && isPlotCell ? resolvePlotDataRefs(cells, cellIndex) : []);
 	const hasVisibleOutput = $derived(showResult || showPythonOutput || isPlotCell);
+	const controlSourceCell = $derived.by(() => {
+		if (!cell || !isControlCell) return null;
+		const configuredId = cell.controlConfig?.source.cellId;
+		if (configuredId)
+			return cells.find((candidate) => candidate.id === configuredId && candidate.result);
+		for (let i = cellIndex - 1; i >= 0; i--) {
+			const candidate = cells[i];
+			if (candidate?.result?.rows?.length) return candidate;
+		}
+		return null;
+	});
 
 	// ── PRQL / Visual / SQL toggle ────────────────────────────────────────────
 	const tables = $derived(getTables());
@@ -461,7 +474,7 @@
 					{/if}
 				</Button>
 			{/if}
-			{#if !reportView && !collapsed}
+			{#if !reportView && !collapsed && !isControlCell}
 				<Button
 					type="button"
 					variant="ghost"
@@ -480,7 +493,7 @@
 					<Maximize2 class="h-3.5 w-3.5" />
 				</Button>
 			{/if}
-			{#if !reportView && !collapsed}
+			{#if !reportView && !collapsed && !isControlCell}
 				<Button
 					type="button"
 					variant="ghost"
@@ -506,7 +519,16 @@
 
 		<div class="min-w-0 flex-1">
 			{#if cell}
-				{#if collapsed}
+				{#if isControlCell}
+					<div class="py-1">
+						<ControlCellView
+							{cell}
+							sourceRows={controlSourceCell?.result?.rows ?? []}
+							sourceColumns={controlSourceCell?.result?.columns ?? []}
+							{reportView}
+						/>
+					</div>
+				{:else if collapsed}
 					<div class="flex min-h-7 items-center gap-2 px-1 py-1">
 						<span class="truncate font-mono text-sm font-medium text-foreground">
 							{cell.outputName || 'Query'}

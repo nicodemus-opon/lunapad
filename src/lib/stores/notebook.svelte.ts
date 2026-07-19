@@ -5163,6 +5163,38 @@ export function insertControlCellAfter(id: string, kind: ControlCellKind): strin
 	return cell.id;
 }
 
+export function insertControlBlockCell(
+	afterCellId: string | null,
+	kind: ControlCellKind,
+	notebookId?: string
+): string | null {
+	const nb = notebookId
+		? (state.notebooks.find((n) => n.id === notebookId) ?? getActiveNotebook())
+		: getActiveNotebook();
+	if (state.storageMode === 'filesystem' && state.projectFolder && nb.format !== 'luna')
+		return null;
+
+	pushHistoryCheckpoint(nb.id);
+	const cell = makeControlCell(kind);
+	const cells = [...nb.cells];
+	if (afterCellId) {
+		const idx = cells.findIndex((c) => c.id === afterCellId);
+		if (idx >= 0) cells.splice(idx + 1, 0, cell);
+		else cells.push(cell);
+	} else {
+		cells.unshift(cell);
+	}
+	replaceNotebookCells(nb.id, cells);
+	focusInsertedCell(cell.id);
+	scheduleSave();
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		scheduleFileSave(nb.id, cell.id);
+	} else if (nb.format === 'luna') {
+		scheduleLunaNotebookSave(nb.id);
+	}
+	return cell.id;
+}
+
 export function insertControlCellBefore(id: string, kind: ControlCellKind): string | null {
 	if (!canAddControlCell()) return null;
 	const nb = getActiveNotebook();

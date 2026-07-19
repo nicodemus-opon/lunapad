@@ -15,9 +15,9 @@ export type NotebookPmBlock =
 
 const EXECUTABLE_CELL_TYPES = new Set<CellType>(['query', 'python', 'plot', 'udf']);
 
-function isExecutableCell(cell: Cell): boolean {
+function isDocumentAtomCell(cell: Cell): boolean {
 	if (cell.promotedModelPath) return false;
-	return EXECUTABLE_CELL_TYPES.has(cell.cellType);
+	return EXECUTABLE_CELL_TYPES.has(cell.cellType) || Boolean(cell.controlConfig);
 }
 
 /** Convert notebook cells (document order) → single ProseMirror/TipTap document. */
@@ -50,7 +50,7 @@ export function cellsToPmDocument(cells: Cell[]): PMDocJSON {
 			continue;
 		}
 
-		if (isExecutableCell(cell)) {
+		if (isDocumentAtomCell(cell)) {
 			content.push({
 				type: 'queryBlock',
 				attrs: {
@@ -169,12 +169,12 @@ export function attachNotebookBlockIds(
 
 	for (let i = 0; i < cells.length; i++) {
 		const cell = cells[i]!;
-		if (isExecutableCell(cell)) {
+		if (isDocumentAtomCell(cell)) {
 			prevQueryId = cell.id;
 			continue;
 		}
 		if (cell.cellType !== 'markdown') continue;
-		const nextQuery = cells.slice(i + 1).find(isExecutableCell);
+		const nextQuery = cells.slice(i + 1).find(isDocumentAtomCell);
 		const key = regionKey(prevQueryId, nextQuery?.id ?? null);
 		const ids = markdownIdsByRegion.get(key) ?? [];
 		ids.push(cell.id);
