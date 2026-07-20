@@ -6,7 +6,9 @@
 		getExternalSchemaTables,
 		getConnections,
 		setExternalConnectionSchema,
-		insertIntoActiveCell
+		insertIntoActiveCell,
+		getAttachedDatabases,
+		removeAttachedDatabase
 	} from '$lib/stores/notebook.svelte';
 	import { fetchConnectionSchema } from '$lib/services/connections';
 	import {
@@ -17,7 +19,8 @@
 		LayoutGrid,
 		Loader2,
 		RefreshCw,
-		Table2
+		Table2,
+		Unplug
 	} from '@lucide/svelte';
 	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
@@ -26,6 +29,8 @@
 
 	const tables = $derived(getTables());
 	const externalSchemaTables = $derived(getExternalSchemaTables());
+	const attachedDatabases = $derived(getAttachedDatabases());
+	const attachedAliases = $derived(new Set(attachedDatabases.map((d) => d.alias)));
 
 	// Row-count lookup by table name for store-tracked tables (uploaded files)
 	const uploadedRowCounts = $derived(new Map(tables.map((t) => [t.name, t.rowCount])));
@@ -85,9 +90,10 @@
 		}
 	}
 
-	// Re-fetch whenever the uploaded tables list changes
+	// Re-fetch whenever the uploaded tables list or attached databases change
 	$effect(() => {
 		void tables.length;
+		void attachedDatabases.length;
 		loadCatalog();
 	});
 
@@ -182,7 +188,8 @@
 	expanded: boolean,
 	onToggle: () => void,
 	refreshing: boolean = false,
-	onRefresh: (() => void) | undefined = undefined
+	onRefresh: (() => void) | undefined = undefined,
+	attached: boolean = false
 )}
 	<ContextMenu.Root>
 		<ContextMenu.Trigger>
@@ -212,6 +219,13 @@
 				<Copy class="h-3.5 w-3.5" />
 				Copy name
 			</ContextMenu.Item>
+			{#if attached}
+				<ContextMenu.Separator />
+				<ContextMenu.Item onclick={() => removeAttachedDatabase(name)} class="text-destructive">
+					<Unplug class="h-3.5 w-3.5" />
+					Detach database
+				</ContextMenu.Item>
+			{/if}
 		</ContextMenu.Content>
 	</ContextMenu.Root>
 {/snippet}
@@ -392,7 +406,8 @@
 					dbExpanded,
 					() => toggleDatabase(dbKey),
 					false,
-					loadCatalog
+					loadCatalog,
+					attachedAliases.has(db.name)
 				)}
 
 				{#if dbExpanded}

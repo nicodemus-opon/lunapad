@@ -1336,6 +1336,25 @@ export async function writeProjectFile(
 	return { isNew };
 }
 
+/** Write raw bytes to a project file (uploaded seeds, attached .duckdb files). Overwrites in place. */
+export async function writeProjectBinaryFile(
+	folder: string,
+	file: string,
+	data: Buffer
+): Promise<void> {
+	const filePath = path.join(folder, file);
+	assertSafe(folder, filePath);
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
+	await fs.writeFile(filePath, data);
+}
+
+/** Read raw bytes from a project file (counterpart to writeProjectBinaryFile). */
+export async function readProjectBinaryFile(folder: string, file: string): Promise<Buffer> {
+	const filePath = path.join(folder, file);
+	assertSafe(folder, filePath);
+	return fs.readFile(filePath);
+}
+
 /**
  * Write a single cell's `.prql` file to disk.
  * Creates parent directories as needed.

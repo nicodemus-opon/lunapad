@@ -9,13 +9,17 @@
 		registerFile,
 		detectFormat,
 		sanitizeTableName,
-		persistUploadedFile,
 		ACCEPT_ALL_FORMATS,
 		executeSQL,
 		dropTable,
 		type FileFormat
 	} from '$lib/services/duckdb';
-	import { addTable, getConnections } from '$lib/stores/notebook.svelte';
+	import {
+		addTable,
+		getConnections,
+		persistUploadedTableFile,
+		attachAndPersistDatabase
+	} from '$lib/stores/notebook.svelte';
 	import { BUILTIN_DUCKDB_CONNECTION, BUILTIN_DUCKDB_CONNECTION_ID } from '$lib/types/connection';
 	import type { Connection } from '$lib/types/connection';
 
@@ -66,7 +70,10 @@
 	);
 	const isExternal = $derived(selectedConnection.type !== 'duckdb-wasm');
 	const isCsvLike = $derived(format === 'csv' || format === 'tsv');
-	const canUpload = $derived(!!file && !!tableName.trim() && !parsing && !uploading && !parseError);
+	const isDuckDBAttach = $derived(format === 'duckdb');
+	const canUpload = $derived(
+		!!file && !!tableName.trim() && !parsing && !uploading && (isDuckDBAttach || !parseError)
+	);
 
 	// ── Cleanup when dialog closes ────────────────────────────────────────────────
 
@@ -99,7 +106,7 @@
 	// ── File parsing ──────────────────────────────────────────────────────────────
 
 	async function parseFile() {
-		if (!file || !buffer || !format) return;
+		if (!file || !buffer || !format || format === 'duckdb') return;
 		parsing = true;
 		parseError = '';
 		try {
@@ -171,7 +178,11 @@
 		uploading = true;
 
 		try {
-			if (!isExternal) {
+			if (isDuckDBAttach) {
+				const alias = tableName.trim();
+				await attachAndPersistDatabase(alias, file!.name, buffer!);
+				toast.success(`Attached "${alias}" from ${file!.name}`);
+			} else if (!isExternal) {
 				// DuckDB WASM: re-register with the real table name
 				const uploadFileName = `__upload_${file!.name}`;
 				const uploadHasHeader = isCsvLike ? hasHeader : true;
@@ -182,7 +193,7 @@
 				} = await registerFile(tableName.trim(), uploadFileName, buffer!, format!, {
 					header: uploadHasHeader
 				});
-				await persistUploadedFile({
+				const { storage, seedPath } = await persistUploadedTableFile({
 					tableName: tableName.trim(),
 					fileName: uploadFileName,
 					format: format!,
@@ -194,7 +205,9 @@
 					fileName: file!.name,
 					rowCount: rc,
 					columns,
-					columnTypes: types
+					columnTypes: types,
+					storage,
+					seedPath
 				});
 				toast.success(`Loaded "${tableName.trim()}" — ${rc.toLocaleString()} rows`);
 			} else {
@@ -238,7 +251,9 @@
 	<Dialog.Content class="flex max-w-2xl flex-col gap-0 overflow-hidden p-0">
 		<Dialog.Header>
 			<Dialog.Title>Upload file</Dialog.Title>
-			<Dialog.Description>Import CSV, TSV, Parquet, or JSON into any connection</Dialog.Description>
+			<Dialog.Description
+				>Import CSV, TSV, Parquet, or JSON into any connection — or attach a .duckdb file</Dialog.Description
+			>
 		</Dialog.Header>
 
 		<div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 py-4">
@@ -275,11 +290,29 @@
 				{:else}
 					<Upload class="h-4 w-4 {dragOver ? 'text-primary' : ''}" />
 					<span class="text-xs">Drop file or click to browse</span>
-					<span class="text-2xs">csv · tsv · parquet · json · ndjson</span>
+					<span class="text-2xs">csv · tsv · parquet · json · ndjson · duckdb</span>
 				{/if}
 			</div>
 
-			{#if file}
+			{#if file && isDuckDBAttach}
+				<!-- .duckdb attach flow: just an alias, no connection/schema/mode -->
+				<div class="flex flex-col gap-1">
+					<label
+						for="upload-table-name"
+						class="text-2xs font-medium tracking-wide text-muted-foreground uppercase"
+						>Attach as</label
+					>
+					<Input
+						id="upload-table-name"
+						class="h-7 font-mono text-xs"
+						bind:value={tableName}
+						placeholder="warehouse"
+					/>
+					<p class="text-2xs text-muted-foreground">
+						Query its tables as <code>{tableName.trim() || 'alias'}.main.table_name</code>
+					</p>
+				</div>
+			{:else if file}
 				<!-- Config row 1: Connection + Table name -->
 				<div class="grid grid-cols-2 gap-3">
 					<div class="flex flex-col gap-1">
@@ -423,16 +456,16 @@
 						</div>
 					</div>
 				{/if}
+			{/if}
 
-				<!-- Upload error -->
-				{#if uploadError}
-					<div
-						class="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
-					>
-						<AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-						{uploadError}
-					</div>
-				{/if}
+			<!-- Upload error -->
+			{#if file && uploadError}
+				<div
+					class="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
+				>
+					<AlertCircle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+					{uploadError}
+				</div>
 			{/if}
 		</div>
 

@@ -136,15 +136,19 @@ function assertConn(): duckdb.AsyncDuckDBConnection {
 	return conn;
 }
 
-export type FileFormat = 'csv' | 'tsv' | 'parquet' | 'json' | 'ndjson';
+export type FileFormat = 'csv' | 'tsv' | 'parquet' | 'json' | 'ndjson' | 'duckdb';
 
 export const FILE_FORMAT_EXTENSIONS: Record<FileFormat, string[]> = {
 	csv: ['.csv'],
 	tsv: ['.tsv'],
 	parquet: ['.parquet', '.pq'],
 	json: ['.json'],
-	ndjson: ['.ndjson', '.jsonl']
+	ndjson: ['.ndjson', '.jsonl'],
+	duckdb: ['.duckdb', '.db']
 };
+
+/** Tabular formats importable as a table via registerFile — excludes 'duckdb' (attached, not imported). */
+export const TABULAR_FILE_FORMATS = ['csv', 'tsv', 'parquet', 'json', 'ndjson'] as const;
 
 export const ACCEPT_ALL_FORMATS = Object.values(FILE_FORMAT_EXTENSIONS).flat().join(',');
 
@@ -155,6 +159,7 @@ export function detectFormat(filename: string): FileFormat | null {
 	if (lower.endsWith('.parquet') || lower.endsWith('.pq')) return 'parquet';
 	if (lower.endsWith('.ndjson') || lower.endsWith('.jsonl')) return 'ndjson';
 	if (lower.endsWith('.json')) return 'json';
+	if (lower.endsWith('.duckdb') || lower.endsWith('.db')) return 'duckdb';
 	return null;
 }
 
@@ -197,6 +202,9 @@ export async function registerFile(
 	format: FileFormat,
 	options?: { header?: boolean }
 ): Promise<{ rowCount: number; columns: string[]; columnTypes: string[] }> {
+	if (format === 'duckdb') {
+		throw new Error('.duckdb files are attached as databases, not imported as a table.');
+	}
 	const c = assertConn();
 	// Slice before passing so DuckDB's worker transfer doesn't detach the caller's buffer
 	await db!.registerFileBuffer(fileName, new Uint8Array(buffer.slice(0)));
@@ -240,6 +248,24 @@ function quoteLiteral(value: string): string {
 	return `'${value.replace(/'/g, "''")}'`;
 }
 
+/**
+ * Attach an uploaded native .duckdb file as an additional catalog. The bytes are
+ * registered as a virtual file — ATTACH works against a registered buffer file the
+ * same way it would against opfs:// or http(s):// paths, no on-disk copy required
+ * for the attach itself (persistence of the bytes across reloads is handled by the caller).
+ */
+export async function attachDatabaseFromBuffer(alias: string, buffer: ArrayBuffer): Promise<void> {
+	const c = assertConn();
+	const virtualFileName = `_attached_${alias}.duckdb`;
+	await db!.registerFileBuffer(virtualFileName, new Uint8Array(buffer.slice(0)));
+	await c.query(`ATTACH ${quoteLiteral(virtualFileName)} AS ${quoteIdent(alias)} (READ_ONLY)`);
+}
+
+export async function detachDatabase(alias: string): Promise<void> {
+	const c = assertConn();
+	await c.query(`DETACH ${quoteIdent(alias)}`);
+}
+
 export type RelationType = 'table' | 'view';
 export type MaterializationMode = 'table' | 'view' | 'incremental';
 
@@ -268,7 +294,7 @@ async function getRelationType(name: string): Promise<RelationType | null> {
 	const rows = await c.query(
 		`SELECT table_type
 		 FROM information_schema.tables
-		 WHERE table_schema = 'main' AND table_name = ${quoteLiteral(name)}
+		 WHERE table_schema = 'main' AND table_catalog = current_database() AND table_name = ${quoteLiteral(name)}
 		 LIMIT 1`
 	);
 	const tableType = (rows.toArray()[0]?.table_type as string | undefined)?.toUpperCase();
@@ -320,7 +346,7 @@ export async function listMainSchemaRelations(): Promise<RelationCatalogEntry[]>
 	const relResult = await c.query(
 		`SELECT table_name, table_type
 		 FROM information_schema.tables
-		 WHERE table_schema = 'main'
+		 WHERE table_schema = 'main' AND table_catalog = current_database()
 		 ORDER BY table_name`
 	);
 
@@ -334,7 +360,7 @@ export async function listMainSchemaRelations(): Promise<RelationCatalogEntry[]>
 		const colsResult = await c.query(
 			`SELECT column_name, data_type
 			 FROM information_schema.columns
-			 WHERE table_schema = 'main' AND table_name = ${quoteLiteral(name)}
+			 WHERE table_schema = 'main' AND table_catalog = current_database() AND table_name = ${quoteLiteral(name)}
 			 ORDER BY ordinal_position`
 		);
 		const columns = colsResult.toArray().map((r) => String(r.column_name));
@@ -424,7 +450,8 @@ export async function getDatabaseCatalog(): Promise<DatabaseCatalogEntry[]> {
 		const colResult = await c.query(
 			`SELECT table_schema, table_name, column_name, data_type
 			 FROM information_schema.columns
-			 WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+			 WHERE table_catalog = ${quoteLiteral(dbName)}
+			   AND table_schema NOT IN ('information_schema', 'pg_catalog')
 			 ORDER BY table_schema, table_name, ordinal_position`
 		);
 
@@ -569,7 +596,9 @@ export async function dropPrevView(): Promise<void> {
 // ── Uploaded-file persistence (IndexedDB) ────────────────────────────────────
 
 const IDB_NAME = 'lunapad-uploaded-files';
+const IDB_VERSION = 2;
 const IDB_STORE = 'files';
+const IDB_DB_STORE = 'databases';
 
 interface StoredFile {
 	tableName: string;
@@ -579,11 +608,22 @@ interface StoredFile {
 	hasHeader: boolean;
 }
 
+interface StoredDatabase {
+	alias: string;
+	fileName: string;
+	buffer: ArrayBuffer;
+}
+
 function openFileIDB(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
-		const req = indexedDB.open(IDB_NAME, 1);
+		const req = indexedDB.open(IDB_NAME, IDB_VERSION);
 		req.onupgradeneeded = () => {
-			req.result.createObjectStore(IDB_STORE, { keyPath: 'tableName' });
+			if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+				req.result.createObjectStore(IDB_STORE, { keyPath: 'tableName' });
+			}
+			if (!req.result.objectStoreNames.contains(IDB_DB_STORE)) {
+				req.result.createObjectStore(IDB_DB_STORE, { keyPath: 'alias' });
+			}
 		};
 		req.onsuccess = () => resolve(req.result);
 		req.onerror = () => reject(req.error);
@@ -634,6 +674,54 @@ export async function restoreUploadedTables(): Promise<void> {
 			await registerFile(f.tableName, f.fileName, f.buffer, f.format, { header: f.hasHeader });
 		} catch {
 			await deletePersistedFile(f.tableName).catch(() => {});
+		}
+	}
+}
+
+// ── Attached-database persistence (IndexedDB fallback for demo/browser-only mode) ──
+
+export async function persistAttachedDatabase(data: {
+	alias: string;
+	fileName: string;
+	buffer: ArrayBuffer;
+}): Promise<void> {
+	const idb = await openFileIDB();
+	return new Promise((resolve, reject) => {
+		const tx = idb.transaction(IDB_DB_STORE, 'readwrite');
+		tx.objectStore(IDB_DB_STORE).put(data satisfies StoredDatabase);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+	});
+}
+
+export async function deletePersistedDatabase(alias: string): Promise<void> {
+	const idb = await openFileIDB();
+	return new Promise((resolve, reject) => {
+		const tx = idb.transaction(IDB_DB_STORE, 'readwrite');
+		tx.objectStore(IDB_DB_STORE).delete(alias);
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+	});
+}
+
+export async function restoreAttachedDatabasesFromIDB(): Promise<void> {
+	let idb: IDBDatabase;
+	try {
+		idb = await openFileIDB();
+	} catch {
+		return;
+	}
+	const dbs = await new Promise<StoredDatabase[]>((resolve, reject) => {
+		const tx = idb.transaction(IDB_DB_STORE, 'readonly');
+		const req = tx.objectStore(IDB_DB_STORE).getAll();
+		req.onsuccess = () => resolve(req.result as StoredDatabase[]);
+		req.onerror = () => reject(req.error);
+	});
+	for (const d of dbs) {
+		try {
+			await attachDatabaseFromBuffer(d.alias, d.buffer);
+		} catch {
+			await deletePersistedDatabase(d.alias).catch(() => {});
 		}
 	}
 }

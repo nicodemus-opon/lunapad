@@ -52,6 +52,8 @@ import {
 	backfillSchemaFromManifest,
 	promoteCells,
 	scaffoldProject,
+	writeProjectBinaryFile,
+	readProjectBinaryFile,
 	type PromotePlanItem,
 	type PromoteResult
 } from '$lib/services/project-client';
@@ -75,8 +77,18 @@ import {
 	registerPythonResultTable,
 	clearPythonResultTable,
 	deletePersistedFile,
+	registerFile,
+	persistUploadedFile,
+	FILE_FORMAT_EXTENSIONS,
+	detectFormat,
+	attachDatabaseFromBuffer,
+	detachDatabase,
+	persistAttachedDatabase,
+	deletePersistedDatabase,
+	restoreAttachedDatabasesFromIDB,
 	type MaterializationMode as DBMaterializationMode,
-	type RelationType
+	type RelationType,
+	type FileFormat
 } from '$lib/services/duckdb';
 import {
 	getCellOutputReference,
@@ -302,6 +314,19 @@ export interface UploadedTable {
 	columns: string[];
 	columnTypes: string[];
 	relationType?: RelationType;
+	/** Where the underlying bytes persist across reloads. Defaults to 'idb' when absent (pre-existing uploads). */
+	storage?: 'seed' | 'idb';
+	/** Path relative to the project folder, e.g. "seeds/customers.csv" — set when storage === 'seed'. */
+	seedPath?: string;
+}
+
+/** A native .duckdb file attached as an additional catalog via ATTACH. */
+export interface AttachedDatabase {
+	alias: string;
+	fileName: string;
+	storage: 'project' | 'idb';
+	/** Path relative to the project folder, e.g. "duckdb_attachments/warehouse.duckdb" — set when storage === 'project'. */
+	projectPath?: string;
 }
 
 export interface ExternalSchemaTable {
@@ -434,6 +459,7 @@ interface NotebookState {
 	openResultTabs: ResultTabInfo[];
 	openExtraTabs: ExtraTab[];
 	tables: UploadedTable[];
+	attachedDatabases: AttachedDatabase[];
 	theme: 'light' | 'dark' | 'system';
 	autoRun: boolean;
 	/** Ghost-text inline completion (Monaco inline-completions provider) — default on. */
@@ -860,6 +886,7 @@ let state = $state<NotebookState>({
 	openResultTabs: [],
 	openExtraTabs: [],
 	tables: [],
+	attachedDatabases: [],
 	theme: 'system',
 	autoRun: false,
 	ghostTextEnabled: true,
@@ -1040,6 +1067,7 @@ function serialize(persistResults = true): string {
 		favoriteNotebookIds: state.favoriteNotebookIds,
 		openResultTabs: state.openResultTabs,
 		tables: state.tables,
+		attachedDatabases: state.attachedDatabases,
 		theme: state.theme,
 		autoRun: state.autoRun,
 		ghostTextEnabled: state.ghostTextEnabled,
@@ -2082,6 +2110,11 @@ function deserialize(raw: string): void {
 					typeof table.name === 'string' &&
 					Array.isArray(table.columns) &&
 					Array.isArray(table.columnTypes)
+			);
+		}
+		if (Array.isArray(data.attachedDatabases)) {
+			state.attachedDatabases = (data.attachedDatabases as AttachedDatabase[]).filter(
+				(entry) => entry && typeof entry.alias === 'string' && typeof entry.fileName === 'string'
 			);
 		}
 		if (typeof data.autoRun === 'boolean') state.autoRun = data.autoRun;
@@ -3481,6 +3514,10 @@ export function getConnections(): Connection[] {
 
 export function getTables(): UploadedTable[] {
 	return state.tables;
+}
+
+export function getAttachedDatabases(): AttachedDatabase[] {
+	return state.attachedDatabases;
 }
 
 export function getExternalSchemaTables(): ExternalSchemaTable[] {
@@ -7792,7 +7829,9 @@ export async function refreshTablesFromCatalog(cascadeAutoRun = false): Promise<
 			rowCount: r.rowCount,
 			columns: r.columns,
 			columnTypes: r.columnTypes,
-			relationType: r.relationType
+			relationType: r.relationType,
+			storage: existing?.storage,
+			seedPath: existing?.seedPath
 		};
 	});
 	scheduleSave();
@@ -8010,6 +8049,7 @@ export function __resetStateForTests(): void {
 		openResultTabs: [],
 		openExtraTabs: [],
 		tables: [],
+		attachedDatabases: [],
 		theme: 'system',
 		autoRun: false,
 		ghostTextEnabled: true,
@@ -8053,7 +8093,9 @@ async function addTableAsync(table: UploadedTable): Promise<void> {
 			? {
 					...entry,
 					fileName: table.fileName,
-					relationType: table.relationType ?? entry.relationType ?? 'table'
+					relationType: table.relationType ?? entry.relationType ?? 'table',
+					storage: table.storage ?? entry.storage,
+					seedPath: table.seedPath ?? entry.seedPath
 				}
 			: entry
 	);
@@ -8072,9 +8114,117 @@ async function addTableAsync(table: UploadedTable): Promise<void> {
 
 export function removeTable(name: string): void {
 	dropRelation(name).catch(() => {});
-	deletePersistedFile(name).catch(() => {});
+	const entry = state.tables.find((t) => t.name === name);
+	if (entry?.storage === 'seed' && entry.seedPath && state.projectFolder) {
+		deleteProjectFile(state.projectFolder, entry.seedPath).catch(() => {});
+	} else {
+		deletePersistedFile(name).catch(() => {});
+	}
 	state.tables = state.tables.filter((t) => t.name !== name);
 	scheduleSave();
+}
+
+/**
+ * Persists an uploaded table's raw bytes so it survives a reload: as a real
+ * seed file under the open dbt project's seeds/ dir when a project folder is
+ * open, or in IndexedDB otherwise (demo/browser-only mode).
+ */
+export async function persistUploadedTableFile(data: {
+	tableName: string;
+	fileName: string;
+	format: FileFormat;
+	buffer: ArrayBuffer;
+	hasHeader: boolean;
+}): Promise<{ storage: 'seed' | 'idb'; seedPath?: string }> {
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		const ext = FILE_FORMAT_EXTENSIONS[data.format][0];
+		const seedPath = `seeds/${data.tableName}${ext}`;
+		await writeProjectBinaryFile(state.projectFolder, seedPath, data.buffer);
+		return { storage: 'seed', seedPath };
+	}
+	await persistUploadedFile(data);
+	return { storage: 'idb' };
+}
+
+/**
+ * Restores uploaded tables backed by real project files (seeds/) on load —
+ * the filesystem-mode counterpart to duckdb.ts's restoreUploadedTables (IDB).
+ */
+export async function restoreSeedTables(): Promise<void> {
+	if (!(state.storageMode === 'filesystem' && state.projectFolder)) return;
+	const folder = state.projectFolder;
+	for (const table of state.tables) {
+		if (table.storage !== 'seed' || !table.seedPath) continue;
+		try {
+			const buffer = await readProjectBinaryFile(folder, table.seedPath);
+			const format = detectFormat(table.seedPath) ?? detectFormat(table.fileName);
+			if (!format || format === 'duckdb') continue;
+			await registerFile(table.name, table.seedPath, buffer, format, { header: true });
+		} catch {
+			// Seed file missing/unreadable — leave the sidebar entry, user can re-upload.
+		}
+	}
+}
+
+// ── Attached-database actions ────────────────────────────────────────────────
+
+export function addAttachedDatabase(entry: AttachedDatabase): void {
+	state.attachedDatabases = [
+		...state.attachedDatabases.filter((d) => d.alias !== entry.alias),
+		entry
+	];
+	scheduleSave();
+}
+
+export function removeAttachedDatabase(alias: string): void {
+	detachDatabase(alias).catch(() => {});
+	const entry = state.attachedDatabases.find((d) => d.alias === alias);
+	if (entry?.storage === 'project' && entry.projectPath && state.projectFolder) {
+		deleteProjectFile(state.projectFolder, entry.projectPath).catch(() => {});
+	} else {
+		deletePersistedDatabase(alias).catch(() => {});
+	}
+	state.attachedDatabases = state.attachedDatabases.filter((d) => d.alias !== alias);
+	scheduleSave();
+}
+
+/**
+ * Attaches an uploaded .duckdb file and persists its bytes: as a real project
+ * file under duckdb_attachments/ when a project folder is open, or in
+ * IndexedDB otherwise (demo/browser-only mode).
+ */
+export async function attachAndPersistDatabase(
+	alias: string,
+	fileName: string,
+	buffer: ArrayBuffer
+): Promise<void> {
+	await attachDatabaseFromBuffer(alias, buffer);
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		const projectPath = `duckdb_attachments/${alias}.duckdb`;
+		await writeProjectBinaryFile(state.projectFolder, projectPath, buffer);
+		addAttachedDatabase({ alias, fileName, storage: 'project', projectPath });
+	} else {
+		await persistAttachedDatabase({ alias, fileName, buffer });
+		addAttachedDatabase({ alias, fileName, storage: 'idb' });
+	}
+}
+
+/**
+ * Restores attached databases backed by real project files (duckdb_attachments/)
+ * on load — the filesystem-mode counterpart to duckdb.ts's restoreAttachedDatabasesFromIDB.
+ */
+export async function restoreAttachedDatabases(): Promise<void> {
+	if (!(state.storageMode === 'filesystem' && state.projectFolder)) return;
+	const folder = state.projectFolder;
+	for (const entry of state.attachedDatabases) {
+		if (entry.storage !== 'project' || !entry.projectPath) continue;
+		try {
+			const buffer = await readProjectBinaryFile(folder, entry.projectPath);
+			await attachDatabaseFromBuffer(entry.alias, buffer);
+		} catch {
+			// Attached file missing/unreadable — leave the sidebar entry, user can re-attach.
+		}
+	}
 }
 
 // ── Export / Import ──────────────────────────────────────────────────────────

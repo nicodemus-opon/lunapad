@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { initDB, restoreUploadedTables } from '$lib/services/duckdb';
+	import {
+		initDB,
+		restoreUploadedTables,
+		restoreAttachedDatabasesFromIDB
+	} from '$lib/services/duckdb';
 	import { initPRQL } from '$lib/services/prql';
 	import { withTimeout } from '$lib/services/async';
 	import { authClient } from '$lib/auth-client';
@@ -67,6 +71,8 @@
 		getIsDbtProject,
 		getIsEvidenceProject,
 		getStorageMode,
+		restoreSeedTables,
+		restoreAttachedDatabases,
 		isNotebookDirty,
 		scheduleFileSave,
 		openLineageTab,
@@ -624,7 +630,13 @@
 				'Initializing application runtime',
 				70_000
 			);
-			await restoreUploadedTables();
+			if (getStorageMode() === 'filesystem' && getProjectFolder()) {
+				await restoreSeedTables();
+				await restoreAttachedDatabases();
+			} else {
+				await restoreUploadedTables();
+				await restoreAttachedDatabasesFromIDB();
+			}
 			await refreshTablesFromCatalog();
 			dbReady = true;
 			trackEvent('workspace_runtime_ready', {
@@ -651,6 +663,10 @@
 			await reloadWorkspaceFromServer();
 			await loadConnectionsFromServer();
 			clearAllResults();
+			if (getStorageMode() === 'filesystem' && getProjectFolder()) {
+				await restoreSeedTables();
+				await restoreAttachedDatabases();
+			}
 			await refreshTablesFromCatalog();
 			if (collabEnabled) {
 				startCommentsPolling(getActiveTabId());

@@ -5,11 +5,14 @@
 		registerFile,
 		detectFormat,
 		sanitizeTableName,
-		persistUploadedFile,
 		ACCEPT_ALL_FORMATS,
 		type FileFormat
 	} from '$lib/services/duckdb';
-	import { addTable } from '$lib/stores/notebook.svelte';
+	import {
+		addTable,
+		persistUploadedTableFile,
+		attachAndPersistDatabase
+	} from '$lib/stores/notebook.svelte';
 
 	let dragOver = $state(false);
 	let dragCount = $state(0);
@@ -21,14 +24,24 @@
 
 	async function importBuffer(fileName: string, buffer: ArrayBuffer, format: FileFormat) {
 		const tableName = sanitizeTableName(fileName);
+		if (format === 'duckdb') {
+			await attachAndPersistDatabase(tableName, fileName, buffer);
+			return { tableName, rowCount: 0 };
+		}
 		const { rowCount, columns, columnTypes } = await registerFile(
 			tableName,
 			fileName,
 			buffer,
 			format
 		);
-		await persistUploadedFile({ tableName, fileName, format, buffer, hasHeader: true });
-		addTable({ name: tableName, fileName, rowCount, columns, columnTypes });
+		const { storage, seedPath } = await persistUploadedTableFile({
+			tableName,
+			fileName,
+			format,
+			buffer,
+			hasHeader: true
+		});
+		addTable({ name: tableName, fileName, rowCount, columns, columnTypes, storage, seedPath });
 		return { tableName, rowCount };
 	}
 
@@ -49,13 +62,15 @@
 		for (const file of valid) {
 			try {
 				const buffer = await file.arrayBuffer();
-				const { tableName, rowCount } = await importBuffer(
-					file.name,
-					buffer,
-					detectFormat(file.name)!
-				);
-				if (valid.length === 1)
-					toast.success(`Loaded "${tableName}" — ${rowCount.toLocaleString()} rows`);
+				const format = detectFormat(file.name)!;
+				const { tableName, rowCount } = await importBuffer(file.name, buffer, format);
+				if (valid.length === 1) {
+					toast.success(
+						format === 'duckdb'
+							? `Attached "${tableName}" from ${file.name}`
+							: `Loaded "${tableName}" — ${rowCount.toLocaleString()} rows`
+					);
+				}
 				ok++;
 			} catch (err) {
 				toast.error(`"${file.name}": ${(err as Error).message}`);
@@ -84,7 +99,11 @@
 			if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 			const buffer = await res.arrayBuffer();
 			const { tableName, rowCount } = await importBuffer(fileName, buffer, format);
-			toast.success(`Loaded "${tableName}" — ${rowCount.toLocaleString()} rows`);
+			toast.success(
+				format === 'duckdb'
+					? `Attached "${tableName}" from ${fileName}`
+					: `Loaded "${tableName}" — ${rowCount.toLocaleString()} rows`
+			);
 			urlInput = '';
 			showUrl = false;
 		} catch (err) {
@@ -169,7 +188,9 @@
 	</div>
 
 	<!-- Format hint -->
-	<p class="mt-0.5 px-0.5 text-2xs text-muted-foreground/60">csv · tsv · parquet · json · ndjson</p>
+	<p class="mt-0.5 px-0.5 text-2xs text-muted-foreground/60">
+		csv · tsv · parquet · json · ndjson · duckdb
+	</p>
 
 	<!-- URL input (shown when URL button clicked) -->
 	{#if showUrl && !loading}

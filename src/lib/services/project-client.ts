@@ -51,6 +51,51 @@ export async function writeProjectFile(
 	}
 }
 
+export async function writeProjectBinaryFile(
+	folder: string,
+	file: string,
+	data: ArrayBuffer
+): Promise<void> {
+	const contentBase64 = arrayBufferToBase64(data);
+	const res = await fetch('/api/project/write-binary', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, file, contentBase64 })
+	});
+	if (!res.ok) {
+		const body = (await res.json()) as { error?: string };
+		throw new Error(body.error ?? 'Failed to write file');
+	}
+}
+
+export async function readProjectBinaryFile(folder: string, file: string): Promise<ArrayBuffer> {
+	const res = await fetch(
+		`/api/project/read-binary?folder=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`
+	);
+	const body = (await res.json()) as { error?: string; contentBase64?: string };
+	if (!res.ok || !body.contentBase64) throw new Error(body.error ?? 'Failed to read file');
+	return base64ToArrayBuffer(body.contentBase64);
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+	let binary = '';
+	const bytes = new Uint8Array(buffer);
+	const chunkSize = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+	}
+	return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes.buffer;
+}
+
 // ── AI memory ────────────────────────────────────────────────────────────────
 
 export interface AIMemoryEntry {
