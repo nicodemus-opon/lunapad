@@ -44,7 +44,8 @@
 		TextCursorInput,
 		CalendarDays,
 		MousePointerClick,
-		MapPinned
+		MapPinned,
+		MessageSquare
 	} from '@lucide/svelte';
 	import * as Command from '$lib/components/ui/command';
 	import { scrollMenuItemIntoView } from './menu-utils';
@@ -66,7 +67,8 @@
 		query: 'Query & pages',
 		input: 'Inputs',
 		data: 'Data displays',
-		ai: 'AI'
+		ai: 'AI',
+		review: 'Review'
 	};
 
 	const iconMap: Record<string, Component> = {
@@ -144,7 +146,8 @@
 		'control-agent': Activity,
 		map: MapPinned,
 		'single-value': Gauge,
-		agent: MousePointerClick
+		agent: MousePointerClick,
+		review: MessageSquare
 	};
 
 	const grouped = $derived.by(() => {

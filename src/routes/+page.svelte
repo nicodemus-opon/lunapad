@@ -1416,7 +1416,7 @@
 										: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
 									onclick={() => {
 										if (reviewPanelOpen) closeCommentPanel();
-										else openInbox();
+										else openInbox(getActiveTabId(), getFocusedCellId());
 									}}
 									aria-pressed={reviewPanelOpen}
 									aria-label="Open review inbox"

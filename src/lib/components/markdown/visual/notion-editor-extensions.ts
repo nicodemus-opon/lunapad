@@ -84,6 +84,7 @@ export interface NotionEditorExtensionOptions {
 	insertControlCell?: (kind: ControlCellKind, editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
+	onRequestReview?: (editor: import('@tiptap/core').Editor) => void;
 	bubbleMenuElement: HTMLElement;
 	bubbleMenuGate: BubbleMenuGate;
 	dragHandleRender: () => HTMLElement;
@@ -251,7 +252,8 @@ export function buildNotionEditorExtensions(opts: NotionEditorExtensionOptions):
 			insertPage: opts.insertPage,
 			insertControlCell: opts.insertControlCell,
 			onRequestLink: opts.onRequestLink,
-			onRequestMedia: opts.onRequestMedia
+			onRequestMedia: opts.onRequestMedia,
+			onRequestReview: opts.onRequestReview
 		}),
 		BubbleMenu.configure({
 			element: opts.bubbleMenuElement,

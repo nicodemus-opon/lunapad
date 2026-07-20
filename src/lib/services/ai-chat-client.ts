@@ -160,7 +160,8 @@ import {
 	getConnectionForTable,
 	runRawQuery,
 	knownTableNames,
-	assertKnownTable
+	assertKnownTable,
+	resolveCellSourceSQL
 } from '$lib/services/ai-investigation-tools.js';
 import { checkReadableSQL } from '$lib/utils/sql-readonly';
 import {
@@ -515,24 +516,36 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 			case 'sample_data': {
 				const { table, n = 10 } = call.args as SampleDataArgs;
 				const tableError = assertKnownTable(table);
+				let fromExpr: string;
+				let isBuiltin: boolean;
+				let connection: Connection;
 				if (tableError) {
-					return {
-						llmText: `sample_data failed: ${tableError}`,
-						previewText: tableError,
-						label: `Unknown table: ${table}`,
-						contextKey: `error: sample_data(${table})`,
-						contextSummary: tableError
-					};
+					const cellSrc = resolveCellSourceSQL(table);
+					if ('error' in cellSrc) {
+						return {
+							llmText: `sample_data failed: ${tableError}`,
+							previewText: tableError,
+							label: `Unknown table: ${table}`,
+							contextKey: `error: sample_data(${table})`,
+							contextSummary: tableError
+						};
+					}
+					fromExpr = `(\n${cellSrc.sql}\n) AS _src`;
+					isBuiltin = cellSrc.isBuiltin;
+					connection = cellSrc.connection;
+				} else {
+					({ isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection());
+					fromExpr = quoteIdent(table);
 				}
 				const safeN = Math.min(n ?? 10, 50);
-				const { isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection();
-				const qt = quoteIdent(table);
 				const sampleSql = isBuiltin
-					? `SELECT * FROM ${qt} USING SAMPLE ${safeN} ROWS`
+					? `SELECT * FROM ${fromExpr} USING SAMPLE ${safeN} ROWS`
 					: connection.type === 'clickhouse'
-						? `SELECT * FROM ${qt} ORDER BY rand() LIMIT ${safeN}`
-						: `SELECT * FROM ${qt} ORDER BY RANDOM() LIMIT ${safeN}`;
-				const result = await runRawQuery(sampleSql, table);
+						? `SELECT * FROM ${fromExpr} ORDER BY rand() LIMIT ${safeN}`
+						: `SELECT * FROM ${fromExpr} ORDER BY RANDOM() LIMIT ${safeN}`;
+				const result = isBuiltin
+					? await executeSQL(sampleSql)
+					: await queryConnectionSQL(connection, sampleSql);
 				const csv = rowsToCsv(result.columns, result.rows);
 				const preview = toMarkdownTable(result.columns, result.rows);
 				const summary = `${result.rows.length} rows sampled, columns: ${result.columns.join(', ')}`;
@@ -547,29 +560,39 @@ async function executeDataTool(call: AIChatToolCall): Promise<DataToolResult | n
 			case 'profile_column': {
 				const { table, column } = call.args as ProfileColumnArgs;
 				const profileTableError = assertKnownTable(table);
+				let fromExpr: string;
+				let isBuiltin: boolean;
+				let connection: Connection;
 				if (profileTableError) {
-					return {
-						llmText: `profile_column failed: ${profileTableError}`,
-						previewText: profileTableError,
-						label: `Unknown table: ${table}`,
-						contextKey: `error: profile_column(${table})`,
-						contextSummary: profileTableError
-					};
+					const cellSrc = resolveCellSourceSQL(table);
+					if ('error' in cellSrc) {
+						return {
+							llmText: `profile_column failed: ${profileTableError}`,
+							previewText: profileTableError,
+							label: `Unknown table: ${table}`,
+							contextKey: `error: profile_column(${table})`,
+							contextSummary: profileTableError
+						};
+					}
+					fromExpr = `(\n${cellSrc.sql}\n) AS _src`;
+					isBuiltin = cellSrc.isBuiltin;
+					connection = cellSrc.connection;
+				} else {
+					({ isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection());
+					fromExpr = quoteIdent(table);
 				}
 				const qCol = quoteIdent(column);
-				const qTable = quoteIdent(table);
+				const runProfileQuery = (sql: string) =>
+					isBuiltin ? executeSQL(sql) : queryConnectionSQL(connection, sql);
 				const [nullRes, statsRes, topRes] = await Promise.all([
-					runRawQuery(
-						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`,
-						table
+					runProfileQuery(
+						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${fromExpr}`
 					),
-					runRawQuery(
-						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`,
-						table
+					runProfileQuery(
+						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${fromExpr}`
 					),
-					runRawQuery(
-						`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
-						table
+					runProfileQuery(
+						`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${fromExpr} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
 					)
 				]);
 				const total = Number(nullRes.rows[0]?.['_total'] ?? 0);

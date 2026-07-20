@@ -179,7 +179,7 @@ export interface SlashCommand {
 	label: string;
 	description: string;
 	snippet: string;
-	group: 'heading' | 'structure' | 'widget' | 'query' | 'report' | 'input' | 'data' | 'ai';
+	group: 'heading' | 'structure' | 'widget' | 'query' | 'report' | 'input' | 'data' | 'ai' | 'review';
 	/** Extra search terms that match this command in the slash menu (e.g. "hr" for divider). */
 	aliases?: string[];
 }
@@ -682,11 +682,23 @@ const BASE_SLASH_COMMANDS: SlashCommand[] = [
 	}
 ];
 
+const REVIEW_SLASH_COMMANDS: SlashCommand[] = [
+	{
+		id: 'review',
+		label: 'Review',
+		description: 'Open the review panel to start a comment thread',
+		snippet: '',
+		group: 'review',
+		aliases: ['comment', 'comments', 'thread', 'discuss']
+	}
+];
+
 export const SLASH_COMMANDS: SlashCommand[] = [
 	...BASE_SLASH_COMMANDS.slice(0, 4),
 	...MARKDOC_REPORT_COMMANDS,
 	...NOTEBOOK_CONTROL_SLASH_COMMANDS,
 	...BASE_SLASH_COMMANDS.slice(4),
 	...MARKDOC_SLASH_COMMANDS,
-	...MARKDOC_PRESET_SLASH_COMMANDS
+	...MARKDOC_PRESET_SLASH_COMMANDS,
+	...REVIEW_SLASH_COMMANDS
 ];

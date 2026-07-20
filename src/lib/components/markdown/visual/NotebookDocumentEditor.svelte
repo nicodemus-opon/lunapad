@@ -48,6 +48,7 @@
 	} from './markdoc-node-selection';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import { createDragGutter, type DragGutterHandle } from './drag-gutter';
+	import { openCommentPanel } from '$lib/stores/comments.svelte';
 
 	type TipTapEditor = import('@tiptap/core').Editor;
 	type NodeSelectionClass = typeof import('@tiptap/pm/state').NodeSelection;
@@ -149,6 +150,10 @@
 			{ width: 288, height: 60 }
 		);
 		linkPopoverOpen = true;
+	}
+
+	function onRequestReview() {
+		openCommentPanel({ notebookId });
 	}
 
 	function applyLinkFromPopover(url: string) {
@@ -626,6 +631,7 @@
 					insertControlCell: (kind, e) => insertControlBlock(kind, e),
 					onRequestLink: (e) => onRequestLink(e),
 					onRequestMedia: (kind, e) => onRequestMedia(kind, e),
+					onRequestReview: () => onRequestReview(),
 					slashHandler: {
 						onStart: ({ items, command }) => {
 							slashItems = items;

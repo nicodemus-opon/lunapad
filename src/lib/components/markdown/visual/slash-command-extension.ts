@@ -66,6 +66,7 @@ export interface SlashCommandExtensionOptions {
 	insertControlCell?: (kind: ControlCellKind, editor: import('@tiptap/core').Editor) => void;
 	onRequestLink?: (editor: import('@tiptap/core').Editor) => void;
 	onRequestMedia?: (kind: 'image' | 'video', editor: import('@tiptap/core').Editor) => void;
+	onRequestReview?: (editor: import('@tiptap/core').Editor) => void;
 }
 
 const CONTROL_COMMAND_KIND: Record<string, ControlCellKind> = {
@@ -161,11 +162,16 @@ function insertSlashItem(
 		| 'refEntries'
 		| 'onRequestLink'
 		| 'onRequestMedia'
+		| 'onRequestReview'
 	>
 ): void {
 	const { id, group } = item;
 	const snippet = contextualSnippet(item, opts?.refEntries?.() ?? []);
 
+	if (id === 'review') {
+		opts?.onRequestReview?.(editor);
+		return;
+	}
 	if (id in CONTROL_COMMAND_KIND) {
 		opts?.insertControlCell?.(CONTROL_COMMAND_KIND[id], editor);
 		return;
@@ -317,7 +323,8 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 			insertQueryBlock: undefined,
 			insertPage: undefined,
 			onRequestLink: undefined,
-			onRequestMedia: undefined
+			onRequestMedia: undefined,
+			onRequestReview: undefined
 		};
 	},
 
@@ -337,13 +344,15 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 		const refEntries = this.options.refEntries;
 		const onRequestLink = this.options.onRequestLink;
 		const onRequestMedia = this.options.onRequestMedia;
+		const onRequestReview = this.options.onRequestReview;
 		const slashOpts = {
 			insertQueryBlock,
 			insertPage,
 			insertControlCell,
 			refEntries,
 			onRequestLink,
-			onRequestMedia
+			onRequestMedia,
+			onRequestReview
 		};
 		// Guards the onExit cleanup: when a command runs it already deleteRange()s the
 		// trigger, so onExit must NOT delete again (that would eat real content).
@@ -415,6 +424,7 @@ export function createSlashCommandExtension(
 		| 'refEntries'
 		| 'onRequestLink'
 		| 'onRequestMedia'
+		| 'onRequestReview'
 	>
 ) {
 	return SlashCommandExtension.configure({ handler, ...opts });

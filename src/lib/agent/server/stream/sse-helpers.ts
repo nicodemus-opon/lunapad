@@ -310,6 +310,13 @@ export function extractRawJsonToolCalls(
 	allowUnbalancedTail = false
 ): string {
 	let result = text;
+	// Resume point for the next `indexOf('{')` scan. Distinct from slicing `result` itself:
+	// a balanced-but-non-tool-call JSON blob (e.g. a model narrating lineage data before its
+	// actual tool call) must stay in the text, but the scan still has to move past it to find
+	// a genuine tool call later in the same buffer — previously it gave up on the whole buffer
+	// the moment the *first* JSON object it found wasn't tool-call-shaped, silently dropping
+	// any real call after it (surfaced as raw tool-call JSON leaking into the chat as text).
+	let searchFrom = 0;
 
 	while (true) {
 		// Find the first JSON object anywhere in remaining text and test it for a tool-call
@@ -317,7 +324,7 @@ export function extractRawJsonToolCalls(
 		// {"function":{"name":...}}, or {"type":"function","name":...} (key order varies by
 		// model, so we can't anchor on a specific leading key — inspect whatever JSON.parse
 		// gives us instead of a "{"key"" substring match).
-		const matchIdx = result.indexOf('{');
+		const matchIdx = result.indexOf('{', searchFrom);
 		if (matchIdx === -1) break;
 
 		// Find balanced braces starting from matchIdx
@@ -353,9 +360,12 @@ export function extractRawJsonToolCalls(
 			obj.args = normalizeToolCallArgs(obj);
 			onToolCall(JSON.stringify(obj));
 			result = result.slice(0, matchIdx) + result.slice(end + 1);
+			searchFrom = matchIdx;
 			continue;
 		}
-		break;
+		// Not a tool call — leave this JSON blob in place as text, but keep scanning past it
+		// rather than aborting the whole extraction (see `searchFrom` comment above).
+		searchFrom = end + 1;
 	}
 
 	return result;

@@ -120,9 +120,19 @@ export function setReviewPanelTab(tab: 'thread' | 'inbox'): void {
 	state.panelOpen = true;
 }
 
-export function openInbox(): void {
+export function openInbox(notebookId?: string | null, cellId?: string | null): void {
 	state.panelOpen = true;
 	state.panelTab = 'inbox';
+	// Without a notebook context, the "Thread" tab's start-thread/reply actions
+	// silently no-op (they early-return on !ctx.notebookId) — set it here too,
+	// same as openCommentPanel, so switching to Thread after opening from Inbox works.
+	if (notebookId) {
+		state.panelNotebookId = notebookId;
+		state.panelCellId = cellId ?? null;
+		state.panelAnchor = cellId
+			? { type: 'cell', key: { notebookId, cellId } }
+			: { type: 'notebook', key: { notebookId } };
+	}
 }
 
 export function isCommentPanelOpen(): boolean {
@@ -159,7 +169,7 @@ export function openCommentPanel(opts: {
 						type: 'cell',
 						key: { notebookId: opts.notebookId, cellId: opts.cellId }
 					}
-				: null;
+				: { type: 'notebook', key: { notebookId: opts.notebookId } };
 }
 
 export function closeCommentPanel(): void {

@@ -98,6 +98,25 @@ describe('extractRawJsonToolCalls', () => {
 		expect(remaining).toBe('Here is your dashboard summary.');
 		expect(calls).toHaveLength(0);
 	});
+
+	// Regression: a model that narrates a non-tool-call JSON blob (e.g. lineage data) before its
+	// actual tool call used to defeat extraction entirely — the scan gave up on the whole buffer
+	// the moment the *first* JSON object it found wasn't tool-call-shaped, so the real call after
+	// it was left in place and rendered as literal JSON text instead of being executed.
+	it('keeps scanning past a leading non-tool-call JSON blob to find a real tool call after it', () => {
+		const calls: string[] = [];
+		const remaining = extractRawJsonToolCalls(
+			'Lineage: {"depends_on":["q1"],"feeds_into":["dim_x"],"high_impact":false} ' +
+				'{"name":"record_decision","parameters":{"decision":"use email as FK"}}',
+			(raw) => calls.push(raw)
+		);
+		expect(calls).toHaveLength(1);
+		const parsed = JSON.parse(calls[0]);
+		expect(parsed.tool).toBe('record_decision');
+		expect(parsed.args.decision).toBe('use email as FK');
+		// The non-tool-call blob stays in place as visible narration text.
+		expect(remaining).toContain('"depends_on":["q1"]');
+	});
 });
 
 describe('normalizeToolCallArgs', () => {

@@ -144,6 +144,43 @@ export function resolveCellId(ref: string): string | null {
 	return null;
 }
 
+// Resolves a notebook cell (by outputName) into runnable SQL with its own upstream
+// deps inlined as CTEs — the same resolution `Run cell` uses. Needed because
+// `sample_data`/`profile_column` accept a `table` name from the LLM, and in most
+// notebooks the "table" it means is actually an un-promoted cell (e.g. `orders` in
+// the .luna demo notebooks), not a physical/external table `assertKnownTable` knows
+// about. Without this, those tools always fail with "Unknown table" for any cell
+// that hasn't been promoted to a real dbt model.
+export function resolveCellSourceSQL(
+	outputName: string
+): { sql: string; isBuiltin: boolean; connection: Connection } | { error: string } {
+	const cells = getCells();
+	const idx = cells.findIndex((c) => c.outputName === outputName && c.cellType === 'query');
+	if (idx === -1) return { error: `Cell '${outputName}' not found` };
+	const cell = cells[idx];
+	const connection = getCellConnection(cell);
+	const isBuiltin = isBuiltinDuckDBConnection(connection);
+	const target = getPRQLTargetForConnection(connection);
+	const compile = (prql: string): string | null => compilePRQLCached(prql, target).sql;
+
+	let sql: string | null;
+	if (cell.language === 'sql') {
+		sql = buildSQLExecutionCode(cells, idx, compile);
+	} else {
+		const fullPrql = buildExecutionCode(cells, idx);
+		const compiled = compilePRQLCached(fullPrql, target);
+		if (compiled.errors.length > 0 || !compiled.sql) {
+			return {
+				error:
+					compiled.errors.map((e) => e.display ?? e.reason).join('; ') || 'PRQL compile error'
+			};
+		}
+		sql = compiled.sql;
+	}
+	if (!sql) return { error: 'Could not build execution SQL for cell' };
+	return { sql, isBuiltin, connection };
+}
+
 export async function executeInvestigationTool(
 	call: InvestigationToolCall
 ): Promise<InvestigationToolResult> {
@@ -153,16 +190,28 @@ export async function executeInvestigationTool(
 				const table = String(call.args.table ?? '');
 				const n = Math.min(Number(call.args.n ?? 10) || 10, 50);
 				const tableError = assertKnownTable(table);
-				if (tableError)
-					return { text: `sample_data failed: ${tableError}`, label: `Unknown table: ${table}` };
-				const { isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection();
-				const qt = quoteIdent(table);
+				let fromExpr: string;
+				let isBuiltin: boolean;
+				let connection: Connection;
+				if (tableError) {
+					const cellSrc = resolveCellSourceSQL(table);
+					if ('error' in cellSrc)
+						return { text: `sample_data failed: ${tableError}`, label: `Unknown table: ${table}` };
+					fromExpr = `(\n${cellSrc.sql}\n) AS _src`;
+					isBuiltin = cellSrc.isBuiltin;
+					connection = cellSrc.connection;
+				} else {
+					({ isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection());
+					fromExpr = quoteIdent(table);
+				}
 				const sampleSql = isBuiltin
-					? `SELECT * FROM ${qt} USING SAMPLE ${n} ROWS`
+					? `SELECT * FROM ${fromExpr} USING SAMPLE ${n} ROWS`
 					: connection.type === 'clickhouse'
-						? `SELECT * FROM ${qt} ORDER BY rand() LIMIT ${n}`
-						: `SELECT * FROM ${qt} ORDER BY RANDOM() LIMIT ${n}`;
-				const result = await runRawQuery(sampleSql, table);
+						? `SELECT * FROM ${fromExpr} ORDER BY rand() LIMIT ${n}`
+						: `SELECT * FROM ${fromExpr} ORDER BY RANDOM() LIMIT ${n}`;
+				const result = isBuiltin
+					? await executeSQL(sampleSql)
+					: await queryConnectionSQL(connection, sampleSql);
 				const csv = rowsToCsv(result.columns, result.rows);
 				return {
 					text: `sample_data(${table}, ${n}) -> ${result.rows.length} rows:\n${csv}`,
@@ -173,22 +222,35 @@ export async function executeInvestigationTool(
 				const table = String(call.args.table ?? '');
 				const column = String(call.args.column ?? '');
 				const tableError = assertKnownTable(table);
-				if (tableError)
-					return { text: `profile_column failed: ${tableError}`, label: `Unknown table: ${table}` };
+				let fromExpr: string;
+				let isBuiltin: boolean;
+				let connection: Connection;
+				if (tableError) {
+					const cellSrc = resolveCellSourceSQL(table);
+					if ('error' in cellSrc)
+						return {
+							text: `profile_column failed: ${tableError}`,
+							label: `Unknown table: ${table}`
+						};
+					fromExpr = `(\n${cellSrc.sql}\n) AS _src`;
+					isBuiltin = cellSrc.isBuiltin;
+					connection = cellSrc.connection;
+				} else {
+					({ isBuiltin, connection } = getConnectionForTable(table) ?? getDefaultConnection());
+					fromExpr = quoteIdent(table);
+				}
 				const qCol = quoteIdent(column);
-				const qTable = quoteIdent(table);
+				const runProfileQuery = (sql: string) =>
+					isBuiltin ? executeSQL(sql) : queryConnectionSQL(connection, sql);
 				const [nullRes, statsRes, topRes] = await Promise.all([
-					runRawQuery(
-						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${qTable}`,
-						table
+					runProfileQuery(
+						`SELECT COUNT(*) AS _total, COUNT(${qCol}) AS _non_null FROM ${fromExpr}`
 					),
-					runRawQuery(
-						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${qTable}`,
-						table
+					runProfileQuery(
+						`SELECT MIN(${qCol}) AS _min, MAX(${qCol}) AS _max, COUNT(DISTINCT ${qCol}) AS _distinct FROM ${fromExpr}`
 					),
-					runRawQuery(
-						`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${qTable} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
-						table
+					runProfileQuery(
+						`SELECT ${qCol} AS _val, COUNT(*) AS _cnt FROM ${fromExpr} WHERE ${qCol} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
 					)
 				]);
 				const total = Number(nullRes.rows[0]?.['_total'] ?? 0);
