@@ -2158,15 +2158,14 @@ function deserialize(raw: string): void {
 	}
 }
 
-export function loadFromStorage(defaultProjectFolder?: string | null): Promise<void> {
-	if (typeof localStorage === 'undefined') return Promise.resolve();
+export async function loadFromStorage(defaultProjectFolder?: string | null): Promise<void> {
+	if (typeof localStorage === 'undefined') return;
 	if (useServerWorkspace) {
 		return loadFromServer(defaultProjectFolder);
 	}
 	const raw = localStorage.getItem(STORAGE_KEY);
 	if (raw) deserialize(raw);
-	finishLoad(defaultProjectFolder);
-	return Promise.resolve();
+	await finishLoad(defaultProjectFolder);
 }
 
 // Postgres-backed hydration for full (authenticated, non-demo) mode. Seeds from the
@@ -2208,13 +2207,18 @@ async function loadFromServer(defaultProjectFolder?: string | null): Promise<voi
 	await loadUserLlmSettings(legacyLlmConfig);
 	await loadConnectionsFromServer();
 	void syncWorkspaceConnectionsToServer();
-	finishLoad(defaultProjectFolder);
+	await finishLoad(defaultProjectFolder);
 }
 
 // Post-processing shared by both the local-only and server-backed load paths — runs
 // once the final notebook state for this load is settled, regardless of where it came
-// from.
-function finishLoad(defaultProjectFolder?: string | null): void {
+// from. Callers await this so storageMode/projectFolder are finalized before anything
+// downstream (e.g. duckdb.ts persistence-mode decisions) inspects them — previously this
+// fired the project-open chain with `void` and returned immediately, so a tenant's
+// auto-opened default project folder often hadn't set storageMode='filesystem' yet by
+// the time initializeRuntime() checked it, silently steering seed/attachment restore
+// into the wrong (IndexedDB) branch.
+async function finishLoad(defaultProjectFolder?: string | null): Promise<void> {
 	// Migrate any notebooks that were saved without a folderId (local mode only).
 	if (state.storageMode === 'local') {
 		const unfoldered = state.notebooks.filter((nb) => !nb.folderId);
@@ -2232,25 +2236,26 @@ function finishLoad(defaultProjectFolder?: string | null): void {
 	// Restore project folder from last session
 	const savedFolder = localStorage.getItem(PROJECT_FOLDER_KEY);
 	if (savedFolder) {
-		void openProject(savedFolder).catch(() => {
+		try {
+			await openProject(savedFolder);
+		} catch {
 			// Folder may have moved — clear it silently
 			localStorage.removeItem(PROJECT_FOLDER_KEY);
-		});
+		}
 	} else if (defaultProjectFolder) {
 		// No project chosen yet this browser — open the deployment's default folder
 		// (e.g. PROJECT_FOLDER in Docker). If it's empty, scaffold a real dbt project
 		// into it first so the default isn't just an empty filesystem-mode shell.
-		void openProject(defaultProjectFolder)
-			.then(async () => {
-				if (!state.isDbtProject) {
-					const name = defaultProjectFolder.split('/').filter(Boolean).pop() || 'project';
-					await scaffoldProject(defaultProjectFolder, name);
-					await openProject(defaultProjectFolder);
-				}
-			})
-			.catch(() => {
-				// Permissions issue, etc. — fall back to local/in-memory mode silently.
-			});
+		try {
+			await openProject(defaultProjectFolder);
+			if (!state.isDbtProject) {
+				const name = defaultProjectFolder.split('/').filter(Boolean).pop() || 'project';
+				await scaffoldProject(defaultProjectFolder, name);
+				await openProject(defaultProjectFolder);
+			}
+		} catch {
+			// Permissions issue, etc. — fall back to local/in-memory mode silently.
+		}
 	}
 }
 

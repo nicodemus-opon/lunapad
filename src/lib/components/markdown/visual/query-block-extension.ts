@@ -196,7 +196,12 @@ export const QueryBlockExtension = Node.create({
 				dom,
 				update(updatedNode) {
 					if (updatedNode.type.name !== 'queryBlock') return false;
-					props.cellId = String(updatedNode.attrs.cellId ?? props.cellId);
+					// A queryBlock node for a *different* cell is not the same logical
+					// node even though the type matches — reject so ProseMirror destroys
+					// this view and mounts a fresh one, instead of relabeling a live
+					// Monaco editor (with its own typing/undo/focus state) onto another
+					// cell's identity when the document reconciles after an insert/reorder.
+					if (String(updatedNode.attrs.cellId ?? '') !== props.cellId) return false;
 					props.pinned = Boolean(updatedNode.attrs.pinned);
 					props.dark = ctx?.dark?.() ?? false;
 					return true;

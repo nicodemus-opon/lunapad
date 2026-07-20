@@ -614,7 +614,10 @@ interface StoredDatabase {
 	buffer: ArrayBuffer;
 }
 
-function openFileIDB(): Promise<IDBDatabase> {
+let idbConnection: IDBDatabase | null = null;
+let idbOpenPromise: Promise<IDBDatabase> | null = null;
+
+function openFileIDBOnce(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
 		const req = indexedDB.open(IDB_NAME, IDB_VERSION);
 		req.onupgradeneeded = () => {
@@ -625,9 +628,40 @@ function openFileIDB(): Promise<IDBDatabase> {
 				req.result.createObjectStore(IDB_DB_STORE, { keyPath: 'alias' });
 			}
 		};
-		req.onsuccess = () => resolve(req.result);
+		// Fires when an older connection (this tab or another) is still open at a
+		// lower version and hasn't closed — without this the request just hangs.
+		req.onblocked = () =>
+			reject(new Error('Another tab is holding an older database connection open.'));
+		req.onsuccess = () => {
+			const db = req.result;
+			// Let a newer version elsewhere (or this same upgrade path next time)
+			// proceed instead of blocking it — drop our cached connection so the
+			// next call reopens fresh.
+			db.onversionchange = () => {
+				db.close();
+				idbConnection = null;
+				idbOpenPromise = null;
+			};
+			resolve(db);
+		};
 		req.onerror = () => reject(req.error);
 	});
+}
+
+function openFileIDB(): Promise<IDBDatabase> {
+	if (idbConnection) return Promise.resolve(idbConnection);
+	if (!idbOpenPromise) {
+		idbOpenPromise = withTimeout(openFileIDBOnce(), 'Opening uploaded-files database', 8_000)
+			.then((db) => {
+				idbConnection = db;
+				return db;
+			})
+			.catch((err) => {
+				idbOpenPromise = null;
+				throw err;
+			});
+	}
+	return idbOpenPromise;
 }
 
 export async function persistUploadedFile(data: {
