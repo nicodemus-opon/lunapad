@@ -135,6 +135,35 @@ describe('notebook create roundtrip', () => {
 		expect(after.cells.find((c) => c.id === 'q_revenue_by_month')?.cellType).toBe('query');
 	});
 
+	it('a slash-inserted notebookPage node survives the PM-doc<->cells sync instead of vanishing', () => {
+		addNotebook();
+		const notebookId = getActiveTabId();
+		const nb = getNotebooks().find((n) => n.id === notebookId)!;
+		const existingCellId = nb.cells[0].id;
+
+		// Mirrors insertPage() in NotebookDocumentEditor.svelte: a notebookPage
+		// atom followed by a trailing paragraph, inserted after the existing cell.
+		const doc: PMDocJSON = {
+			type: 'doc',
+			content: [
+				{
+					type: 'queryBlock',
+					attrs: { cellId: existingCellId, cellType: 'query', pinned: false }
+				},
+				{ type: 'notebookPage', attrs: { title: 'Untitled', pageId: 'page-1' } },
+				{ type: 'paragraph' }
+			]
+		};
+
+		syncNotebookFromPmDocument(notebookId, doc);
+
+		const after = getNotebooks().find((n) => n.id === notebookId)!;
+		expect(after.cells.some((c) => c.id === existingCellId)).toBe(true);
+		expect(
+			after.cells.some((c) => c.cellType === 'markdown' && c.markdown.includes('Untitled'))
+		).toBe(true);
+	});
+
 	it('loadProjectNotebooks preserves a new notebook before its .luna file appears on disk', async () => {
 		const existing = diskNotebook('models/staging/existing', 'existing');
 		listProjectNotebooksMock.mockResolvedValue({

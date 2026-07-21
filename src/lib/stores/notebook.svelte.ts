@@ -783,15 +783,25 @@ function cellTypeForControlKind(kind: ControlCellKind): CellType {
 	return 'input';
 }
 
-function controlNameForKind(kind: ControlCellKind): string {
+export function controlNameForKind(kind: ControlCellKind): string {
 	return kind.replace(/-input$/, '').replace(/-/g, '_');
 }
 
-function initialControlResult(kind: ControlCellKind, config: ControlCellConfig): Cell['result'] {
+export function initialControlResult(
+	kind: ControlCellKind,
+	config: ControlCellConfig
+): Cell['result'] {
 	if (kind === 'table-input' && config.tableData) {
 		return {
 			rows: config.tableData.rows,
 			columns: config.tableData.columns
+		};
+	}
+	if (kind === 'date-range' && config.name) {
+		const range = (config.value as { start?: string; end?: string } | null) ?? {};
+		return {
+			rows: [{ name: config.name, start: range.start ?? '', end: range.end ?? '' }],
+			columns: ['name', 'start', 'end']
 		};
 	}
 	if (config.name) {
@@ -4006,7 +4016,16 @@ function rebuildCellsFromBlocks(notebook: Notebook, blocks: NotebookPmBlock[]): 
 	const next: Cell[] = [];
 
 	for (const block of blocks) {
-		if (block.kind === 'page') continue;
+		if (block.kind === 'page') {
+			// Sub-pages have no dedicated cell type — they round-trip as an H1
+			// markdown cell (extractPagesFromPmDocument already treats plain H1s
+			// as page anchors too, so this keeps both forms consistent). Without
+			// this branch the slash-command insert vanished on the next
+			// PM-doc<->cells sync because 'page' blocks were silently dropped.
+			const title = block.title || 'Untitled';
+			next.push(makeMarkdownCell(`# ${title}`));
+			continue;
+		}
 		if (block.kind === 'query') {
 			const cell = cellMap.get(block.cellId);
 			if (cell) {
@@ -6656,6 +6675,18 @@ export function setStageResultCollapsed(id: string, stageIdx: number, collapsed:
  * SQL cells: SQL is returned directly from the pre-built execution code.
  * PRQL cells: the execution code is compiled via prqlc.
  */
+function makeWritebackError(reason: string): PRQLError {
+	return {
+		kind: 'writeback',
+		code: null,
+		reason,
+		hint: null,
+		span: null,
+		display: reason,
+		location: null
+	};
+}
+
 function makeUdfError(reason: string): PRQLError {
 	return {
 		kind: 'udf',
@@ -7162,6 +7193,10 @@ export async function runCell(id: string): Promise<void> {
 	}
 	if (idx === -1) return;
 	const cell = nb.cells[idx];
+	if (cell.cellType === 'writeback') {
+		await runWritebackCell(cell, nb, idx);
+		return;
+	}
 	if (cell.cellType !== 'query') return;
 	// One controller per cell — any previous run for this cell is superseded.
 	cellRunControllers.get(id)?.abort();
@@ -7462,6 +7497,81 @@ async function publishPythonResultToWarehouse(
 		'replace',
 		inferMaterializeTargetSchema(connection)
 	);
+}
+
+/** Executes a `control-writeback` cell's guarded write. Deliberately never sends
+ *  raw SQL from the client — it resolves the nearest upstream query result and
+ *  ships it through uploadConnectionTable() (structured {columns, rows} → the
+ *  server's /api/connections/upload route), the same primitive already used for
+ *  publishPythonResultToWarehouse. This is intentionally separate from
+ *  assertReadableSQL/queryExternalConnection, which exist specifically to block
+ *  DML from untrusted SQL on the read path. */
+async function runWritebackCell(cell: Cell, nb: Notebook, idx: number): Promise<void> {
+	const wb = cell.controlConfig?.writeback;
+	cell.errors = [];
+	if (!wb?.allowWrite) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError('Enable "Allow writes" in the control settings before running.')];
+		return;
+	}
+	if (!wb.connectionId || !wb.target.trim()) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError('Choose a connection and target table before running.')];
+		return;
+	}
+	const connection = state.connections.find((c) => c.id === wb.connectionId);
+	if (!connection) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError('The configured connection no longer exists.')];
+		return;
+	}
+	if (isBuiltinDuckDBConnection(connection)) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError('Writeback needs an external connection — the built-in DuckDB is read-only here.')];
+		return;
+	}
+
+	const configuredId = cell.controlConfig?.source.cellId;
+	let source: Cell | null = null;
+	if (configuredId) source = nb.cells.find((c) => c.id === configuredId && c.result) ?? null;
+	else {
+		for (let i = idx - 1; i >= 0; i--) {
+			if (nb.cells[i]?.result?.rows?.length) {
+				source = nb.cells[i]!;
+				break;
+			}
+		}
+	}
+	if (!source?.result?.rows.length) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError('No upstream query result to write — add a query cell above this one.')];
+		return;
+	}
+
+	cell.status = 'running';
+	try {
+		const { rows, columns } = source.result;
+		const columnTypes = inferResultColumnTypes(columns, rows);
+		const dotIdx = wb.target.indexOf('.');
+		const schema = dotIdx >= 0 ? wb.target.slice(0, dotIdx) : undefined;
+		const tableName = dotIdx >= 0 ? wb.target.slice(dotIdx + 1) : wb.target;
+		// Trino's upload path only offers replace/append — 'insert' and 'upsert' both
+		// map to an append until true upsert semantics are wired up server-side.
+		const uploadMode = wb.mode === 'replace' ? 'replace' : 'append';
+		const result = await uploadConnectionTable(
+			connection,
+			tableName,
+			columns.map((name, i) => ({ name, type: columnTypes[i] ?? 'VARCHAR' })),
+			rowsToMatrix(columns, rows),
+			uploadMode,
+			schema
+		);
+		cell.status = 'success';
+		cell.result = { rows: [{ rowsWritten: result.rowsInserted }], columns: ['rowsWritten'] };
+	} catch (err) {
+		cell.status = 'error';
+		cell.errors = [makeWritebackError(err instanceof Error ? err.message : 'Writeback failed.')];
+	}
 }
 
 export async function runPythonCell(id: string): Promise<void> {

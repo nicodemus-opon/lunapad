@@ -8,7 +8,7 @@ export interface EmailMessage {
 	html?: string;
 }
 
-function smtpConfigured(): boolean {
+export function smtpConfigured(): boolean {
 	return Boolean(process.env.SMTP_HOST && process.env.EMAIL_FROM);
 }
 

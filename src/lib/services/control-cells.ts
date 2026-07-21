@@ -79,7 +79,7 @@ export interface ControlCellConfig {
 	writeback?: {
 		connectionId: string | null;
 		target: string;
-		mode: 'manual' | 'app' | 'scheduled';
+		mode: 'insert' | 'upsert' | 'replace';
 		allowWrite: boolean;
 	};
 	agent?: {
@@ -260,7 +260,7 @@ export function defaultControlCellConfig(kind: ControlCellKind, name: string): C
 		chartConfig: null,
 		writeback:
 			kind === 'writeback'
-				? { connectionId: null, target: '', mode: 'manual', allowWrite: false }
+				? { connectionId: null, target: '', mode: 'insert', allowWrite: false }
 				: undefined,
 		agent: kind === 'agent' ? { instruction: '', scope: 'notebook' } : undefined
 	};

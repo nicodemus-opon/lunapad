@@ -75,7 +75,7 @@ describe('control cell defaults', () => {
 		expect(writeback.writeback).toMatchObject({
 			connectionId: null,
 			target: '',
-			mode: 'manual',
+			mode: 'insert',
 			allowWrite: false
 		});
 

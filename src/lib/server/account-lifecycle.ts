@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { query } from './db.js';
 import { ensureAuthTablesOnce } from './auth.js';
-import { sendEmail } from './email.js';
+import { sendEmail, smtpConfigured } from './email.js';
 import { publicOrigin } from './cloud-config.js';
 
 type TokenKind = 'password_reset' | 'email_verification';
@@ -59,7 +59,7 @@ function manualTokenDeliveryEnabled(): boolean {
 	return (
 		process.env.EMAIL_PROVIDER === 'manual' ||
 		process.env.EMAIL_PROVIDER === 'none' ||
-		process.env.NODE_ENV !== 'production'
+		!smtpConfigured()
 	);
 }
 
@@ -84,7 +84,7 @@ async function createToken(input: {
 			input.ttlMinutes
 		]
 	);
-	const manual = manualTokenDeliveryEnabled();
+	let manual = manualTokenDeliveryEnabled();
 	const origin = publicOrigin();
 	if (!manual) {
 		const path =
@@ -92,17 +92,25 @@ async function createToken(input: {
 				? `/reset-password?token=${encodeURIComponent(token)}`
 				: `/api/account/email/verify?token=${encodeURIComponent(token)}`;
 		const url = `${origin}${path}`;
-		await sendEmail({
-			to: input.email,
-			subject:
-				input.kind === 'password_reset'
-					? 'Reset your Lunapad password'
-					: 'Verify your Lunapad email',
-			text:
-				input.kind === 'password_reset'
-					? `Reset your Lunapad password: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
-					: `Verify your Lunapad email: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
-		});
+		try {
+			await sendEmail({
+				to: input.email,
+				subject:
+					input.kind === 'password_reset'
+						? 'Reset your Lunapad password'
+						: 'Verify your Lunapad email',
+				text:
+					input.kind === 'password_reset'
+						? `Reset your Lunapad password: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
+						: `Verify your Lunapad email: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
+			});
+		} catch (err) {
+			// SMTP is configured but unreachable/misconfigured — don't fail the whole
+			// request (the token row already exists); fall back to handing the token
+			// back directly so the flow stays usable while delivery is fixed.
+			console.error(`[account-lifecycle] SMTP send failed for ${input.kind}:`, err);
+			manual = true;
+		}
 	}
 	return {
 		ok: true,

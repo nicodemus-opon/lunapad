@@ -110,7 +110,7 @@ const getCatalogDir = () => process.env.TRINO_CATALOG_DIR;
 const TRINO_ACCESS_CONTROL_FILE = 'lunapad-access-control.json';
 
 type TrinoAccessRuleSet = {
-	catalogs: Array<{ user?: string; catalog?: string; allow: 'all' | 'read-only' | 'none' }>;
+	catalogs: Array<{ user?: string; catalog?: string; allow: 'owner' | 'all' | 'read-only' | 'none' }>;
 	schemas: Array<{ user?: string; catalog?: string; owner: boolean }>;
 	tables: Array<{
 		user?: string;
@@ -134,8 +134,10 @@ const CATALOG_MANAGER_TRINO_USER =
 function baseTrinoAccessRules(): TrinoAccessRuleSet {
 	return {
 		catalogs: [
-			{ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, allow: 'all' },
-			{ user: CATALOG_MANAGER_TRINO_USER, catalog: TENANT_CATALOG_PATTERN, allow: 'all' }
+			// CREATE CATALOG / DROP CATALOG require AccessMode.OWNER in Trino's file-based
+			// access control — 'all' only grants query/select access, not catalog management.
+			{ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, allow: 'owner' },
+			{ user: CATALOG_MANAGER_TRINO_USER, catalog: TENANT_CATALOG_PATTERN, allow: 'owner' }
 		],
 		schemas: [{ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, owner: true }],
 		tables: [
@@ -221,6 +223,18 @@ function hardenBaseTrinoRules(rules: TrinoAccessRuleSet): boolean {
 			changed = true;
 		}
 	}
+	// CREATE CATALOG / DROP CATALOG require AccessMode.OWNER — upgrade any rule written by an
+	// older build that granted only 'all' (query access), which silently broke catalog
+	// registration for whichever user runs it (lunapad or the catalog manager).
+	for (const rule of rules.catalogs) {
+		if (
+			(rule.user === 'lunapad' || rule.user === CATALOG_MANAGER_TRINO_USER) &&
+			rule.allow === 'all'
+		) {
+			rule.allow = 'owner';
+			changed = true;
+		}
+	}
 	if (
 		!rules.catalogs.some(
 			(rule) => rule.user === CATALOG_MANAGER_TRINO_USER && rule.catalog === TENANT_CATALOG_PATTERN
@@ -229,7 +243,7 @@ function hardenBaseTrinoRules(rules: TrinoAccessRuleSet): boolean {
 		rules.catalogs.push({
 			user: CATALOG_MANAGER_TRINO_USER,
 			catalog: TENANT_CATALOG_PATTERN,
-			allow: 'all'
+			allow: 'owner'
 		});
 		changed = true;
 	}

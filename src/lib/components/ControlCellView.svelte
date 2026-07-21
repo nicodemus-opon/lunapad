@@ -24,9 +24,19 @@
 		updateControlCellValue,
 		updateControlTableData,
 		runAll,
-		runAllStale
+		runAllStale,
+		runCell,
+		getConnections,
+		getCells
 	} from '$lib/stores/notebook.svelte';
 	import type { ControlCellConfig, ControlOption } from '$lib/services/control-cells';
+	import {
+		clearContextCells,
+		addContextCell,
+		getIsGenerating,
+		setAIChatOpen
+	} from '$lib/stores/ai-chat.svelte';
+	import { submitAIMessage } from '$lib/services/ai-chat-client';
 
 	interface Props {
 		cell: Cell;
@@ -78,6 +88,7 @@
 	});
 	const pivotRows = $derived.by(() => buildPivotRows(sourceRows, config, sourceColumns));
 	const Icon = $derived(iconName());
+	const connections = $derived(getConnections());
 	const mapRows = $derived.by(() => {
 		const lat = config.source.columns?.[0] ?? findColumn(/lat|latitude/i);
 		const lon = config.source.columns?.[1] ?? findColumn(/lon|lng|long|longitude/i);
@@ -99,6 +110,19 @@
 
 	function patchConfig(patch: Partial<ControlCellConfig>) {
 		updateControlCellConfig(cell.id, patch);
+	}
+
+	function patchWriteback(patch: Partial<NonNullable<ControlCellConfig['writeback']>>) {
+		const next = {
+			...(config.writeback ?? { connectionId: null, target: '', mode: 'insert' as const, allowWrite: false }),
+			...patch
+		};
+		const configured = Boolean(next.connectionId && next.target.trim());
+		patchConfig({
+			writeback: next,
+			status: configured ? 'valid' : 'permission-blocked',
+			error: configured ? null : 'Choose a connection and enable writes before running.'
+		});
 	}
 
 	function setValue(value: unknown) {
@@ -154,6 +178,28 @@
 
 	function findColumn(re: RegExp): string | undefined {
 		return sourceColumns.find((col) => re.test(col));
+	}
+
+	/** Minimal control-agent wiring: seed AI chat context per the configured scope,
+	 *  then hand off to the same submitAIMessage() the chat input uses. No inline
+	 *  result rendering here — the answer lands in the AI chat panel. */
+	function runAgent() {
+		const instruction = config.agent?.instruction?.trim();
+		if (!instruction) return;
+		const scope = config.agent?.scope ?? 'notebook';
+		const cells = getCells();
+		const idx = cells.findIndex((c) => c.id === cell.id);
+		clearContextCells();
+		if (scope === 'notebook') {
+			for (const c of cells) addContextCell(c.id);
+		} else if (scope === 'upstream') {
+			for (const c of cells.slice(0, idx < 0 ? 0 : idx)) addContextCell(c.id);
+		}
+		// 'selected-cells' leaves context empty here — it defers to whatever cells
+		// the user has already pinned into AI context via the notebook's own
+		// selection affordance, rather than guessing a selection.
+		setAIChatOpen(true);
+		void submitAIMessage(instruction);
 	}
 
 	function runButton() {
@@ -316,6 +362,154 @@
 								{#each sourceColumns as col (col)}
 									<option value={col}>{col}</option>
 								{/each}
+							</NativeSelect>
+						</label>
+					{/if}
+
+					{#if config.kind !== 'run-button' && config.kind !== 'writeback' && config.kind !== 'agent'}
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Default value</span>
+							<div class="flex items-center gap-1.5">
+								<Input
+									class="min-w-0"
+									value={formatValue(config.defaultValue)}
+									oninput={(e) => patchConfig({ defaultValue: e.currentTarget.value })}
+								/>
+								<Button
+									size="sm"
+									variant="outline"
+									class="h-7 shrink-0 text-2xs"
+									title="Reset current value to default"
+									onclick={() => setValue(config.defaultValue)}
+								>
+									Reset
+								</Button>
+							</div>
+						</label>
+					{/if}
+
+					{#if ['text-input', 'number-input', 'file-upload', 'agent'].includes(config.kind)}
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Placeholder</span>
+							<Input
+								value={config.display.placeholder ?? ''}
+								oninput={(e) => patchConfig({ display: { placeholder: e.currentTarget.value } })}
+							/>
+						</label>
+					{/if}
+					<label class="block space-y-1">
+						<span class="text-2xs font-medium text-muted-foreground">Help text</span>
+						<Input
+							value={config.display.helpText ?? ''}
+							oninput={(e) => patchConfig({ display: { helpText: e.currentTarget.value } })}
+						/>
+					</label>
+					<label class="block space-y-1">
+						<span class="text-2xs font-medium text-muted-foreground">Display variant</span>
+						<NativeSelect
+							value={config.display.variant ?? 'panel'}
+							onchange={(e) =>
+								patchConfig({
+									display: {
+										variant: e.currentTarget.value as ControlCellConfig['display']['variant']
+									}
+								})}
+						>
+							<option value="panel">Panel</option>
+							<option value="inline">Inline</option>
+							<option value="compact">Compact</option>
+						</NativeSelect>
+					</label>
+
+					{#if config.kind === 'file-upload'}
+						<div class="grid grid-cols-2 gap-2">
+							<label class="space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Accept</span>
+								<Input
+									placeholder=".csv,.json"
+									value={config.validation.accept ?? ''}
+									oninput={(e) => patchConfig({ validation: { accept: e.currentTarget.value } })}
+								/>
+							</label>
+							<label class="space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Max size (MB)</span>
+								<Input
+									type="number"
+									value={String(Math.round((config.validation.maxBytes ?? 0) / (1024 * 1024)))}
+									oninput={(e) =>
+										patchConfig({
+											validation: { maxBytes: Number(e.currentTarget.value) * 1024 * 1024 }
+										})}
+								/>
+							</label>
+						</div>
+					{/if}
+
+					{#if config.kind === 'writeback'}
+						<div class="space-y-2 border-t border-border pt-2">
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Connection</span>
+								<NativeSelect
+									value={config.writeback?.connectionId ?? ''}
+									onchange={(e) =>
+										patchWriteback({ connectionId: e.currentTarget.value || null })}
+								>
+									<option value="">Choose a connection…</option>
+									{#each connections as conn (conn.id)}
+										<option value={conn.id}>{conn.name}</option>
+									{/each}
+								</NativeSelect>
+							</label>
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Target table</span>
+								<Input
+									placeholder="schema.table"
+									value={config.writeback?.target ?? ''}
+									oninput={(e) => patchWriteback({ target: e.currentTarget.value })}
+								/>
+							</label>
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Mode</span>
+								<NativeSelect
+									value={config.writeback?.mode ?? 'insert'}
+									onchange={(e) =>
+										patchWriteback({
+											mode: e.currentTarget.value as 'insert' | 'upsert' | 'replace'
+										})}
+								>
+									<option value="insert">Insert</option>
+									<option value="upsert">Upsert</option>
+									<option value="replace">Replace</option>
+								</NativeSelect>
+							</label>
+							<label class="inline-flex items-center gap-2 text-xs">
+								<input
+									class="size-3.5 rounded border-input accent-primary"
+									type="checkbox"
+									checked={config.writeback?.allowWrite ?? false}
+									onchange={(e) => patchWriteback({ allowWrite: e.currentTarget.checked })}
+								/>
+								Allow writes (required to run)
+							</label>
+						</div>
+					{/if}
+
+					{#if config.kind === 'agent'}
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Context scope</span>
+							<NativeSelect
+								value={config.agent?.scope ?? 'notebook'}
+								onchange={(e) =>
+									patchConfig({
+										agent: {
+											...(config.agent ?? { instruction: '' }),
+											scope: e.currentTarget.value as 'notebook' | 'upstream' | 'selected-cells'
+										}
+									})}
+							>
+								<option value="notebook">Entire notebook</option>
+								<option value="upstream">Upstream cells only</option>
+								<option value="selected-cells">Selected cells</option>
 							</NativeSelect>
 						</label>
 					{/if}
@@ -488,11 +682,40 @@
 		</div>
 		{@render dataTable({ rows: filteredRows, columns: activeColumns })}
 	{:else if config.kind === 'writeback'}
-		<div
-			class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-		>
-			Writeback is guarded. Choose a connection and enable writes before this cell can run.
-		</div>
+		{@const writebackReady = Boolean(
+			config.writeback?.allowWrite && config.writeback?.connectionId && config.writeback?.target.trim()
+		)}
+		{#if !writebackReady}
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
+				Writeback is guarded. Choose a connection, a target table, and enable writes (gear icon
+				above) before this cell can run.
+			</div>
+		{:else}
+			<div class="flex items-center gap-2">
+				<Button
+					size="sm"
+					class="h-8 gap-2"
+					disabled={cell.status === 'running'}
+					onclick={() => void runCell(cell.id)}
+				>
+					<Play class="size-3.5" />
+					{cell.status === 'running' ? 'Writing…' : `Write to ${config.writeback?.target}`}
+				</Button>
+				<span class="font-mono text-2xs text-muted-foreground">
+					{config.writeback?.mode} · {connections.find((c) => c.id === config.writeback?.connectionId)
+						?.name ?? config.writeback?.connectionId}
+				</span>
+			</div>
+			{#if cell.status === 'error' && cell.errors?.length}
+				<p class="mt-2 text-xs text-destructive">{cell.errors[0]?.reason}</p>
+			{:else if cell.status === 'success'}
+				<p class="mt-2 text-xs text-muted-foreground">
+					Wrote {cell.result?.rows?.[0]?.rowsWritten ?? 0} row(s).
+				</p>
+			{/if}
+		{/if}
 	{:else if config.kind === 'agent'}
 		<Textarea
 			placeholder={config.display.placeholder}
@@ -502,10 +725,24 @@
 					agent: { ...(config.agent ?? { scope: 'notebook' }), instruction: e.currentTarget.value }
 				})}
 		/>
-		<p class="mt-2 text-xs text-muted-foreground">
-			Agent execution is scoped to notebook context and stays disabled until an AI provider is
-			configured.
-		</p>
+		<div class="mt-2 flex items-center gap-2">
+			<Button
+				size="sm"
+				class="h-8 gap-2"
+				disabled={!config.agent?.instruction?.trim() || getIsGenerating()}
+				onclick={runAgent}
+			>
+				<Bot class="size-3.5" />
+				{getIsGenerating() ? 'Running…' : 'Run agent'}
+			</Button>
+			<span class="text-2xs text-muted-foreground">
+				Scope: {config.agent?.scope ?? 'notebook'} · answers open in the AI chat panel
+			</span>
+		</div>
+	{/if}
+
+	{#if config.display.helpText}
+		<p class="mt-2 text-2xs text-muted-foreground">{config.display.helpText}</p>
 	{/if}
 </section>
 

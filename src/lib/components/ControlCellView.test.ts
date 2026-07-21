@@ -85,6 +85,7 @@ describe('ControlCellView anatomy', () => {
 		expect(source).toContain('Choose latitude and longitude columns.');
 		expect(source).toContain('Run an upstream cell or configure data.');
 		expect(source).toContain('Writeback is guarded.');
-		expect(source).toContain('Agent execution is scoped to notebook context');
+		expect(source).toContain('runAgent');
+		expect(source).toContain('submitAIMessage');
 	});
 });

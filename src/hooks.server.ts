@@ -112,7 +112,13 @@ const DEMO_BLOCKED_PREFIXES = [
 	'/api/admin',
 	'/admin',
 	'/api/v1',
-	'/api/mcp'
+	'/api/mcp',
+	// Server-side subprocess execution needs a real tenant + entitlements (quota
+	// tracking), neither of which DEMO_MODE provisions — without this block it
+	// 400s with a raw "Cannot read properties of undefined (reading 'id')" from
+	// locals.organization! instead of the same clean 403 every other server-only
+	// feature gets here.
+	'/api/python'
 ];
 
 function isPublicPath(pathname: string): boolean {
