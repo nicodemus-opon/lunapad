@@ -84,7 +84,7 @@ async function createToken(input: {
 			input.ttlMinutes
 		]
 	);
-	let manual = manualTokenDeliveryEnabled();
+	const manual = manualTokenDeliveryEnabled();
 	const origin = publicOrigin();
 	if (!manual) {
 		const path =
@@ -105,11 +105,14 @@ async function createToken(input: {
 						: `Verify your Lunapad email: ${url}\n\nThis link expires in ${input.ttlMinutes} minutes.`
 			});
 		} catch (err) {
-			// SMTP is configured but unreachable/misconfigured — don't fail the whole
-			// request (the token row already exists); fall back to handing the token
-			// back directly so the flow stays usable while delivery is fixed.
+			// SMTP is explicitly configured here, so a send failure is a real
+			// misconfiguration (bad host/port/creds/TLS) the operator needs to see and
+			// fix — silently downgrading to manual token delivery would hide it behind
+			// a working-looking response. The token row already exists and stays valid,
+			// so the token param isn't lost; the request just surfaces the SMTP error.
+			const reason = err instanceof Error ? err.message : String(err);
 			console.error(`[account-lifecycle] SMTP send failed for ${input.kind}:`, err);
-			manual = true;
+			throw new Error(`Failed to send email: ${reason}`);
 		}
 	}
 	return {

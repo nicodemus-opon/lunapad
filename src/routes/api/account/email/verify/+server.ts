@@ -39,9 +39,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			return json({ error: err instanceof Error ? err.message : 'Email verification failed.' }, { status: 400 });
 		}
 	}
-	const result = await requestEmailVerification({
-		userId: locals.user.id,
-		email: locals.user.email ?? ''
-	});
-	return json(result);
+	try {
+		const result = await requestEmailVerification({
+			userId: locals.user.id,
+			email: locals.user.email ?? ''
+		});
+		return json(result);
+	} catch (err) {
+		return json(
+			{ error: err instanceof Error ? err.message : 'Failed to start email verification.' },
+			{ status: 502 }
+		);
+	}
 };
