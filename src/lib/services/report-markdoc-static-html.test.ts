@@ -65,6 +65,48 @@ describe('renderMarkdocCellToStaticHtml', () => {
 		expect(html).toContain('color-mix');
 	});
 
+	it('syntax-highlights fenced code blocks', () => {
+		const md = ['```sql', 'select * from orders', '```'].join('\n');
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).toContain('class="hljs-block"');
+		expect(html).toContain('class="language-sql"');
+		expect(html).toContain('hljs-keyword');
+	});
+
+	it('renders a {% metric %} widget instead of a blank div', () => {
+		const md = '{% metric value=42 vs=40 label="Total" /%}';
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).not.toContain('data-markdoc-tag="metric"');
+		expect(html).toContain('markdoc-metric-value');
+		expect(html).toContain('42');
+		expect(html).toContain('Total');
+		expect(html).toContain('markdoc-metric-delta--up');
+	});
+
+	it('renders a {% badge %} widget instead of a blank div', () => {
+		const md = '{% badge value="active" color="success" /%}';
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).toContain('markdoc-badge');
+		expect(html).toContain('active');
+	});
+
+	it('renders a {% progress %} widget instead of a blank div', () => {
+		const md = '{% progress value=60 max=100 label="completion" /%}';
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).toContain('markdoc-progress');
+		expect(html).toContain('60%');
+		expect(html).toContain('completion');
+	});
+
+	it('falls back to the underlying data table for {% chart %} widgets', () => {
+		const md =
+			'{% chart type="bar" data=[{"category":"a","value":12},{"category":"b","value":8}] x="category" y="value" /%}';
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).toContain('markdoc-chart-fallback');
+		expect(html).toContain('<table class="report-table">');
+		expect(html).toContain('category');
+	});
+
 	it('preserves nested layout wrappers in static html export', () => {
 		const cells = [
 			makeCell('orders', [
@@ -202,5 +244,35 @@ describe('renderMarkdocCellToStaticHtml', () => {
 	it('omits the {% toc %} widget entirely when there are no headings', () => {
 		const html = renderMarkdocCellToStaticHtml('{% toc /%}', []);
 		expect(html).not.toContain('data-markdoc-tag="toc"');
+	});
+
+	it('gives headings an id matching the {% toc %} link target, when a cell id is passed', () => {
+		const cellId = 'intro';
+		const cells = [
+			{
+				id: cellId,
+				cellType: 'markdown',
+				markdown: '# Overview\n\nSome text.'
+			} as unknown as Cell
+		];
+		const headingHtml = renderMarkdocCellToStaticHtml('# Overview', cells, cellId);
+		const idMatch = headingHtml.match(/<h1 id="([^"]+)">/);
+		expect(idMatch).not.toBeNull();
+
+		const tocHtml = renderMarkdocCellToStaticHtml('{% toc /%}', cells);
+		expect(tocHtml).toContain(`href="#${idMatch![1]}"`);
+	});
+
+	it('does not add an id to headings when no cell id is passed', () => {
+		const html = renderMarkdocCellToStaticHtml('# Title', []);
+		expect(html).toContain('<h1>Title</h1>');
+		expect(html).not.toContain('<h1 id=');
+	});
+
+	it('renders an inline {% filter %} tag as nothing, matching the live report page', () => {
+		const md = '{% filter kind="dropdown" param="status" label="Status" options=["a","b"] /%}';
+		const html = renderMarkdocCellToStaticHtml(md, []);
+		expect(html).not.toContain('Status');
+		expect(html).not.toContain('data-markdoc-tag="filter"');
 	});
 });

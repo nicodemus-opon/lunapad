@@ -4,6 +4,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Download, MessageSquare } from '@lucide/svelte';
 	import type { PublicShareCell } from '$lib/server/shared-reports';
+	import hljs from 'highlight.js/lib/core';
+	import sql from 'highlight.js/lib/languages/sql';
+	import python from 'highlight.js/lib/languages/python';
+
+	hljs.registerLanguage('sql', sql);
+	hljs.registerLanguage('python', python);
 
 	interface Props {
 		cell: PublicShareCell;
@@ -31,6 +37,17 @@
 		ssrThemeOverrides
 	}: Props = $props();
 
+	const highlightLang = $derived(cell.cellType === 'python' ? 'python' : cell.language);
+
+	// hljs.highlight only adds <span class="hljs-*"> tags — no XSS risk.
+	const highlightedCode = $derived.by(() => {
+		if (!cell.code) return '';
+		if (hljs.getLanguage(highlightLang)) {
+			return hljs.highlight(cell.code, { language: highlightLang }).value;
+		}
+		return cell.code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	});
+
 	const hasTabularData = $derived(Boolean(rows && columns));
 	const hasPythonOutput = $derived(
 		Boolean(
@@ -56,7 +73,8 @@
 </script>
 
 {#if cell.code}
-	<pre class="report-cell-code"><code>{cell.code}</code></pre>
+	<pre class="report-cell-code"><code class="language-{highlightLang}">{@html highlightedCode}</code
+		></pre>
 {/if}
 {#if error}
 	<p class="report-cell-error">{error}</p>
@@ -121,6 +139,42 @@
 		font-size: 0.75rem;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+	/* Syntax token colors — bound to app CSS tokens for automatic dark/light support */
+	.report-cell-code :global(.hljs-keyword),
+	.report-cell-code :global(.hljs-selector-tag),
+	.report-cell-code :global(.hljs-built_in) {
+		color: var(--primary);
+		font-weight: 600;
+	}
+	.report-cell-code :global(.hljs-string),
+	.report-cell-code :global(.hljs-attr) {
+		color: var(--chart-2);
+	}
+	.report-cell-code :global(.hljs-number),
+	.report-cell-code :global(.hljs-literal) {
+		color: var(--chart-1);
+	}
+	.report-cell-code :global(.hljs-comment),
+	.report-cell-code :global(.hljs-quote) {
+		color: var(--muted-foreground);
+		font-style: italic;
+	}
+	.report-cell-code :global(.hljs-title),
+	.report-cell-code :global(.hljs-section),
+	.report-cell-code :global(.hljs-name) {
+		color: var(--chart-4);
+	}
+	.report-cell-code :global(.hljs-variable),
+	.report-cell-code :global(.hljs-template-variable) {
+		color: var(--chart-3);
+	}
+	.report-cell-code :global(.hljs-type),
+	.report-cell-code :global(.hljs-class) {
+		color: var(--chart-4);
+	}
+	.report-cell-code :global(.hljs-meta) {
+		color: var(--muted-foreground);
 	}
 	.report-cell-error {
 		font-family: var(--font-mono);

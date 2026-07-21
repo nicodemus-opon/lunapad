@@ -2,7 +2,11 @@ import Markdoc from '@markdoc/markdoc';
 import type { RenderableTreeNode, Tag } from '@markdoc/markdoc';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import { renderMarkdocCell } from '$lib/services/markdoc-interp';
-import { textFromMarkdocChildren, buildNotebookOutline } from '$lib/services/notebook-outline';
+import {
+	textFromMarkdocChildren,
+	buildNotebookOutline,
+	resolveHeadingAnchorId
+} from '$lib/services/notebook-outline';
 import type { ColumnFormatKind } from '$lib/services/column-format';
 import type { TableAggKind } from '$lib/services/report-table-summary';
 import { renderReportTableToStaticHtml } from '$lib/services/report-table-static-html';
@@ -15,8 +19,39 @@ import type {
 	ColumnConditionalRules,
 	ReportTableConditionalRule
 } from '$lib/services/report-table-conditional-format';
+import { resolveSemanticToken, type SemanticTone } from '$lib/components/markdown/semantic-tone';
+import hljs from 'highlight.js/lib/core';
+import sql from 'highlight.js/lib/languages/sql';
+import python from 'highlight.js/lib/languages/python';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import json from 'highlight.js/lib/languages/json';
+import bash from 'highlight.js/lib/languages/bash';
+import yaml from 'highlight.js/lib/languages/yaml';
+import xml from 'highlight.js/lib/languages/xml';
+
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('shell', bash);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml);
 
 const TagImpl = Markdoc.Tag;
+
+/** Same highlighting used by the live editor's CodeBlock.svelte — only adds
+ * <span class="hljs-*"> tags, so the result is safe to inline as HTML. */
+export function highlightCodeToStaticHtml(code: string, lang: string): string {
+	if (!code) return '';
+	if (lang && hljs.getLanguage(lang)) {
+		return hljs.highlight(code, { language: lang }).value;
+	}
+	return escapeHtml(code);
+}
 
 function escapeHtml(s: string): string {
 	return s
@@ -159,14 +194,118 @@ function datatableTagToStaticTable(tag: Tag): string {
 	});
 }
 
+const METRIC_CURRENCY_FMT = new Intl.NumberFormat(undefined, {
+	style: 'currency',
+	currency: 'USD',
+	maximumFractionDigits: 0
+});
+const METRIC_COMPACT_FMT = new Intl.NumberFormat(undefined, {
+	notation: 'compact',
+	maximumFractionDigits: 1
+});
+const METRIC_DATE_FMT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+
+// Mirrors MetricWidget.svelte's `displayValue` derivation so the static export
+// shows the same formatted number the live report/editor would.
+function formatMetricValue(value: unknown, format: string): string {
+	if (value == null) return '—';
+	if (format === 'date') {
+		const d = new Date(typeof value === 'number' ? value : String(value));
+		return Number.isNaN(d.getTime()) ? String(value) : METRIC_DATE_FMT.format(d);
+	}
+	const n = typeof value === 'number' ? value : Number(value);
+	if (Number.isNaN(n)) return String(value);
+	switch (format) {
+		case 'currency':
+			return METRIC_CURRENCY_FMT.format(n);
+		case 'compact':
+			return METRIC_COMPACT_FMT.format(n);
+		case 'percent':
+			return `${n.toFixed(1)}%`;
+		default:
+			return n.toLocaleString();
+	}
+}
+
+function metricTagToStaticHtml(tag: Tag): string {
+	const attrs = tag.attributes as Record<string, unknown>;
+	const value = formatMetricValue(
+		attrs.value,
+		typeof attrs.format === 'string' ? attrs.format : 'number'
+	);
+	const label = typeof attrs.label === 'string' && attrs.label ? escapeHtml(attrs.label) : '';
+	const trend = attrs.trend === 'up' || attrs.trend === 'down' ? attrs.trend : null;
+	const deltaPct = typeof attrs.deltaPct === 'number' ? attrs.deltaPct : null;
+	const accentToken = resolveSemanticToken(
+		attrs.accent as SemanticTone | undefined,
+		'var(--foreground)'
+	);
+	let delta = '';
+	if (trend && deltaPct != null) {
+		const arrow = trend === 'up' ? '▲' : '▼';
+		delta = `<span class="markdoc-metric-delta markdoc-metric-delta--${trend}">${arrow} ${Math.abs(deltaPct).toFixed(1)}%</span>`;
+	}
+	return `<span class="markdoc-metric" style="--markdoc-metric-accent:${escapeHtml(accentToken)}"><span class="markdoc-metric-value">${escapeHtml(value)}</span>${delta}${label ? `<span class="markdoc-metric-label">${label}</span>` : ''}</span>`;
+}
+
+function badgeTagToStaticHtml(tag: Tag): string {
+	const attrs = tag.attributes as Record<string, unknown>;
+	const value = attrs.value ?? '';
+	const CHART_TOKENS = [
+		'var(--chart-1)',
+		'var(--chart-2)',
+		'var(--chart-3)',
+		'var(--chart-4)',
+		'var(--chart-5)'
+	];
+	let hash = 0;
+	const str = String(value);
+	for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+	const fallback = CHART_TOKENS[hash % CHART_TOKENS.length];
+	const token = resolveSemanticToken(attrs.color as SemanticTone | undefined, fallback);
+	return `<span class="markdoc-badge" style="--markdoc-badge-token:${escapeHtml(token)}">${escapeHtml(str)}</span>`;
+}
+
+function progressTagToStaticHtml(tag: Tag): string {
+	const attrs = tag.attributes as Record<string, unknown>;
+	const value = typeof attrs.value === 'number' ? attrs.value : 0;
+	const max = typeof attrs.max === 'number' ? attrs.max : 100;
+	const label = typeof attrs.label === 'string' && attrs.label ? escapeHtml(attrs.label) : '';
+	const color = typeof attrs.color === 'string' ? attrs.color : 'info';
+	const token =
+		color === 'success'
+			? 'var(--success)'
+			: color === 'warning'
+				? 'var(--warning)'
+				: color === 'error'
+					? 'var(--destructive)'
+					: 'var(--chart-1)';
+	const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+	return `<div class="markdoc-progress">${label ? `<div class="markdoc-progress-label">${label}</div>` : ''}<div class="markdoc-progress-track"><div class="markdoc-progress-fill" style="width:${pct}%;background:${token}"></div></div><div class="markdoc-progress-value">${pct.toFixed(0)}%</div></div>`;
+}
+
+// Plotly charts can't run in a static file, so fall back to the underlying
+// table data (rather than a blank div) — same data the live chart plots.
+function chartTagToStaticHtml(tag: Tag): string {
+	const attrs = tag.attributes as Record<string, unknown>;
+	const data = Array.isArray(attrs.data) ? (attrs.data as Record<string, unknown>[]) : [];
+	const title = typeof attrs.title === 'string' && attrs.title ? escapeHtml(attrs.title) : '';
+	if (!data.length) {
+		return `<div class="markdoc-chart-fallback">${title ? `<p class="markdoc-chart-fallback-title">${title}</p>` : ''}<p class="markdoc-chart-fallback-note">Chart has no data.</p></div>`;
+	}
+	const xColumn = typeof attrs.xColumn === 'string' ? attrs.xColumn : undefined;
+	const yColumns = Array.isArray(attrs.yColumns) ? (attrs.yColumns as string[]) : [];
+	const columns = xColumn && yColumns.length ? [xColumn, ...yColumns] : Object.keys(data[0]);
+	const tableHtml = renderReportTableToStaticHtml(data, columns, {
+		maxRows: 50,
+		truncated: data.length > 50
+	});
+	return `<div class="markdoc-chart-fallback">${title ? `<p class="markdoc-chart-fallback-title">${title}</p>` : ''}<p class="markdoc-chart-fallback-note">Interactive chart available in the live report view — showing underlying data.</p>${tableHtml}</div>`;
+}
+
 // Standard HTML elements we emit verbatim (wrapping their rendered children).
+// Headings (h1-h6) are handled separately above so they can carry a TOC-matching id.
 const WRAP_TAGS = new Set([
-	'h1',
-	'h2',
-	'h3',
-	'h4',
-	'h5',
-	'h6',
 	'p',
 	'ul',
 	'ol',
@@ -176,7 +315,6 @@ const WRAP_TAGS = new Set([
 	'em',
 	'del',
 	'code',
-	'pre',
 	'a',
 	'span',
 	'div',
@@ -234,6 +372,27 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 		// Rich, first-class table rendering for our widgets.
 		if (tag.name === 'datatable') return datatableTagToStaticTable(tag);
 
+		// Fenced code block — Markdoc emits this as a `pre` tag with a `data-language`
+		// attribute and raw text children (see MarkdocNode.svelte's `pre` branch, which
+		// hands the same shape to CodeBlock.svelte). Highlight it the same way here so
+		// the static export doesn't regress to plain unhighlighted text.
+		if (tag.name === 'pre') {
+			const lang = String((tag.attributes as Record<string, unknown>)?.['data-language'] ?? '');
+			const rawCode = textFromMarkdocChildren((tag.children ?? []) as unknown[]);
+			const highlighted = highlightCodeToStaticHtml(rawCode, lang);
+			return `<pre class="hljs-block"><code class="language-${escapeHtml(lang)}">${highlighted}</code></pre>`;
+		}
+
+		if (tag.name === 'metric') return metricTagToStaticHtml(tag);
+		if (tag.name === 'badge') return badgeTagToStaticHtml(tag);
+		if (tag.name === 'progress') return progressTagToStaticHtml(tag);
+		if (tag.name === 'chart') return chartTagToStaticHtml(tag);
+		// Inline {% filter %} tags are always consolidated into one filter bar on the
+		// live report page (ReportPage.svelte suppresses them inline whenever any exist
+		// — see FilterWidget.svelte's suppressInline) — the export route renders that
+		// bar itself from the same tags, so the inline tag renders nothing here too.
+		if (tag.name === 'filter') return '';
+
 		if (tag.name === 'table') {
 			const parsed = parseSimpleMarkdocTable(tag);
 			if (parsed) {
@@ -251,6 +410,19 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
 		const childrenHtml = ((tag.children ?? []) as RenderableTreeNode[])
 			.map((c) => renderRenderableToStaticHtml(c))
 			.join('');
+
+		// Headings need a matching `id` so `{% toc %}` links (built from the same
+		// per-cell anchor scheme as the live editor/report — see notebook-outline.ts)
+		// actually land somewhere instead of no-op-ing in the exported file.
+		if (/^h[1-6]$/.test(tag.name)) {
+			const label = textFromMarkdocChildren((tag.children ?? []) as unknown[]);
+			const id =
+				currentHeadingCellId && label.trim()
+					? resolveHeadingAnchorId(currentHeadingCellId, label, currentHeadingSlugTracker)
+					: undefined;
+			const idAttr = id ? ` id="${escapeHtml(id)}"` : '';
+			return `<${tag.name}${idAttr}${renderTagAttributes(tag.name, tag.attributes as Record<string, unknown>)}>${childrenHtml}</${tag.name}>`;
+		}
 
 		if (WRAP_TAGS.has(tag.name)) {
 			return `<${tag.name}${renderTagAttributes(tag.name, tag.attributes as Record<string, unknown>)}>${childrenHtml}</${tag.name}>`;
@@ -376,13 +548,29 @@ function renderRenderableToStaticHtml(node: RenderableTreeNode): string {
  * Safe because rendering is synchronous and re-entrant only via the calls this module makes. */
 let currentStaticHtmlCells: Cell[] = [];
 
-export function renderMarkdocCellToStaticHtml(markdown: string, cells: Cell[]): string {
+/** Same per-cell heading-anchor scheme as MarkdocNode.svelte (headingSlugPrefix +
+ * headingSlugTracker) — module-scoped for the same reason as `currentStaticHtmlCells`
+ * above: threading it through every recursive call would touch every branch for one tag. */
+let currentHeadingCellId = '';
+let currentHeadingSlugTracker = new Set<string>();
+
+export function renderMarkdocCellToStaticHtml(
+	markdown: string,
+	cells: Cell[],
+	headingSlugPrefix = ''
+): string {
 	const { tree } = renderMarkdocCell(markdown, cells);
 	const previousCells = currentStaticHtmlCells;
+	const previousHeadingCellId = currentHeadingCellId;
+	const previousHeadingSlugTracker = currentHeadingSlugTracker;
 	currentStaticHtmlCells = cells;
+	currentHeadingCellId = headingSlugPrefix;
+	currentHeadingSlugTracker = new Set<string>();
 	try {
 		return tree.map((n) => renderRenderableToStaticHtml(n)).join('\n');
 	} finally {
 		currentStaticHtmlCells = previousCells;
+		currentHeadingCellId = previousHeadingCellId;
+		currentHeadingSlugTracker = previousHeadingSlugTracker;
 	}
 }

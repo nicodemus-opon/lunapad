@@ -350,126 +350,16 @@
 		flex-direction: column;
 		gap: 1.75rem;
 	}
-	.report-markdown {
-		font-size: 0.95rem;
-		line-height: 1.7;
-	}
-	/* Infographic type scale: h1 = display headline, h2 = tracked-caps section header
-	   with a heavy rule, h3 = quiet kicker/eyebrow. A real hierarchy ladder instead of
-	   three near-identical bold sizes. */
-	.report-markdown :global(h1) {
-		font-size: 2.6rem;
-		font-weight: 800;
-		letter-spacing: -0.03em;
-		margin: 0 0 1.25rem;
-		line-height: 1.05;
-	}
-	.report-markdown :global(h2) {
-		font-size: 0.95rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		border-top: 3px solid var(--foreground);
-		padding-top: 0.5rem;
-		margin: 2.25rem 0 0.9rem;
-		line-height: 1.35;
-	}
-	.report-markdown :global(h3) {
-		font-size: var(--text-2xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--muted-foreground);
-		margin: 1.5rem 0 0.35rem;
-	}
-	.report-markdown :global(h4),
-	.report-markdown :global(h5),
-	.report-markdown :global(h6) {
-		font-size: 1rem;
-		font-weight: 600;
-		margin: 1rem 0 0.4rem;
-	}
-	/* Blockquotes as serif-italic captions — source lines and asides. */
-	.report-markdown :global(blockquote) {
-		border: none;
-		margin: 0.5rem 0 0.75rem;
-		padding: 0;
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: 0.85rem;
-		color: var(--muted-foreground);
-	}
-	.report-markdown :global(p) {
-		margin: 0 0 0.75rem;
-	}
-	.report-markdown :global(p:first-child) {
-		margin-top: 0;
-	}
-	.report-markdown :global(*:last-child) {
-		margin-bottom: 0;
-	}
-	.report-markdown :global(ul),
-	.report-markdown :global(ol) {
-		padding-left: 1.5rem;
-		margin: 0 0 0.75rem;
-	}
-	.report-markdown :global(li) {
-		margin-bottom: 0.25rem;
-	}
-	.report-markdown :global(pre) {
-		background: color-mix(in oklch, currentColor 6%, transparent);
-		border-radius: 0.35rem;
-		padding: 0.75rem 1rem;
-		margin: 0 0 0.75rem;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-	.report-markdown :global(code) {
-		font-family: ui-monospace, SFMono-Regular, monospace;
-		font-size: 0.85em;
-		background: color-mix(in oklch, currentColor 8%, transparent);
-		border-radius: 0.25rem;
-		padding: 0.1em 0.35em;
-	}
-	.report-markdown :global(pre code) {
-		background: none;
-		padding: 0;
-	}
-	.report-markdown :global(blockquote) {
-		border-left: 2px solid var(--border);
-		margin: 0 0 0.75rem;
-		padding-left: 1rem;
-		opacity: 0.8;
-	}
-	.report-markdown :global(hr) {
-		border: none;
-		border-top: 1px solid var(--border);
-		margin: 1.25rem 0;
-	}
-	.report-markdown :global(a) {
-		text-decoration: underline;
-		text-underline-offset: 2px;
-	}
-	.report-markdown :global(img) {
-		max-width: 100%;
-		border-radius: 0.35rem;
-	}
-	.report-markdown :global(table) {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.85em;
-		margin: 0 0 0.75rem;
-	}
-	.report-markdown :global(th),
-	.report-markdown :global(td) {
-		padding: 0.4rem 0.7rem;
-		border: 1px solid var(--border);
-		text-align: left;
-	}
-	.report-markdown :global(th) {
-		font-weight: 600;
-		background: color-mix(in oklch, currentColor 4%, transparent);
-	}
+	/* Typography for .report-markdown (headings, blockquote, code, links, lists, etc.)
+	   comes from the shared markdown-surface.css (imported globally via layout.css) —
+	   the same rules the in-app Report View (NotebookDocumentEditor's
+	   .notebook-document-surface) uses. This component used to carry its own parallel
+	   "infographic" heading scale here that silently diverged from that shared file,
+	   which is why headings looked completely different between the live editor's
+	   Report View and this public share page. Don't reintroduce a local override —
+	   any report-page-specific typography tweak belongs in markdown-surface.css so
+	   every surface (editor, in-app report view, public share, static export) stays
+	   in sync. */
 
 	@media print {
 		:global(.no-print) {

@@ -71,6 +71,7 @@ describe('visual dashboard slash commands', () => {
 			'bullet',
 			'numbered',
 			'emoji',
+			'review',
 			'report-summary',
 			'report-filtered',
 			'report-grouped',
