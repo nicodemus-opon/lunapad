@@ -125,6 +125,36 @@ describe('buildNotebookOutline', () => {
 		expect(outline.some((e) => e.label === 'Report')).toBe(true);
 	});
 
+	it('surfaces prose from markdown cells with no headings', () => {
+		const cells = [
+			makeCell({
+				id: 'md1',
+				cellType: 'markdown',
+				markdown: 'This notebook walks through **synthetic** order data end to end.'
+			})
+		];
+		const outline = buildNotebookOutline(cells);
+		expect(outline).toHaveLength(1);
+		expect(outline[0]).toMatchObject({
+			kind: 'text',
+			cellId: 'md1',
+			label: 'This notebook walks through synthetic order data end to end.'
+		});
+	});
+
+	it('does not add a text entry for a markdown cell that already has headings', () => {
+		const cells = [
+			makeCell({
+				id: 'md1',
+				cellType: 'markdown',
+				markdown: '# Overview\n\nSome intro prose here.'
+			})
+		];
+		const outline = buildNotebookOutline(cells);
+		expect(outline).toHaveLength(1);
+		expect(outline[0].kind).toBe('heading');
+	});
+
 	it('skips promoted cells and unnamed cells', () => {
 		const cells = [
 			makeCell({ id: 'q1', cellType: 'query', outputName: '', promotedModelPath: null }),

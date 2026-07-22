@@ -15,6 +15,7 @@
 	interface Props {
 		data?: Record<string, unknown>[];
 		cols?: string[];
+		title?: string;
 		limit?: number;
 		linkedFilter?: string;
 		pageSize?: number;
@@ -37,6 +38,7 @@
 	const {
 		data = [],
 		cols,
+		title,
 		limit = 10,
 		linkedFilter,
 		pageSize = 10,
@@ -121,6 +123,7 @@
 			rows={transformed.rows}
 			columns={transformed.columns}
 			name="datatable"
+			{title}
 			pageSize={effectivePageSize}
 			{headerInsights}
 			truncated={false}
@@ -161,7 +164,7 @@
 {#if fullscreen}
 	<div class="md-datatable-overlay" role="dialog" aria-modal="true">
 		<div class="md-datatable-overlay-header">
-			<span>{data.length} rows</span>
+			<span>{title ? `${title} — ` : ''}{data.length} rows</span>
 			<Button
 				variant="ghost"
 				size="icon-sm"

@@ -12,8 +12,32 @@ export function smtpConfigured(): boolean {
 	return Boolean(process.env.SMTP_HOST && process.env.EMAIL_FROM);
 }
 
-function escapeAddress(value: string): string {
-	return value.replace(/[<>\r\n]/g, '').trim();
+interface ParsedAddress {
+	name?: string;
+	email: string;
+}
+
+function parseAddress(value: string): ParsedAddress {
+	const stripped = value.replace(/[\r\n]/g, '').trim();
+	const match = stripped.match(/^(.*)<([^<>]+)>$/);
+	if (match) {
+		const name = match[1].trim();
+		const email = match[2].trim();
+		return name ? { name, email } : { email };
+	}
+	return { email: stripped.replace(/[<>]/g, '') };
+}
+
+// Bare address only, for the SMTP envelope (MAIL FROM / RCPT TO) — no display name.
+function envelopeAddress(value: string): string {
+	return parseAddress(value).email;
+}
+
+// "Name <email>" (or bare email) for header lines, re-wrapped so the angle
+// brackets always match a real address instead of being stripped outright.
+function headerAddress(value: string): string {
+	const { name, email } = parseAddress(value);
+	return name ? `${name} <${email}>` : email;
 }
 
 function smtpLineReader(socket: net.Socket | tls.TLSSocket) {
@@ -66,8 +90,8 @@ export async function sendEmail(message: EmailMessage): Promise<{ delivery: 'ema
 	const host = process.env.SMTP_HOST!;
 	const port = Number(process.env.SMTP_PORT ?? '587');
 	const secure = process.env.SMTP_SECURE === 'true' || port === 465;
-	const from = escapeAddress(process.env.EMAIL_FROM!);
-	const to = escapeAddress(message.to);
+	const from = process.env.EMAIL_FROM!;
+	const to = message.to;
 	let socket: net.Socket | tls.TLSSocket = secure
 		? tls.connect({ host, port, servername: host })
 		: net.connect({ host, port });
@@ -100,12 +124,12 @@ export async function sendEmail(message: EmailMessage): Promise<{ delivery: 'ema
 			await command(Buffer.from(process.env.SMTP_USER).toString('base64'), [334]);
 			await command(Buffer.from(process.env.SMTP_PASSWORD).toString('base64'), [235]);
 		}
-		await command(`MAIL FROM:<${from}>`, [250]);
-		await command(`RCPT TO:<${to}>`, [250, 251]);
+		await command(`MAIL FROM:<${envelopeAddress(from)}>`, [250]);
+		await command(`RCPT TO:<${envelopeAddress(to)}>`, [250, 251]);
 		await command('DATA', [354]);
 		const body = [
-			`From: ${from}`,
-			`To: ${to}`,
+			`From: ${headerAddress(from)}`,
+			`To: ${headerAddress(to)}`,
 			`Subject: ${message.subject.replaceAll('\r', '').replaceAll('\n', ' ')}`,
 			'MIME-Version: 1.0',
 			'Content-Type: text/plain; charset=utf-8',

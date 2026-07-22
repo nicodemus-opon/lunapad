@@ -370,6 +370,29 @@
 	);
 	let notebookScrollEl: HTMLElement | undefined = $state();
 
+	// The notebook-scroll <main> is reused across tabs, so its scrollTop survives
+	// a tab switch unless we save/restore it ourselves — otherwise switching from a
+	// long-scrolled notebook to a short one leaves the view scrolled past its content.
+	// The outgoing tab's offset must be captured in a pre-DOM-update effect: once the
+	// shorter notebook's cells patch in, the browser clamps scrollTop to the new
+	// (smaller) scrollHeight before a post-update effect would ever see the real value.
+	const tabScrollPositions = new Map<string, number>();
+	let prevScrollTabId: string | null = null;
+	$effect.pre(() => {
+		const id = activeTabId;
+		const root = notebookScrollEl;
+		if (root && prevScrollTabId && prevScrollTabId !== id) {
+			tabScrollPositions.set(prevScrollTabId, root.scrollTop);
+		}
+		prevScrollTabId = id;
+	});
+	$effect(() => {
+		const id = activeTabId;
+		const root = notebookScrollEl;
+		if (!root) return;
+		root.scrollTop = tabScrollPositions.get(id) ?? 0;
+	});
+
 	// Cells render via QueryBlockNodeView/markdown NodeViews inside the ProseMirror
 	// document (not NotebookCell, which is worksheet-only) — so scrolling to an
 	// outline/backlink target has to happen here against the raw DOM, keyed by the

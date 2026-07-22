@@ -221,7 +221,7 @@
 		</div>
 
 		<div
-			class="absolute top-0 right-0 z-10 flex h-6 min-w-0 items-center gap-1 rounded-md border border-border bg-background/90 px-1.5 shadow-sm backdrop-blur-[2px] transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showControls
+			class="absolute top-0 right-0 z-10 flex h-6 min-w-0 items-center gap-2 transition-opacity duration-(--motion-fast) ease-(--motion-ease-out) {showControls
 				? 'opacity-100'
 				: 'pointer-events-none opacity-0'}"
 			aria-hidden={!showControls}

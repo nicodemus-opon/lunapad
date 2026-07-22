@@ -92,6 +92,7 @@ export const MARKDOC_TAG_CATALOG: Record<string, MarkdocTagCatalogEntry> = {
 		attributes: {
 			data: { detail: 'Row data ($cell.rows)', required: true },
 			cols: { detail: 'Columns to show' },
+			title: { detail: 'Label shown above the table, next to search' },
 			limit: { detail: 'Max rows before expand' },
 			linkedFilter: { detail: 'Highlight when filter param is active' },
 			pageSize: { detail: 'Rows per page' },

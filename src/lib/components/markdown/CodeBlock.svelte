@@ -53,8 +53,13 @@
 {/if}
 
 <style>
+	/* Colors below are the exact hex values from the lunapad-light/lunapad-dark Monaco
+	   themes (src/lib/monaco/themes.ts) — this block is meant to read as "the same
+	   code, out of the editor", so it must match pixel-for-pixel rather than derive
+	   from the (brand-customizable) app color tokens. */
 	.hljs-block {
-		background: color-mix(in oklab, var(--muted-foreground) 10%, transparent);
+		background: #f3f1ea;
+		color: #1f1e1b;
 		border-radius: var(--radius);
 		padding: 0.5rem 0.75rem;
 		margin: 0 0 0.5rem;
@@ -64,6 +69,10 @@
 		font-size: var(--text-2xs);
 		line-height: 1.6;
 	}
+	:global(.dark) .hljs-block {
+		background: #1f1e1b;
+		color: #c3c0b6;
+	}
 	.hljs-block code {
 		background: none;
 		padding: 0;
@@ -71,43 +80,70 @@
 		font-family: inherit;
 		font-size: inherit;
 	}
-	/* Syntax token colors — bound to app CSS tokens for automatic dark/light support */
 	.hljs-block :global(.hljs-keyword),
 	.hljs-block :global(.hljs-selector-tag),
-	.hljs-block :global(.hljs-built_in) {
-		color: var(--primary);
-		font-weight: 600;
+	.hljs-block :global(.hljs-built_in),
+	.hljs-block :global(.hljs-tag) {
+		color: #2f6f9f;
+		font-weight: 700;
+	}
+	:global(.dark) .hljs-block :global(.hljs-keyword),
+	:global(.dark) .hljs-block :global(.hljs-selector-tag),
+	:global(.dark) .hljs-block :global(.hljs-built_in),
+	:global(.dark) .hljs-block :global(.hljs-tag) {
+		color: #7fb8dd;
 	}
 	.hljs-block :global(.hljs-string),
 	.hljs-block :global(.hljs-attr) {
-		color: var(--chart-2);
+		color: #58804f;
+	}
+	:global(.dark) .hljs-block :global(.hljs-string),
+	:global(.dark) .hljs-block :global(.hljs-attr) {
+		color: #a9c49a;
 	}
 	.hljs-block :global(.hljs-number),
 	.hljs-block :global(.hljs-literal) {
-		color: var(--chart-1);
+		color: #9c6b2e;
+	}
+	:global(.dark) .hljs-block :global(.hljs-number),
+	:global(.dark) .hljs-block :global(.hljs-literal) {
+		color: #d4a972;
 	}
 	.hljs-block :global(.hljs-comment),
-	.hljs-block :global(.hljs-quote) {
-		color: var(--muted-foreground);
+	.hljs-block :global(.hljs-quote),
+	.hljs-block :global(.hljs-meta) {
+		color: #8a8276;
 		font-style: italic;
+	}
+	:global(.dark) .hljs-block :global(.hljs-comment),
+	:global(.dark) .hljs-block :global(.hljs-quote),
+	:global(.dark) .hljs-block :global(.hljs-meta) {
+		color: #8f8a7d;
 	}
 	.hljs-block :global(.hljs-title),
 	.hljs-block :global(.hljs-section),
 	.hljs-block :global(.hljs-name) {
-		color: var(--chart-4);
+		color: #6a5b9e;
+	}
+	:global(.dark) .hljs-block :global(.hljs-title),
+	:global(.dark) .hljs-block :global(.hljs-section),
+	:global(.dark) .hljs-block :global(.hljs-name) {
+		color: #b1a6d4;
 	}
 	.hljs-block :global(.hljs-variable),
 	.hljs-block :global(.hljs-template-variable) {
-		color: var(--chart-3);
+		color: #1f1e1b;
+	}
+	:global(.dark) .hljs-block :global(.hljs-variable),
+	:global(.dark) .hljs-block :global(.hljs-template-variable) {
+		color: #c3c0b6;
 	}
 	.hljs-block :global(.hljs-type),
 	.hljs-block :global(.hljs-class) {
-		color: var(--chart-4);
+		color: #2e7d86;
 	}
-	.hljs-block :global(.hljs-meta) {
-		color: var(--muted-foreground);
-	}
-	.hljs-block :global(.hljs-tag) {
-		color: var(--primary);
+	:global(.dark) .hljs-block :global(.hljs-type),
+	:global(.dark) .hljs-block :global(.hljs-class) {
+		color: #92c4c4;
 	}
 </style>

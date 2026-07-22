@@ -402,6 +402,7 @@ const datatableTag: Schema = {
 	attributes: {
 		data: { type: Array, required: true },
 		cols: { type: Array },
+		title: { type: String },
 		limit: { type: Number, default: 10 },
 		linkedFilter: { type: String },
 		pageSize: { type: Number },

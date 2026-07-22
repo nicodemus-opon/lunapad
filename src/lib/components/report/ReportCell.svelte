@@ -130,51 +130,89 @@
 		gap: 0.35rem;
 		margin-bottom: 0.35rem;
 	}
+	/* Colors below are the exact hex values from the lunapad-light/lunapad-dark Monaco
+	   themes (src/lib/monaco/themes.ts) — matches the editor pixel-for-pixel rather
+	   than deriving from the (brand-customizable) app color tokens. */
 	.report-cell-code {
 		margin: 0 0 0.5rem;
 		padding: 0.5rem 0.65rem;
 		border-radius: 0.375rem;
-		background: var(--muted);
+		background: #f3f1ea;
+		color: #1f1e1b;
 		font-family: var(--font-mono);
 		font-size: 0.75rem;
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
-	/* Syntax token colors — bound to app CSS tokens for automatic dark/light support */
+	:global(.dark) .report-cell-code {
+		background: #1f1e1b;
+		color: #c3c0b6;
+	}
 	.report-cell-code :global(.hljs-keyword),
 	.report-cell-code :global(.hljs-selector-tag),
-	.report-cell-code :global(.hljs-built_in) {
-		color: var(--primary);
-		font-weight: 600;
+	.report-cell-code :global(.hljs-built_in),
+	.report-cell-code :global(.hljs-tag) {
+		color: #2f6f9f;
+		font-weight: 700;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-keyword),
+	:global(.dark) .report-cell-code :global(.hljs-selector-tag),
+	:global(.dark) .report-cell-code :global(.hljs-built_in),
+	:global(.dark) .report-cell-code :global(.hljs-tag) {
+		color: #7fb8dd;
 	}
 	.report-cell-code :global(.hljs-string),
 	.report-cell-code :global(.hljs-attr) {
-		color: var(--chart-2);
+		color: #58804f;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-string),
+	:global(.dark) .report-cell-code :global(.hljs-attr) {
+		color: #a9c49a;
 	}
 	.report-cell-code :global(.hljs-number),
 	.report-cell-code :global(.hljs-literal) {
-		color: var(--chart-1);
+		color: #9c6b2e;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-number),
+	:global(.dark) .report-cell-code :global(.hljs-literal) {
+		color: #d4a972;
 	}
 	.report-cell-code :global(.hljs-comment),
-	.report-cell-code :global(.hljs-quote) {
-		color: var(--muted-foreground);
+	.report-cell-code :global(.hljs-quote),
+	.report-cell-code :global(.hljs-meta) {
+		color: #8a8276;
 		font-style: italic;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-comment),
+	:global(.dark) .report-cell-code :global(.hljs-quote),
+	:global(.dark) .report-cell-code :global(.hljs-meta) {
+		color: #8f8a7d;
 	}
 	.report-cell-code :global(.hljs-title),
 	.report-cell-code :global(.hljs-section),
 	.report-cell-code :global(.hljs-name) {
-		color: var(--chart-4);
+		color: #6a5b9e;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-title),
+	:global(.dark) .report-cell-code :global(.hljs-section),
+	:global(.dark) .report-cell-code :global(.hljs-name) {
+		color: #b1a6d4;
 	}
 	.report-cell-code :global(.hljs-variable),
 	.report-cell-code :global(.hljs-template-variable) {
-		color: var(--chart-3);
+		color: #1f1e1b;
+	}
+	:global(.dark) .report-cell-code :global(.hljs-variable),
+	:global(.dark) .report-cell-code :global(.hljs-template-variable) {
+		color: #c3c0b6;
 	}
 	.report-cell-code :global(.hljs-type),
 	.report-cell-code :global(.hljs-class) {
-		color: var(--chart-4);
+		color: #2e7d86;
 	}
-	.report-cell-code :global(.hljs-meta) {
-		color: var(--muted-foreground);
+	:global(.dark) .report-cell-code :global(.hljs-type),
+	:global(.dark) .report-cell-code :global(.hljs-class) {
+		color: #92c4c4;
 	}
 	.report-cell-error {
 		font-family: var(--font-mono);

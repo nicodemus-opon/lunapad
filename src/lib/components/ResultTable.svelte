@@ -60,6 +60,8 @@
 		onSearchValueChange?: (value: string) => void;
 		/** Show the built-in search row (standalone markdown datatables). */
 		showSearch?: boolean;
+		/** Optional label shown at the start of the search row (e.g. a datatable's title). */
+		title?: string;
 		onAddSort?: (column: string, dir: 'asc' | 'desc') => void;
 		onAddFilter?: (column: string) => void;
 		onColumnDescriptionChange?: (column: string, description: string) => void;
@@ -85,6 +87,7 @@
 		searchValue,
 		onSearchValueChange,
 		showSearch = true,
+		title,
 		truncated = false,
 		fillHeight = false,
 		onAddSort,
@@ -564,32 +567,50 @@
 <div class="flex min-h-0 flex-col gap-2 {fillHeight ? 'min-h-0 flex-1' : ''}">
 	<div class="flex min-h-0 min-w-0 gap-2 {fillHeight ? 'min-h-0 flex-1 overflow-hidden' : ''}">
 		<div class="flex min-h-0 min-w-0 flex-1 flex-col {fillHeight ? 'overflow-hidden' : ''}">
-			{#if showSearch}
-				<div class="flex items-center px-1">
-					<label class="group/search relative ml-auto flex items-center">
-						<Search
-							class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
-						/>
-						<input
-							class="h-7 w-40 rounded-md border border-transparent bg-transparent pr-6 pl-7 text-xs text-foreground transition-[width,background-color,border-color] duration-(--motion-medium) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/40 focus:w-72 focus:border-border focus:bg-background motion-reduce:transition-none"
-							type="text"
-							placeholder="Search"
-							aria-label="Search table"
-							value={globalSearch}
-							oninput={(e) => setGlobalSearch(e.currentTarget.value)}
-						/>
-						{#if globalSearch.trim()}
-							<button
-								type="button"
-								class="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
-								onclick={() => setGlobalSearch('')}
-								aria-label="Clear search"
-								title="Clear search"
-							>
-								<X class="h-3 w-3" />
-							</button>
-						{/if}
-					</label>
+			{#if showSearch || title}
+				<div class="flex h-7 shrink-0 items-center gap-2 px-1">
+					{#if title}
+						<span
+							class="min-w-0 flex-1 truncate text-xs leading-none font-semibold text-foreground"
+						>
+							{title}
+						</span>
+					{/if}
+					{#if showSearch}
+						<label
+							class="group/search relative flex shrink-0 items-center {title ? '' : 'ml-auto'}"
+						>
+							<Search
+								class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground/45 transition-colors group-focus-within/search:text-muted-foreground"
+							/>
+							<input
+								class="h-7 w-44 rounded-md border border-transparent bg-transparent pr-6 pl-7 text-xs text-foreground transition-[background-color,border-color] duration-(--motion-medium) ease-(--motion-ease-out) outline-none placeholder:text-muted-foreground/45 hover:bg-muted/40 focus:border-border focus:bg-background motion-reduce:transition-none"
+								type="text"
+								placeholder="Search"
+								aria-label="Search table"
+								value={globalSearch}
+								oninput={(e) => setGlobalSearch(e.currentTarget.value)}
+								onkeydown={(e) => {
+									if (e.key === 'Escape' && globalSearch) {
+										e.stopPropagation();
+										setGlobalSearch('');
+										e.currentTarget.blur();
+									}
+								}}
+							/>
+							{#if globalSearch.trim()}
+								<button
+									type="button"
+									class="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+									onclick={() => setGlobalSearch('')}
+									aria-label="Clear search"
+									title="Clear search"
+								>
+									<X class="h-3 w-3" />
+								</button>
+							{/if}
+						</label>
+					{/if}
 				</div>
 			{/if}
 			<Table.Root

@@ -5,7 +5,7 @@ export type OutlineLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type OutlineEntry = {
 	id: string;
 	cellId: string;
-	kind: 'heading' | 'cell';
+	kind: 'heading' | 'cell' | 'text';
 	level: OutlineLevel;
 	label: string;
 	anchorId?: string;
@@ -60,6 +60,21 @@ function parseMarkdownHeadings(cellId: string, markdown: string): OutlineEntry[]
 	return entries;
 }
 
+/** Strip markdown syntax down to a short plain-text label for prose blocks with no heading. */
+function previewText(markdown: string, maxLen = 60): string | null {
+	const stripped = markdown
+		.replace(/```[\s\S]*?```/g, ' ')
+		.replace(/`([^`]+)`/g, '$1')
+		.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+		.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+		.replace(/[*_~>#]+/g, '')
+		.replace(/^\s*[-\d.]+\s+/gm, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (!stripped) return null;
+	return stripped.length > maxLen ? `${stripped.slice(0, maxLen).trimEnd()}…` : stripped;
+}
+
 function isNamedExecutableCell(cell: Cell): boolean {
 	if (cell.promotedModelPath) return false;
 	if (cell.controlConfig) return Boolean(cell.outputName.trim());
@@ -91,10 +106,23 @@ export function buildNotebookOutline(cells: Cell[]): OutlineEntry[] {
 
 		if (cell.cellType === 'markdown') {
 			const headings = parseMarkdownHeadings(cell.id, cell.markdown);
-			for (const h of headings) {
-				if (!usedIds.has(h.id)) {
-					usedIds.add(h.id);
-					outline.push(h);
+			if (headings.length > 0) {
+				for (const h of headings) {
+					if (!usedIds.has(h.id)) {
+						usedIds.add(h.id);
+						outline.push(h);
+					}
+				}
+			} else {
+				// No headings to anchor on — still surface the prose so notebooks that are
+				// mostly narrative text don't look empty next to a handful of named cells.
+				const label = previewText(cell.markdown);
+				if (label) {
+					const id = `${cell.id}--text`;
+					if (!usedIds.has(id)) {
+						usedIds.add(id);
+						outline.push({ id, cellId: cell.id, kind: 'text', level: 1, label });
+					}
 				}
 			}
 			continue;

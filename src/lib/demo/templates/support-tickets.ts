@@ -57,7 +57,7 @@ Synthetic ticket data — 1,200 tickets with priority, status, and resolution ti
 
 {% grid cols=2 %}
 {% chart type="pie" data=$status_breakdown.rows x="status" y="ticket_count" title="Tickets by status" /%}
-{% datatable data=$monthly_trend.rows cols=["month","avg_resolution_days","ticket_volume_delta"] limit=12 /%}
+{% datatable data=$monthly_trend.rows cols=["month","avg_resolution_days","ticket_volume_delta"] title="Monthly trend" limit=12 /%}
 {% /grid %}`;
 
 	const cells: Cell[] = [
