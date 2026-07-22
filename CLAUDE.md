@@ -110,9 +110,12 @@ The Svelte MCP server (`@sveltejs/mcp`) is configured in `.vscode/mcp.json` and 
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
 
-Rules:
+Rules — no exceptions, no rationalizing around these:
 
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Before any grep/Read/Explore-agent use for a codebase question, run graphify first: `graphify explain "<symbol>"` for a focused node, `graphify path "<A>" "<B>"` for a relationship, `graphify query "<question>"` for broader orientation. This applies even when the question is about UI/visual/component code — "graphify won't converge on this" is not a valid reason to skip straight to grep; try explain/path on the specific component or handler name first.
+- It IS correct, not a rule violation, to follow up a graphify result with Read on the exact file/line it names, or with grep for an exact string once graphify has told you which file to look in. The rule is about what comes *first*, not a ban on ever reading files.
+- Only fall back to raw grep/Explore without graphify first when graphify genuinely returns zero relevant nodes for every phrasing tried — and say so explicitly in that turn ("graphify returned nothing for X, falling back to grep") rather than silently switching.
+- This applies to subagents too: any Task/Agent prompt that involves exploring this codebase must tell the subagent to use graphify first.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

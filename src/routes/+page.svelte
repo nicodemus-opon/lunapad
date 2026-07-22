@@ -7,6 +7,7 @@
 		restoreAttachedDatabasesFromIDB
 	} from '$lib/services/duckdb';
 	import { initPRQL } from '$lib/services/prql';
+	import { parseJupyterNotebook } from '$lib/services/jupyter-import';
 	import { withTimeout } from '$lib/services/async';
 	import { authClient } from '$lib/auth-client';
 	import Logo from '$lib/assets/logo.svelte';
@@ -26,6 +27,7 @@
 		addCellWithLanguage,
 		addMarkdownCell,
 		addNotebook,
+		createNotebookFromPmDocument,
 		renameNotebook,
 		createFolder,
 		setActiveTab,
@@ -995,6 +997,49 @@
 		(e.target as HTMLInputElement).value = '';
 	}
 
+	function handleImportJupyter() {
+		const input = document.getElementById('import-jupyter-input') as HTMLInputElement | null;
+		input?.click();
+	}
+	function onImportJupyterFile(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		(e.target as HTMLInputElement).value = '';
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = (ev) => {
+			try {
+				const existingOutputNames = getNotebooks().flatMap((n) =>
+					n.cells.map((c) => c.outputName).filter(Boolean)
+				);
+				const parsed = parseJupyterNotebook(
+					ev.target!.result as string,
+					file.name,
+					existingOutputNames
+				);
+				const notebookId = createNotebookFromPmDocument({
+					name: parsed.name,
+					document: parsed.document,
+					executableCells: parsed.executableCells
+				});
+				if (!notebookId) {
+					toast.error('Jupyter notebook had no importable cells');
+					return;
+				}
+				const kernel = parsed.kernelLanguage?.toLowerCase();
+				if (kernel && !['python', 'python3', 'ipython'].includes(kernel)) {
+					toast.warning(
+						`Kernel "${parsed.kernelLanguage}" isn't Python — code cells were imported as Python cells and may need adjustment.`
+					);
+				} else {
+					toast.success(`Imported "${parsed.name}"`);
+				}
+			} catch (err) {
+				toast.error(`Import failed: ${(err as Error).message}`);
+			}
+		};
+		reader.readAsText(file);
+	}
+
 	// ── Prev view name helper ─────────────────────────────────────────────────
 	function prevSourcesForCell(idx: number): GUISourceSchema[] {
 		// CTE expansion now works for all connection types (DuckDB, Postgres, ClickHouse).
@@ -1241,6 +1286,9 @@
 								{/if}
 								<DropdownMenu.Item onclick={handleImport}>
 									<FileDown class="h-3.5 w-3.5" /> Import notebook…
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={handleImportJupyter}>
+									<FileCode2 class="h-3.5 w-3.5" /> Import Jupyter notebook (.ipynb)…
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={handleExport}>
 									<FileUp class="h-3.5 w-3.5" /> Export notebook
@@ -1547,6 +1595,13 @@
 						accept=".json"
 						class="hidden"
 						onchange={onImportFile}
+					/>
+					<input
+						id="import-jupyter-input"
+						type="file"
+						accept=".ipynb"
+						class="hidden"
+						onchange={onImportJupyterFile}
 					/>
 				</div>
 			</div>
