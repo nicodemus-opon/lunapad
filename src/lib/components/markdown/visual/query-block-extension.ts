@@ -5,15 +5,7 @@ import type { Cell, CellDisplay } from '$lib/stores/notebook.svelte';
 import { setCellDisplay } from '$lib/stores/notebook.svelte';
 import QueryBlockNodeView from './QueryBlockNodeView.svelte';
 import { reactiveProps } from './reactive-props.svelte';
-
-/** Nearest element for a DOM event (handles text-node targets). */
-function eventTargetElement(event: Event): Element | null {
-	let node = event.target as globalThis.Node | null;
-	while (node && node.nodeType !== globalThis.Node.ELEMENT_NODE) {
-		node = node.parentNode;
-	}
-	return node as Element | null;
-}
+import { eventTargetElement } from './nodeview-utils';
 
 export interface QueryBlockExtensionContext {
 	getCells: () => Cell[];

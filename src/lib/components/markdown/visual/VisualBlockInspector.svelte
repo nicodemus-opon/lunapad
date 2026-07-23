@@ -338,13 +338,9 @@
 		<p class="nc-empty-copy">Choose a block in the document to edit its properties.</p>
 	</div>
 {:else if block.kind === 'fence'}
-	<div class="nc-stack">
-		<p class="nc-section-label">Source</p>
-		<Textarea
-			class="nc-textarea font-mono"
-			value={block.source}
-			oninput={(e) => onPatch({ source: e.currentTarget.value })}
-		></Textarea>
+	<div class="nc-empty">
+		<p class="nc-empty-title">Edit in place</p>
+		<p class="nc-empty-copy">This code block is edited directly in the canvas.</p>
 	</div>
 {:else if !parsed}
 	<div class="nc-empty">
@@ -766,6 +762,16 @@
 								<option value={r}>{r}</option>
 							{/each}
 						</NativeSelect>
+					{/snippet}
+				</NodeConfigField>
+
+				<NodeConfigField label="Title" hint="Shown above the table, next to search">
+					{#snippet control()}
+						<Input
+							class="nc-input"
+							value={attr(parsed.attrs.title)}
+							oninput={(e) => setAttr('title', e.currentTarget.value || undefined)}
+						/>
 					{/snippet}
 				</NodeConfigField>
 

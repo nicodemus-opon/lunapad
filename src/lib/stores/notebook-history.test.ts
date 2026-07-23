@@ -37,7 +37,8 @@ import {
 	canUndo,
 	canRedo,
 	getCells,
-	getNotebooks
+	getNotebooks,
+	notebookHistorySignal
 } from '$lib/stores/notebook.svelte';
 
 describe('notebook undo/redo + copy/paste/duplicate', () => {
@@ -180,6 +181,20 @@ describe('notebook undo/redo + copy/paste/duplicate', () => {
 		for (let i = 0; i < 55; i++) undo();
 		expect(canUndo()).toBe(false);
 		expect(getCells().length).toBeGreaterThan(1);
+	});
+
+	it('undo/redo bump notebookHistorySignal for the affected notebook so the visual editor can force a resync', () => {
+		const nbId = getNotebooks()[0].id;
+		const seqBefore = notebookHistorySignal.seq;
+
+		addCell();
+		undo();
+		expect(notebookHistorySignal.notebookId).toBe(nbId);
+		expect(notebookHistorySignal.seq).toBe(seqBefore + 1);
+
+		redo();
+		expect(notebookHistorySignal.notebookId).toBe(nbId);
+		expect(notebookHistorySignal.seq).toBe(seqBefore + 2);
 	});
 
 	it('history is scoped per notebook', () => {

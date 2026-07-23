@@ -5734,6 +5734,16 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 const MAX_HISTORY_DEPTH = 50;
 const historyStacks = new Map<string, { undo: CellSnapshot[][]; redo: CellSnapshot[][] }>();
 
+/** Bumped whenever undo()/redo() apply a history snapshot. NotebookDocumentEditor
+ *  watches this to force an immediate reconciliation of the on-screen document with
+ *  the reverted store state, bypassing the focus/debounce deferrals that exist only
+ *  to protect self-originated typing — those must never suppress an external
+ *  mutation like undo/redo. */
+export const notebookHistorySignal = $state<{ notebookId: string | null; seq: number }>({
+	notebookId: null,
+	seq: 0
+});
+
 function snapshotNotebookCells(nb: Notebook): CellSnapshot[] {
 	return nb.cells.map(cellToSnapshot);
 }
@@ -5760,6 +5770,8 @@ function applyHistorySnapshot(notebookId: string, snap: CellSnapshot[]): void {
 	if (!nb) return;
 	const liveIds = new Set(nb.cells.map((c) => c.id));
 	restoreCellSnapshots(notebookId, snap);
+	notebookHistorySignal.notebookId = notebookId;
+	notebookHistorySignal.seq++;
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		for (const s of snap) {
 			if (!liveIds.has(s.id)) scheduleFileSave(notebookId, s.id);

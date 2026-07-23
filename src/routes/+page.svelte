@@ -222,7 +222,8 @@
 		LogOut,
 		ShieldUser,
 		Sigma,
-		CalendarDays
+		CalendarDays,
+		LayoutGrid
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -1184,86 +1185,100 @@
 								<DropdownMenu.Item onclick={() => (templateGalleryOpen = true)}>
 									<FlaskConical class="h-3.5 w-3.5" /> Browse templates
 								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
-									<Code2 class="h-3.5 w-3.5" /> New PRQL cell
-									<DropdownMenu.Shortcut>⇧⌘↵</DropdownMenu.Shortcut>
-								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => addCellWithLanguage('sql')}>
-									<FileCode2 class="h-3.5 w-3.5" /> New SQL cell
-								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => addMarkdownCell()}>
-									<BookOpen class="h-3.5 w-3.5" /> New markdown cell
-									<DropdownMenu.Shortcut>⇧⌘M</DropdownMenu.Shortcut>
-								</DropdownMenu.Item>
-								{#if canAddUdfCell()}
-									<DropdownMenu.Item onclick={() => addUdfCell()}>
-										<FileCode2 class="h-3.5 w-3.5" /> New Python UDF cell
-									</DropdownMenu.Item>
-								{/if}
-								{#if canAddPlotCell()}
-									<DropdownMenu.Item onclick={() => addPlotCell()}>
-										<BarChart2 class="h-3.5 w-3.5" /> New plot cell
-									</DropdownMenu.Item>
-								{/if}
-								{#if canAddPythonCell()}
-									<DropdownMenu.Item onclick={() => addPythonCell()}>
-										<FileCode2 class="h-3.5 w-3.5" /> New Python cell
-									</DropdownMenu.Item>
-								{/if}
+								<DropdownMenu.Separator />
+								<DropdownMenu.Sub>
+									<DropdownMenu.SubTrigger>
+										<Code2 class="h-3.5 w-3.5" /> New cell
+									</DropdownMenu.SubTrigger>
+									<DropdownMenu.SubContent>
+										<DropdownMenu.Item onclick={() => addCellWithLanguage('prql')}>
+											<Code2 class="h-3.5 w-3.5" /> New PRQL cell
+											<DropdownMenu.Shortcut>⇧⌘↵</DropdownMenu.Shortcut>
+										</DropdownMenu.Item>
+										<DropdownMenu.Item onclick={() => addCellWithLanguage('sql')}>
+											<FileCode2 class="h-3.5 w-3.5" /> New SQL cell
+										</DropdownMenu.Item>
+										<DropdownMenu.Item onclick={() => addMarkdownCell()}>
+											<BookOpen class="h-3.5 w-3.5" /> New markdown cell
+											<DropdownMenu.Shortcut>⇧⌘M</DropdownMenu.Shortcut>
+										</DropdownMenu.Item>
+										{#if canAddUdfCell()}
+											<DropdownMenu.Item onclick={() => addUdfCell()}>
+												<FileCode2 class="h-3.5 w-3.5" /> New Python UDF cell
+											</DropdownMenu.Item>
+										{/if}
+										{#if canAddPlotCell()}
+											<DropdownMenu.Item onclick={() => addPlotCell()}>
+												<BarChart2 class="h-3.5 w-3.5" /> New plot cell
+											</DropdownMenu.Item>
+										{/if}
+										{#if canAddPythonCell()}
+											<DropdownMenu.Item onclick={() => addPythonCell()}>
+												<FileCode2 class="h-3.5 w-3.5" /> New Python cell
+											</DropdownMenu.Item>
+										{/if}
+									</DropdownMenu.SubContent>
+								</DropdownMenu.Sub>
 								{#if canAddControlCell()}
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('text-input')}>
-										<Info class="h-3.5 w-3.5" /> New text input
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('number-input')}>
-										<Sigma class="h-3.5 w-3.5" /> New number input
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('slider')}>
-										<ChevronsDownUp class="h-3.5 w-3.5" /> New slider
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('date-input')}>
-										<CalendarDays class="h-3.5 w-3.5" /> New date input
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('date-range')}>
-										<CalendarDays class="h-3.5 w-3.5" /> New date range
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('checkbox')}>
-										<Check class="h-3.5 w-3.5" /> New checkbox
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('select')}>
-										<ChevronsUpDown class="h-3.5 w-3.5" /> New select input
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('multiselect')}>
-										<ListTree class="h-3.5 w-3.5" /> New multiselect
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('run-button')}>
-										<Play class="h-3.5 w-3.5" /> New run button
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('file-upload')}>
-										<Upload class="h-3.5 w-3.5" /> New file upload
-									</DropdownMenu.Item>
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('table-input')}>
-										<Table2 class="h-3.5 w-3.5" /> New editable table
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('table-display')}>
-										<Table2 class="h-3.5 w-3.5" /> New rich table
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('pivot')}>
-										<Network class="h-3.5 w-3.5" /> New pivot cell
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('map')}>
-										<Globe class="h-3.5 w-3.5" /> New map cell
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('single-value')}>
-										<BarChart2 class="h-3.5 w-3.5" /> New single value
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('writeback')}>
-										<ShieldUser class="h-3.5 w-3.5" /> New writeback
-									</DropdownMenu.Item>
-									<DropdownMenu.Item onclick={() => insertControlCellFromGui('agent')}>
-										<Sparkles class="h-3.5 w-3.5" /> New agent block
-									</DropdownMenu.Item>
+									<DropdownMenu.Sub>
+										<DropdownMenu.SubTrigger>
+											<LayoutGrid class="h-3.5 w-3.5" /> Insert block
+										</DropdownMenu.SubTrigger>
+										<DropdownMenu.SubContent>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('text-input')}>
+												<Info class="h-3.5 w-3.5" /> New text input
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('number-input')}>
+												<Sigma class="h-3.5 w-3.5" /> New number input
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('slider')}>
+												<ChevronsDownUp class="h-3.5 w-3.5" /> New slider
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('date-input')}>
+												<CalendarDays class="h-3.5 w-3.5" /> New date input
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('date-range')}>
+												<CalendarDays class="h-3.5 w-3.5" /> New date range
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('checkbox')}>
+												<Check class="h-3.5 w-3.5" /> New checkbox
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('select')}>
+												<ChevronsUpDown class="h-3.5 w-3.5" /> New select input
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('multiselect')}>
+												<ListTree class="h-3.5 w-3.5" /> New multiselect
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('run-button')}>
+												<Play class="h-3.5 w-3.5" /> New run button
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('file-upload')}>
+												<Upload class="h-3.5 w-3.5" /> New file upload
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('table-input')}>
+												<Table2 class="h-3.5 w-3.5" /> New editable table
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('table-display')}>
+												<Table2 class="h-3.5 w-3.5" /> New rich table
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('pivot')}>
+												<Network class="h-3.5 w-3.5" /> New pivot cell
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('map')}>
+												<Globe class="h-3.5 w-3.5" /> New map cell
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('single-value')}>
+												<BarChart2 class="h-3.5 w-3.5" /> New single value
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('writeback')}>
+												<ShieldUser class="h-3.5 w-3.5" /> New writeback
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => insertControlCellFromGui('agent')}>
+												<Sparkles class="h-3.5 w-3.5" /> New agent block
+											</DropdownMenu.Item>
+										</DropdownMenu.SubContent>
+									</DropdownMenu.Sub>
 								{/if}
 								<DropdownMenu.Separator />
 								{#if !data.demoMode}

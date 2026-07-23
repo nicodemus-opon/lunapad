@@ -37,6 +37,7 @@
 		patchMarkdocNodeSelection,
 		type MarkdocSelectedNode
 	} from './markdoc-node-selection';
+	import { isFenceSource } from './fence-source';
 	import { clampContextMenuPosition, clampMenuPosition, handleMenuKeyDown } from './menu-utils';
 	import BodyPortal from '$lib/components/ui/body-portal.svelte';
 	import { Plus, Copy, Trash2, X, ArrowUp, ArrowDown } from '@lucide/svelte';
@@ -88,15 +89,21 @@
 	let linkPopoverPos = $state({ top: 0, left: 0 });
 	let linkPopoverEditor: TipTapEditor | null = null;
 
-	// Media insert popover ("/image" slash command)
+	// Media insert popover ("/image" slash command, or clicking an existing image to edit it)
 	let mediaPopoverOpen = $state(false);
 	let mediaPopoverKind = $state<'image' | 'video'>('image');
 	let mediaPopoverPos = $state({ top: 0, left: 0 });
 	let mediaPopoverEditor: TipTapEditor | null = null;
+	let mediaPopoverEditPos = $state<number | null>(null);
+	let mediaPopoverInitialSrc = $state<string | undefined>(undefined);
+	let mediaPopoverInitialAlt = $state('');
 
 	function onRequestMedia(kind: 'image' | 'video', ed: TipTapEditor) {
 		mediaPopoverEditor = ed;
 		mediaPopoverKind = kind;
+		mediaPopoverEditPos = null;
+		mediaPopoverInitialSrc = undefined;
+		mediaPopoverInitialAlt = '';
 		const coords = ed.view.coordsAtPos(ed.state.selection.from);
 		mediaPopoverPos = clampMenuPosition(
 			{ top: coords.top, left: coords.left, bottom: coords.bottom },
@@ -105,13 +112,32 @@
 		mediaPopoverOpen = true;
 	}
 
-	function applyMediaInsert(src: string) {
+	// Selecting an already-placed image (NodeSelection) reopens the same popover
+	// prefilled, so editing a real image doesn't require a separate properties UI.
+	function onImageNodeSelected(ed: TipTapEditor, pos: number, attrs: Record<string, unknown>) {
+		mediaPopoverEditor = ed;
+		mediaPopoverKind = 'image';
+		mediaPopoverEditPos = pos;
+		mediaPopoverInitialSrc = typeof attrs.src === 'string' ? attrs.src : undefined;
+		mediaPopoverInitialAlt = typeof attrs.alt === 'string' ? attrs.alt : '';
+		const coords = ed.view.coordsAtPos(pos);
+		mediaPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 160 }
+		);
+		mediaPopoverOpen = true;
+	}
+
+	function applyMediaInsert(src: string, alt?: string) {
 		const ed = mediaPopoverEditor;
 		const kind = mediaPopoverKind;
+		const editPos = mediaPopoverEditPos;
 		mediaPopoverOpen = false;
 		if (!ed) return;
-		if (kind === 'image') {
-			ed.chain().focus().setImage({ src }).run();
+		if (kind === 'image' && editPos !== null) {
+			ed.chain().focus().setNodeSelection(editPos).updateAttributes('image', { src, alt }).run();
+		} else if (kind === 'image') {
+			ed.chain().focus().setImage({ src, alt }).run();
 		} else {
 			const content = pmContentFromSnippet(`{% video src=${JSON.stringify(src)} /%}`);
 			ed.chain().focus().insertContent(content).run();
@@ -325,7 +351,16 @@
 
 	function syncSelection(ed: TipTapEditor) {
 		if (!NodeSelectionCtor) return;
-		selectedNodeInfo = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
+		const sel = ed.state.selection;
+		if (sel instanceof NodeSelectionCtor && sel.node.type.name === 'image') {
+			selectedNodeInfo = null;
+			onImageNodeSelected(ed, sel.from, sel.node.attrs);
+			return;
+		}
+		const next = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
+		// Fence blocks are edited in-canvas now (FenceBlockView) — the properties
+		// popover has nothing left to show for them.
+		selectedNodeInfo = next?.type === 'block' && isFenceSource(next.source) ? null : next;
 	}
 
 	function emitNow(ed: TipTapEditor) {
@@ -824,6 +859,8 @@
 				>
 					<MediaInsertPopover
 						kind={mediaPopoverKind}
+						initialSrc={mediaPopoverInitialSrc}
+						initialAlt={mediaPopoverInitialAlt}
 						onInsert={applyMediaInsert}
 						onCancel={() => {
 							mediaPopoverOpen = false;

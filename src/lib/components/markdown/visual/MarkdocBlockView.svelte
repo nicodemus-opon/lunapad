@@ -4,8 +4,8 @@
 	import type { Cell } from '$lib/stores/notebook.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Trash2 } from '@lucide/svelte';
-	import MermaidFenceView from './MermaidFenceView.svelte';
-	import { isMermaidFenceSource } from './mermaid-code';
+	import FenceBlockView from './FenceBlockView.svelte';
+	import { isFenceSource } from './fence-source';
 
 	interface Props {
 		source: string;
@@ -14,16 +14,31 @@
 		selected?: boolean;
 		onSelect?: () => void;
 		onDelete?: () => void;
+		onSourceChange?: (source: string) => void;
 	}
 
-	const { source, cells, notebookId = '', selected = false, onSelect, onDelete }: Props = $props();
+	const {
+		source,
+		cells,
+		notebookId = '',
+		selected = false,
+		onSelect,
+		onDelete,
+		onSourceChange
+	}: Props = $props();
 
 	const rendered = $derived(renderMarkdocCell(source, cells));
-	const isMermaid = $derived(isMermaidFenceSource(source));
+	const isFence = $derived(isFenceSource(source));
 </script>
 
-{#if isMermaid}
-	<MermaidFenceView {source} {selected} {onSelect} {onDelete} />
+{#if isFence}
+	<FenceBlockView
+		{source}
+		{selected}
+		onSourceChange={(next) => onSourceChange?.(next)}
+		{onSelect}
+		{onDelete}
+	/>
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div

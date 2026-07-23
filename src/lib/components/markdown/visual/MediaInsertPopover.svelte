@@ -3,17 +3,23 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { sanitizeUrl } from '$lib/services/safe-url';
+	import { untrack } from 'svelte';
 
 	interface Props {
 		kind: 'image' | 'video';
-		onInsert: (src: string) => void;
+		initialSrc?: string;
+		initialAlt?: string;
+		onInsert: (src: string, alt?: string) => void;
 		onCancel: () => void;
 	}
 
-	const { kind, onInsert, onCancel }: Props = $props();
+	const { kind, initialSrc, initialAlt = '', onInsert, onCancel }: Props = $props();
 
+	// Popover is remounted fresh each time it opens (guarded by an #if block in the
+	// caller), so this is intentionally a one-time snapshot, not a live binding.
 	let tab = $state<'url' | 'upload'>('url');
-	let url = $state('https://');
+	let url = $state(untrack(() => initialSrc ?? 'https://'));
+	let alt = $state(untrack(() => initialAlt));
 	let error = $state('');
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let fileInputEl = $state<HTMLInputElement | null>(null);
@@ -28,7 +34,7 @@
 			error = 'Enter a valid http(s) URL';
 			return;
 		}
-		onInsert(safe);
+		onInsert(safe, kind === 'image' ? alt.trim() : undefined);
 	}
 
 	function onFileChange(e: Event) {
@@ -42,7 +48,7 @@
 		const reader = new FileReader();
 		reader.onload = () => {
 			const src = reader.result;
-			if (typeof src === 'string') onInsert(src);
+			if (typeof src === 'string') onInsert(src, kind === 'image' ? alt.trim() : undefined);
 		};
 		reader.readAsDataURL(file);
 	}
@@ -110,6 +116,24 @@
 			accept={kind === 'video' ? 'video/*' : 'image/*'}
 			class="hidden"
 			onchange={onFileChange}
+		/>
+	{/if}
+
+	{#if kind === 'image'}
+		<Input
+			type="text"
+			class="h-7 min-w-0 text-xs"
+			placeholder="Alt text (optional)"
+			bind:value={alt}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					applyUrl();
+				} else if (e.key === 'Escape') {
+					e.preventDefault();
+					onCancel();
+				}
+			}}
 		/>
 	{/if}
 

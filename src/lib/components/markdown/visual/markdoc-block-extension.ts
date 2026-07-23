@@ -3,6 +3,7 @@ import { mount, unmount } from 'svelte';
 import type { Cell } from '$lib/stores/notebook.svelte';
 import MarkdocBlockView from './MarkdocBlockView.svelte';
 import { reactiveProps } from './reactive-props.svelte';
+import { eventTargetElement } from './nodeview-utils';
 
 export interface MarkdocBlockExtensionContext {
 	getCells: () => Cell[];
@@ -15,6 +16,7 @@ export const MarkdocBlockExtension = Node.create({
 	atom: true,
 	defining: true,
 	isolating: true,
+	selectable: true,
 
 	addAttributes() {
 		return {
@@ -54,6 +56,17 @@ export const MarkdocBlockExtension = Node.create({
 					const pos = getPos();
 					if (typeof pos !== 'number') return;
 					editor.chain().focus().setNodeSelection(pos).deleteSelection().run();
+				},
+				onSourceChange: (next: string) => {
+					editor
+						.chain()
+						.command(({ tr }) => {
+							const pos = getPos();
+							if (typeof pos !== 'number') return false;
+							tr.setNodeAttribute(pos, 'source', next);
+							return true;
+						})
+						.run();
 				}
 			});
 
@@ -79,7 +92,14 @@ export const MarkdocBlockExtension = Node.create({
 					props.selected = false;
 					dom.classList.remove('ProseMirror-selectednode');
 				},
-				stopEvent() {
+				stopEvent(event) {
+					// contentEditable=false on `dom`, but fence sources mount a live Monaco
+					// editor inside it — PM must stay hands-off events within the node so
+					// typing/selection/clicks inside Monaco (or the mermaid mode bar) work.
+					const el = eventTargetElement(event);
+					return Boolean(el?.closest('.markdoc-block-node'));
+				},
+				ignoreMutation() {
 					return true;
 				}
 			};

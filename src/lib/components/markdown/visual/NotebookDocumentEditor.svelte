@@ -23,7 +23,8 @@
 		insertControlBlockCell,
 		removeQueryBlockCell,
 		duplicateQueryBlockCell,
-		getNotebooks
+		getNotebooks,
+		notebookHistorySignal
 	} from '$lib/stores/notebook.svelte';
 	import { buildNotebookDocumentExtensions } from './notebook-document-extensions';
 	import { createRefreshBus } from './nodeview-refresh-bus';
@@ -46,6 +47,7 @@
 		patchMarkdocNodeSelection,
 		type MarkdocSelectedNode
 	} from './markdoc-node-selection';
+	import { isFenceSource } from './fence-source';
 	import { findFilterUsages } from '$lib/services/markdoc-visual-analysis';
 	import { createDragGutter, type DragGutterHandle } from './drag-gutter';
 	import { openCommentPanel } from '$lib/stores/comments.svelte';
@@ -90,6 +92,7 @@
 	/** Notebook id the editor content belongs to — guards blur/debounced emits after tab switches. */
 	let editingNotebookId: string | null = null;
 	let loadedNotebookId: string | null = null;
+	let lastReconciledHistorySeq = -1;
 	let reconcilingFromStore = false;
 	let dragGutter: DragGutterHandle | null = null;
 
@@ -107,15 +110,21 @@
 	let mentionCommandFn = $state<((item: { id: string; label: string }) => void) | null>(null);
 	let mentionMenuPos = $state({ top: 0, left: 0 });
 
-	// Media insert popover ("/image" slash command)
+	// Media insert popover ("/image" slash command, or clicking an existing image to edit it)
 	let mediaPopoverOpen = $state(false);
 	let mediaPopoverKind = $state<'image' | 'video'>('image');
 	let mediaPopoverPos = $state({ top: 0, left: 0 });
 	let mediaPopoverEditor: TipTapEditor | null = null;
+	let mediaPopoverEditPos = $state<number | null>(null);
+	let mediaPopoverInitialSrc = $state<string | undefined>(undefined);
+	let mediaPopoverInitialAlt = $state('');
 
 	function onRequestMedia(kind: 'image' | 'video', ed: TipTapEditor) {
 		mediaPopoverEditor = ed;
 		mediaPopoverKind = kind;
+		mediaPopoverEditPos = null;
+		mediaPopoverInitialSrc = undefined;
+		mediaPopoverInitialAlt = '';
 		const coords = ed.view.coordsAtPos(ed.state.selection.from);
 		mediaPopoverPos = clampMenuPosition(
 			{ top: coords.top, left: coords.left, bottom: coords.bottom },
@@ -124,13 +133,32 @@
 		mediaPopoverOpen = true;
 	}
 
-	function applyMediaInsert(src: string) {
+	// Selecting an already-placed image (NodeSelection) reopens the same popover
+	// prefilled, so editing a real image doesn't require a separate properties UI.
+	function onImageNodeSelected(ed: TipTapEditor, pos: number, attrs: Record<string, unknown>) {
+		mediaPopoverEditor = ed;
+		mediaPopoverKind = 'image';
+		mediaPopoverEditPos = pos;
+		mediaPopoverInitialSrc = typeof attrs.src === 'string' ? attrs.src : undefined;
+		mediaPopoverInitialAlt = typeof attrs.alt === 'string' ? attrs.alt : '';
+		const coords = ed.view.coordsAtPos(pos);
+		mediaPopoverPos = clampMenuPosition(
+			{ top: coords.top, left: coords.left, bottom: coords.bottom },
+			{ width: 288, height: 160 }
+		);
+		mediaPopoverOpen = true;
+	}
+
+	function applyMediaInsert(src: string, alt?: string) {
 		const ed = mediaPopoverEditor;
 		const kind = mediaPopoverKind;
+		const editPos = mediaPopoverEditPos;
 		mediaPopoverOpen = false;
 		if (!ed) return;
-		if (kind === 'image') {
-			ed.chain().focus().setImage({ src }).run();
+		if (kind === 'image' && editPos !== null) {
+			ed.chain().focus().setNodeSelection(editPos).updateAttributes('image', { src, alt }).run();
+		} else if (kind === 'image') {
+			ed.chain().focus().setImage({ src, alt }).run();
 		} else {
 			const content = pmContentFromSnippet(`{% video src=${JSON.stringify(src)} /%}`);
 			ed.chain().focus().insertContent(content).run();
@@ -574,7 +602,15 @@
 
 	function syncSelection(ed: TipTapEditor) {
 		if (!NodeSelectionCtor) return;
-		const next = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
+		const sel = ed.state.selection;
+		if (sel instanceof NodeSelectionCtor && sel.node.type.name === 'image') {
+			onImageNodeSelected(ed, sel.from, sel.node.attrs);
+			return;
+		}
+		const raw = syncMarkdocNodeSelection(ed, NodeSelectionCtor);
+		// Fence blocks are edited in-canvas now (FenceBlockView) — the properties
+		// popover has nothing left to show for them.
+		const next = raw?.type === 'block' && isFenceSource(raw.source) ? null : raw;
 		if (next) {
 			selectedNodeInfo = next;
 			nodeConfigOpen = true;
@@ -894,6 +930,9 @@
 		const id = notebookId;
 		const layoutKey = c.map((cell) => cell.id).join('\0');
 		void layoutKey;
+		// Read outside untrack() so an undo/redo bump for this notebook reschedules
+		// this effect; -1 when the last bump belonged to a different notebook.
+		const historySeq = notebookHistorySignal.notebookId === id ? notebookHistorySignal.seq : -1;
 
 		untrack(() => {
 			if (!editor) return;
@@ -902,11 +941,33 @@
 			// flush stale editor JSON into the newly active notebook id.
 			if (loadedNotebookId !== null && loadedNotebookId !== id) {
 				resetEditorForNotebookSwitch(c);
+				lastReconciledHistorySeq = historySeq;
 				return;
 			}
 
 			if (loadedNotebookId === null) loadedNotebookId = id;
 			latestCells = c;
+
+			const isHistoryRevert = historySeq !== -1 && historySeq !== lastReconciledHistorySeq;
+			lastReconciledHistorySeq = historySeq;
+
+			if (isHistoryRevert) {
+				// undo()/redo() mutated the store directly — this must be reflected on
+				// screen immediately regardless of focus/debounce state below (those
+				// guards only protect in-progress self-typing). Cancel (never flush)
+				// any in-flight debounced emit: flushing it would push the stale
+				// pre-undo on-screen content right back over the store, clobbering
+				// the undo the user just performed.
+				if (emitTimer) {
+					clearTimeout(emitTimer);
+					emitTimer = null;
+				}
+				pendingReconcile = false;
+				blurFlushPending = false;
+				reconcileFromCells(c);
+				return;
+			}
+
 			if (emitTimer) {
 				pendingReconcile = true;
 				return;
@@ -1031,6 +1092,8 @@
 			>
 				<MediaInsertPopover
 					kind={mediaPopoverKind}
+					initialSrc={mediaPopoverInitialSrc}
+					initialAlt={mediaPopoverInitialAlt}
 					onInsert={applyMediaInsert}
 					onCancel={() => {
 						mediaPopoverOpen = false;
