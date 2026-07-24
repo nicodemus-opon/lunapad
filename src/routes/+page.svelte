@@ -139,7 +139,6 @@
 	import MarkdocPreviewProvider from '$lib/components/markdown/MarkdocPreviewProvider.svelte';
 	import NotebookBreadcrumbs from '$lib/components/notebook/NotebookBreadcrumbs.svelte';
 	import NotebookBacklinks from '$lib/components/notebook/NotebookBacklinks.svelte';
-	import ProjectSection from '$lib/components/ProjectSection.svelte';
 	import ProjectSwitcher from '$lib/components/ProjectSwitcher.svelte';
 	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
@@ -579,6 +578,9 @@
 
 	function updateSidebarFromClientX(clientX: number) {
 		if (sidebarDragRectLeft === null) {
+			// layoutRoot is captured in onMount before #layout-root exists (it only
+			// mounts once dbReady flips true), so re-query lazily if it's still unset.
+			if (!layoutRoot) layoutRoot = document.getElementById('layout-root') as HTMLDivElement | null;
 			if (!layoutRoot) return;
 			const rect = layoutRoot.getBoundingClientRect();
 			if (rect.width <= 0) return;
@@ -1750,8 +1752,6 @@
 					inert={sidebarCollapsed}
 					aria-hidden={sidebarCollapsed}
 				>
-					<ProjectSection />
-
 					{#key activeSidebarPanel}
 						<div
 							class="flex min-h-0 flex-1 flex-col overflow-hidden"
