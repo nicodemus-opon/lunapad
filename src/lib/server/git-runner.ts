@@ -112,8 +112,20 @@ function buildGit(
 ): { git: SimpleGit; cleanup: () => void } {
 	assertAllowedProjectFolder(cwd);
 	const auth = prepareGitAuth(credential);
-	let git = simpleGit({ baseDir: cwd }).env(auth.env);
-	for (const [key, value] of auth.config) git = git.addConfig(key, value);
+	// Pass per-invocation config as `-c key=value` spawn args (simple-git's `config`
+	// option), not via .addConfig() — addConfig runs `git config --local`, which
+	// persists into the repo's shared .git/config on disk. Since multiple git
+	// operations against the same folder can overlap (status/remote polls alongside
+	// a push), that persistent write raced across requests, letting one request's
+	// git process pick up another's already-cleaned-up ephemeral key path.
+	// core.sshCommand is flagged as a vulnerability category by simple-git's
+	// injection guard; the value here is always our own server-built ssh
+	// invocation (never user input), so it's safe to allow.
+	const git = simpleGit({
+		baseDir: cwd,
+		unsafe: { allowUnsafeSshCommand: true },
+		config: auth.config.map(([key, value]) => `${key}=${value}`)
+	}).env(auth.env);
 	return { git, cleanup: auth.cleanup };
 }
 

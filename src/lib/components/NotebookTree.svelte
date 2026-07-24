@@ -5,6 +5,7 @@
 	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import GitStatusBadge from '$lib/components/git/GitStatusBadge.svelte';
 	import {
 		addNotebook,
 		addNotebookInFolder,
@@ -17,7 +18,9 @@
 		getExpandedNotebookIds,
 		getFolders,
 		getNotebooks,
+		getNotebookGitPaths,
 		getOpenNotebookTabIds,
+		getProjectFolder,
 		isNotebookDirty,
 		isFolderEmpty,
 		moveNotebookToFolder,
@@ -34,6 +37,7 @@
 		type Notebook,
 		type NotebookFolder
 	} from '$lib/stores/notebook.svelte';
+	import { refreshGitStatus, getGitStatusForPaths } from '$lib/stores/git.svelte';
 	import { buildNotebookOutline } from '$lib/services/notebook-outline';
 	import { toast } from 'svelte-sonner';
 	import { fade } from 'svelte/transition';
@@ -98,6 +102,22 @@
 	const expandedNotebookIds = $derived(getExpandedNotebookIds());
 	const openTabIds = $derived(getOpenNotebookTabIds());
 	const favoriteIds = $derived(getFavoriteNotebookIds());
+	const projectFolder = $derived(getProjectFolder());
+
+	$effect(() => {
+		if (projectFolder) void refreshGitStatus(projectFolder);
+	});
+
+	function notebookGitStatus(notebook: Notebook) {
+		return getGitStatusForPaths(getNotebookGitPaths(notebook));
+	}
+
+	function folderHasGitChanges(folderId: string): boolean {
+		const childNotebooks = notebooks.filter((n) => n.folderId === folderId);
+		if (childNotebooks.some((n) => notebookGitStatus(n) !== undefined)) return true;
+		const childFolders = folders.filter((f) => f.parentId === folderId);
+		return childFolders.some((f) => folderHasGitChanges(f.id));
+	}
 
 	let renamingNotebookId = $state<string | null>(null);
 	let renamingFolderId = $state<string | null>(null);
@@ -413,11 +433,19 @@
 									}}
 								>
 									{#snippet icon()}
-										{#if isExpanded}
-											<FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-										{:else}
-											<Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-										{/if}
+										<span class="relative shrink-0">
+											{#if isExpanded}
+												<FolderOpen class="h-3.5 w-3.5 text-muted-foreground" />
+											{:else}
+												<Folder class="h-3.5 w-3.5 text-muted-foreground" />
+											{/if}
+											{#if folderHasGitChanges(row.folder.id)}
+												<span
+													class="absolute -right-0.5 -bottom-0.5 h-1.5 w-1.5 rounded-full bg-warning/90 ring-1 ring-background"
+													title="Contains uncommitted changes"
+												></span>
+											{/if}
+										</span>
 									{/snippet}
 									{#snippet label()}
 										{#if renamingFolderId === row.folder.id}
@@ -461,6 +489,7 @@
 					{@const isOpen = openTabIds.includes(row.notebook.id)}
 					{@const isDragging = draggingNotebookId === row.notebook.id}
 					{@const isExpanded = expandedNotebookIds.includes(row.notebook.id)}
+					{@const gitStatus = notebookGitStatus(row.notebook)}
 					<div in:fade={{ duration: fadeMs }}>
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
@@ -486,6 +515,9 @@
 												? 'text-foreground'
 												: 'text-muted-foreground'}"
 										/>
+										{#if gitStatus}
+											<GitStatusBadge status={gitStatus} class="shrink-0" />
+										{/if}
 									{/snippet}
 									{#snippet label()}
 										{#if renamingNotebookId === row.notebook.id}

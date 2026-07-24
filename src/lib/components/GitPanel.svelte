@@ -16,8 +16,8 @@
 		FolderGit2
 	} from '@lucide/svelte';
 	import { getProjectFolder } from '$lib/stores/notebook.svelte';
+	import { refreshGitStatus, getRawGitStatus } from '$lib/stores/git.svelte';
 	import {
-		gitStatus,
 		gitBranches,
 		gitLog,
 		gitStage,
@@ -34,7 +34,6 @@
 		watchGitLogs
 	} from '$lib/services/git-client';
 	import type {
-		GitStatus,
 		GitBranches,
 		GitCommitLogEntry,
 		GitFileStatus,
@@ -45,10 +44,11 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import GitStatusBadge from '$lib/components/git/GitStatusBadge.svelte';
 	import GitDiffView from '$lib/components/git/GitDiffView.svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 
 	const projectFolder = $derived(getProjectFolder());
 
-	let status = $state<GitStatus | null>(null);
+	const status = $derived(getRawGitStatus());
 	let remote = $state<GitRemoteInfo | null>(null);
 	let loadingStatus = $state(false);
 	let commitMessage = $state('');
@@ -73,13 +73,16 @@
 
 	let discardTarget = $state<{ paths: string[]; untracked: boolean } | null>(null);
 	let discardConfirmOpen = $state(false);
+	let forcePushConfirmOpen = $state(false);
 
 	async function refresh() {
 		if (!projectFolder) return;
 		loadingStatus = true;
 		try {
-			const [s, r] = await Promise.all([gitStatus(projectFolder), gitGetRemote(projectFolder)]);
-			status = s;
+			const [, r] = await Promise.all([
+				refreshGitStatus(projectFolder),
+				gitGetRemote(projectFolder)
+			]);
 			remote = r;
 		} catch (err) {
 			toast.error((err as Error).message ?? 'Failed to load git status');
@@ -185,6 +188,10 @@
 		} catch (err) {
 			toast.error((err as Error).message ?? 'Failed to discard changes');
 		}
+	}
+
+	async function performForcePush() {
+		await doPush(true);
 	}
 
 	async function toggleDiff(file: { path: string; staged: boolean; untracked?: boolean }) {
@@ -413,6 +420,20 @@
 				>
 					<ArrowUp class="h-3.5 w-3.5" />
 				</button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class="inline-flex h-6 w-4 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
+						title="More push options"
+						disabled={busy || !status.hasRemote}
+					>
+						<ChevronDown class="h-3 w-3" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content side="bottom" align="end" class="min-w-40">
+						<DropdownMenu.Item variant="destructive" onclick={() => (forcePushConfirmOpen = true)}>
+							<ArrowUp class="h-3.5 w-3.5" /> Force push…
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			</div>
 		{/if}
 	</div>
@@ -738,4 +759,12 @@
 		: 'This discards all uncommitted changes to the selected file(s). This cannot be undone.'}
 	confirmLabel={discardTarget?.untracked ? 'Delete' : 'Discard'}
 	onConfirm={performDiscard}
+/>
+
+<ConfirmDialog
+	bind:open={forcePushConfirmOpen}
+	title="Force push?"
+	body="This overwrites the remote branch's history with your local branch. Anyone else's unpushed or diverged commits on the remote will be lost. This cannot be undone."
+	confirmLabel="Force push"
+	onConfirm={performForcePush}
 />

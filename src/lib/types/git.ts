@@ -1,5 +1,8 @@
 export type GitFileStatusCode = 'M' | 'A' | 'D' | 'R' | 'C' | 'U';
 
+/** Status codes accepted by GitStatusBadge — tracked codes plus '?' for untracked files. */
+export type GitDisplayStatus = GitFileStatusCode | '?';
+
 export interface GitFileStatus {
 	path: string;
 	status: GitFileStatusCode;

@@ -2571,6 +2571,16 @@ function getRelativeCellPath(notebook: Notebook, cell: Cell): string | null {
 	return getRelativeNotebookPath(notebook, cell);
 }
 
+/** All on-disk paths backing a notebook, for matching against git status.
+ *  `.luna` notebooks are one file; `flat` notebooks are one file per cell. */
+export function getNotebookGitPaths(notebook: Notebook): string[] {
+	if (notebook.format === 'luna') return [`${notebook.id}.luna`];
+	const paths = notebook.cells
+		.map((cell) => getRelativeNotebookPath(notebook, cell))
+		.filter((p): p is string => p !== null);
+	return [...new Set(paths)];
+}
+
 /** All known model outputNames across the project, for ref() injection on save. */
 function allProjectModelNames(): string[] {
 	return state.notebooks.flatMap((nb) =>
@@ -7528,7 +7538,9 @@ async function runWritebackCell(cell: Cell, nb: Notebook, idx: number): Promise<
 	cell.errors = [];
 	if (!wb?.allowWrite) {
 		cell.status = 'error';
-		cell.errors = [makeWritebackError('Enable "Allow writes" in the control settings before running.')];
+		cell.errors = [
+			makeWritebackError('Enable "Allow writes" in the control settings before running.')
+		];
 		return;
 	}
 	if (!wb.connectionId || !wb.target.trim()) {
@@ -7544,7 +7556,11 @@ async function runWritebackCell(cell: Cell, nb: Notebook, idx: number): Promise<
 	}
 	if (isBuiltinDuckDBConnection(connection)) {
 		cell.status = 'error';
-		cell.errors = [makeWritebackError('Writeback needs an external connection — the built-in DuckDB is read-only here.')];
+		cell.errors = [
+			makeWritebackError(
+				'Writeback needs an external connection — the built-in DuckDB is read-only here.'
+			)
+		];
 		return;
 	}
 
@@ -7561,7 +7577,9 @@ async function runWritebackCell(cell: Cell, nb: Notebook, idx: number): Promise<
 	}
 	if (!source?.result?.rows.length) {
 		cell.status = 'error';
-		cell.errors = [makeWritebackError('No upstream query result to write — add a query cell above this one.')];
+		cell.errors = [
+			makeWritebackError('No upstream query result to write — add a query cell above this one.')
+		];
 		return;
 	}
 
