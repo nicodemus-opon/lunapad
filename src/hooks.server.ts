@@ -21,6 +21,7 @@ import {
 } from '$lib/server/permissions';
 import { startShareRefreshWorker } from '$lib/server/share-refresh-worker';
 import { startTrinoCatalogReconciler } from '$lib/server/trino-reconcile-worker';
+import { ensureBaseTrinoAccessFile } from '$lib/server/connections';
 import {
 	createOrganizationForUser,
 	deploymentMode,
@@ -38,6 +39,9 @@ import { isRateLimitedShared, rateLimitIp } from '$lib/server/redis-rate-limit';
 
 startShareRefreshWorker();
 startTrinoCatalogReconciler();
+ensureBaseTrinoAccessFile().catch((err) =>
+	console.warn('[trino-access-control] failed to seed base rules file:', err)
+);
 if (!building) assertCloudEnv();
 
 // If a project folder is pre-configured via env (useful in Docker deployments),

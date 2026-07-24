@@ -1965,6 +1965,11 @@ function normalizeQueryResult(result: { rows: Record<string, unknown>[]; columns
 	rows: Record<string, unknown>[];
 	columns: string[];
 } {
+	if (!Array.isArray(result?.rows) || !Array.isArray(result?.columns)) {
+		throw new Error(
+			'Query engine returned an unexpected response (query may still be running). Try again in a moment.'
+		);
+	}
 	return {
 		columns: result.columns,
 		rows: result.rows.map((row) =>

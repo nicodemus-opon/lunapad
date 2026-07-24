@@ -20,6 +20,20 @@ services:
   trino:
     # Pin to the version referenced in connections.ts (catalog.management=dynamic behavior).
     image: trinodb/trino:481
+    # app's depends_on waits for this service to be healthy, so Trino's own first-ever
+    # boot on a fresh clone/volume can't rely on the app process to have created
+    # lunapad-access-control.json yet (that only happens once the app itself has
+    # started — see ensureBaseTrinoAccessFile() in connections.ts). Seed an inert
+    # empty-rules stub here if the file is missing so the file-based access-control
+    # plugin has something valid to load; the app overwrites it with real content
+    # within one security.refresh-period (5s) of its own boot or first request.
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/trino/catalog
+        [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
+        exec /usr/lib/trino/bin/run-trino
     ports:
       - '8067:8080'
     configs:

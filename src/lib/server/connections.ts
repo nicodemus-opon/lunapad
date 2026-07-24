@@ -247,6 +247,36 @@ function hardenBaseTrinoRules(rules: TrinoAccessRuleSet): boolean {
 		});
 		changed = true;
 	}
+	// The above only ever *upgrades* an existing 'lunapad' rule — it does nothing if the
+	// base rules are entirely absent (e.g. a rules file seeded from scratch, such as the
+	// inert stub docker-compose writes before the app has ever run). Add them from scratch
+	// when missing so a bare/empty rules file self-heals into a working base ruleset.
+	if (
+		!rules.catalogs.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+	) {
+		rules.catalogs.push({ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, allow: 'owner' });
+		changed = true;
+	}
+	if (
+		!rules.schemas.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+	) {
+		rules.schemas.push({ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, owner: true });
+		changed = true;
+	}
+	if (
+		!rules.tables.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+	) {
+		rules.tables.push({
+			user: 'lunapad',
+			catalog: NON_TENANT_CATALOG_PATTERN,
+			privileges: ['SELECT', 'INSERT', 'DELETE', 'UPDATE', 'OWNERSHIP']
+		});
+		changed = true;
+	}
+	if (!rules.queries.some((rule) => rule.allow.includes('execute'))) {
+		rules.queries.push({ allow: ['execute'] });
+		changed = true;
+	}
 	return changed;
 }
 
@@ -278,6 +308,33 @@ async function ensureTenantTrinoAccess(orgId?: string | null): Promise<void> {
 			changed = true;
 		}
 		if (changed) await writeTrinoAccessRules(filePath, rules);
+	});
+}
+
+// Guarantees the access-control file has at least the base rules, independent of any
+// orgId — ensureTenantTrinoAccess above only ever runs (and only ever writes) once a
+// tenant-scoped request occurs. On a fresh checkout/volume the file won't exist yet;
+// docker-compose also seeds an inert empty-rules stub before Trino's own first boot
+// (so the app container, which only starts once Trino is already healthy, isn't in
+// that path) — either way this reuses hardenBaseTrinoRules to fill in whatever base
+// rules are missing, not just create the file when absent. Called once at server boot
+// (see hooks.server.ts) as a recovery path for both cases.
+export async function ensureBaseTrinoAccessFile(): Promise<void> {
+	const catalogDir = getCatalogDir();
+	if (!catalogDir) return;
+	const filePath = getTrinoAccessControlPath(catalogDir);
+
+	await withAccessControlLock(filePath, async () => {
+		let existed = true;
+		try {
+			await fs.access(filePath);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+			existed = false;
+		}
+		const rules = await readTrinoAccessRules(filePath);
+		const changed = hardenBaseTrinoRules(rules);
+		if (!existed || changed) await writeTrinoAccessRules(filePath, rules);
 	});
 }
 

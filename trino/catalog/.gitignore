@@ -3,3 +3,8 @@
 *.properties
 !tpch.properties
 !docker_postgres.properties
+
+# Runtime-rewritten Trino access-control rules (per-org catalog grants appended
+# by connections.ts's ensureTenantTrinoAccess). Same reasoning as the *.properties
+# rule above — never track it; it's seeded from baseTrinoAccessRules() if missing.
+lunapad-access-control.json
