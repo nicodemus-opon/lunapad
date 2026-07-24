@@ -13,6 +13,7 @@
 		setGhostTextEnabled
 	} from '$lib/stores/notebook.svelte';
 	import ConnectionsSettings from './ConnectionsSettings.svelte';
+	import GitSettings from './GitSettings.svelte';
 	import ApiKeysSettings from './ApiKeysSettings.svelte';
 	import PythonPackagesPanel from './PythonPackagesPanel.svelte';
 	import UsageSettings from './UsageSettings.svelte';
@@ -39,7 +40,8 @@
 		PackageSearch,
 		Activity,
 		ListChecks,
-		Wrench
+		Wrench,
+		GitBranch
 	} from '@lucide/svelte';
 
 	type SettingsTab =
@@ -49,6 +51,7 @@
 		| 'account'
 		| 'ai'
 		| 'connections'
+		| 'git'
 		| 'api-keys'
 		| 'python'
 		| 'usage'
@@ -112,6 +115,8 @@
 		if (open && tab === 'team' && !isAdmin) tab = 'general';
 		// Python packages only make sense with a project folder open.
 		if (open && tab === 'python' && !getProjectFolder()) tab = 'general';
+		// Git remote config is scoped to the open project folder.
+		if (open && tab === 'git' && !getProjectFolder()) tab = 'general';
 	});
 
 	async function saveProfile(): Promise<void> {
@@ -241,6 +246,9 @@
 		{ id: 'account' as const, label: 'Account', icon: User },
 		{ id: 'ai' as const, label: 'AI', icon: Sparkles },
 		{ id: 'connections' as const, label: 'Connections', icon: Database },
+		...(getProjectFolder()
+			? [{ id: 'git' as const, label: 'Source control', icon: GitBranch }]
+			: []),
 		{ id: 'api-keys' as const, label: 'API Keys', icon: KeyRound },
 		{ id: 'usage' as const, label: 'Usage', icon: Activity },
 		{ id: 'jobs' as const, label: 'Jobs', icon: ListChecks },
@@ -611,6 +619,8 @@
 					</div>
 				{:else if tab === 'connections'}
 					<ConnectionsSettings />
+				{:else if tab === 'git'}
+					<GitSettings />
 				{:else if tab === 'api-keys'}
 					<ApiKeysSettings />
 				{:else if tab === 'python'}

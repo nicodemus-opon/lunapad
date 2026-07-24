@@ -7,7 +7,8 @@ export type CloudJobKind =
 	| 'python'
 	| 'ai'
 	| 'share_refresh'
-	| 'notebook_execution';
+	| 'notebook_execution'
+	| 'git';
 
 export type CloudJobStatus =
 	| 'queued'

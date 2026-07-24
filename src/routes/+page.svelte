@@ -143,6 +143,7 @@
 	import ProjectSwitcher from '$lib/components/ProjectSwitcher.svelte';
 	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
+	import GitPanel from '$lib/components/GitPanel.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
@@ -223,7 +224,8 @@
 		ShieldUser,
 		Sigma,
 		CalendarDays,
-		LayoutGrid
+		LayoutGrid,
+		GitBranch
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -487,7 +489,7 @@
 	const menuTriggerClass =
 		'h-7 rounded-md px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground data-open:bg-muted data-open:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 
-	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'evidence';
+	type SidebarPanel = 'notebooks' | 'tables' | 'dbt' | 'git' | 'evidence';
 	let activeSidebarPanel = $state<SidebarPanel>('notebooks');
 
 	// Svelte transitions don't honor the prefers-reduced-motion media query, gate manually.
@@ -1711,6 +1713,9 @@
 					{#if isDbtProject}
 						{@render railButton('dbt', FlaskConical, 'dbt models')}
 					{/if}
+					{#if projectFolder}
+						{@render railButton('git', GitBranch, 'Source control')}
+					{/if}
 					{#if isEvidenceProject}
 						{@render railButton('evidence', MonitorPlay, 'Evidence pages')}
 					{/if}
@@ -1949,6 +1954,9 @@
 							{:else if activeSidebarPanel === 'dbt' && isDbtProject}
 								<!-- dbt panel -->
 								<DbtPanel />
+							{:else if activeSidebarPanel === 'git' && projectFolder}
+								<!-- Source control panel -->
+								<GitPanel />
 							{:else if activeSidebarPanel === 'evidence' && isEvidenceProject}
 								<!-- Evidence panel -->
 								<div class="min-h-0 flex-1 overflow-y-auto">
