@@ -17,6 +17,11 @@ export interface PageBridge {
 	closeWorksheetView: () => void;
 	goBackPageNav: () => void;
 	goForwardPageNav: () => void;
+	openGitPanel: () => void;
+	stageAllGitChanges: () => void;
+	focusGitCommitBox: () => void;
+	gitPush: () => void;
+	gitPull: () => void;
 }
 
 let pageBridge: PageBridge | null = null;

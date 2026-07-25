@@ -30,6 +30,8 @@
 	} from '$lib/stores/notebook.svelte';
 	import { toast } from 'svelte-sonner';
 	import Editor from '$lib/components/Editor.svelte';
+	import { getCellDiff } from '$lib/services/cell-diff';
+	import type { DiffHunk } from '$lib/utils/unified-diff';
 	import GUIEditor from '$lib/components/gui/GUIEditor.svelte';
 	import InlineResultView from '$lib/components/InlineResultView.svelte';
 	import InlinePromptBar from '$lib/components/cell/InlinePromptBar.svelte';
@@ -108,6 +110,27 @@
 	const isPlotCell = $derived(cell?.cellType === 'plot');
 	const isControlCell = $derived(Boolean(cell?.controlConfig));
 	const pythonTableHints = $derived(cell ? getPythonTableHints(cell.code, notebookId) : []);
+
+	// Git diff gutter (flat-format notebooks only — see cell-diff.ts). Debounced
+	// so a fast typist doesn't fire a diff round trip on every keystroke.
+	let gitDiffHunks = $state<DiffHunk[] | undefined>(undefined);
+	let gitDiffTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		const currentCell = cell;
+		const code = currentCell?.code;
+		void currentCell?.outputName;
+		void currentCell?.language;
+		if (!isQueryCell || !currentCell) {
+			gitDiffHunks = undefined;
+			return;
+		}
+		if (gitDiffTimer) clearTimeout(gitDiffTimer);
+		gitDiffTimer = setTimeout(() => {
+			void getCellDiff(notebookId, currentCell, code ?? '').then((parsed) => {
+				gitDiffHunks = parsed?.hunks;
+			});
+		}, 500);
+	});
 	const connections = $derived(getConnections());
 	const isDbtProject = $derived(getIsDbtProject());
 	const connectionValue = $derived(cell?.connectionId ?? BUILTIN_DUCKDB_CONNECTION_ID);
@@ -691,6 +714,7 @@
 									{dark}
 									layout="auto"
 									embeddedNotebook
+									{gitDiffHunks}
 									onchange={handleCodeChange}
 								/>
 							{/if}

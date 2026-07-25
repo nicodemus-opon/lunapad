@@ -13,7 +13,8 @@ import {
 	deleteStaleSchemaEmbeddings,
 	searchSchemaEmbeddings,
 	upsertMemoryEmbedding,
-	searchMemoryEmbeddings
+	searchMemoryEmbeddings,
+	listMemoryEmbeddedSlugs
 } from './embeddings';
 
 function embeddingResponse(): Response {
@@ -181,6 +182,23 @@ describe('searchMemoryEmbeddings', () => {
 		const result = await searchMemoryEmbeddings('revenue by month', '/proj');
 		expect(result).toEqual([]);
 		expect(queryMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('listMemoryEmbeddedSlugs', () => {
+	it('returns the set of slugs already embedded for a folder', async () => {
+		queryMock.mockResolvedValueOnce([{ slug: 'orders-grain' }, { slug: 'null-rate' }]);
+		const result = await listMemoryEmbeddedSlugs('/proj');
+		const [sql, params] = queryMock.mock.calls[0];
+		expect(sql).toContain('FROM memory_embeddings WHERE folder = $1');
+		expect(params).toEqual(['/proj', 'default', 'default']);
+		expect(result).toEqual(new Set(['orders-grain', 'null-rate']));
+	});
+
+	it('returns an empty set on query failure rather than throwing', async () => {
+		queryMock.mockRejectedValueOnce(new Error('no such table'));
+		const result = await listMemoryEmbeddedSlugs('/proj');
+		expect(result).toEqual(new Set());
 	});
 });
 

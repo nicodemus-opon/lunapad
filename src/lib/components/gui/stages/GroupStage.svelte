@@ -218,8 +218,22 @@
 	}
 
 	function removeAgg(idx: number) {
+		aggKeys = aggKeys.filter((_, i) => i !== idx);
 		onUpdate({ ...stage, aggregations: stage.aggregations.filter((_, i) => i !== idx) });
 	}
+
+	// ── Stable per-aggregation keys for {#each} — prevents needless Popover
+	// teardown/recreation on every reorder (mirrors GUIEditor.svelte's stageKeys) ──
+	function makeAggKey() {
+		return Math.random().toString(36).slice(2, 10);
+	}
+	let aggKeys = $state<string[]>([]);
+	$effect.pre(() => {
+		const n = stage.aggregations.length;
+		if (aggKeys.length !== n) {
+			aggKeys = Array.from({ length: n }, (_, i) => aggKeys[i] ?? makeAggKey());
+		}
+	});
 
 	// ── Expanded inline agg chip ────────────────────────────────────────────
 	let expandedAggIdx = $state<number | null>(null);
@@ -287,6 +301,12 @@
 		const aggregations = [...stage.aggregations];
 		const [moved] = aggregations.splice(from, 1);
 		aggregations.splice(to, 0, moved);
+
+		const nextKeys = [...aggKeys];
+		const [movedKey] = nextKeys.splice(from, 1);
+		nextKeys.splice(to, 0, movedKey);
+		aggKeys = nextKeys;
+
 		onUpdate({ ...stage, aggregations });
 	}
 
@@ -414,7 +434,7 @@
 				<span class="text-xs text-muted-foreground/60 italic">none</span>
 			{/if}
 
-			{#each stage.aggregations as agg, idx (`${agg.name}-${agg.func}-${idx}`)}
+			{#each stage.aggregations as agg, idx (aggKeys[idx])}
 				<div
 					role="listitem"
 					draggable={expandedAggIdx !== idx}

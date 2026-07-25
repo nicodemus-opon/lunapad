@@ -23,8 +23,12 @@ import {
 	DEFAULT_SCHEMA_TOKEN_BUDGET,
 	SMALL_MODEL_SCHEMA_TOKEN_BUDGET
 } from '$lib/services/token-budget.js';
-import { NATIVE_TOOLS } from '$lib/agent/server/tools/native-schemas.js';
+import {
+	NATIVE_TOOLS,
+	withoutUnavailablePythonCellType
+} from '$lib/agent/server/tools/native-schemas.js';
 import { schemasForChat } from '$lib/agent/tools/registry.js';
+import { CORE_TOOLS } from '$lib/agent/tools/tool-search-catalog.js';
 import {
 	send,
 	flushDoneBlocks,
@@ -281,8 +285,8 @@ RULES:
 17. LIVE REFS IN MARKDOWN: ${buildMarkdocSyntaxBlock()}
 18. SELF-DESCRIBING DATA APP UI: ${buildComponentCapabilityPromptBlock()}
 19. STRUCTURED NOTEBOOK UI: ${buildGeneratedDashboardPromptBlock()}
-20. RECORD DECISIONS & DISCOVERIES: after confirming a primary key, join key, grain, or business rule, call record_decision (type: "decision"). Also call it for a notable data fact — unexpected null rate, surprising cardinality, a gotcha (type: "discovery"). Persisted to disk, not just this conversation — re-injected in future turns and retrievable later via search_workspace, so you and future sessions never re-investigate it.
-21. ASK ONLY WHEN GENUINELY BLOCKED: call ask_user only when an ambiguity cannot be resolved by investigating data (sample_data/query_data/profile_column) and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, or unclear whether to reuse an existing cell vs create a new one). Prefer a stated default over asking — pick the more common convention, note the assumption, and proceed. Never ask about anything answerable from the Schema or Cells sections above. Provide options only for a naturally short discrete choice (2-4 items); omit options otherwise. At most once per task unless the answer creates a new ambiguity.
+20. RECORD DECISIONS & DISCOVERIES: call record_decision inline as you resolve things, not only at the end — see its tool description for exactly when.
+21. ASK ONLY WHEN GENUINELY BLOCKED: see ask_user's tool description for when to call it. Prefer a stated default over asking; never ask about anything answerable from the Schema or Cells sections above.
 
 You MAY write 1–2 sentences of explanation before tool calls.
 
@@ -409,17 +413,10 @@ function buildSystemPromptXML(
 	const schemaChangeSection = schemaChangeNote ? `\n\n⚠ ${schemaChangeNote}` : '';
 	const contractSection = buildWorkspaceContractSection(workspaceContract);
 
-	const toolFmtSection = useNativeTools
-		? ''
-		: `
-Emit tool calls inline in your response using this exact format:
-<tool_call>{"tool":"TOOL_NAME","callId":"C1","args":{...}}</tool_call>
-
-IMPORTANT: callId is how you reference tool results later. For notebook query nodes, use the cellId values you placed in create_notebook/apply_notebook_patch executableCells and queryBlock blocks.
-`;
+	// This function is only ever invoked on the useNativeTools=true path (non-Ollama backends
+	// call buildSystemPromptOllama instead) — no XML tool-call format section needed here.
 
 	return `You are a senior analytics engineer in Lunapad. Before writing any SQL, identify the **business question** behind the request — not just the technical task. Build what was asked AND the obvious next level: if asked for revenue, also design the customer grain; if the data is sessions, also think about the conversion funnel. Your primary obligation is to the long-term health of the model graph. Your output must read like a real analyst's deliverable — structured, insight-driven, reusable.
-${toolFmtSection}
 
 ## Modeling Workflow (required when creating any new model)
 
@@ -487,39 +484,18 @@ ${buildGeneratedDashboardPromptBlock()}
 - Use markdown in your prose: **bold** key findings, bullet lists for multiple points, \`code\` for cell/table names
 - Keep explanations tight — the notebook cells speak for themselves
 
-## Tools (action)
-- inspect_notebook: {notebookId?:string} — inspect the active notebook document before patching it
-- create_notebook: {blueprint:{title:string, planningIntent?:object, qualityTarget?:"valid"|"polished"|"publication", autoRepair?:"off"|"safe"|"aggressive", executableCells:[{cellId:string, outputName:string, cellType:"query"${pythonAvailable ? '|"python"' : ''}, language:"sql"${pythonAvailable ? '|"python"' : ''}, code:string, materializeMode?:"ephemeral"|"view"|"table"|"incremental"}], blocks:[...]}}
-  - Use snake_case cellIds/outputNames describing the query: revenue_by_month, top_customers, order_funnel${pythonAvailable ? '\n  - For Python cells (cellType:"python") write Python source directly in code. See Tool selection below for when to use Python over SQL.' : ''}
-  - Include text blocks for intro, methodology, findings, and caveats. SQL belongs exclusively in executableCells, never prose.
-- apply_notebook_patch: {title?:string, blueprint:{title?:string, planningIntent?:object, qualityTarget?:"valid"|"polished"|"publication", autoRepair?:"off"|"safe"|"aggressive", executableCells?:[...], blocks:[...]}} or {title?:string, document:{...}} or {title?:string, operations:[...], executableCells?:[...]} — patch the active notebook atomically. Use title to rename it.
-- run_query_nodes: {cellIds:string[]} or {nodeIds:string[]} — always run all added/changed queryBlock nodes
-- validate_notebook: {notebookId?:string} — validate before done
-- **pick_chart: {cellId:string}** — PREFERRED. Call after run_query_nodes. Reads actual result and auto-selects the correct chart type. Use this for every query cell when charts are useful.
-- set_chart: {cellId:string, chartConfig:{chartType:"bar"|"bar-horizontal"|"line"|"area"|"scatter"|"bubble"|"pie"|"histogram"|"heatmap"|"big-value"|"value"|"delta"|"funnel"|"box-plot"|"calendar-heatmap"|"sankey"|"map"|"choropleth", xColumn:string, yColumns:string[], colorColumn?:string, latColumn?:string, lonColumn?:string, geoScope?:"world"|"usa-states", seriesMode?:"auto"|"grouped"|"stacked", sortOrder?:"none"|"asc"|"desc", title?:string}}
-  - Use only when you need a specific non-default type: area for cumulative totals, pie for proportions, scatter with colorColumn, sankey, etc.
-- Do not call create_cell, update_cell, move_cell, or run_cells. They are legacy tools; use the atomic notebook tools above.
+## Tool policy
+Every tool available to you (arguments and when to use it) is fully described in its own schema — this section only covers things a tool schema can't: legacy names and cross-tool sequencing rules.
 
-## Tools (data investigation — call BEFORE writing SQL)
-- sample_data: {table:string, n?:number} — random rows from a schema table. **Call this first on any unfamiliar table** to learn actual values, date formats, and column content.
-- query_data: {sql:string, limit?:number} — run any read-only SELECT to verify specific values, ranges, or join keys
-- profile_column: {table:string, column:string} — null rate, distinct count, min/max, top 5 values; use before GROUP BY or JOIN on unknown columns
+Do not call create_cell, update_cell, move_cell, or run_cells — legacy tools not in your current toolset; use the atomic notebook tools (create_notebook, apply_notebook_patch, run_query_nodes) instead.
 
-**DATA RULE: The schema shows column names only — not values. If you don't know what's in a column (status codes, category names, date format, nullable), call sample_data or query_data FIRST. Never invent values.**
+**DATA RULE: The schema below shows column names only, never values. If you don't know what's actually in a column (status codes, category names, date format, nullable), inspect it first — never invent values.**
 
 **SCHEMA LISTING: If the user asks what columns a table has, or what fields exist in the schema, answer directly from the Schema section below — do NOT call sample_data, profile_column, or query_data for that.**
 
 **SELF-CORRECT: After run_query_nodes you will receive each cell's result (row count or error). If ANY cell failed, you MUST fix it with apply_notebook_patch, then run_query_nodes again. Keep trying with a different approach if the same fix fails. Do NOT output \`<done>\` until ALL cells succeed and validate_notebook is ok.**
 
 **DONE SIGNAL: When your analysis is fully complete, output a \`<done>\` block at the very end (after all tool calls and prose): \`<done>{"suggestions":["short follow-up 1","short follow-up 2","short follow-up 3"]}</done>\`. Each suggestion must name a specific analytical pattern, metric, or model the data can support next — not a generic task. Good: \`"Retention curve by signup_month"\`, \`"RFM segmentation on these orders"\`. Bad: \`"Add more metrics"\`, \`"Improve the model"\`. Then stop calling tools. After each \`run_query_nodes\`, \`sample_data\`, \`query_data\`, or \`profile_column\` call, the system pauses and gives you the result before you continue — do NOT include \`<done>\` in the same response as these tools.**
-
-## Tools (lookup — use before building or modifying cells)
-- get_lineage: {outputName:string} — upstream/downstream deps
-- list_cells: {} — full inventory of existing models (use in Step 1)
-- search_workspace: {query:string} — semantic search; returns full SQL code for matched cells, plus relevant past decisions/discoveries recorded via record_decision (use in Step 1 to find reusable models AND check what's already been decided)
-- get_cell_result: {cellId:string, limit?:number} — read an already-run cell's result data without re-querying. Use when explaining results or charting existing data.
-- **record_decision: {decision:string, type?:"decision"|"discovery"}** — record a modeling decision or notable data discovery that persists across turns AND across future sessions (written to disk). Call after confirming a primary key, join key, grain, business rule, or data quality fix (type: "decision"); call for a surprising data fact too (type: "discovery"). Prevents re-investigating already-resolved questions in later turns or later sessions.
-- **ask_user: {question:string, options?:string[]}** — pause and ask the user a clarifying question. Use ONLY when genuinely blocked by ambiguity you cannot resolve via sample_data/query_data/profile_column or a reasonable stated default, and a wrong guess would mean redoing significant work (e.g. two equally plausible join keys, reuse vs create a new cell). Never ask about anything answerable from the Schema or Notebook below. Provide 'options' (2-4 short choices) only when the answer is naturally discrete; omit it otherwise so the user can answer freely. At most once per task unless the answer creates a new ambiguity. The system pauses after this call and gives you the user's answer before you continue — do NOT include a done block in the same response as ask_user.
 
 ## Graph notation
 depends_on=[x] = reads FROM x. feeds_into=[x] = x reads FROM this. [HIGH IMPACT] = cell has 3+ dependents — be conservative when modifying.
@@ -1395,8 +1371,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				// model will call list_cells via function-calling (finish_reason: tool_calls),
 				// ending the turn before the sprint block is ever output.
 				if (useNativeTools && req.subagentType !== 'sprint_planning') {
-					const activeTools = req.allowedTools ? schemasForChat(req.allowedTools) : NATIVE_TOOLS;
-					llmBody['tools'] = activeTools;
+					// Standard-loop turns (no subagentType, no explicit allowedTools) default to
+					// CORE_TOOLS instead of the full catalog — progressive tool disclosure via
+					// find_tools. Subagent phases are untouched: they either already set
+					// allowedTools (ai-subagents.ts SUBAGENT_TOOLS) or, if not, keep getting the
+					// full NATIVE_TOOLS they always got.
+					const activeTools = req.allowedTools
+						? schemasForChat(req.allowedTools)
+						: req.subagentType || process.env.AI_DISABLE_TOOL_NARROWING === '1'
+							? NATIVE_TOOLS
+							: schemasForChat(CORE_TOOLS);
+					llmBody['tools'] = withoutUnavailablePythonCellType(activeTools, pythonAvailable);
 					llmBody['tool_choice'] = activeTools.length > 0 ? 'auto' : 'none';
 				}
 

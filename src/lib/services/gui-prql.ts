@@ -1428,8 +1428,12 @@ function applyStageToColumns(
 ): string[] {
 	if (stage.disabled) return cols;
 	switch (stage.type) {
-		case 'from':
-			return tableSchemas[stage.table] ?? [];
+		case 'from': {
+			const fromCols = tableSchemas[stage.table] ?? [];
+			return stage.alias
+				? [...fromCols, ...fromCols.map((c) => `${stage.alias}.${c}`)]
+				: fromCols;
+		}
 		case 'select':
 			return stage.columns.length ? stage.columns : cols;
 		case 'derive':
@@ -1522,7 +1526,10 @@ export function reconcileStagesAfterSourceChange(
 	const [firstStage, ...rest] = stages;
 	if (firstStage.type !== 'from') return stages;
 
-	let availableColumns = [...(tableSchemas[firstStage.table] ?? [])];
+	const seedColumns = tableSchemas[firstStage.table] ?? [];
+	let availableColumns = firstStage.alias
+		? [...seedColumns, ...seedColumns.map((c) => `${firstStage.alias}.${c}`)]
+		: [...seedColumns];
 	const nextStages: GUIPipelineStage[] = [firstStage];
 
 	for (const stage of rest) {
@@ -1648,10 +1655,14 @@ export function reconcileStagesAfterSourceChange(
 			}
 			case 'raw':
 				break;
-			case 'from':
+			case 'from': {
 				nextStages.push(stage);
-				availableColumns = [...(tableSchemas[stage.table] ?? [])];
+				const fromCols = tableSchemas[stage.table] ?? [];
+				availableColumns = stage.alias
+					? [...fromCols, ...fromCols.map((c) => `${stage.alias}.${c}`)]
+					: [...fromCols];
 				break;
+			}
 		}
 	}
 

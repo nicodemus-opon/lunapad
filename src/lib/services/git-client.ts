@@ -3,7 +3,13 @@
  * Mirrors the shape of project-client.ts's dbt* functions.
  */
 
-import type { GitStatus, GitBranches, GitCommitLogEntry, GitRemoteInfo } from '$lib/types/git';
+import type {
+	GitStatus,
+	GitBranches,
+	GitCommitLogEntry,
+	GitRemoteInfo,
+	GitStashEntry
+} from '$lib/types/git';
 
 async function unwrap<T>(res: Response, fallback: string): Promise<T> {
 	const body = (await res.json()) as { error?: string } & T;
@@ -27,6 +33,19 @@ export async function gitDiff(
 	const res = await fetch(`/api/git/diff?${params.toString()}`);
 	const body = await unwrap<{ diff: string }>(res, 'Failed to load diff');
 	return body.diff;
+}
+
+/** Committed content of a file at a ref (default HEAD), or null if it doesn't
+ *  exist there — used by editor diff gutters. */
+export async function gitFileContentAtRef(
+	folder: string,
+	path: string,
+	ref = 'HEAD'
+): Promise<string | null> {
+	const params = new URLSearchParams({ folder, path, ref });
+	const res = await fetch(`/api/git/file-content?${params.toString()}`);
+	const body = await unwrap<{ content: string | null }>(res, 'Failed to load file content');
+	return body.content;
 }
 
 export async function gitLog(
@@ -177,6 +196,78 @@ export function watchGitLogs(
 	})();
 
 	return () => ctrl.abort();
+}
+
+export async function gitStashList(folder: string): Promise<GitStashEntry[]> {
+	const res = await fetch(`/api/git/stash?folder=${encodeURIComponent(folder)}`);
+	const body = await unwrap<{ stashes: GitStashEntry[] }>(res, 'Failed to load stashes');
+	return body.stashes;
+}
+
+export async function gitStashSave(
+	folder: string,
+	message?: string,
+	includeUntracked = false
+): Promise<void> {
+	const res = await fetch('/api/git/stash', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, message, includeUntracked })
+	});
+	await unwrap(res, 'Failed to stash changes');
+}
+
+async function gitStashApplyOrPop(
+	folder: string,
+	index: number,
+	action: 'apply' | 'pop'
+): Promise<void> {
+	const res = await fetch(`/api/git/stash/${index}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, action })
+	});
+	await unwrap(res, `Failed to ${action} stash`);
+}
+
+export async function gitStashApply(folder: string, index: number): Promise<void> {
+	return gitStashApplyOrPop(folder, index, 'apply');
+}
+
+export async function gitStashPop(folder: string, index: number): Promise<void> {
+	return gitStashApplyOrPop(folder, index, 'pop');
+}
+
+export async function gitStashDrop(folder: string, index: number): Promise<void> {
+	const res = await fetch(`/api/git/stash/${index}?folder=${encodeURIComponent(folder)}`, {
+		method: 'DELETE'
+	});
+	await unwrap(res, 'Failed to drop stash');
+}
+
+export interface GitConflictContent {
+	base: string | null;
+	ours: string | null;
+	theirs: string | null;
+}
+
+export async function gitConflictContent(folder: string, path: string): Promise<GitConflictContent> {
+	const params = new URLSearchParams({ folder, path });
+	const res = await fetch(`/api/git/conflict?${params.toString()}`);
+	return unwrap<GitConflictContent>(res, 'Failed to load conflict content');
+}
+
+export async function gitResolveConflict(
+	folder: string,
+	path: string,
+	resolution: 'ours' | 'theirs'
+): Promise<void> {
+	const res = await fetch('/api/git/conflict', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ folder, path, resolution })
+	});
+	await unwrap(res, 'Failed to resolve conflict');
 }
 
 export async function gitGetRemote(folder: string): Promise<GitRemoteInfo | null> {

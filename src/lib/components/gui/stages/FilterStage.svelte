@@ -64,12 +64,26 @@
 	}
 
 	function removeCond(idx: number) {
+		condKeys = condKeys.filter((_, i) => i !== idx);
 		onUpdate({ ...stage, conditions: stage.conditions.filter((_, i) => i !== idx) });
 	}
 
 	function toggleLogic() {
 		onUpdate({ ...stage, logic: stage.logic === 'and' ? 'or' : 'and' });
 	}
+
+	// ── Stable per-condition keys for {#each} — prevents needless Popover
+	// teardown/recreation on every reorder (mirrors GUIEditor.svelte's stageKeys) ──
+	function makeCondKey() {
+		return Math.random().toString(36).slice(2, 10);
+	}
+	let condKeys = $state<string[]>([]);
+	$effect.pre(() => {
+		const n = stage.conditions.length;
+		if (condKeys.length !== n) {
+			condKeys = Array.from({ length: n }, (_, i) => condKeys[i] ?? makeCondKey());
+		}
+	});
 
 	// ── Drag-to-reorder conditions ───────────────────────────────────────────────
 	let dragCondIdx = $state<number | null>(null);
@@ -78,6 +92,12 @@
 		const conditions = [...stage.conditions];
 		const [moved] = conditions.splice(from, 1);
 		conditions.splice(to, 0, moved);
+
+		const nextKeys = [...condKeys];
+		const [movedKey] = nextKeys.splice(from, 1);
+		nextKeys.splice(to, 0, movedKey);
+		condKeys = nextKeys;
+
 		onUpdate({ ...stage, conditions });
 	}
 
@@ -298,7 +318,7 @@
 		<span class="text-xs text-muted-foreground/60 italic">no conditions</span>
 	{/if}
 
-	{#each stage.conditions as cond, idx}
+	{#each stage.conditions as cond, idx (condKeys[idx])}
 		{#if idx > 0}
 			<!-- AND / OR logic toggle badge -->
 			<button

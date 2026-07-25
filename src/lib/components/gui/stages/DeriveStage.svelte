@@ -177,8 +177,22 @@
 	}
 
 	function removeCol(idx: number) {
+		colKeys = colKeys.filter((_, i) => i !== idx);
 		onUpdate({ ...stage, columns: stage.columns.filter((_, i) => i !== idx) });
 	}
+
+	// ── Stable per-column keys for {#each} — prevents needless Popover
+	// teardown/recreation on every reorder (mirrors GUIEditor.svelte's stageKeys) ──
+	function makeColKey() {
+		return Math.random().toString(36).slice(2, 10);
+	}
+	let colKeys = $state<string[]>([]);
+	$effect.pre(() => {
+		const n = stage.columns.length;
+		if (colKeys.length !== n) {
+			colKeys = Array.from({ length: n }, (_, i) => colKeys[i] ?? makeColKey());
+		}
+	});
 
 	function updateColName(idx: number, name: string) {
 		onUpdate({ ...stage, columns: stage.columns.map((c, i) => (i === idx ? { ...c, name } : c)) });
@@ -345,6 +359,12 @@
 		const columns = [...stage.columns];
 		const [moved] = columns.splice(from, 1);
 		columns.splice(to, 0, moved);
+
+		const nextKeys = [...colKeys];
+		const [movedKey] = nextKeys.splice(from, 1);
+		nextKeys.splice(to, 0, movedKey);
+		colKeys = nextKeys;
+
 		onUpdate({ ...stage, columns });
 	}
 </script>
@@ -354,7 +374,7 @@
 		<span class="text-xs text-muted-foreground/60 italic">no columns</span>
 	{/if}
 
-	{#each stage.columns as col, idx (`${col.name}-${idx}`)}
+	{#each stage.columns as col, idx (colKeys[idx])}
 		<div
 			role="listitem"
 			draggable="true"

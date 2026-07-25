@@ -77,6 +77,7 @@ export function isNativeToolCallWellFormed(tool: string, args: Record<string, un
 		case 'get_cell_result':
 			return str(args.outputName) || str(args.cellId);
 		case 'search_workspace':
+		case 'find_tools':
 			return str(args.query);
 		case 'create_cell': {
 			if (!str(args.outputName)) return false;
@@ -130,7 +131,10 @@ export function tablesReferencedInCode(code: string): string[] {
  *  reuse the same unknown-table check the SSE chat loop applies to create_cell/
  *  update_cell, instead of re-implementing it for create_notebook/apply_notebook_patch's
  *  executableCells. */
-export function codeReferencesUnknownTable(code: string, ctx: ChatToolPolicyContext): string | null {
+export function codeReferencesUnknownTable(
+	code: string,
+	ctx: ChatToolPolicyContext
+): string | null {
 	for (const table of tablesReferencedInCode(code)) {
 		if (!tableKnown(table, ctx)) return table;
 	}

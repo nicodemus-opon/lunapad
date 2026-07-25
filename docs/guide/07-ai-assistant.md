@@ -35,9 +35,11 @@ The board is a view on the current conversation, not a separate project manager.
 
 ## Memory
 
-The assistant stores embeddings of past prompts and outcomes in Postgres (`ai_memory` on the server). When you ask something similar to a prior request, retrieval may surface cells, models, or decisions that worked before.
+The assistant records decisions and discoveries as it works — primary keys, join grains, naming choices — without you asking it to. Each one is saved as a small file under `.lunapad/memory/` in the project folder, scoped to that project.
 
-Memory is shared across the deployment (not per user). It does not replace reading the code the assistant just wrote. **Clear conversation** resets the visible thread and session tools; retrieval can still influence the next request.
+Retrieval is on demand, not a prompt dump: when a request looks similar to a prior one, the assistant searches this memory (semantically, via Postgres + Ollama embeddings, when both are configured; by keyword overlap otherwise) and pulls in only what's relevant. A handful of the most recent entries are also seeded into every conversation automatically so recent context carries forward without an explicit search.
+
+Memory does not replace reading the code the assistant just wrote. **Clear conversation** resets the visible thread and session tools; saved memory persists and can still influence the next request.
 
 Workspace **modeling standards** (naming, materializations, style) are separate from memory. They live in the workspace blob and apply to every conversation until you change them.
 

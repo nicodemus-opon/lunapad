@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { assertAllowedProjectFolder, assertSafe } from './project.js';
+import {
+	ensureEmbeddingTables,
+	listMemoryEmbeddedSlugs,
+	upsertMemoryEmbedding
+} from './embeddings.js';
+import type { TenantRef } from './tenancy.js';
 
 /**
  * Durable, per-project AI memory — decisions and discoveries recorded via the
@@ -248,6 +254,36 @@ export async function removeEntry(folder: string, slug: string): Promise<MemoryI
 
 export async function readIndexEntries(folder: string): Promise<MemoryIndexEntry[]> {
 	return listEntries(folder);
+}
+
+/** Embed any entry written before Postgres/Ollama were configured (or written while
+ *  embed-memory briefly failed) — otherwise those entries fall back to lexical search
+ *  forever with no user-visible signal. Idempotent: upsertMemoryEmbedding's
+ *  ON CONFLICT (project_id, folder, slug) makes re-running this safe, and this function
+ *  additionally skips slugs already embedded to avoid needless re-embedding calls. */
+export async function backfillMemoryEmbeddings(
+	folder: string,
+	tenant?: TenantRef | null
+): Promise<{ backfilled: number; total: number }> {
+	await ensureEmbeddingTables();
+	const [entries, embeddedSlugs] = await Promise.all([
+		listEntries(folder),
+		listMemoryEmbeddedSlugs(folder, tenant)
+	]);
+	const missing = entries.filter((e) => !embeddedSlugs.has(e.slug));
+
+	let backfilled = 0;
+	for (const entry of missing) {
+		await upsertMemoryEmbedding({
+			tenant,
+			folder,
+			slug: entry.slug,
+			type: entry.type,
+			description: entry.description
+		});
+		backfilled++;
+	}
+	return { backfilled, total: entries.length };
 }
 
 export async function readConventions(folder: string): Promise<string> {

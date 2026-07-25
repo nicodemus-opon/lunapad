@@ -12,7 +12,8 @@ export type ShortcutGroup =
 	| 'command-mode'
 	| 'cell-editor'
 	| 'gui-stages'
-	| 'markdown-editor';
+	| 'markdown-editor'
+	| 'git';
 
 export interface KeyChord {
 	key: string;

@@ -1,7 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+
+const { ensureEmbeddingTablesMock, listMemoryEmbeddedSlugsMock, upsertMemoryEmbeddingMock } =
+	vi.hoisted(() => ({
+		ensureEmbeddingTablesMock: vi.fn().mockResolvedValue(undefined),
+		listMemoryEmbeddedSlugsMock: vi.fn().mockResolvedValue(new Set()),
+		upsertMemoryEmbeddingMock: vi.fn().mockResolvedValue(undefined)
+	}));
+vi.mock('./embeddings.js', () => ({
+	ensureEmbeddingTables: ensureEmbeddingTablesMock,
+	listMemoryEmbeddedSlugs: listMemoryEmbeddedSlugsMock,
+	upsertMemoryEmbedding: upsertMemoryEmbeddingMock
+}));
+
 import {
 	writeEntry,
 	removeEntry,
@@ -9,6 +22,7 @@ import {
 	readConventions,
 	writeConventions,
 	searchMemoryLexical,
+	backfillMemoryEmbeddings,
 	slugify
 } from './ai-memory.js';
 
@@ -16,6 +30,9 @@ let dir: string;
 
 beforeEach(async () => {
 	dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lunapad-ai-memory-test-'));
+	ensureEmbeddingTablesMock.mockClear();
+	listMemoryEmbeddedSlugsMock.mockClear().mockResolvedValue(new Set());
+	upsertMemoryEmbeddingMock.mockClear();
 });
 
 afterEach(async () => {
@@ -87,6 +104,44 @@ describe('removeEntry', () => {
 		const entries = await removeEntry(dir, slug);
 		expect(entries).toHaveLength(0);
 		await expect(fs.access(path.join(dir, '.lunapad', 'memory', `${slug}.md`))).rejects.toThrow();
+	});
+});
+
+describe('backfillMemoryEmbeddings', () => {
+	it('embeds only entries missing from memory_embeddings', async () => {
+		await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per line item.' });
+		await writeEntry(dir, { type: 'discovery', text: 'customer_id is null for guest checkouts.' });
+		listMemoryEmbeddedSlugsMock.mockResolvedValueOnce(new Set(['orders-grain-is-one-row-per']));
+
+		const result = await backfillMemoryEmbeddings(dir);
+
+		expect(ensureEmbeddingTablesMock).toHaveBeenCalledTimes(1);
+		expect(upsertMemoryEmbeddingMock).toHaveBeenCalledTimes(1);
+		expect(upsertMemoryEmbeddingMock).toHaveBeenCalledWith(
+			expect.objectContaining({ slug: 'customerid-is-null-for-guest-checkouts' })
+		);
+		expect(result).toEqual({ backfilled: 1, total: 2 });
+	});
+
+	it('is a no-op (idempotent) when everything is already embedded', async () => {
+		await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per line item.' });
+		listMemoryEmbeddedSlugsMock.mockResolvedValueOnce(new Set(['orders-grain-is-one-row-per']));
+
+		const result = await backfillMemoryEmbeddings(dir);
+
+		expect(upsertMemoryEmbeddingMock).not.toHaveBeenCalled();
+		expect(result).toEqual({ backfilled: 0, total: 1 });
+	});
+
+	it('running it twice in a row backfills nothing the second time', async () => {
+		await writeEntry(dir, { type: 'decision', text: 'Orders grain is one row per line item.' });
+		listMemoryEmbeddedSlugsMock.mockResolvedValueOnce(new Set());
+		const first = await backfillMemoryEmbeddings(dir);
+		expect(first.backfilled).toBe(1);
+
+		listMemoryEmbeddedSlugsMock.mockResolvedValueOnce(new Set(['orders-grain-is-one-row-per']));
+		const second = await backfillMemoryEmbeddings(dir);
+		expect(second.backfilled).toBe(0);
 	});
 });
 

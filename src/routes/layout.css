@@ -23,6 +23,11 @@
 	--destructive-foreground: oklch(1 0 0);
 	--warning: oklch(0.666 0.179 58.318);
 	--success: oklch(0.588 0.158 241.966);
+	/* Dedicated diff add/remove colors — deliberately NOT --success (a blue hue in
+     this theme) and --destructive, since diff coloring is conventionally green/red
+     regardless of the app's own semantic palette. */
+	--diff-added: oklch(0.6 0.16 145);
+	--diff-removed: oklch(0.577 0.245 27.325);
 	--border: oklch(0.869 0.005 56.366);
 	--input: oklch(0.922 0 0);
 	--ring: oklch(0.554 0.046 257.417);
@@ -157,6 +162,8 @@
 	--destructive-foreground: oklch(0.145 0 0);
 	--warning: oklch(0.828 0.189 84.429);
 	--success: oklch(0.746 0.16 232.661);
+	--diff-added: oklch(0.72 0.15 145);
+	--diff-removed: oklch(0.704 0.191 22.216);
 	--border: oklch(0.3618 0.0101 106.8928);
 	--input: oklch(0.4336 0.0113 100.2195);
 	--ring: oklch(0.869 0.022 252.894);
@@ -225,6 +232,8 @@
 	--color-destructive-foreground: var(--destructive-foreground);
 	--color-warning: var(--warning);
 	--color-success: var(--success);
+	--color-diff-added: var(--diff-added);
+	--color-diff-removed: var(--diff-removed);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);

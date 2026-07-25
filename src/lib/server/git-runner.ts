@@ -11,7 +11,8 @@ import type {
 	GitFileStatusCode,
 	GitBranches,
 	GitBranchInfo,
-	GitCommitLogEntry
+	GitCommitLogEntry,
+	GitStashEntry
 } from '$lib/types/git';
 
 export interface GitJob {
@@ -197,18 +198,154 @@ export async function getGitDiff(
 	}
 }
 
+/** Committed content of a file at a ref (default HEAD) — used by editor diff
+ *  gutters to diff against the live buffer, since that needs raw old-content,
+ *  not a pre-computed on-disk diff. Returns null if the file doesn't exist at
+ *  that ref (e.g. a newly-added, not-yet-committed file). */
+export async function getGitFileContentAtRef(
+	cwd: string,
+	filePath: string,
+	ref = 'HEAD',
+	credential?: GitCredentialSecret | null
+): Promise<string | null> {
+	const { git, cleanup } = buildGit(cwd, credential);
+	try {
+		return await git.show([`${ref}:${filePath}`]);
+	} catch {
+		return null;
+	} finally {
+		cleanup();
+	}
+}
+
+const STASH_FIELD_SEP = '\x09';
+
+export async function getGitStashList(cwd: string): Promise<GitStashEntry[]> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		const raw = await git.raw(['stash', 'list', `--format=%gd${STASH_FIELD_SEP}%s${STASH_FIELD_SEP}%ai`]);
+		if (!raw.trim()) return [];
+		return raw
+			.trim()
+			.split('\n')
+			.map((line, i) => {
+				const [ref, message, date] = line.split(STASH_FIELD_SEP);
+				const match = ref?.match(/stash@\{(\d+)\}/);
+				return {
+					index: match ? parseInt(match[1], 10) : i,
+					message: message ?? '',
+					date: date ?? ''
+				};
+			});
+	} finally {
+		cleanup();
+	}
+}
+
+export async function gitStashSave(
+	cwd: string,
+	message?: string,
+	includeUntracked = false
+): Promise<void> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		const args = ['stash', 'push'];
+		if (includeUntracked) args.push('--include-untracked');
+		if (message) args.push('-m', message);
+		await git.raw(args);
+	} finally {
+		cleanup();
+	}
+}
+
+export async function gitStashApply(cwd: string, index: number): Promise<void> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		await git.raw(['stash', 'apply', `stash@{${index}}`]);
+	} finally {
+		cleanup();
+	}
+}
+
+export async function gitStashPop(cwd: string, index: number): Promise<void> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		await git.raw(['stash', 'pop', `stash@{${index}}`]);
+	} finally {
+		cleanup();
+	}
+}
+
+export interface GitConflictContent {
+	base: string | null;
+	ours: string | null;
+	theirs: string | null;
+}
+
+/** Three-way content for a conflicted file — stage 1/2/3 of the index are the
+ *  common ancestor / "ours" / "theirs" respectively during a conflicted merge.
+ *  Any side can be missing (e.g. the file was added on only one side). */
+export async function getGitConflictContent(cwd: string, filePath: string): Promise<GitConflictContent> {
+	const { git, cleanup } = buildGit(cwd);
+	async function showStage(stage: 1 | 2 | 3): Promise<string | null> {
+		try {
+			return await git.show([`:${stage}:${filePath}`]);
+		} catch {
+			return null;
+		}
+	}
+	try {
+		const [base, ours, theirs] = await Promise.all([showStage(1), showStage(2), showStage(3)]);
+		return { base, ours, theirs };
+	} finally {
+		cleanup();
+	}
+}
+
+/** Resolves a conflicted file by taking one side wholesale and staging it —
+ *  the pragmatic v1 (no manual merge-marker editing). */
+export async function gitResolveConflict(
+	cwd: string,
+	filePath: string,
+	resolution: 'ours' | 'theirs'
+): Promise<void> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		await git.raw(['checkout', `--${resolution}`, '--', filePath]);
+		await git.add([filePath]);
+	} finally {
+		cleanup();
+	}
+}
+
+export async function gitStashDrop(cwd: string, index: number): Promise<void> {
+	const { git, cleanup } = buildGit(cwd);
+	try {
+		await git.raw(['stash', 'drop', `stash@{${index}}`]);
+	} finally {
+		cleanup();
+	}
+}
+
 export async function getGitLog(
 	cwd: string,
 	opts: { filePath?: string; maxCount: number }
 ): Promise<GitCommitLogEntry[]> {
 	const { git, cleanup } = buildGit(cwd);
 	try {
-		const result = await git.log({ file: opts.filePath, maxCount: opts.maxCount });
+		const result = await git.log({
+			file: opts.filePath,
+			maxCount: opts.maxCount,
+			format: { hash: '%H', author_name: '%an', date: '%ai', message: '%s', parents: '%P' }
+		});
 		return result.all.map((c) => ({
 			hash: c.hash,
 			author: c.author_name,
 			date: c.date,
-			message: c.message
+			message: c.message,
+			parents: (c as unknown as { parents: string }).parents
+				? (c as unknown as { parents: string }).parents.split(' ').filter(Boolean)
+				: []
 		}));
 	} finally {
 		cleanup();

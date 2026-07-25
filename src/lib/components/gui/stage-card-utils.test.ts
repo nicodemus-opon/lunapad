@@ -4,8 +4,49 @@ import {
 	getNextStageRecommendations,
 	getStageEvidenceSummary,
 	getStageQualityInsights,
-	presentStageErrors
+	presentStageErrors,
+	reorderStagesByKeyOrder
 } from '$lib/components/gui/stage-card-utils';
+
+describe('reorderStagesByKeyOrder', () => {
+	const stages = ['from', 'filter', 'select', 'sort'];
+	const keys = ['k0', 'k1', 'k2', 'k3'];
+
+	it('returns noop when the key order is unchanged', () => {
+		expect(reorderStagesByKeyOrder(stages, keys, keys)).toEqual({ kind: 'noop' });
+	});
+
+	it('reorders stages and keys together to match the new key order', () => {
+		const newOrder = ['k0', 'k2', 'k1', 'k3'];
+		expect(reorderStagesByKeyOrder(stages, keys, newOrder)).toEqual({
+			kind: 'reorder',
+			stages: ['from', 'select', 'filter', 'sort'],
+			stageKeys: newOrder
+		});
+	});
+
+	it('signals revert when the pinned first stage would move', () => {
+		const newOrder = ['k1', 'k0', 'k2', 'k3'];
+		expect(reorderStagesByKeyOrder(stages, keys, newOrder)).toEqual({ kind: 'revert' });
+	});
+
+	it('signals revert when the new order has a different length', () => {
+		expect(reorderStagesByKeyOrder(stages, keys, ['k0', 'k1'])).toEqual({ kind: 'revert' });
+	});
+
+	it('signals revert when the new order contains an unknown or duplicate key', () => {
+		expect(reorderStagesByKeyOrder(stages, keys, ['k0', 'k1', 'k2', 'kX'])).toEqual({
+			kind: 'revert'
+		});
+		expect(reorderStagesByKeyOrder(stages, keys, ['k0', 'k1', 'k1', 'k3'])).toEqual({
+			kind: 'revert'
+		});
+	});
+
+	it('is a noop for an empty pipeline', () => {
+		expect(reorderStagesByKeyOrder([], [], [])).toEqual({ kind: 'noop' });
+	});
+});
 
 describe('getStageEvidenceSummary', () => {
 	it('returns status labels for non-result states', () => {

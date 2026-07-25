@@ -9,13 +9,12 @@
 		RefreshCcw,
 		X,
 		Plus,
-		Minus,
 		ExternalLink,
 		GitCommit,
 		Loader2,
 		FolderGit2
 	} from '@lucide/svelte';
-	import { getProjectFolder } from '$lib/stores/notebook.svelte';
+	import { getProjectFolder, openConflictResolutionTab } from '$lib/stores/notebook.svelte';
 	import { refreshGitStatus, getRawGitStatus } from '$lib/stores/git.svelte';
 	import {
 		gitBranches,
@@ -39,11 +38,14 @@
 		GitFileStatus,
 		GitRemoteInfo
 	} from '$lib/types/git';
-	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import GitStatusBadge from '$lib/components/git/GitStatusBadge.svelte';
-	import GitDiffView from '$lib/components/git/GitDiffView.svelte';
+	import CommitBox from '$lib/components/git/CommitBox.svelte';
+	import CommitGraph from '$lib/components/git/CommitGraph.svelte';
+	import StashSection from '$lib/components/git/StashSection.svelte';
+	import FileChangesSection from '$lib/components/git/FileChangesSection.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 
 	const projectFolder = $derived(getProjectFolder());
@@ -113,15 +115,6 @@
 		if (projectFolder) void refresh();
 	});
 
-	function relativeTime(dateStr: string): string {
-		const diffMs = Date.now() - new Date(dateStr).getTime();
-		const diffMin = Math.round(diffMs / 60_000);
-		if (diffMin < 1) return 'just now';
-		if (diffMin < 60) return `${diffMin}m ago`;
-		const diffHr = Math.round(diffMin / 60);
-		if (diffHr < 24) return `${diffHr}h ago`;
-		return `${Math.round(diffHr / 24)}d ago`;
-	}
 
 	function watchJobAsPromise(jobId: string, label: string): Promise<number> {
 		return new Promise((resolve) => {
@@ -171,6 +164,19 @@
 			await refresh();
 		} catch (err) {
 			toast.error((err as Error).message ?? 'Failed to stage files');
+		}
+	}
+
+	async function unstageAll() {
+		if (!projectFolder || !status?.staged.length) return;
+		try {
+			await gitUnstage(
+				projectFolder,
+				status.staged.map((f) => f.path)
+			);
+			await refresh();
+		} catch (err) {
+			toast.error((err as Error).message ?? 'Failed to unstage files');
 		}
 	}
 
@@ -495,179 +501,93 @@
 				{/snippet}
 			</EmptyState>
 		{:else}
-			<!-- Commit box -->
-			{#if status.staged.length > 0}
-				<div class="border-b border-border px-2 py-2">
-					<textarea
-						class="w-full resize-none rounded border border-input bg-background px-2 py-1.5 text-2xs placeholder:text-muted-foreground/40 focus:ring-1 focus:ring-primary/40 focus:outline-none"
-						rows="2"
-						placeholder="Commit message"
-						bind:value={commitMessage}
-					></textarea>
-					<div class="mt-1.5 flex gap-1">
-						<button
-							class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-primary px-2 py-1 text-2xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-							disabled={busy || !commitMessage.trim()}
-							onclick={() => void commitAndSync()}
+			<!-- Conflicts (highest urgency — shown first) -->
+			{#if status.conflicted.length > 0}
+				<div class="border-b border-border bg-destructive/5">
+					<div class="px-3 pt-2 pb-1">
+						<span class="text-xs font-semibold text-destructive"
+							>Conflicts ({status.conflicted.length})</span
 						>
-							{#if busy}<Loader2 class="h-3 w-3 animate-spin" />{:else}<GitCommit
-									class="h-3 w-3"
-								/>{/if}
-							{status.behind > 0 ? 'Pull, commit & sync' : 'Commit and sync'}
-						</button>
-						<button
-							class="shrink-0 rounded border border-border bg-background px-2 py-1 text-2xs transition-colors hover:bg-accent disabled:opacity-40"
-							disabled={busy || !commitMessage.trim()}
-							title="Commit without pushing"
-							onclick={() => void commitOnly()}
-						>
-							Commit only
-						</button>
 					</div>
+					{#each status.conflicted as path (path)}
+						<TreeRow
+							leafSpacer={false}
+							onActivate={() => openConflictResolutionTab(path)}
+						>
+							{#snippet icon()}<GitStatusBadge status="U" />{/snippet}
+							{#snippet label()}<span class="min-w-0 flex-1 truncate font-mono text-xs"
+									>{path}</span
+								>{/snippet}
+						</TreeRow>
+					{/each}
+					<p class="px-3 pb-2 text-3xs text-muted-foreground">
+						Resolve all conflicts before committing.
+					</p>
 				</div>
 			{/if}
 
-			<!-- Staged -->
-			{#if status.staged.length > 0}
-				<div class="px-3 pt-1.5 pb-0.5">
-					<span class="text-2xs font-medium text-muted-foreground/50"
-						>Staged ({status.staged.length})</span
-					>
-				</div>
-				{#each status.staged as file (file.path)}
-					<TreeRow
-						leafSpacer={false}
-						onActivate={() => void toggleDiff({ path: file.path, staged: true })}
-					>
-						{#snippet icon()}<GitStatusBadge status={file.status} />{/snippet}
-						{#snippet label()}<span class="min-w-0 flex-1 truncate font-mono text-xs"
-								>{file.path}</span
-							>{/snippet}
-						{#snippet trailing()}
-							<button
-								class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
-								title="Unstage"
-								onclick={(e) => {
-									e.stopPropagation();
-									void toggleStage(file, true);
-								}}
-							>
-								<Minus class="h-3 w-3" />
-							</button>
-						{/snippet}
-					</TreeRow>
-					{#if expandedPath === file.path}
-						<div class="px-2 pb-1.5">
-							<GitDiffView diff={expandedDiff} loading={expandedDiffLoading} />
-						</div>
-					{/if}
-				{/each}
-			{/if}
+			<!-- Commit box -->
+			<CommitBox
+				stagedCount={status.staged.length}
+				behind={status.behind}
+				{busy}
+				hasConflicts={status.conflicted.length > 0}
+				bind:message={commitMessage}
+				onCommitOnly={() => void commitOnly()}
+				onCommitAndSync={() => void commitAndSync()}
+			/>
 
-			<!-- Unstaged -->
-			{#if status.unstaged.length > 0}
-				<div class="px-3 pt-1.5 pb-0.5">
-					<span class="text-2xs font-medium text-muted-foreground/50"
-						>Changes ({status.unstaged.length})</span
-					>
-				</div>
-				{#each status.unstaged as file (file.path)}
-					<TreeRow
-						leafSpacer={false}
-						onActivate={() => void toggleDiff({ path: file.path, staged: false })}
-					>
-						{#snippet icon()}<GitStatusBadge status={file.status} />{/snippet}
-						{#snippet label()}<span class="min-w-0 flex-1 truncate font-mono text-xs"
-								>{file.path}</span
-							>{/snippet}
-						{#snippet trailing()}
-							<button
-								class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-destructive"
-								title="Discard changes"
-								onclick={(e) => {
-									e.stopPropagation();
-									confirmDiscard([file.path], false);
-								}}
-							>
-								<X class="h-3 w-3" />
-							</button>
-							<button
-								class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
-								title="Stage"
-								onclick={(e) => {
-									e.stopPropagation();
-									void toggleStage(file, false);
-								}}
-							>
-								<Plus class="h-3 w-3" />
-							</button>
-						{/snippet}
-					</TreeRow>
-					{#if expandedPath === file.path}
-						<div class="px-2 pb-1.5">
-							<GitDiffView diff={expandedDiff} loading={expandedDiffLoading} />
-						</div>
-					{/if}
-				{/each}
-			{/if}
+			<FileChangesSection
+				title="Staged Changes"
+				files={status.staged}
+				staged={true}
+				accent="staged"
+				bulkActionLabel={status.staged.length > 0 ? 'Unstage all' : undefined}
+				onBulkAction={() => void unstageAll()}
+				{expandedPath}
+				{expandedDiff}
+				{expandedDiffLoading}
+				onToggleDiff={(file) => void toggleDiff(file)}
+				onPrimaryAction={(path) => {
+					const file = status.staged.find((f) => f.path === path);
+					if (file) void toggleStage(file, true);
+				}}
+			/>
 
-			<!-- Untracked -->
-			{#if status.untracked.length > 0}
-				<div class="flex items-center justify-between px-3 pt-1.5 pb-0.5">
-					<span class="text-2xs font-medium text-muted-foreground/50"
-						>Untracked ({status.untracked.length})</span
-					>
-					<button
-						class="text-2xs text-muted-foreground hover:text-foreground"
-						onclick={() => void stageAllUntracked()}
-					>
-						Stage all
-					</button>
-				</div>
-				{#each status.untracked as filePath (filePath)}
-					<TreeRow
-						leafSpacer={false}
-						onActivate={() => void toggleDiff({ path: filePath, staged: false, untracked: true })}
-					>
-						{#snippet icon()}<GitStatusBadge status="?" />{/snippet}
-						{#snippet label()}<span
-								class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70"
-								>{filePath}</span
-							>{/snippet}
-						{#snippet trailing()}
-							<button
-								class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-destructive"
-								title="Delete file"
-								onclick={(e) => {
-									e.stopPropagation();
-									confirmDiscard([filePath], true);
-								}}
-							>
-								<X class="h-3 w-3" />
-							</button>
-							<button
-								class="invisible shrink-0 rounded p-0.5 text-muted-foreground group-hover/row:visible hover:bg-sidebar-accent/60 hover:text-foreground"
-								title="Stage"
-								onclick={(e) => {
-									e.stopPropagation();
-									void stageUntracked(filePath);
-								}}
-							>
-								<Plus class="h-3 w-3" />
-							</button>
-						{/snippet}
-					</TreeRow>
-					{#if expandedPath === filePath}
-						<div class="px-2 pb-1.5">
-							<GitDiffView diff={expandedDiff} loading={expandedDiffLoading} />
-						</div>
-					{/if}
-				{/each}
-			{/if}
+			<FileChangesSection
+				title="Changes"
+				files={status.unstaged}
+				staged={false}
+				bulkActionLabel={undefined}
+				{expandedPath}
+				{expandedDiff}
+				{expandedDiffLoading}
+				onToggleDiff={(file) => void toggleDiff(file)}
+				onPrimaryAction={(path) => {
+					const file = status.unstaged.find((f) => f.path === path);
+					if (file) void toggleStage(file, false);
+				}}
+				onSecondaryAction={(path) => confirmDiscard([path], false)}
+			/>
+
+			<FileChangesSection
+				title="Untracked"
+				files={status.untracked.map((path) => ({ path, status: '?' as const }))}
+				staged={false}
+				untracked={true}
+				bulkActionLabel={status.untracked.length > 0 ? 'Stage all' : undefined}
+				onBulkAction={() => void stageAllUntracked()}
+				{expandedPath}
+				{expandedDiff}
+				{expandedDiffLoading}
+				onToggleDiff={(file) => void toggleDiff(file)}
+				onPrimaryAction={(path) => void stageUntracked(path)}
+				onSecondaryAction={(path) => confirmDiscard([path], true)}
+			/>
 
 			{#if status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0}
-				<EmptyState description="No changes — working tree clean.">
-					{#snippet icon()}<GitCommit class="h-4 w-4" />{/snippet}
+				<EmptyState description="No changes — working tree is clean.">
+					{#snippet icon()}<GitCommit class="h-4 w-4 text-success" />{/snippet}
 				</EmptyState>
 			{/if}
 
@@ -705,21 +625,17 @@
 				{#if commits.length === 0}
 					<EmptyState description="No commits yet." />
 				{:else}
-					<div class="max-h-40 overflow-y-auto pb-1">
-						{#each commits as commit}
-							<div
-								class="mx-[var(--sidebar-row-inset)] px-[calc(var(--sidebar-panel-x)-var(--sidebar-row-inset))] py-1"
-							>
-								<p class="truncate text-2xs text-foreground">{commit.message}</p>
-								<p class="text-3xs text-muted-foreground/60">
-									{commit.author} · {relativeTime(commit.date)} · {commit.hash.slice(0, 7)}
-								</p>
-							</div>
-						{/each}
-					</div>
+					<CommitGraph {commits} />
 				{/if}
 			{/if}
 		</div>
+		<StashSection
+			{projectFolder}
+			hasChangesToStash={Boolean(
+				status.staged.length || status.unstaged.length || status.untracked.length
+			)}
+			onWorkingTreeChanged={() => void refresh()}
+		/>
 	{/if}
 
 	<!-- Live log drawer -->

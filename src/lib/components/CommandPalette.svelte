@@ -9,17 +9,21 @@
 		getLastCellId,
 		openNotebookTabAtCell,
 		navigateToOutlineEntry,
-		runAll
+		runAll,
+		getProjectFolder
 	} from '$lib/stores/notebook.svelte';
 	import { buildNotebookOutline } from '$lib/services/notebook-outline';
+	import { quickStageAll, quickPush, quickPull, quickFetch } from '$lib/services/git-quick-actions';
+	import { requestFocusCommitBox } from '$lib/stores/git.svelte';
 
 	interface Props {
 		open: boolean;
 		onClose: () => void;
 		onToggleSidebar?: () => void;
+		onOpenGitPanel?: () => void;
 	}
 
-	let { open = $bindable(), onClose, onToggleSidebar }: Props = $props();
+	let { open = $bindable(), onClose, onToggleSidebar, onOpenGitPanel }: Props = $props();
 
 	let query = $state('');
 	let selectedIndex = $state(0);
@@ -33,6 +37,7 @@
 
 	const notebooks = $derived(getNotebooks());
 	const activeNotebookId = $derived(getActiveTabId());
+	const projectFolder = $derived(getProjectFolder());
 
 	const allItems = $derived<PaletteItem[]>([
 		...notebooks.map((nb) => ({
@@ -89,7 +94,66 @@
 				if (lastId) addCellAfter(lastId);
 				close();
 			}
-		}
+		},
+		...(projectFolder
+			? ([
+					{
+						kind: 'action',
+						label: 'Git: Stage all changes',
+						sub: '',
+						run: () => {
+							void quickStageAll();
+							close();
+						}
+					},
+					{
+						kind: 'action',
+						label: 'Git: Commit staged changes',
+						sub: '',
+						run: () => {
+							requestFocusCommitBox();
+							onOpenGitPanel?.();
+							close();
+						}
+					},
+					{
+						kind: 'action',
+						label: 'Git: Push',
+						sub: '',
+						run: () => {
+							void quickPush();
+							close();
+						}
+					},
+					{
+						kind: 'action',
+						label: 'Git: Pull',
+						sub: '',
+						run: () => {
+							void quickPull();
+							close();
+						}
+					},
+					{
+						kind: 'action',
+						label: 'Git: Fetch',
+						sub: '',
+						run: () => {
+							void quickFetch();
+							close();
+						}
+					},
+					{
+						kind: 'action',
+						label: 'Git: Switch branch…',
+						sub: '',
+						run: () => {
+							onOpenGitPanel?.();
+							close();
+						}
+					}
+				] satisfies PaletteItem[])
+			: [])
 	]);
 
 	const filtered = $derived.by(() => {

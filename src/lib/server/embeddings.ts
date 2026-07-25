@@ -395,6 +395,19 @@ export async function searchMemoryEmbeddings(
 	).catch(() => []);
 }
 
+/** Slugs already embedded for a folder — used to backfill entries written before
+ *  Postgres/Ollama were configured (or written while embed-memory briefly failed). */
+export async function listMemoryEmbeddedSlugs(
+	folder: string,
+	tenant?: TenantRef | null
+): Promise<Set<string>> {
+	const rows = await query<{ slug: string }>(
+		`SELECT slug FROM memory_embeddings WHERE folder = $1 AND org_id = $2 AND project_id = $3`,
+		[folder, tenant?.orgId ?? DEFAULT_ORG_ID, tenant?.projectId ?? DEFAULT_PROJECT_ID]
+	).catch(() => []);
+	return new Set(rows.map((r) => r.slug));
+}
+
 export async function countSchemaEmbeddings(
 	connectionIds: string[],
 	tenant?: TenantRef | null

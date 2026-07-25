@@ -16,6 +16,8 @@
 	import PromoteDialog from './PromoteDialog.svelte';
 	import PromoteSeedDialog from './PromoteSeedDialog.svelte';
 	import { mapErrorsToStages } from '$lib/services/gui-prql';
+	import { getCellDiff } from '$lib/services/cell-diff';
+	import type { DiffHunk } from '$lib/utils/unified-diff';
 	import { createCellModeSwitch } from '$lib/services/cell-mode-switch.svelte';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import type { CompletionEntry } from '$lib/monaco/completions';
@@ -263,6 +265,28 @@
 	const isPythonCell = $derived(cell.cellType === 'python');
 	const isControlCell = $derived(Boolean(cell.controlConfig));
 	const pythonTableHints = $derived(getPythonTableHints(cell.code, notebookId));
+
+	// Git diff gutter (flat-format notebooks only — see cell-diff.ts). Debounced
+	// so a fast typist doesn't fire a diff round trip on every keystroke.
+	let gitDiffHunks = $state<DiffHunk[] | undefined>(undefined);
+	let gitDiffTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		const code = cell.code;
+		void cell.outputName;
+		void cell.language;
+		const nbId = notebookId;
+		const currentCell = cell;
+		if (!isQueryCell || !nbId) {
+			gitDiffHunks = undefined;
+			return;
+		}
+		if (gitDiffTimer) clearTimeout(gitDiffTimer);
+		gitDiffTimer = setTimeout(() => {
+			void getCellDiff(nbId, currentCell, code).then((parsed) => {
+				gitDiffHunks = parsed?.hunks;
+			});
+		}, 500);
+	});
 	// Raw-code editor cells the inline "Tell AI what to do" prompt supports — GUI-mode
 	// query cells have their own AI entry via AddStageMenu instead.
 	const canInlinePrompt = $derived((isQueryCell && cell.editMode !== 'gui') || isPythonCell);
@@ -1163,6 +1187,7 @@
 					{dark}
 					layout={editorLayout}
 					embeddedNotebook
+					{gitDiffHunks}
 					onchange={(c) => updateCellCode(cell.id, c)}
 				/>
 			</div>

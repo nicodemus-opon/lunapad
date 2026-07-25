@@ -76,6 +76,7 @@
 		restoreSeedTables,
 		restoreAttachedDatabases,
 		isNotebookDirty,
+		getNotebookGitStatus,
 		scheduleFileSave,
 		openLineageTab,
 		duplicateNotebook,
@@ -143,6 +144,12 @@
 	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import DbtPanel from '$lib/components/DbtPanel.svelte';
 	import GitPanel from '$lib/components/GitPanel.svelte';
+	import GlobalStatusBar from '$lib/components/GlobalStatusBar.svelte';
+	import GitStatusBadge from '$lib/components/git/GitStatusBadge.svelte';
+	import ConflictResolutionView from '$lib/components/git/ConflictResolutionView.svelte';
+	import type { GitDisplayStatus } from '$lib/types/git';
+	import { quickStageAll, quickPush, quickPull } from '$lib/services/git-quick-actions';
+	import { requestFocusCommitBox } from '$lib/stores/git.svelte';
 	import EvidencePanel from '$lib/components/EvidencePanel.svelte';
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
@@ -187,6 +194,7 @@
 		Table2,
 		BarChart2,
 		Network,
+		AlertTriangle,
 		Check,
 		FolderPlus,
 		Search,
@@ -261,6 +269,7 @@
 
 	const SHORTCUT_GROUPS: { key: string; title: string }[] = [
 		{ key: 'global', title: 'Notebook — global' },
+		{ key: 'git', title: 'Git' },
 		{ key: 'command-mode', title: 'Notebook — command mode' },
 		{ key: 'cell-editor', title: 'Cell editor' },
 		{ key: 'gui-stages', title: 'GUI pipeline stages' },
@@ -765,7 +774,15 @@
 			},
 			goForwardPageNav: () => {
 				goForwardPageNav();
-			}
+			},
+			openGitPanel: () => selectSidebarPanel('git'),
+			stageAllGitChanges: () => void quickStageAll(),
+			focusGitCommitBox: () => {
+				requestFocusCommitBox();
+				selectSidebarPanel('git');
+			},
+			gitPush: () => void quickPush(),
+			gitPull: () => void quickPull()
 		});
 		return () => {
 			unmountKeyboard();
@@ -2006,6 +2023,7 @@
 					name: string;
 					icon?: typeof Table2;
 					dirty?: boolean;
+					gitStatus?: GitDisplayStatus;
 					staleCount?: number;
 					renamable?: boolean;
 					closable?: boolean;
@@ -2048,6 +2066,9 @@
 							/>
 						{:else}
 							<span class="max-w-32 truncate">{opts.name}</span>
+						{/if}
+						{#if opts.gitStatus}
+							<GitStatusBadge status={opts.gitStatus} class="w-auto" />
 						{/if}
 						{#if (opts.staleCount ?? 0) > 0}
 							<span
@@ -2117,6 +2138,7 @@
 										id: nb.id,
 										name: notebookDisplayName(nb.id, nb.name),
 										dirty: isNotebookDirty(nb.id),
+										gitStatus: getNotebookGitStatus(nb),
 										staleCount,
 										renamable: true,
 										closable: notebooks.length > 1,
@@ -2168,7 +2190,9 @@
 									? Network
 									: et.type === 'evidence-preview'
 										? MonitorPlay
-										: Table2}
+										: et.type === 'conflict-resolution'
+											? AlertTriangle
+											: Table2}
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
 								{@render appTab({
@@ -2494,6 +2518,13 @@
 							<main class="flex-1 overflow-hidden">
 								<EvidencePreview pagePath={activeExtraTab.pagePath ?? ''} />
 							</main>
+						{:else if activeExtraTab.type === 'conflict-resolution'}
+							<main class="flex-1 overflow-hidden">
+								<ConflictResolutionView
+									conflictPath={activeExtraTab.conflictPath ?? ''}
+									tabId={activeExtraTab.id}
+								/>
+							</main>
 						{:else}
 							<main class="flex-1 overflow-y-auto">
 								<div class="mx-auto max-w-7xl px-4 py-4">
@@ -2565,6 +2596,7 @@
 				</div>
 			</div>
 		</div>
+		<GlobalStatusBar {projectFolder} onOpenGitPanel={() => selectSidebarPanel('git')} />
 	</div>
 {/if}
 
@@ -2572,6 +2604,7 @@
 	bind:open={commandPaletteOpen}
 	onClose={() => (commandPaletteOpen = false)}
 	onToggleSidebar={toggleSidebarCollapsed}
+	onOpenGitPanel={() => selectSidebarPanel('git')}
 />
 
 <SettingsDialog

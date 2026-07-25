@@ -1,9 +1,29 @@
 import { READONLY_INVESTIGATION_TOOLS } from '$lib/server/ai-tools.js';
 import { SUPPORTED_BLOCK_TYPES } from '$lib/services/generated-dashboard.js';
+import { DEFERRED_TOOL_HINTS } from '$lib/agent/tools/tool-search-catalog.js';
 
 // Native OpenAI-format tool definitions (kept minimal to reduce token count)
 // Lookup tools run client-side; they inject results as text into the message thread.
 const ALL_NATIVE_TOOLS = [
+	{
+		type: 'function',
+		function: {
+			name: 'find_tools',
+			description:
+				`Search for a tool not in your current toolset by describing what you need to do. Covers: ${DEFERRED_TOOL_HINTS.map((t) => `${t.name} (${t.hint})`).join('; ')}. ` +
+				'Returns matching tool names; call the tool itself on your NEXT turn (it is not usable in the same turn as this call).',
+			parameters: {
+				type: 'object',
+				properties: {
+					query: {
+						type: 'string',
+						description: 'What you need to do, e.g. "change chart type" or "reorder a cell".'
+					}
+				},
+				required: ['query']
+			}
+		}
+	},
 	{
 		type: 'function',
 		function: {
@@ -604,3 +624,35 @@ const LEGACY_CELL_TOOLS = new Set(['create_cell', 'update_cell']);
 export const NATIVE_TOOLS = ALL_NATIVE_TOOLS.filter(
 	(tool) => !LEGACY_CELL_TOOLS.has(tool.function.name)
 );
+
+// Tools whose cellType enum offers "python" unconditionally, even when this session's
+// environment can't run it — the enum and the system prompt's "SQL only" guidance would
+// otherwise contradict each other. Strip the option at request-build time instead of
+// forking NATIVE_TOOLS into a pythonAvailable-parameterized function, since NATIVE_TOOLS
+// is shared by the registry/MCP surfaces where no such per-request flag exists.
+const PYTHON_CELL_TYPE_PATHS: Record<string, string[]> = {
+	create_notebook: ['blueprint', 'executableCells'],
+	apply_notebook_patch: ['executableCells']
+};
+
+export function withoutUnavailablePythonCellType(
+	tools: typeof NATIVE_TOOLS,
+	pythonAvailable: boolean
+): typeof NATIVE_TOOLS {
+	if (pythonAvailable) return tools;
+	return tools.map((tool) => {
+		const path = PYTHON_CELL_TYPE_PATHS[tool.function.name];
+		if (!path) return tool;
+		const clone = structuredClone(tool);
+		let node: Record<string, any> = clone.function.parameters?.properties ?? {};
+		for (const key of path) {
+			node = node?.[key]?.properties ?? node?.[key]?.items?.properties;
+			if (!node) return tool;
+		}
+		const cellTypeSchema = node.cellType as { enum?: string[] } | undefined;
+		if (cellTypeSchema?.enum) {
+			cellTypeSchema.enum = cellTypeSchema.enum.filter((v) => v !== 'python');
+		}
+		return clone;
+	}) as typeof NATIVE_TOOLS;
+}

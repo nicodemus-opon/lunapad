@@ -146,7 +146,8 @@ export type AIChatToolName =
 	| 'record_decision'
 	| 'validate_result'
 	| 'compare_cells'
-	| 'ask_user';
+	| 'ask_user'
+	| 'find_tools';
 
 export interface CreateCellArgs {
 	afterCellId?: string;
@@ -282,6 +283,10 @@ export interface AskUserArgs {
 	options?: string[];
 }
 
+export interface FindToolsArgs {
+	query: string;
+}
+
 export interface AIChatToolCall {
 	callId: string;
 	tool: AIChatToolName;
@@ -308,5 +313,6 @@ export interface AIChatToolCall {
 		| RecordDecisionArgs
 		| ValidateResultArgs
 		| CompareCellsArgs
-		| AskUserArgs;
+		| AskUserArgs
+		| FindToolsArgs;
 }

@@ -38,6 +38,14 @@ export interface GitCommitLogEntry {
 	author: string;
 	date: string;
 	message: string;
+	/** Parent commit hashes — empty for the root commit, 2+ for a merge. */
+	parents: string[];
+}
+
+export interface GitStashEntry {
+	index: number;
+	message: string;
+	date: string;
 }
 
 export interface GitRemoteInfo {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { cn } from '$lib/utils';
+	import { isStageDragging } from '$lib/stores/chip-edit.svelte';
 
 	interface Props {
 		value: string;
@@ -31,6 +32,9 @@
 	$effect(() => {
 		if (!editing) draft = value;
 	}); // sync when not editing (e.g. external value change)
+	$effect(() => {
+		if (isStageDragging()) open = false;
+	});
 
 	let inputEl = $state<HTMLInputElement | undefined>();
 	let mirror = $state<HTMLSpanElement | undefined>();
@@ -180,7 +184,7 @@
 		{#if open && filtered.length > 0}
 			<!-- position:fixed so overflow:hidden on ancestor chip containers doesn't clip this -->
 			<div
-				style="position: fixed; top: {dropdownTop}px; left: {dropdownLeft}px; z-index: 9999;"
+				style="position: fixed; top: {dropdownTop}px; left: {dropdownLeft}px; z-index: var(--z-dropdown, 65);"
 				class="max-h-48 max-w-56 min-w-max overflow-auto rounded-md border bg-popover shadow-md"
 			>
 				{#each filtered as s, i (s)}

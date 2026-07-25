@@ -9,7 +9,8 @@ export const STOP_AFTER_TOOLS = new Set([
 	'query_data',
 	'profile_column',
 	'get_cell_result',
-	'ask_user'
+	'ask_user',
+	'find_tools'
 ]);
 
 export function shouldStopAfterTool(tool: string): boolean {

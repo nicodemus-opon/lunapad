@@ -404,6 +404,38 @@ function makeStageFromType(
 	}
 }
 
+export type StageReorderResult<T> =
+	| { kind: 'reorder'; stages: T[]; stageKeys: string[] }
+	| { kind: 'revert' }
+	| { kind: 'noop' };
+
+// Given the current stages/stageKeys and the key order Sortable reports the DOM is
+// now in, decide what to do. The first stage is pinned — any DOM order that doesn't
+// keep it first is rejected as a 'revert' signal (caller should use sortable.sort()
+// to physically put the DOM back, since Svelte's keyed {#each} will only reconcile
+// its own state to a *new* key order, not point-in-time DOM reality).
+export function reorderStagesByKeyOrder<T>(
+	stages: T[],
+	stageKeys: string[],
+	newKeyOrder: string[]
+): StageReorderResult<T> {
+	if (newKeyOrder.length !== stageKeys.length) return { kind: 'revert' };
+	if (stageKeys.length === 0) return { kind: 'noop' };
+	if (newKeyOrder[0] !== stageKeys[0]) return { kind: 'revert' };
+	if (newKeyOrder.every((key, i) => key === stageKeys[i])) return { kind: 'noop' };
+
+	const byKey = new Map(stageKeys.map((key, i) => [key, stages[i]]));
+	const nextStages = newKeyOrder.map((key) => byKey.get(key));
+	if (
+		nextStages.some((stage) => stage === undefined) ||
+		new Set(newKeyOrder).size !== newKeyOrder.length
+	) {
+		return { kind: 'revert' };
+	}
+
+	return { kind: 'reorder', stages: nextStages as T[], stageKeys: newKeyOrder };
+}
+
 export function getStageSummary(stage: GUIPipelineStage): string {
 	switch (stage.type) {
 		case 'from':

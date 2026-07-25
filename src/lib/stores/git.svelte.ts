@@ -28,6 +28,19 @@ export async function refreshGitStatus(folder: string): Promise<GitStatus | null
 	}
 }
 
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced trailing-edge refresh for callers (like notebook autosave) that
+ *  write to disk frequently and shouldn't each trigger their own git-status
+ *  round trip — collapses bursts of writes into a single refresh. */
+export function scheduleGitStatusRefresh(folder: string, delayMs = 750): void {
+	if (refreshTimer) clearTimeout(refreshTimer);
+	refreshTimer = setTimeout(() => {
+		refreshTimer = null;
+		void refreshGitStatus(folder);
+	}, delayMs);
+}
+
 const statusByPath = $derived.by(() => {
 	const map = new Map<string, GitDisplayStatus>();
 	if (!rawStatus?.isRepo) return map;
@@ -76,4 +89,17 @@ function statusPriority(status: GitDisplayStatus): number {
 
 export function getCurrentGitFolder(): string | null {
 	return currentFolder;
+}
+
+let focusCommitBoxRequest = $state(0);
+
+/** Bumped by command-palette/keyboard actions that want the commit message box
+ *  focused — GitPanel's CommitBox watches this rather than taking a direct ref,
+ *  since the caller (command palette) has no DOM handle into the sidebar panel. */
+export function requestFocusCommitBox(): void {
+	focusCommitBoxRequest++;
+}
+
+export function getFocusCommitBoxRequest(): number {
+	return focusCommitBoxRequest;
 }

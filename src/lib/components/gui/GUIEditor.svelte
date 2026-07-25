@@ -10,6 +10,8 @@
 		deriveChipErrors,
 		reconcileStagesAfterSourceChange
 	} from '$lib/services/gui-prql';
+	import { reorderStagesByKeyOrder } from './stage-card-utils';
+	import { setStageDragging } from '$lib/stores/chip-edit.svelte';
 	import type { PRQLStageError } from '$lib/services/gui-prql';
 	import {
 		getIntelligentPresetSuggestions,
@@ -486,11 +488,17 @@
 
 	// ── Drag-and-drop ──────────────────────────────────────────────────────────
 	let stageListEl: HTMLElement | undefined = $state();
+	let sortable: Sortable | undefined;
 
 	onMount(() => {
 		if (!stageListEl) return;
-		const sortable = Sortable.create(stageListEl, {
+		sortable = Sortable.create(stageListEl, {
 			handle: '[data-drag-handle]',
+			// Restrict Sortable's own index/order tracking to actual stage cards —
+			// otherwise it also counts the interleaved .insert-zone divider divs,
+			// which throws off evt.oldIndex/newIndex for any stage past index 1.
+			draggable: '.stage-item',
+			dataIdAttr: 'data-sortable-key',
 			animation: 150,
 			ghostClass: 'stage-sort-ghost',
 			chosenClass: 'stage-sort-chosen',
@@ -501,34 +509,39 @@
 				// Suppress the stage-enter keyframe while sorting so the re-render on
 				// drop doesn't replay it against Sortable's own drop animation.
 				isSorting = true;
+				// Force-close any open chip suggestion dropdown — Sortable moves DOM
+				// nodes directly, so a dropdown left open mid-drag can end up detached
+				// from its input's live position.
+				setStageDragging(true);
 			},
-			onEnd(evt) {
+			onEnd() {
 				requestAnimationFrame(() => {
 					isSorting = false;
 				});
-				const oldIdx = evt.oldIndex ?? 0;
-				const newIdx = evt.newIndex ?? 0;
-				if (oldIdx === newIdx) return;
-				// Lock the first (from) stage in place
-				if (oldIdx === 0 || newIdx === 0) {
-					// Force Svelte to re-render, undoing the DOM move
-					onStagesChange([...stages]);
+				setStageDragging(false);
+				if (!sortable) return;
+				// Ask Sortable for the DOM order it actually left things in, rather than
+				// trusting evt.oldIndex/newIndex (unreliable — see draggable option above).
+				const newKeyOrder = sortable.toArray();
+				const result = reorderStagesByKeyOrder(stages, stageKeys, newKeyOrder);
+				if (result.kind === 'noop') return;
+				if (result.kind === 'revert') {
+					// Sortable already physically moved DOM nodes; since stages/stageKeys
+					// are staying the same, Svelte's keyed {#each} won't move anything back
+					// on its own (same key order in, same key order out). Use Sortable's own
+					// API to actually put the DOM back so it doesn't desync from Svelte's
+					// internal keyed-each bookkeeping.
+					sortable.sort(stageKeys, true);
 					return;
 				}
-				const next = [...stages];
-				const [moved] = next.splice(oldIdx, 1);
-				next.splice(newIdx, 0, moved);
-
-				// Reorder stageKeys in parallel so Svelte tracks the moved card
-				const nextKeys = [...stageKeys];
-				const [movedKey] = nextKeys.splice(oldIdx, 1);
-				nextKeys.splice(newIdx, 0, movedKey);
-				stageKeys = nextKeys;
-
-				onStagesChange(next);
+				stageKeys = result.stageKeys;
+				onStagesChange(result.stages);
 			}
 		});
-		return () => sortable.destroy();
+		return () => {
+			sortable?.destroy();
+			sortable = undefined;
+		};
 	});
 
 	$effect(() => {
@@ -558,7 +571,11 @@
 						</div>
 					</div>
 				{/if}
-				<div class="stage-item" style={`--stage-enter-delay: ${Math.min(idx, 7) * 26}ms`}>
+				<div
+					class="stage-item"
+					data-sortable-key={stageKeys[idx]}
+					style={`--stage-enter-delay: ${Math.min(idx, 7) * 26}ms`}
+				>
 					<PipelineStageCard
 						{stage}
 						index={idx}

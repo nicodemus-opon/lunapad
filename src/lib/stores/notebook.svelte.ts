@@ -29,6 +29,8 @@ import { maskDollarQuotedBlocks } from '$lib/utils/sql-dollar-quote';
 import { deconflictName } from '$lib/utils/deconflict';
 import { serializeCell as serializeCellToFile } from '$lib/services/prql-file';
 import { serializeLunaFile } from '$lib/services/luna-file';
+import { getGitStatusForPaths, scheduleGitStatusRefresh } from '$lib/stores/git.svelte';
+import type { GitDisplayStatus } from '$lib/types/git';
 import type { OutlineEntry } from '$lib/services/notebook-outline';
 import { buildNotebookOutline } from '$lib/services/notebook-outline';
 import {
@@ -414,7 +416,7 @@ export interface ResultTabInfo {
 
 export interface ExtraTab {
 	id: string;
-	type: 'table-view' | 'profile' | 'lineage' | 'evidence-preview';
+	type: 'table-view' | 'profile' | 'lineage' | 'evidence-preview' | 'conflict-resolution';
 	tableName: string;
 	name: string;
 	viewMode: ResultViewMode;
@@ -423,6 +425,8 @@ export interface ExtraTab {
 	focusedModelName?: string;
 	// For evidence-preview tabs
 	pagePath?: string;
+	// For conflict-resolution tabs: repo-relative path of the conflicted file
+	conflictPath?: string;
 }
 
 export interface LLMConfig {
@@ -2567,7 +2571,7 @@ function getRelativeNotebookPath(notebook: Notebook, cell: Cell): string | null 
 }
 
 /** Relative path within the project folder for a single cell's .prql file. */
-function getRelativeCellPath(notebook: Notebook, cell: Cell): string | null {
+export function getRelativeCellPath(notebook: Notebook, cell: Cell): string | null {
 	return getRelativeNotebookPath(notebook, cell);
 }
 
@@ -2579,6 +2583,12 @@ export function getNotebookGitPaths(notebook: Notebook): string[] {
 		.map((cell) => getRelativeNotebookPath(notebook, cell))
 		.filter((p): p is string => p !== null);
 	return [...new Set(paths)];
+}
+
+/** Highest-priority git status across a notebook's backing file(s) — shared by
+ *  NotebookTree's row badge and the tab bar's tab indicator. */
+export function getNotebookGitStatus(notebook: Notebook): GitDisplayStatus | undefined {
+	return getGitStatusForPaths(getNotebookGitPaths(notebook));
 }
 
 /** All known model outputNames across the project, for ref() injection on save. */
@@ -2631,14 +2641,15 @@ function scheduleLunaNotebookSave(notebookId: string): void {
 			const nb = state.notebooks.find((n) => n.id === notebookId);
 			if (!nb || !state.projectFolder) return;
 			const content = serializeLunaFile(nb.cells);
-			writeProjectFile(state.projectFolder, `${nb.id}.luna`, content, state.isDbtProject).catch(
-				(e) => {
+			const folder = state.projectFolder;
+			writeProjectFile(folder, `${nb.id}.luna`, content, state.isDbtProject)
+				.then(() => scheduleGitStatusRefresh(folder))
+				.catch((e) => {
 					// A failed write must not leave the notebook falsely marked clean —
 					// re-flag it dirty so the unsaved state is accurate and a later edit retries.
 					console.error('[workspace] failed to save notebook to disk', e);
 					dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
-				}
-			);
+				});
 		}, 500)
 	);
 }
@@ -2674,12 +2685,15 @@ export function scheduleFileSave(notebookId: string, cellId: string): void {
 			// so the file-watcher reload re-groups them under the correct notebook.
 			const notebookAnnotation = cell.outputName !== nb.name ? nb.id : undefined;
 			const content = serializeCellToFile(cell, knownModels, notebookAnnotation);
-			writeProjectFile(state.projectFolder, relPath, content, state.isDbtProject).catch((e) => {
-				// A failed write must not leave the notebook falsely marked clean —
-				// re-flag it dirty so the unsaved state is accurate and a later edit retries.
-				console.error('[workspace] failed to save cell to disk', e);
-				dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
-			});
+			const folder = state.projectFolder;
+			writeProjectFile(folder, relPath, content, state.isDbtProject)
+				.then(() => scheduleGitStatusRefresh(folder))
+				.catch((e) => {
+					// A failed write must not leave the notebook falsely marked clean —
+					// re-flag it dirty so the unsaved state is accurate and a later edit retries.
+					console.error('[workspace] failed to save cell to disk', e);
+					dirtyNotebookIds = new Set([...dirtyNotebookIds, notebookId]);
+				});
 		}, 500)
 	);
 }
@@ -4805,6 +4819,28 @@ export function openLineageTab(focusedModelName?: string): void {
 		viewMode: 'table',
 		chartConfig: null,
 		focusedModelName
+	};
+	state.openExtraTabs = [...state.openExtraTabs, tab];
+	state.activeTabId = tab.id;
+}
+
+export function openConflictResolutionTab(conflictPath: string): void {
+	const existing = state.openExtraTabs.find(
+		(t) => t.type === 'conflict-resolution' && t.conflictPath === conflictPath
+	);
+	if (existing) {
+		state.activeTabId = existing.id;
+		return;
+	}
+	const fileName = conflictPath.split('/').pop() ?? conflictPath;
+	const tab: ExtraTab = {
+		id: makeId(),
+		type: 'conflict-resolution',
+		tableName: '',
+		name: `Conflict: ${fileName}`,
+		viewMode: 'table',
+		chartConfig: null,
+		conflictPath
 	};
 	state.openExtraTabs = [...state.openExtraTabs, tab];
 	state.activeTabId = tab.id;

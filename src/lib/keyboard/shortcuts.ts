@@ -265,6 +265,53 @@ export const SHORTCUTS: ShortcutDef[] = [
 		handler: () => redo()
 	},
 
+	// ── Git ───────────────────────────────────────────────────────────────────
+	{
+		id: 'git.open-panel',
+		chord: { key: 'g', mod: true, shift: true },
+		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		group: 'git',
+		label: 'Open source control',
+		when: notTyping,
+		handler: () => page()?.openGitPanel()
+	},
+	{
+		id: 'git.stage-all',
+		chord: { key: 'a', mod: true, shift: true },
+		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		group: 'git',
+		label: 'Stage all changes',
+		when: notTyping,
+		handler: () => page()?.stageAllGitChanges()
+	},
+	{
+		id: 'git.commit-focus',
+		chord: { key: 'i', mod: true, shift: true },
+		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		group: 'git',
+		label: 'Focus commit message',
+		when: notTyping,
+		handler: () => page()?.focusGitCommitBox()
+	},
+	{
+		id: 'git.push',
+		chord: { key: 'p', mod: true, shift: true },
+		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		group: 'git',
+		label: 'Push',
+		when: notTyping,
+		handler: () => page()?.gitPush()
+	},
+	{
+		id: 'git.pull',
+		chord: { key: 'u', mod: true, shift: true },
+		contexts: ['global', 'command-mode', 'monaco-code', 'monaco-markdown', 'stage-editor', 'stage-menu'],
+		group: 'git',
+		label: 'Pull',
+		when: notTyping,
+		handler: () => page()?.gitPull()
+	},
+
 	// ── Cell editor (Monaco / stage-adjacent) ─────────────────────────────────
 	{
 		id: 'cell.run',

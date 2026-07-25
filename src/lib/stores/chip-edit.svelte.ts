@@ -16,3 +16,17 @@ export function endChipEdit(): void {
 export function isChipEditing(): boolean {
 	return activeChipEdits > 0;
 }
+
+// Set while a GUIEditor stage (or inner condition/aggregate/derive) drag is in
+// flight. Chip suggestion dropdowns (ChipInput/InlineChipLabel) close themselves
+// while this is true, since SortableJS moves DOM nodes directly and a chip
+// dropdown left open mid-drag can end up detached from its input's live position.
+let stageDragging = $state(false);
+
+export function setStageDragging(dragging: boolean): void {
+	stageDragging = dragging;
+}
+
+export function isStageDragging(): boolean {
+	return stageDragging;
+}

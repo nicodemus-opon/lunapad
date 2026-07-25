@@ -125,12 +125,15 @@ import type {
 	ProfileColumnArgs,
 	RecordDecisionArgs,
 	AskUserArgs,
+	FindToolsArgs,
+	AIChatToolName,
 	WorkspaceContract,
 	WorkspaceNamingRule,
 	SprintTask,
 	SprintTaskType,
 	PipelinePhase
 } from '$lib/types/ai-chat.js';
+import { CORE_TOOLS, findDeferredTools } from '$lib/agent/tools/tool-search-catalog.js';
 import {
 	buildDiscoverySummary,
 	parseReviewResult,
@@ -339,6 +342,9 @@ const _sessionId = crypto.randomUUID();
 let _sessionDataContext = new Map<string, string>();
 // Modeling decisions recorded via record_decision tool — persists across turns
 let _sessionPlanContext: string[] = [];
+// Tool names unlocked this session via find_tools — widens the standard-loop's default
+// CORE_TOOLS set on subsequent requests (progressive tool disclosure, see tool-search-catalog.ts)
+let _sessionUnlockedTools = new Set<AIChatToolName>();
 // Row count + column profile cache per table — keyed by table name
 let _preflightCache = new Map<
 	string,
@@ -393,6 +399,7 @@ export function resetAISession(): void {
 	saveAIMemory();
 	_sessionDataContext = new Map();
 	_sessionPlanContext = [];
+	_sessionUnlockedTools = new Set();
 	_preflightCache = new Map();
 	_preflightDone = false;
 	_idlePreflightDone = false;
@@ -421,6 +428,7 @@ export async function loadProjectMemoryIfNeeded(): Promise<void> {
 	_lastLoadedMemoryFolder = folder;
 
 	_sessionDataContext = new Map();
+	_sessionUnlockedTools = new Set();
 	_preflightCache = new Map();
 	_preflightDone = false;
 	_idlePreflightDone = false;
@@ -442,6 +450,28 @@ export async function loadProjectMemoryIfNeeded(): Promise<void> {
 	} catch (err) {
 		console.error('[ai-memory] failed to load project memory:', err);
 		_sessionPlanContext = [];
+	}
+
+	// Fire-and-forget: catch up any memory entries written before Postgres/Ollama were
+	// configured. Never blocks this function — a fresh folder-open still proceeds on the
+	// (already awaited) ambient seed above regardless of how long this takes.
+	void backfillMemoryEmbeddingsIfHealthy(folder);
+}
+
+/** Runs at most once per folder-open (loadProjectMemoryIfNeeded already dedupes by folder).
+ *  Best-effort in every sense: skips silently if Postgres/Ollama aren't configured, and
+ *  swallows any request failure — this is a coverage improvement, never a requirement. */
+async function backfillMemoryEmbeddingsIfHealthy(folder: string): Promise<void> {
+	try {
+		const health = await fetch('/api/ai/context-health').then((r) => r.json());
+		if (!health?.rag) return;
+		await fetch('/api/ai/memory/backfill-embeddings', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ folder })
+		});
+	} catch {
+		/* Postgres/Ollama unavailable or request failed — lexical fallback still works */
 	}
 }
 
@@ -1291,7 +1321,16 @@ function buildRequest(contextCellIds: string[], workspaceMemory?: string): AICha
 		...(_sessionPlanContext.length > 0 && { sessionPlanContext: _sessionPlanContext.slice(-15) }),
 		...(workspaceContract && { workspaceContract }),
 		// #9 — Flag schema changes so the model re-verifies column names
-		...(schemaChangeNote && { schemaChangeNote })
+		...(schemaChangeNote && { schemaChangeNote }),
+		// Progressive tool disclosure: default the standard loop to CORE_TOOLS + whatever's been
+		// unlocked via find_tools this session. Subagent call sites overwrite allowedTools right
+		// after calling buildRequest(), so this default never reaches them. Native tool-calling
+		// only — Ollama's XML tool-call format has no `tools` array to narrow, and this same
+		// value also gates which tool names the server accepts (chat/+server.ts), so setting it
+		// there would incorrectly restrict small local models to CORE_TOOLS.
+		...(llmConfig.provider !== 'ollama' && {
+			allowedTools: [...new Set([...CORE_TOOLS, ..._sessionUnlockedTools])]
+		})
 	};
 }
 
@@ -1622,6 +1661,17 @@ async function executeToolCallWithResult(
 	}
 
 	emitAgentTelemetry({ type: 'tool', tool: call.tool });
+
+	if (call.tool === 'find_tools') {
+		const { query } = call.args as FindToolsArgs;
+		const matches = findDeferredTools(query);
+		for (const m of matches) _sessionUnlockedTools.add(m.name);
+		const text = matches.length
+			? `Found: ${matches.map((m) => `${m.name} (${m.hint})`).join('; ')}. Available on your next turn.`
+			: `No matching tool found for "${query}".`;
+		updateMessageText(aiMsgId, `\n\n${text}\n\n`);
+		return text;
+	}
 
 	// Read-only inspection tools — inject result as text, also return for LLM re-injection
 	if (

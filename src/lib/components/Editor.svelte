@@ -43,6 +43,7 @@
 	import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
 	import { shouldForwardFromMonaco } from '$lib/keyboard/monaco-bridge';
 	import { setGhostInlineEditActive } from '$lib/monaco/ghost-completions';
+	import type { DiffHunk } from '$lib/utils/unified-diff';
 
 	export type EditorLanguage = CellLanguage | 'javascript' | 'python';
 
@@ -87,6 +88,10 @@
 		layout?: 'auto' | 'fill';
 		/** Notebook-inline styling — no border, themed code background */
 		embeddedNotebook?: boolean;
+		/** Git diff hunks (live buffer vs. committed HEAD) to render as gutter
+		 *  color bars — added/changed lines get a green bar, deletion points a
+		 *  red one. Caller computes these (see $lib/services/cell-diff.ts). */
+		gitDiffHunks?: DiffHunk[];
 	}
 
 	let {
@@ -107,7 +112,8 @@
 		pythonSchemas = [],
 		pythonTableHints = [],
 		layout = 'auto',
-		embeddedNotebook = false
+		embeddedNotebook = false,
+		gitDiffHunks
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -533,6 +539,54 @@
 		);
 	});
 
+	// Sync git diff hunks → gutter color-bar decorations (added/changed lines
+	// green, deletion points red). A removed row has no line in the new buffer
+	// to anchor to, so it's rendered on the next surviving line (or the hunk's
+	// end, if the removal is the last thing in it).
+	let diffDecorations: Monaco.editor.IEditorDecorationsCollection | null = null;
+	$effect(() => {
+		if (!monaco || !editor || !model) return;
+		const hunks = gitDiffHunks;
+		const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
+		if (hunks) {
+			for (const hunk of hunks) {
+				let pendingRemoval = false;
+				for (const row of hunk.rows) {
+					if (row.kind === 'removed') {
+						pendingRemoval = true;
+						continue;
+					}
+					if (row.newLine === null) continue;
+					if (pendingRemoval) {
+						decorations.push({
+							range: new monaco.Range(row.newLine, 1, row.newLine, 1),
+							options: { isWholeLine: true, linesDecorationsClassName: 'git-diff-gutter-removed' }
+						});
+						pendingRemoval = false;
+					}
+					if (row.kind === 'added') {
+						decorations.push({
+							range: new monaco.Range(row.newLine, 1, row.newLine, 1),
+							options: { isWholeLine: true, linesDecorationsClassName: 'git-diff-gutter-added' }
+						});
+					}
+				}
+				if (pendingRemoval) {
+					const endLine = Math.max(1, hunk.newStart + hunk.newLines - 1);
+					decorations.push({
+						range: new monaco.Range(endLine, 1, endLine, 1),
+						options: { isWholeLine: true, linesDecorationsClassName: 'git-diff-gutter-removed' }
+					});
+				}
+			}
+		}
+		if (!diffDecorations) diffDecorations = editor.createDecorationsCollection(decorations);
+		else diffDecorations.set(decorations);
+		// Decoration changes alone don't repaint under our automaticLayout:false
+		// setup (only size/content changes schedule a render) — force one.
+		scheduleEditorLayoutPass();
+	});
+
 	export function focus(): void {
 		if (editor) editor.focus();
 		else focusRequested = true;
@@ -612,5 +666,11 @@
 	}
 	.editor-container :global(.monaco-editor:focus-within) {
 		outline: none;
+	}
+	.editor-container :global(.git-diff-gutter-added) {
+		border-left: 3px solid var(--diff-added);
+	}
+	.editor-container :global(.git-diff-gutter-removed) {
+		border-left: 3px solid var(--diff-removed);
 	}
 </style>

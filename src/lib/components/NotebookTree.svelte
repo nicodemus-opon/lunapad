@@ -18,7 +18,7 @@
 		getExpandedNotebookIds,
 		getFolders,
 		getNotebooks,
-		getNotebookGitPaths,
+		getNotebookGitStatus,
 		getOpenNotebookTabIds,
 		getProjectFolder,
 		isNotebookDirty,
@@ -37,7 +37,7 @@
 		type Notebook,
 		type NotebookFolder
 	} from '$lib/stores/notebook.svelte';
-	import { refreshGitStatus, getGitStatusForPaths } from '$lib/stores/git.svelte';
+	import { refreshGitStatus } from '$lib/stores/git.svelte';
 	import { buildNotebookOutline } from '$lib/services/notebook-outline';
 	import { toast } from 'svelte-sonner';
 	import { fade } from 'svelte/transition';
@@ -108,13 +108,9 @@
 		if (projectFolder) void refreshGitStatus(projectFolder);
 	});
 
-	function notebookGitStatus(notebook: Notebook) {
-		return getGitStatusForPaths(getNotebookGitPaths(notebook));
-	}
-
 	function folderHasGitChanges(folderId: string): boolean {
 		const childNotebooks = notebooks.filter((n) => n.folderId === folderId);
-		if (childNotebooks.some((n) => notebookGitStatus(n) !== undefined)) return true;
+		if (childNotebooks.some((n) => getNotebookGitStatus(n) !== undefined)) return true;
 		const childFolders = folders.filter((f) => f.parentId === folderId);
 		return childFolders.some((f) => folderHasGitChanges(f.id));
 	}
@@ -489,7 +485,7 @@
 					{@const isOpen = openTabIds.includes(row.notebook.id)}
 					{@const isDragging = draggingNotebookId === row.notebook.id}
 					{@const isExpanded = expandedNotebookIds.includes(row.notebook.id)}
-					{@const gitStatus = notebookGitStatus(row.notebook)}
+					{@const gitStatus = getNotebookGitStatus(row.notebook)}
 					<div in:fade={{ duration: fadeMs }}>
 						<ContextMenu.Root>
 							<ContextMenu.Trigger>
