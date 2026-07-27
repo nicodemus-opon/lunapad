@@ -133,7 +133,6 @@
 	import NotebookTree from '$lib/components/NotebookTree.svelte';
 	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import NotebookOutline from '$lib/components/notebook/NotebookOutline.svelte';
-	import NotebookStatusBar from '$lib/components/notebook/NotebookStatusBar.svelte';
 	import CellWorksheetView from '$lib/components/notebook/CellWorksheetView.svelte';
 	import ReportViewShell from '$lib/components/markdown/ReportViewShell.svelte';
 	import NotebookDocumentEditor from '$lib/components/markdown/visual/NotebookDocumentEditor.svelte';
@@ -2501,12 +2500,6 @@
 									</div>
 								</main>
 							{/if}
-							<NotebookStatusBar
-								{connections}
-								defaultConnectionId={activeNotebook?.cells.find((c) => c.cellType === 'query')
-									?.connectionId ?? null}
-								{reportView}
-							/>
 						</div>
 					{:else if activeExtraTab}
 						{#if activeExtraTab.type === 'lineage'}
@@ -2596,7 +2589,15 @@
 				</div>
 			</div>
 		</div>
-		<GlobalStatusBar {projectFolder} onOpenGitPanel={() => selectSidebarPanel('git')} />
+		<GlobalStatusBar
+			{projectFolder}
+			onOpenGitPanel={() => selectSidebarPanel('git')}
+			showNotebookStatus={isNotebookTab}
+			{connections}
+			defaultConnectionId={activeNotebook?.cells.find((c) => c.cellType === 'query')
+				?.connectionId ?? null}
+			{reportView}
+		/>
 	</div>
 {/if}
 

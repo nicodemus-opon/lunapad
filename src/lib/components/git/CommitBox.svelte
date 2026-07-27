@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { GitCommit, Loader2 } from '@lucide/svelte';
 	import { getFocusCommitBoxRequest } from '$lib/stores/git.svelte';
+	import { Button } from '$lib/components/ui/button';
 
 	let {
 		stagedCount,
@@ -47,23 +48,27 @@
 		bind:value={message}
 	></textarea>
 	<div class="mt-1.5 flex gap-1">
-		<button
-			class="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+		<Button
+			size="sm"
+			class="flex-1 overflow-hidden text-2xs"
 			disabled={busy || !message.trim() || stagedCount === 0 || hasConflicts}
+			title={behind > 0 ? 'Pull, commit & sync' : 'Commit and sync'}
 			onclick={onCommitAndSync}
 		>
-			{#if busy}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<GitCommit
-					class="h-3.5 w-3.5"
+			{#if busy}<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />{:else}<GitCommit
+					class="h-3.5 w-3.5 shrink-0"
 				/>{/if}
-			{behind > 0 ? 'Pull, commit & sync' : 'Commit and sync'}
-		</button>
-		<button
-			class="shrink-0 rounded border border-border bg-background px-2 py-1.5 text-xs transition-colors hover:bg-accent disabled:opacity-40"
+			<span class="truncate">{behind > 0 ? 'Pull, commit & sync' : 'Commit and sync'}</span>
+		</Button>
+		<Button
+			variant="outline"
+			size="sm"
+			class="shrink-0 text-2xs"
 			disabled={busy || !message.trim() || stagedCount === 0 || hasConflicts}
 			title="Commit without pushing"
 			onclick={onCommitOnly}
 		>
 			Commit only
-		</button>
+		</Button>
 	</div>
 </div>
