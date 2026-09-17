@@ -79,6 +79,10 @@ services:
 
   storage-init:
     image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    build:
+      context: .
+      target: runner
+    pull_policy: build
     command: sh -c "node scripts/storage-init.mjs && touch /tmp/storage-init-ready && tail -f /dev/null"
     depends_on:
       rustfs:
@@ -107,6 +111,7 @@ services:
     build:
       context: .
       target: runner
+    pull_policy: build
     ports:
       - '${APP_PORT_BIND:-127.0.0.1:3967}:3000'
     expose:
@@ -175,6 +180,10 @@ services:
 
   worker:
     image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    build:
+      context: .
+      target: runner
+    pull_policy: build
     command: node scripts/cloud-worker.mjs
     depends_on:
       app:
