@@ -40,12 +40,16 @@ services:
     # real content within one security.refresh-period (5s) of its own boot.
     # Must mirror docker-compose.yml — cloud previously used allow-all here, which
     # disabled all tenant isolation and leaked catalogs across workspaces.
+    # The file must stay world-readable (0644): Trino runs as a different UID and
+    # fails with "File is not readable" on a 0600 file written by the app's user.
     command:
       - sh
       - -c
       - |
         mkdir -p /etc/trino/catalog
+        if [ -d /etc/trino/catalog/lunapad-access-control.json ]; then rm -rf /etc/trino/catalog/lunapad-access-control.json; fi
         [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
+        chmod 644 /etc/trino/catalog/lunapad-access-control.json || true
         exec /usr/lib/trino/bin/run-trino
     configs:
       - source: trino_config

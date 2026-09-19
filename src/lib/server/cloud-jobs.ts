@@ -414,15 +414,22 @@ export async function failTimedOutCloudJobs(
 	await ensureCloudJobsTableOnce();
 	const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
 	const orgId = input.orgId === undefined ? DEFAULT_ORG_ID : input.orgId;
+	// Sweeps both classes of stuck jobs:
+	// - 'running' with an expired lease or past its timeout (worker died mid-job).
+	// - 'queued' older than its timeout that was never claimed (worker down or
+	//   unable to claim). Without the second branch a dead worker leaves queued
+	//   rows forever, and since countActiveCloudJobs counts queued+running the
+	//   org is then stuck at "Plan limit reached" with no self-recovery.
 	const rows = await query<CloudJobRow>(
 		`WITH expired AS (
 			SELECT id
 			FROM cloud_jobs
 			WHERE ($1::text IS NULL OR org_id = $1)
-			  AND status = 'running'
+			  AND status IN ('queued', 'running')
 			  AND (
-			    lease_expires_at < now()
-			    OR (started_at IS NOT NULL AND started_at + (timeout_ms::int * interval '1 millisecond') < now())
+			    (status = 'running' AND lease_expires_at < now())
+			    OR (status = 'running' AND started_at IS NOT NULL AND started_at + (timeout_ms::int * interval '1 millisecond') < now())
+			    OR (status = 'queued' AND created_at + (timeout_ms::int * interval '1 millisecond') < now())
 			  )
 			ORDER BY updated_at ASC
 			LIMIT $2

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Connection, ConnectionSecret } from '$lib/types/connection';
 
-const { fetchMock, mkdirMock, readFileMock, renameMock, writeFileMock, unlinkMock } = vi.hoisted(() => ({
+const { fetchMock, mkdirMock, readFileMock, renameMock, writeFileMock, unlinkMock, accessMock, chmodMock } = vi.hoisted(() => ({
 	fetchMock: vi.fn(),
 	mkdirMock: vi.fn(),
 	readFileMock: vi.fn(),
 	renameMock: vi.fn(),
 	writeFileMock: vi.fn(),
-	unlinkMock: vi.fn()
+	unlinkMock: vi.fn(),
+	accessMock: vi.fn(),
+	chmodMock: vi.fn()
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -16,7 +18,9 @@ vi.mock('node:fs/promises', () => ({
 		readFile: readFileMock,
 		rename: renameMock,
 		writeFile: writeFileMock,
-		unlink: unlinkMock
+		unlink: unlinkMock,
+		access: accessMock,
+		chmod: chmodMock
 	}
 }));
 
@@ -134,6 +138,8 @@ beforeEach(() => {
 	renameMock.mockReset().mockResolvedValue(undefined);
 	writeFileMock.mockReset().mockResolvedValue(undefined);
 	unlinkMock.mockReset().mockResolvedValue(undefined);
+	accessMock.mockReset().mockResolvedValue(undefined);
+	chmodMock.mockReset().mockResolvedValue(undefined);
 	process.env.TRINO_CATALOG_DIR = '/tmp/test-catalog';
 });
 
@@ -163,6 +169,21 @@ describe('registerCatalog', () => {
 			expect.stringContaining('lunapad-access-control.json.tmp'),
 			expect.stringContaining('"user": "lunapad_catalog_manager"'),
 			expect.any(Object)
+		);
+	});
+
+	it('writes the access-control file world-readable so Trino can load it', async () => {
+		await registerAndCapture(postgresConnection, { password: 'pw' }, 'org-a');
+
+		const rulesCall = writeFileMock.mock.calls.find((c) =>
+			String(c[0]).includes('lunapad-access-control.json.tmp')
+		);
+		// 0644: Trino runs as a different UID in its own container; 0600 fails
+		// with "File is not readable".
+		expect(rulesCall?.[2]).toMatchObject({ mode: 0o644 });
+		expect(chmodMock).toHaveBeenCalledWith(
+			expect.stringContaining('lunapad-access-control.json'),
+			0o644
 		);
 	});
 
@@ -537,7 +558,8 @@ describe('new connector catalog content', () => {
 
 		const credsCall = writeFileMock.mock.calls.find((c) => String(c[0]).includes('-gsheets.json'));
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
-		expect(credsCall?.[2]).toMatchObject({ mode: 0o600 });
+		// 0644: Trino reads this file as a different UID in its own container.
+		expect(credsCall?.[2]).toMatchObject({ mode: 0o644 });
 
 		expect(content).toContain('USING gsheets');
 		expect(content).toContain(`"gsheets.metadata-sheet-id" = 'sheet123'`);
@@ -588,7 +610,8 @@ describe('new connector catalog content', () => {
 
 		const credsCall = writeFileMock.mock.calls.find((c) => String(c[0]).includes('-bigquery.json'));
 		expect(credsCall?.[1]).toBe('{"type":"service_account"}');
-		expect(credsCall?.[2]).toMatchObject({ mode: 0o600 });
+		// 0644: Trino reads this file as a different UID in its own container.
+		expect(credsCall?.[2]).toMatchObject({ mode: 0o644 });
 
 		expect(content).toContain('USING bigquery');
 		expect(content).toContain(`"bigquery.project-id" = 'my-gcp-project'`);

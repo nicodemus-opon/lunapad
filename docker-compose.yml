@@ -32,7 +32,9 @@ services:
       - -c
       - |
         mkdir -p /etc/trino/catalog
+        if [ -d /etc/trino/catalog/lunapad-access-control.json ]; then rm -rf /etc/trino/catalog/lunapad-access-control.json; fi
         [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
+        chmod 644 /etc/trino/catalog/lunapad-access-control.json || true
         exec /usr/lib/trino/bin/run-trino
     ports:
       - '8067:8080'

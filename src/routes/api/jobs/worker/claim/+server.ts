@@ -1,6 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { claimNextCloudJob, type CloudJobKind } from '$lib/server/cloud-jobs';
+import {
+	claimNextCloudJob,
+	failTimedOutCloudJobs,
+	type CloudJobKind
+} from '$lib/server/cloud-jobs';
 import { requireCloudWorkerAuth } from '$lib/server/cloud-worker-auth';
 import { projectsRoot } from '$lib/server/tenancy';
 import path from 'node:path';
@@ -41,6 +45,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const workerId = typeof body.workerId === 'string' ? body.workerId.trim() : '';
 	if (!workerId) return json({ error: 'workerId is required.' }, { status: 400 });
 	const kind = body.kind && kinds.has(body.kind as CloudJobKind) ? (body.kind as CloudJobKind) : null;
+	// Opportunistic reap: the Inngest cron reaper is the primary sweeper, but if the
+	// scheduler is down (or a previous incident left stuck rows), expired leases
+	// would otherwise block claiming/entitlements forever. Sweep best-effort on the
+	// same org scope the worker is claiming for — cheap, and exactly when it matters.
+	// A reap failure must never block claiming, so swallow errors deliberately.
+	await failTimedOutCloudJobs({ orgId: body.orgId ?? null, limit: 100 }).catch(() => []);
 	const lease = await claimNextCloudJob({
 		orgId: body.orgId,
 		kind,

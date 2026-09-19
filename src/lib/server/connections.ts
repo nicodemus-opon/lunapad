@@ -53,7 +53,17 @@ async function writeServiceAccountCredentialsFile(
 
 	const filePath = serviceAccountCredentialsPath(catalogDir, catalogName, suffix);
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
-	await fs.writeFile(filePath, secret.credentialsJson, { encoding: 'utf-8', mode: 0o600 });
+	// 0644, not 0600: Trino opens this file as a different UID in its own
+	// container (same cross-container readability requirement as the access-control
+	// file — a 0600 file fails Google connectors with "file not readable").
+	// The secret itself remains encrypted in the DB; this on-disk copy is scoped to
+	// the deployment's shared catalog volume. Repair older 0600 copies in place.
+	await fs.writeFile(filePath, secret.credentialsJson, { encoding: 'utf-8', mode: 0o644 });
+	try {
+		await fs.chmod(filePath, 0o644);
+	} catch {
+		/* ignore */
+	}
 	return filePath;
 }
 
@@ -199,6 +209,17 @@ async function readTrinoAccessRules(filePath: string): Promise<TrinoAccessRuleSe
 		return normalizeTrinoAccessRules(JSON.parse(await fs.readFile(filePath, 'utf-8')));
 	} catch (err) {
 		if ((err as NodeJS.ErrnoException).code === 'ENOENT') return baseTrinoAccessRules();
+		if (err instanceof SyntaxError) {
+			// A corrupt (non-JSON) rules file bricks every catalog operation that
+			// touches access control — quarantine it and self-heal from base rules
+			// instead of failing closed forever.
+			try {
+				await fs.rename(filePath, `${filePath}.corrupt-${Date.now()}`);
+			} catch {
+				/* ignore */
+			}
+			return baseTrinoAccessRules();
+		}
 		throw err;
 	}
 }
@@ -206,11 +227,24 @@ async function readTrinoAccessRules(filePath: string): Promise<TrinoAccessRuleSe
 async function writeTrinoAccessRules(filePath: string, rules: TrinoAccessRuleSet): Promise<void> {
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
 	const tmp = `${filePath}.tmp`;
+	// 0644, not 0600: this file holds no secrets (only user/catalog access patterns)
+	// and must stay readable by the Trino process, which runs as a different UID in
+	// its own container. A 0600 file owned by the app user makes Trino fail with
+	// "File is not readable: .../lunapad-access-control.json".
 	await fs.writeFile(tmp, `${JSON.stringify(rules, null, 2)}\n`, {
 		encoding: 'utf-8',
-		mode: 0o600
+		mode: 0o644
 	});
 	await fs.rename(tmp, filePath);
+	// Repair the mode on any pre-existing file written 0600 by an older build —
+	// rename() preserves the tmp mode but leaves a stale destination untouched
+	// when nothing changed, so an old file would otherwise stay unreadable.
+	// Best-effort: never fail catalog registration over a chmod.
+	try {
+		await fs.chmod(filePath, 0o644);
+	} catch {
+		/* ignore */
+	}
 }
 
 // Upgrades a stale on-disk rules file written before the base `lunapad` rule was scoped
@@ -938,19 +972,53 @@ export async function listLiveTrinoCatalogNames(trinoUser?: string): Promise<str
 	return names;
 }
 
-async function listKnownPhysicalCatalogNames(): Promise<Set<string>> {
+async function listKnownPhysicalCatalogNames(): Promise<Set<string> | null> {
+	// A null return means "unknown" (DB unreachable) — callers must skip cleanup
+	// rather than treat every live catalog as orphaned. Never return an empty set
+	// on failure: that would mass-drop all tenant catalogs.
 	try {
-		const rows = await query<{ data: { physicalCatalogName?: string } }>(
-			`SELECT data FROM connections`
-		);
-		return new Set(
-			rows
-				.map((row) => row.data?.physicalCatalogName)
-				.filter((name): name is string => typeof name === 'string' && name.length > 0)
-				.map((name) => name.toLowerCase())
-		);
+		const known = new Set<string>();
+		// Belt-and-braces: stored names cover rows whose org was hard-deleted
+		// (those catalogs are genuinely orphaned and SHOULD be cleaned).
+		try {
+			const rows = await query<{ data: { physicalCatalogName?: string } }>(
+				`SELECT data FROM connections`
+			);
+			for (const row of rows) {
+				const name = row.data?.physicalCatalogName;
+				if (typeof name === 'string' && name.length > 0) known.add(name.toLowerCase());
+			}
+		} catch {
+			return null;
+		}
+		// Derived names cover legacy rows stored before tenant isolation added
+		// `physicalCatalogName` — without this their live lp_* catalogs would be
+		// misclassified as orphans and dropped while still referenced.
+		let orgIds: string[];
+		try {
+			const orgRows = await query<{ id: string }>(`SELECT id FROM organizations`);
+			orgIds = orgRows.map((row) => row.id).filter((id) => typeof id === 'string');
+		} catch {
+			return known.size > 0 ? known : null;
+		}
+		for (const orgId of orgIds) {
+			try {
+				const connections = await listConnectionsMetadata(orgId, {
+					includePhysicalCatalogName: true
+				});
+				for (const connection of connections) {
+					if (connection.type === 'duckdb-wasm') continue;
+					const physical = (forTrino(connection, orgId) as ExternalConnection).catalogName;
+					if (physical) known.add(physical.toLowerCase());
+				}
+			} catch {
+				// One bad org must not poison the whole known-set; its stored names
+				// (collected above) still protect its catalogs.
+			}
+		}
+		return known;
 	} catch {
-		return new Set();
+		return null;
 	}
 }
 
@@ -958,6 +1026,9 @@ export async function listOrphanPhysicalCatalogs(
 	knownPhysicalNames?: Set<string>
 ): Promise<string[]> {
 	const known = knownPhysicalNames ?? (await listKnownPhysicalCatalogNames());
+	// Unknown known-set (DB unreachable): fail closed and report no orphans rather
+	// than dropping every live tenant catalog.
+	if (!known) return [];
 	const live = await listLiveTrinoCatalogNames().catch(() => [] as string[]);
 	return live.filter(
 		(name) => isPhysicalCatalogName(name) && !known.has(name.toLowerCase())

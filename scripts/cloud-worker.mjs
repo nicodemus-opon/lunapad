@@ -79,7 +79,7 @@ async function finish(lease, status, extra = {}) {
 	throw lastError;
 }
 
-async function heartbeatLoop(lease, signal) {
+async function heartbeatLoop(lease, signal, onJobGone) {
 	while (!signal.aborted) {
 		await new Promise((resolve) => setTimeout(resolve, Math.max(5_000, Math.floor(leaseMs / 3))));
 		if (signal.aborted) break;
@@ -90,6 +90,13 @@ async function heartbeatLoop(lease, signal) {
 				leaseMs
 			});
 		} catch (err) {
+			if (err.status === 404) {
+				// Job was cancelled or reaped server-side — stop the run so a
+				// cancelled Trino query is actually killed instead of running to
+				// completion and then failing its finish call.
+				onJobGone?.();
+				break;
+			}
 			console.warn(`Heartbeat failed for ${lease.job.id}:`, err.message);
 		}
 	}
@@ -101,7 +108,9 @@ async function executeLease(lease) {
 		() => controller.abort(new Error('Job timed out.')),
 		lease.runner.timeoutMs
 	);
-	const heartbeat = heartbeatLoop(lease, controller.signal);
+	const heartbeat = heartbeatLoop(lease, controller.signal, () =>
+		controller.abort(new Error('Job settled server-side.'))
+	);
 	const scratchPath = lease.runner.tenantScratchPath;
 	try {
 		await fs.mkdir(scratchPath, { recursive: true });
@@ -121,6 +130,12 @@ async function executeLease(lease) {
 			resultPointer: resultPath
 		});
 	} catch (err) {
+		if (controller.signal.aborted && controller.signal.reason?.message === 'Job settled server-side.') {
+			// Heartbeat 404: user cancelled or reaper timed out — the server already
+			// owns the terminal state, so finishing would 404. Skip it quietly.
+			trace(lease, 'job settled server-side (cancelled or reaped); skipping finish');
+			return;
+		}
 		if (controller.signal.aborted) {
 			await finish(lease, 'timed_out', { error: 'Job timed out before the runner completed.' });
 		} else {
@@ -151,6 +166,29 @@ async function claimOnce() {
 
 async function main() {
 	console.log(`Lunapad worker ${workerId} polling ${baseUrl} with concurrency ${concurrency}`);
+	// Fail fast with an actionable message when the worker token is rejected: a
+	// 401/403 here means CLOUD_WORKER_TOKEN differs between the worker and app
+	// services (common on Coolify when env vars are set per-service), and every
+	// subsequent poll would fail the same way while jobs pile up unclaimed.
+	try {
+		await api('/api/jobs/worker/claim', { workerId, leaseMs });
+	} catch (err) {
+		if (err.status === 401 || err.status === 403) {
+			console.error(
+				`Worker auth rejected (HTTP ${err.status}): CLOUD_WORKER_TOKEN does not match the app service. ` +
+					'Set the same token on both services and redeploy.'
+			);
+			process.exit(1);
+		}
+		if (err.status === 503) {
+			console.error(
+				'Worker auth unavailable (HTTP 503): CLOUD_WORKER_TOKEN is not configured on the app service. ' +
+					'Set it on both services and redeploy.'
+			);
+			process.exit(1);
+		}
+		console.warn('Worker initial poll failed (will retry):', err.message);
+	}
 	while (!shuttingDown) {
 		try {
 			while (active.size < concurrency && (await claimOnce())) {
