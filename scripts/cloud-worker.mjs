@@ -55,24 +55,46 @@ function trace(lease, message) {
 
 async function finish(lease, status, extra = {}) {
 	// The finish call is the only thing standing between a completed job and a
-	// terminal state — a transient 400/5xx here strands the job as running/queued
+	// terminal state — a transient 5xx here strands the job as running/queued
 	// forever (and the client polls until timeout). Retry with backoff, then let
 	// the error propagate so it is logged instead of failing silently.
+	// A 400 is NOT transient (the identical body would fail identically), so fail
+	// fast and surface the endpoint's diagnostics instead of burning 4 attempts.
 	const attempts = 4;
+	const payload = {
+		orgId: lease.job.orgId,
+		workerId,
+		status,
+		...extra
+	};
+	let serialized;
+	try {
+		serialized = JSON.stringify(payload);
+	} catch (err) {
+		trace(
+			lease,
+			`finish ${status} payload is not JSON-serializable (keys ${Object.keys(payload).join(',')}): ${err.message}`
+		);
+		throw err;
+	}
+	trace(
+		lease,
+		`finish ${status} payload: ${serialized.length} chars, keys ${Object.keys(payload).join(',')}`
+	);
 	let lastError;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
-			await api(new URL(lease.runner.finishUrl).pathname, {
-				orgId: lease.job.orgId,
-				workerId,
-				status,
-				...extra
-			});
+			await api(new URL(lease.runner.finishUrl).pathname, JSON.parse(serialized));
 			if (attempt > 1) trace(lease, `finish ${status} succeeded on attempt ${attempt}`);
 			return;
 		} catch (err) {
 			lastError = err;
-			trace(lease, `finish ${status} attempt ${attempt}/${attempts} failed: ${err.message}`);
+			const detail = err.payload ? ` ${JSON.stringify(err.payload).slice(0, 500)}` : '';
+			trace(
+				lease,
+				`finish ${status} attempt ${attempt}/${attempts} failed: ${err.message}${detail}`
+			);
+			if (err.status === 400) break;
 			if (attempt < attempts) await new Promise((r) => setTimeout(r, 1000 * attempt));
 		}
 	}
@@ -130,7 +152,10 @@ async function executeLease(lease) {
 			resultPointer: resultPath
 		});
 	} catch (err) {
-		if (controller.signal.aborted && controller.signal.reason?.message === 'Job settled server-side.') {
+		if (
+			controller.signal.aborted &&
+			controller.signal.reason?.message === 'Job settled server-side.'
+		) {
 			// Heartbeat 404: user cancelled or reaper timed out — the server already
 			// owns the terminal state, so finishing would 404. Skip it quietly.
 			trace(lease, 'job settled server-side (cancelled or reaped); skipping finish');
