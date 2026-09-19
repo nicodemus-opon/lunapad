@@ -1,3 +1,4 @@
+import { withTimeout } from '$lib/services/async';
 import { compilePRQL, type PRQLError } from '$lib/services/prql';
 import {
 	buildExecutionCode,
@@ -8341,7 +8342,14 @@ export async function persistUploadedTableFile(data: {
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const ext = FILE_FORMAT_EXTENSIONS[data.format][0];
 		const seedPath = `seeds/${data.tableName}${ext}`;
-		await writeProjectBinaryFile(state.projectFolder, seedPath, data.buffer);
+		// Bound the server round-trip so a stalled /api/project/write-binary
+		// can't leave the upload dialog in "Uploading…" forever — the DuckDB
+		// table itself is already created at this point.
+		await withTimeout(
+			writeProjectBinaryFile(state.projectFolder, seedPath, data.buffer),
+			`Persisting seed file "${seedPath}"`,
+			30_000
+		);
 		return { storage: 'seed', seedPath };
 	}
 	await persistUploadedFile(data);
@@ -8403,7 +8411,11 @@ export async function attachAndPersistDatabase(
 	await attachDatabaseFromBuffer(alias, buffer);
 	if (state.storageMode === 'filesystem' && state.projectFolder) {
 		const projectPath = `duckdb_attachments/${alias}.duckdb`;
-		await writeProjectBinaryFile(state.projectFolder, projectPath, buffer);
+		await withTimeout(
+			writeProjectBinaryFile(state.projectFolder, projectPath, buffer),
+			`Persisting attached database "${alias}"`,
+			30_000
+		);
 		addAttachedDatabase({ alias, fileName, storage: 'project', projectPath });
 	} else {
 		await persistAttachedDatabase({ alias, fileName, buffer });

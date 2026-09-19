@@ -25,7 +25,13 @@
 	async function importBuffer(fileName: string, buffer: ArrayBuffer, format: FileFormat) {
 		const tableName = sanitizeTableName(fileName);
 		if (format === 'duckdb') {
-			await attachAndPersistDatabase(tableName, fileName, buffer);
+			try {
+				await attachAndPersistDatabase(tableName, fileName, buffer);
+			} catch (persistErr) {
+				toast.warning(
+					`Attached "${tableName}" but persistence failed — it won't survive reload: ${(persistErr as Error).message}`
+				);
+			}
 			return { tableName, rowCount: 0 };
 		}
 		const { rowCount, columns, columnTypes } = await registerFile(
@@ -34,13 +40,25 @@
 			buffer,
 			format
 		);
-		const { storage, seedPath } = await persistUploadedTableFile({
-			tableName,
-			fileName,
-			format,
-			buffer,
-			hasHeader: true
-		});
+		// Persistence is best-effort: the table is already queryable. Never let
+		// a quota/IDB-abort/seed-write failure leave the importer stuck.
+		let storage: 'seed' | 'idb' = 'idb';
+		let seedPath: string | undefined;
+		try {
+			const persisted = await persistUploadedTableFile({
+				tableName,
+				fileName,
+				format,
+				buffer,
+				hasHeader: true
+			});
+			storage = persisted.storage;
+			seedPath = persisted.seedPath;
+		} catch (persistErr) {
+			toast.warning(
+				`Loaded "${tableName}" but persistence failed — it won't survive reload: ${(persistErr as Error).message}`
+			);
+		}
 		addTable({ name: tableName, fileName, rowCount, columns, columnTypes, storage, seedPath });
 		return { tableName, rowCount };
 	}

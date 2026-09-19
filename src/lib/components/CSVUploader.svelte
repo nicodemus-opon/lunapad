@@ -35,13 +35,19 @@
 				.replace(/^([0-9])/, '_$1');
 
 			const { rowCount, columns, columnTypes } = await registerCSV(tableName, buffer);
-			await persistUploadedFile({
-				tableName,
-				fileName: file.name,
-				format: 'csv',
-				buffer,
-				hasHeader: true
-			});
+			try {
+				await persistUploadedFile({
+					tableName,
+					fileName: file.name,
+					format: 'csv',
+					buffer,
+					hasHeader: true
+				});
+			} catch (persistErr) {
+				toast.warning(
+					`Loaded "${tableName}" but persistence failed — it won't survive reload: ${(persistErr as Error).message}`
+				);
+			}
 			addTable({
 				name: tableName,
 				fileName: file.name,

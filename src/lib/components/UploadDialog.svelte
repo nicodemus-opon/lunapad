@@ -180,8 +180,21 @@
 		try {
 			if (isDuckDBAttach) {
 				const alias = tableName.trim();
-				await attachAndPersistDatabase(alias, file!.name, buffer!);
-				toast.success(`Attached "${alias}" from ${file!.name}`);
+				let persistFailed: Error | null = null;
+				try {
+					await attachAndPersistDatabase(alias, file!.name, buffer!);
+				} catch (persistErr) {
+					// The ATTACH itself may already have succeeded — don't leave
+					// the dialog stuck on "Uploading…"; warn and continue.
+					persistFailed = persistErr as Error;
+				}
+				if (persistFailed) {
+					toast.warning(
+						`Attached "${alias}" but persistence failed — it won't survive reload: ${persistFailed.message}`
+					);
+				} else {
+					toast.success(`Attached "${alias}" from ${file!.name}`);
+				}
 			} else if (!isExternal) {
 				// DuckDB WASM: re-register with the real table name
 				const uploadFileName = `__upload_${file!.name}`;
@@ -193,13 +206,25 @@
 				} = await registerFile(tableName.trim(), uploadFileName, buffer!, format!, {
 					header: uploadHasHeader
 				});
-				const { storage, seedPath } = await persistUploadedTableFile({
-					tableName: tableName.trim(),
-					fileName: uploadFileName,
-					format: format!,
-					buffer: buffer!,
-					hasHeader: uploadHasHeader
-				});
+				// Persistence is best-effort: the table is already queryable.
+				// A persistence failure (quota, IDB abort, stalled seed write)
+				// must degrade to a warning, never to a stuck "Uploading…".
+				let storage: 'seed' | 'idb' = 'idb';
+				let seedPath: string | undefined;
+				let persistFailed: Error | null = null;
+				try {
+					const persisted = await persistUploadedTableFile({
+						tableName: tableName.trim(),
+						fileName: uploadFileName,
+						format: format!,
+						buffer: buffer!,
+						hasHeader: uploadHasHeader
+					});
+					storage = persisted.storage;
+					seedPath = persisted.seedPath;
+				} catch (persistErr) {
+					persistFailed = persistErr as Error;
+				}
 				addTable({
 					name: tableName.trim(),
 					fileName: file!.name,
@@ -209,24 +234,45 @@
 					storage,
 					seedPath
 				});
-				toast.success(`Loaded "${tableName.trim()}" — ${rc.toLocaleString()} rows`);
+				if (persistFailed) {
+					toast.warning(
+						`Loaded "${tableName.trim()}" but persistence failed — it won't survive reload: ${persistFailed.message}`
+					);
+				} else {
+					toast.success(`Loaded "${tableName.trim()}" — ${rc.toLocaleString()} rows`);
+				}
 			} else {
 				// External connection: query all rows from preview table
 				const { rows: rowObjs } = await executeSQL(`SELECT * FROM "${PREVIEW_TABLE}"`);
 				const rowArrays = rowObjs.map((row) => previewColumns.map((col) => row[col]));
 
-				const res = await fetch('/api/connections/upload', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						connection: selectedConnection,
-						tableName: tableName.trim(),
-						schema: targetSchema.trim() || undefined,
-						columns: previewColumns.map((name, i) => ({ name, type: columnTypes[i] })),
-						rows: rowArrays,
-						mode
-					})
-				});
+				// Bound the server round-trip so a stalled connection worker
+				// can't leave the dialog in "Uploading…" forever.
+				const uploadController = new AbortController();
+				const uploadTimer = setTimeout(() => uploadController.abort(), 120_000);
+				let res: Response;
+				try {
+					res = await fetch('/api/connections/upload', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							connection: selectedConnection,
+							tableName: tableName.trim(),
+							schema: targetSchema.trim() || undefined,
+							columns: previewColumns.map((name, i) => ({ name, type: columnTypes[i] })),
+							rows: rowArrays,
+							mode
+						}),
+						signal: uploadController.signal
+					});
+				} catch (fetchErr) {
+					if ((fetchErr as Error).name === 'AbortError') {
+						throw new Error('Upload timed out after 120s — the server may still be working.');
+					}
+					throw fetchErr;
+				} finally {
+					clearTimeout(uploadTimer);
+				}
 				const data = await res.json();
 				if (!data.ok) throw new Error(data.error ?? 'Upload failed.');
 				toast.success(

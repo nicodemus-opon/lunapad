@@ -664,6 +664,61 @@ function openFileIDB(): Promise<IDBDatabase> {
 	return idbOpenPromise;
 }
 
+/**
+ * Runs a single IndexedDB readwrite operation with completion/error/abort
+ * handling plus a timeout, so callers can never hang forever in the
+ * "Uploading…" state when a put fails (e.g. quota exceeded, large
+ * ArrayBuffer clone failure). Previously only `oncomplete`/`onerror` were
+ * observed — an aborted transaction fires `onabort` instead, leaving the
+ * promise (and the upload UI) pending indefinitely even though the DuckDB
+ * table itself was already created.
+ */
+function runIDBWrite(
+	idb: IDBDatabase,
+	store: string,
+	op: (objectStore: IDBObjectStore) => void,
+	label: string,
+	timeoutMs = 15_000
+): Promise<void> {
+	return withTimeout(
+		new Promise<void>((resolve, reject) => {
+			let settled = false;
+			const done = () => {
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
+			};
+			const fail = (err: unknown) => {
+				if (!settled) {
+					settled = true;
+					reject(err instanceof Error ? err : new Error(`${label} failed.`));
+				}
+			};
+			try {
+				const tx = idb.transaction(store, 'readwrite');
+				tx.oncomplete = () => done();
+				// A failed request aborts the transaction: `onabort` is the
+				// reliable signal, `onerror` alone misses it (the reported bug).
+				tx.onerror = () => fail(tx.error ?? new Error(`${label} failed.`));
+				tx.onabort = () =>
+					fail(tx.error ?? new DOMException(`${label} aborted.`, 'AbortError'));
+				try {
+					op(tx.objectStore(store));
+				} catch (err) {
+					fail(err);
+				}
+				// If neither handler ever fires (defensive), the withTimeout
+				// race below still settles the promise.
+			} catch (err) {
+				fail(err);
+			}
+		}),
+		label,
+		timeoutMs
+	);
+}
+
 export async function persistUploadedFile(data: {
 	tableName: string;
 	fileName: string;
@@ -672,22 +727,26 @@ export async function persistUploadedFile(data: {
 	hasHeader: boolean;
 }): Promise<void> {
 	const idb = await openFileIDB();
-	return new Promise((resolve, reject) => {
-		const tx = idb.transaction(IDB_STORE, 'readwrite');
-		tx.objectStore(IDB_STORE).put(data satisfies StoredFile);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
+	await runIDBWrite(
+		idb,
+		IDB_STORE,
+		(objectStore) => {
+			objectStore.put(data satisfies StoredFile);
+		},
+		`Persisting uploaded table "${data.tableName}"`
+	);
 }
 
 export async function deletePersistedFile(tableName: string): Promise<void> {
 	const idb = await openFileIDB();
-	return new Promise((resolve, reject) => {
-		const tx = idb.transaction(IDB_STORE, 'readwrite');
-		tx.objectStore(IDB_STORE).delete(tableName);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
+	await runIDBWrite(
+		idb,
+		IDB_STORE,
+		(objectStore) => {
+			objectStore.delete(tableName);
+		},
+		`Deleting persisted table "${tableName}"`
+	);
 }
 
 export async function restoreUploadedTables(): Promise<void> {
@@ -697,12 +756,17 @@ export async function restoreUploadedTables(): Promise<void> {
 	} catch {
 		return;
 	}
-	const files = await new Promise<StoredFile[]>((resolve, reject) => {
-		const tx = idb.transaction(IDB_STORE, 'readonly');
-		const req = tx.objectStore(IDB_STORE).getAll();
-		req.onsuccess = () => resolve(req.result as StoredFile[]);
-		req.onerror = () => reject(req.error);
-	});
+	const files = await withTimeout(
+		new Promise<StoredFile[]>((resolve, reject) => {
+			const tx = idb.transaction(IDB_STORE, 'readonly');
+			const req = tx.objectStore(IDB_STORE).getAll();
+			req.onsuccess = () => resolve(req.result as StoredFile[]);
+			req.onerror = () => reject(req.error);
+			tx.onabort = () => reject(tx.error ?? new Error('Reading persisted tables aborted.'));
+		}),
+		'Restoring uploaded tables',
+		15_000
+	);
 	for (const f of files) {
 		try {
 			await registerFile(f.tableName, f.fileName, f.buffer, f.format, { header: f.hasHeader });
@@ -720,22 +784,26 @@ export async function persistAttachedDatabase(data: {
 	buffer: ArrayBuffer;
 }): Promise<void> {
 	const idb = await openFileIDB();
-	return new Promise((resolve, reject) => {
-		const tx = idb.transaction(IDB_DB_STORE, 'readwrite');
-		tx.objectStore(IDB_DB_STORE).put(data satisfies StoredDatabase);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
+	await runIDBWrite(
+		idb,
+		IDB_DB_STORE,
+		(objectStore) => {
+			objectStore.put(data satisfies StoredDatabase);
+		},
+		`Persisting attached database "${data.alias}"`
+	);
 }
 
 export async function deletePersistedDatabase(alias: string): Promise<void> {
 	const idb = await openFileIDB();
-	return new Promise((resolve, reject) => {
-		const tx = idb.transaction(IDB_DB_STORE, 'readwrite');
-		tx.objectStore(IDB_DB_STORE).delete(alias);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
+	await runIDBWrite(
+		idb,
+		IDB_DB_STORE,
+		(objectStore) => {
+			objectStore.delete(alias);
+		},
+		`Deleting persisted database "${alias}"`
+	);
 }
 
 export async function restoreAttachedDatabasesFromIDB(): Promise<void> {
@@ -745,12 +813,17 @@ export async function restoreAttachedDatabasesFromIDB(): Promise<void> {
 	} catch {
 		return;
 	}
-	const dbs = await new Promise<StoredDatabase[]>((resolve, reject) => {
-		const tx = idb.transaction(IDB_DB_STORE, 'readonly');
-		const req = tx.objectStore(IDB_DB_STORE).getAll();
-		req.onsuccess = () => resolve(req.result as StoredDatabase[]);
-		req.onerror = () => reject(req.error);
-	});
+	const dbs = await withTimeout(
+		new Promise<StoredDatabase[]>((resolve, reject) => {
+			const tx = idb.transaction(IDB_DB_STORE, 'readonly');
+			const req = tx.objectStore(IDB_DB_STORE).getAll();
+			req.onsuccess = () => resolve(req.result as StoredDatabase[]);
+			req.onerror = () => reject(req.error);
+			tx.onabort = () => reject(tx.error ?? new Error('Reading attached databases aborted.'));
+		}),
+		'Restoring attached databases',
+		15_000
+	);
 	for (const d of dbs) {
 		try {
 			await attachDatabaseFromBuffer(d.alias, d.buffer);
