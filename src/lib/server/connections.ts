@@ -116,13 +116,21 @@ const TRINO_URL = (process.env.TRINO_URL ?? 'http://trino:8080').replace(/\/$/, 
 // TRINO_CATALOG_DIR must point to the directory Trino reads catalog .properties
 // files from (bind-mounted into the Trino container).
 // In Docker Compose it is set to /trino-catalog by the app service environment.
-// Read at call time (not module init) so tests can override via process.env.
+// TRINO_ACCESS_CONTROL_RULES_FILE points at the file-based access-control rules.
+// It must live OUTSIDE the catalog scan dir (e.g. /trino-access/..., shared via
+// the trino-access volume) — a .json inside the dynamic catalog dir pollutes
+// Trino's catalog loading. Read at call time (not module init) so tests can
+// override via process.env.
 const getCatalogDir = () => process.env.TRINO_CATALOG_DIR;
 
 const TRINO_ACCESS_CONTROL_FILE = 'lunapad-access-control.json';
 
 type TrinoAccessRuleSet = {
-	catalogs: Array<{ user?: string; catalog?: string; allow: 'owner' | 'all' | 'read-only' | 'none' }>;
+	catalogs: Array<{
+		user?: string;
+		catalog?: string;
+		allow: 'owner' | 'all' | 'read-only' | 'none';
+	}>;
 	schemas: Array<{ user?: string; catalog?: string; owner: boolean }>;
 	tables: Array<{
 		user?: string;
@@ -288,19 +296,25 @@ function hardenBaseTrinoRules(rules: TrinoAccessRuleSet): boolean {
 	// inert stub docker-compose writes before the app has ever run). Add them from scratch
 	// when missing so a bare/empty rules file self-heals into a working base ruleset.
 	if (
-		!rules.catalogs.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+		!rules.catalogs.some(
+			(rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN
+		)
 	) {
 		rules.catalogs.push({ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, allow: 'owner' });
 		changed = true;
 	}
 	if (
-		!rules.schemas.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+		!rules.schemas.some(
+			(rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN
+		)
 	) {
 		rules.schemas.push({ user: 'lunapad', catalog: NON_TENANT_CATALOG_PATTERN, owner: true });
 		changed = true;
 	}
 	if (
-		!rules.tables.some((rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN)
+		!rules.tables.some(
+			(rule) => rule.user === 'lunapad' && rule.catalog === NON_TENANT_CATALOG_PATTERN
+		)
 	) {
 		rules.tables.push({
 			user: 'lunapad',
@@ -351,14 +365,34 @@ async function ensureTenantTrinoAccess(orgId?: string | null): Promise<void> {
 // orgId — ensureTenantTrinoAccess above only ever runs (and only ever writes) once a
 // tenant-scoped request occurs. On a fresh checkout/volume the file won't exist yet;
 // docker-compose also seeds an inert empty-rules stub before Trino's own first boot
-// (so the app container, which only starts once Trino is already healthy, isn't in
-// that path) — either way this reuses hardenBaseTrinoRules to fill in whatever base
+// — either way this reuses hardenBaseTrinoRules to fill in whatever base
 // rules are missing, not just create the file when absent. Called once at server boot
 // (see hooks.server.ts) as a recovery path for both cases.
+// Migrates the legacy location (<catalogDir>/lunapad-access-control.json, inside
+// Trino's dynamic catalog scan dir) to TRINO_ACCESS_CONTROL_RULES_FILE when set:
+// one-time copy so per-org grants accumulated in the old file are not lost.
 export async function ensureBaseTrinoAccessFile(): Promise<void> {
 	const catalogDir = getCatalogDir();
 	if (!catalogDir) return;
 	const filePath = getTrinoAccessControlPath(catalogDir);
+	const legacyPath = path.join(catalogDir, TRINO_ACCESS_CONTROL_FILE);
+
+	if (filePath !== legacyPath) {
+		try {
+			await fs.access(filePath);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+				try {
+					const legacyRules = await readTrinoAccessRules(legacyPath);
+					await writeTrinoAccessRules(filePath, legacyRules);
+				} catch {
+					/* no legacy file (or unreadable) — fresh seed below */
+				}
+			} else {
+				throw err;
+			}
+		}
+	}
 
 	await withAccessControlLock(filePath, async () => {
 		let existed = true;
@@ -965,8 +999,10 @@ export async function listLiveTrinoCatalogNames(trinoUser?: string): Promise<str
 	});
 	const names: string[] = [];
 	for (const row of result.rows) {
-		const raw =
-			(row['Catalog'] ?? row['catalog'] ?? row['CATALOG'] ?? Object.values(row)[0]) as unknown;
+		const raw = (row['Catalog'] ??
+			row['catalog'] ??
+			row['CATALOG'] ??
+			Object.values(row)[0]) as unknown;
 		if (typeof raw === 'string' && raw.length > 0) names.push(raw);
 	}
 	return names;
@@ -1030,9 +1066,7 @@ export async function listOrphanPhysicalCatalogs(
 	// than dropping every live tenant catalog.
 	if (!known) return [];
 	const live = await listLiveTrinoCatalogNames().catch(() => [] as string[]);
-	return live.filter(
-		(name) => isPhysicalCatalogName(name) && !known.has(name.toLowerCase())
-	);
+	return live.filter((name) => isPhysicalCatalogName(name) && !known.has(name.toLowerCase()));
 }
 
 async function dropPhysicalCatalogFiles(physicalCatalogName: string): Promise<void> {

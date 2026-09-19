@@ -35,21 +35,30 @@ services:
 
   trino:
     image: trinodb/trino:481
-    # Seed an inert empty-rules stub before Trino's first boot so the file-based
-    # access-control plugin has something valid to load; the app overwrites it with
-    # real content within one security.refresh-period (5s) of its own boot.
-    # Must mirror docker-compose.yml — cloud previously used allow-all here, which
-    # disabled all tenant isolation and leaked catalogs across workspaces.
+    # Seed the file-based access-control rules OUTSIDE the dynamic catalog scan
+    # dir (/etc/trino/access, shared via the trino-access volume). The rules file
+    # previously lived at /etc/trino/catalog/lunapad-access-control.json, inside
+    # the directory Trino scans for *.properties catalogs (catalog.management=
+    # dynamic, catalog.store=file) — every stale lp_*.properties there delays
+    # bootstrap, and unreachable JDBC hosts pushed startup past the healthcheck
+    # grace period so Compose marked Trino unhealthy and app never started.
+    # Migration is handled here: copy the legacy file once, then remove it from
+    # the catalog dir. Must mirror docker-compose.yml.
     # The file must stay world-readable (0644): Trino runs as a different UID and
     # fails with "File is not readable" on a 0600 file written by the app's user.
     command:
       - sh
       - -c
       - |
-        mkdir -p /etc/trino/catalog
+        mkdir -p /etc/trino/catalog /etc/trino/access
+        if [ -d /etc/trino/access/lunapad-access-control.json ]; then rm -rf /etc/trino/access/lunapad-access-control.json; fi
         if [ -d /etc/trino/catalog/lunapad-access-control.json ]; then rm -rf /etc/trino/catalog/lunapad-access-control.json; fi
-        [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
-        chmod 644 /etc/trino/catalog/lunapad-access-control.json || true
+        if [ ! -f /etc/trino/access/lunapad-access-control.json ] && [ -f /etc/trino/catalog/lunapad-access-control.json ]; then cp /etc/trino/catalog/lunapad-access-control.json /etc/trino/access/lunapad-access-control.json || true; fi
+        rm -f /etc/trino/catalog/lunapad-access-control.json || true
+        [ -f /etc/trino/access/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/access/lunapad-access-control.json
+        chmod 644 /etc/trino/access/lunapad-access-control.json || true
+        echo "--- trino catalog dir ---" && ls -l /etc/trino/catalog || true
+        echo "--- trino access dir ---" && ls -l /etc/trino/access || true
         exec /usr/lib/trino/bin/run-trino
     configs:
       - source: trino_config
@@ -58,19 +67,24 @@ services:
         target: /etc/trino/access-control.properties
     volumes:
       # Same named volume is mounted at /trino-catalog in app — dynamic
-      # CREATE CATALOG files written by Trino appear in the app container there,
-      # and lunapad-access-control.json is shared the same way. Do not point the
-      # app at /tmp or any other non-shared path.
+      # CREATE CATALOG files written by Trino appear in the app container there.
+      # Access-control rules live in the SEPARATE trino-access volume (mounted at
+      # /trino-access in app) so the .json never pollutes the catalog scan dir.
       - trino-catalog:/etc/trino/catalog
+      - trino-access:/etc/trino/access
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:8080/v1/info | grep -q ''"starting":false''']
+      # Image-native check (ships with trinodb/trino:481). Stale lp_*.properties
+      # pointing at unreachable JDBC hosts can keep Trino in starting:true for
+      # minutes — allow a long grace period instead of failing the deploy.
+      test: ['CMD-SHELL', '/usr/lib/trino/bin/health-check']
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 60s
+      retries: 30
+      start_period: 180s
+      start_interval: 5s
     restart: unless-stopped
 
   rustfs-permissions:
@@ -140,7 +154,10 @@ services:
       db:
         condition: service_healthy
       trino:
-        condition: service_healthy
+        # service_started, not service_healthy: the app itself writes Trino's
+        # access-control file and retries Trino over HTTP, so a slow Trino
+        # bootstrap must not deadlock the app that unblocks it.
+        condition: service_started
       redis:
         condition: service_healthy
       storage-init:
@@ -148,7 +165,7 @@ services:
     environment:
       SERVICE_URL_APP_3000: ${SERVICE_URL_APP_3000:-}
       SERVICE_FQDN_APP_3000: ${SERVICE_FQDN_APP_3000:-}
-      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_FQDN_APP_3000:-http://localhost:3967}}}
+      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_URL_APP:-${SERVICE_FQDN_APP_3000:-${SERVICE_FQDN_APP:-http://localhost:3967}}}}}
       PORT: 3000
       HOST: 0.0.0.0
       DEPLOYMENT_MODE: cloud
@@ -171,10 +188,9 @@ services:
       REDIS_URL: redis://redis:6379
       TRINO_URL: http://trino:8080
       TRINO_CATALOG_DIR: /trino-catalog
-      # Must stay unset (default <catalogDir>/lunapad-access-control.json) so the app
-      # writes the rules file into the shared trino-catalog volume where Trino reads
-      # it. A previous revision pointed this at /tmp/... which Trino never sees.
-      # TRINO_ACCESS_CONTROL_RULES_FILE: /trino-catalog/lunapad-access-control.json
+      # Rules file lives in the shared trino-access volume (NOT the catalog scan
+      # dir) so the .json never pollutes Trino's dynamic catalog loading.
+      TRINO_ACCESS_CONTROL_RULES_FILE: /trino-access/lunapad-access-control.json
       OBJECT_STORAGE_PROVIDER: s3
       S3_ENDPOINT: http://rustfs:9000
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
@@ -191,6 +207,7 @@ services:
       INNGEST_SERVE_ORIGIN: http://app:3000
     volumes:
       - trino-catalog:/trino-catalog
+      - trino-access:/trino-access
       - cloud-project:/app/project
       - cloud-projects:/app/projects
     healthcheck:
@@ -212,7 +229,7 @@ services:
       app:
         condition: service_healthy
     environment:
-      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_FQDN_APP_3000:-http://localhost:3967}}}
+      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_URL_APP:-${SERVICE_FQDN_APP_3000:-${SERVICE_FQDN_APP:-http://localhost:3967}}}}}
       LUNAPAD_BASE_URL: http://app:3000
       CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-${SERVICE_PASSWORD_64_WORKER:-change-me-cloud-worker-token}}
       CLOUD_WORKER_CONCURRENCY: ${CLOUD_WORKER_CONCURRENCY:-2}
@@ -230,6 +247,7 @@ volumes:
   redis-data:
   rustfs-data:
   trino-catalog:
+  trino-access:
   cloud-project:
   cloud-projects:
 
@@ -247,5 +265,5 @@ configs:
   trino_access_control:
     content: |
       access-control.name=file
-      security.config-file=/etc/trino/catalog/lunapad-access-control.json
+      security.config-file=/etc/trino/access/lunapad-access-control.json
       security.refresh-period=5s

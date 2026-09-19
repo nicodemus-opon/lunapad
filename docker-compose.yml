@@ -20,21 +20,26 @@ services:
   trino:
     # Pin to the version referenced in connections.ts (catalog.management=dynamic behavior).
     image: trinodb/trino:481
-    # app's depends_on waits for this service to be healthy, so Trino's own first-ever
-    # boot on a fresh clone/volume can't rely on the app process to have created
-    # lunapad-access-control.json yet (that only happens once the app itself has
-    # started — see ensureBaseTrinoAccessFile() in connections.ts). Seed an inert
-    # empty-rules stub here if the file is missing so the file-based access-control
-    # plugin has something valid to load; the app overwrites it with real content
-    # within one security.refresh-period (5s) of its own boot or first request.
+    # Access-control rules live OUTSIDE the dynamic catalog scan dir
+    # (/etc/trino/access, bind-mounted from ./trino/access). The rules file
+    # previously lived inside /etc/trino/catalog, which Trino scans for
+    # *.properties catalogs — stale lp_*.properties there delay bootstrap past
+    # the healthcheck grace period. Migration from the legacy path is handled
+    # below; the app writes via TRINO_ACCESS_CONTROL_RULES_FILE. Must mirror
+    # docker-compose.cloud.yml.
     command:
       - sh
       - -c
       - |
-        mkdir -p /etc/trino/catalog
+        mkdir -p /etc/trino/catalog /etc/trino/access
+        if [ -d /etc/trino/access/lunapad-access-control.json ]; then rm -rf /etc/trino/access/lunapad-access-control.json; fi
         if [ -d /etc/trino/catalog/lunapad-access-control.json ]; then rm -rf /etc/trino/catalog/lunapad-access-control.json; fi
-        [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
-        chmod 644 /etc/trino/catalog/lunapad-access-control.json || true
+        if [ ! -f /etc/trino/access/lunapad-access-control.json ] && [ -f /etc/trino/catalog/lunapad-access-control.json ]; then cp /etc/trino/catalog/lunapad-access-control.json /etc/trino/access/lunapad-access-control.json || true; fi
+        rm -f /etc/trino/catalog/lunapad-access-control.json || true
+        [ -f /etc/trino/access/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/access/lunapad-access-control.json
+        chmod 644 /etc/trino/access/lunapad-access-control.json || true
+        echo "--- trino catalog dir ---" && ls -l /etc/trino/catalog || true
+        echo "--- trino access dir ---" && ls -l /etc/trino/access || true
         exec /usr/lib/trino/bin/run-trino
     ports:
       - '8067:8080'
@@ -49,15 +54,17 @@ services:
       # New sources are registered by writing a .properties file then restarting Trino
       # (Docker restart:unless-stopped brings it back automatically after graceful shutdown).
       - ./trino/catalog:/etc/trino/catalog
+      - ./trino/access:/etc/trino/access
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:8080/v1/info | grep -q ''"starting":false''']
+      test: ['CMD-SHELL', '/usr/lib/trino/bin/health-check']
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 60s
+      retries: 30
+      start_period: 180s
+      start_interval: 5s
     restart: unless-stopped
 
   redis:
@@ -84,7 +91,10 @@ services:
       db:
         condition: service_healthy
       trino:
-        condition: service_healthy
+        # service_started, not service_healthy: the app writes Trino's
+        # access-control file and retries Trino over HTTP, so slow Trino
+        # bootstrap must not deadlock the app that unblocks it.
+        condition: service_started
       redis:
         condition: service_healthy
     environment:
@@ -101,6 +111,7 @@ services:
       INNGEST_SERVE_HOST: ${INNGEST_SERVE_HOST:-http://app:3000}
       TRINO_URL: ${TRINO_URL:-http://trino:8080}
       TRINO_CATALOG_DIR: ${TRINO_CATALOG_DIR:-/trino-catalog}
+      TRINO_ACCESS_CONTROL_RULES_FILE: ${TRINO_ACCESS_CONTROL_RULES_FILE:-/trino-access/lunapad-access-control.json}
       # Postgres (pgvector) — use service name, not localhost, inside Docker network.
       DATABASE_URL: ${DATABASE_URL:-postgresql://lunapad:lunapad@db:5432/lunapad}
       # Auth (better-auth) — set real random values before deploying for real.
@@ -129,6 +140,7 @@ services:
       - 'host.docker.internal:host-gateway'
     volumes:
       - ./trino/catalog:/trino-catalog
+      - ./trino/access:/trino-access
       - ./project:/app/project
       - ./projects:/app/projects
     healthcheck:
@@ -178,5 +190,5 @@ configs:
   trino_access_control:
     content: |
       access-control.name=file
-      security.config-file=/etc/trino/catalog/lunapad-access-control.json
+      security.config-file=/etc/trino/access/lunapad-access-control.json
       security.refresh-period=5s

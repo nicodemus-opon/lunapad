@@ -1,0 +1,6 @@
+# Runtime-rewritten Trino access-control rules (per-org catalog grants appended
+# by connections.ts). Bind-mounted at /etc/trino/access in the Trino container
+# and at /trino-access in the app container — kept OUTSIDE the dynamic catalog
+# scan dir (/etc/trino/catalog) so the .json never pollutes catalog loading.
+# Never track the live file; it is seeded if missing.
+lunapad-access-control.json
