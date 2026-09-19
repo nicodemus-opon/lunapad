@@ -128,7 +128,7 @@
 	</nav>
 {/if}
 
-{#if pages.length > 0}
+{#if pages.length > 1}
 	<div class="mb-3 flex flex-wrap gap-1" aria-label="Pages in this notebook">
 		{#each pages as page (page.id)}
 			<button
