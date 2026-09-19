@@ -2,7 +2,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Badge } from '$lib/components/ui/badge';
 	import * as Popover from '$lib/components/ui/popover';
 	import NativeSelect from '$lib/components/ui/native-select/native-select.svelte';
 	import {
@@ -89,6 +88,20 @@
 	const pivotRows = $derived.by(() => buildPivotRows(sourceRows, config, sourceColumns));
 	const Icon = $derived(iconName());
 	const connections = $derived(getConnections());
+	// Display variants: panel = slim card, inline = label beside control (borderless),
+	// compact = input-only with sr-only label. Display kinds (tables/map/metric)
+	// always render as panel so their content doesn't break.
+	const variant = $derived(config.display.variant ?? 'panel');
+	const displayWidth = $derived(config.display.width ?? 'full');
+	const isDisplayKind = $derived(
+		['table-display', 'pivot', 'map', 'single-value'].includes(config.kind)
+	);
+	const effectiveVariant = $derived(isDisplayKind ? 'panel' : variant);
+	const showOwnLabel = $derived(config.kind !== 'checkbox' && config.kind !== 'run-button');
+	const needsAttention = $derived(
+		config.status !== 'valid' && config.status !== 'success' && config.status !== 'disabled'
+	);
+	const inputSizeClass = $derived(effectiveVariant === 'compact' ? 'h-7 text-xs' : '');
 	const mapRows = $derived.by(() => {
 		const lat = config.source.columns?.[0] ?? findColumn(/lat|latitude/i);
 		const lon = config.source.columns?.[1] ?? findColumn(/lon|lng|long|longitude/i);
@@ -221,10 +234,11 @@
 		return TextCursorInput;
 	}
 
-	function badgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-		if (status === 'error' || status === 'permission-blocked') return 'destructive';
-		if (status === 'success' || status === 'valid') return 'secondary';
-		return 'outline';
+	function statusDotClass(status: string): string {
+		if (status === 'error' || status === 'permission-blocked') return 'bg-destructive';
+		if (status === 'stale' || status === 'unconfigured') return 'bg-amber-500';
+		if (status === 'running') return 'bg-primary animate-pulse';
+		return 'bg-muted-foreground/50';
 	}
 
 	function formatValue(value: unknown): string {
@@ -258,29 +272,62 @@
 	}
 </script>
 
-<section class="control-cell rounded-lg border border-border bg-background/70 p-3 shadow-xs">
-	<div class="mb-3 flex flex-wrap items-start justify-between gap-3">
-		<div class="flex min-w-0 items-start gap-2">
+<section
+	class="control-cell {effectiveVariant === 'panel'
+		? 'rounded-lg border border-border bg-background/70 p-2.5 shadow-xs'
+		: effectiveVariant === 'inline'
+			? 'flex items-center gap-2 py-1'
+			: 'flex items-center gap-1.5 py-0.5'} {displayWidth === 'full' ? 'w-full' : 'w-auto max-w-md'}"
+>
+	<div class={effectiveVariant === 'panel' ? 'mb-2 flex items-center gap-2' : 'contents'}>
+		{#if effectiveVariant === 'panel' && isDisplayKind}
 			<span
-				class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/35 text-muted-foreground"
+				class="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/35 text-muted-foreground"
 			>
-				<Icon class="size-3.5" />
+				<Icon class="size-3" />
 			</span>
-			<div class="min-w-0">
-				<div class="flex flex-wrap items-center gap-2">
-					<p class="text-sm font-medium text-foreground">{config.label}</p>
-					<Badge variant={badgeVariant(config.status)} class="h-5 text-2xs">{config.status}</Badge>
-				</div>
-				<p class="mt-0.5 text-xs text-muted-foreground">{config.description}</p>
-				{#if config.name}
-					<p class="mt-1 font-mono text-2xs text-muted-foreground">${config.name}</p>
+		{/if}
+		{#if effectiveVariant !== 'panel' && !showOwnLabel}
+			<!-- checkbox / run-button label themselves in the control body -->
+		{:else if effectiveVariant === 'compact'}
+			<span class="sr-only">{config.label}</span>
+		{:else}
+			<p
+				class={effectiveVariant === 'panel'
+					? 'min-w-0 flex-1 truncate text-[13px] font-medium text-foreground'
+					: 'order-1 shrink-0 truncate text-[13px] font-medium text-foreground'}
+				title={effectiveVariant === 'panel'
+					? undefined
+					: (config.display.helpText ?? config.label)}
+			>
+				{config.label}
+				{#if effectiveVariant === 'panel' && config.name}
+					<span class="ml-1.5 font-mono text-2xs font-normal text-muted-foreground"
+						>${config.name}</span
+					>
 				{/if}
-			</div>
-		</div>
+			</p>
+		{/if}
+		<div
+			class={effectiveVariant === 'panel'
+				? 'flex shrink-0 items-center gap-1.5'
+				: 'order-3 flex shrink-0 items-center gap-1'}
+		>
+			{#if needsAttention}
+				<span
+					class="size-1.5 shrink-0 rounded-full {statusDotClass(config.status)}"
+					title={config.status}
+				></span>
+				{#if effectiveVariant === 'panel'}
+					<span class="shrink-0 text-2xs text-muted-foreground">{config.status}</span>
+				{/if}
+			{/if}
 		{#if !reportView}
 			<Popover.Root>
 				<Popover.Trigger
-					class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+					class="inline-flex {effectiveVariant === 'panel'
+						? 'size-7'
+						: 'size-6'} items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 					aria-label="Configure control"
 					title="Configure control"
 				>
@@ -404,22 +451,39 @@
 							oninput={(e) => patchConfig({ display: { helpText: e.currentTarget.value } })}
 						/>
 					</label>
-					<label class="block space-y-1">
-						<span class="text-2xs font-medium text-muted-foreground">Display variant</span>
-						<NativeSelect
-							value={config.display.variant ?? 'panel'}
-							onchange={(e) =>
-								patchConfig({
-									display: {
-										variant: e.currentTarget.value as ControlCellConfig['display']['variant']
-									}
-								})}
-						>
-							<option value="panel">Panel</option>
-							<option value="inline">Inline</option>
-							<option value="compact">Compact</option>
-						</NativeSelect>
-					</label>
+					<div class="grid grid-cols-2 gap-2">
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Display variant</span>
+							<NativeSelect
+								value={config.display.variant ?? 'panel'}
+								onchange={(e) =>
+									patchConfig({
+										display: {
+											variant: e.currentTarget.value as ControlCellConfig['display']['variant']
+										}
+									})}
+							>
+								<option value="panel">Panel</option>
+								<option value="inline">Inline</option>
+								<option value="compact">Compact</option>
+							</NativeSelect>
+						</label>
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Width</span>
+							<NativeSelect
+								value={config.display.width ?? 'full'}
+								onchange={(e) =>
+									patchConfig({
+										display: {
+											width: e.currentTarget.value as ControlCellConfig['display']['width']
+										}
+									})}
+							>
+								<option value="full">Full</option>
+								<option value="auto">Auto</option>
+							</NativeSelect>
+						</label>
+					</div>
 
 					{#if config.kind === 'file-upload'}
 						<div class="grid grid-cols-2 gap-2">
@@ -516,12 +580,15 @@
 				</Popover.Content>
 			</Popover.Root>
 		{/if}
+		</div>
 	</div>
 
+	<div class={effectiveVariant === 'panel' ? '' : 'order-2 min-w-0 flex-1'}>
 	{#if config.kind === 'text-input'}
 		<Input
 			aria-label={config.label}
 			placeholder={config.display.placeholder}
+			class={inputSizeClass}
 			value={String(config.value ?? '')}
 			oninput={(e) => setValue(e.currentTarget.value)}
 		/>
@@ -529,6 +596,7 @@
 		<Input
 			aria-label={config.label}
 			type="number"
+			class={inputSizeClass}
 			min={config.validation.min}
 			max={config.validation.max}
 			step={config.validation.step ?? 1}
@@ -553,6 +621,7 @@
 		<Input
 			aria-label={config.label}
 			type="date"
+			class={inputSizeClass}
 			value={String(config.value ?? '')}
 			oninput={(e) => setValue(e.currentTarget.value)}
 		/>
@@ -561,6 +630,7 @@
 			<Input
 				aria-label={`${config.label} start`}
 				type="date"
+				class={inputSizeClass}
 				value={String((config.value as { start?: string })?.start ?? '')}
 				oninput={(e) =>
 					setValue({ ...((config.value as object) ?? {}), start: e.currentTarget.value })}
@@ -568,6 +638,7 @@
 			<Input
 				aria-label={`${config.label} end`}
 				type="date"
+				class={inputSizeClass}
 				value={String((config.value as { end?: string })?.end ?? '')}
 				oninput={(e) =>
 					setValue({ ...((config.value as object) ?? {}), end: e.currentTarget.value })}
@@ -623,6 +694,7 @@
 		<Input
 			type="file"
 			aria-label={config.label}
+			class={inputSizeClass}
 			accept={config.validation.accept}
 			onchange={(e) => {
 				const file = e.currentTarget.files?.[0];
@@ -741,9 +813,10 @@
 		</div>
 	{/if}
 
-	{#if config.display.helpText}
-		<p class="mt-2 text-2xs text-muted-foreground">{config.display.helpText}</p>
+	{#if config.display.helpText && effectiveVariant === 'panel'}
+		<p class="mt-1.5 text-2xs text-muted-foreground">{config.display.helpText}</p>
 	{/if}
+	</div>
 </section>
 
 {#snippet dataTable({ rows, columns }: { rows: Record<string, unknown>[]; columns: string[] })}

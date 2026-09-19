@@ -40,7 +40,6 @@ describe('ControlCellView anatomy', () => {
 			'$lib/components/ui/button',
 			'$lib/components/ui/input',
 			'$lib/components/ui/textarea',
-			'$lib/components/ui/badge',
 			'$lib/components/ui/popover',
 			'$lib/components/ui/native-select/native-select.svelte'
 		]) {
@@ -58,6 +57,20 @@ describe('ControlCellView anatomy', () => {
 		]) {
 			expect(source).toContain(icon);
 		}
+	});
+
+	it('keeps the header slim and honors the display variant config', () => {
+		// No generic description boilerplate or $name line in the header.
+		expect(source).not.toContain('{config.description}');
+		expect(source).not.toContain('$lib/components/ui/badge');
+		// Status surfaces as a dot, only for non-valid states.
+		expect(source).toContain('statusDotClass');
+		expect(source).toContain('needsAttention');
+		// Display variant + width actually drive the layout.
+		expect(source).toContain('effectiveVariant');
+		expect(source).toContain("value={config.display.variant ?? 'panel'}");
+		expect(source).toContain("value={config.display.width ?? 'full'}");
+		expect(source).toContain('sr-only');
 	});
 
 	it('keeps controls accessible and configurable', () => {
