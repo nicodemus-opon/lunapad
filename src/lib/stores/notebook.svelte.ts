@@ -1970,8 +1970,24 @@ function normalizeQueryResult(result: { rows: Record<string, unknown>[]; columns
 	columns: string[];
 } {
 	if (!Array.isArray(result?.rows) || !Array.isArray(result?.columns)) {
+		// Surface the actual shape (keys + types, never row data) — the previous
+		// generic message hid cases like a queued {job} envelope or an error
+		// payload reaching this point, making cloud-queue failures undiagnosable.
+		const shape =
+			result && typeof result === 'object'
+				? Object.fromEntries(
+						Object.entries(result).map(([key, value]) => [
+							key,
+							Array.isArray(value) ? 'array' : typeof value
+						])
+					)
+				: typeof result;
+		const hint =
+			result && typeof result === 'object' && 'job' in result
+				? ' The query was queued for background execution — upgrade the query client to poll the job instead of expecting inline rows.'
+				: '';
 		throw new Error(
-			'Query engine returned an unexpected response (query may still be running). Try again in a moment.'
+			`Query engine returned an unexpected response (keys ${JSON.stringify(shape)}).${hint} Check the Jobs panel and worker logs, then try again.`
 		);
 	}
 	return {

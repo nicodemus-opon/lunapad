@@ -54,12 +54,29 @@ function trace(lease, message) {
 }
 
 async function finish(lease, status, extra = {}) {
-	await api(new URL(lease.runner.finishUrl).pathname, {
-		orgId: lease.job.orgId,
-		workerId,
-		status,
-		...extra
-	});
+	// The finish call is the only thing standing between a completed job and a
+	// terminal state — a transient 400/5xx here strands the job as running/queued
+	// forever (and the client polls until timeout). Retry with backoff, then let
+	// the error propagate so it is logged instead of failing silently.
+	const attempts = 4;
+	let lastError;
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			await api(new URL(lease.runner.finishUrl).pathname, {
+				orgId: lease.job.orgId,
+				workerId,
+				status,
+				...extra
+			});
+			if (attempt > 1) trace(lease, `finish ${status} succeeded on attempt ${attempt}`);
+			return;
+		} catch (err) {
+			lastError = err;
+			trace(lease, `finish ${status} attempt ${attempt}/${attempts} failed: ${err.message}`);
+			if (attempt < attempts) await new Promise((r) => setTimeout(r, 1000 * attempt));
+		}
+	}
+	throw lastError;
 }
 
 async function heartbeatLoop(lease, signal) {

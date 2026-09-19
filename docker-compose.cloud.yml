@@ -35,12 +35,28 @@ services:
 
   trino:
     image: trinodb/trino:481
+    # Seed an inert empty-rules stub before Trino's first boot so the file-based
+    # access-control plugin has something valid to load; the app overwrites it with
+    # real content within one security.refresh-period (5s) of its own boot.
+    # Must mirror docker-compose.yml — cloud previously used allow-all here, which
+    # disabled all tenant isolation and leaked catalogs across workspaces.
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/trino/catalog
+        [ -f /etc/trino/catalog/lunapad-access-control.json ] || printf '%s' '{"catalogs":[],"schemas":[],"tables":[],"queries":[]}' > /etc/trino/catalog/lunapad-access-control.json
+        exec /usr/lib/trino/bin/run-trino
     configs:
       - source: trino_config
         target: /etc/trino/config.properties
       - source: trino_access_control
         target: /etc/trino/access-control.properties
     volumes:
+      # Same named volume is mounted at /trino-catalog in app — dynamic
+      # CREATE CATALOG files written by Trino appear in the app container there,
+      # and lunapad-access-control.json is shared the same way. Do not point the
+      # app at /tmp or any other non-shared path.
       - trino-catalog:/etc/trino/catalog
     depends_on:
       db:
@@ -151,7 +167,10 @@ services:
       REDIS_URL: redis://redis:6379
       TRINO_URL: http://trino:8080
       TRINO_CATALOG_DIR: /trino-catalog
-      TRINO_ACCESS_CONTROL_RULES_FILE: /tmp/lunapad-access-control.json
+      # Must stay unset (default <catalogDir>/lunapad-access-control.json) so the app
+      # writes the rules file into the shared trino-catalog volume where Trino reads
+      # it. A previous revision pointed this at /tmp/... which Trino never sees.
+      # TRINO_ACCESS_CONTROL_RULES_FILE: /trino-catalog/lunapad-access-control.json
       OBJECT_STORAGE_PROVIDER: s3
       S3_ENDPOINT: http://rustfs:9000
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
@@ -223,4 +242,6 @@ configs:
       catalog.store=file
   trino_access_control:
     content: |
-      access-control.name=allow-all
+      access-control.name=file
+      security.config-file=/etc/trino/catalog/lunapad-access-control.json
+      security.refresh-period=5s

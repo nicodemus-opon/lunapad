@@ -72,15 +72,147 @@ export async function queryConnectionSQL(
 	signal?: AbortSignal,
 	runId?: string
 ): Promise<QueryConnectionResponse> {
-	return postJSON<QueryConnectionResponse>(
-		'/api/connections/query',
-		{
+	const response = await fetch('/api/connections/query', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json'
+		},
+		body: JSON.stringify({
 			connection,
 			sql,
 			runId
-		} satisfies QueryConnectionRequest,
+		} satisfies QueryConnectionRequest),
 		signal
+	});
+
+	// Cloud queue deployments answer 202 with a job descriptor instead of rows —
+	// poll the job until it reaches a terminal state, then unwrap its result.
+	// Without this every interactive query on queue mode fails downstream with a
+	// generic "unexpected response" error.
+	if (response.status === 202) {
+		const queued = (await response.json().catch(() => ({}))) as {
+			job?: { id?: string };
+		};
+		const jobId = queued.job?.id;
+		if (!jobId) {
+			throw new Error(
+				'Query was queued for background execution but no job id was returned. Check the Jobs panel.'
+			);
+		}
+		return pollQueuedQueryResult(jobId, signal);
+	}
+
+	if (!response.ok) {
+		let message = `Request failed with ${response.status}`;
+		try {
+			const payload = (await response.json()) as { error?: string };
+			message = payload.error || message;
+		} catch {
+			// Ignore JSON parse failures and keep the status-derived message.
+		}
+		throw new Error(message);
+	}
+
+	return (await response.json()) as QueryConnectionResponse;
+}
+
+type QueuedQueryJob = {
+	id: string;
+	status: string;
+	result?: unknown | null;
+	error?: string | null;
+};
+
+function isAbortError(err: unknown): boolean {
+	return (
+		err instanceof Error &&
+		(err.name === 'AbortError' || /aborted|abortion/i.test(err.message ?? ''))
 	);
+}
+
+function throwAborted(): never {
+	const err = new Error('Query cancelled');
+	err.name = 'AbortError';
+	throw err;
+}
+
+async function pollQueuedQueryResult(
+	jobId: string,
+	signal?: AbortSignal,
+	timeoutMs = 120_000
+): Promise<QueryConnectionResponse> {
+	const start = Date.now();
+	// Slightly faster than the smoke script's 750ms since interactive cells wait on this.
+	const pollMs = 700;
+	while (true) {
+		if (signal?.aborted) {
+			// Best-effort: release the queued/running job server-side, then settle
+			// as a cancellation so the cell returns to idle instead of erroring.
+			await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+				method: 'POST'
+			}).catch(() => {});
+			throwAborted();
+		}
+		let job: QueuedQueryJob;
+		try {
+			const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { signal });
+			const body = (await res.json().catch(() => ({}))) as { job?: QueuedQueryJob };
+			if (!res.ok || !body.job) {
+				throw new Error(`Query job lookup failed (HTTP ${res.status}).`);
+			}
+			job = body.job;
+		} catch (err) {
+			if (signal?.aborted || isAbortError(err)) throwAborted();
+			throw err;
+		}
+		switch (job.status) {
+			case 'succeeded': {
+				const result = job.result as Partial<QueryConnectionResponse> | null;
+				if (!result || !Array.isArray(result.rows) || !Array.isArray(result.columns)) {
+					throw new Error(
+						'Query job succeeded but returned an unexpected result shape. Check the Jobs panel for details.'
+					);
+				}
+				return { rows: result.rows, columns: result.columns };
+			}
+			case 'failed':
+			case 'timed_out':
+			case 'cancelled':
+				throw new Error(job.error ?? `Query job ${job.status}.`);
+			case 'queued':
+			case 'running':
+				break;
+			default:
+				throw new Error(`Query job has unknown status "${job.status}".`);
+		}
+		if (Date.now() - start > timeoutMs) {
+			throw new Error(
+				'Query is still queued after 120s — the worker may be down. Check the Jobs panel and worker logs.'
+			);
+		}
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(() => {
+					signal?.removeEventListener('abort', onAbort);
+					resolve();
+				}, pollMs);
+				const onAbort = () => {
+					clearTimeout(timer);
+					const err = new Error('Query cancelled');
+					err.name = 'AbortError';
+					reject(err);
+				};
+				if (signal?.aborted) {
+					onAbort();
+					return;
+				}
+				signal?.addEventListener('abort', onAbort, { once: true });
+			});
+		} catch (err) {
+			if (isAbortError(err)) throwAborted();
+			throw err;
+		}
+	}
 }
 
 export async function cancelConnectionQuery(runId: string): Promise<void> {

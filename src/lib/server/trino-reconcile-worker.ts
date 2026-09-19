@@ -1,4 +1,4 @@
-import { reconcileTrinoCatalogs } from './connections.js';
+import { cleanupOrphanPhysicalCatalogs, reconcileTrinoCatalogs } from './connections.js';
 import { query } from './db.js';
 import { deploymentMode } from './tenancy.js';
 
@@ -14,6 +14,21 @@ async function reconcileAllOrganizations(): Promise<void> {
 		if (failed.length > 0) {
 			console.warn(`[trino-reconcile] ${failed.length} catalog(s) failed for org ${row.id}`);
 		}
+	}
+	// Single shared Trino cluster: drop lp_* dynamic catalogs with no owning
+	// connection row (deleted orgs/connections, pre-isolation leftovers). Without
+	// this a later workspace reusing a connection id hits "already exists" on
+	// CREATE CATALOG, which surfaces as a cross-account duplicate.
+	try {
+		const dropped = await cleanupOrphanPhysicalCatalogs();
+		if (dropped.length > 0) {
+			console.warn(`[trino-reconcile] dropped ${dropped.length} orphan catalog(s): ${dropped.join(', ')}`);
+		}
+	} catch (err) {
+		console.warn(
+			'[trino-reconcile] orphan cleanup failed:',
+			err instanceof Error ? err.message : String(err)
+		);
 	}
 }
 

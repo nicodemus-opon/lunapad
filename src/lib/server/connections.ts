@@ -15,6 +15,7 @@ import type {
 } from '$lib/types/connection';
 import {
 	forTrino,
+	isPhysicalCatalogName,
 	physicalCatalogPrefixFor,
 	rewriteTenantCatalogReferences,
 	tenantTrinoUser,
@@ -22,6 +23,7 @@ import {
 } from './trino-catalog-isolation.js';
 import { listConnectionsMetadata } from './connections-store.js';
 import { getSecret } from './connection-secrets.js';
+import { query } from './db.js';
 
 // Service-account JSON credentials are shared across all Google-auth connectors
 // (Google Sheets, BigQuery) — each gets its own file, named by suffix, alongside
@@ -733,6 +735,16 @@ export async function registerCatalog(
 			`Invalid source ID "${trinoConnection.catalogName}". Must start with a lowercase letter and contain only lowercase letters, digits, and underscores (max 64 chars).`
 		);
 	}
+	// Tenant isolation requires the physical lp_<orghash>_<connhash> namespace.
+	// Without an orgId the logical alias is used verbatim as the Trino catalog name,
+	// which collides globally on a shared cloud cluster (two accounts using the same
+	// alias would fight over one catalog). Self-hosted single-tenant may omit orgId;
+	// cloud callers must always pass it.
+	if (orgId && !trinoConnection.catalogName.toLowerCase().startsWith('lp_')) {
+		throw new Error(
+			`Source "${connection.catalogName}" was not mapped to a tenant-isolated catalog name. Please retry — if this persists, reconcile this workspace.`
+		);
+	}
 
 	const catalogDir = getCatalogDir();
 	if (!catalogDir) {
@@ -749,21 +761,37 @@ export async function registerCatalog(
 		properties: { ...spec.properties, ...catalogTypeMappingProperties(trinoConnection.type) }
 	};
 
+	const dropSQL = buildDropCatalogSQL(trinoConnection.catalogName);
+	const createSQL = buildCreateCatalogSQL(trinoConnection.catalogName, fullSpec);
+	const managerOpts = { trinoUser: catalogManagerTrinoUser(orgId) };
+
 	await withCatalogLock(trinoConnection.catalogName, async () => {
 		// DROP + CREATE so edits to an already-registered catalog (host, port, database,
 		// credentials, ...) actually take effect — see comment above.
-		await trinoRequest(buildDropCatalogSQL(trinoConnection.catalogName), undefined, undefined, {
-			trinoUser: catalogManagerTrinoUser(orgId)
-		});
-		await trinoRequest(
-			buildCreateCatalogSQL(trinoConnection.catalogName, fullSpec),
-			undefined,
-			undefined,
-			{
-				trinoUser: catalogManagerTrinoUser(orgId)
+		await trinoRequest(dropSQL, undefined, undefined, managerOpts);
+		try {
+			await trinoRequest(createSQL, undefined, undefined, managerOpts);
+		} catch (err) {
+			if (!isTrinoAlreadyExistsError(err)) throw err;
+			// Trino reported the catalog still exists right after our DROP (stale
+			// dynamic store / concurrent creator / orphan from a deleted workspace).
+			// DROP once more and retry a single time before surfacing a friendly error.
+			await trinoRequest(dropSQL, undefined, undefined, managerOpts).catch(() => {});
+			try {
+				await trinoRequest(createSQL, undefined, undefined, managerOpts);
+			} catch (retryErr) {
+				if (!isTrinoAlreadyExistsError(retryErr)) throw retryErr;
+				throw new Error(
+					`Source alias "${connection.catalogName}" is available in this workspace, but Trino reports catalog "${trinoConnection.catalogName}" already exists (likely an orphan from another or deleted workspace). It will be cleaned automatically — please retry in a few seconds.`
+				);
 			}
-		);
+		}
 	});
+}
+
+function isTrinoAlreadyExistsError(err: unknown): boolean {
+	const message = err instanceof Error ? err.message : String(err ?? '');
+	return /already\s+exists/i.test(message);
 }
 
 export async function unregisterCatalog(
@@ -779,10 +807,18 @@ export async function unregisterCatalog(
 		trinoUser: catalogManagerTrinoUser(orgId)
 	}).catch(() => {});
 
+	// DROP CATALOG removes the persisted .properties file via Trino, but unlink
+	// best-effort here too so a down/unreachable Trino can't leave a stale file
+	// that later collides as a cross-workspace "already exists" duplicate.
 	// Google-auth connectors write service-account credentials alongside the catalog
 	// file — clean up to avoid orphaned secrets sitting on disk after removal.
 	const delDir = getCatalogDir();
 	if (delDir) {
+		try {
+			await fs.unlink(path.join(delDir, `${catalogName}.properties`));
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+		}
 		for (const suffix of ['gsheets', 'bigquery']) {
 			try {
 				await fs.unlink(serviceAccountCredentialsPath(delDir, catalogName, suffix));
@@ -833,6 +869,16 @@ export async function getTrinoCatalogStatuses(orgId: string): Promise<TrinoCatal
 		accessRules?.catalogs.some((rule) => rule.user === user && rule.catalog === `${prefix}.*`)
 	);
 
+	// Dynamic catalogs are created via CREATE CATALOG SQL; Trino persists the
+	// .properties file itself into the shared catalog volume. On cloud that write can
+	// lag behind the SQL response (or the volume wiring can break), so also consult
+	// Trino's live catalog list — a catalog present in SHOW CATALOGS counts as
+	// existing even if the file isn't visible to the app yet.
+	const liveCatalogs = await listLiveTrinoCatalogNames(catalogManagerTrinoUser(orgId)).catch(
+		() => null
+	);
+	const liveSet = liveCatalogs ? new Set(liveCatalogs.map((name) => name.toLowerCase())) : null;
+
 	const statuses: TrinoCatalogStatus[] = [];
 	for (const connection of connections) {
 		if (connection.type === 'duckdb-wasm') continue;
@@ -842,31 +888,123 @@ export async function getTrinoCatalogStatuses(orgId: string): Promise<TrinoCatal
 			? path.join(catalogDir, `${physicalCatalogName}.properties`)
 			: null;
 		const catalogFileExists = catalogFile
-			? await fs
-					.access(catalogFile)
+			? await Promise.resolve()
+					.then(() => fs.access(catalogFile))
 					.then(() => true)
 					.catch(() => false)
 			: false;
-		const ready = catalogFileExists && hasAccessRule;
+		const catalogLive = liveSet?.has(physicalCatalogName.toLowerCase()) ?? false;
+		const catalogExists = catalogFileExists || catalogLive;
+		const ready = catalogExists && hasAccessRule;
 		statuses.push({
 			connectionId: connection.id,
 			sourceAlias: connection.catalogName,
 			physicalCatalogName,
 			trinoUser: user,
 			catalogFile,
-			catalogFileExists,
+			catalogFileExists: catalogExists,
 			accessControlConfigured: hasAccessRule,
-			status: ready ? 'ready' : catalogFileExists ? 'registering' : 'failed',
+			status: ready ? 'ready' : catalogExists ? 'registering' : 'failed',
 			...(ready
 				? {}
 				: {
-						message: !catalogFileExists
-							? 'Catalog file is missing; reconcile this workspace.'
+						message: !catalogExists
+							? 'Catalog is missing in Trino; reconcile this workspace.'
 							: 'Tenant access-control rule is missing.'
 					})
 		});
 	}
 	return statuses;
+}
+
+// ── Orphan detection / cleanup (shared cloud cluster) ─────────────────────────
+// A single Trino cluster serves every workspace; physical catalogs are
+// lp_<orghash>_<connhash>. When a connection or whole org is deleted without a
+// matching DROP CATALOG (crash, old build, manual DB edit), the dynamic catalog
+// — and its .properties file — lingers globally. A later workspace reusing the
+// same connection id then hits "already exists" on CREATE, which looks like a
+// cross-account duplicate. These helpers let the reconciler auto-clean those.
+
+export async function listLiveTrinoCatalogNames(trinoUser?: string): Promise<string[]> {
+	const result = await trinoRequest('SHOW CATALOGS', undefined, undefined, {
+		trinoUser: trinoUser ?? CATALOG_MANAGER_TRINO_USER
+	});
+	const names: string[] = [];
+	for (const row of result.rows) {
+		const raw =
+			(row['Catalog'] ?? row['catalog'] ?? row['CATALOG'] ?? Object.values(row)[0]) as unknown;
+		if (typeof raw === 'string' && raw.length > 0) names.push(raw);
+	}
+	return names;
+}
+
+async function listKnownPhysicalCatalogNames(): Promise<Set<string>> {
+	try {
+		const rows = await query<{ data: { physicalCatalogName?: string } }>(
+			`SELECT data FROM connections`
+		);
+		return new Set(
+			rows
+				.map((row) => row.data?.physicalCatalogName)
+				.filter((name): name is string => typeof name === 'string' && name.length > 0)
+				.map((name) => name.toLowerCase())
+		);
+	} catch {
+		return new Set();
+	}
+}
+
+export async function listOrphanPhysicalCatalogs(
+	knownPhysicalNames?: Set<string>
+): Promise<string[]> {
+	const known = knownPhysicalNames ?? (await listKnownPhysicalCatalogNames());
+	const live = await listLiveTrinoCatalogNames().catch(() => [] as string[]);
+	return live.filter(
+		(name) => isPhysicalCatalogName(name) && !known.has(name.toLowerCase())
+	);
+}
+
+async function dropPhysicalCatalogFiles(physicalCatalogName: string): Promise<void> {
+	const delDir = getCatalogDir();
+	if (!delDir) return;
+	const candidates = [path.join(delDir, `${physicalCatalogName}.properties`)];
+	for (const file of candidates) {
+		try {
+			await fs.unlink(file);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+		}
+	}
+	for (const suffix of ['gsheets', 'bigquery']) {
+		try {
+			await fs.unlink(serviceAccountCredentialsPath(delDir, physicalCatalogName, suffix));
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+		}
+	}
+}
+
+export async function dropOrphanPhysicalCatalog(
+	physicalCatalogName: string,
+	trinoUser?: string
+): Promise<void> {
+	await trinoRequest(buildDropCatalogSQL(physicalCatalogName), undefined, undefined, {
+		trinoUser: trinoUser ?? CATALOG_MANAGER_TRINO_USER
+	}).catch(() => {});
+	await dropPhysicalCatalogFiles(physicalCatalogName).catch(() => {});
+}
+
+export async function cleanupOrphanPhysicalCatalogs(
+	knownPhysicalNames?: Set<string>,
+	trinoUser?: string
+): Promise<string[]> {
+	const orphans = await listOrphanPhysicalCatalogs(knownPhysicalNames).catch(() => []);
+	const dropped: string[] = [];
+	for (const orphan of orphans) {
+		await dropOrphanPhysicalCatalog(orphan, trinoUser);
+		dropped.push(orphan);
+	}
+	return dropped;
 }
 
 // ── SQL validation ────────────────────────────────────────────────────────────
