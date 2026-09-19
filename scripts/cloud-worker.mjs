@@ -143,14 +143,28 @@ async function executeLease(lease) {
 			orgId: lease.job.orgId,
 			workerId
 		});
+		// The finish POST has proven unable to carry multi-MB bodies end to end
+		// (a ~1.5MB result arrived as an empty body and was rejected), while the
+		// result file below travels over the shared /app/projects volume instead.
+		// Send the result inline only when small; the app resolves larger results
+		// from resultPointer. The file is always written either way.
+		const INLINE_RESULT_LIMIT = 256_000;
 		const resultPath = path.join(scratchPath, 'result.json');
+		const resultJson = JSON.stringify(result.result ?? null);
 		await fs.writeFile(resultPath, JSON.stringify(result.result ?? null, null, 2));
 		trace(lease, `completed ${lease.job.kind} job`);
-		trace(lease, `result: ${resultPath}`);
-		await finish(lease, 'succeeded', {
-			result: result.result ?? null,
-			resultPointer: resultPath
-		});
+		trace(lease, `result: ${resultPath} (${resultJson.length} chars)`);
+		await finish(
+			lease,
+			'succeeded',
+			resultJson.length <= INLINE_RESULT_LIMIT
+				? {
+						result: JSON.parse(resultJson),
+						resultPointer: resultPath,
+						resultBytes: resultJson.length
+					}
+				: { resultPointer: resultPath, resultBytes: resultJson.length }
+		);
 	} catch (err) {
 		if (
 			controller.signal.aborted &&

@@ -233,6 +233,11 @@ services:
       LUNAPAD_BASE_URL: http://app:3000
       CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-${SERVICE_PASSWORD_64_WORKER:-change-me-cloud-worker-token}}
       CLOUD_WORKER_CONCURRENCY: ${CLOUD_WORKER_CONCURRENCY:-2}
+    volumes:
+      # Shared with app (/app/projects): the worker writes result.json into
+      # .worker-scratch here and the app resolves large finish results from the
+      # resultPointer file instead of a multi-MB POST body.
+      - cloud-projects:/app/projects
     restart: unless-stopped
 
   inngest:

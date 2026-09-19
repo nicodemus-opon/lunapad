@@ -2,7 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { finishCloudJob, type CloudJobStatus } from '$lib/server/cloud-jobs';
 import { requireCloudWorkerAuth } from '$lib/server/cloud-worker-auth';
-import { finishPayloadShape, isFinalCloudJobStatus } from '$lib/server/cloud-job-finish';
+import {
+	finishPayloadShape,
+	isFinalCloudJobStatus,
+	resolveFinishResult
+} from '$lib/server/cloud-job-finish';
+import { projectsRoot } from '$lib/server/tenancy';
 
 export const POST: RequestHandler = async ({ params, request }) => {
 	const denied = requireCloudWorkerAuth(request);
@@ -56,13 +61,33 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 	const workerId = typeof body.workerId === 'string' ? body.workerId.trim() : '';
 	if (!workerId) return json({ error: 'workerId is required.' }, { status: 400 });
+	// Large results travel via resultPointer (a result.json on the shared projects
+	// volume) instead of inline, because multi-MB POST bodies have been observed
+	// arriving empty. Resolve the file here so the stored job row is identical
+	// either way.
+	const resolved = await resolveFinishResult({
+		result: body.result,
+		resultPointer: body.resultPointer,
+		projectsRoot: projectsRoot()
+	});
+	if (resolved.error) {
+		console.warn(`[jobs-finish] job ${params.id}: ${resolved.error}.`);
+		return json(
+			{
+				error: 'A valid final status is required.',
+				reason: 'result_unreadable',
+				detail: resolved.error
+			},
+			{ status: 400 }
+		);
+	}
 	const job = await finishCloudJob({
 		orgId: body.orgId,
 		jobId: params.id,
 		workerId,
 		status: body.status,
 		logs: body.logs,
-		result: body.result,
+		result: resolved.result,
 		resultPointer: body.resultPointer,
 		error: body.error
 	});
