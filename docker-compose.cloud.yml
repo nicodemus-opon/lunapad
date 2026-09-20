@@ -87,30 +87,6 @@ services:
       start_interval: 5s
     restart: unless-stopped
 
-  rustfs-permissions:
-    image: alpine:3.20
-    command: sh -c "mkdir -p /data && chown -R 10001:10001 /data && tail -f /dev/null"
-    volumes:
-      - rustfs-data:/data
-    healthcheck:
-      test: ['CMD-SHELL', 'stat -c %u:%g /data | grep -qx 10001:10001']
-      interval: 2s
-      timeout: 2s
-      retries: 15
-
-  rustfs:
-    image: rustfs/rustfs:latest
-    depends_on:
-      rustfs-permissions:
-        condition: service_healthy
-    environment:
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-lunapad}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}
-    command: /data
-    volumes:
-      - rustfs-data:/data
-    restart: unless-stopped
-
   storage-init:
     image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
     build:
@@ -118,21 +94,86 @@ services:
       target: runner
     pull_policy: build
     command: sh -c "node scripts/storage-init.mjs && touch /tmp/storage-init-ready && tail -f /dev/null"
-    depends_on:
-      rustfs:
-        condition: service_started
     environment:
-      S3_ENDPOINT: http://rustfs:9000
+      # External S3 — all file state (projects, worker scratch, shares, Trino
+      # files) lives here. No bundled object store; configure via env.
+      # S3_FORCE_PATH_STYLE: 'true' for S3-compatibles (MinIO/Garage/R2-path),
+      # 'false' for AWS virtual-hosted style.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-lunapad}
-      S3_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}
-      S3_FORCE_PATH_STYLE: 'true'
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      STORAGE_INIT_SKIP_BUCKET_CREATE: ${STORAGE_INIT_SKIP_BUCKET_CREATE:-}
     healthcheck:
       test: ['CMD-SHELL', 'test -f /tmp/storage-init-ready']
       interval: 5s
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # Automatic one-shot migration: runs on every `up`/deploy BEFORE the app,
+  # copying legacy local volumes + DB share snapshots into the external bucket.
+  # Idempotent (identical size skips, rerun is a no-op) so leaving it in the boot
+  # chain is safe. Gate it with MIGRATION_ARGS / MIGRATE_ENABLE:
+  #   MIGRATE_ENABLE=0            → skip (app boots without migrating)
+  #   MIGRATION_ARGS="--apply --only projects,db-shares" → subset
+  # Never deletes source unless MIGRATION_ARGS includes --delete-source.
+  migration:
+    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    build:
+      context: .
+      target: runner
+    pull_policy: build
+    command: sh -c "if [ \"$${MIGRATE_ENABLE:-1}\" = 0 ]; then echo 'migration disabled via MIGRATE_ENABLE=0'; exit 0; fi; node scripts/migrate-to-s3.mjs $${MIGRATION_ARGS:---apply}"
+    depends_on:
+      db:
+        condition: service_healthy
+      storage-init:
+        condition: service_healthy
+    extra_hosts:
+      # Lets the migration reach host-bound endpoints (e.g. a temporary
+      # legacy-RustFS container started with --network host during the
+      # old-to-new copy) via http://host.docker.internal:9000 on Linux too.
+      - 'host.docker.internal:host-gateway'
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_PROJECTS_PREFIX: ${S3_PROJECTS_PREFIX:-projects/}
+      S3_WORKER_SCRATCH_PREFIX: ${S3_WORKER_SCRATCH_PREFIX:-worker-scratch/}
+      S3_SHARES_PREFIX: ${S3_SHARES_PREFIX:-shares/}
+      S3_TRINO_CATALOG_PREFIX: ${S3_TRINO_CATALOG_PREFIX:-trino-catalog/}
+      S3_TRINO_ACCESS_PREFIX: ${S3_TRINO_ACCESS_PREFIX:-trino-access/}
+      DATABASE_URL: postgresql://lunapad:${POSTGRES_PASSWORD:-${SERVICE_PASSWORD_64_POSTGRES:-lunapad}}@db:5432/lunapad
+      MIGRATION_ARGS: ${MIGRATION_ARGS:---apply}
+      MIGRATE_ENABLE: ${MIGRATE_ENABLE:-1}
+      # Legacy RustFS copy-out: ZERO env needed. Defaults probe
+      # http://host.docker.internal:9000 (a temporary legacy-RustFS container
+      # serving the old volume with --network host — see .env.cloud.example).
+      # Nothing there -> warn-and-skip. Data there -> copied automatically on
+      # every boot (idempotent). Strict fail-fast applies ONLY when you
+      # explicitly set MIGRATE_SOURCE_RUSTFS_ENDPOINT and it is unreachable.
+      MIGRATE_SOURCE_RUSTFS_ENDPOINT: ${MIGRATE_SOURCE_RUSTFS_ENDPOINT:-http://host.docker.internal:9000}
+      MIGRATE_SOURCE_RUSTFS_BUCKET: ${MIGRATE_SOURCE_RUSTFS_BUCKET:-lunapad-artifacts}
+      MIGRATE_SOURCE_RUSTFS_KEY: ${MIGRATE_SOURCE_RUSTFS_KEY:-${RUSTFS_ACCESS_KEY:-lunapad}}
+      MIGRATE_SOURCE_RUSTFS_SECRET: ${MIGRATE_SOURCE_RUSTFS_SECRET:-${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}}
+      MIGRATE_REQUIRE_RUSTFS: ${MIGRATE_REQUIRE_RUSTFS:-1}
+      MIGRATE_RUSTFS_WAIT_MS: ${MIGRATE_RUSTFS_WAIT_MS:-15000}
+      MIGRATE_SOURCE_PROJECT: /migrate/project
+      MIGRATE_SOURCE_PROJECTS: /migrate/projects
+      MIGRATE_SOURCE_TRINO_CATALOG: /migrate/trino-catalog
+      MIGRATE_SOURCE_TRINO_ACCESS: /migrate/trino-access
+    volumes:
+      - cloud-project:/migrate/project:ro
+      - cloud-projects:/migrate/projects:ro
+      - trino-catalog:/migrate/trino-catalog:ro
+      - trino-access:/migrate/trino-access:ro
+    restart: 'no'
 
   mailpit:
     image: axllent/mailpit:latest
@@ -162,6 +203,11 @@ services:
         condition: service_healthy
       storage-init:
         condition: service_healthy
+      migration:
+        # Automatic migration runs before the app on every boot. Exit 0 (incl.
+        # MIGRATE_ENABLE=0 skip) unblocks the app; migration failure blocks the
+        # app fail-fast so no requests serve half-migrated state.
+        condition: service_completed_successfully
     environment:
       SERVICE_URL_APP_3000: ${SERVICE_URL_APP_3000:-}
       SERVICE_FQDN_APP_3000: ${SERVICE_FQDN_APP_3000:-}
@@ -192,11 +238,21 @@ services:
       # dir) so the .json never pollutes Trino's dynamic catalog loading.
       TRINO_ACCESS_CONTROL_RULES_FILE: /trino-access/lunapad-access-control.json
       OBJECT_STORAGE_PROVIDER: s3
-      S3_ENDPOINT: http://rustfs:9000
+      FILE_STORAGE_BACKEND: ${FILE_STORAGE_BACKEND:-s3}
+      # External S3 (required in cloud): point at AWS S3 or any S3-compatible
+      # endpoint (R2/MinIO/Garage). Keys accept AWS_* aliases.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-lunapad}
-      S3_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}
-      S3_FORCE_PATH_STYLE: 'true'
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_PROJECTS_PREFIX: ${S3_PROJECTS_PREFIX:-projects/}
+      S3_WORKER_SCRATCH_PREFIX: ${S3_WORKER_SCRATCH_PREFIX:-worker-scratch/}
+      S3_SHARES_PREFIX: ${S3_SHARES_PREFIX:-shares/}
+      S3_TRINO_CATALOG_PREFIX: ${S3_TRINO_CATALOG_PREFIX:-trino-catalog/}
+      S3_TRINO_ACCESS_PREFIX: ${S3_TRINO_ACCESS_PREFIX:-trino-access/}
+      FILE_CACHE_DIR: /tmp/s3cache
       SIGNUP_RATE_LIMIT_PER_HOUR: ${SIGNUP_RATE_LIMIT_PER_HOUR:-20}
       PROJECT_FOLDER: /app/project
       PROJECTS_ROOT: /app/projects
@@ -233,6 +289,17 @@ services:
       LUNAPAD_BASE_URL: http://app:3000
       CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-${SERVICE_PASSWORD_64_WORKER:-change-me-cloud-worker-token}}
       CLOUD_WORKER_CONCURRENCY: ${CLOUD_WORKER_CONCURRENCY:-2}
+      # Worker needs the same external S3 identity for the S3 scratch handoff
+      # (worker-scratch/ keys) once FILE_STORAGE_BACKEND=s3 is live.
+      OBJECT_STORAGE_PROVIDER: s3
+      FILE_STORAGE_BACKEND: ${FILE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_WORKER_SCRATCH_PREFIX: ${S3_WORKER_SCRATCH_PREFIX:-worker-scratch/}
     volumes:
       # Shared with app (/app/projects): the worker writes result.json into
       # .worker-scratch here and the app resolves large finish results from the
@@ -250,7 +317,6 @@ services:
 volumes:
   pgdata:
   redis-data:
-  rustfs-data:
   trino-catalog:
   trino-access:
   cloud-project:

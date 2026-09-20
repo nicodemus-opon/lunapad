@@ -192,6 +192,17 @@
 	const connectionType = $derived(
 		connections.find((entry) => entry.id === connectionValue)?.type ?? 'duckdb-wasm'
 	);
+	const cellExternalSchema = $derived(
+		externalSchemaTables.filter((t) => t.connectionId === connectionValue)
+	);
+	const udfFunctionNames = $derived.by((): string[] => {
+		if (cell?.language !== 'sql') return [];
+		const names: string[] = [];
+		for (const c of cells) {
+			if (c.cellType === 'udf' && c.outputName) names.push(c.outputName);
+		}
+		return names;
+	});
 	const cellCatalogName = $derived.by(() => {
 		if (connectionType === 'duckdb-wasm') return undefined;
 		const conn = connections.find((c) => c.id === connectionValue);
@@ -708,6 +719,11 @@
 										: cell.language === 'sql'
 											? 'sql'
 											: 'prql'}
+									sqlDialect={cellSqlDialect}
+									{connectionType}
+									connectionId={connectionValue}
+									externalSchema={cellExternalSchema}
+									{udfFunctionNames}
 									pythonContext={isPythonCell ? { kind: 'data', notebookId } : undefined}
 									pythonSchemas={isPythonCell ? prevCellSources : []}
 									{pythonTableHints}

@@ -1,13 +1,43 @@
 import crypto from 'node:crypto';
 
-const endpoint = process.env.S3_ENDPOINT ?? 'http://rustfs:9000';
-const bucket = process.env.S3_BUCKET ?? 'lunapad-artifacts';
-const accessKey = process.env.S3_ACCESS_KEY_ID ?? process.env.RUSTFS_ACCESS_KEY ?? 'lunapad';
-const secretKey = process.env.S3_SECRET_ACCESS_KEY ?? process.env.RUSTFS_SECRET_KEY ?? 'lunapad-local-secret';
+// Generic external S3 gate for Docker boot (`storage-init` service).
+// Works against any S3-compatible endpoint (AWS S3, R2, MinIO, Garage, RustFS)
+// purely via env — no bundled object store required.
+//
+// Required env:
+//   S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID (or AWS_ACCESS_KEY_ID),
+//   S3_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY)
+// Optional env:
+//   S3_REGION (default us-east-1), S3_FORCE_PATH_STYLE (default true for
+//   compatibles; set 'false' for AWS virtual-hosted style),
+//   STORAGE_INIT_TIMEOUT_MS, STORAGE_INIT_POLL_MS, STORAGE_INIT_SKIP_BUCKET_CREATE=1
+const endpoint = process.env.S3_ENDPOINT;
+const bucket = process.env.S3_BUCKET;
+const accessKey =
+	process.env.S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? process.env.RUSTFS_ACCESS_KEY;
+const secretKey =
+	process.env.S3_SECRET_ACCESS_KEY ??
+	process.env.AWS_SECRET_ACCESS_KEY ??
+	process.env.RUSTFS_SECRET_KEY;
 const region = process.env.S3_REGION ?? 'us-east-1';
 const forcePathStyle = process.env.S3_FORCE_PATH_STYLE !== 'false';
+const skipBucketCreate = process.env.STORAGE_INIT_SKIP_BUCKET_CREATE === '1';
 const timeoutMs = Number(process.env.STORAGE_INIT_TIMEOUT_MS ?? '120000');
 const pollMs = Number(process.env.STORAGE_INIT_POLL_MS ?? '2000');
+
+function requireEnv() {
+	const missing = [];
+	if (!endpoint) missing.push('S3_ENDPOINT');
+	if (!bucket) missing.push('S3_BUCKET');
+	if (!accessKey) missing.push('S3_ACCESS_KEY_ID');
+	if (!secretKey) missing.push('S3_SECRET_ACCESS_KEY');
+	if (missing.length > 0) {
+		throw new Error(
+			`External S3 is not configured. Missing: ${missing.join(', ')}. ` +
+				`Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY (+ S3_REGION, S3_FORCE_PATH_STYLE) on the Docker stack.`
+		);
+	}
+}
 
 function hashHex(value) {
 	return crypto.createHash('sha256').update(value).digest('hex');
@@ -24,11 +54,7 @@ function stamp(date = new Date()) {
 
 function objectUrl(key = '') {
 	const base = new URL(endpoint.endsWith('/') ? endpoint : `${endpoint}/`);
-	const encodedKey = key
-		.split('/')
-		.filter(Boolean)
-		.map(encodeURIComponent)
-		.join('/');
+	const encodedKey = key.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 	if (forcePathStyle) {
 		base.pathname = `${base.pathname.replace(/\/$/, '')}/${bucket}${encodedKey ? `/${encodedKey}` : ''}`;
 		return base;
@@ -47,7 +73,9 @@ function sign({ method, url, body = '', contentType }) {
 	headers.set('x-amz-date', amzDate);
 	if (contentType) headers.set('content-type', contentType);
 	const signedHeaders = Array.from(headers.keys()).sort();
-	const canonicalHeaders = signedHeaders.map((name) => `${name}:${headers.get(name).trim()}\n`).join('');
+	const canonicalHeaders = signedHeaders
+		.map((name) => `${name}:${headers.get(name).trim()}\n`)
+		.join('');
 	const canonicalRequest = [
 		method,
 		url.pathname,
@@ -83,8 +111,17 @@ async function s3(method, key = '', body = '', contentType) {
 }
 
 async function createBucket() {
+	if (skipBucketCreate) {
+		console.log(
+			'STORAGE_INIT_SKIP_BUCKET_CREATE=1 — skipping bucket create (bucket must pre-exist).'
+		);
+		return;
+	}
 	const response = await s3('PUT');
-	if (response.ok || response.status === 409) return;
+	// 200/409: created / already exists (compatibles). 403: providers like AWS/R2
+	// where the deployer pre-creates the bucket without s3:CreateBucket — treat as
+	// "assume pre-created" and let the smoke test prove access.
+	if (response.ok || response.status === 409 || response.status === 403) return;
 	const text = await response.text().catch(() => '');
 	throw new Error(`bucket create failed with ${response.status}${text ? `: ${text}` : ''}`);
 }
@@ -103,16 +140,17 @@ async function smoke() {
 }
 
 async function main() {
+	requireEnv();
 	const started = Date.now();
 	for (;;) {
 		try {
 			await createBucket();
 			await smoke();
-			console.log(`RustFS bucket "${bucket}" is ready at ${endpoint}.`);
+			console.log(`External S3 bucket "${bucket}" is ready at ${endpoint}.`);
 			return;
 		} catch (err) {
 			if (Date.now() - started > timeoutMs) throw err;
-			console.log(`Waiting for RustFS bucket "${bucket}": ${err.message}`);
+			console.log(`Waiting for external S3 bucket "${bucket}": ${err.message}`);
 			await new Promise((resolve) => setTimeout(resolve, pollMs));
 		}
 	}

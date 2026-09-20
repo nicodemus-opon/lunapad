@@ -22,12 +22,21 @@ export function requiredCloudEnv(): string[] {
 		required.push('SMTP_HOST', 'EMAIL_FROM');
 	}
 	if (process.env.OBJECT_STORAGE_PROVIDER === 's3') {
-		required.push(
-			'S3_ENDPOINT',
-			'S3_BUCKET',
-			'S3_ACCESS_KEY_ID',
-			'S3_SECRET_ACCESS_KEY'
-		);
+		required.push('S3_ENDPOINT', 'S3_BUCKET');
+		if (
+			!process.env.S3_ACCESS_KEY_ID &&
+			!process.env.AWS_ACCESS_KEY_ID &&
+			!process.env.RUSTFS_ACCESS_KEY
+		) {
+			required.push('S3_ACCESS_KEY_ID');
+		}
+		if (
+			!process.env.S3_SECRET_ACCESS_KEY &&
+			!process.env.AWS_SECRET_ACCESS_KEY &&
+			!process.env.RUSTFS_SECRET_KEY
+		) {
+			required.push('S3_SECRET_ACCESS_KEY');
+		}
 	}
 	const missingEnv = required.map(missing).filter((value): value is string => Boolean(value));
 	if (!publicOriginEnvPresent()) {
@@ -53,7 +62,9 @@ export function assertCloudEnv(): void {
 		process.env.CLOUD_QUEUE_WORKER_ENABLED !== 'true' &&
 		process.env.CLOUD_WORKER_ENABLED !== 'true'
 	) {
-		throw new Error('CLOUD_QUEUE_WORKER_ENABLED=true is required when CLOUD_EXECUTION_ADAPTER=queue.');
+		throw new Error(
+			'CLOUD_QUEUE_WORKER_ENABLED=true is required when CLOUD_EXECUTION_ADAPTER=queue.'
+		);
 	}
 }
 

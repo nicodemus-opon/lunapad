@@ -24,8 +24,7 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		formatDialect,
-		sql as sqlDialectDef,
-		postgresql as postgresqlDialectDef,
+		duckdb as duckdbDialectDef,
 		trino as trinoDialectDef,
 		type DialectOptions
 	} from 'sql-formatter';
@@ -39,7 +38,7 @@
 		PythonUpstreamSchema,
 		SqlModelContext
 	} from '$lib/monaco/completions';
-	import type { ConnectionType } from '$lib/types/connection';
+	import type { ConnectionType, PRQLTarget } from '$lib/types/connection';
 	import type { ExternalSchemaTable } from '$lib/stores/notebook.svelte';
 	import { shouldForwardFromMonaco } from '$lib/keyboard/monaco-bridge';
 	import { setGhostInlineEditActive } from '$lib/monaco/ghost-completions';
@@ -64,8 +63,8 @@
 		 * meaningful when language is 'javascript'. See $lib/monaco/plot-globals.ts
 		 * for why only the focused JS editor's globals are ever live. */
 		plotGlobalsDts?: string;
-		/** SQL dialect for formatter: 'duckdb' | 'postgresql' | 'clickhouse' */
-		sqlDialect?: string;
+		/** SQL dialect for formatter — only 'sql.duckdb' | 'sql.trino' */
+		sqlDialect?: PRQLTarget;
 		/** Drives dialect-specific SQL function completions/hover */
 		connectionType?: ConnectionType;
 		/** Connection id for recency ranking and FK-aware JOIN completion. */
@@ -102,7 +101,7 @@
 		readonly = false,
 		completions = [],
 		language = 'prql',
-		sqlDialect = 'sql',
+		sqlDialect,
 		connectionType = 'duckdb-wasm',
 		connectionId,
 		externalSchema = [],
@@ -201,13 +200,18 @@
 		const current = model.getValue();
 		if (!current.trim()) return false;
 		try {
-			const dialectMap: Record<string, DialectOptions> = {
-				'sql.duckdb': sqlDialectDef,
-				'sql.trino': trinoDialectDef,
-				postgresql: postgresqlDialectDef,
-				duckdb: sqlDialectDef
-			};
-			const baseDialect = dialectMap[sqlDialect] ?? sqlDialectDef;
+			// Only dialects are duckdb and trino. When the caller doesn't pass
+			// sqlDialect (or passes a legacy alias), infer from connectionType
+			// so we never fall back to the generic "sql" grammar — it can't
+			// parse Postgres/Trino `::` casts like `::float8`.
+			const normalizedDialect: PRQLTarget =
+				sqlDialect === 'sql.duckdb' || sqlDialect === 'sql.trino'
+					? sqlDialect
+					: connectionType === 'duckdb-wasm'
+						? 'sql.duckdb'
+						: 'sql.trino';
+			const baseDialect: DialectOptions =
+				normalizedDialect === 'sql.duckdb' ? duckdbDialectDef : trinoDialectDef;
 			// Tell the formatter about UDFs defined elsewhere in the notebook so it
 			// treats their names as known functions (no space before the call paren) —
 			// otherwise it formats `mult(10)` as `mult (10)` like any other identifier.

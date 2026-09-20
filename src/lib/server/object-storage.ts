@@ -6,13 +6,41 @@ export interface StorageObject {
 	contentType?: string;
 }
 
+function accessKeyId(): string {
+	return (
+		process.env.S3_ACCESS_KEY_ID ||
+		process.env.AWS_ACCESS_KEY_ID ||
+		process.env.RUSTFS_ACCESS_KEY ||
+		''
+	);
+}
+
+function secretAccessKey(): string {
+	return (
+		process.env.S3_SECRET_ACCESS_KEY ||
+		process.env.AWS_SECRET_ACCESS_KEY ||
+		process.env.RUSTFS_SECRET_KEY ||
+		''
+	);
+}
+
+export function missingStorageEnv(): string[] {
+	const missing: string[] = [];
+	if (process.env.OBJECT_STORAGE_PROVIDER !== 's3') missing.push('OBJECT_STORAGE_PROVIDER');
+	if (!process.env.S3_ENDPOINT) missing.push('S3_ENDPOINT');
+	if (!process.env.S3_BUCKET) missing.push('S3_BUCKET');
+	if (!accessKeyId()) missing.push('S3_ACCESS_KEY_ID');
+	if (!secretAccessKey()) missing.push('S3_SECRET_ACCESS_KEY');
+	return missing;
+}
+
 function storageConfigured(): boolean {
-	return Boolean(
+	return (
 		process.env.OBJECT_STORAGE_PROVIDER === 's3' &&
-		process.env.S3_ENDPOINT &&
-		process.env.S3_BUCKET &&
-		process.env.S3_ACCESS_KEY_ID &&
-		process.env.S3_SECRET_ACCESS_KEY
+		Boolean(process.env.S3_ENDPOINT) &&
+		Boolean(process.env.S3_BUCKET) &&
+		Boolean(accessKeyId()) &&
+		Boolean(secretAccessKey())
 	);
 }
 
@@ -82,13 +110,13 @@ function signRequest(input: {
 	const scope = `${dateStamp}/${region()}/s3/aws4_request`;
 	const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, hashHex(canonicalRequest)].join('\n');
 	const signingKey = hmac(
-		hmac(hmac(hmac(`AWS4${process.env.S3_SECRET_ACCESS_KEY!}`, dateStamp), region()), 's3'),
+		hmac(hmac(hmac(`AWS4${secretAccessKey()}`, dateStamp), region()), 's3'),
 		'aws4_request'
 	);
 	const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
 	headers.set(
 		'authorization',
-		`AWS4-HMAC-SHA256 Credential=${process.env.S3_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaderNames.join(
+		`AWS4-HMAC-SHA256 Credential=${accessKeyId()}/${scope}, SignedHeaders=${signedHeaderNames.join(
 			';'
 		)}, Signature=${signature}`
 	);
@@ -123,6 +151,68 @@ export async function getObjectText(key: string): Promise<string> {
 	const response = await storageFetch('GET', key);
 	if (!response.ok) throw new Error(`S3 get failed with ${response.status}`);
 	return response.text();
+}
+
+export async function getObjectBytes(key: string): Promise<Uint8Array> {
+	const response = await storageFetch('GET', key);
+	if (!response.ok) throw new Error(`S3 get failed with ${response.status}`);
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function headObject(
+	key: string
+): Promise<{ size: number; etag: string | null } | null> {
+	const response = await storageFetch('HEAD', key);
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`S3 head failed with ${response.status}`);
+	return {
+		size: Number(response.headers.get('content-length') ?? '0'),
+		etag: response.headers.get('etag')
+	};
+}
+
+export interface ListedObject {
+	key: string;
+	size: number;
+}
+
+function parseListXml(xml: string): { keys: ListedObject[]; nextToken: string | null } {
+	const keys: ListedObject[] = [];
+	const contentRe = /<Contents>([\s\S]*?)<\/Contents>/g;
+	let match: RegExpExecArray | null;
+	while ((match = contentRe.exec(xml)) !== null) {
+		const block = match[1];
+		const keyMatch = /<Key>([\s\S]*?)<\/Key>/.exec(block);
+		const sizeMatch = /<Size>([\s\S]*?)<\/Size>/.exec(block);
+		if (!keyMatch) continue;
+		keys.push({ key: keyMatch[1], size: Number(sizeMatch?.[1] ?? '0') });
+	}
+	const truncated = /<IsTruncated>(true|false)<\/IsTruncated>/.exec(xml)?.[1] === 'true';
+	const token = /<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml)?.[1] ?? null;
+	return { keys, nextToken: truncated ? token : null };
+}
+
+/** List all keys under a prefix (ListObjectsV2, paginated). */
+export async function listObjects(prefix: string): Promise<ListedObject[]> {
+	if (!storageConfigured()) throw new Error('S3 object storage is not configured.');
+	const out: ListedObject[] = [];
+	let continuationToken: string | undefined;
+	for (;;) {
+		const base = endpointUrl('');
+		// endpointUrl('') resolves to the bucket root; ListObjectsV2 operates there.
+		base.searchParams.set('list-type', '2');
+		base.searchParams.set('prefix', prefix);
+		base.searchParams.set('max-keys', '1000');
+		if (continuationToken) base.searchParams.set('continuation-token', continuationToken);
+		const headers = signRequest({ method: 'GET', url: base, body: '' });
+		const response = await fetch(base, { method: 'GET', headers });
+		if (!response.ok) throw new Error(`S3 list failed with ${response.status}`);
+		const { keys, nextToken } = parseListXml(await response.text());
+		out.push(...keys);
+		if (!nextToken) break;
+		continuationToken = nextToken;
+	}
+	return out;
 }
 
 export async function deleteObject(key: string): Promise<void> {
