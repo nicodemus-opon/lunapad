@@ -7,7 +7,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: lunapad
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-${SERVICE_PASSWORD_64_POSTGRES:-lunapad}}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lunapad}
       POSTGRES_DB: lunapad
     configs:
       - source: init_pgvector
@@ -88,7 +88,7 @@ services:
     restart: unless-stopped
 
   storage-init:
-    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    image: ${LUNAPAD_RUNNER_IMAGE:-lunapad-runner}
     build:
       context: .
       target: runner
@@ -101,8 +101,14 @@ services:
       # 'false' for AWS virtual-hosted style.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
+      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       STORAGE_INIT_SKIP_BUCKET_CREATE: ${STORAGE_INIT_SKIP_BUCKET_CREATE:-}
@@ -121,7 +127,7 @@ services:
   #   MIGRATION_ARGS="--apply --only projects,db-shares" → subset
   # Never deletes source unless MIGRATION_ARGS includes --delete-source.
   migration:
-    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    image: ${LUNAPAD_RUNNER_IMAGE:-lunapad-runner}
     build:
       context: .
       target: runner
@@ -140,8 +146,14 @@ services:
     environment:
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
+      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       S3_PROJECTS_PREFIX: ${S3_PROJECTS_PREFIX:-projects/}
@@ -149,7 +161,7 @@ services:
       S3_SHARES_PREFIX: ${S3_SHARES_PREFIX:-shares/}
       S3_TRINO_CATALOG_PREFIX: ${S3_TRINO_CATALOG_PREFIX:-trino-catalog/}
       S3_TRINO_ACCESS_PREFIX: ${S3_TRINO_ACCESS_PREFIX:-trino-access/}
-      DATABASE_URL: postgresql://lunapad:${POSTGRES_PASSWORD:-${SERVICE_PASSWORD_64_POSTGRES:-lunapad}}@db:5432/lunapad
+      DATABASE_URL: postgresql://lunapad:${POSTGRES_PASSWORD:-lunapad}@db:5432/lunapad
       MIGRATION_ARGS: ${MIGRATION_ARGS:---apply}
       MIGRATE_ENABLE: ${MIGRATE_ENABLE:-1}
       # Legacy RustFS copy-out: ZERO env needed. Defaults probe
@@ -160,8 +172,9 @@ services:
       # explicitly set MIGRATE_SOURCE_RUSTFS_ENDPOINT and it is unreachable.
       MIGRATE_SOURCE_RUSTFS_ENDPOINT: ${MIGRATE_SOURCE_RUSTFS_ENDPOINT:-http://host.docker.internal:9000}
       MIGRATE_SOURCE_RUSTFS_BUCKET: ${MIGRATE_SOURCE_RUSTFS_BUCKET:-lunapad-artifacts}
-      MIGRATE_SOURCE_RUSTFS_KEY: ${MIGRATE_SOURCE_RUSTFS_KEY:-${RUSTFS_ACCESS_KEY:-lunapad}}
-      MIGRATE_SOURCE_RUSTFS_SECRET: ${MIGRATE_SOURCE_RUSTFS_SECRET:-${RUSTFS_SECRET_KEY:-${SERVICE_PASSWORD_64_RUSTFS:-lunapad-local-secret}}}
+      MIGRATE_SOURCE_RUSTFS_KEY: ${MIGRATE_SOURCE_RUSTFS_KEY:-}
+      MIGRATE_SOURCE_RUSTFS_SECRET: ${MIGRATE_SOURCE_RUSTFS_SECRET:-}
+      SERVICE_PASSWORD_64_RUSTFS: ${SERVICE_PASSWORD_64_RUSTFS:-}
       MIGRATE_REQUIRE_RUSTFS: ${MIGRATE_REQUIRE_RUSTFS:-1}
       MIGRATE_RUSTFS_WAIT_MS: ${MIGRATE_RUSTFS_WAIT_MS:-15000}
       MIGRATE_SOURCE_PROJECT: /migrate/project
@@ -182,7 +195,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    image: ${LUNAPAD_RUNNER_IMAGE:-lunapad-runner}
     build:
       context: .
       target: runner
@@ -211,19 +224,21 @@ services:
     environment:
       SERVICE_URL_APP_3000: ${SERVICE_URL_APP_3000:-}
       SERVICE_FQDN_APP_3000: ${SERVICE_FQDN_APP_3000:-}
-      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_URL_APP:-${SERVICE_FQDN_APP_3000:-${SERVICE_FQDN_APP:-http://localhost:3967}}}}}
+      # Single-level: publicOrigin() in code falls back to Coolify's
+      # SERVICE_URL_* when ORIGIN is empty.
+      ORIGIN: ${ORIGIN:-}
       PORT: 3000
       HOST: 0.0.0.0
       DEPLOYMENT_MODE: cloud
       PUBLIC_CLOUD_SIGNUP_ENABLED: ${PUBLIC_CLOUD_SIGNUP_ENABLED:-true}
-      DATABASE_URL: postgresql://lunapad:${POSTGRES_PASSWORD:-${SERVICE_PASSWORD_64_POSTGRES:-lunapad}}@db:5432/lunapad
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-${SERVICE_PASSWORD_64_AUTH:-change-me-cloud-auth-secret}}
-      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-${SERVICE_HEX_64_SECRETS:-bHVuYXBhZC1sb2NhbC1kZXYtc2VjcmV0LTMyLWJ5dGU=}}
+      DATABASE_URL: postgresql://lunapad:${POSTGRES_PASSWORD:-lunapad}@db:5432/lunapad
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-change-me-cloud-auth-secret}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-bHVuYXBhZC1sb2NhbC1kZXYtc2VjcmV0LTMyLWJ5dGU=}
       BILLING_PROVIDER: ${BILLING_PROVIDER:-manual}
       CLOUD_DEFAULT_PLAN: ${CLOUD_DEFAULT_PLAN:-starter}
       CLOUD_EXECUTION_ADAPTER: queue
       CLOUD_QUEUE_WORKER_ENABLED: 'true'
-      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-${SERVICE_PASSWORD_64_WORKER:-change-me-cloud-worker-token}}
+      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-change-me-cloud-worker-token}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
@@ -243,8 +258,14 @@ services:
       # endpoint (R2/MinIO/Garage). Keys accept AWS_* aliases.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
+      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       S3_PROJECTS_PREFIX: ${S3_PROJECTS_PREFIX:-projects/}
@@ -275,7 +296,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ${LUNAPAD_RUNNER_IMAGE:-${COOLIFY_RESOURCE_UUID:-lunapad}-runner}
+    image: ${LUNAPAD_RUNNER_IMAGE:-lunapad-runner}
     build:
       context: .
       target: runner
@@ -285,9 +306,11 @@ services:
       app:
         condition: service_healthy
     environment:
-      ORIGIN: ${ORIGIN:-${SERVICE_URL_APP_3000:-${SERVICE_URL_APP:-${SERVICE_FQDN_APP_3000:-${SERVICE_FQDN_APP:-http://localhost:3967}}}}}
+      # Single-level: publicOrigin() in code falls back to Coolify's
+      # SERVICE_URL_* when ORIGIN is empty.
+      ORIGIN: ${ORIGIN:-}
       LUNAPAD_BASE_URL: http://app:3000
-      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-${SERVICE_PASSWORD_64_WORKER:-change-me-cloud-worker-token}}
+      CLOUD_WORKER_TOKEN: ${CLOUD_WORKER_TOKEN:-change-me-cloud-worker-token}
       CLOUD_WORKER_CONCURRENCY: ${CLOUD_WORKER_CONCURRENCY:-2}
       # Worker needs the same external S3 identity for the S3 scratch handoff
       # (worker-scratch/ keys) once FILE_STORAGE_BACKEND=s3 is live.
@@ -295,8 +318,14 @@ services:
       FILE_STORAGE_BACKEND: ${FILE_STORAGE_BACKEND:-s3}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${AWS_ACCESS_KEY_ID:-${RUSTFS_ACCESS_KEY:-}}}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${AWS_SECRET_ACCESS_KEY:-${RUSTFS_SECRET_KEY:-}}}
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
+      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       S3_WORKER_SCRATCH_PREFIX: ${S3_WORKER_SCRATCH_PREFIX:-worker-scratch/}

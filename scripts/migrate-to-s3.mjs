@@ -99,12 +99,12 @@ const SRC_RUSTFS_KEY =
 	opt('--source-rustfs-key', '') ||
 	process.env.MIGRATE_SOURCE_RUSTFS_KEY ||
 	process.env.RUSTFS_ACCESS_KEY ||
-	process.env.S3_ACCESS_KEY_ID ||
 	'lunapad';
 const SRC_RUSTFS_SECRET =
 	opt('--source-rustfs-secret', '') ||
 	process.env.MIGRATE_SOURCE_RUSTFS_SECRET ||
 	process.env.RUSTFS_SECRET_KEY ||
+	process.env.SERVICE_PASSWORD_64_RUSTFS ||
 	'lunapad-local-secret';
 // Strict by default: an unreachable legacy source fails the run (and blocks the
 // app via the compose boot gate) instead of silently stranding data. Set
