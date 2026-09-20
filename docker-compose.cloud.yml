@@ -101,12 +101,12 @@ services:
       # 'false' for AWS virtual-hosted style.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
-      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated,
+      # and refuses to delete env rows referenced here — so only reference
+      # vars users must actually set. (AWS_* aliases are still honored when
+      # present in the container environment.)
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
@@ -146,12 +146,12 @@ services:
     environment:
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
-      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated,
+      # and refuses to delete env rows referenced here — so only reference
+      # vars users must actually set. (AWS_* aliases are still honored when
+      # present in the container environment.)
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
@@ -172,8 +172,9 @@ services:
       # explicitly set MIGRATE_SOURCE_RUSTFS_ENDPOINT and it is unreachable.
       MIGRATE_SOURCE_RUSTFS_ENDPOINT: ${MIGRATE_SOURCE_RUSTFS_ENDPOINT:-http://host.docker.internal:9000}
       MIGRATE_SOURCE_RUSTFS_BUCKET: ${MIGRATE_SOURCE_RUSTFS_BUCKET:-lunapad-artifacts}
-      MIGRATE_SOURCE_RUSTFS_KEY: ${MIGRATE_SOURCE_RUSTFS_KEY:-}
-      MIGRATE_SOURCE_RUSTFS_SECRET: ${MIGRATE_SOURCE_RUSTFS_SECRET:-}
+      # Legacy source credentials resolve in code: explicit flags first, then
+      # RUSTFS_* (passed through below), then generated, then defaults — so no
+      # compose reference here, keeping those rows deletable in Coolify.
       SERVICE_PASSWORD_64_RUSTFS: ${SERVICE_PASSWORD_64_RUSTFS:-}
       MIGRATE_REQUIRE_RUSTFS: ${MIGRATE_REQUIRE_RUSTFS:-1}
       MIGRATE_RUSTFS_WAIT_MS: ${MIGRATE_RUSTFS_WAIT_MS:-15000}
@@ -258,12 +259,12 @@ services:
       # endpoint (R2/MinIO/Garage). Keys accept AWS_* aliases.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
-      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated,
+      # and refuses to delete env rows referenced here — so only reference
+      # vars users must actually set. (AWS_* aliases are still honored when
+      # present in the container environment.)
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
@@ -318,12 +319,12 @@ services:
       FILE_STORAGE_BACKEND: ${FILE_STORAGE_BACKEND:-s3}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-lunapad-artifacts}
-      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated.
-      # Key aliases (AWS_*, RUSTFS_*) are resolved in code, not here.
+      # Single-level only: Coolify leaves nested ${A:-${B:-}} uninterpolated,
+      # and refuses to delete env rows referenced here — so only reference
+      # vars users must actually set. (AWS_* aliases are still honored when
+      # present in the container environment.)
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
