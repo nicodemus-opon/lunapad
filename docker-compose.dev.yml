@@ -30,8 +30,8 @@ services:
       - /app/node_modules
       - /app/.svelte-kit
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:5173/api/health > /dev/null']
-      interval: 5s
+      test: ['CMD-SHELL', 'curl -sf http://localhost:5173/api/health/live > /dev/null']
+      interval: 30s
       timeout: 5s
       retries: 20
       start_period: 20s

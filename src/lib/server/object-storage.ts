@@ -221,12 +221,44 @@ export async function deleteObject(key: string): Promise<void> {
 		throw new Error(`S3 delete failed with ${response.status}`);
 }
 
+let cachedHealth: { value: 'ok'; expiresAt: number } | null = null;
+let inFlightHealth: Promise<'ok' | 'not_configured'> | null = null;
+
+function s3HealthTtlMs(): number {
+	const raw = Number(process.env.S3_HEALTHCHECK_TTL_MS ?? '60000');
+	if (!Number.isFinite(raw)) return 60000;
+	return Math.min(Math.max(raw, 5000), 300000);
+}
+
+/** Test-only reset for the health cache / in-flight dedupe. */
+export function _resetObjectStorageHealthCache(): void {
+	cachedHealth = null;
+	inFlightHealth = null;
+}
+
 export async function checkObjectStorageHealth(): Promise<'ok' | 'not_configured'> {
 	if (!storageConfigured()) return 'not_configured';
-	const key = `health/${crypto.randomUUID()}.txt`;
-	await putObject({ key, body: 'ok', contentType: 'text/plain; charset=utf-8' });
-	const value = await getObjectText(key);
-	await deleteObject(key);
-	if (value !== 'ok') throw new Error('S3 health object round-trip returned unexpected content.');
-	return 'ok';
+	const now = Date.now();
+	if (cachedHealth && cachedHealth.expiresAt > now) return cachedHealth.value;
+	if (inFlightHealth) return inFlightHealth;
+	inFlightHealth = (async () => {
+		// Read-only, single-op connectivity probe: ListObjectsV2 with max-keys=1
+		// under a fixed prefix. No writes, no garbage objects, no pagination.
+		const url = endpointUrl('');
+		url.searchParams.set('list-type', '2');
+		url.searchParams.set('prefix', 'health/');
+		url.searchParams.set('max-keys', '1');
+		const headers = signRequest({ method: 'GET', url, body: '' });
+		const response = await fetch(url, { method: 'GET', headers });
+		if (!response.ok) throw new Error(`S3 health check failed with ${response.status}`);
+		// Drain the body so the connection can be reused; content is irrelevant.
+		await response.arrayBuffer().catch(() => undefined);
+		cachedHealth = { value: 'ok', expiresAt: Date.now() + s3HealthTtlMs() };
+		return 'ok' as const;
+	})();
+	try {
+		return await inFlightHealth;
+	} finally {
+		inFlightHealth = null;
+	}
 }
