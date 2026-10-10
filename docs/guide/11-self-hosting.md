@@ -118,7 +118,6 @@ In a normal (non-demo) install, first-time visitors see a welcome dialog; they c
 
 ## Other ways to run it
 
-- **Desktop app.** A native Tauri build, if you'd rather not run Docker at all.
 - **Hosted cloud stack.** Use `docker-compose.cloud.yml` to
   run cloud mode with open signup, a worker, RustFS storage, and Mailpit SMTP:
   `docker compose -f docker-compose.cloud.yml up --build`.

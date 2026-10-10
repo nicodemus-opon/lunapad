@@ -122,8 +122,6 @@
 		restoreNotebookHistorySnapshot
 	} from '$lib/stores/notebook.svelte';
 	import { onProjectChange as listenForProjectChange } from '$lib/stores/project-context';
-	import { isDesktop, platformOS } from '$lib/services/platform.svelte';
-	import WindowControls from '$lib/components/WindowControls.svelte';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -1255,14 +1253,8 @@
 	</div>
 {:else}
 	<div class="flex h-screen flex-col overflow-hidden">
-		<header
-			class="sticky top-0 z-(--z-sticky) border-b border-border bg-background"
-			data-tauri-drag-region={isDesktop ? '' : undefined}
-		>
-			<div
-				class="flex items-center justify-between px-2 py-2"
-				style="padding-right: calc(var(--titlebar-inset-right, 0px) + 0.5rem)"
-			>
+		<header class="sticky top-0 z-(--z-sticky) border-b border-border bg-background">
+			<div class="flex items-center justify-between px-2 py-2">
 				<div class="flex items-center gap-2">
 					<div class="flex shrink-0 items-center gap-2">
 						<Logo class="h-5 w-5 text-foreground" />
@@ -1717,11 +1709,6 @@
 					/>
 				</div>
 			</div>
-			{#if isDesktop && (platformOS.value === 'windows' || platformOS.value === 'linux')}
-				<div class="pointer-events-auto absolute top-0 right-0 h-full">
-					<WindowControls />
-				</div>
-			{/if}
 		</header>
 
 		{#if data.demoMode}

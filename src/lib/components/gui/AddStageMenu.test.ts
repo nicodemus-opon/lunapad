@@ -66,8 +66,10 @@ describe('AddStageMenu command palette layout', () => {
 		expect(source).toContain('{#each queryLanes as lane (lane.key)}');
 		expect(source).toContain("result.kind === 'analysis'");
 		expect(source).toContain('Likely questions for this schema, translated into stage chains.');
+		// Composite key: diversifySuggestions dedups by semanticKey, so the same
+		// preset.id can legitimately appear twice when stage shapes differ.
 		expect(source).toContain(
-			'{#each filteredPresetSuggestions as suggestion, idx (suggestion.preset.id)}'
+			'{#each filteredPresetSuggestions as suggestion, idx (`${suggestion.preset.id}::${idx}`)}'
 		);
 		expect(source).toContain('add-stage-kind--preset');
 	});

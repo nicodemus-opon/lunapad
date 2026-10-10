@@ -2,7 +2,6 @@ node_modules
 build
 .svelte-kit
 .git
-src-tauri
 test-results
 graphify-out
 coverage

@@ -25,10 +25,6 @@ vite.config.ts.timestamp-*
 # Generated DuckDB static assets (copied from node_modules at build time)
 /static/duckdb/
 
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-
 # Test artifacts
 test-results/
 playwright-report/
@@ -67,7 +63,6 @@ generated_datasets_round2/
 .claude/
 .vscode/
 
-src-tauri/
 demo-assets/
 FEATURES.md
 project/

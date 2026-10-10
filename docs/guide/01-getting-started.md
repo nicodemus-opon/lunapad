@@ -43,8 +43,6 @@ You can also write to the built-in DuckDB engine with no catalog prefix at all. 
 
 ## Other ways to run it
 
-**Desktop app.** Lunapad also ships as a native desktop app (Tauri-based) if you'd rather not run Docker. Functionality is the same; external data sources still need Trino running somewhere reachable.
-
 **Local development.** If you're modifying Lunapad itself rather than just using it, see the repository's main `README.md` for `pnpm dev` instructions.
 
 ## Next

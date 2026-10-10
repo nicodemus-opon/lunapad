@@ -121,24 +121,6 @@
 	--tint-surface: 0.1;
 	--tint-border: 0.3;
 	--tint-hover: 0.2;
-
-	/* Platform titlebar adaptation */
-	--titlebar-height: 0px;
-	--titlebar-inset-left: 0px;
-	--titlebar-inset-right: 0px;
-}
-
-/* macOS Tauri: overlay title bar with native traffic lights */
-:root[data-platform='tauri'][data-os='macos'] {
-	--titlebar-height: 28px;
-	--titlebar-inset-left: 96px;
-}
-
-/* Windows/Linux Tauri: frameless with custom controls */
-:root[data-platform='tauri'][data-os='windows'],
-:root[data-platform='tauri'][data-os='linux'] {
-	--titlebar-height: 32px;
-	--titlebar-inset-right: 138px;
 }
 
 .dark {
