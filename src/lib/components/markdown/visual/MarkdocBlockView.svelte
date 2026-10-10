@@ -76,7 +76,7 @@
 				<Trash2 class="h-3 w-3" />
 			</Button>
 		</div>
-		<div class="markdoc-block-preview px-1 py-0.5">
+		<div class="markdoc-block-preview p-1">
 			<MarkdocRenderer
 				content={rendered.tree}
 				errors={rendered.errors}

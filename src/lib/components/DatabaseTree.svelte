@@ -73,15 +73,7 @@
 	async function loadCatalog() {
 		try {
 			const next = await getDatabaseCatalog();
-			// Auto-expand databases and schemas that are new
-			for (const db of next) {
-				const dbKey = `duckdb:${db.name}`;
-				if (!(dbKey in expandedDb)) expandedDb[dbKey] = true;
-				for (const schema of db.schemas) {
-					const schemaKey = `${dbKey}.${schema.name}`;
-					if (!(schemaKey in expandedSchema)) expandedSchema[schemaKey] = true;
-				}
-			}
+			// Keep databases and schemas collapsed by default — user expands explicitly.
 			catalog = next;
 		} catch {
 			catalog = [];
@@ -122,7 +114,7 @@
 
 	function toggleSchema(dbKey: string, schema: string) {
 		const key = `${dbKey}.${schema}`;
-		expandedSchema[key] = !(expandedSchema[key] ?? true);
+		expandedSchema[key] = !(expandedSchema[key] ?? false);
 	}
 
 	function toggleTable(key: string) {
@@ -398,7 +390,7 @@
 			<!-- DuckDB databases from catalog -->
 			{#each catalog as db (db.name)}
 				{@const dbKey = `duckdb:${db.name}`}
-				{@const dbExpanded = expandedDb[dbKey] ?? true}
+				{@const dbExpanded = expandedDb[dbKey] ?? false}
 				{@const tableCount = db.schemas.reduce((n, s) => n + s.tables.length, 0)}
 				{@render dbRow(
 					db.name,
@@ -413,7 +405,7 @@
 				{#if dbExpanded}
 					{#each db.schemas as schema (schema.name)}
 						{@const schemaKey = `${dbKey}.${schema.name}`}
-						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
+						{@const schemaExpanded = expandedSchema[schemaKey] ?? false}
 						{@render schemaRow(
 							schema.name,
 							schema.tables.length,
@@ -454,7 +446,7 @@
 			<!-- External database connections -->
 			{#each externalCatalog as entry (entry.id)}
 				{@const dbKey = `external:${entry.id}`}
-				{@const dbExpanded = expandedDb[dbKey] ?? true}
+				{@const dbExpanded = expandedDb[dbKey] ?? false}
 				{@const isRefreshing = refreshingIds.has(entry.id)}
 				{@render dbRow(
 					entry.name,
@@ -468,7 +460,7 @@
 				{#if dbExpanded}
 					{#each entry.schemas as [schema, schemaTables] (schema)}
 						{@const schemaKey = `${dbKey}.${schema}`}
-						{@const schemaExpanded = expandedSchema[schemaKey] ?? true}
+						{@const schemaExpanded = expandedSchema[schemaKey] ?? false}
 						{@render schemaRow(
 							schema,
 							schemaTables.length,

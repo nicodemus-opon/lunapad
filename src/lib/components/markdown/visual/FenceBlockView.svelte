@@ -163,7 +163,7 @@
 			<Trash2 class="h-3 w-3" />
 		</Button>
 	</div>
-	<div class="px-1 py-0.5">
+	<div class="p-1">
 		{#if isMermaid}
 			<MarkdownModeBar {mode} onModeChange={(m) => (mode = m)} />
 		{/if}

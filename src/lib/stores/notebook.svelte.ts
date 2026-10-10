@@ -485,6 +485,7 @@ interface NotebookState {
 	pythonAvailable: boolean;
 	isDbtProject: boolean;
 	dbtModels: DbtModel[];
+	dbtError: string | null;
 	dbtLastCompileAt: number | null;
 	dbtRunningJobId: string | null;
 	dbtSchedules: DbtSchedule[];
@@ -919,6 +920,7 @@ let state = $state<NotebookState>({
 	pythonAvailable: false,
 	isDbtProject: false,
 	dbtModels: [],
+	dbtError: null,
 	dbtLastCompileAt: null,
 	dbtRunningJobId: null,
 	dbtSchedules: [],
@@ -2748,10 +2750,18 @@ export async function openProject(folder: string): Promise<void> {
 
 	// Load dbt manifest if available
 	if (info.isDbtProject) {
+		state.dbtError = null;
 		try {
 			state.dbtModels = await fetchDbtManifest(folder);
-		} catch {
+			if (state.dbtModels.length === 0) {
+				state.dbtError =
+					'No models found yet. Run dbt compile (or add .sql/.prql files under models/) to build the lineage graph.';
+			}
+		} catch (err) {
 			state.dbtModels = [];
+			state.dbtError = (err as Error)?.message ?? 'Failed to load dbt manifest.';
+			if (import.meta.env?.MODE !== 'test')
+				console.warn('[lunapad] dbt manifest load failed:', state.dbtError);
 		}
 		// Load persisted schedules
 		void loadDbtSchedules().catch(() => {});
@@ -2788,6 +2798,7 @@ export function closeProject(): void {
 	state.pythonAvailable = false;
 	state.isDbtProject = false;
 	state.dbtModels = [];
+	state.dbtError = null;
 	state.dbtLastCompileAt = null;
 	state.dbtRunningJobId = null;
 	state.dbtSchedules = [];
@@ -2921,10 +2932,16 @@ export async function refreshDbtManifest(): Promise<void> {
 	try {
 		state.dbtModels = await fetchDbtManifest(state.projectFolder);
 		state.dbtLastCompileAt = Date.now();
+		state.dbtError =
+			state.dbtModels.length === 0
+				? 'No models found yet. Run dbt compile (or add .sql/.prql files under models/) to build the lineage graph.'
+				: null;
 		// Backfill column names from manifest into _models.yml (best-effort)
 		void backfillSchemaFromManifest(state.projectFolder);
-	} catch {
-		// ignore
+	} catch (err) {
+		state.dbtError = (err as Error)?.message ?? 'Failed to load dbt manifest.';
+		if (import.meta.env?.MODE !== 'test')
+			console.warn('[lunapad] dbt manifest refresh failed:', state.dbtError);
 	}
 }
 
@@ -2937,6 +2954,9 @@ export function getIsDbtProject(): boolean {
 }
 export function getDbtModels(): DbtModel[] {
 	return state.dbtModels;
+}
+export function getDbtError(): string | null {
+	return state.dbtError;
 }
 export function getDbtRunningJobId(): string | null {
 	return state.dbtRunningJobId;
@@ -4821,6 +4841,9 @@ export function openProfileTab(tableName: string): void {
 }
 
 export function openLineageTab(focusedModelName?: string): void {
+	// Retry the manifest load — the tab may have been opened from a stale
+	// empty state (e.g. project opened before `dbt compile` finished).
+	if (state.projectFolder && state.isDbtProject) void refreshDbtManifest();
 	const existing = state.openExtraTabs.find((t) => t.type === 'lineage');
 	if (existing) {
 		if (focusedModelName)
@@ -5794,66 +5817,77 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 	scheduleSave();
 }
 
+/** Extra plot/visualization fields that `CellSnapshot` doesn't cover but
+ *  notebook-history revisions do — applied to live cells after restore. */
+export interface HistoryPlotFields {
+	plotMode?: Cell['plotMode'];
+	plotConfig?: Cell['plotConfig'];
+	plotSourceCellId?: Cell['plotSourceCellId'];
+}
+
 /**
- * Restore one cell's content fields from a history snapshot (Metabase-style
- * History revert). Single undo checkpoint + save, unlike calling the granular
- * setters one by one. Returns false when the cell no longer exists.
+ * Restore a whole notebook (name + cells) from a notebook-history revision —
+ * the Metabase History revert. Reuses `restoreCellSnapshots` for the cell
+ * array (order, add/remove resurrection, compile refresh), then applies plot
+ * fields, bumps the visual-editor resync signal, and persists to workspace +
+ * project files. Removed cells' disk files are deleted in flat format,
+ * mirroring `removeCell`. Single session-undo checkpoint.
  */
-export function restoreCellHistorySnapshot(
-	cellId: string,
-	snapshot: {
-		outputName: string;
-		cellType: CellType;
-		language: CellLanguage;
-		code: string;
-		markdown: string;
-		udfBody: string;
-		connectionId: string | null;
-		guiStages: GUIPipelineStage[];
-		editMode: CellEditMode;
-		materializeMode: CellMaterializationMode;
-		description: string | null;
-		dbtTags: string[];
-		resultChartConfig: ChartConfig | null;
-		plotConfig: ChartConfig | null;
-		plotMode: 'gui' | 'code';
-	}
+export function restoreNotebookHistorySnapshot(
+	notebookId: string,
+	snapshot: { name: string; cells: Array<CellSnapshot & HistoryPlotFields> }
 ): boolean {
-	const context = findCellContext(cellId);
-	if (!context) return false;
-	const { notebook: nb, cell, idx } = context;
-	pushHistoryCheckpoint(nb.id);
-	const codeChanged = cell.code !== snapshot.code;
-	cell.outputName = snapshot.outputName;
-	cell.cellType = snapshot.cellType;
-	cell.language = snapshot.language;
-	cell.code = snapshot.code;
-	cell.markdown = snapshot.markdown;
-	cell.udfBody = snapshot.udfBody;
-	cell.connectionId = snapshot.connectionId;
-	cell.guiStages = snapshot.guiStages;
-	cell.editMode = snapshot.editMode;
-	cell.materializeMode = snapshot.materializeMode;
-	cell.materializeTarget = snapshot.outputName;
-	cell.description = snapshot.description;
-	cell.dbtTags = snapshot.dbtTags;
-	cell.resultChartConfig = snapshot.resultChartConfig;
-	cell.plotConfig = snapshot.plotConfig;
-	cell.plotMode = snapshot.plotMode;
-	if (codeChanged && (cell.cellType === 'query' || cell.cellType === 'plot')) {
-		cell.needsRun = true;
-		cell.staleReason = 'code-changed';
-		cell.staleSources = [];
-		const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
-		cell.errors = errors;
-		cell.compiledSQL = sql;
-		if (cell.outputName)
-			markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+	const nb = state.notebooks.find((n) => n.id === notebookId);
+	if (!nb) return false;
+	pushHistoryCheckpoint(notebookId);
+	nb.name = snapshot.name;
+
+	if (state.storageMode === 'filesystem' && state.projectFolder && nb.format !== 'luna') {
+		const keepIds = new Set(snapshot.cells.map((c) => c.id));
+		for (const cell of nb.cells) {
+			if (keepIds.has(cell.id)) continue;
+			const key = `${nb.id}:${cell.id}`;
+			const pending = fileSaveTimers.get(key);
+			if (pending) {
+				clearTimeout(pending);
+				fileSaveTimers.delete(key);
+			}
+			const rel = getRelativeCellPath(nb, cell);
+			if (rel) {
+				deleteProjectFile(state.projectFolder, rel).catch(() => {});
+				if (cell.language !== 'sql') {
+					deleteProjectFile(state.projectFolder, rel.replace(/\.prql$/, '.sql')).catch(() => {});
+				}
+			}
+			const viewName = cell.outputName || `_cell_${cell.id}`;
+			dropView(viewName).catch(() => {});
+			const pythonJob = pythonJobByCellId.get(cell.id);
+			if (pythonJob) {
+				pythonJobByCellId.delete(cell.id);
+				void cancelPython(pythonJob.notebookId, pythonJob.jobId);
+			}
+			if (nb.worksheetCellId === cell.id) nb.worksheetCellId = null;
+		}
 	}
+
+	restoreCellSnapshots(notebookId, snapshot.cells);
+
+	const plotById = new Map(snapshot.cells.map((c) => [c.id, c]));
+	for (const cell of nb.cells) {
+		const snap = plotById.get(cell.id);
+		if (!snap) continue;
+		if (snap.plotMode !== undefined) cell.plotMode = snap.plotMode;
+		if (snap.plotConfig !== undefined) cell.plotConfig = snap.plotConfig;
+		if (snap.plotSourceCellId !== undefined) cell.plotSourceCellId = snap.plotSourceCellId;
+	}
+
 	notebookHistorySignal.notebookId = nb.id;
 	notebookHistorySignal.seq++;
 	scheduleSave();
-	scheduleFileSave(nb.id, cellId);
+	if (state.storageMode === 'filesystem' && state.projectFolder) {
+		if (nb.format === 'luna') scheduleLunaNotebookSave(nb.id);
+		else for (const cell of nb.cells) scheduleFileSave(nb.id, cell.id);
+	}
 	return true;
 }
 
@@ -8333,6 +8367,7 @@ export function __resetStateForTests(): void {
 		pythonAvailable: false,
 		isDbtProject: false,
 		dbtModels: [],
+		dbtError: null,
 		dbtLastCompileAt: null,
 		dbtRunningJobId: null,
 		dbtSchedules: [],

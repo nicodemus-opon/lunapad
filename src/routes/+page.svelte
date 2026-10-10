@@ -118,7 +118,8 @@
 		closeWorksheetView,
 		getAllCellsAcrossNotebooks,
 		setCellResultViewMode,
-		setNotebookFilterValue
+		setNotebookFilterValue,
+		restoreNotebookHistorySnapshot
 	} from '$lib/stores/notebook.svelte';
 	import { onProjectChange as listenForProjectChange } from '$lib/stores/project-context';
 	import { isDesktop, platformOS } from '$lib/services/platform.svelte';
@@ -153,6 +154,14 @@
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
+	import NotebookHistoryPanel from '$lib/components/notebook/NotebookHistoryPanel.svelte';
+	import {
+		fingerprintNotebook,
+		getNotebookRevisions,
+		maybeRecordNotebookRevision,
+		recordNotebookRevert,
+		type NotebookRevision
+	} from '$lib/services/notebook-history';
 	import SitesPanel from '$lib/components/sites/SitesPanel.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ReviewPanel from '$lib/components/comments/ReviewPanel.svelte';
@@ -231,7 +240,8 @@
 		Sigma,
 		CalendarDays,
 		LayoutGrid,
-		GitBranch
+		GitBranch,
+		History
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -481,6 +491,71 @@
 	}
 	let shareDialogOpen = $state(false);
 	let sitesDialogOpen = $state(false);
+	// ── Notebook History (Metabase-style Info > History) ─────────────────────
+	let historyOpen = $state(false);
+	let historyRevisions = $state<NotebookRevision[]>([]);
+	let historyRevertingId = $state<string | null>(null);
+
+	function openNotebookHistory(): void {
+		if (!activeNotebook) return;
+		// Flush any pending debounced capture so the timeline includes the
+		// latest edits before it opens.
+		flushHistoryCapture();
+		maybeRecordNotebookRevision(activeNotebook.id, activeNotebook.name, activeNotebook.cells);
+		historyRevisions = getNotebookRevisions(activeNotebook.id);
+		historyOpen = true;
+	}
+
+	function handleHistoryRevert(rev: NotebookRevision): void {
+		if (!activeNotebook || historyRevertingId) return;
+		flushHistoryCapture();
+		historyRevertingId = rev.id;
+		try {
+			const ok = restoreNotebookHistorySnapshot(activeNotebook.id, rev.snapshot);
+			if (!ok) {
+				toast.error('Could not restore that version.');
+				return;
+			}
+			// Record the revert itself as a new version (non-destructive, like Metabase).
+			recordNotebookRevert(activeNotebook.id, rev.snapshot);
+			historyRevisions = getNotebookRevisions(activeNotebook.id);
+			toast.success('Reverted to earlier version');
+		} finally {
+			historyRevertingId = null;
+		}
+	}
+
+	// One watcher for the whole notebook covers both editors (classic cells
+	// and visual query blocks mutate the same store). Versions cut on
+	// debounced edits — Lunapad autosaves, so debounce is the equivalent of
+	// Metabase's cut-on-save.
+	let historyCaptureTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastHistoryFingerprint: string | null = null;
+	function flushHistoryCapture(): void {
+		if (historyCaptureTimer) {
+			clearTimeout(historyCaptureTimer);
+			historyCaptureTimer = null;
+		}
+	}
+	$effect(() => {
+		const nb = activeNotebook;
+		if (!nb || reportView || data.demoMode) return;
+		const fingerprint = fingerprintNotebook(nb.name, nb.cells);
+		if (fingerprint === lastHistoryFingerprint) return;
+		lastHistoryFingerprint = fingerprint;
+		const notebookId = nb.id;
+		flushHistoryCapture();
+		historyCaptureTimer = setTimeout(() => {
+			historyCaptureTimer = null;
+			const current = getNotebooks().find((n) => n.id === notebookId);
+			if (!current) return;
+			const rev = maybeRecordNotebookRevision(notebookId, current.name, current.cells);
+			if (rev && historyOpen && activeNotebook?.id === notebookId) {
+				historyRevisions = getNotebookRevisions(notebookId);
+			}
+		}, 2000);
+		return () => flushHistoryCapture();
+	});
 	let reviewPanelResizeStartX = 0;
 	let reviewPanelResizeStartWidth = 360;
 	let commandPaletteOpen = $state(false);
@@ -1569,6 +1644,21 @@
 							</Tooltip.Trigger>
 							<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
 						</Tooltip.Root>
+						<Tooltip.Root>
+							<Tooltip.Trigger
+								class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {historyOpen
+									? 'bg-primary/15 text-primary'
+									: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+								onclick={openNotebookHistory}
+								aria-pressed={historyOpen}
+								aria-label="View notebook history"
+								data-testid="history-toggle"
+							>
+								<History class="h-3.5 w-3.5" />
+								<span class="hidden sm:inline">History</span>
+							</Tooltip.Trigger>
+							<Tooltip.Content side="bottom">Notebook version history</Tooltip.Content>
+						</Tooltip.Root>
 					{/if}
 
 					<Tooltip.Root>
@@ -1728,8 +1818,12 @@
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
 					{@render railButton('tables', Database, 'Databases & tables')}
-					{#if isDbtProject}
-						{@render railButton('dbt', FlaskConical, 'dbt models')}
+					{#if isDbtProject || projectFolder}
+						{@render railButton(
+							'dbt',
+							FlaskConical,
+							isDbtProject ? 'dbt models' : 'dbt models (no dbt_project.yml detected)'
+						)}
 					{/if}
 					{#if projectFolder}
 						{@render railButton('git', GitBranch, 'Source control')}
@@ -1967,8 +2061,9 @@
 										<DatabaseTree />
 									</div>
 								</div>
-							{:else if activeSidebarPanel === 'dbt' && isDbtProject}
-								<!-- dbt panel -->
+							{:else if activeSidebarPanel === 'dbt' && (isDbtProject || projectFolder)}
+								<!-- dbt panel (mounts for any open folder so lineage stays reachable;
+								DbtPanel itself explains when dbt_project.yml is missing) -->
 								<DbtPanel />
 							{:else if activeSidebarPanel === 'git' && projectFolder}
 								<!-- Source control panel -->
@@ -2721,6 +2816,13 @@
 	}}
 />
 <SitesPanel bind:open={sitesDialogOpen} />
+<NotebookHistoryPanel
+	bind:open={historyOpen}
+	notebookName={activeNotebook?.name ?? 'Untitled'}
+	revisions={historyRevisions}
+	revertingId={historyRevertingId}
+	onRevert={handleHistoryRevert}
+/>
 <WelcomeDialog
 	bind:open={welcomeOpen}
 	onBrowseTemplates={() => {

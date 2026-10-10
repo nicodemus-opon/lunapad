@@ -21,7 +21,9 @@
 	} from '@lucide/svelte';
 	import {
 		getProjectFolder,
+		getIsDbtProject,
 		getDbtModels,
+		getDbtError,
 		getDbtRunningJobId,
 		getDbtLastCompileAt,
 		refreshDbtManifest,
@@ -40,12 +42,17 @@
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
 
 	const projectFolder = $derived(getProjectFolder());
+	const isDbtProject = $derived(getIsDbtProject());
 	const dbtModels = $derived(getDbtModels());
+	const dbtError = $derived(getDbtError());
 	const runningJobId = $derived(getDbtRunningJobId());
 	const lastCompileAt = $derived(getDbtLastCompileAt());
 	const schedules = $derived(getDbtSchedules());
 
-	let expanded = $state(false);
+	// Default open so the View-lineage / Compile / Refresh actions are
+	// discoverable on a fresh (never-compiled) project — the "lineage is not
+	// showing" report came from users never finding the collapsed section.
+	let expanded = $state(true);
 	let schedulesExpanded = $state(false);
 	let logLines = $state<string[]>([]);
 	let logHeader = $state('');
@@ -323,8 +330,8 @@
 			</button>
 			<button
 				class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-40"
-				title="Compile"
-				disabled={!!runningJobId || !projectFolder}
+				title={isDbtProject ? 'Compile' : 'Compile (needs dbt_project.yml)'}
+				disabled={!!runningJobId || !projectFolder || !isDbtProject}
 				onclick={() => runCommand(() => dbtCompile(projectFolder!), 'Compile')}
 			>
 				<Zap class="h-3.5 w-3.5" />
@@ -341,6 +348,25 @@
 	</div>
 
 	{#if expanded}
+		{#if projectFolder && !isDbtProject}
+			<div class="mx-2 mb-2 rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-2xs text-muted-foreground">
+				No <span class="font-mono">dbt_project.yml</span> found in this folder, so the manifest is
+				empty. Lineage below still shows live notebook cells — open the project root (or add a
+				<span class="font-mono">dbt_project.yml</span>) and run
+				<span class="font-mono">dbt compile</span> for full model lineage.
+			</div>
+		{/if}
+		{#if dbtError && dbtModels.length === 0}
+			<div class="mx-2 mb-2 rounded border border-border bg-muted/40 px-2 py-1.5 text-2xs text-muted-foreground" role="status">
+				{dbtError}
+				<button
+					class="ml-1 underline underline-offset-2 hover:text-foreground"
+					onclick={() => void refreshDbtManifest()}
+				>
+					Retry
+				</button>
+			</div>
+		{/if}
 		<!-- Node selector -->
 		<div class="relative px-2 pb-2">
 			<div class="relative">

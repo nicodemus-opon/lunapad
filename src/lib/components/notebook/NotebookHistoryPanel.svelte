@@ -1,20 +1,20 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Pencil, History, Undo2 } from '@lucide/svelte';
-	import { relativeTime, type CellRevision } from '$lib/services/cell-history';
+	import { relativeTime, type NotebookRevision } from '$lib/services/notebook-history';
 
 	let {
 		open = $bindable(false),
-		cellName,
+		notebookName,
 		revisions,
 		revertingId = null,
 		onRevert
 	}: {
 		open?: boolean;
-		cellName: string;
-		revisions: CellRevision[];
+		notebookName: string;
+		revisions: NotebookRevision[];
 		revertingId?: string | null;
-		onRevert: (revision: CellRevision) => void;
+		onRevert: (revision: NotebookRevision) => void;
 	} = $props();
 
 	// Tick every 30s so "x minutes ago" stays fresh while open.
@@ -30,7 +30,7 @@
 <Dialog.Root bind:open>
 	<Dialog.Content
 		class="flex max-h-[85vh] w-full max-w-md flex-col gap-0 overflow-hidden p-0"
-		aria-label={`History of ${cellName || 'cell'}`}
+		aria-label={`History of ${notebookName || 'notebook'}`}
 	>
 		<Dialog.Header class="shrink-0 px-5 pt-5 pb-0">
 			<Dialog.Title class="text-base">Info</Dialog.Title>
@@ -57,6 +57,7 @@
 					Insights
 				</span>
 			</div>
+			<p class="truncate px-0.5 pt-2 text-xs text-muted-foreground">{notebookName}</p>
 		</Dialog.Header>
 
 		<div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -65,7 +66,7 @@
 					<History class="h-6 w-6 text-muted-foreground/50" />
 					<p class="text-sm text-muted-foreground">No history yet.</p>
 					<p class="max-w-60 text-xs text-muted-foreground/70">
-						A version is saved automatically each time you edit this cell.
+						A version is saved automatically each time you edit this notebook.
 					</p>
 				</div>
 			{:else}

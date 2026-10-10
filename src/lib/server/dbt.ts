@@ -72,9 +72,10 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 
 		const upstreamRefs: string[] = [];
 		for (const dep of node.depends_on?.nodes ?? []) {
-			// dep is like "model.project_name.orders_clean"
+			// dep is like "model.project_name.orders_clean" (or
+			// "model.project_name.orders_clean.v1" for versioned models).
 			const parts = dep.split('.');
-			if (parts[0] === 'model' && parts.length === 3) {
+			if (parts[0] === 'model' && parts.length >= 3) {
 				upstreamRefs.push(parts[2]);
 			}
 		}
@@ -203,7 +204,7 @@ export async function backfillColumnsFromManifest(projectRoot: string): Promise<
 	}
 }
 
-const REF_RE = /\{\{\s*ref\('([^']+)'\)\s*\}\}/g;
+const REF_RE = /\{\{\s*ref\(\s*['"]([^'"]+)['"]\s*\)\s*\}\}/g;
 
 function extractRefs(content: string): string[] {
 	const refs: string[] = [];

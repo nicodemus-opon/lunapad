@@ -380,7 +380,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-	class="query-block-view group/qb relative my-2 -ml-6 w-[calc(100%+1.5rem)] rounded-md border border-transparent transition-colors {selected
+	class="query-block-view group/qb relative my-2 -ml-6 w-[calc(100%+1.5rem)] rounded-md border border-transparent p-2 transition-colors {selected
 		? 'border-ring bg-muted/10'
 		: collapsed
 			? 'cursor-pointer border-border/60 bg-muted/10 hover:border-border'

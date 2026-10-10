@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { getDbtModels, setActiveTab, getNotebooks, type Cell } from '$lib/stores/notebook.svelte';
+	import {
+		getDbtModels,
+		getDbtError,
+		getIsDbtProject,
+		getProjectFolder,
+		refreshDbtManifest,
+		setActiveTab,
+		getNotebooks,
+		type Cell
+	} from '$lib/stores/notebook.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
@@ -31,6 +40,9 @@
 	let { focusedModelName = $bindable() }: Props = $props();
 
 	const dbtModels = $derived(getDbtModels());
+	const dbtError = $derived(getDbtError());
+	const isDbtProject = $derived(getIsDbtProject());
+	const projectFolder = $derived(getProjectFolder());
 	const notebooks = $derived(getNotebooks());
 
 	function escapeRe(s: string): string {
@@ -349,12 +361,27 @@
 					/>
 				</svg>
 			</div>
-			<div>
+			<div class="max-w-sm">
 				<p class="text-sm font-medium text-foreground/80">No models or cells yet</p>
-				<p class="mt-0.5 text-xs text-muted-foreground">
-					Run <span class="font-mono">dbt compile</span>, or add a query/Python/plot cell, to build
-					the lineage graph
-				</p>
+				{#if projectFolder && !isDbtProject}
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						This folder has no <span class="font-mono">dbt_project.yml</span>, so there is no
+						model manifest. Open the project root instead — live query/Python/plot cells will
+						still appear here once they have an output name.
+					</p>
+				{:else if dbtError}
+					<p class="mt-0.5 text-xs text-muted-foreground" role="status">{dbtError}</p>
+				{:else}
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						Run <span class="font-mono">dbt compile</span>, or add a query/Python/plot cell, to
+						build the lineage graph
+					</p>
+				{/if}
+				{#if projectFolder && isDbtProject}
+					<Button variant="outline" size="sm" class="mt-3" onclick={() => void refreshDbtManifest()}>
+						Retry manifest load
+					</Button>
+				{/if}
 			</div>
 		</div>
 	{:else}
