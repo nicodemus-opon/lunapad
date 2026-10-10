@@ -10,14 +10,25 @@ import { env } from '$env/dynamic/public';
 import {
 	apiErrorDedupeKey,
 	buildEnvelope,
+	describeConsoleArgs,
 	describeError,
 	extractApiErrorMessage,
 	isReportableApiResponse,
 	parseDsn,
 	postEnvelope,
+	setSentryDebug,
 	shouldReportDeduped,
 	type SentryEventContext
 } from '../sentry-envelope.js';
+
+function clientDebugEnabled(): boolean {
+	try {
+		if (new URLSearchParams(location.search).has('sentryDebug')) return true;
+	} catch {
+		// ignore
+	}
+	return (env as Record<string, string | undefined>).PUBLIC_SENTRY_DEBUG === '1';
+}
 
 function clientDsn(): string {
 	return env.PUBLIC_SENTRY_DSN ?? '';
@@ -34,6 +45,7 @@ export function captureClientException(
 ): Promise<void> {
 	try {
 		if (!browser) return Promise.resolve();
+		setSentryDebug(clientDebugEnabled());
 		const dsn = parseDsn(clientDsn());
 		if (!dsn) return Promise.resolve();
 		const { type, value, stack } = describeError(error);
@@ -55,7 +67,7 @@ let listenersInstalled = false;
 let fetchWrapped = false;
 
 /**
- * Report same-origin /api/* 5xx responses. The app's fetch calls catch
+ * Report same-origin /api/* error responses. The app's fetch calls catch
  * failures and surface toasts, so window.onerror never sees them — without
  * this, client-visible breakage is invisible to Sentry. Throttled per
  * endpoint; network-level rejections (offline) are ignored to avoid noise.
@@ -115,10 +127,28 @@ function requestInputMethod(input: RequestInfo | URL): string | null {
 	return (input as Request).method ?? null;
 }
 
+/** Mirror every console.error into Sentry (pass-through, throttled, no recursion). */
+function hookConsoleError(): void {
+	const original = console.error.bind(console);
+	console.error = (...args: unknown[]) => {
+		original(...args);
+		try {
+			const { value, stack } = describeConsoleArgs(args);
+			if (!shouldReportDeduped(`console ${value.slice(0, 120)}`)) return;
+			void captureClientException(stack ? Object.assign(new Error(value), { stack }) : value, {
+				url: location.pathname
+			});
+		} catch {
+			// ignore
+		}
+	};
+}
+
 /** Attach window error/rejection listeners. Safe to call repeatedly. */
 export function initClientSentry(): void {
 	if (!browser || listenersInstalled) return;
 	listenersInstalled = true;
+	hookConsoleError();
 	const dsn = parseDsn(clientDsn());
 	console.log(`[sentry] client reporting ${dsn ? 'enabled' : 'disabled (no PUBLIC_SENTRY_DSN)'}`);
 	if (!dsn) return;

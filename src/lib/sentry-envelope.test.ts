@@ -1,9 +1,11 @@
 import { createServer, type Server } from 'node:http';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	apiErrorDedupeKey,
 	buildEnvelope,
 	clearReportDedupCache,
+	clearSentryTestState,
+	describeConsoleArgs,
 	describeError,
 	extractApiErrorMessage,
 	isReportableApiResponse,
@@ -11,6 +13,7 @@ import {
 	parseDsn,
 	parseStack,
 	postEnvelope,
+	setSentryDebug,
 	shouldReportDeduped,
 	SENTRY_DEDUPE_WINDOW_MS
 } from './sentry-envelope.js';
@@ -106,12 +109,13 @@ describe('buildEnvelope', () => {
 	});
 });
 
-describe('handled-5xx policy', () => {
-	it('reports 5xx /api JSON, never health checks, streams, or 4xx', () => {
+describe('api error policy', () => {
+	it('reports every 4xx/5xx on /api/*, including health checks', () => {
 		expect(isReportableApiResponse('/api/presence', 503, 'application/json')).toBe(true);
 		expect(isReportableApiResponse('/api/presence', 500, null)).toBe(true);
-		expect(isReportableApiResponse('/api/health/live', 500, 'application/json')).toBe(false);
-		expect(isReportableApiResponse('/api/jobs', 401, 'application/json')).toBe(false);
+		expect(isReportableApiResponse('/api/presence', 404, 'application/json')).toBe(true);
+		expect(isReportableApiResponse('/api/jobs', 401, 'application/json')).toBe(true);
+		expect(isReportableApiResponse('/api/health/live', 500, 'application/json')).toBe(true);
 		expect(isReportableApiResponse('/api/jobs', 200, 'application/json')).toBe(false);
 		expect(isReportableApiResponse('/r/report', 500, 'text/html')).toBe(false);
 		expect(isReportableApiResponse('/api/report', 500, 'text/html')).toBe(true);
@@ -145,6 +149,31 @@ describe('shouldReportDeduped', () => {
 	});
 });
 
+describe('describeConsoleArgs', () => {
+	it('formats tagged messages with printf substitution', () => {
+		expect(describeConsoleArgs(['[presence GET] failed:', new TypeError('bad')]).value).toBe(
+			'[presence GET] failed: TypeError: bad'
+		);
+		const withStack = describeConsoleArgs(['oops %s %d', 'x', 3]);
+		expect(withStack.value).toBe('oops x 3');
+		expect(withStack.stack).toBeUndefined();
+	});
+
+	it('lifts the first Error stack and stringifies objects', () => {
+		const err = new Error('boom');
+		const described = describeConsoleArgs(['ctx', err, { code: 7 }]);
+		expect(described.value).toBe('ctx Error: boom {"code":7}');
+		expect(described.stack).toContain('Error: boom');
+	});
+
+	it('never throws and always returns a value', () => {
+		expect(describeConsoleArgs([]).value).toBe('console.error');
+		const circular: Record<string, unknown> = {};
+		circular.self = circular;
+		expect(describeConsoleArgs([circular]).value).toBeDefined();
+	});
+});
+
 describe('describeError', () => {
 	it('normalizes Error, string, and exotic values', () => {
 		const err = new TypeError('bad');
@@ -171,6 +200,10 @@ describe('postEnvelope', () => {
 					contentType: String(req.headers['content-type']),
 					body: data
 				});
+				if ((req.url ?? '').includes('/forbidden/')) {
+					res.writeHead(403).end('{"detail":"forbidden"}');
+					return;
+				}
 				res.writeHead(200).end('{}');
 			});
 		});
@@ -194,5 +227,25 @@ describe('postEnvelope', () => {
 
 	it('never throws when the endpoint is unreachable', async () => {
 		await expect(postEnvelope('http://127.0.0.1:1/api/1/envelope/', 'x')).resolves.toBeUndefined();
+	});
+
+	it('warns once about rejected sends only when debug is on', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			clearSentryTestState();
+			const dsn = parseDsn(`http://key@127.0.0.1:${port}/forbidden/6`)!;
+			await postEnvelope(dsn.envelopeUrl, 'x');
+			expect(warn).not.toHaveBeenCalled();
+			setSentryDebug(true);
+			await postEnvelope(dsn.envelopeUrl, 'x');
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(warn.mock.calls[0][0]).toContain('403');
+			// Throttled: repeat rejection stays silent.
+			await postEnvelope(dsn.envelopeUrl, 'x');
+			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+			clearSentryTestState();
+		}
 	});
 });

@@ -291,6 +291,10 @@ services:
       PUBLIC_SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-cloud}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # '1' to log rejected ingest sends (e.g. HTTP 403 from a wrong DSN or a
+      # non-allow-listed origin). Off by default; browser equivalent is
+      # ?sentryDebug=1 in the page URL.
+      SENTRY_DEBUG: ${SENTRY_DEBUG:-}
     volumes:
       - trino-catalog:/trino-catalog
       - trino-access:/trino-access

@@ -206,6 +206,12 @@ export function buildEnvelope(options: SentryEnvelopeOptions): string {
 /**
  * POST an envelope. Never throws — error reporting must not break the app.
  * Fire-and-forget at call sites (`void postEnvelope(...)`); awaited in tests.
+ *
+ * Rejections are silent by default. Enable `setSentryDebug(true)` (server:
+ * SENTRY_DEBUG=1, browser: ?sentryDebug=1) to log the HTTP status of rejected
+ * sends — e.g. a 403 means the endpoint refused the DSN/origin, which no
+ * client-side change can fix. Throttled per status so a persistent rejection
+ * can't spam the logs.
  */
 export async function postEnvelope(envelopeUrl: string, body: string): Promise<void> {
 	try {
@@ -216,9 +222,77 @@ export async function postEnvelope(envelopeUrl: string, body: string): Promise<v
 			signal: AbortSignal.timeout(5000)
 		});
 		// 429/4xx: drop silently — retrying error reports risks feedback loops.
-		if (!response.ok) await response.body?.cancel().catch(() => {});
+		if (!response.ok) {
+			await response.body?.cancel().catch(() => {});
+			if (sentryDebugEnabled && shouldReportDeduped(`ingest ${response.status}`)) {
+				console.warn(
+					`[sentry] ingest rejected the event (HTTP ${response.status} from ${envelopeUrl}). ` +
+						`A 401/403 means the DSN key is wrong for this project or the origin is not allow-listed — check the receiver's project settings, not this app.`
+				);
+			}
+		}
 	} catch {
 		// Offline / DNS / timeout — never surface.
+	}
+}
+
+let sentryDebugEnabled = false;
+
+/** Enable one-line warnings for rejected ingest sends. Safe to call anytime. */
+export function setSentryDebug(enabled: boolean): void {
+	sentryDebugEnabled = enabled;
+}
+
+/** Test-only: reset debug state and the dedupe cache. */
+export function clearSentryTestState(): void {
+	sentryDebugEnabled = false;
+	clearReportDedupCache();
+}
+
+function formatConsoleValue(value: unknown, maxLength: number = 1000): string {
+	if (value instanceof Error) return `${value.name || 'Error'}: ${value.message || String(value)}`;
+	if (typeof value === 'string') return value;
+	if (value === null || value === undefined) return String(value);
+	try {
+		const json = JSON.stringify(value);
+		return (json ?? String(value)).slice(0, maxLength);
+	} catch {
+		return String(value);
+	}
+}
+
+/**
+ * Turn console.error(...) args into an event value + stack, mirroring how the
+ * message looks in the console. The first Error arg's stack becomes the event
+ * stacktrace; everything is bounded so a huge logged object can't blow up the
+ * envelope. Never throws.
+ */
+export function describeConsoleArgs(args: unknown[]): { value: string; stack?: string } {
+	try {
+		let stack: string | undefined;
+		for (const arg of args) {
+			if (!stack && arg instanceof Error && arg.stack) {
+				stack = arg.stack;
+				break;
+			}
+		}
+		const [first, ...rest] = args;
+		let template = typeof first === 'string' ? first : '';
+		let values: unknown[] = typeof first === 'string' ? [...rest] : [...args];
+		if (template.includes('%')) {
+			template = template.replace(/%[sdifoO%]/g, (match) => {
+				if (match === '%%') return '%';
+				const next = values.shift();
+				return formatConsoleValue(next);
+			});
+		}
+		const parts = [template, ...values.map((v) => formatConsoleValue(v))].filter(
+			(part) => part !== ''
+		);
+		const value = parts.join(' ').slice(0, 2000) || 'console.error';
+		return stack ? { value, stack } : { value };
+	} catch {
+		return { value: 'console.error' };
 	}
 }
 
@@ -283,16 +357,20 @@ export function apiErrorDedupeKey(
 }
 
 /**
- * Decide whether a response counts as a reportable handled API error.
- * Only 5xx on same-origin /api/* JSON (never health checks or streams).
+ * Decide whether a response counts as a reportable API error.
+ * Every 4xx/5xx on /api/* is reported — including health checks (a failing
+ * health endpoint IS the issue) — because the app surfaces failures as
+ * status codes, not throws. Event streams are excluded (buffering a stream
+ * to read its body would be worse than the error). Throttling happens
+ * separately via shouldReportDeduped.
  */
 export function isReportableApiResponse(
 	pathname: string,
 	status: number,
 	contentType: string | null
 ): boolean {
-	if (status < 500) return false;
-	if (!pathname.startsWith('/api/') || pathname.startsWith('/api/health')) return false;
+	if (status < 400) return false;
+	if (!pathname.startsWith('/api/')) return false;
 	if ((contentType ?? '').includes('text/event-stream')) return false;
 	return true;
 }

@@ -563,8 +563,8 @@ export const handle: Handle = async (args) => {
 };
 
 /**
- * Report handled 5xx API responses (the app's dominant failure shape:
- * try/catch → console.error → json({error}, 5xx), which never throws).
+ * Report API error responses (the app's dominant failure shape: try/catch →
+ * console.error → json({error}, 4xx/5xx), which never throws).
  * Throttled per endpoint so hot pollers can't flood the Sentry quota.
  * Never throws — reporting must not break responses.
  */
