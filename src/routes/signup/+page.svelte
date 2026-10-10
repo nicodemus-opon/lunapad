@@ -142,7 +142,7 @@
 				<p class="mt-4 text-2xs tracking-wide text-muted-foreground uppercase">
 					Step {currentStepIndex + 1} of {steps.length}
 				</p>
-				<h1 class="mt-1 font-serif text-xl leading-tight">{currentStep.title}</h1>
+				<h1 class="mt-1 text-xl font-semibold leading-tight tracking-tight">{currentStep.title}</h1>
 				<p class="mt-1 text-xs text-muted-foreground">{currentStep.subtitle}</p>
 
 				{#if currentStepId === 'account'}

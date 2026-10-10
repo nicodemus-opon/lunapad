@@ -75,7 +75,7 @@
 		<p class="text-sm text-muted-foreground">Checking setup status…</p>
 	{:else if setupError && setupMode === 'closed'}
 		<div class="w-full max-w-xl rounded-lg border border-destructive/30 bg-card p-6 shadow-sm">
-			<h1 class="font-serif text-2xl">Setup unavailable</h1>
+			<h1 class="text-2xl font-semibold tracking-tight">Setup unavailable</h1>
 			<p class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
 				{setupError}
 			</p>
@@ -90,7 +90,7 @@
 				<p class="text-2xs tracking-wide text-muted-foreground uppercase">
 					{setupMode === 'repair' ? 'Finish setup' : 'Welcome to Lunapad'}
 				</p>
-				<h1 class="mt-1 font-serif text-2xl">
+				<h1 class="mt-1 text-2xl font-semibold tracking-tight">
 					{setupMode === 'repair' ? 'Repair your workspace' : 'Create your workspace'}
 				</h1>
 				<p class="mt-2 text-sm leading-6 text-muted-foreground">

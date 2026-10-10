@@ -5794,6 +5794,69 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 	scheduleSave();
 }
 
+/**
+ * Restore one cell's content fields from a history snapshot (Metabase-style
+ * History revert). Single undo checkpoint + save, unlike calling the granular
+ * setters one by one. Returns false when the cell no longer exists.
+ */
+export function restoreCellHistorySnapshot(
+	cellId: string,
+	snapshot: {
+		outputName: string;
+		cellType: CellType;
+		language: CellLanguage;
+		code: string;
+		markdown: string;
+		udfBody: string;
+		connectionId: string | null;
+		guiStages: GUIPipelineStage[];
+		editMode: CellEditMode;
+		materializeMode: CellMaterializationMode;
+		description: string | null;
+		dbtTags: string[];
+		resultChartConfig: ChartConfig | null;
+		plotConfig: ChartConfig | null;
+		plotMode: 'gui' | 'code';
+	}
+): boolean {
+	const context = findCellContext(cellId);
+	if (!context) return false;
+	const { notebook: nb, cell, idx } = context;
+	pushHistoryCheckpoint(nb.id);
+	const codeChanged = cell.code !== snapshot.code;
+	cell.outputName = snapshot.outputName;
+	cell.cellType = snapshot.cellType;
+	cell.language = snapshot.language;
+	cell.code = snapshot.code;
+	cell.markdown = snapshot.markdown;
+	cell.udfBody = snapshot.udfBody;
+	cell.connectionId = snapshot.connectionId;
+	cell.guiStages = snapshot.guiStages;
+	cell.editMode = snapshot.editMode;
+	cell.materializeMode = snapshot.materializeMode;
+	cell.materializeTarget = snapshot.outputName;
+	cell.description = snapshot.description;
+	cell.dbtTags = snapshot.dbtTags;
+	cell.resultChartConfig = snapshot.resultChartConfig;
+	cell.plotConfig = snapshot.plotConfig;
+	cell.plotMode = snapshot.plotMode;
+	if (codeChanged && (cell.cellType === 'query' || cell.cellType === 'plot')) {
+		cell.needsRun = true;
+		cell.staleReason = 'code-changed';
+		cell.staleSources = [];
+		const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
+		cell.errors = errors;
+		cell.compiledSQL = sql;
+		if (cell.outputName)
+			markDownstreamStale(cell.outputName, 'upstream-changed', new Set(), cell.id);
+	}
+	notebookHistorySignal.notebookId = nb.id;
+	notebookHistorySignal.seq++;
+	scheduleSave();
+	scheduleFileSave(nb.id, cellId);
+	return true;
+}
+
 // ── Undo/redo history ────────────────────────────────────────────────────────
 // Session-only (never persisted): a per-notebook stack of CellSnapshot arrays.
 // Structural mutations push a checkpoint of the pre-mutation cell list; continuous

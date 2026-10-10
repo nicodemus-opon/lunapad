@@ -55,6 +55,7 @@
 		getPythonAvailable,
 		setCellMarkdownPreview,
 		setMarkdownEditMode,
+		restoreCellHistorySnapshot,
 		testCell,
 		getIsDbtProject,
 		getProjectFolder,
@@ -91,6 +92,13 @@
 	import CellGutter from './cell/CellGutter.svelte';
 	import CellHeader from './cell/CellHeader.svelte';
 	import CellMenu from './cell/CellMenu.svelte';
+	import CellHistoryPanel from './cell/CellHistoryPanel.svelte';
+	import {
+		getCellRevisions,
+		maybeRecordCellRevision,
+		recordRevertRevision,
+		type CellRevision
+	} from '$lib/services/cell-history';
 	import {
 		getCellCommentCount,
 		openCommentPanel,
@@ -190,6 +198,104 @@
 	let materializeDialogOpen = $state(false);
 	let promoteDialogOpen = $state(false);
 	let promoteSeedDialogOpen = $state(false);
+	let historyOpen = $state(false);
+	let historyRevisions = $state<CellRevision[]>([]);
+	let historyRevertingId = $state<string | null>(null);
+
+	function openCellHistory(): void {
+		if (!notebookId) return;
+		// Flush any pending debounced capture so the timeline includes the
+		// latest edits before it opens.
+		flushHistoryCapture();
+		maybeRecordCellRevision(notebookId, cell);
+		historyRevisions = getCellRevisions(notebookId, cell.id);
+		historyOpen = true;
+	}
+
+	function handleHistoryRevert(rev: CellRevision): void {
+		if (!notebookId || historyRevertingId) return;
+		historyRevertingId = rev.id;
+		try {
+			const ok = restoreCellHistorySnapshot(cell.id, {
+				outputName: rev.snapshot.outputName,
+				cellType: rev.snapshot.cellType as Cell['cellType'],
+				language: rev.snapshot.language as Cell['language'],
+				code: rev.snapshot.code,
+				markdown: rev.snapshot.markdown,
+				udfBody: rev.snapshot.udfBody,
+				connectionId: rev.snapshot.connectionId,
+				guiStages: rev.snapshot.guiStages as Cell['guiStages'],
+				editMode: rev.snapshot.editMode as Cell['editMode'],
+				materializeMode: rev.snapshot.materializeMode as Cell['materializeMode'],
+				description: rev.snapshot.description,
+				dbtTags: [...rev.snapshot.dbtTags],
+				resultChartConfig: rev.snapshot.resultChartConfig as Cell['resultChartConfig'],
+				plotConfig: rev.snapshot.plotConfig as Cell['plotConfig'],
+				plotMode: rev.snapshot.plotMode as Cell['plotMode']
+			});
+			if (!ok) return;
+			// Record the revert itself as a new version (non-destructive, like Metabase).
+			recordRevertRevision(notebookId, cell, rev.snapshot);
+			historyRevisions = getCellRevisions(notebookId, cell.id);
+		} finally {
+			historyRevertingId = null;
+		}
+	}
+
+	// Metabase cuts a version on every save — capture debounced so bursts of
+	// keystrokes coalesce into one revision instead of one per keystroke.
+	let historyCaptureTimer: ReturnType<typeof setTimeout> | null = null;
+	function flushHistoryCapture(): void {
+		if (historyCaptureTimer) {
+			clearTimeout(historyCaptureTimer);
+			historyCaptureTimer = null;
+		}
+	}
+	$effect(() => {
+		// Track content fields; the effect re-runs on any of them changing.
+		const tracked = {
+			code: cell.code,
+			markdown: cell.markdown,
+			udfBody: cell.udfBody,
+			language: cell.language,
+			cellType: cell.cellType,
+			outputName: cell.outputName,
+			connectionId: cell.connectionId,
+			editMode: cell.editMode,
+			materializeMode: cell.materializeMode,
+			description: cell.description,
+			dbtTags: cell.dbtTags,
+			guiStages: cell.guiStages,
+			resultChartConfig: cell.resultChartConfig,
+			plotConfig: cell.plotConfig,
+			plotMode: cell.plotMode
+		};
+		if (!notebookId || reportView || isGhost) return;
+		flushHistoryCapture();
+		historyCaptureTimer = setTimeout(() => {
+			historyCaptureTimer = null;
+			maybeRecordCellRevision(notebookId, {
+				id: cell.id,
+				cellType: tracked.cellType,
+				outputName: tracked.outputName,
+				code: tracked.code,
+				markdown: tracked.markdown,
+				udfBody: tracked.udfBody,
+				language: tracked.language,
+				connectionId: tracked.connectionId,
+				guiStages: tracked.guiStages,
+				editMode: tracked.editMode,
+				materializeMode: tracked.materializeMode,
+				description: tracked.description,
+				dbtTags: tracked.dbtTags,
+				resultChartConfig: tracked.resultChartConfig,
+				plotConfig: tracked.plotConfig,
+				plotMode: tracked.plotMode
+			});
+			if (historyOpen) historyRevisions = getCellRevisions(notebookId, cell.id);
+		}, 2000);
+		return () => flushHistoryCapture();
+	});
 	// Portaled popovers (status chips, refs, errors) take focus outside the cell
 	// element; keep the cell chrome revealed while any of them is open.
 	let overlayCount = $state(0);
@@ -1488,6 +1594,7 @@
 								onRunTests={() => void testCell(cell.id)}
 								onOpenInlinePrompt={canInlinePrompt ? openInlinePrompt : undefined}
 								onOpenWorksheet={supportsWorksheet ? handleOpenWorksheet : undefined}
+								onOpenHistory={notebookId ? openCellHistory : undefined}
 								{onShareWithAI}
 								{isPlotCell}
 							/>
@@ -1527,6 +1634,13 @@
 		<PromoteDialog bind:open={promoteDialogOpen} {cell} />
 		<PromoteSeedDialog bind:open={promoteSeedDialogOpen} {cell} />
 	{/if}
+	<CellHistoryPanel
+		bind:open={historyOpen}
+		cellName={cell.outputName || 'Untitled cell'}
+		revisions={historyRevisions}
+		revertingId={historyRevertingId}
+		onRevert={handleHistoryRevert}
+	/>
 	<CellModeSwitchDialogs
 		bind:confirmSwitchToGui={modeSwitch.confirmSwitchToGui}
 		bind:confirmSwitchToSql={modeSwitch.confirmSwitchToSql}

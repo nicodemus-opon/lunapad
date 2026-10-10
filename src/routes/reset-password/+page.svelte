@@ -45,7 +45,7 @@
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
 		<div>
-			<h1 class="font-serif text-lg">Reset password</h1>
+			<h1 class="text-lg font-semibold tracking-tight">Reset password</h1>
 			<p class="mt-1 text-xs text-muted-foreground">Choose a new password for your Lunapad account.</p>
 		</div>
 

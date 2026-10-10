@@ -25,7 +25,8 @@
 		Eraser,
 		Maximize2,
 		ChevronsDownUp,
-		ChevronsUpDown
+		ChevronsUpDown,
+		History
 	} from '@lucide/svelte';
 	import {
 		moveCell,
@@ -66,6 +67,7 @@
 		onOpenInlinePrompt,
 		onOpenWorksheet,
 		onShareWithAI,
+		onOpenHistory,
 		isPlotCell = false,
 		dragHandle = true,
 		onDisplayChange
@@ -88,6 +90,7 @@
 		onOpenInlinePrompt?: () => void;
 		onOpenWorksheet?: () => void;
 		onShareWithAI?: () => void;
+		onOpenHistory?: () => void;
 		isPlotCell?: boolean;
 		/** When true (classic notebook), the trigger doubles as the SortableJS drag
 		 * handle. Disable inside the visual document editor, where dragging is owned
@@ -233,6 +236,12 @@
 					<FileSpreadsheet class="h-3.5 w-3.5" /> Promote to dbt seed…
 				</DropdownMenu.Item>
 			{/if}
+			<DropdownMenu.Separator />
+		{/if}
+		{#if onOpenHistory}
+			<DropdownMenu.Item onclick={onOpenHistory}>
+				<History class="h-3.5 w-3.5" /> View history
+			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 		{/if}
 		<DropdownMenu.Item onclick={() => setCellHideInReport(cell.id, !cell.hideInReport)}>

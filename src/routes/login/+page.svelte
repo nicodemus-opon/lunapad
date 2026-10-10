@@ -78,7 +78,7 @@
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
 		<div>
-			<h1 class="font-serif text-lg">Sign in to Lunapad</h1>
+			<h1 class="text-lg font-semibold tracking-tight">Sign in to Lunapad</h1>
 			<p class="mt-1 text-xs text-muted-foreground">
 				Open your data workspace, shared reports, automations, and team settings.
 			</p>

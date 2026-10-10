@@ -64,7 +64,7 @@
 		class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
 	>
 		<div>
-			<h1 class="font-serif text-lg">Join the workspace</h1>
+			<h1 class="text-lg font-semibold tracking-tight">Join the workspace</h1>
 			<p class="mt-1 text-xs text-muted-foreground">
 				Invited as <span class="font-medium text-foreground">{data.invitation.role}</span> ·
 				{data.invitation.email}
