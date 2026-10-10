@@ -112,6 +112,8 @@ export interface SentryEventContext {
 	method?: string;
 	userId?: string;
 	requestId?: string;
+	/** HTTP status of the failed API response (handled-5xx reports). */
+	status?: number;
 	platform?: string;
 	runtimeName?: string;
 	runtimeVersion?: string;
@@ -168,7 +170,14 @@ export function buildEnvelope(options: SentryEnvelopeOptions): string {
 				}
 			: {}),
 		...(context.userId ? { user: { id: context.userId } } : {}),
-		...(context.requestId ? { tags: { request_id: context.requestId } } : {})
+		...(context.requestId || context.status !== undefined
+			? {
+					tags: {
+						...(context.requestId ? { request_id: context.requestId } : {}),
+						...(context.status !== undefined ? { status_code: String(context.status) } : {})
+					}
+				}
+			: {})
 	};
 	if (context.runtimeName) {
 		event.contexts = {
@@ -228,4 +237,77 @@ export function describeError(error: unknown): { type: string; value: string; st
 	} catch {
 		return { type: 'Error', value: String(error) };
 	}
+}
+
+// ── Handled-5xx reporting policy (shared by server + client) ─────────────
+// Hot-polling endpoints (presence, jobs) can 5xx every second — without a
+// throttle one outage floods the Sentry quota. One report per key per window.
+
+export const SENTRY_DEDUPE_WINDOW_MS = 60_000;
+const SENTRY_DEDUPE_MAX_KEYS = 500;
+
+const reportMarks = new Map<string, number>();
+
+/** True when this key may be reported now (and records the mark). */
+export function shouldReportDeduped(key: string, now: number = Date.now()): boolean {
+	const last = reportMarks.get(key);
+	if (last !== undefined && now - last < SENTRY_DEDUPE_WINDOW_MS) return false;
+	if (reportMarks.size >= SENTRY_DEDUPE_MAX_KEYS && !reportMarks.has(key)) {
+		let oldestKey: string | null = null;
+		let oldestTime = Infinity;
+		for (const [k, t] of reportMarks) {
+			if (t < oldestTime) {
+				oldestTime = t;
+				oldestKey = k;
+			}
+		}
+		if (oldestKey !== null) reportMarks.delete(oldestKey);
+	}
+	reportMarks.set(key, now);
+	return true;
+}
+
+/** Test-only: reset the dedupe cache. */
+export function clearReportDedupCache(): void {
+	reportMarks.clear();
+}
+
+/** Dedupe key for a failed API response. */
+export function apiErrorDedupeKey(
+	source: string,
+	method: string,
+	pathname: string,
+	status: number
+): string {
+	return `${source} ${method} ${pathname} ${status}`;
+}
+
+/**
+ * Decide whether a response counts as a reportable handled API error.
+ * Only 5xx on same-origin /api/* JSON (never health checks or streams).
+ */
+export function isReportableApiResponse(
+	pathname: string,
+	status: number,
+	contentType: string | null
+): boolean {
+	if (status < 500) return false;
+	if (!pathname.startsWith('/api/') || pathname.startsWith('/api/health')) return false;
+	if ((contentType ?? '').includes('text/event-stream')) return false;
+	return true;
+}
+
+/** Pull the `{error}` (or SvelteKit `{message}`) text out of a JSON error body. */
+export function extractApiErrorMessage(text: string, maxLength: number = 500): string {
+	try {
+		const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+		for (const field of [parsed.error, parsed.message]) {
+			if (typeof field === 'string' && field.trim()) {
+				return field.trim().slice(0, maxLength);
+			}
+		}
+	} catch {
+		// Not JSON — fall through to raw text.
+	}
+	return text.trim().slice(0, maxLength);
 }

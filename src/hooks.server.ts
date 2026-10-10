@@ -37,6 +37,12 @@ import { cloudSignupOpen } from '$lib/server/cloud-config';
 import { assertCloudEnv } from '$lib/server/cloud-readiness';
 import { isRateLimitedShared, rateLimitIp } from '$lib/server/redis-rate-limit';
 import { captureServerException, initServerSentry } from '$lib/server/sentry';
+import {
+	apiErrorDedupeKey,
+	extractApiErrorMessage,
+	isReportableApiResponse,
+	shouldReportDeduped
+} from '$lib/sentry-envelope';
 
 startShareRefreshWorker();
 startTrinoCatalogReconciler();
@@ -46,7 +52,12 @@ ensureBaseTrinoAccessFile().catch((err) =>
 if (!building) assertCloudEnv();
 // Sentry error reporting (no-op when SENTRY_DSN is empty). Reads DSN at call
 // time so Docker/Coolify runtime env needs no rebuild.
-if (!building) initServerSentry();
+if (!building) {
+	initServerSentry();
+	console.log(
+		`[sentry] server reporting ${process.env.SENTRY_DSN?.trim() ? 'enabled' : 'disabled (no SENTRY_DSN)'}`
+	);
+}
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -540,15 +551,53 @@ function sentryRequestContext(event: RequestEvent): {
 }
 
 export const handle: Handle = async (args) => {
+	let response: Response;
 	try {
-		return await baseHandle(args);
+		response = await baseHandle(args);
 	} catch (err) {
 		void captureServerException(err, sentryRequestContext(args.event));
 		throw err;
 	}
+	reportHandledApiError(args.event, response);
+	return response;
 };
 
+/**
+ * Report handled 5xx API responses (the app's dominant failure shape:
+ * try/catch → console.error → json({error}, 5xx), which never throws).
+ * Throttled per endpoint so hot pollers can't flood the Sentry quota.
+ * Never throws — reporting must not break responses.
+ */
+function reportHandledApiError(event: RequestEvent, response: Response): void {
+	try {
+		const { pathname } = event.url;
+		if (!isReportableApiResponse(pathname, response.status, response.headers.get('content-type'))) {
+			return;
+		}
+		const method = event.request.method;
+		if (!shouldReportDeduped(apiErrorDedupeKey('server', method, pathname, response.status)))
+			return;
+		const context = sentryRequestContext(event);
+		void response
+			.clone()
+			.text()
+			.then((text) => {
+				const detail = extractApiErrorMessage(text);
+				const probe = new Error(
+					`API ${method} ${pathname} failed (${response.status})${detail ? `: ${detail}` : ''}`
+				);
+				void captureServerException(probe, { ...context, status: response.status });
+			})
+			.catch(() => {});
+	} catch {
+		// ignore
+	}
+}
+
 export const handleError: HandleServerError = async ({ error, event }) => {
+	// Note: SvelteKit only calls this for *unexpected* errors — HttpErrors
+	// thrown via `error()` bypass it (verified). Those are covered by the
+	// handled-5xx reporting in `handle` above instead.
 	void captureServerException(error, sentryRequestContext(event));
 	return { message: 'An unexpected error occurred.', requestId: event.locals.requestId };
 };

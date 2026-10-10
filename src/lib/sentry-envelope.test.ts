@@ -1,12 +1,18 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+	apiErrorDedupeKey,
 	buildEnvelope,
+	clearReportDedupCache,
 	describeError,
+	extractApiErrorMessage,
+	isReportableApiResponse,
 	newEventId,
 	parseDsn,
 	parseStack,
-	postEnvelope
+	postEnvelope,
+	shouldReportDeduped,
+	SENTRY_DEDUPE_WINDOW_MS
 } from './sentry-envelope.js';
 
 describe('parseDsn', () => {
@@ -90,13 +96,52 @@ describe('buildEnvelope', () => {
 			dsn,
 			type: 'Error',
 			value: 'x',
-			context: { url: '/api/jobs', method: 'POST', userId: 'u1', requestId: 'r1' }
+			context: { url: '/api/jobs', method: 'POST', userId: 'u1', requestId: 'r1', status: 503 }
 		});
 		const event = JSON.parse(body.split('\n')[2]);
 		expect(event.request).toEqual({ url: '/api/jobs', method: 'POST' });
 		expect(event.user).toEqual({ id: 'u1' });
-		expect(event.tags).toEqual({ request_id: 'r1' });
+		expect(event.tags).toEqual({ request_id: 'r1', status_code: '503' });
 		expect(JSON.stringify(event)).not.toContain('cookie');
+	});
+});
+
+describe('handled-5xx policy', () => {
+	it('reports 5xx /api JSON, never health checks, streams, or 4xx', () => {
+		expect(isReportableApiResponse('/api/presence', 503, 'application/json')).toBe(true);
+		expect(isReportableApiResponse('/api/presence', 500, null)).toBe(true);
+		expect(isReportableApiResponse('/api/health/live', 500, 'application/json')).toBe(false);
+		expect(isReportableApiResponse('/api/jobs', 401, 'application/json')).toBe(false);
+		expect(isReportableApiResponse('/api/jobs', 200, 'application/json')).toBe(false);
+		expect(isReportableApiResponse('/r/report', 500, 'text/html')).toBe(false);
+		expect(isReportableApiResponse('/api/report', 500, 'text/html')).toBe(true);
+		expect(isReportableApiResponse('/api/stream', 500, 'text/event-stream')).toBe(false);
+	});
+
+	it('extracts the {error} message with a length bound', () => {
+		expect(extractApiErrorMessage(JSON.stringify({ error: '  Failed badly. ' }))).toBe(
+			'Failed badly.'
+		);
+		expect(extractApiErrorMessage(JSON.stringify({ message: 'thrown probe' }))).toBe(
+			'thrown probe'
+		);
+		expect(extractApiErrorMessage('plain text failure')).toBe('plain text failure');
+		expect(extractApiErrorMessage('x'.repeat(1000)).length).toBeLessThanOrEqual(500);
+		expect(extractApiErrorMessage('not json {{{')).toBe('not json {{{'.slice(0, 500));
+	});
+});
+
+describe('shouldReportDeduped', () => {
+	it('throttles repeats inside the window, allows new keys and expiry', () => {
+		clearReportDedupCache();
+		const key = apiErrorDedupeKey('server', 'GET', '/api/presence', 503);
+		expect(shouldReportDeduped(key, 1000)).toBe(true);
+		expect(shouldReportDeduped(key, 1001)).toBe(false);
+		expect(
+			shouldReportDeduped(apiErrorDedupeKey('server', 'POST', '/api/presence', 503), 1001)
+		).toBe(true);
+		expect(shouldReportDeduped(key, 1000 + SENTRY_DEDUPE_WINDOW_MS)).toBe(true);
+		clearReportDedupCache();
 	});
 });
 
