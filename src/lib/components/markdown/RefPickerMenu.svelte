@@ -49,7 +49,7 @@
 				<div class="md-refpicker-empty">No matching cells</div>
 			{/if}
 			{#each filtered as entry (entry.cellName)}
-				{#each entry.columns as column (column.name)}
+				{#each entry.columns as column, ci (`${column.name}::${ci}`)}
 					<Button
 						type="button"
 						variant="ghost"

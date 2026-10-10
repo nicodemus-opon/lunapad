@@ -283,6 +283,14 @@ services:
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-local}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-local}
       INNGEST_SERVE_ORIGIN: http://app:3000
+      # ── Sentry error reporting (optional, no-op when empty) ─────────────
+      # Set SENTRY_DSN once; it feeds both the server reporter and the browser
+      # reporter (PUBLIC_SENTRY_DSN, injected at request time — no rebuild
+      # needed when the value changes). Read at runtime, never baked in.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      PUBLIC_SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-cloud}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     volumes:
       - trino-catalog:/trino-catalog
       - trino-access:/trino-access

@@ -1216,7 +1216,7 @@
 									<span class="text-3xs text-muted-foreground/50">press number to add</span>
 								</div>
 								<div class="grid grid-cols-2 gap-1">
-									{#each stageResults as item, idx (item.type)}
+									{#each stageResults as item, idx (`${item.type}::${idx}`)}
 										{@const ItemIcon = ICONS[item.type]}
 										<button
 											class="flex items-center gap-2 rounded-lg border border-border bg-muted/10 px-2.5 py-2 text-left transition-[background-color,border-color] duration-(--motion-fast) ease-(--motion-ease-out) hover:border-border hover:bg-accent"
@@ -1262,7 +1262,7 @@
 										{#if matchedColumn}<span class="add-stage-badge">{matchedColumn}</span>{/if}
 									</div>
 									<div class="space-y-0.5">
-										{#each filteredPresetSuggestions as suggestion, idx (suggestion.preset.id)}
+										{#each filteredPresetSuggestions as suggestion, idx (`${suggestion.preset.id}::${idx}`)}
 											{@const referencesMatchedColumn = presetMentionsColumn(
 												suggestion,
 												matchedColumn
@@ -1299,7 +1299,7 @@
 									<section class="space-y-1">
 										<p class="chip-lane-heading px-0.5">Analysis prompts</p>
 										<div class="space-y-0.5">
-											{#each analysisResults as suggestion, idx (suggestion.id)}
+											{#each analysisResults as suggestion, idx (`${suggestion.id}::${idx}`)}
 												<button
 													class="w-full rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-(--motion-fast) hover:border-border hover:bg-accent"
 													onclick={() => chooseCommand({ kind: 'analysis', suggestion })}

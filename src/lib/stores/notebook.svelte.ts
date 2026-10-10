@@ -5809,9 +5809,16 @@ export function restoreCellSnapshots(notebookId: string, snapCells: CellSnapshot
 		cell.needsRun = true;
 		cell.staleReason = 'code-changed';
 		cell.staleSources = [];
-		const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
-		cell.errors = errors;
-		cell.compiledSQL = sql;
+		try {
+			const { errors, sql } = getCompiledCellSQL(nb.cells, idx);
+			cell.errors = errors;
+			cell.compiledSQL = sql;
+		} catch {
+			// Diagnostics must never break a restore (undo/history revert):
+			// worst case they refresh on the next keystroke.
+			cell.errors = [];
+			cell.compiledSQL = null;
+		}
 	}
 
 	scheduleSave();
@@ -5872,13 +5879,22 @@ export function restoreNotebookHistorySnapshot(
 
 	restoreCellSnapshots(notebookId, snapshot.cells);
 
-	const plotById = new Map(snapshot.cells.map((c) => [c.id, c]));
+	// restoreCellSnapshots' live-cell branch doesn't cover visualization and
+	// table-chrome fields (it only restores those for resurrected cells), so
+	// apply them here — otherwise reverting a "changed visualization settings"
+	// version visibly does nothing. Explicit nulls in the snapshot (e.g. a
+	// cleared chart config) win over live state; missing keys are skipped.
+	const uiById = new Map(snapshot.cells.map((c) => [c.id, c]));
 	for (const cell of nb.cells) {
-		const snap = plotById.get(cell.id);
+		const snap = uiById.get(cell.id);
 		if (!snap) continue;
 		if (snap.plotMode !== undefined) cell.plotMode = snap.plotMode;
 		if (snap.plotConfig !== undefined) cell.plotConfig = snap.plotConfig;
 		if (snap.plotSourceCellId !== undefined) cell.plotSourceCellId = snap.plotSourceCellId;
+		if (snap.resultChartConfig !== undefined) cell.resultChartConfig = snap.resultChartConfig;
+		if (snap.resultViewMode !== undefined) cell.resultViewMode = snap.resultViewMode;
+		if (snap.columnFormatRules !== undefined) cell.columnFormatRules = snap.columnFormatRules;
+		if (snap.columnWidths !== undefined) cell.columnWidths = snap.columnWidths;
 	}
 
 	notebookHistorySignal.notebookId = nb.id;

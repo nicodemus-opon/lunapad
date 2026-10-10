@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { GitBranch, ArrowUp, ArrowDown, FolderGit2, Loader2 } from '@lucide/svelte';
+	import { GitBranch, ArrowUp, ArrowDown, FolderGit2, Loader2, History } from '@lucide/svelte';
 	import { getRawGitStatus, refreshGitStatus } from '$lib/stores/git.svelte';
 	import {
 		getActiveNotebookRunningCount,
@@ -14,6 +14,7 @@
 	let {
 		projectFolder,
 		onOpenGitPanel,
+		onOpenHistory,
 		showNotebookStatus = false,
 		connections = [],
 		defaultConnectionId = null,
@@ -21,6 +22,7 @@
 	}: {
 		projectFolder: string | null;
 		onOpenGitPanel: () => void;
+		onOpenHistory?: () => void;
 		showNotebookStatus?: boolean;
 		connections?: Connection[];
 		defaultConnectionId?: string | null;
@@ -86,6 +88,19 @@
 	{/if}
 
 	<span class="flex-1"></span>
+
+	{#if showNotebookStatus && onOpenHistory}
+		<button
+			class="-my-1 flex h-7 shrink-0 items-center gap-1.5 px-2 transition-colors hover:bg-muted/40 hover:text-foreground"
+			onclick={onOpenHistory}
+			title="Notebook info & version history"
+			aria-label="Open notebook info and history"
+			data-testid="history-toggle"
+		>
+			<History class="h-3 w-3" />
+			History
+		</button>
+	{/if}
 
 	{#if status?.isRepo}
 		<button

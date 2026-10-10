@@ -245,7 +245,7 @@
 					<div
 						class="mx-3 mb-2 max-h-40 overflow-y-auto rounded bg-muted/40 p-2 font-mono text-2xs leading-relaxed"
 					>
-						{#each logLines as line (line)}
+						{#each logLines as line, i (i)}
 							<div class={logLineClass(line)}>{line}</div>
 						{/each}
 					</div>

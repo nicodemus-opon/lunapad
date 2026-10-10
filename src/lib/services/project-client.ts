@@ -219,41 +219,53 @@ export function watchProjectFolder(
 ): () => void {
 	const ctrl = new AbortController();
 	const url = `/api/project/watch?folder=${encodeURIComponent(folder)}`;
+	let attempt = 0;
 
 	(async () => {
-		try {
-			const res = await fetch(url, { signal: ctrl.signal });
-			if (!res.body) return;
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
+		// Reconnect loop: proxies (Cloudflare) kill idle SSE after ~60-100s
+		// despite server heartbeats; without reconnect the file watcher
+		// silently dies and looks like ERR_QUIC_PROTOCOL_ERROR in the console.
+		while (!ctrl.signal.aborted) {
+			try {
+				const res = await fetch(url, { signal: ctrl.signal });
+				if (!res.ok || !res.body) throw new Error(`watch HTTP ${res.status}`);
+				attempt = 0;
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = '';
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const parts = buffer.split('\n\n');
-				buffer = parts.pop() ?? '';
-				for (const part of parts) {
-					const line = part.trim();
-					if (!line.startsWith('data:')) continue;
-					try {
-						const event = JSON.parse(line.slice(5).trim()) as {
-							type: string;
-							filename?: string;
-						};
-						if (event.type === 'manifest-changed') {
-							onManifestChange?.();
-						} else if (event.filename) {
-							onChange(event.filename);
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					if (ctrl.signal.aborted) break;
+					buffer += decoder.decode(value, { stream: true });
+					const parts = buffer.split('\n\n');
+					buffer = parts.pop() ?? '';
+					for (const part of parts) {
+						const line = part.trim();
+						if (!line.startsWith('data:')) continue;
+						try {
+							const event = JSON.parse(line.slice(5).trim()) as {
+								type: string;
+								filename?: string;
+							};
+							if (event.type === 'manifest-changed') {
+								onManifestChange?.();
+							} else if (event.filename) {
+								onChange(event.filename);
+							}
+						} catch {
+							// ignore
 						}
-					} catch {
-						// ignore
 					}
 				}
+			} catch {
+				if (ctrl.signal.aborted) break;
+				// Exponential backoff, max 30s.
+				attempt += 1;
+				const delay = Math.min(1000 * 2 ** Math.min(attempt, 5), 30_000);
+				await new Promise((r) => setTimeout(r, delay));
 			}
-		} catch {
-			// connection closed or aborted — fine
 		}
 	})();
 

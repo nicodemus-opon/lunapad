@@ -16,7 +16,7 @@
 	<p class="text-2xs text-muted-foreground italic">No data</p>
 {:else}
 	<div class="space-y-1">
-		{#each values as row (`${row.value ?? 'null'}-${row.count}`)}
+		{#each values as row, i (`${row.value ?? '__null__'}::${row.count}::${i}`)}
 			{@const barPct = maxCount > 0 ? (row.count / maxCount) * 100 : 0}
 			<div class="flex items-center gap-2 text-2xs">
 				<span

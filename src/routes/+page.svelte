@@ -154,7 +154,7 @@
 	import EvidencePreview from '$lib/components/EvidencePreview.svelte';
 	import UploadDialog from '$lib/components/UploadDialog.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
-	import NotebookHistoryPanel from '$lib/components/notebook/NotebookHistoryPanel.svelte';
+	import NotebookInfoPanel from '$lib/components/notebook/NotebookInfoPanel.svelte';
 	import {
 		fingerprintNotebook,
 		getNotebookRevisions,
@@ -240,8 +240,7 @@
 		Sigma,
 		CalendarDays,
 		LayoutGrid,
-		GitBranch,
-		History
+		GitBranch
 	} from '@lucide/svelte';
 	import AIChatPanel from '$lib/components/ai/AIChatPanel.svelte';
 	import {
@@ -520,6 +519,9 @@
 			recordNotebookRevert(activeNotebook.id, rev.snapshot);
 			historyRevisions = getNotebookRevisions(activeNotebook.id);
 			toast.success('Reverted to earlier version');
+		} catch (err) {
+			console.error('[history] revert failed', err);
+			toast.error(`Revert failed: ${err instanceof Error ? err.message : 'unknown error'}`);
 		} finally {
 			historyRevertingId = null;
 		}
@@ -1644,21 +1646,6 @@
 							</Tooltip.Trigger>
 							<Tooltip.Content side="bottom">Toggle AI chat (⌘J)</Tooltip.Content>
 						</Tooltip.Root>
-						<Tooltip.Root>
-							<Tooltip.Trigger
-								class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {historyOpen
-									? 'bg-primary/15 text-primary'
-									: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
-								onclick={openNotebookHistory}
-								aria-pressed={historyOpen}
-								aria-label="View notebook history"
-								data-testid="history-toggle"
-							>
-								<History class="h-3.5 w-3.5" />
-								<span class="hidden sm:inline">History</span>
-							</Tooltip.Trigger>
-							<Tooltip.Content side="bottom">Notebook version history</Tooltip.Content>
-						</Tooltip.Root>
 					{/if}
 
 					<Tooltip.Root>
@@ -2687,6 +2674,7 @@
 		<GlobalStatusBar
 			{projectFolder}
 			onOpenGitPanel={() => selectSidebarPanel('git')}
+			onOpenHistory={activeNotebook ? openNotebookHistory : undefined}
 			showNotebookStatus={isNotebookTab}
 			{connections}
 			defaultConnectionId={activeNotebook?.cells.find((c) => c.cellType === 'query')
@@ -2816,9 +2804,13 @@
 	}}
 />
 <SitesPanel bind:open={sitesDialogOpen} />
-<NotebookHistoryPanel
+<NotebookInfoPanel
 	bind:open={historyOpen}
+	notebookId={activeNotebook?.id ?? ''}
 	notebookName={activeNotebook?.name ?? 'Untitled'}
+	format={activeNotebook?.format}
+	storageLabel={projectFolder ?? 'Browser storage'}
+	cells={activeNotebook?.cells ?? []}
 	revisions={historyRevisions}
 	revertingId={historyRevertingId}
 	onRevert={handleHistoryRevert}

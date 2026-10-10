@@ -15,9 +15,7 @@ import 'monaco-editor/esm/vs/basic-languages/dockerfile/dockerfile.contribution.
 import 'monaco-editor/esm/vs/language/typescript/monaco.contribution.js';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
-import EditorWorkerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?url';
 import TSWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?worker';
-import TSWorkerUrl from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?url';
 
 // Trino/generic SQL Monarch tokenizers from monaco-sql-languages
 // (imported directly — no contribution/worker setup, so no side effects)
@@ -73,12 +71,13 @@ export { setModelPlotGlobals, clearModelPlotGlobals, activatePlotGlobals } from 
 let initialized = false;
 const SETUP_KEY = '__lunapad_monaco_setup__';
 
-/** Vite emits Monaco workers as ESM modules; start them as module workers so
- * the dev-client imports and bundled dependencies execute correctly. */
-function createMonacoWorker(moduleUrl: string): Worker {
-	const scriptUrl = new URL(moduleUrl, globalThis.location.href).href;
-	return new Worker(scriptUrl, { type: 'module' });
-}
+/** Vite emits Monaco workers as ESM modules (see worker.format: 'es' in
+ * vite.config.ts); start them as module workers. A single `?worker`
+ * constructor per language avoids emitting the worker bundle twice
+ * (`?worker` + `?url`) and avoids the network-worker COEP header requirement
+ * that broke static hosts (COEP-isolated pages refuse network workers whose
+ * script lacks COEP/CORP headers → main-thread fallback). If construction
+ * still throws, Monaco falls back to the main thread with a console warning. */
 
 // Dialect → Monaco language ID mapping.
 // All external connections execute as Trino SQL; DuckDB is generic SQL.
@@ -123,14 +122,20 @@ export function setupMonaco(): typeof monaco {
 	initialized = true;
 	setupState[SETUP_KEY] = true;
 
-	const useBlobWorkers = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
 	self.MonacoEnvironment = {
 		getWorker: (_workerId: string, label: string) => {
 			const isTs = label === 'typescript' || label === 'javascript';
-			if (useBlobWorkers) {
-				return createMonacoWorker(isTs ? TSWorkerUrl : EditorWorkerUrl);
+			try {
+				type ModuleWorkerCtor = new (options?: { name?: string; type?: WorkerType }) => Worker;
+				const EditorCtor = EditorWorker as unknown as ModuleWorkerCtor;
+				const TsCtor = TSWorker as unknown as ModuleWorkerCtor;
+				return isTs ? new TsCtor({ type: 'module' }) : new EditorCtor({ type: 'module' });
+			} catch (err) {
+				// Static hosts without COEP/CORP worker headers (or file:// in
+				// Tauri) throw here; Monaco catches and runs on the main thread.
+				console.warn('[monaco] worker creation failed, using main thread:', err);
+				throw err;
 			}
-			return isTs ? new TSWorker() : new EditorWorker();
 		}
 	};
 

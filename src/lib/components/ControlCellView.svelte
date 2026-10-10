@@ -406,7 +406,7 @@
 									})}
 							>
 								<option value="">Auto</option>
-								{#each sourceColumns as col (col)}
+								{#each sourceColumns as col, i (`${col}::${i}`)}
 									<option value={col}>{col}</option>
 								{/each}
 							</NativeSelect>
@@ -659,13 +659,13 @@
 			value={String(config.value ?? '')}
 			onchange={(e) => setValue(e.currentTarget.value)}
 		>
-			{#each config.options as opt (opt.value)}
+			{#each config.options as opt, i (`${opt.value}::${i}`)}
 				<option value={opt.value}>{opt.label}</option>
 			{/each}
 		</NativeSelect>
 	{:else if config.kind === 'multiselect'}
 		<div class="flex flex-wrap gap-1.5">
-			{#each config.options as opt (opt.value)}
+			{#each config.options as opt, i (`${opt.value}::${i}`)}
 				<button
 					type="button"
 					class="rounded-md border px-2 py-1 text-xs transition-colors {Array.isArray(
@@ -825,7 +825,7 @@
 			<table class="w-full border-collapse text-left text-xs">
 				<thead class="sticky top-0 bg-muted/80">
 					<tr>
-						{#each columns as col (col)}
+						{#each columns as col, ci (`${col}::${ci}`)}
 							<th class="border-b border-border px-2 py-1.5 font-medium text-muted-foreground"
 								>{col}</th
 							>
@@ -835,7 +835,7 @@
 				<tbody>
 					{#each rows as row, idx (idx)}
 						<tr class="border-b border-border/50 last:border-b-0">
-							{#each columns as col (col)}
+							{#each columns as col, ci (`${col}::${ci}`)}
 								<td class="max-w-48 truncate px-2 py-1.5">{formatValue(row[col])}</td>
 							{/each}
 						</tr>

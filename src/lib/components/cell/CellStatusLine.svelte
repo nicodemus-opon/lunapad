@@ -288,7 +288,7 @@
 						</p>
 					{:else}
 						<div class="flex flex-col gap-1">
-							{#each cell.dbtTestResults as result (result.testName)}
+							{#each cell.dbtTestResults as result (`${result.testName}::${result.column ?? ''}`)}
 								<div class="flex items-center gap-2">
 									{#if result.status === 'pass'}
 										<CheckCircle2 class="h-3 w-3 shrink-0 text-success" />

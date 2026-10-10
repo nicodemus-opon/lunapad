@@ -175,6 +175,11 @@ export default defineConfig({
 		]
 	},
 	assetsInclude: ['**/*.wasm'],
+	worker: {
+		// Monaco workers are ESM; Vite defaults to iife which mismatches
+		// `new Worker(url, { type: 'module' })` and breaks COEP module workers.
+		format: 'es'
+	},
 	server: {
 		sourcemapIgnoreList(sourcePath) {
 			return sourcePath.includes('duckdb') && sourcePath.includes('.map');

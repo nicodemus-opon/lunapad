@@ -10,7 +10,10 @@ import type {
 
 declare global {
 	namespace App {
-		// interface Error {}
+		interface Error {
+			message: string;
+			requestId?: string;
+		}
 		interface Locals {
 			user: typeof auth.$Infer.Session.user | null;
 			session: typeof auth.$Infer.Session.session | null;

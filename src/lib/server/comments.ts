@@ -605,8 +605,26 @@ export async function countUnreadInbox(
 	userId: string,
 	tenant: { orgId?: string | null; projectId?: string | null } = {}
 ): Promise<number> {
-	const inbox = await getInbox(userId, tenant);
-	return inbox.filter((i) => i.thread.unread).length;
+	await ensureCommentsTablesOnce();
+	const orgId = tenant.orgId ?? DEFAULT_ORG_ID;
+	const projectId = tenant.projectId ?? DEFAULT_PROJECT_ID;
+	// Single-query count — avoids the N+1 getThread/listComments hydration in
+	// getInbox() (one query per thread + per comment reactions) that starved
+	// the pg pool when inbox + counts + presence + workspace fired together.
+	const rows = await query<{ count: string }>(
+		`SELECT COUNT(*)::text AS count FROM comment_threads t
+		 LEFT JOIN comment_read_state r ON r.thread_id = t.id AND r.user_id = $1
+		 LEFT JOIN LATERAL (
+		   SELECT MAX(c.created_at) AS latest
+		   FROM comments c WHERE c.thread_id = t.id AND c.deleted_at IS NULL
+		 ) c ON true
+		 WHERE t.status = 'open' AND t.org_id = $2 AND t.project_id = $3
+		   AND (t.assignee_id = $1 OR t.share_token IS NOT NULL)
+		   AND c.latest IS NOT NULL
+		   AND (r.last_read_at IS NULL OR c.latest > r.last_read_at)`,
+		[userId, orgId, projectId]
+	);
+	return Number(rows[0]?.count ?? 0);
 }
 
 export { extractMentions };

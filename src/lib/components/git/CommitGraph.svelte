@@ -64,7 +64,7 @@
 						stroke-width="1.5"
 					/>
 				{/if}
-				{#each row.parentLanes as parent (parent.hash + parent.lane)}
+				{#each row.parentLanes as parent, pi (`${parent.hash}:${parent.lane}:${pi}`)}
 					<line
 						x1={x(row.lane)}
 						y1={ROW_HEIGHT / 2}

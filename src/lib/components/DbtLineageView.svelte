@@ -395,7 +395,7 @@
 				width={canvasW}
 				height={canvasH}
 			>
-				{#each edges as edge (`${edge.from.entry.key}->${edge.to.entry.key}`)}
+				{#each edges as edge, ei (`${edge.from.entry.key}->${edge.to.entry.key}::${ei}`)}
 					{@const focused = isFocusedEdge(edge)}
 					{@const x2 = edge.to.x}
 					{@const y2 = edge.to.y + MID_Y}

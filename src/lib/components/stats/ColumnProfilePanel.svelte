@@ -63,7 +63,7 @@
 		<p class="py-6 text-center text-sm text-muted-foreground">No columns to profile.</p>
 	{:else if mode === 'compact'}
 		<div class="space-y-2">
-			{#each compactProfiles as profile (profile.column)}
+			{#each compactProfiles as profile, i (`${profile.column}::${i}`)}
 				<ColumnProfileCard {profile} compact />
 			{/each}
 			{#if profiles.length > 2}
@@ -89,7 +89,7 @@
 		</div>
 	{:else}
 		<div class="space-y-3 {fillHeight ? 'min-h-0 flex-1 overflow-y-auto' : ''}">
-			{#each profiles as profile (profile.column)}
+			{#each profiles as profile, i (`${profile.column}::${i}`)}
 				<ColumnProfileCard {profile} />
 			{/each}
 		</div>

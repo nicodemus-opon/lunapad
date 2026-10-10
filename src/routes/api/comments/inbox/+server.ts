@@ -8,24 +8,34 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!can(userFromLocals(locals.user), 'comments:read')) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
-	if (url.searchParams.get('count') === '1') {
-		const unread = await countUnreadInbox(locals.user.id, {
+	try {
+		if (url.searchParams.get('count') === '1') {
+			const unread = await countUnreadInbox(locals.user.id, {
+				orgId: locals.organization?.id,
+				projectId: locals.project?.id
+			});
+			return json({ unread });
+		}
+		const items = await getInbox(locals.user.id, {
 			orgId: locals.organization?.id,
 			projectId: locals.project?.id
 		});
-		return json({ unread });
+		return json({ items });
+	} catch (err) {
+		console.error('[comments inbox GET] failed:', err);
+		return json({ error: 'Failed to load inbox.' }, { status: 503 });
 	}
-	const items = await getInbox(locals.user.id, {
-		orgId: locals.organization?.id,
-		projectId: locals.project?.id
-	});
-	return json({ items });
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
-	const body = await request.json();
-	const threadIds = Array.isArray(body.threadIds) ? body.threadIds : [];
-	await markThreadsRead(locals.user.id, threadIds);
-	return json({ ok: true });
+	try {
+		const body = await request.json();
+		const threadIds = Array.isArray(body.threadIds) ? body.threadIds : [];
+		await markThreadsRead(locals.user.id, threadIds);
+		return json({ ok: true });
+	} catch (err) {
+		console.error('[comments inbox POST] failed:', err);
+		return json({ error: 'Failed to update inbox.' }, { status: 503 });
+	}
 };

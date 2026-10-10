@@ -27,7 +27,7 @@
 		class="h-7 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 	/>
 	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-		{#each filtered as profile (profile.column)}
+		{#each filtered as profile, i (`${profile.column}::${i}`)}
 			{@const Icon = KIND_ICON[profile.kind]}
 			{@const isSelected = selected === profile.column}
 			<button

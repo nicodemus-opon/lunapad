@@ -1,4 +1,4 @@
-import { json, type Handle, type RequestEvent } from '@sveltejs/kit';
+import { json, type Handle, type HandleServerError, type RequestEvent } from '@sveltejs/kit';
 import crypto from 'node:crypto';
 import { building } from '$app/environment';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
@@ -36,6 +36,7 @@ import { getSetupStatus } from '$lib/server/onboarding';
 import { cloudSignupOpen } from '$lib/server/cloud-config';
 import { assertCloudEnv } from '$lib/server/cloud-readiness';
 import { isRateLimitedShared, rateLimitIp } from '$lib/server/redis-rate-limit';
+import { captureServerException, initServerSentry } from '$lib/server/sentry';
 
 startShareRefreshWorker();
 startTrinoCatalogReconciler();
@@ -43,6 +44,9 @@ ensureBaseTrinoAccessFile().catch((err) =>
 	console.warn('[trino-access-control] failed to seed base rules file:', err)
 );
 if (!building) assertCloudEnv();
+// Sentry error reporting (no-op when SENTRY_DSN is empty). Reads DSN at call
+// time so Docker/Coolify runtime env needs no rebuild.
+if (!building) initServerSentry();
 
 // If a project folder is pre-configured via env (useful in Docker deployments),
 // set it so the Inngest scheduler function can immediately find due schedules.
@@ -249,7 +253,7 @@ function emailVerified(user: App.Locals['user']): boolean {
 	return Boolean((user as unknown as { emailVerified?: boolean })?.emailVerified);
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
+const baseHandle: Handle = async ({ event, resolve }) => {
 	const requestId = event.request.headers.get('X-Request-Id') ?? crypto.randomUUID();
 	event.locals.requestId = requestId;
 	const decorateResponse = (response: Response): Response => {
@@ -512,4 +516,39 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// but does NOT require CORP headers on same-origin resources (require-corp does, which
 	// blocks Workers served as static files from sirv that bypasses this hook).
 	return decorateResponse(response);
+};
+
+function sentryRequestContext(event: RequestEvent): {
+	url: string;
+	method: string;
+	userId?: string;
+	requestId?: string;
+} {
+	let pathname = event.url.pathname;
+	try {
+		pathname = new URL(event.url.pathname, 'http://localhost').pathname;
+	} catch {
+		// fall through with the raw pathname
+	}
+	return {
+		// Pathname only: query strings may carry tokens/secrets.
+		url: pathname,
+		method: event.request.method,
+		userId: event.locals.user?.id,
+		requestId: event.locals.requestId
+	};
+}
+
+export const handle: Handle = async (args) => {
+	try {
+		return await baseHandle(args);
+	} catch (err) {
+		void captureServerException(err, sentryRequestContext(args.event));
+		throw err;
+	}
+};
+
+export const handleError: HandleServerError = async ({ error, event }) => {
+	void captureServerException(error, sentryRequestContext(event));
+	return { message: 'An unexpected error occurred.', requestId: event.locals.requestId };
 };

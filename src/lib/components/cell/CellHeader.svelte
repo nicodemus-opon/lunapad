@@ -213,7 +213,7 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="w-auto max-w-96 space-y-2">
-							{#each cell.errors as error (error.display ?? error.reason)}
+							{#each cell.errors as error, errorIdx (errorIdx)}
 								<pre
 									class="font-mono text-xs whitespace-pre-wrap text-destructive">{error.display ??
 										error.reason}</pre>

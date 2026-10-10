@@ -486,7 +486,7 @@
 								)}
 
 								{#if tableExpanded}
-									{#each table.columns.slice(0, limitFor(tableNodeKey)) as column, colIdx (column)}
+									{#each table.columns.slice(0, limitFor(tableNodeKey)) as column, colIdx (`${column}::${colIdx}`)}
 										{@render columnRow(column, table.columnTypes[colIdx], `${rawName}.${column}`)}
 									{/each}
 									{@render showMoreRow(tableNodeKey, table.columns.length, 3)}

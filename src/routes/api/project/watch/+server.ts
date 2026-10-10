@@ -37,9 +37,40 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 			// Send a heartbeat immediately so the client knows it's connected
 			send({ type: 'connected' });
 
+			// Heartbeat every 20s keeps Cloudflare / reverse proxies from killing
+			// the idle SSE connection (otherwise ERR_QUIC_PROTOCOL_ERROR / closed).
+			const heartbeat = setInterval(() => {
+				try {
+					controller.enqueue(encoder.encode(`: ping\n\n`));
+				} catch {
+					clearInterval(heartbeat);
+				}
+			}, 20_000);
+
+			function cleanup(watcher: ReturnType<typeof fs.watch> | null): void {
+				clearInterval(heartbeat);
+				try {
+					watcher?.close();
+				} catch {
+					/* ignore */
+				}
+				try {
+					controller.close();
+				} catch {
+					/* ignore */
+				}
+			}
+
 			let watcher: ReturnType<typeof fs.watch> | null = null;
 			try {
-				watcher = fs.watch(folder, { recursive: true }, (eventType, filename) => {
+				// recursive watch is only supported on macOS/Windows; on Linux
+				// (e.g. /app/projects Docker deploys) it throws — keep the
+				// connection alive with heartbeats instead of closing instantly.
+				const watchOpts: { recursive: boolean } =
+					process.platform === 'darwin' || process.platform === 'win32'
+						? { recursive: true }
+						: { recursive: false };
+				watcher = fs.watch(folder, watchOpts, (eventType, filename) => {
 					if (!filename) return;
 					const normalized = filename.replace(/\\/g, '/');
 
@@ -62,18 +93,25 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 				});
 
 				watcher.on('error', () => {
-					try { controller.close(); } catch { /* ignore */ }
+					cleanup(watcher);
 				});
 			} catch {
-				try { controller.close(); } catch { /* ignore */ }
+				// Watch unsupported (e.g. Linux recursive) — stay connected so the
+				// client doesn't spin; heartbeats keep the socket alive.
 				return;
 			}
 
 			// Clean up when client disconnects
 			request.signal.addEventListener('abort', () => {
-				watcher?.close();
-				try { controller.close(); } catch { /* ignore */ }
+				cleanup(watcher);
 			});
+		},
+		cancel() {
+			try {
+				// No direct watcher ref here; abort handler covers cleanup.
+			} catch {
+				/* ignore */
+			}
 		}
 	});
 
@@ -81,7 +119,8 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
-			Connection: 'keep-alive'
+			Connection: 'keep-alive',
+			'X-Accel-Buffering': 'no'
 		}
 	});
 };

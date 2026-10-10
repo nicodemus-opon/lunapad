@@ -19,7 +19,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!can(user, 'workspace:write')) {
 		return json({ error: 'Forbidden' }, { status: 403 });
 	}
-	const body = (await request.json()) as Partial<SaveWorkspaceRequest>;
+	// Guard oversized payloads before parsing (Cloudflare/proxy 520 on giant blobs).
+	const contentLength = Number(request.headers.get('content-length') ?? 0);
+	if (contentLength > 8_000_000) {
+		return json({ error: 'Workspace payload too large.' }, { status: 413 });
+	}
+	let body: Partial<SaveWorkspaceRequest>;
+	try {
+		body = (await request.json()) as Partial<SaveWorkspaceRequest>;
+	} catch {
+		return json({ error: 'Invalid JSON workspace payload.' }, { status: 400 });
+	}
 	if (!body || typeof body !== 'object' || !('data' in body)) {
 		return json({ error: 'Workspace payload is required.' }, { status: 400 });
 	}

@@ -66,7 +66,7 @@
 
 	const effectiveOptions = $derived.by((): string[] => {
 		if (!Array.isArray(options)) return [];
-		return options
+		const mapped = options
 			.map((opt) => {
 				if (typeof opt === 'string' || typeof opt === 'number') return String(opt);
 				if (optionsColumn && opt && typeof opt === 'object')
@@ -74,6 +74,9 @@
 				return null;
 			})
 			.filter((v): v is string => v !== null && v !== '');
+		// Dedupe: repeated values (e.g. optionsColumn over N rows) would otherwise
+		// produce duplicate {#each} keys and crash with each_key_duplicate.
+		return [...new Set(mapped)];
 	});
 
 	const value = $derived(param ? ctx.getValue(param) || defaultValue || '' : defaultValue || '');
@@ -151,7 +154,7 @@
 				onchange={(e) => onChange((e.target as HTMLSelectElement).value)}
 			>
 				{#if !defaultValue}<option value="">All</option>{/if}
-				{#each kind === 'searchable-dropdown' ? filteredSearchOptions : effectiveOptions as opt (opt)}
+				{#each kind === 'searchable-dropdown' ? filteredSearchOptions : effectiveOptions as opt, i (`${opt}::${i}`)}
 					<option value={opt}>{opt}</option>
 				{/each}
 			</NativeSelect>
@@ -189,7 +192,7 @@
 				}}
 				class="md-filter-buttons"
 			>
-				{#each effectiveOptions as opt (opt)}
+				{#each effectiveOptions as opt, i (`${opt}::${i}`)}
 					<ToggleGroup.Item value={opt} class="md-filter-btn" aria-label={opt}
 						>{opt}</ToggleGroup.Item
 					>
@@ -202,7 +205,7 @@
 				onValueChange={(next) => onChange(next.join(','))}
 				class="md-filter-multiselect"
 			>
-				{#each effectiveOptions as opt (opt)}
+				{#each effectiveOptions as opt, i (`${opt}::${i}`)}
 					<ToggleGroup.Item value={opt} class="md-filter-btn" aria-label={opt}
 						>{opt}</ToggleGroup.Item
 					>

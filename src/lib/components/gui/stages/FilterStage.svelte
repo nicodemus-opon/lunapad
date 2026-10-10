@@ -229,7 +229,7 @@
 			<div class="space-y-1.5">
 				{#if selected.length > 0}
 					<div class="flex flex-wrap gap-1">
-						{#each selected as item (item)}
+						{#each selected as item, i (`${item}::${i}`)}
 							<span
 								class="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-2xs"
 							>
@@ -247,7 +247,7 @@
 				{/if}
 				{#if distinctVals.length > 0}
 					<div class="max-h-36 divide-y overflow-y-auto rounded-md border border-border text-xs">
-						{#each distinctVals as val (val)}
+						{#each distinctVals as val, i (`${val}::${i}`)}
 							{@const checked = selected.includes(val)}
 							<label class="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-muted/50">
 								<input

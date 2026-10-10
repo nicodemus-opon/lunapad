@@ -10,7 +10,7 @@
 
 {#if hints.length > 0}
 	<div class="flex flex-wrap items-center gap-1.5">
-		{#each hints as hint (hint)}
+		{#each hints as hint, i (i)}
 			<span
 				class="inline-flex items-center gap-1 rounded-md border border-border bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
 			>

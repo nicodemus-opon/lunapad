@@ -107,7 +107,7 @@
 				{#if optionsCell}
 					<NativeSelect bind:value={optionsColumn} class="h-7 text-xs">
 						<option value="">Select column…</option>
-						{#each cellColumns as col (col.name)}
+						{#each cellColumns as col, i (`${col.name}::${i}`)}
 							<option value={col.name}>{col.name}</option>
 						{/each}
 					</NativeSelect>

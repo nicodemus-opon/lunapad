@@ -9,6 +9,6 @@ declare module 'monaco-editor/esm/vs/basic-languages/sql/sql.js' {
 }
 
 declare module '*?worker' {
-	const workerConstructor: new (options?: { name?: string }) => Worker;
+	const workerConstructor: new (options?: { name?: string; type?: 'classic' | 'module' }) => Worker;
 	export default workerConstructor;
 }
