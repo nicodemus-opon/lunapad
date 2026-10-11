@@ -127,6 +127,26 @@ describe('walkProjectDirectory', () => {
 		expect(reportNb).toBeDefined();
 		const names = reportNb!.cells.map((c) => c.outputName);
 		expect(names).toEqual(['metrics', 'metrics_copy']);
+		// Regression: both entries derived id "metrics" from the shared name,
+		// which crashed lineage with each_key_duplicate. Ids must be unique.
+		const ids = new Set(reportNb!.cells.map((c) => c.id));
+		expect(ids.size).toBe(reportNb!.cells.length);
+	});
+
+	it('keeps cell ids unique when a .luna entry collides with a file-backed model', async () => {
+		await write('models/orders.prql', 'from raw_orders');
+		await write(
+			'notebooks/report.luna',
+			['{% query name="orders" lang="prql" %}', 'from orders', '{% /query %}'].join('\n')
+		);
+
+		const { notebooks } = await walkProjectDirectory(dir);
+		const cells = notebooks.flatMap((n) =>
+			n.cells.filter((c) => !c.promotedModelPath && c.outputName.startsWith('orders'))
+		);
+		expect(cells.length).toBe(2);
+		const ids = new Set(cells.map((c) => c.id));
+		expect(ids.size).toBe(cells.length);
 	});
 
 	it('deconflicts a manifest-fallback model against an existing on-disk model name', async () => {

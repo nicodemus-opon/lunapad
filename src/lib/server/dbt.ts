@@ -160,7 +160,10 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 			upstreamRefs,
 			materialized: (node.config?.materialized ?? 'view') as DbtModel['materialized'],
 			lastRunStatus: statusMap.get(nodeId) ?? 'unknown',
-			path: node.path ? stripModelPathPrefix(node.path, modelPaths) : '',
+			// Fall back to the manifest node id (unique per node) when the
+			// node carries no path — an empty-string path would collide across
+			// nodes and crash Svelte's keyed each-blocks downstream.
+			path: node.path ? stripModelPathPrefix(node.path, modelPaths) : nodeId,
 			tags: normalizeTags(node.tags ?? node.config?.tags)
 		});
 	}

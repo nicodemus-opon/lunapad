@@ -26,11 +26,24 @@ function claimOutputName(used: Set<string>, name: string): string {
 }
 
 /** Mutates `cell` in place so its id/outputName/materializeTarget agree after
- *  a (possible) `claimOutputName` rename. No-op for cells with no outputName
- *  (e.g. markdown cells, or UDF/query cells that already fell back to a
- *  crypto.randomUUID() id because their name couldn't be parsed). */
-function claimCellOutputName(used: Set<string>, cell: Cell, preserveId = false): void {
-	if (!cell.outputName) return;
+ *  a (possible) `claimOutputName` rename. `usedIds` tracks every cell id
+ *  claimed project-wide: `.luna` entries derive their id from their name
+ *  (`id = name` when no explicit cellId is stored), so two entries sharing a
+ *  name would otherwise keep the same id after the outputName deconflict —
+ *  producing duplicate keys that crash Svelte's keyed each-blocks in
+ *  DbtLineageView (each_key_duplicate). When `preserveId` is set the explicit
+ *  id is kept unless it collides, in which case it falls back to the
+ *  (already unique) claimed outputName. */
+function claimCellOutputName(
+	used: Set<string>,
+	cell: Cell,
+	preserveId = false,
+	usedIds?: Set<string>
+): void {
+	if (!cell.outputName) {
+		if (usedIds) cell.id = claimCellId(usedIds, cell.id);
+		return;
+	}
 	const claimed = claimOutputName(used, cell.outputName);
 	if (claimed !== cell.outputName) {
 		cell.outputName = claimed;
@@ -38,6 +51,31 @@ function claimCellOutputName(used: Set<string>, cell: Cell, preserveId = false):
 		cell.materializeTarget = claimed;
 		if (cell.controlConfig) cell.controlConfig = { ...cell.controlConfig, name: claimed };
 	}
+	if (usedIds) {
+		// File-backed cells use outputName as id (unique by construction
+		// above); luna cells keep their stored id unless it collides.
+		if (!preserveId) {
+			cell.id = claimCellId(usedIds, cell.id);
+		} else if (usedIds.has(cell.id)) {
+			cell.id = claimCellId(usedIds, claimed);
+		} else {
+			usedIds.add(cell.id);
+		}
+	}
+}
+
+/** Reserves `candidate` in `usedIds`, suffixing with `_copy`, `_copy2`, … on
+ *  collision (falling back to a UUID when even the outputName-derived base is
+ *  taken). Returns the reserved id. */
+function claimCellId(usedIds: Set<string>, candidate: string): string {
+	const base = candidate || crypto.randomUUID();
+	if (!usedIds.has(base)) {
+		usedIds.add(base);
+		return base;
+	}
+	const deduped = deconflictName(usedIds, base);
+	usedIds.add(deduped);
+	return deduped;
 }
 
 export interface AuditResult {
@@ -515,6 +553,10 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	// (e.g. two files with the same name in different folders) are deconflicted
 	// here, at load time, rather than silently producing duplicate cell ids.
 	const usedOutputNames = new Set<string>();
+	// Cell ids must be project-wide unique too: Svelte keyed each-blocks
+	// (lineage, report pages) throw each_key_duplicate on a collision, and
+	// id-based lookups (findCellContext) resolve to the wrong cell.
+	const usedCellIds = new Set<string>();
 
 	// Collected during the walk: cells that belong to another notebook via @notebook header.
 	// Appended in a post-processing pass after all standalone notebooks are built.
@@ -585,7 +627,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 					// Secondary cell: belongs to another notebook via @notebook annotation
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
 				} else {
-					claimCellOutputName(usedOutputNames, cell);
+					claimCellOutputName(usedOutputNames, cell, false, usedCellIds);
 					const notebook: Notebook = {
 						id: notebookId,
 						name: cell.outputName,
@@ -616,7 +658,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 				if (targetNbId) {
 					secondaryCells.push({ targetNotebookId: targetNbId, cell });
 				} else {
-					claimCellOutputName(usedOutputNames, cell);
+					claimCellOutputName(usedOutputNames, cell, false, usedCellIds);
 					const notebook: Notebook = {
 						id: notebookId,
 						name: cell.outputName,
@@ -640,7 +682,8 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 				const cells = await hydrateLunaEntries(
 					parseLunaFile(content).entries,
 					folder,
-					usedOutputNames
+					usedOutputNames,
+					usedCellIds
 				);
 				notebooks.push({
 					id: notebookId,
@@ -680,7 +723,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	await walkDir(path.join(folder, 'models'), 'models', null);
 
 	// Notebooks section: `.luna` multi-cell notebooks, parallel to models/analyses.
-	await walkNotebooksDirectory(folder, notebooks, folders, usedOutputNames);
+	await walkNotebooksDirectory(folder, notebooks, folders, usedOutputNames, usedCellIds);
 
 	// Post-process: append secondary cells to their target notebooks.
 	// Files with a -- @notebook header belong to a multi-cell notebook rather than
@@ -688,7 +731,7 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	for (const { targetNotebookId, cell } of secondaryCells) {
 		const targetNb = notebooks.find((n) => n.id === targetNotebookId);
 		if (targetNb) {
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			targetNb.cells.push(cell);
 		}
 		// If the target notebook doesn't exist (e.g. its primary file is missing),
@@ -700,7 +743,14 @@ export async function walkProjectDirectory(folder: string): Promise<ProjectNoteb
 	// This covers dbt projects where .sql source files were deleted or never
 	// committed — the raw_code in the manifest is the original source SQL.
 	const notebookIds = new Set(notebooks.map((n) => n.id));
-	await loadMissingModelsFromManifest(folder, notebookIds, notebooks, folders, usedOutputNames);
+	await loadMissingModelsFromManifest(
+		folder,
+		notebookIds,
+		notebooks,
+		folders,
+		usedOutputNames,
+		usedCellIds
+	);
 
 	return { notebooks, folders };
 }
@@ -726,7 +776,8 @@ async function loadMissingModelsFromManifest(
 	existingNotebookIds: Set<string>,
 	notebooks: Notebook[],
 	folders: NotebookFolder[],
-	usedOutputNames: Set<string>
+	usedOutputNames: Set<string>,
+	usedCellIds?: Set<string>
 ): Promise<void> {
 	let manifest: { nodes?: Record<string, ManifestNode> };
 	try {
@@ -763,6 +814,7 @@ async function loadMissingModelsFromManifest(
 		const mat = matMap[node.config?.materialized ?? ''] ?? 'table';
 
 		const outputName = claimOutputName(usedOutputNames, node.name);
+		const cellId = usedCellIds ? claimCellId(usedCellIds, outputName) : outputName;
 		// folderId = parent directory of the model (e.g. "models/staging/links")
 		const parts = notebookId.split('/');
 		const folderId = parts.length > 2 ? parts.slice(0, -1).join('/') : null;
@@ -788,7 +840,7 @@ async function loadMissingModelsFromManifest(
 		}
 
 		const cell: Cell = {
-			id: outputName,
+			id: cellId,
 			cellType: 'query',
 			language: 'sql',
 			connectionId: null,
@@ -872,7 +924,8 @@ async function walkNotebooksDirectory(
 	folder: string,
 	notebooks: Notebook[],
 	folders: NotebookFolder[],
-	usedOutputNames: Set<string>
+	usedOutputNames: Set<string>,
+	usedCellIds?: Set<string>
 ): Promise<void> {
 	const notebooksDir = path.join(folder, 'notebooks');
 	let hasContent = false;
@@ -921,7 +974,8 @@ async function walkNotebooksDirectory(
 				const cells = await hydrateLunaEntries(
 					parseLunaFile(content).entries,
 					folder,
-					usedOutputNames
+					usedOutputNames,
+					usedCellIds
 				);
 				notebooks.push({
 					id: notebookId,
@@ -973,7 +1027,8 @@ async function findModelFilePath(projectFolder: string, modelName: string): Prom
 async function hydrateLunaEntries(
 	entries: LunaEntry[],
 	projectRoot: string,
-	usedOutputNames: Set<string>
+	usedOutputNames: Set<string>,
+	usedCellIds?: Set<string>
 ): Promise<Cell[]> {
 	const cells: Cell[] = [];
 	for (let i = 0; i < entries.length; i++) {
@@ -983,36 +1038,39 @@ async function hydrateLunaEntries(
 			// (unlike query/udf/plot cells, keyed by outputName) — fall back to
 			// document position so the id survives a save+reparse round-trip and
 			// the in-memory merge in loadProjectNotebooks() can still match it up.
+			// Positional ids repeat across notebooks by design; markdown cells
+			// are excluded from lineage/report keyed lists, so they stay out of
+			// the project-wide id registry.
 			cells.push(buildMarkdownCell(entry.markdown, i, entry.editMode));
 			continue;
 		}
 		if (entry.kind === 'query') {
 			const cell = buildQueryCellFromLuna(entry);
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'udf') {
 			const cell = buildUdfCellFromLuna(entry.udfBody);
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'plot') {
 			const cell = buildPlotCellFromLuna(entry.name, entry.code, entry.meta, entry.cellId);
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'python') {
 			const cell = buildPythonCellFromLuna(entry.name, entry.code, entry.cellId);
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			cells.push(cell);
 			continue;
 		}
 		if (entry.kind === 'control') {
 			const cell = buildControlCellFromLuna(entry);
-			claimCellOutputName(usedOutputNames, cell, true);
+			claimCellOutputName(usedOutputNames, cell, true, usedCellIds);
 			cells.push(cell);
 			continue;
 		}
@@ -1049,7 +1107,7 @@ async function hydrateLunaEntries(
 			meta: {},
 			code: ''
 		});
-		claimCellOutputName(usedOutputNames, stub, true);
+		claimCellOutputName(usedOutputNames, stub, true, usedCellIds);
 		cells.push({ ...stub, promotedModelPath: relPath ?? '' });
 	}
 	// Resolve plotSourceCellName -> id now that every cell's final (deconflicted)

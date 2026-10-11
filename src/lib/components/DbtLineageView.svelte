@@ -77,7 +77,11 @@
 	const lineageEntries = $derived.by((): LineageEntry[] => {
 		const modelEntries: ModelEntry[] = dbtModels.map((model) => ({
 			kind: 'model',
-			key: model.path,
+			// Namespaced by kind: a live cell id can equal a model outputName
+			// (file-backed cells use outputName as id), and raw model paths
+			// may be empty when the manifest omits them — neither may collide
+			// in the keyed {#each} below (each_key_duplicate crashes the tab).
+			key: `model:${model.path || model.name}`,
 			name: model.name,
 			upstreamRefs: model.upstreamRefs,
 			model
@@ -97,7 +101,7 @@
 				}
 				cellEntries.push({
 					kind: 'cell',
-					key: cell.id,
+					key: `cell:${cell.id}`,
 					name: cell.outputName,
 					upstreamRefs: refs,
 					cell,
@@ -105,6 +109,21 @@
 					notebookName: nb.name
 				});
 			}
+		}
+		// Last-resort dedupe: ids are expected unique project-wide, but a
+		// stale manifest or a duplicated notebook file can still produce
+		// collisions. Svelte keyed each-blocks throw on duplicates, so suffix
+		// repeats instead of crashing the whole lineage tab.
+		const seen = new Set<string>();
+		for (const entry of [...modelEntries, ...cellEntries]) {
+			if (!seen.has(entry.key)) {
+				seen.add(entry.key);
+				continue;
+			}
+			let n = 2;
+			while (seen.has(`${entry.key}#${n}`)) n++;
+			entry.key = `${entry.key}#${n}`;
+			seen.add(entry.key);
 		}
 		return [...modelEntries, ...cellEntries];
 	});

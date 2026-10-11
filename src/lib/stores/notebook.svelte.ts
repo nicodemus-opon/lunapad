@@ -2908,12 +2908,15 @@ export async function loadProjectNotebooks(): Promise<void> {
  *  Cells with `promotedModelPath` set are deliberately excluded: a `.luna`
  *  notebook's `model` ref intentionally mirrors a standalone model cell's
  *  id/outputName elsewhere in the project (see hydrateLunaEntries in
- *  project.ts) — that's a feature, not a collision. */
+ *  project.ts) — that's a feature, not a collision. Markdown cells are
+ *  excluded too: their ids are positional (`md-<index>`) within each notebook
+ *  by design and repeat across notebooks. */
 function warnOnDuplicateCellIds(): void {
 	const seen = new Map<string, string>(); // id -> notebookId
 	for (const nb of state.notebooks) {
 		for (const c of nb.cells) {
 			if (c.promotedModelPath) continue;
+			if (c.cellType === 'markdown') continue;
 			const prevNotebookId = seen.get(c.id);
 			if (prevNotebookId !== undefined) {
 				console.error(
