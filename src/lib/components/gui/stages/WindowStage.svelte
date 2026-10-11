@@ -96,7 +96,7 @@
 				value={key.column}
 				suggestions={availableColumns}
 				placeholder="column…"
-				class="px-2 py-1 font-mono text-xs {invalid ? 'text-destructive/70' : ''}"
+				class="px-2 {invalid ? 'text-destructive/70' : ''}"
 				oncommit={(v) => updateSortKey(idx, { column: v })}
 			/>
 
@@ -117,7 +117,7 @@
 				suggestions={availableColumns}
 				initialEditing={true}
 				placeholder="column…"
-				class="px-2 py-1 font-mono text-xs"
+				class="px-2"
 				oncommit={commitAddSort}
 				oncancel={() => (pendingNewSort = false)}
 			/>

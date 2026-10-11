@@ -92,7 +92,7 @@
 	data-trend={trend ?? undefined}
 	data-size={size !== 'default' ? size : undefined}
 	data-layout={layout === 'row' ? 'row' : undefined}
-	style:grid-column={span && span > 1 ? `span ${span}` : undefined}
+	style:--md-span={span && span > 1 ? `span ${span}` : undefined}
 	style:--md-metric-accent={accentToken}
 >
 	{#if layout === 'row'}

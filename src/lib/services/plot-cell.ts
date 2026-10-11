@@ -50,7 +50,8 @@ function asFigure(result: unknown): PlotCellFigure {
 export function runPlotCode(code: string, scope: PlotCellScope): PlotCellFigure {
 	const names = Object.keys(scope);
 	const values = names.map((n) => scope[n]);
-	// eslint-disable-next-line no-new-func
+	// Deliberate `new Function`: sandboxed plot-DSL evaluator over caller-supplied
+	// rows/columns (would trip no-new-func if that rule were enabled).
 	const fn = new Function(...names, `'use strict'; ${code}`);
 	const result = fn(...values);
 	if (result === undefined) {
@@ -85,7 +86,7 @@ export function evaluateCustomChartCode(
 	columns: string[]
 ): PlotCellResult {
 	try {
-		// eslint-disable-next-line no-new-func
+		// Deliberate `new Function`: sandboxed plot-DSL evaluator (see above).
 		const fn = new Function('rows', 'columns', `'use strict'; ${code}`);
 		const result = fn(rows, columns);
 		if (result === undefined) {

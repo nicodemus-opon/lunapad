@@ -143,7 +143,7 @@
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns}
-					class="px-2 py-1 font-mono text-xs"
+					class="px-2"
 					oncommit={(v) => renameCol(idx, v)}
 					oncancel={() => {
 						if (!col) remove(col);
@@ -164,7 +164,7 @@
 				suggestions={unselected}
 				initialEditing={true}
 				placeholder="column…"
-				class="px-2 py-1 font-mono text-xs"
+				class="px-2"
 				oncommit={commitPending}
 				oncancel={cancelPending}
 			/>

@@ -264,7 +264,7 @@
 						type="button"
 						variant="ghost"
 						size="sm"
-						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						class="flex w-full rounded px-2 py-1 text-left text-xs hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
 						onmousedown={(e) => {
 							e.preventDefault();
 							opt.action();

@@ -8,7 +8,6 @@ export interface DashboardTemplate {
 	name: string;
 	description: string;
 	category: TemplateCategory;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	icon: Component<any>;
 	build: () => Notebook;
 }

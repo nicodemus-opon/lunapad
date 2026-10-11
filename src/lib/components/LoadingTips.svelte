@@ -53,9 +53,7 @@
 		<Logo class="h-6 w-6 text-primary" />
 	</div>
 	<div class="flex h-10 max-w-sm flex-col items-center gap-2 px-6 text-center">
-		<span class="text-[10px] font-medium tracking-[0.2em] text-muted-foreground/50 uppercase"
-			>Tip</span
-		>
+		<span class="text-kicker text-muted-foreground/50">Tip</span>
 		{#key index}
 			<p class="text-sm text-muted-foreground" in:fade={{ duration: 300 }}>{TIPS[index]}</p>
 		{/key}

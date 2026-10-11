@@ -46,8 +46,8 @@
 
 <!-- Panel -->
 <div
-	class="flex shrink-0 flex-col border-l border-border bg-background"
-	style="width: {width}px;"
+	class="flex w-(--ai-panel-w) shrink-0 flex-col border-l border-border bg-background"
+	style:--ai-panel-w="{width}px"
 	data-testid="ai-panel"
 >
 	<!-- Header -->

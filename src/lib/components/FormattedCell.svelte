@@ -111,8 +111,8 @@
 {:else if format.kind === 'category'}
 	<span class="inline-flex items-center gap-1.5 text-xs">
 		<span
-			class="h-1.5 w-1.5 shrink-0 rounded-full"
-			style="background-color: var(--tag-{paletteSeedForValue(plainText) + 1})"
+			class="h-1.5 w-1.5 shrink-0 rounded-full bg-(--dot)"
+			style:--dot="var(--tag-{paletteSeedForValue(plainText) + 1})"
 		></span>
 		<span class="truncate">{plainText}</span>
 	</span>

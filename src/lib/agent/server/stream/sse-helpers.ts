@@ -262,7 +262,6 @@ export function normalizeToolCallArgs(obj: Record<string, unknown>): Record<stri
 		}
 	}
 	// Flat format: every key except tool/callId/args/arguments/name/parameters is an arg
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const { tool: _t, callId: _c, args: _a, arguments: _ar, name: _n, parameters: _p, ...rest } = obj;
 	return rest;
 }

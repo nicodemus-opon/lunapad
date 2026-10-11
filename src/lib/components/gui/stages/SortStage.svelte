@@ -100,7 +100,7 @@
 				value={key.column || ''}
 				suggestions={availableColumns}
 				placeholder="column…"
-				class="px-2 py-1 font-mono text-xs"
+				class="px-2"
 				oncommit={(v) => updateKey(idx, { column: v })}
 			/>
 
@@ -122,7 +122,7 @@
 				suggestions={availableColumns}
 				initialEditing={true}
 				placeholder="column…"
-				class="px-2 py-1 font-mono text-xs"
+				class="px-2"
 				oncommit={commitPending}
 				oncancel={cancelPending}
 			/>

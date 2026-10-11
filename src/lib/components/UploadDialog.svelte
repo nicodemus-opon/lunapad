@@ -151,7 +151,6 @@
 	$effect(() => {
 		if (!file || !buffer || !format) return;
 		if (isCsvLike) {
-			// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 			hasHeader; // track for re-parse on toggle
 		}
 		parseFile();
@@ -308,7 +307,7 @@
 			<div
 				class="flex h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed transition-[border-color,background-color,box-shadow] duration-(--motion-medium) select-none
 					{dragOver
-					? 'border-primary bg-primary/10 text-foreground shadow-[inset_0_0_0_3px_oklch(from_var(--primary)_l_c_h/0.08)]'
+					? 'border-primary bg-primary/10 text-foreground dropzone-glow'
 					: file
 						? 'border-border bg-muted/15 text-foreground hover:border-primary'
 						: 'surface-inset border-border text-muted-foreground hover:border-primary hover:bg-muted/15'}"
@@ -373,7 +372,7 @@
 							>
 							<Select.Content>
 								{#each connections as conn (conn.id)}
-									<Select.Item value={conn.id} class="text-xs">{connectionLabel(conn)}</Select.Item>
+									<Select.Item value={conn.id}>{connectionLabel(conn)}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>

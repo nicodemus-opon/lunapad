@@ -26,8 +26,8 @@
 
 <div
 	class="md-progress"
-	style="--md-progress-token: {token}"
-	style:grid-column={span && span > 1 ? `span ${span}` : undefined}
+	style:--md-progress-token={token}
+	style:--md-span={span && span > 1 ? `span ${span}` : undefined}
 >
 	{#if label}<div class="md-progress-label">{label}</div>{/if}
 	<Progress value={pct} max={100} class="md-progress-track" />

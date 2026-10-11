@@ -1259,7 +1259,10 @@
 	}
 </script>
 
-<div class="chart-view flex w-full flex-col rounded-md border bg-background p-4" style="height:{height}px">
+<div
+	class="chart-view flex h-(--h) w-full flex-col rounded-md border bg-background p-4"
+	style:--h="{height}px"
+>
 	{#if config.title}
 		<div class="mb-1 shrink-0 px-1">
 			<p class="text-sm leading-tight font-medium text-foreground">{config.title}</p>

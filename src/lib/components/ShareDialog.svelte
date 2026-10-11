@@ -456,10 +456,10 @@
 										>Poll {pollIntervalSeconds}s</Select.Trigger
 									>
 									<Select.Content>
-										<Select.Item value="60" class="text-xs">1 min</Select.Item>
-										<Select.Item value="300" class="text-xs">5 min</Select.Item>
-										<Select.Item value="900" class="text-xs">15 min</Select.Item>
-										<Select.Item value="3600" class="text-xs">1 hr</Select.Item>
+										<Select.Item value="60">1 min</Select.Item>
+										<Select.Item value="300">5 min</Select.Item>
+										<Select.Item value="900">15 min</Select.Item>
+										<Select.Item value="3600">1 hr</Select.Item>
 									</Select.Content>
 								</Select.Root>
 							</div>
@@ -479,9 +479,9 @@
 										{expiresAt ? 'Custom' : 'Never'}
 									</Select.Trigger>
 									<Select.Content>
-										<Select.Item value="never" class="text-xs">Never</Select.Item>
-										<Select.Item value="7d" class="text-xs">7 days</Select.Item>
-										<Select.Item value="30d" class="text-xs">30 days</Select.Item>
+										<Select.Item value="never">Never</Select.Item>
+										<Select.Item value="7d">7 days</Select.Item>
+										<Select.Item value="30d">30 days</Select.Item>
 									</Select.Content>
 								</Select.Root>
 							</div>
@@ -504,10 +504,10 @@
 												: 'Weekly'}
 								</Select.Trigger>
 								<Select.Content>
-									<Select.Item value="0" class="text-xs">Off</Select.Item>
-									<Select.Item value="1" class="text-xs">Hourly</Select.Item>
-									<Select.Item value="24" class="text-xs">Daily</Select.Item>
-									<Select.Item value="168" class="text-xs">Weekly</Select.Item>
+									<Select.Item value="0">Off</Select.Item>
+									<Select.Item value="1">Hourly</Select.Item>
+									<Select.Item value="24">Daily</Select.Item>
+									<Select.Item value="168">Weekly</Select.Item>
 								</Select.Content>
 							</Select.Root>
 						</div>

@@ -153,7 +153,7 @@
 			{/if}
 
 			<textarea
-				class="min-h-[52px] w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+				class="min-h-15 w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
 				placeholder="Custom instructions (e.g. always use UTC timestamps, surrogate keys for dimensions…)"
 				value={standards.customInstructions}
 				oninput={(e) => updateInstructions((e.target as HTMLTextAreaElement).value)}

@@ -165,8 +165,10 @@
 	<span
 		bind:this={mirror}
 		aria-hidden="true"
-		class={cn('pointer-events-none invisible absolute whitespace-pre', className)}
-		>{draft || placeholder}</span
+		class={cn(
+			'pointer-events-none invisible absolute py-1 font-mono text-xs whitespace-pre',
+			className
+		)}>{draft || placeholder}</span
 	>
 
 	{#if editing}
@@ -176,7 +178,7 @@
 			value={draft}
 			{placeholder}
 			style="width: {mirrorWidth}px"
-			class={cn('min-w-4 bg-transparent outline-none', className)}
+			class={cn('min-w-4 bg-transparent py-1 font-mono text-xs outline-none', className)}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
 			onblur={handleBlur}
@@ -205,7 +207,7 @@
 	{:else}
 		<button
 			type="button"
-			class={cn('cursor-text bg-transparent text-left', className)}
+			class={cn('cursor-text bg-transparent py-1 text-left font-mono text-xs', className)}
 			onclick={startEdit}
 		>
 			{value || placeholder}

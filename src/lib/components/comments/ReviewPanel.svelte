@@ -148,8 +148,8 @@
 </div>
 
 <div
-	class="flex shrink-0 flex-col border-l border-border bg-sidebar"
-	style="width: {width}px;"
+	class="flex w-(--review-w) shrink-0 flex-col border-l border-border bg-sidebar"
+	style:--review-w="{width}px"
 	data-testid="review-panel"
 >
 	<div class="flex h-9 shrink-0 items-center justify-between border-b border-border px-2.5">
@@ -343,7 +343,7 @@
 						</button>
 					{/if}
 					<Textarea
-						class="min-h-[64px] resize-none border-border bg-background text-xs"
+						class="min-h-18 resize-none border-border bg-background text-xs"
 						placeholder="Reply… @{teamUsers[0]?.mention ?? 'name'} to mention"
 						bind:value={composer}
 						onkeydown={(e) => {

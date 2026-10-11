@@ -83,7 +83,7 @@
 			<InlineChipLabel
 				value={stage.alias}
 				placeholder="alias…"
-				class="px-1.5 py-1 font-mono text-xs text-muted-foreground"
+				class="px-1.5 text-muted-foreground"
 				oncommit={(v) => onUpdate({ ...stage, alias: v || undefined })}
 			/>
 			<span class={CHIP_META}>=</span>
@@ -94,7 +94,7 @@
 			value={stage.table || ''}
 			suggestions={availableTables}
 			placeholder="table…"
-			class="px-1.5 py-1 font-mono text-xs"
+			class="px-1.5"
 			oncommit={(v) =>
 				onUpdate({
 					...stage,

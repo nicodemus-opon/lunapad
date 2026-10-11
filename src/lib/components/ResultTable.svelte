@@ -614,11 +614,10 @@
 				</div>
 			{/if}
 			<Table.Root
-				class="result-table"
+				class="result-table {hasResizedColumns ? 'table-fixed' : ''}"
 				containerClass="rounded-sm border border-border {fillHeight
 					? 'min-h-0 w-full max-w-full flex-1 overflow-auto'
 					: 'max-h-96 overflow-auto'}"
-				style={hasResizedColumns ? 'table-layout: fixed;' : undefined}
 			>
 				<Table.Header>
 					{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
@@ -626,9 +625,11 @@
 							{#each headerGroup.headers as header, hi (header.id)}
 								{@const s = statsMap[header.id]}
 								<Table.Head
-									class="result-table-head relative h-auto min-h-10 whitespace-normal border-b border-border p-2 align-top
-								{hi === 0 ? 'sticky top-0 left-0 z-30' : 'sticky top-0 z-20'}"
-									style={hasResizedColumns ? `width: ${header.getSize()}px;` : undefined}
+									class="result-table-head relative h-auto min-h-10 border-b border-border p-2 align-top whitespace-normal
+								{hi === 0 ? 'sticky top-0 left-0 z-30' : 'sticky top-0 z-20'} {hasResizedColumns
+										? 'w-(--col-w)'
+										: ''}"
+									style={hasResizedColumns ? `--col-w: ${header.getSize()}px;` : undefined}
 								>
 									{#if s && headerInsights === 'full'}
 										{@const Icon = formatMap[s.col]
@@ -746,7 +747,9 @@
 								{@const fmt = formatMap[cell.column.id] ?? { kind: 'text' }}
 								{@const conditional = styleForCell(value, cell.column.id)}
 								<Table.Cell
-									class="{hasResizedColumns ? '' : 'max-w-64'} cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
+									class="{hasResizedColumns
+										? ''
+										: 'max-w-64'} cursor-pointer truncate p-2 transition-colors hover:bg-muted/50
 									{ci === 0 ? 'result-table-sticky-col sticky left-0 z-10' : ''}
 									{!isNull && (fmt.kind === 'number' || fmt.kind === 'currency' || fmt.kind === 'percentage')
 										? 'text-right'
@@ -765,10 +768,10 @@
 										<span class="inline-flex items-center gap-1">
 											{#if conditional?.icon}
 												<span
-													class="shrink-0 text-2xs font-semibold"
-													style="color: {conditionalToneToCssVar(
+													class="shrink-0 text-2xs font-semibold text-(--tone)"
+													style:--tone={conditionalToneToCssVar(
 														conditional.textTone ?? conditional.tone ?? 'neutral'
-													)}"
+													)}
 													>{conditional.icon === 'up'
 														? '▲'
 														: conditional.icon === 'down'
@@ -810,8 +813,9 @@
 				onclick={closeColumnMenu}
 			></button>
 			<div
-				style="position: fixed; top: {columnMenuTop}px; left: {columnMenuLeft}px;"
-				class="column-menu z-(--z-dropdown) w-60 rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/15 backdrop-blur-sm"
+				style:--menu-top={`${columnMenuTop}px`}
+				style:--menu-left={`${columnMenuLeft}px`}
+				class="column-menu fixed top-(--menu-top) left-(--menu-left) z-(--z-dropdown) w-60 rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/15 backdrop-blur-sm"
 			>
 				<div class="flex items-start justify-between gap-2 px-2 py-1.5">
 					<div class="min-w-0">
@@ -840,7 +844,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {sortDirFor(
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 {sortDirFor(
 									menuCol
 								) === 'asc'
 									? 'bg-primary/12 text-primary'
@@ -857,7 +861,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {sortDirFor(
+								class="h-7 justify-center gap-1 px-1.5 text-2xs focus-visible:ring-2 {sortDirFor(
 									menuCol
 								) === 'desc'
 									? 'bg-primary/12 text-primary'
@@ -874,7 +878,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-center px-1.5 text-2xs text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-center px-1.5 text-2xs text-muted-foreground focus-visible:ring-2"
 								onclick={() => {
 									sorting = sorting.filter((s) => s.id !== menuCol);
 									resetPaginationToFirstPage();
@@ -890,7 +894,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50 {hasFilterFor(
+							class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2 {hasFilterFor(
 								menuCol
 							)
 								? 'text-warning'
@@ -910,7 +914,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-start gap-2 px-2 text-2xs focus-visible:ring-2"
 								onclick={(e) => {
 									openDescPopover(menuCol, e.currentTarget as HTMLElement);
 									closeColumnMenu();
@@ -933,7 +937,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2"
 								onclick={() => {
 									setColumnRules(menuCol, defaultConditionalRulesForColumn(menuCol));
 									closeColumnMenu();
@@ -944,7 +948,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2"
 								onclick={() => {
 									setColumnRules(menuCol, [
 										{
@@ -963,7 +967,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2"
 								onclick={() => {
 									setColumnRules(menuCol, [
 										{ id: `${menuCol}:bar`, type: 'dataBar', tone: 'info' }
@@ -976,7 +980,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="h-7 justify-start px-2 text-2xs focus-visible:ring-2"
 								onclick={() => {
 									setColumnRules(menuCol, [{ id: `${menuCol}:icons`, type: 'iconSet' }]);
 									closeColumnMenu();
@@ -989,7 +993,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="mt-1 h-7 w-full justify-start px-2 text-2xs text-destructive hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50"
+								class="mt-1 h-7 w-full justify-start px-2 text-2xs text-destructive hover:text-destructive focus-visible:ring-2"
 								onclick={() => {
 									clearColumnRules(menuCol);
 									closeColumnMenu();
@@ -1013,8 +1017,9 @@
 				onclick={closeFilterPopover}
 			></button>
 			<div
-				style="position: fixed; top: {filterPopoverTop}px; left: {filterPopoverLeft}px;"
-				class="z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+				style:--filter-top={`${filterPopoverTop}px`}
+				style:--filter-left={`${filterPopoverLeft}px`}
+				class="fixed top-(--filter-top) left-(--filter-left) z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
 			>
 				<p class="mb-1 flex items-center gap-1 text-2xs font-medium text-muted-foreground">
 					<Filter class="h-3 w-3" />
@@ -1058,8 +1063,9 @@
 				onclick={() => (descPopoverCol = null)}
 			></button>
 			<div
-				style="position: fixed; top: {descPopoverTop}px; left: {descPopoverLeft}px;"
-				class="z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
+				style:--desc-top={`${descPopoverTop}px`}
+				style:--desc-left={`${descPopoverLeft}px`}
+				class="fixed top-(--desc-top) left-(--desc-left) z-(--z-dropdown) w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
 			>
 				<p class="mb-1 text-2xs font-medium text-muted-foreground">{descPopoverCol}</p>
 				<textarea
@@ -1160,7 +1166,7 @@
 					</Select.Trigger>
 					<Select.Content>
 						{#each pageSizeOptions as size (size)}
-							<Select.Item value={String(size)} class="text-xs">{size} per page</Select.Item>
+							<Select.Item value={String(size)}>{size} per page</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>

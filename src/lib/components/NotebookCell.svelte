@@ -1076,7 +1076,7 @@
 				{/if}
 				{#if isMarkdownOutputOnly}
 					{#if reportView}
-						<div class="markdown-body prose">
+						<div class="markdown-body">
 							{#if markdocResult}
 								<MarkdocRenderer
 									content={markdocResult.tree}
@@ -1088,7 +1088,7 @@
 						</div>
 					{:else}
 						<div
-							class="markdown-body prose cursor-text"
+							class="markdown-body cursor-text"
 							role="button"
 							tabindex="0"
 							aria-label="Edit markdown cell"
@@ -1263,7 +1263,7 @@
 			>
 				{#if running}
 					<div
-						class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-[2px]"
+						class="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-border bg-background/90 px-2 py-1 text-2xs font-medium text-muted-foreground shadow-sm backdrop-blur-xs"
 					>
 						<Loader2 class="h-3 w-3 animate-spin" />
 						<span>Updating</span>
@@ -1360,8 +1360,8 @@
 			{#if worksheet}
 				<div class="flex min-h-0 flex-1 flex-col">
 					<div
-						style="height: {editorHeight}px"
-						class="flex min-h-40 shrink-0 flex-col overflow-hidden"
+						style:--eh="{editorHeight}px"
+						class="flex h-(--eh) min-h-40 shrink-0 flex-col overflow-hidden"
 					>
 						{#if !codeHidden}
 							<div onfocusin={onEditorFocus} class="flex min-h-0 flex-1 flex-col overflow-hidden">

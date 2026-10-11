@@ -101,7 +101,6 @@
 	const needsAttention = $derived(
 		config.status !== 'valid' && config.status !== 'success' && config.status !== 'disabled'
 	);
-	const inputSizeClass = $derived(effectiveVariant === 'compact' ? 'h-7 text-xs' : '');
 	const mapRows = $derived.by(() => {
 		const lat = config.source.columns?.[0] ?? findColumn(/lat|latitude/i);
 		const lon = config.source.columns?.[1] ?? findColumn(/lon|lng|long|longitude/i);
@@ -127,7 +126,12 @@
 
 	function patchWriteback(patch: Partial<NonNullable<ControlCellConfig['writeback']>>) {
 		const next = {
-			...(config.writeback ?? { connectionId: null, target: '', mode: 'insert' as const, allowWrite: false }),
+			...(config.writeback ?? {
+				connectionId: null,
+				target: '',
+				mode: 'insert' as const,
+				allowWrite: false
+			}),
 			...patch
 		};
 		const configured = Boolean(next.connectionId && next.target.trim());
@@ -277,7 +281,9 @@
 		? 'rounded-lg border border-border bg-background/70 p-2.5 shadow-xs'
 		: effectiveVariant === 'inline'
 			? 'flex items-center gap-2 py-1'
-			: 'flex items-center gap-1.5 py-0.5'} {displayWidth === 'full' ? 'w-full' : 'w-auto max-w-md'}"
+			: 'flex items-center gap-1.5 py-0.5'} {displayWidth === 'full'
+		? 'w-full'
+		: 'w-auto max-w-md'}"
 >
 	<div class={effectiveVariant === 'panel' ? 'mb-2 flex items-center gap-2' : 'contents'}>
 		{#if effectiveVariant === 'panel' && isDisplayKind}
@@ -294,11 +300,9 @@
 		{:else}
 			<p
 				class={effectiveVariant === 'panel'
-					? 'min-w-0 flex-1 truncate text-[13px] font-medium text-foreground'
-					: 'order-1 shrink-0 truncate text-[13px] font-medium text-foreground'}
-				title={effectiveVariant === 'panel'
-					? undefined
-					: (config.display.helpText ?? config.label)}
+					? 'min-w-0 flex-1 truncate text-sm font-medium text-foreground'
+					: 'order-1 shrink-0 truncate text-sm font-medium text-foreground'}
+				title={effectiveVariant === 'panel' ? undefined : (config.display.helpText ?? config.label)}
 			>
 				{config.label}
 				{#if effectiveVariant === 'panel' && config.name}
@@ -322,500 +326,510 @@
 					<span class="shrink-0 text-2xs text-muted-foreground">{config.status}</span>
 				{/if}
 			{/if}
-		{#if !reportView}
-			<Popover.Root>
-				<Popover.Trigger
-					class="inline-flex {effectiveVariant === 'panel'
-						? 'size-7'
-						: 'size-6'} items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-					aria-label="Configure control"
-					title="Configure control"
-				>
-					<Settings2 class="size-3.5" />
-				</Popover.Trigger>
-				<Popover.Content class="w-[min(22rem,calc(100vw-2rem))] space-y-3 p-3" align="end">
-					<label class="block space-y-1">
-						<span class="text-2xs font-medium text-muted-foreground">Label</span>
-						<Input
-							value={config.label}
-							oninput={(e) => patchConfig({ label: e.currentTarget.value })}
-						/>
-					</label>
-					<label class="block space-y-1">
-						<span class="text-2xs font-medium text-muted-foreground">Variable name</span>
-						<Input
-							value={config.name}
-							oninput={(e) => patchConfig({ name: e.currentTarget.value })}
-						/>
-					</label>
-					{#if config.kind === 'select' || config.kind === 'multiselect'}
+			{#if !reportView}
+				<Popover.Root>
+					<Popover.Trigger
+						class="inline-flex {effectiveVariant === 'panel'
+							? 'size-7'
+							: 'size-6'} items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+						aria-label="Configure control"
+						title="Configure control"
+					>
+						<Settings2 class="size-3.5" />
+					</Popover.Trigger>
+					<Popover.Content class="w-[min(22rem,calc(100vw-2rem))] space-y-3 p-3" align="end">
 						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Options</span>
-							<Textarea class="min-h-24 font-mono text-xs" bind:value={optionDraft} />
-						</label>
-						<Button
-							size="sm"
-							variant="outline"
-							class="h-7 text-xs"
-							onclick={() => patchConfig({ options: parseOptions() })}
-						>
-							Save options
-						</Button>
-					{/if}
-					{#if config.kind === 'slider' || config.kind === 'number-input'}
-						<div class="grid grid-cols-3 gap-2">
-							<label class="space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Min</span>
-								<Input
-									type="number"
-									value={config.validation.min ?? 0}
-									oninput={(e) =>
-										patchConfig({ validation: { min: Number(e.currentTarget.value) } })}
-								/>
-							</label>
-							<label class="space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Max</span>
-								<Input
-									type="number"
-									value={config.validation.max ?? 100}
-									oninput={(e) =>
-										patchConfig({ validation: { max: Number(e.currentTarget.value) } })}
-								/>
-							</label>
-							<label class="space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Step</span>
-								<Input
-									type="number"
-									value={config.validation.step ?? 1}
-									oninput={(e) =>
-										patchConfig({ validation: { step: Number(e.currentTarget.value) } })}
-								/>
-							</label>
-						</div>
-					{/if}
-					{#if sourceColumns.length && ['table-display', 'pivot', 'map', 'single-value'].includes(config.kind)}
-						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Primary column</span>
-							<NativeSelect
-								value={config.source.columns?.[0] ?? ''}
-								onchange={(e) =>
-									patchConfig({
-										source: {
-											columns: [e.currentTarget.value, ...(config.source.columns ?? []).slice(1)]
-										}
-									})}
-							>
-								<option value="">Auto</option>
-								{#each sourceColumns as col, i (`${col}::${i}`)}
-									<option value={col}>{col}</option>
-								{/each}
-							</NativeSelect>
-						</label>
-					{/if}
-
-					{#if config.kind !== 'run-button' && config.kind !== 'writeback' && config.kind !== 'agent'}
-						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Default value</span>
-							<div class="flex items-center gap-1.5">
-								<Input
-									class="min-w-0"
-									value={formatValue(config.defaultValue)}
-									oninput={(e) => patchConfig({ defaultValue: e.currentTarget.value })}
-								/>
-								<Button
-									size="sm"
-									variant="outline"
-									class="h-7 shrink-0 text-2xs"
-									title="Reset current value to default"
-									onclick={() => setValue(config.defaultValue)}
-								>
-									Reset
-								</Button>
-							</div>
-						</label>
-					{/if}
-
-					{#if ['text-input', 'number-input', 'file-upload', 'agent'].includes(config.kind)}
-						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Placeholder</span>
+							<span class="text-2xs font-medium text-muted-foreground">Label</span>
 							<Input
-								value={config.display.placeholder ?? ''}
-								oninput={(e) => patchConfig({ display: { placeholder: e.currentTarget.value } })}
+								value={config.label}
+								oninput={(e) => patchConfig({ label: e.currentTarget.value })}
 							/>
 						</label>
-					{/if}
-					<label class="block space-y-1">
-						<span class="text-2xs font-medium text-muted-foreground">Help text</span>
-						<Input
-							value={config.display.helpText ?? ''}
-							oninput={(e) => patchConfig({ display: { helpText: e.currentTarget.value } })}
-						/>
-					</label>
-					<div class="grid grid-cols-2 gap-2">
 						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Display variant</span>
-							<NativeSelect
-								value={config.display.variant ?? 'panel'}
-								onchange={(e) =>
-									patchConfig({
-										display: {
-											variant: e.currentTarget.value as ControlCellConfig['display']['variant']
-										}
-									})}
-							>
-								<option value="panel">Panel</option>
-								<option value="inline">Inline</option>
-								<option value="compact">Compact</option>
-							</NativeSelect>
+							<span class="text-2xs font-medium text-muted-foreground">Variable name</span>
+							<Input
+								value={config.name}
+								oninput={(e) => patchConfig({ name: e.currentTarget.value })}
+							/>
 						</label>
-						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Width</span>
-							<NativeSelect
-								value={config.display.width ?? 'full'}
-								onchange={(e) =>
-									patchConfig({
-										display: {
-											width: e.currentTarget.value as ControlCellConfig['display']['width']
-										}
-									})}
-							>
-								<option value="full">Full</option>
-								<option value="auto">Auto</option>
-							</NativeSelect>
-						</label>
-					</div>
-
-					{#if config.kind === 'file-upload'}
-						<div class="grid grid-cols-2 gap-2">
-							<label class="space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Accept</span>
-								<Input
-									placeholder=".csv,.json"
-									value={config.validation.accept ?? ''}
-									oninput={(e) => patchConfig({ validation: { accept: e.currentTarget.value } })}
-								/>
-							</label>
-							<label class="space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Max size (MB)</span>
-								<Input
-									type="number"
-									value={String(Math.round((config.validation.maxBytes ?? 0) / (1024 * 1024)))}
-									oninput={(e) =>
-										patchConfig({
-											validation: { maxBytes: Number(e.currentTarget.value) * 1024 * 1024 }
-										})}
-								/>
-							</label>
-						</div>
-					{/if}
-
-					{#if config.kind === 'writeback'}
-						<div class="space-y-2 border-t border-border pt-2">
+						{#if config.kind === 'select' || config.kind === 'multiselect'}
 							<label class="block space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Connection</span>
+								<span class="text-2xs font-medium text-muted-foreground">Options</span>
+								<Textarea class="min-h-24 font-mono text-xs" bind:value={optionDraft} />
+							</label>
+							<Button
+								size="sm"
+								variant="outline"
+								class="h-7 text-xs"
+								onclick={() => patchConfig({ options: parseOptions() })}
+							>
+								Save options
+							</Button>
+						{/if}
+						{#if config.kind === 'slider' || config.kind === 'number-input'}
+							<div class="grid grid-cols-3 gap-2">
+								<label class="space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Min</span>
+									<Input
+										type="number"
+										value={config.validation.min ?? 0}
+										oninput={(e) =>
+											patchConfig({ validation: { min: Number(e.currentTarget.value) } })}
+									/>
+								</label>
+								<label class="space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Max</span>
+									<Input
+										type="number"
+										value={config.validation.max ?? 100}
+										oninput={(e) =>
+											patchConfig({ validation: { max: Number(e.currentTarget.value) } })}
+									/>
+								</label>
+								<label class="space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Step</span>
+									<Input
+										type="number"
+										value={config.validation.step ?? 1}
+										oninput={(e) =>
+											patchConfig({ validation: { step: Number(e.currentTarget.value) } })}
+									/>
+								</label>
+							</div>
+						{/if}
+						{#if sourceColumns.length && ['table-display', 'pivot', 'map', 'single-value'].includes(config.kind)}
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Primary column</span>
 								<NativeSelect
-									value={config.writeback?.connectionId ?? ''}
+									value={config.source.columns?.[0] ?? ''}
 									onchange={(e) =>
-										patchWriteback({ connectionId: e.currentTarget.value || null })}
+										patchConfig({
+											source: {
+												columns: [e.currentTarget.value, ...(config.source.columns ?? []).slice(1)]
+											}
+										})}
 								>
-									<option value="">Choose a connection…</option>
-									{#each connections as conn (conn.id)}
-										<option value={conn.id}>{conn.name}</option>
+									<option value="">Auto</option>
+									{#each sourceColumns as col, i (`${col}::${i}`)}
+										<option value={col}>{col}</option>
 									{/each}
 								</NativeSelect>
 							</label>
+						{/if}
+
+						{#if config.kind !== 'run-button' && config.kind !== 'writeback' && config.kind !== 'agent'}
 							<label class="block space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Target table</span>
+								<span class="text-2xs font-medium text-muted-foreground">Default value</span>
+								<div class="flex items-center gap-1.5">
+									<Input
+										class="min-w-0"
+										value={formatValue(config.defaultValue)}
+										oninput={(e) => patchConfig({ defaultValue: e.currentTarget.value })}
+									/>
+									<Button
+										size="sm"
+										variant="outline"
+										class="h-7 shrink-0 text-2xs"
+										title="Reset current value to default"
+										onclick={() => setValue(config.defaultValue)}
+									>
+										Reset
+									</Button>
+								</div>
+							</label>
+						{/if}
+
+						{#if ['text-input', 'number-input', 'file-upload', 'agent'].includes(config.kind)}
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Placeholder</span>
 								<Input
-									placeholder="schema.table"
-									value={config.writeback?.target ?? ''}
-									oninput={(e) => patchWriteback({ target: e.currentTarget.value })}
+									value={config.display.placeholder ?? ''}
+									oninput={(e) => patchConfig({ display: { placeholder: e.currentTarget.value } })}
 								/>
 							</label>
+						{/if}
+						<label class="block space-y-1">
+							<span class="text-2xs font-medium text-muted-foreground">Help text</span>
+							<Input
+								value={config.display.helpText ?? ''}
+								oninput={(e) => patchConfig({ display: { helpText: e.currentTarget.value } })}
+							/>
+						</label>
+						<div class="grid grid-cols-2 gap-2">
 							<label class="block space-y-1">
-								<span class="text-2xs font-medium text-muted-foreground">Mode</span>
+								<span class="text-2xs font-medium text-muted-foreground">Display variant</span>
 								<NativeSelect
-									value={config.writeback?.mode ?? 'insert'}
+									value={config.display.variant ?? 'panel'}
 									onchange={(e) =>
-										patchWriteback({
-											mode: e.currentTarget.value as 'insert' | 'upsert' | 'replace'
+										patchConfig({
+											display: {
+												variant: e.currentTarget.value as ControlCellConfig['display']['variant']
+											}
 										})}
 								>
-									<option value="insert">Insert</option>
-									<option value="upsert">Upsert</option>
-									<option value="replace">Replace</option>
+									<option value="panel">Panel</option>
+									<option value="inline">Inline</option>
+									<option value="compact">Compact</option>
 								</NativeSelect>
 							</label>
-							<label class="inline-flex items-center gap-2 text-xs">
-								<input
-									class="size-3.5 rounded border-input accent-primary"
-									type="checkbox"
-									checked={config.writeback?.allowWrite ?? false}
-									onchange={(e) => patchWriteback({ allowWrite: e.currentTarget.checked })}
-								/>
-								Allow writes (required to run)
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Width</span>
+								<NativeSelect
+									value={config.display.width ?? 'full'}
+									onchange={(e) =>
+										patchConfig({
+											display: {
+												width: e.currentTarget.value as ControlCellConfig['display']['width']
+											}
+										})}
+								>
+									<option value="full">Full</option>
+									<option value="auto">Auto</option>
+								</NativeSelect>
 							</label>
 						</div>
-					{/if}
 
-					{#if config.kind === 'agent'}
-						<label class="block space-y-1">
-							<span class="text-2xs font-medium text-muted-foreground">Context scope</span>
-							<NativeSelect
-								value={config.agent?.scope ?? 'notebook'}
-								onchange={(e) =>
-									patchConfig({
-										agent: {
-											...(config.agent ?? { instruction: '' }),
-											scope: e.currentTarget.value as 'notebook' | 'upstream' | 'selected-cells'
-										}
-									})}
-							>
-								<option value="notebook">Entire notebook</option>
-								<option value="upstream">Upstream cells only</option>
-								<option value="selected-cells">Selected cells</option>
-							</NativeSelect>
-						</label>
-					{/if}
-				</Popover.Content>
-			</Popover.Root>
-		{/if}
+						{#if config.kind === 'file-upload'}
+							<div class="grid grid-cols-2 gap-2">
+								<label class="space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Accept</span>
+									<Input
+										placeholder=".csv,.json"
+										value={config.validation.accept ?? ''}
+										oninput={(e) => patchConfig({ validation: { accept: e.currentTarget.value } })}
+									/>
+								</label>
+								<label class="space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Max size (MB)</span>
+									<Input
+										type="number"
+										value={String(Math.round((config.validation.maxBytes ?? 0) / (1024 * 1024)))}
+										oninput={(e) =>
+											patchConfig({
+												validation: { maxBytes: Number(e.currentTarget.value) * 1024 * 1024 }
+											})}
+									/>
+								</label>
+							</div>
+						{/if}
+
+						{#if config.kind === 'writeback'}
+							<div class="space-y-2 border-t border-border pt-2">
+								<label class="block space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Connection</span>
+									<NativeSelect
+										value={config.writeback?.connectionId ?? ''}
+										onchange={(e) =>
+											patchWriteback({ connectionId: e.currentTarget.value || null })}
+									>
+										<option value="">Choose a connection…</option>
+										{#each connections as conn (conn.id)}
+											<option value={conn.id}>{conn.name}</option>
+										{/each}
+									</NativeSelect>
+								</label>
+								<label class="block space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Target table</span>
+									<Input
+										placeholder="schema.table"
+										value={config.writeback?.target ?? ''}
+										oninput={(e) => patchWriteback({ target: e.currentTarget.value })}
+									/>
+								</label>
+								<label class="block space-y-1">
+									<span class="text-2xs font-medium text-muted-foreground">Mode</span>
+									<NativeSelect
+										value={config.writeback?.mode ?? 'insert'}
+										onchange={(e) =>
+											patchWriteback({
+												mode: e.currentTarget.value as 'insert' | 'upsert' | 'replace'
+											})}
+									>
+										<option value="insert">Insert</option>
+										<option value="upsert">Upsert</option>
+										<option value="replace">Replace</option>
+									</NativeSelect>
+								</label>
+								<label class="inline-flex items-center gap-2 text-xs">
+									<input
+										class="size-3.5 rounded border-input accent-primary"
+										type="checkbox"
+										checked={config.writeback?.allowWrite ?? false}
+										onchange={(e) => patchWriteback({ allowWrite: e.currentTarget.checked })}
+									/>
+									Allow writes (required to run)
+								</label>
+							</div>
+						{/if}
+
+						{#if config.kind === 'agent'}
+							<label class="block space-y-1">
+								<span class="text-2xs font-medium text-muted-foreground">Context scope</span>
+								<NativeSelect
+									value={config.agent?.scope ?? 'notebook'}
+									onchange={(e) =>
+										patchConfig({
+											agent: {
+												...(config.agent ?? { instruction: '' }),
+												scope: e.currentTarget.value as 'notebook' | 'upstream' | 'selected-cells'
+											}
+										})}
+								>
+									<option value="notebook">Entire notebook</option>
+									<option value="upstream">Upstream cells only</option>
+									<option value="selected-cells">Selected cells</option>
+								</NativeSelect>
+							</label>
+						{/if}
+					</Popover.Content>
+				</Popover.Root>
+			{/if}
 		</div>
 	</div>
 
 	<div class={effectiveVariant === 'panel' ? '' : 'order-2 min-w-0 flex-1'}>
-	{#if config.kind === 'text-input'}
-		<Input
-			aria-label={config.label}
-			placeholder={config.display.placeholder}
-			class={inputSizeClass}
-			value={String(config.value ?? '')}
-			oninput={(e) => setValue(e.currentTarget.value)}
-		/>
-	{:else if config.kind === 'number-input'}
-		<Input
-			aria-label={config.label}
-			type="number"
-			class={inputSizeClass}
-			min={config.validation.min}
-			max={config.validation.max}
-			step={config.validation.step ?? 1}
-			value={String(config.value ?? '')}
-			oninput={(e) => setValue(Number(e.currentTarget.value))}
-		/>
-	{:else if config.kind === 'slider'}
-		<div class="flex items-center gap-3">
-			<input
-				class="h-2 flex-1 accent-primary"
+		{#if config.kind === 'text-input'}
+			<Input
 				aria-label={config.label}
-				type="range"
-				min={config.validation.min ?? 0}
-				max={config.validation.max ?? 100}
+				placeholder={config.display.placeholder}
+				class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+				value={String(config.value ?? '')}
+				oninput={(e) => setValue(e.currentTarget.value)}
+			/>
+		{:else if config.kind === 'number-input'}
+			<Input
+				aria-label={config.label}
+				type="number"
+				class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+				min={config.validation.min}
+				max={config.validation.max}
 				step={config.validation.step ?? 1}
-				value={Number(config.value ?? 0)}
+				value={String(config.value ?? '')}
 				oninput={(e) => setValue(Number(e.currentTarget.value))}
 			/>
-			<span class="w-12 text-right font-mono text-xs text-muted-foreground">{config.value}</span>
-		</div>
-	{:else if config.kind === 'date-input'}
-		<Input
-			aria-label={config.label}
-			type="date"
-			class={inputSizeClass}
-			value={String(config.value ?? '')}
-			oninput={(e) => setValue(e.currentTarget.value)}
-		/>
-	{:else if config.kind === 'date-range'}
-		<div class="grid gap-2 sm:grid-cols-2">
-			<Input
-				aria-label={`${config.label} start`}
-				type="date"
-				class={inputSizeClass}
-				value={String((config.value as { start?: string })?.start ?? '')}
-				oninput={(e) =>
-					setValue({ ...((config.value as object) ?? {}), start: e.currentTarget.value })}
-			/>
-			<Input
-				aria-label={`${config.label} end`}
-				type="date"
-				class={inputSizeClass}
-				value={String((config.value as { end?: string })?.end ?? '')}
-				oninput={(e) =>
-					setValue({ ...((config.value as object) ?? {}), end: e.currentTarget.value })}
-			/>
-		</div>
-	{:else if config.kind === 'checkbox'}
-		<label class="inline-flex items-center gap-2 text-sm">
-			<input
-				class="size-4 rounded border-input accent-primary"
-				type="checkbox"
-				checked={Boolean(config.value)}
-				onchange={(e) => setValue(e.currentTarget.checked)}
-			/>
-			<span>{config.label}</span>
-		</label>
-	{:else if config.kind === 'select'}
-		<NativeSelect
-			value={String(config.value ?? '')}
-			onchange={(e) => setValue(e.currentTarget.value)}
-		>
-			{#each config.options as opt, i (`${opt.value}::${i}`)}
-				<option value={opt.value}>{opt.label}</option>
-			{/each}
-		</NativeSelect>
-	{:else if config.kind === 'multiselect'}
-		<div class="flex flex-wrap gap-1.5">
-			{#each config.options as opt, i (`${opt.value}::${i}`)}
-				<button
-					type="button"
-					class="rounded-md border px-2 py-1 text-xs transition-colors {Array.isArray(
-						config.value
-					) && config.value.includes(opt.value)
-						? 'border-primary bg-primary/10 text-primary'
-						: 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
-					onclick={() => {
-						const current = Array.isArray(config.value) ? config.value : [];
-						setValue(
-							current.includes(opt.value)
-								? current.filter((v) => v !== opt.value)
-								: [...current, opt.value]
-						);
-					}}
-				>
-					{opt.label}
-				</button>
-			{/each}
-		</div>
-	{:else if config.kind === 'run-button'}
-		<Button size="sm" class="h-8 gap-2" onclick={runButton}
-			><Play class="size-3.5" />Run linked cells</Button
-		>
-	{:else if config.kind === 'file-upload'}
-		<Input
-			type="file"
-			aria-label={config.label}
-			class={inputSizeClass}
-			accept={config.validation.accept}
-			onchange={(e) => {
-				const file = e.currentTarget.files?.[0];
-				if (!file) return;
-				setValue({
-					name: file.name,
-					size: file.size,
-					type: file.type,
-					lastModified: file.lastModified
-				});
-			}}
-		/>
-		{#if config.value && typeof config.value === 'object'}
-			<p class="mt-2 text-xs text-muted-foreground">{(config.value as { name?: string }).name}</p>
-		{/if}
-	{:else if config.kind === 'table-input'}
-		<Textarea class="min-h-32 font-mono text-xs" bind:value={tableDraft} />
-		<div class="mt-2 flex items-center gap-2">
-			<Button size="sm" variant="outline" class="h-7 text-xs" onclick={applyTableDraft}
-				>Apply rows</Button
-			>
-			{#if tableDraftError}<span class="text-xs text-destructive">{tableDraftError}</span>{/if}
-		</div>
-	{:else if config.kind === 'single-value'}
-		<div class="rounded-md bg-muted/25 px-3 py-4">
-			<p class="text-3xl font-semibold tracking-normal text-foreground">
-				{formatValue(singleValue)}
-			</p>
-			<p class="mt-1 text-xs text-muted-foreground">
-				{config.source.columns?.[0] ?? numericColumns[0] ?? 'value'}
-			</p>
-		</div>
-	{:else if config.kind === 'map'}
-		<div class="relative min-h-56 overflow-hidden rounded-md border border-border bg-muted/20">
-			{#if mapRows.length}
-				{#each mapRows as point, idx (`${point.lat}-${point.lon}-${idx}`)}
-					<span
-						class="absolute size-2 rounded-full bg-primary shadow-sm"
-						title={point.label}
-						style={`left:${((point.lon + 180) / 360) * 100}%;top:${((90 - point.lat) / 180) * 100}%`}
-					></span>
-				{/each}
-			{:else}
-				<div class="flex h-56 items-center justify-center text-xs text-muted-foreground">
-					Choose latitude and longitude columns.
-				</div>
-			{/if}
-		</div>
-	{:else if config.kind === 'pivot'}
-		{@render dataTable({ rows: pivotRows, columns: pivotRows[0] ? Object.keys(pivotRows[0]) : [] })}
-	{:else if config.kind === 'table-display'}
-		<div class="mb-2 flex items-center gap-2">
-			<Input class="h-7 max-w-56 text-xs" placeholder="Filter rows" bind:value={tableFilter} />
-			<Button size="sm" variant="outline" class="h-7 gap-1.5 text-xs" onclick={downloadCsv}
-				><Download class="size-3" />CSV</Button
-			>
-		</div>
-		{@render dataTable({ rows: filteredRows, columns: activeColumns })}
-	{:else if config.kind === 'writeback'}
-		{@const writebackReady = Boolean(
-			config.writeback?.allowWrite && config.writeback?.connectionId && config.writeback?.target.trim()
-		)}
-		{#if !writebackReady}
-			<div
-				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-			>
-				Writeback is guarded. Choose a connection, a target table, and enable writes (gear icon
-				above) before this cell can run.
+		{:else if config.kind === 'slider'}
+			<div class="flex items-center gap-3">
+				<input
+					class="h-2 flex-1 accent-primary"
+					aria-label={config.label}
+					type="range"
+					min={config.validation.min ?? 0}
+					max={config.validation.max ?? 100}
+					step={config.validation.step ?? 1}
+					value={Number(config.value ?? 0)}
+					oninput={(e) => setValue(Number(e.currentTarget.value))}
+				/>
+				<span class="w-12 text-right font-mono text-xs text-muted-foreground">{config.value}</span>
 			</div>
-		{:else}
-			<div class="flex items-center gap-2">
+		{:else if config.kind === 'date-input'}
+			<Input
+				aria-label={config.label}
+				type="date"
+				class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+				value={String(config.value ?? '')}
+				oninput={(e) => setValue(e.currentTarget.value)}
+			/>
+		{:else if config.kind === 'date-range'}
+			<div class="grid gap-2 sm:grid-cols-2">
+				<Input
+					aria-label={`${config.label} start`}
+					type="date"
+					class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+					value={String((config.value as { start?: string })?.start ?? '')}
+					oninput={(e) =>
+						setValue({ ...((config.value as object) ?? {}), start: e.currentTarget.value })}
+				/>
+				<Input
+					aria-label={`${config.label} end`}
+					type="date"
+					class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+					value={String((config.value as { end?: string })?.end ?? '')}
+					oninput={(e) =>
+						setValue({ ...((config.value as object) ?? {}), end: e.currentTarget.value })}
+				/>
+			</div>
+		{:else if config.kind === 'checkbox'}
+			<label class="inline-flex items-center gap-2 text-sm">
+				<input
+					class="size-4 rounded border-input accent-primary"
+					type="checkbox"
+					checked={Boolean(config.value)}
+					onchange={(e) => setValue(e.currentTarget.checked)}
+				/>
+				<span>{config.label}</span>
+			</label>
+		{:else if config.kind === 'select'}
+			<NativeSelect
+				value={String(config.value ?? '')}
+				onchange={(e) => setValue(e.currentTarget.value)}
+			>
+				{#each config.options as opt, i (`${opt.value}::${i}`)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</NativeSelect>
+		{:else if config.kind === 'multiselect'}
+			<div class="flex flex-wrap gap-1.5">
+				{#each config.options as opt, i (`${opt.value}::${i}`)}
+					<button
+						type="button"
+						class="rounded-md border px-2 py-1 text-xs transition-colors {Array.isArray(
+							config.value
+						) && config.value.includes(opt.value)
+							? 'border-primary bg-primary/10 text-primary'
+							: 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+						onclick={() => {
+							const current = Array.isArray(config.value) ? config.value : [];
+							setValue(
+								current.includes(opt.value)
+									? current.filter((v) => v !== opt.value)
+									: [...current, opt.value]
+							);
+						}}
+					>
+						{opt.label}
+					</button>
+				{/each}
+			</div>
+		{:else if config.kind === 'run-button'}
+			<Button size="sm" class="h-8 gap-2" onclick={runButton}
+				><Play class="size-3.5" />Run linked cells</Button
+			>
+		{:else if config.kind === 'file-upload'}
+			<Input
+				type="file"
+				aria-label={config.label}
+				class={effectiveVariant === 'compact' ? 'h-7 text-xs' : ''}
+				accept={config.validation.accept}
+				onchange={(e) => {
+					const file = e.currentTarget.files?.[0];
+					if (!file) return;
+					setValue({
+						name: file.name,
+						size: file.size,
+						type: file.type,
+						lastModified: file.lastModified
+					});
+				}}
+			/>
+			{#if config.value && typeof config.value === 'object'}
+				<p class="mt-2 text-xs text-muted-foreground">{(config.value as { name?: string }).name}</p>
+			{/if}
+		{:else if config.kind === 'table-input'}
+			<Textarea class="min-h-32 font-mono text-xs" bind:value={tableDraft} />
+			<div class="mt-2 flex items-center gap-2">
+				<Button size="sm" variant="outline" class="h-7 text-xs" onclick={applyTableDraft}
+					>Apply rows</Button
+				>
+				{#if tableDraftError}<span class="text-xs text-destructive">{tableDraftError}</span>{/if}
+			</div>
+		{:else if config.kind === 'single-value'}
+			<div class="rounded-md bg-muted/25 px-3 py-4">
+				<p class="text-3xl font-semibold tracking-normal text-foreground">
+					{formatValue(singleValue)}
+				</p>
+				<p class="mt-1 text-xs text-muted-foreground">
+					{config.source.columns?.[0] ?? numericColumns[0] ?? 'value'}
+				</p>
+			</div>
+		{:else if config.kind === 'map'}
+			<div class="relative min-h-56 overflow-hidden rounded-md border border-border bg-muted/20">
+				{#if mapRows.length}
+					{#each mapRows as point, idx (`${point.lat}-${point.lon}-${idx}`)}
+						<span
+							class="absolute top-(--my) left-(--mx) size-2 rounded-full bg-primary shadow-sm"
+							title={point.label}
+							style:--mx="{((point.lon + 180) / 360) * 100}%"
+							style:--my="{((90 - point.lat) / 180) * 100}%"
+						></span>
+					{/each}
+				{:else}
+					<div class="flex h-56 items-center justify-center text-xs text-muted-foreground">
+						Choose latitude and longitude columns.
+					</div>
+				{/if}
+			</div>
+		{:else if config.kind === 'pivot'}
+			{@render dataTable({
+				rows: pivotRows,
+				columns: pivotRows[0] ? Object.keys(pivotRows[0]) : []
+			})}
+		{:else if config.kind === 'table-display'}
+			<div class="mb-2 flex items-center gap-2">
+				<Input class="h-7 max-w-56 text-xs" placeholder="Filter rows" bind:value={tableFilter} />
+				<Button size="sm" variant="outline" class="h-7 gap-1.5 text-xs" onclick={downloadCsv}
+					><Download class="size-3" />CSV</Button
+				>
+			</div>
+			{@render dataTable({ rows: filteredRows, columns: activeColumns })}
+		{:else if config.kind === 'writeback'}
+			{@const writebackReady = Boolean(
+				config.writeback?.allowWrite &&
+				config.writeback?.connectionId &&
+				config.writeback?.target.trim()
+			)}
+			{#if !writebackReady}
+				<div
+					class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				>
+					Writeback is guarded. Choose a connection, a target table, and enable writes (gear icon
+					above) before this cell can run.
+				</div>
+			{:else}
+				<div class="flex items-center gap-2">
+					<Button
+						size="sm"
+						class="h-8 gap-2"
+						disabled={cell.status === 'running'}
+						onclick={() => void runCell(cell.id)}
+					>
+						<Play class="size-3.5" />
+						{cell.status === 'running' ? 'Writing…' : `Write to ${config.writeback?.target}`}
+					</Button>
+					<span class="font-mono text-2xs text-muted-foreground">
+						{config.writeback?.mode} · {connections.find(
+							(c) => c.id === config.writeback?.connectionId
+						)?.name ?? config.writeback?.connectionId}
+					</span>
+				</div>
+				{#if cell.status === 'error' && cell.errors?.length}
+					<p class="mt-2 text-xs text-destructive">{cell.errors[0]?.reason}</p>
+				{:else if cell.status === 'success'}
+					<p class="mt-2 text-xs text-muted-foreground">
+						Wrote {cell.result?.rows?.[0]?.rowsWritten ?? 0} row(s).
+					</p>
+				{/if}
+			{/if}
+		{:else if config.kind === 'agent'}
+			<Textarea
+				placeholder={config.display.placeholder}
+				value={config.agent?.instruction ?? ''}
+				oninput={(e) =>
+					patchConfig({
+						agent: {
+							...(config.agent ?? { scope: 'notebook' }),
+							instruction: e.currentTarget.value
+						}
+					})}
+			/>
+			<div class="mt-2 flex items-center gap-2">
 				<Button
 					size="sm"
 					class="h-8 gap-2"
-					disabled={cell.status === 'running'}
-					onclick={() => void runCell(cell.id)}
+					disabled={!config.agent?.instruction?.trim() || getIsGenerating()}
+					onclick={runAgent}
 				>
-					<Play class="size-3.5" />
-					{cell.status === 'running' ? 'Writing…' : `Write to ${config.writeback?.target}`}
+					<Bot class="size-3.5" />
+					{getIsGenerating() ? 'Running…' : 'Run agent'}
 				</Button>
-				<span class="font-mono text-2xs text-muted-foreground">
-					{config.writeback?.mode} · {connections.find((c) => c.id === config.writeback?.connectionId)
-						?.name ?? config.writeback?.connectionId}
+				<span class="text-2xs text-muted-foreground">
+					Scope: {config.agent?.scope ?? 'notebook'} · answers open in the AI chat panel
 				</span>
 			</div>
-			{#if cell.status === 'error' && cell.errors?.length}
-				<p class="mt-2 text-xs text-destructive">{cell.errors[0]?.reason}</p>
-			{:else if cell.status === 'success'}
-				<p class="mt-2 text-xs text-muted-foreground">
-					Wrote {cell.result?.rows?.[0]?.rowsWritten ?? 0} row(s).
-				</p>
-			{/if}
 		{/if}
-	{:else if config.kind === 'agent'}
-		<Textarea
-			placeholder={config.display.placeholder}
-			value={config.agent?.instruction ?? ''}
-			oninput={(e) =>
-				patchConfig({
-					agent: { ...(config.agent ?? { scope: 'notebook' }), instruction: e.currentTarget.value }
-				})}
-		/>
-		<div class="mt-2 flex items-center gap-2">
-			<Button
-				size="sm"
-				class="h-8 gap-2"
-				disabled={!config.agent?.instruction?.trim() || getIsGenerating()}
-				onclick={runAgent}
-			>
-				<Bot class="size-3.5" />
-				{getIsGenerating() ? 'Running…' : 'Run agent'}
-			</Button>
-			<span class="text-2xs text-muted-foreground">
-				Scope: {config.agent?.scope ?? 'notebook'} · answers open in the AI chat panel
-			</span>
-		</div>
-	{/if}
 
-	{#if config.display.helpText && effectiveVariant === 'panel'}
-		<p class="mt-1.5 text-2xs text-muted-foreground">{config.display.helpText}</p>
-	{/if}
+		{#if config.display.helpText && effectiveVariant === 'panel'}
+			<p class="mt-1.5 text-2xs text-muted-foreground">{config.display.helpText}</p>
+		{/if}
 	</div>
 </section>
 

@@ -19,8 +19,17 @@ pnpm test         # Run unit tests (vitest, files: src/**/*.test.ts)
 pnpm test:e2e     # Run Playwright e2e tests (e2e/*.spec.ts)
 pnpm check        # svelte-kit sync + svelte-check type checking
 pnpm lint         # prettier --check
+pnpm lint:design  # eslint + @shadcn/lint design-system check
 pnpm format       # prettier --write
 ```
+
+After ANY UI/markup/class change, run `pnpm lint:design` and fix all `shadcn/*`
+warnings (zero is the bar). The design-system policy lives in `eslint.config.mjs`
+— read its comments before touching UI code. Never add `eslint-disable` for a
+`shadcn/*` rule; fix the code or update the policy with a rationale comment.
+See AGENTS.md "Design-system lint" for the class-writing conventions
+(`style:--x` directives + `(--x)` shorthand, `@utility` for new globals,
+registered hook-class prefixes).
 
 Run a single test file: `pnpm vitest run src/lib/services/cell-deps.test.ts`
 
@@ -113,7 +122,7 @@ This project has a knowledge graph at graphify-out/ with god nodes, community st
 Rules — no exceptions, no rationalizing around these:
 
 - Before any grep/Read/Explore-agent use for a codebase question, run graphify first: `graphify explain "<symbol>"` for a focused node, `graphify path "<A>" "<B>"` for a relationship, `graphify query "<question>"` for broader orientation. This applies even when the question is about UI/visual/component code — "graphify won't converge on this" is not a valid reason to skip straight to grep; try explain/path on the specific component or handler name first.
-- It IS correct, not a rule violation, to follow up a graphify result with Read on the exact file/line it names, or with grep for an exact string once graphify has told you which file to look in. The rule is about what comes *first*, not a ban on ever reading files.
+- It IS correct, not a rule violation, to follow up a graphify result with Read on the exact file/line it names, or with grep for an exact string once graphify has told you which file to look in. The rule is about what comes _first_, not a ban on ever reading files.
 - Only fall back to raw grep/Explore without graphify first when graphify genuinely returns zero relevant nodes for every phrasing tried — and say so explicitly in that turn ("graphify returned nothing for X, falling back to grep") rather than silently switching.
 - This applies to subagents too: any Task/Agent prompt that involves exploring this codebase must tell the subagent to use graphify first.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.

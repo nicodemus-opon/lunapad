@@ -725,7 +725,7 @@
 				editorProps: {
 					attributes: {
 						class:
-							'notion-surface notebook-document-surface markdown-surface prose markdown-body min-h-28 w-full px-0 pt-1 pb-24 focus:outline-none'
+							'notion-surface notebook-document-surface markdown-surface markdown-body min-h-28 w-full px-0 pt-1 pb-24 focus:outline-none'
 					},
 					handleDOMEvents: {
 						beforeinput: () => {
@@ -1026,8 +1026,9 @@
 	{#if slashOpen && slashItems.length}
 		<BodyPortal>
 			<div
-				class="slash-menu-anchor fixed z-50"
-				style="top: {slashMenuPos.top}px; left: {slashMenuPos.left}px;"
+				class="slash-menu-anchor fixed top-(--slash-top) left-(--slash-left) z-50"
+				style:--slash-top="{slashMenuPos.top}px"
+				style:--slash-left="{slashMenuPos.left}px"
 			>
 				<SlashMenu
 					items={slashItems}
@@ -1047,8 +1048,9 @@
 	{#if mentionOpen}
 		<BodyPortal>
 			<div
-				class="mention-menu-anchor fixed z-50"
-				style="top: {mentionMenuPos.top}px; left: {mentionMenuPos.left}px;"
+				class="mention-menu-anchor fixed top-(--mention-top) left-(--mention-left) z-50"
+				style:--mention-top="{mentionMenuPos.top}px"
+				style:--mention-left="{mentionMenuPos.left}px"
 			>
 				<MentionMenu
 					items={mentionItems}
@@ -1070,8 +1072,9 @@
 	{#if linkPopoverOpen}
 		<BodyPortal>
 			<div
-				class="link-popover-anchor fixed z-50"
-				style="top: {linkPopoverPos.top}px; left: {linkPopoverPos.left}px;"
+				class="link-popover-anchor fixed top-(--link-top) left-(--link-left) z-50"
+				style:--link-top="{linkPopoverPos.top}px"
+				style:--link-left="{linkPopoverPos.left}px"
 			>
 				<LinkPopover
 					onApply={applyLinkFromPopover}
@@ -1087,8 +1090,9 @@
 	{#if mediaPopoverOpen}
 		<BodyPortal>
 			<div
-				class="media-popover-anchor fixed z-50"
-				style="top: {mediaPopoverPos.top}px; left: {mediaPopoverPos.left}px;"
+				class="media-popover-anchor fixed top-(--media-top) left-(--media-left) z-50"
+				style:--media-top="{mediaPopoverPos.top}px"
+				style:--media-left="{mediaPopoverPos.left}px"
 			>
 				<MediaInsertPopover
 					kind={mediaPopoverKind}
@@ -1108,7 +1112,11 @@
 		<BodyPortal>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="fixed inset-0 z-40" onclick={closeBlockMenu} onkeydown={() => {}}></div>
-			<div class="fixed z-50" style="top: {blockMenuPos.top}px; left: {blockMenuPos.left}px;">
+			<div
+				class="fixed top-(--block-top) left-(--block-left) z-50"
+				style:--block-top="{blockMenuPos.top}px"
+				style:--block-left="{blockMenuPos.left}px"
+			>
 				<BlockMenu
 					groups={blockMenuGroups}
 					selectedIndex={blockMenuSelected}

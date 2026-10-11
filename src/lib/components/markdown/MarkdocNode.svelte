@@ -157,15 +157,12 @@
 {:else if tag?.name === 'columns'}
 	<div
 		class="md-columns"
-		style="--md-columns-gap: {COLUMNS_GAP_PRESETS[tag.attributes.gap ?? 'default']}"
+		style:--md-columns-gap={COLUMNS_GAP_PRESETS[tag.attributes.gap ?? 'default']}
 	>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'column'}
-	<div
-		class="md-column"
-		style={tag.attributes.width ? `flex-basis:${tag.attributes.width}` : undefined}
-	>
+	<div class="md-column" style:--md-col-w={tag.attributes.width ?? undefined}>
 		{#each tag.children as child, i (i)}<MarkdocNode node={child} {...nodeProps} />{/each}
 	</div>
 {:else if tag?.name === 'grid'}
@@ -192,7 +189,7 @@
 		class="md-card {tag.attributes.accent && tag.attributes.accent !== 'neutral'
 			? `md-card--${tag.attributes.accent}`
 			: ''}"
-		style:grid-column={typeof tag.attributes.span === 'number' && tag.attributes.span > 1
+		style:--md-span={typeof tag.attributes.span === 'number' && tag.attributes.span > 1
 			? `span ${tag.attributes.span}`
 			: undefined}
 	>

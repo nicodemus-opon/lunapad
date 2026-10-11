@@ -185,7 +185,7 @@
 					<Select.Trigger class="h-7 w-36 text-xs">{addMiniType}</Select.Trigger>
 					<Select.Content>
 						{#each LOOP_MINI_STAGE_TYPES as entry}
-							<Select.Item value={entry.value} class="text-xs">{entry.label}</Select.Item>
+							<Select.Item value={entry.value}>{entry.label}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -214,7 +214,7 @@
 							<Select.Trigger class="h-7 w-36 text-xs">{mini.type}</Select.Trigger>
 							<Select.Content>
 								{#each LOOP_MINI_STAGE_TYPES as entry}
-									<Select.Item value={entry.value} class="text-xs">{entry.label}</Select.Item>
+									<Select.Item value={entry.value}>{entry.label}</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>

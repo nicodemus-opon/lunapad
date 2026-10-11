@@ -52,8 +52,8 @@
 				</div>
 				<div class="h-2 overflow-hidden rounded-full bg-muted">
 					<div
-						class="h-full rounded-full {STATS_BAR_PRIMARY}"
-						style="width: {profile.completeness}%"
+						class="h-full w-(--bar-w) rounded-full {STATS_BAR_PRIMARY}"
+						style:--bar-w={`${profile.completeness}%`}
 					></div>
 				</div>
 				{#if profile.nullCount > 0}
@@ -75,8 +75,8 @@
 				</div>
 				<div class="h-2 overflow-hidden rounded-full bg-muted">
 					<div
-						class="h-full rounded-full {STATS_BAR_SECONDARY}"
-						style="width: {Math.min(100, profile.uniquePct)}%"
+						class="h-full w-(--bar-w) rounded-full {STATS_BAR_SECONDARY}"
+						style:--bar-w={`${Math.min(100, profile.uniquePct)}%`}
 					></div>
 				</div>
 			</div>
@@ -143,7 +143,10 @@
 					<div class="flex items-center gap-2">
 						<span class="w-10 text-muted-foreground">True</span>
 						<div class="h-3 flex-1 overflow-hidden rounded bg-muted">
-							<div class="h-full rounded {STATS_BAR_PRIMARY}" style="width: {truePct}%"></div>
+							<div
+								class="h-full w-(--bar-w) rounded {STATS_BAR_PRIMARY}"
+								style:--bar-w={`${truePct}%`}
+							></div>
 						</div>
 						<span class="w-16 text-right font-mono tabular-nums">
 							{profile.boolean.trueCount.toLocaleString()} ({fmtPct(truePct, 1)})
@@ -153,8 +156,8 @@
 						<span class="w-10 text-muted-foreground">False</span>
 						<div class="h-3 flex-1 overflow-hidden rounded bg-muted">
 							<div
-								class="h-full rounded {STATS_BAR_SECONDARY}"
-								style="width: {100 - truePct}%"
+								class="h-full w-(--bar-w) rounded {STATS_BAR_SECONDARY}"
+								style:--bar-w={`${100 - truePct}%`}
 							></div>
 						</div>
 						<span class="w-16 text-right font-mono tabular-nums">

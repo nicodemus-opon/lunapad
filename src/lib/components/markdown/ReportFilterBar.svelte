@@ -59,7 +59,7 @@
 	<div class="report-filter-bar" class:collapsed>
 		<span class="report-filter-bar-title">
 			<SlidersHorizontal class="h-3.5 w-3.5" />
-			<span class="title-text">Filters</span>
+			<span>Filters</span>
 			{#if chips.length > 0}
 				<span class="report-filter-count">{chips.length}</span>
 			{/if}

@@ -3,13 +3,9 @@
 	import type { LayoutData } from './$types';
 
 	const { data, children }: { data: LayoutData; children: Snippet } = $props();
-
-	const accentStyle = $derived(
-		data.site.accentColor ? `--site-accent: ${data.site.accentColor};` : ''
-	);
 </script>
 
-<div class="site-shell" style={accentStyle}>
+<div class="site-shell" style:--site-accent={data.site.accentColor ?? undefined}>
 	<nav class="site-nav no-print">
 		<div class="site-nav-brand">
 			{#if data.site.logoUrl}
@@ -91,10 +87,5 @@
 		font-size: 0.72rem;
 		color: var(--muted-foreground);
 		text-align: center;
-	}
-	@media print {
-		:global(.no-print) {
-			display: none !important;
-		}
 	}
 </style>

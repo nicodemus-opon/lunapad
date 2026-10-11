@@ -94,8 +94,8 @@
 							data-testid="ai-sprint-plan-task"
 						>
 							<span
-								class="mt-0.5 shrink-0"
-								style="color: var({style.colorVar})"
+								class="mt-0.5 shrink-0 text-(--task-icon-c)"
+								style:--task-icon-c="var({style.colorVar})"
 								title={style.label}
 							>
 								<TypeIcon class="h-3 w-3" />

@@ -103,7 +103,7 @@
 					{/if}
 				</p>
 				{#if repairReason}
-					<p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+					<p class="mt-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
 						{repairReason}
 					</p>
 				{/if}

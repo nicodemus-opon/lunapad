@@ -739,26 +739,26 @@
 					<Select.Content>
 						<Select.Group>
 							<Select.GroupHeading class="text-2xs">Relational</Select.GroupHeading>
-							<Select.Item value="postgres" class="text-xs">Postgres</Select.Item>
-							<Select.Item value="mysql" class="text-xs">MySQL</Select.Item>
-							<Select.Item value="mariadb" class="text-xs">MariaDB</Select.Item>
-							<Select.Item value="sqlserver" class="text-xs">SQL Server</Select.Item>
-							<Select.Item value="oracle" class="text-xs">Oracle</Select.Item>
-							<Select.Item value="redshift" class="text-xs">Redshift</Select.Item>
-							<Select.Item value="singlestore" class="text-xs">SingleStore</Select.Item>
-							<Select.Item value="snowflake" class="text-xs">Snowflake</Select.Item>
+							<Select.Item value="postgres">Postgres</Select.Item>
+							<Select.Item value="mysql">MySQL</Select.Item>
+							<Select.Item value="mariadb">MariaDB</Select.Item>
+							<Select.Item value="sqlserver">SQL Server</Select.Item>
+							<Select.Item value="oracle">Oracle</Select.Item>
+							<Select.Item value="redshift">Redshift</Select.Item>
+							<Select.Item value="singlestore">SingleStore</Select.Item>
+							<Select.Item value="snowflake">Snowflake</Select.Item>
 						</Select.Group>
 						<Select.Group>
 							<Select.GroupHeading class="text-2xs">NoSQL / Search</Select.GroupHeading>
-							<Select.Item value="mongodb" class="text-xs">MongoDB</Select.Item>
-							<Select.Item value="cassandra" class="text-xs">Cassandra</Select.Item>
-							<Select.Item value="elasticsearch" class="text-xs">Elasticsearch</Select.Item>
+							<Select.Item value="mongodb">MongoDB</Select.Item>
+							<Select.Item value="cassandra">Cassandra</Select.Item>
+							<Select.Item value="elasticsearch">Elasticsearch</Select.Item>
 						</Select.Group>
 						<Select.Group>
 							<Select.GroupHeading class="text-2xs">Other</Select.GroupHeading>
-							<Select.Item value="clickhouse" class="text-xs">ClickHouse</Select.Item>
-							<Select.Item value="gsheets" class="text-xs">Google Sheets</Select.Item>
-							<Select.Item value="bigquery" class="text-xs">BigQuery</Select.Item>
+							<Select.Item value="clickhouse">ClickHouse</Select.Item>
+							<Select.Item value="gsheets">Google Sheets</Select.Item>
+							<Select.Item value="bigquery">BigQuery</Select.Item>
 						</Select.Group>
 					</Select.Content>
 				</Select.Root>
@@ -1064,8 +1064,8 @@
 							>{form.identifierType === 'sid' ? 'SID' : 'Service Name'}</Select.Trigger
 						>
 						<Select.Content>
-							<Select.Item value="service_name" class="text-xs">Service Name</Select.Item>
-							<Select.Item value="sid" class="text-xs">SID</Select.Item>
+							<Select.Item value="service_name">Service Name</Select.Item>
+							<Select.Item value="sid">SID</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>
@@ -1204,9 +1204,9 @@
 									>{pgSecureLabel}</Select.Trigger
 								>
 								<Select.Content>
-									<Select.Item value="disable" class="text-xs">Disabled</Select.Item>
-									<Select.Item value="require" class="text-xs">Enabled (no cert check)</Select.Item>
-									<Select.Item value="verify-full" class="text-xs"
+									<Select.Item value="disable">Disabled</Select.Item>
+									<Select.Item value="require">Enabled (no cert check)</Select.Item>
+									<Select.Item value="verify-full"
 										>Enabled (verify cert)</Select.Item
 									>
 								</Select.Content>
@@ -1221,8 +1221,8 @@
 									>{form.secure === 'true' ? 'Enabled' : 'Disabled'}</Select.Trigger
 								>
 								<Select.Content>
-									<Select.Item value="false" class="text-xs">Disabled</Select.Item>
-									<Select.Item value="true" class="text-xs">Enabled</Select.Item>
+									<Select.Item value="false">Disabled</Select.Item>
+									<Select.Item value="true">Enabled</Select.Item>
 								</Select.Content>
 							</Select.Root>
 						{/if}
@@ -1246,8 +1246,8 @@
 									: 'Verify cert'}</Select.Trigger
 							>
 							<Select.Content>
-								<Select.Item value="true" class="text-xs">Trusted (no cert check)</Select.Item>
-								<Select.Item value="false" class="text-xs">Verify cert</Select.Item>
+								<Select.Item value="true">Trusted (no cert check)</Select.Item>
+								<Select.Item value="false">Verify cert</Select.Item>
 							</Select.Content>
 						</Select.Root>
 					</div>

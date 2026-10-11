@@ -331,10 +331,9 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={containerEl}
-	class="relative h-full w-full overflow-hidden bg-background {dragging
+	class="lineage-canvas relative h-full w-full overflow-hidden bg-background {dragging
 		? 'cursor-grabbing'
 		: 'cursor-grab'}"
-	style="background-image: radial-gradient(circle, hsl(var(--border) / 0.6) 1px, transparent 1px); background-size: 22px 22px;"
 	onwheel={onWheel}
 	onmousedown={onMouseDown}
 	onmousemove={onMouseMove}
@@ -365,9 +364,9 @@
 				<p class="text-sm font-medium text-foreground/80">No models or cells yet</p>
 				{#if projectFolder && !isDbtProject}
 					<p class="mt-0.5 text-xs text-muted-foreground">
-						This folder has no <span class="font-mono">dbt_project.yml</span>, so there is no
-						model manifest. Open the project root instead — live query/Python/plot cells will
-						still appear here once they have an output name.
+						This folder has no <span class="font-mono">dbt_project.yml</span>, so there is no model
+						manifest. Open the project root instead — live query/Python/plot cells will still appear
+						here once they have an output name.
 					</p>
 				{:else if dbtError}
 					<p class="mt-0.5 text-xs text-muted-foreground" role="status">{dbtError}</p>
@@ -378,7 +377,12 @@
 					</p>
 				{/if}
 				{#if projectFolder && isDbtProject}
-					<Button variant="outline" size="sm" class="mt-3" onclick={() => void refreshDbtManifest()}>
+					<Button
+						variant="outline"
+						size="sm"
+						class="mt-3"
+						onclick={() => void refreshDbtManifest()}
+					>
 						Retry manifest load
 					</Button>
 				{/if}
@@ -387,7 +391,12 @@
 	{:else}
 		<!-- Transformed canvas: edges + nodes move together -->
 		<div
-			style="position: absolute; top: 0; left: 0; width: {canvasW}px; height: {canvasH}px; transform: translate({tx}px, {ty}px) scale({scale}); transform-origin: 0 0;"
+			class="absolute top-0 left-0 h-(--cv-h) w-(--cv-w) origin-top-left translate-x-(--tx) translate-y-(--ty) scale-(--ts)"
+			style:--cv-w="{canvasW}px"
+			style:--cv-h="{canvasH}px"
+			style:--tx="{tx}px"
+			style:--ty="{ty}px"
+			style:--ts={scale}
 		>
 			<!-- SVG layer: edges only, pointer-events none so nodes are clickable -->
 			<svg
@@ -418,8 +427,10 @@
 			{#each layout as node (node.entry.key)}
 				{@const isFocused = node.entry.name === focusedModelName}
 				<div
-					class="lineage-node absolute"
-					style="left: {node.x}px; top: {node.y}px; width: {NODE_W}px;"
+					class="lineage-node absolute top-(--ny) left-(--nx) w-(--nw)"
+					style:--nx="{node.x}px"
+					style:--ny="{node.y}px"
+					style:--nw="{NODE_W}px"
 				>
 					{#if node.entry.kind === 'model'}
 						{@const model = node.entry.model}
@@ -618,3 +629,10 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.lineage-canvas {
+		background-image: radial-gradient(circle, hsl(var(--border) / 0.6) 1px, transparent 1px);
+		background-size: 22px 22px;
+	}
+</style>

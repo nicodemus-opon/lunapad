@@ -82,12 +82,12 @@
 	{#if hasTabularData}
 		<div class="report-cell-toolbar no-print">
 			{#if exportEnabled}
-				<Button variant="outline" size="sm" class="h-7 text-[11px]" onclick={downloadCsv}>
+				<Button variant="outline" size="sm" class="h-7 text-2xs" onclick={downloadCsv}>
 					<Download class="h-3 w-3" /> CSV
 				</Button>
 			{/if}
 			{#if oncomment}
-				<Button variant="outline" size="sm" class="h-7 text-[11px]" onclick={oncomment}>
+				<Button variant="outline" size="sm" class="h-7 text-2xs" onclick={oncomment}>
 					<MessageSquare class="h-3 w-3" /> Comment
 				</Button>
 			{/if}

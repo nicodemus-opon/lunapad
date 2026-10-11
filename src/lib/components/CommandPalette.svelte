@@ -218,7 +218,7 @@
 {#if open}
 	<!-- Backdrop -->
 	<div
-		class="fixed inset-0 z-(--z-overlay) bg-background/70 backdrop-blur-[3px]"
+		class="fixed inset-0 z-(--z-overlay) bg-background/70 backdrop-blur-xs"
 		onclick={close}
 		role="presentation"
 	></div>

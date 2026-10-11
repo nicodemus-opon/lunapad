@@ -26,7 +26,10 @@
 					{#if row.value != null}{row.value}{:else}<em class="text-muted-foreground">null</em>{/if}
 				</span>
 				<div class="h-2.5 min-w-0 flex-1 overflow-hidden rounded bg-muted">
-					<div class="h-full rounded {STATS_TOP_VALUE}" style="width: {barPct}%"></div>
+					<div
+						class="h-full w-(--bar-w) rounded {STATS_TOP_VALUE}"
+						style:--bar-w={`${barPct}%`}
+					></div>
 				</div>
 				<span class="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
 					{row.count.toLocaleString()} ({fmtPct(row.pctOfRows, 1)})

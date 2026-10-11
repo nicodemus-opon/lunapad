@@ -138,7 +138,7 @@ const sqlLspPlugin: Plugin = {
 const viteLogger = createLogger();
 
 export default defineConfig({
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- vite@8/vitest vite@7 Plugin type mismatch
+	// vite@8/vitest vite@7 Plugin type mismatch justifies the `any` below
 	plugins: [
 		sqlLspPlugin,
 		duckdbStaticServe,

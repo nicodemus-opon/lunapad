@@ -130,25 +130,25 @@
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content side="bottom" align="start" class="min-w-40">
 				{#if suggested.length > 0}
-					<DropdownMenu.Label class="text-2xs text-muted-foreground">Suggested</DropdownMenu.Label>
+					<DropdownMenu.Label class="text-2xs">Suggested</DropdownMenu.Label>
 					{#each suggested as kind (kind)}
 						<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
 					{/each}
 					{#if otherKinds.length > 0}
 						<DropdownMenu.Separator />
-						<DropdownMenu.Label class="text-2xs text-muted-foreground">More</DropdownMenu.Label>
+						<DropdownMenu.Label class="text-2xs">More</DropdownMenu.Label>
 					{/if}
 				{/if}
 				{#each otherKinds as kind (kind)}
 					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
 				{/each}
 				<DropdownMenu.Separator />
-				<DropdownMenu.Label class="text-2xs text-muted-foreground">Inputs</DropdownMenu.Label>
+				<DropdownMenu.Label class="text-2xs">Inputs</DropdownMenu.Label>
 				{#each inputKinds as kind (kind)}
 					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
 				{/each}
 				<DropdownMenu.Separator />
-				<DropdownMenu.Label class="text-2xs text-muted-foreground">Data & AI</DropdownMenu.Label>
+				<DropdownMenu.Label class="text-2xs">Data & AI</DropdownMenu.Label>
 				{#each dataKinds as kind (kind)}
 					<DropdownMenu.Item onclick={() => onAdd(kind)}>{kindLabels[kind]}</DropdownMenu.Item>
 				{/each}

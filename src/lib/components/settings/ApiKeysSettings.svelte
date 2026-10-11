@@ -179,10 +179,10 @@
 					{newKeyExpiry === 'never' ? 'No expiry' : `${newKeyExpiry} days`}
 				</Select.Trigger>
 				<Select.Content>
-					<Select.Item value="never" class="text-xs">No expiry</Select.Item>
-					<Select.Item value="30" class="text-xs">30 days</Select.Item>
-					<Select.Item value="90" class="text-xs">90 days</Select.Item>
-					<Select.Item value="365" class="text-xs">365 days</Select.Item>
+					<Select.Item value="never">No expiry</Select.Item>
+					<Select.Item value="30">30 days</Select.Item>
+					<Select.Item value="90">90 days</Select.Item>
+					<Select.Item value="365">365 days</Select.Item>
 				</Select.Content>
 			</Select.Root>
 			<Button

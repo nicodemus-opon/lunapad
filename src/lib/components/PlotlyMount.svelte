@@ -89,7 +89,7 @@
 		bind:this={el}
 		data-plot
 		data-plot-ready={ready ? true : undefined}
-		style="width:100%;height:100%"
+		class="h-full w-full"
 	></div>
 	{#if errorText}
 		<div

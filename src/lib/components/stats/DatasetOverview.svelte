@@ -39,8 +39,8 @@
 		</p>
 		<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
 			<div
-				class="h-full rounded-full {STATS_BAR_PRIMARY} transition-all"
-				style="width: {overview.avgCompleteness}%"
+				class="h-full w-(--bar-w) rounded-full {STATS_BAR_PRIMARY} transition-all"
+				style:--bar-w={`${overview.avgCompleteness}%`}
 			></div>
 		</div>
 	</div>

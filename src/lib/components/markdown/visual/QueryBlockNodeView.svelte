@@ -380,7 +380,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-	class="query-block-view group/qb relative my-2 -ml-6 w-[calc(100%+1.5rem)] rounded-md border border-transparent p-2 transition-colors {selected
+	class="query-block-view group/qb relative my-2 -ml-[1.5rem] w-[calc(100%+1.5rem)] rounded-md border border-transparent p-2 transition-colors {selected
 		? 'border-ring bg-muted/10'
 		: collapsed
 			? 'cursor-pointer border-border/60 bg-muted/10 hover:border-border'
@@ -453,7 +453,7 @@
 					type="button"
 					variant="ghost"
 					size="icon-xs"
-					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 {inlinePromptOpen
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-primary focus-visible:ring-2 {inlinePromptOpen
 						? 'text-primary'
 						: ''}"
 					title="Tell AI what to do"
@@ -471,7 +471,7 @@
 					type="button"
 					variant="ghost"
 					size="icon-xs"
-					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {running
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 {running
 						? 'text-primary'
 						: ''}"
 					title={running ? 'Cancel' : 'Run'}
@@ -493,7 +493,7 @@
 					type="button"
 					variant="ghost"
 					size="icon-xs"
-					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2"
 					title={collapsed ? 'Expand cell' : 'Collapse cell'}
 					aria-label={collapsed ? 'Expand cell' : 'Collapse cell'}
 					onclick={(e) => {
@@ -514,7 +514,7 @@
 					variant="ghost"
 					size="icon-xs"
 					data-testid="open-worksheet"
-					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2"
 					title="Open in worksheet (rename, language, GUI editor)"
 					aria-label="Open in worksheet"
 					onmousedown={(e) => {
@@ -532,7 +532,7 @@
 					type="button"
 					variant="ghost"
 					size="icon-xs"
-					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 {pinned
+					class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 {pinned
 						? 'text-primary'
 						: ''}"
 					title={pinned ? 'Unpin code' : 'Pin code visible'}
@@ -613,7 +613,7 @@
 						>
 							<div class="flex items-center justify-between border-b border-border px-2 py-0.5">
 								<Input
-									class="h-5 min-w-0 flex-1 rounded-none border-transparent bg-transparent px-0 py-0 font-mono text-2xs text-muted-foreground shadow-none outline-none hover:bg-transparent focus:border-transparent focus:bg-transparent focus:text-foreground focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+									class="h-5 min-w-0 flex-1 px-0 py-0 font-mono text-2xs text-muted-foreground shadow-none focus:border-transparent focus:text-foreground focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
 									aria-label="Cell output name"
 									placeholder="model name"
 									value={nameDraft}

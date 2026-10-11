@@ -265,6 +265,35 @@
 	--shadow-2xl: var(--shadow-2xl);
 }
 
+/* ─── App utilities ──────────────────────────────────────────────────────── */
+/* Declared with @utility (not a plain selector) so Tailwind's content scanner
+   registers the name. Plain selectors here are invisible to the class graph and
+   to `shadcn/no-unknown-classes`. Kept global because print surfaces span
+   several routes (ReportPage, the public site layout) and each used to carry
+   its own duplicate `@media print { :global(.no-print) }` block. */
+@utility no-print {
+	@media print {
+		display: none !important;
+	}
+}
+
+/* Active file-drop target glow (UploadDialog). A bespoke inset ring in the
+   brand color — not a shadow-scale value, so it lives here as a named
+   treatment instead of a shadow-[...] arbitrary. */
+@utility dropzone-glow {
+	box-shadow: inset 0 0 0 3px oklch(from var(--primary) l c h / 0.08);
+}
+
+/* Micro kicker label: 10px uppercase eyebrow used for section kickers
+   (loading tips, stage palette). Unifies the two ad-hoc tracking values
+   (0.18em / 0.2em) into one treatment. Pair with a text-* color utility. */
+@utility text-kicker {
+	font-size: 0.625rem;
+	font-weight: 500;
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+}
+
 @layer base {
 	* {
 		@apply border-border outline-ring/70;

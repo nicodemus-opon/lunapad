@@ -242,7 +242,7 @@
 							</Select.Trigger>
 							<Select.Content>
 								{#each activeShares as share (share.token)}
-									<Select.Item value={share.token} class="text-xs">{share.notebookName}</Select.Item
+									<Select.Item value={share.token}>{share.notebookName}</Select.Item
 									>
 								{/each}
 							</Select.Content>

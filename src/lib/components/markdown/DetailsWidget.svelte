@@ -18,11 +18,7 @@
 <Collapsible.Root bind:open={isOpen}>
 	<div class="md-details" class:is-open={isOpen}>
 		<Collapsible.Trigger class="md-details-summary" aria-expanded={isOpen}>
-			<ChevronRight
-				class="md-details-chevron"
-				style={isOpen ? 'transform: rotate(90deg)' : undefined}
-				size={14}
-			/>
+			<ChevronRight class="md-details-chevron" size={14} />
 			<span>{summary}</span>
 		</Collapsible.Trigger>
 		<Collapsible.Content class="md-details-body">
@@ -35,5 +31,8 @@
 	:global(.md-details-chevron) {
 		flex-shrink: 0;
 		transition: transform var(--motion-medium) var(--motion-ease-out);
+	}
+	:global(.md-details.is-open .md-details-chevron) {
+		transform: rotate(90deg);
 	}
 </style>

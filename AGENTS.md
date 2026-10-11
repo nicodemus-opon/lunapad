@@ -6,6 +6,52 @@
 
 ---
 
+## Design-system lint (mandatory)
+
+This project enforces its Tailwind design system with `@shadcn/lint` (ESLint).
+The policy lives in `eslint.config.mjs` — read its comments before touching
+any UI code; they document what callers may change per component family.
+
+- After ANY UI/markup/class change, run `pnpm lint:design` and fix **all**
+  `shadcn/*` warnings. Zero warnings is the bar — do not finish UI work dirty.
+  The command must exit 0 with no output; it currently does.
+- NEVER add `eslint-disable` for a `shadcn/*` rule to silence a finding.
+  If the finding exposes a wrong policy, update `eslint.config.mjs` (with a
+  rationale comment). If it exposes wrong code, fix the code.
+
+How to write classes so lint stays green:
+
+- **Dynamic values** → Svelte style directive + paren shorthand, never `style=`:
+  `style:--panel-top="{y}px"` + class `top-(--panel-top)`. Directives accept
+  only `var(--token)` refs or non-colors — never raw hex (user-supplied colors
+  are the sole exception and are documented in the config, not in markup).
+- **Never the bracket form**: `w-[var(--x)]` / `[calc(...)]` trips
+  `no-arbitrary-values`. The `(--x)` shorthand (`w-(--x)`, `duration-(--motion-fast)`,
+  `z-(--z-dropdown)`) is the project idiom and passes.
+- **No `style=` attributes and no `style:` directives for regular properties**
+  on any element. Static values become plain classes (`fixed`, `table-fixed`).
+  `style:--x` directives are FORBIDDEN on components (Svelte compile error) —
+  use a plain `style="--x: ..."` attribute there (custom-property-only is exempt).
+- **Component classes must be statically readable**: string literals,
+  `cond ? 'a' : 'b'`, `cond && 'a'` inside `cn(...)`. No template-literal
+  building, no cross-file class constants at call sites (shared recipes live
+  in `chip-styles.ts`; token/unknown-class rules still check that file).
+  Wrapper components forward via `cn("defaults...", className)` so caller
+  overrides win through tailwind-merge.
+- **New global classes** → declare with `@utility` in `src/routes/layout.css`
+  (see `no-print`, `dropzone-glow`, `text-kicker`), never as plain selectors.
+  Plain selectors are invisible to the class graph.
+- **New JS-hook/marker classes** (event delegation, `:global()` state hooks)
+  must use a registered prefix (`nc-*`, `md-*`, `is-*`, `qb-*`, `iw-*`,
+  `cf-*`, `inspector-*`, `picker-*`, `*-anchor`, … — full list in
+  `eslint.config.mjs` as `PROJECT_VOCAB`). Anything else warns as unknown.
+- **No raw palette colors** (`bg-amber-500` → `bg-warning`), no off-scale
+  values (`text-[11px]` → `text-2xs`). Note `--spacing` is `0.22rem`, so the
+  linter's scale-equivalent suggestions assume 4px — verify by hand.
+- Destructive menu items use `data-variant="destructive"`, not `text-destructive`.
+
+---
+
 You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
 
 ## Available Svelte MCP Tools:

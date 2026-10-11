@@ -234,11 +234,12 @@
 		toast.success('Theme imported.');
 	}
 
-	function swatchStyle(theme: WorkspaceTheme): string {
-		const primary = theme.light['--primary'] ?? 'var(--primary)';
-		const c1 = theme.light['--chart-1'] ?? 'var(--chart-1)';
-		const c2 = theme.light['--chart-2'] ?? 'var(--chart-2)';
-		return `background: conic-gradient(${primary} 0 33%, ${c1} 33% 66%, ${c2} 66% 100%);`;
+	function swatchColors(theme: WorkspaceTheme): [string, string, string] {
+		return [
+			theme.light['--primary'] ?? 'var(--primary)',
+			theme.light['--chart-1'] ?? 'var(--chart-1)',
+			theme.light['--chart-2'] ?? 'var(--chart-2)'
+		];
 	}
 </script>
 
@@ -253,10 +254,13 @@
 
 		<div class="flex flex-wrap items-center gap-2">
 			{#each PRESET_THEMES as theme (theme.id)}
+				{@const swatch = swatchColors(theme)}
 				<button
 					type="button"
-					class="group relative h-7 w-7 rounded-full border border-border transition-transform disabled:cursor-not-allowed"
-					style={swatchStyle(theme)}
+					class="theme-swatch group relative h-7 w-7 rounded-full border border-border transition-transform disabled:cursor-not-allowed"
+					style:--sw-a={swatch[0]}
+					style:--sw-b={swatch[1]}
+					style:--sw-c={swatch[2]}
 					disabled={!isAdmin}
 					title={theme.name}
 					aria-label={`Use ${theme.name} theme`}
@@ -371,3 +375,9 @@
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.theme-swatch {
+		background: conic-gradient(var(--sw-a) 0 33%, var(--sw-b) 33% 66%, var(--sw-c) 66% 100%);
+	}
+</style>

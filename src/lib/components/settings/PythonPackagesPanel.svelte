@@ -121,7 +121,7 @@
 						<span class="font-mono">{pkg.name}</span>
 						<span class="text-muted-foreground">{pkg.version}</span>
 						{#if CURATED.has(pkg.name.toLowerCase())}
-							<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+							<span class="rounded bg-muted px-1.5 py-0.5 text-3xs text-muted-foreground"
 								>curated</span
 							>
 						{/if}

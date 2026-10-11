@@ -424,7 +424,7 @@
 				<InlineChipLabel
 					value={col.name}
 					placeholder="name…"
-					class="px-1.5 py-1 font-mono text-xs"
+					class="px-1.5"
 					oncommit={(v) => updateColName(idx, v)}
 				/>
 				<span class="{CHIP_META} px-0.5">=</span>
@@ -439,14 +439,14 @@
 						value={bexpr.left.value}
 						suggestions={availableColumns}
 						placeholder="col…"
-						class="px-1.5 py-1 font-mono text-xs"
+						class="px-1.5"
 						oncommit={(v) => setBinaryLeftCol(idx, v)}
 					/>
 				{:else}
 					<InlineChipLabel
 						value={bexpr.left.value}
 						placeholder="val…"
-						class="px-1.5 py-1 font-mono text-xs"
+						class="px-1.5"
 						oncommit={(v) => setBinaryLeftLiteral(idx, v)}
 					/>
 				{/if}
@@ -471,14 +471,14 @@
 						value={bexpr.right.value}
 						suggestions={availableColumns}
 						placeholder="col…"
-						class="px-1.5 py-1 font-mono text-xs"
+						class="px-1.5"
 						oncommit={(v) => setBinaryRightCol(idx, v)}
 					/>
 				{:else}
 					<InlineChipLabel
 						value={bexpr.right.value}
 						placeholder="val…"
-						class="px-1.5 py-1 font-mono text-xs"
+						class="px-1.5"
 						oncommit={(v) => setBinaryRightLiteral(idx, v)}
 					/>
 				{/if}
@@ -487,7 +487,7 @@
 				<InlineChipLabel
 					value={col.name}
 					placeholder="name…"
-					class="px-1.5 py-1 font-mono text-xs"
+					class="px-1.5"
 					oncommit={(v) => updateColName(idx, v)}
 				/>
 				<span class="{CHIP_META} px-0.5">=</span>
@@ -554,7 +554,7 @@
 											</Select.Trigger>
 											<Select.Content>
 												{#each functionOptions as f (f.value)}
-													<Select.Item value={f.value} class="text-xs">{f.label}</Select.Item>
+													<Select.Item value={f.value}>{f.label}</Select.Item>
 												{/each}
 											</Select.Content>
 										</Select.Root>

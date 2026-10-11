@@ -134,7 +134,7 @@
 	}
 </script>
 
-<div class="md-chart" style="height: {effectiveHeight}px">
+<div class="md-chart h-(--ch)" style:--ch="{effectiveHeight}px">
 	{#if chartState === 'ready'}
 		<ChartView
 			bind:this={chartRef}
@@ -185,7 +185,7 @@
 			<p>Run query to preview chart</p>
 			<div class="md-chart-ghost-bars" aria-hidden="true">
 				{#each [42, 68, 55, 80, 48, 72, 60] as h (h)}
-					<div class="md-chart-ghost-bar" style="height: {h}%"></div>
+					<div class="md-chart-ghost-bar h-(--gh)" style:--gh="{h}%"></div>
 				{/each}
 			</div>
 		</div>

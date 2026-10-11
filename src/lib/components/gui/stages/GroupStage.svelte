@@ -568,8 +568,7 @@
 															>
 															<Select.Content
 																>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item
-																		value={func}
-																		class="text-xs">{func}</Select.Item
+																		value={func}>{func}</Select.Item
 																	>{/each}</Select.Content
 															>
 														</Select.Root>
@@ -591,9 +590,8 @@
 													>
 														<Select.Trigger class="h-7 w-14 text-xs">{parsed.op}</Select.Trigger>
 														<Select.Content
-															>{#each STRUCTURED_AGG_OPS as op (op)}<Select.Item
-																	value={op}
-																	class="text-xs">{op}</Select.Item
+															>{#each STRUCTURED_AGG_OPS as op (op)}<Select.Item value={op}
+																	>{op}</Select.Item
 																>{/each}</Select.Content
 														>
 													</Select.Root>
@@ -611,8 +609,7 @@
 															>
 															<Select.Content
 																>{#each STRUCTURED_AGG_FUNCS as func (func)}<Select.Item
-																		value={func}
-																		class="text-xs">{func}</Select.Item
+																		value={func}>{func}</Select.Item
 																	>{/each}</Select.Content
 															>
 														</Select.Root>
@@ -702,7 +699,7 @@
 				<InlineChipLabel
 					value={col}
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c) || c === col)}
-					class="px-2 py-1 font-mono text-xs"
+					class="px-2"
 					oncommit={(v) => renameBy(idx, v)}
 					oncancel={() => {
 						if (!col) removeGroupByIdx(idx);
@@ -722,7 +719,7 @@
 					suggestions={availableColumns.filter((c) => !stage.by.includes(c))}
 					initialEditing={true}
 					placeholder="column…"
-					class="px-2 py-1 font-mono text-xs"
+					class="px-2"
 					oncommit={commitAddBy}
 					oncancel={() => (pendingNewBy = false)}
 				/>

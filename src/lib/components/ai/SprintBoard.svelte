@@ -35,12 +35,14 @@
 				{@const style = SPRINT_TASK_STYLE[task.type]}
 				{@const TypeIcon = style.icon}
 				<li
-					class="flex items-start gap-2 border-l-2 px-2.5 py-0.5"
-					style="border-color: {task.status === 'pending'
-						? 'transparent'
-						: `var(${style.colorVar})`}"
+					class="flex items-start gap-2 border-l-2 border-l-(--task-c) px-2.5 py-0.5"
+					style:--task-c={task.status === 'pending' ? 'transparent' : `var(${style.colorVar})`}
 				>
-					<span class="mt-0.5 shrink-0" style="color: var({style.colorVar})" title={style.label}>
+					<span
+						class="mt-0.5 shrink-0 text-(--task-icon-c)"
+						style:--task-icon-c="var({style.colorVar})"
+						title={style.label}
+					>
 						<TypeIcon size={11} />
 					</span>
 

@@ -1015,9 +1015,7 @@
 					</div>
 					<!-- Compact keyboard hint row -->
 					<div class="flex items-center gap-2 pt-1.5 pb-0.5">
-						<span class="mr-0.5 text-3xs tracking-[0.18em] text-muted-foreground/50 uppercase"
-							>Stage palette</span
-						>
+						<span class="mr-0.5 text-kicker text-muted-foreground/50">Stage palette</span>
 						{#each [['/', 'open'], ['1–9', 'pick'], ['↵', 'AI generate'], ['⌘↵', 'AI + apply']] as [key, hint]}
 							<span class="inline-flex items-center gap-1 text-3xs text-muted-foreground/50">
 								<kbd
@@ -1040,8 +1038,7 @@
 										AI full query — window / join / analytics
 									</p>
 									<div class="flex items-center gap-2">
-										<span class="add-stage-badge border-primary bg-primary/15 text-primary"
-											>AI</span
+										<span class="add-stage-badge border-primary bg-primary/15 text-primary">AI</span
 										>
 										<Button
 											variant="outline"
@@ -1122,7 +1119,11 @@
 								{#each queryLanes as lane (lane.key)}
 									<section class="space-y-0.5">
 										<div class="flex items-center gap-2 px-0.5 pb-0.5">
-											<p class="chip-lane-heading">{lane.title}</p>
+											<p
+												class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase"
+											>
+												{lane.title}
+											</p>
 											<span class="text-3xs text-muted-foreground/50">{lane.description}</span>
 										</div>
 										{#each lane.results as result, idx (`${lane.key}-${idx}`)}
@@ -1181,7 +1182,9 @@
 						<div class="space-y-4 py-0.5">
 							{#if quickChips.length > 0}
 								<section class="space-y-1">
-									<p class="chip-lane-heading px-0.5">Suggested for this pipeline</p>
+									<p class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+										Suggested for this pipeline
+									</p>
 									<div class="space-y-0.5">
 										{#each quickChips as chip, idx (chip.id)}
 											{@const ItemIcon = ICONS[chip.icon]}
@@ -1212,7 +1215,9 @@
 
 							<section class="space-y-1.5">
 								<div class="flex items-center gap-2 px-0.5">
-									<p class="chip-lane-heading">Stage primitives</p>
+									<p class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+										Stage primitives
+									</p>
 									<span class="text-3xs text-muted-foreground/50">press number to add</span>
 								</div>
 								<div class="grid grid-cols-2 gap-1">
@@ -1258,7 +1263,9 @@
 							{#if showMoreStageOptions}
 								<section class="space-y-1">
 									<div class="flex items-center gap-2 px-0.5">
-										<p class="chip-lane-heading">Templates</p>
+										<p class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+											Templates
+										</p>
 										{#if matchedColumn}<span class="add-stage-badge">{matchedColumn}</span>{/if}
 									</div>
 									<div class="space-y-0.5">
@@ -1297,7 +1304,9 @@
 
 								{#if analysisResults.length > 0}
 									<section class="space-y-1">
-										<p class="chip-lane-heading px-0.5">Analysis prompts</p>
+										<p class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+											Analysis prompts
+										</p>
 										<div class="space-y-0.5">
 											{#each analysisResults as suggestion, idx (`${suggestion.id}::${idx}`)}
 												<button

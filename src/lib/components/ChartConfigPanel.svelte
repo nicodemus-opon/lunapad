@@ -446,7 +446,7 @@
 	<div class="inspector-section">
 		<p class="inspector-section-title">Title</p>
 		<div class="inspector-section-body">
-			<div class="text-fields">
+			<div class="chart-config-fields">
 				<Input
 					type="text"
 					class="chart-config-control"
@@ -1026,7 +1026,7 @@
 		color: var(--foreground);
 	}
 
-	.text-fields {
+	.chart-config-fields {
 		display: grid;
 		gap: 0.375rem;
 	}

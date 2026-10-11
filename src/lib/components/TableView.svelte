@@ -53,7 +53,7 @@
 			</span>
 		{/if}
 		{#if totalRows !== null && totalRows > LIMIT}
-			<span class="rounded bg-(--chart-1)/15 px-1.5 py-0.5 text-[10px] font-medium text-chart-1">
+			<span class="rounded bg-(--chart-1)/15 px-1.5 py-0.5 text-3xs font-medium text-chart-1">
 				Showing first {LIMIT.toLocaleString()}
 			</span>
 		{/if}

@@ -235,7 +235,7 @@
 						{#each revisions as rev (rev.id)}
 							<li class="relative flex items-start gap-3 py-3 pl-6">
 								<span
-									class="absolute top-3 -left-[13px] flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background"
+									class="absolute top-3 -left-3.5 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background"
 									aria-hidden="true"
 								>
 									<Pencil class="h-3 w-3 text-muted-foreground" />

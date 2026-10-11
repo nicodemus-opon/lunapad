@@ -1586,7 +1586,7 @@
 							<div class="hidden items-center -space-x-1.5 md:flex" aria-label="Teammates viewing">
 								{#each notebookPresence.slice(0, 4) as person (person.userId)}
 									<span
-										class="flex h-6 w-6 items-center justify-center rounded-full border border-background bg-muted text-[9px] font-semibold text-muted-foreground"
+										class="flex h-6 w-6 items-center justify-center rounded-full border border-background bg-muted text-3xs font-semibold text-muted-foreground"
 										title={person.userName}
 									>
 										{person.userName
@@ -1780,15 +1780,14 @@
 
 		<div id="layout-root" class="flex flex-1 overflow-hidden">
 			<div
-				class="flex h-full flex-row overflow-hidden border-r border-sidebar-border bg-background text-foreground {isDraggingSidebar
+				class="flex h-full w-(--side-w) flex-row overflow-hidden border-r border-sidebar-border bg-background text-foreground {isDraggingSidebar
 					? 'transition-none'
 					: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
-				style={sidebarCollapsed ? 'width: var(--sidebar-rail-width)' : `width: ${sidebarWidth}px`}
+				style:--side-w={sidebarCollapsed ? 'var(--sidebar-rail-width)' : `${sidebarWidth}px`}
 			>
 				<!-- Icon rail (width tracks --sidebar-rail-width — w-9 disagrees with --spacing scale) -->
 				<div
-					class="flex shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border bg-background px-1 pt-1 pb-1.5"
-					style="width: var(--sidebar-rail-width)"
+					class="flex w-(--sidebar-rail-width) shrink-0 flex-col items-center gap-0.5 border-r border-sidebar-border bg-background px-1 pt-1 pb-1.5"
 				>
 					{@render railButton('notebooks', BookOpen, 'Notebooks')}
 					{@render railButton('tables', Database, 'Databases & tables')}
@@ -1827,12 +1826,12 @@
 
 				<!-- Panel content (width collapses to 0 — avoid opacity transitions that can stick) -->
 				<div
-					class="flex shrink-0 flex-col overflow-hidden {isDraggingSidebar
+					class="flex w-(--panel-w) shrink-0 flex-col overflow-hidden {isDraggingSidebar
 						? 'transition-none'
 						: 'transition-[width] duration-(--motion-medium) ease-(--motion-ease-out)'}"
-					style={sidebarCollapsed
-						? 'width: 0'
-						: `width: calc(${sidebarWidth}px - var(--sidebar-rail-width))`}
+					style:--panel-w={sidebarCollapsed
+						? '0'
+						: `calc(${sidebarWidth}px - var(--sidebar-rail-width))`}
 					inert={sidebarCollapsed}
 					aria-hidden={sidebarCollapsed}
 				>
@@ -2389,12 +2388,12 @@
 												</Select.Trigger>
 												<Select.Content>
 													{#if activeNotebookConnectionValue === '__mixed__'}
-														<Select.Item value="__mixed__" class="font-mono text-xs"
+														<Select.Item value="__mixed__" class="font-mono"
 															>Mixed connections</Select.Item
 														>
 													{/if}
 													{#each connections as connection (connection.id)}
-														<Select.Item value={connection.id} class="font-mono text-xs"
+														<Select.Item value={connection.id} class="font-mono"
 															>{connection.name}</Select.Item
 														>
 													{/each}
@@ -2430,13 +2429,13 @@
 													{/if}
 												</Select.Trigger>
 												<Select.Content>
-													<Select.Item value="0" class="text-xs">Auto-refresh: Off</Select.Item>
-													<Select.Item value="30000" class="text-xs">Every 30s</Select.Item>
-													<Select.Item value="60000" class="text-xs">Every 1m</Select.Item>
-													<Select.Item value="300000" class="text-xs">Every 5m</Select.Item>
-													<Select.Item value="900000" class="text-xs">Every 15m</Select.Item>
-													<Select.Item value="1800000" class="text-xs">Every 30m</Select.Item>
-													<Select.Item value="3600000" class="text-xs">Every 1h</Select.Item>
+													<Select.Item value="0">Auto-refresh: Off</Select.Item>
+													<Select.Item value="30000">Every 30s</Select.Item>
+													<Select.Item value="60000">Every 1m</Select.Item>
+													<Select.Item value="300000">Every 5m</Select.Item>
+													<Select.Item value="900000">Every 15m</Select.Item>
+													<Select.Item value="1800000">Every 30m</Select.Item>
+													<Select.Item value="3600000">Every 1h</Select.Item>
 												</Select.Content>
 											</Select.Root>
 										</div>

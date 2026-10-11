@@ -292,8 +292,7 @@
 		submitting ||
 			((dialogMode === 'create-workspace' || dialogMode === 'rename-workspace') &&
 				!workspaceName.trim()) ||
-			((dialogMode === 'create-project' || dialogMode === 'rename-project') &&
-				!projectName.trim())
+			((dialogMode === 'create-project' || dialogMode === 'rename-project') && !projectName.trim())
 	);
 </script>
 
@@ -317,7 +316,9 @@
 			</div>
 		{:else if loadError}
 			<div class="space-y-2 p-2">
-				<p class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+				<p
+					class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+				>
 					{loadError}
 				</p>
 				<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
@@ -369,7 +370,7 @@
 						<span class="min-w-0 flex-1 truncate">{project.name}</span>
 					</DropdownMenu.Item>
 					{#if item.organization.id === current?.organization.id && isAdmin}
-						<div class="flex gap-1 py-1 pr-2 pl-[2.625rem]">
+						<div class="flex gap-1 py-1 pr-2 pl-12">
 							<button
 								class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
 								disabled={switching}
@@ -398,7 +399,7 @@
 				<Users class="h-3.5 w-3.5" /> Create workspace
 			</DropdownMenu.Item>
 			{#if current}
-				<DropdownMenu.Item onclick={() => openDialog('leave-workspace')} class="text-destructive">
+				<DropdownMenu.Item onclick={() => openDialog('leave-workspace')} data-variant="destructive">
 					<LogOut class="h-3.5 w-3.5" /> Leave current workspace
 				</DropdownMenu.Item>
 			{/if}
@@ -437,7 +438,9 @@
 			</Dialog.Header>
 
 			{#if dialogError}
-				<p class="mx-5 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+				<p
+					class="mx-5 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+				>
 					{dialogError}
 				</p>
 			{/if}

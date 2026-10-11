@@ -534,10 +534,10 @@
 											: 'OpenAPI-compatible'}
 									</Select.Trigger>
 									<Select.Content>
-										<Select.Item value="openapi-compatible" class="text-xs"
+										<Select.Item value="openapi-compatible"
 											>OpenAPI-compatible</Select.Item
 										>
-										<Select.Item value="ollama" class="text-xs">Ollama</Select.Item>
+										<Select.Item value="ollama">Ollama</Select.Item>
 									</Select.Content>
 								</Select.Root>
 							</div>

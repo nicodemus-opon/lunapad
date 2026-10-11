@@ -213,7 +213,7 @@
 			</ContextMenu.Item>
 			{#if attached}
 				<ContextMenu.Separator />
-				<ContextMenu.Item onclick={() => removeAttachedDatabase(name)} class="text-destructive">
+				<ContextMenu.Item onclick={() => removeAttachedDatabase(name)} data-variant="destructive">
 					<Unplug class="h-3.5 w-3.5" />
 					Detach database
 				</ContextMenu.Item>
@@ -379,7 +379,7 @@
 			{#each [80, 60, 72, 48, 64] as width, i (i)}
 				<div class="mx-1 flex h-7 items-center gap-1.5 px-2">
 					<Skeleton class="h-3 w-3 shrink-0 rounded-sm" />
-					<Skeleton class="h-3 rounded-sm" style="width: {width}%" />
+					<Skeleton class="h-3 w-(--sw) rounded-sm" style="--sw: {width}%" />
 				</div>
 			{/each}
 		{:else if catalog.length === 0 && externalCatalog.length === 0}

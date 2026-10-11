@@ -46,7 +46,7 @@
 	});
 </script>
 
-<div bind:this={el} style="height: {height}px;"></div>
+<div bind:this={el} class="h-(--h)" style:--h="{height}px"></div>
 
 {#if figure === null}
 	<p class="text-xs text-destructive/90">Couldn't parse this figure's JSON spec.</p>

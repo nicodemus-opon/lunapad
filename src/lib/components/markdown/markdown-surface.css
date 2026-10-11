@@ -195,6 +195,7 @@
 
 .md-column {
 	flex: 1 1 0%;
+	flex-basis: var(--md-col-w, auto);
 	min-width: 0;
 }
 
@@ -258,6 +259,7 @@
 	border-radius: var(--radius-sm);
 	padding: 0.55rem 0.65rem;
 	margin: 0.6rem 0;
+	grid-column: var(--md-span, auto);
 }
 
 /* Accented cards get the same subtle fill callouts use — panels, not just outlines. */
@@ -377,6 +379,7 @@
 	border-radius: var(--radius-sm);
 	margin: 0;
 	vertical-align: top;
+	grid-column: var(--md-span, auto);
 }
 
 .md-metric-row {
@@ -626,6 +629,7 @@ select.md-filter-control {
 
 .md-progress {
 	margin: 0.35rem 0;
+	grid-column: var(--md-span, auto);
 }
 
 .md-progress-label {
@@ -1057,6 +1061,7 @@ textarea.md-control {
 
 .markdown-surface .markdoc-container-node.is-column .markdoc-container-content.md-column {
 	flex: 1 1 0%;
+	flex-basis: var(--md-col-w, auto);
 	min-width: 0;
 }
 

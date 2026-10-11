@@ -23,12 +23,27 @@
 						usage.limits.maxExternalConnections,
 						'Add a warehouse connection'
 					],
-					['Published shares', usage.usage.publishedShares, usage.limits.maxPublishedShares, 'Publish a report'],
+					[
+						'Published shares',
+						usage.usage.publishedShares,
+						usage.limits.maxPublishedShares,
+						'Publish a report'
+					],
 					['Schedules', usage.usage.scheduledJobs, usage.limits.maxSchedules, 'Schedule refresh'],
 					['API keys', usage.usage.apiKeys, null, 'Create API key'],
-					['Active jobs', usage.usage.activeJobs, usage.limits.maxConcurrentJobs, 'Run hosted work'],
+					[
+						'Active jobs',
+						usage.usage.activeJobs,
+						usage.limits.maxConcurrentJobs,
+						'Run hosted work'
+					],
 					['AI tokens', usage.usage.aiTokens, usage.limits.monthlyAiTokens, 'Use AI assistant'],
-					['Storage MB', usage.usage.storageMb ?? 0, usage.limits.maxStorageMb, 'Store project files']
+					[
+						'Storage MB',
+						usage.usage.storageMb ?? 0,
+						usage.limits.maxStorageMb,
+						'Store project files'
+					]
 				]
 			: []
 	);
@@ -92,12 +107,16 @@
 			<div class="h-8 rounded-md bg-muted/30"></div>
 		</div>
 	{:else if loadError}
-		<div class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+		<div
+			class="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
+		>
 			<p class="text-xs text-destructive">{loadError}</p>
 			<Button variant="outline" size="sm" class="h-7 text-xs" onclick={load}>Retry</Button>
 		</div>
 	{:else if !usage}
-		<p class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+		<p
+			class="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground"
+		>
 			Usage is not available for this workspace yet.
 		</p>
 	{:else}
@@ -117,12 +136,15 @@
 								<div class="font-medium">{row[0]}</div>
 								<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
 									<div
-										class="h-full rounded-full {ratio(row[1] as number, row[2] as number | string | null) > 0.85
+										class="h-full w-(--use-w) rounded-full {ratio(
+											row[1] as number,
+											row[2] as number | string | null
+										) > 0.85
 											? 'bg-destructive'
 											: ratio(row[1] as number, row[2] as number | string | null) > 0.65
-												? 'bg-amber-500'
+												? 'bg-warning'
 												: 'bg-primary'}"
-										style={`width: ${Math.round(ratio(row[1] as number, row[2] as number | string | null) * 100)}%`}
+										style:--use-w={`${Math.round(ratio(row[1] as number, row[2] as number | string | null) * 100)}%`}
 									></div>
 								</div>
 								<div class="mt-1 text-2xs text-muted-foreground">{row[3]}</div>

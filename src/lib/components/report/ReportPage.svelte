@@ -237,7 +237,9 @@
 
 <svelte:head>
 	{#if themeOverrideCss}
-		<style>{themeOverrideCss}</style>
+		<style>
+{themeOverrideCss}
+		</style>
 	{/if}
 </svelte:head>
 
@@ -362,9 +364,6 @@
 	   in sync. */
 
 	@media print {
-		:global(.no-print) {
-			display: none !important;
-		}
 		.report-page {
 			padding: 0;
 			max-width: none;

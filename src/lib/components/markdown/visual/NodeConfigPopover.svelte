@@ -113,8 +113,9 @@
 		></button>
 		<div
 			bind:this={popoverEl}
-			class="node-config-popover fixed z-(--z-dropdown) flex max-h-[min(70vh,28rem)] w-[min(20rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-xl shadow-black/10 focus:outline-none"
-			style="top: {panelPos.top}px; left: {panelPos.left}px;"
+			class="node-config-popover fixed top-(--panel-top) left-(--panel-left) z-(--z-dropdown) flex max-h-[min(70vh,28rem)] w-[min(20rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-xl shadow-black/10 focus:outline-none"
+			style:--panel-top="{panelPos.top}px"
+			style:--panel-left="{panelPos.left}px"
 			role="dialog"
 			aria-label="{title} properties"
 			tabindex={-1}
