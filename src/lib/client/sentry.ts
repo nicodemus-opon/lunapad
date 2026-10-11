@@ -57,7 +57,7 @@ export function captureClientException(
 			context: { platform: 'javascript', runtimeName: 'browser', ...context },
 			environment: 'client'
 		});
-		return postEnvelope(dsn.envelopeUrl, body);
+		return postEnvelope(dsn.envelopeUrl, body, dsn.key);
 	} catch {
 		return Promise.resolve();
 	}

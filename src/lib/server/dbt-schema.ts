@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +26,12 @@ export interface DbtSchemaModel {
 export interface DbtSchemaFile {
 	version: number;
 	models: DbtSchemaModel[];
+	/**
+	 * True when the source YAML used keys this parser does not model, so writing it
+	 * back out would silently delete them. `writeSchemaFile` refuses to overwrite a
+	 * file in this state rather than destroying content it cannot reproduce.
+	 */
+	lossy?: boolean;
 }
 
 // ── Minimal YAML parser for dbt schema files ─────────────────────────────────
@@ -223,6 +230,10 @@ export function parseSchemaYaml(content: string): DbtSchemaFile {
 									config.tags = tags;
 									continue;
 								}
+							} else {
+								// materialized/schema/tags are all we model under config;
+								// anything else there would be lost on write.
+								result.lossy = true;
 							}
 							i++;
 						}
@@ -298,6 +309,9 @@ export function parseSchemaYaml(content: string): DbtSchemaFile {
 										col.tests = tests;
 									}
 								} else {
+									// data_tests, meta, constraints, +column-style keys, ...
+									// we don't model these, so a rewrite would drop them.
+									result.lossy = true;
 									i++;
 								}
 							}
@@ -305,6 +319,8 @@ export function parseSchemaYaml(content: string): DbtSchemaFile {
 						}
 						model.columns = columns;
 					} else {
+						// data_tests, meta, constraints, docs, access, ...
+						result.lossy = true;
 						i++;
 					}
 				}
@@ -377,10 +393,37 @@ export function serializeSchemaYaml(schema: DbtSchemaFile): string {
 
 // ── File I/O helpers ─────────────────────────────────────────────────────────
 
-/** Returns the path to `_models.yml` in the same directory as the given model file. */
+/**
+ * Path to the schema YAML governing a model file.
+ *
+ * Prefers the app's own `_models.yml` (written by the schema editor) when it exists.
+ * Otherwise falls back to dbt's real conventions — `schema.yml` in the model's own
+ * directory, then `models/schema.yml`, then a single `models/<name>.yml` — because
+ * most projects are not written in the `_models.yml` style and would otherwise get
+ * no docs at all.
+ *
+ * The chosen path is also the write target, so it must not depend on a file the app
+ * is about to create; hence "exists" rather than "prefer _models.yml" when neither
+ * is present.
+ */
 export function findSchemaFile(projectRoot: string, modelRelPath: string): string {
-	const dir = path.dirname(path.join(projectRoot, modelRelPath));
-	return path.join(dir, '_models.yml');
+	const abs = path.join(projectRoot, modelRelPath);
+	const dir = path.dirname(abs);
+	const appOwned = path.join(dir, '_models.yml');
+	if (fsSync.existsSync(appOwned)) return appOwned;
+
+	for (const candidate of [
+		path.join(dir, 'schema.yml'),
+		path.join(dir, 'schema.yaml'),
+		path.join(projectRoot, 'models', 'schema.yml'),
+		path.join(projectRoot, 'models', 'schema.yaml'),
+		abs.replace(/\.(sql|prql)$/, '.yml'),
+		abs.replace(/\.(sql|prql)$/, '.yaml')
+	]) {
+		if (fsSync.existsSync(candidate)) return candidate;
+	}
+	// Nothing on disk yet — default to the app's own file so writes stay contained.
+	return appOwned;
 }
 
 export async function readSchemaFile(ymlPath: string): Promise<DbtSchemaFile> {
@@ -393,6 +436,21 @@ export async function readSchemaFile(ymlPath: string): Promise<DbtSchemaFile> {
 }
 
 export async function writeSchemaFile(ymlPath: string, schema: DbtSchemaFile): Promise<void> {
+	// Never clobber a file we can't faithfully re-serialize. This parser models a
+	// subset of dbt's schema YAML, so rewriting a project that uses `data_tests`,
+	// `meta`, `constraints`, `+column`, `access`, … would silently delete them — and
+	// `backfillColumnsFromManifest` runs on every manifest refresh, so merely opening
+	// a project was enough to trigger it. Refusing is strictly better than corrupting.
+	// A missing file parses to the default (not lossy), so creating new files works.
+	const existing = await readSchemaFile(ymlPath);
+	if (existing.lossy) {
+		console.warn(
+			`[dbt-schema] refusing to rewrite ${ymlPath}: it contains keys this parser does not ` +
+				'preserve, and rewriting would delete them. Update it manually or add support for ' +
+				'those keys first.'
+		);
+		return;
+	}
 	await fs.mkdir(path.dirname(ymlPath), { recursive: true });
 	await fs.writeFile(ymlPath, serializeSchemaYaml(schema), 'utf-8');
 }

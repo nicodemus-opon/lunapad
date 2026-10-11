@@ -186,7 +186,7 @@ describe('describeError', () => {
 
 describe('postEnvelope', () => {
 	let server: Server;
-	let received: { url: string; contentType: string; body: string }[];
+	let received: { url: string; contentType: string; auth: string; body: string }[];
 	let port: number;
 
 	beforeAll(async () => {
@@ -198,10 +198,17 @@ describe('postEnvelope', () => {
 				received.push({
 					url: req.url ?? '',
 					contentType: String(req.headers['content-type']),
+					auth: String(req.headers['x-sentry-auth'] ?? ''),
 					body: data
 				});
 				if ((req.url ?? '').includes('/forbidden/')) {
 					res.writeHead(403).end('{"detail":"forbidden"}');
+					return;
+				}
+				if ((req.url ?? '').includes('/blocked/')) {
+					res
+						.writeHead(403, { 'Content-Type': 'text/html' })
+						.end('<!DOCTYPE html><html><title>Attention Required! | Cloudflare</title></html>');
 					return;
 				}
 				res.writeHead(200).end('{}');
@@ -222,7 +229,19 @@ describe('postEnvelope', () => {
 		expect(received).toHaveLength(1);
 		expect(received[0].url).toBe('/sentry/api/5/envelope/');
 		expect(received[0].contentType).toBe('application/x-sentry-envelope');
+		expect(received[0].auth).toBe('');
 		expect(received[0].body).toBe('test-body');
+	});
+
+	it('sends the DSN key as X-Sentry-Auth and as a sentry_key query', async () => {
+		const dsn = parseDsn(`http://public-key@127.0.0.1:${port}/sentry/5`)!;
+		await postEnvelope(dsn.envelopeUrl, 'test-body', dsn.key);
+		const sent = received[received.length - 1];
+		expect(sent.url).toBe('/sentry/api/5/envelope/?sentry_key=public-key');
+		expect(sent.auth).toBe(
+			'Sentry sentry_key=public-key, sentry_version=7, sentry_client=lunapad.sentry-lite/1.0.0'
+		);
+		expect(sent.body).toBe('test-body');
 	});
 
 	it('never throws when the endpoint is unreachable', async () => {
@@ -237,12 +256,31 @@ describe('postEnvelope', () => {
 			await postEnvelope(dsn.envelopeUrl, 'x');
 			expect(warn).not.toHaveBeenCalled();
 			setSentryDebug(true);
-			await postEnvelope(dsn.envelopeUrl, 'x');
+			await postEnvelope(dsn.envelopeUrl, 'x', dsn.key);
 			expect(warn).toHaveBeenCalledTimes(1);
-			expect(warn.mock.calls[0][0]).toContain('403');
+			const message = String(warn.mock.calls[0][0]);
+			expect(message).toContain('403');
+			// The receiver's own body is what names the cause.
+			expect(message).toContain('{"detail":"forbidden"}');
+			expect(message).toContain('rejected the DSN key');
 			// Throttled: repeat rejection stays silent.
-			await postEnvelope(dsn.envelopeUrl, 'x');
+			await postEnvelope(dsn.envelopeUrl, 'x', dsn.key);
 			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+			clearSentryTestState();
+		}
+	});
+
+	it('diagnoses an HTML error page as a receiver-side block', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			clearSentryTestState();
+			const dsn = parseDsn(`http://key@127.0.0.1:${port}/blocked/6`)!;
+			setSentryDebug(true);
+			await postEnvelope(dsn.envelopeUrl, 'x', dsn.key);
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(String(warn.mock.calls[0][0])).toContain('Cloudflare/WAF');
 		} finally {
 			warn.mockRestore();
 			clearSentryTestState();

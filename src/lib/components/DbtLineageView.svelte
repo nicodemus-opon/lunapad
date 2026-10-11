@@ -167,7 +167,20 @@
 		return nodes;
 	});
 
-	const nameToNode = $derived(new Map(layout.map((n) => [n.entry.name, n])));
+	// Two nodes may legitimately share a name (a stale manifest can contain both
+	// `marts/orders.sql` and `staging/orders.sql`). A plain name→node Map lets the
+	// last one win, which draws every incoming edge to an arbitrary node. Only
+	// unambiguous names are indexed, so a duplicate drops its edge rather than
+	// showing a connection that doesn't exist.
+	const nameToNode = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const n of layout) counts.set(n.entry.name, (counts.get(n.entry.name) ?? 0) + 1);
+		const map = new Map<string, NodeLayout>();
+		for (const n of layout) {
+			if (counts.get(n.entry.name) === 1) map.set(n.entry.name, n);
+		}
+		return map;
+	});
 
 	// Canvas size (for SVG edge layer)
 	const canvasW = $derived(layout.length ? Math.max(...layout.map((n) => n.x + NODE_W)) + 48 : 600);

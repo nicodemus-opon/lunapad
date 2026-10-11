@@ -76,6 +76,10 @@ export const GET: RequestHandler = async ({ url, request }) => {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
+			// nginx/Coolify/Cloudflare buffer text/event-stream by default, which
+			// holds every line back until the buffer fills — the drawer then looks
+			// permanently empty even though the job is streaming fine.
+			'X-Accel-Buffering': 'no',
 			Connection: 'keep-alive'
 		}
 	});

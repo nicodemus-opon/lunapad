@@ -59,7 +59,7 @@ export function captureServerException(
 			environment,
 			release
 		});
-		return postEnvelope(dsn.envelopeUrl, body);
+		return postEnvelope(dsn.envelopeUrl, body, dsn.key);
 	} catch {
 		return Promise.resolve();
 	}

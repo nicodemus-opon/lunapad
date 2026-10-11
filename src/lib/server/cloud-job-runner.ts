@@ -2,7 +2,7 @@ import { appendCloudJobLogs, getCloudJob, type CloudJob } from './cloud-jobs.js'
 import { queryExternalConnection } from './connections.js';
 import { getSecret } from './connection-secrets.js';
 import { getConnectionMetadata, listConnectionsMetadata } from './connections-store.js';
-import { spawnDbt } from './dbt-runner.js';
+import { getJob, spawnDbt } from './dbt-runner.js';
 import {
 	ensureProjectPinnedPackages,
 	getPythonJob,
@@ -52,6 +52,29 @@ function waitForPythonJob(jobId: string, timeoutMs: number): Promise<PythonRunRe
 	});
 }
 
+function waitForDbtJob(jobId: string, timeoutMs: number): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const job = getJob(jobId);
+		if (!job) {
+			reject(new Error('dbt job not found immediately after spawning it.'));
+			return;
+		}
+		if (job.done) {
+			resolve(job.exitCode ?? 0);
+			return;
+		}
+		const timer = setTimeout(() => {
+			job.emitter.off('done', onDone);
+			reject(new Error('dbt execution timed out.'));
+		}, timeoutMs);
+		const onDone = (code: number | null) => {
+			clearTimeout(timer);
+			resolve(code ?? 0);
+		};
+		job.emitter.once('done', onDone);
+	});
+}
+
 export function queueWorkerSupportsKind(kind: CloudJob['kind']): boolean {
 	if (kind === 'query' || kind === 'dbt' || kind === 'python') return true;
 	return process.env.CLOUD_WORKER_EXPERIMENTAL_AGENT_JOBS === 'true';
@@ -88,7 +111,38 @@ export async function runClaimedCloudJob(input: {
 	if (job.kind === 'dbt') {
 		const folder = assertString(payload.folder, 'folder');
 		const args = assertStringArray(payload.args, 'args');
-		return { jobId: spawnDbt(args, folder) };
+		const dbtJobId = spawnDbt(args, folder);
+		const dbtJob = getJob(dbtJobId);
+		if (!dbtJob) throw new Error('dbt job not found immediately after spawning it.');
+
+		// Mirror the python branch below: without this, a queued dbt job finishes with
+		// `cloud_jobs.logs = NULL` — the UI has nothing to render and the drawer opens
+		// empty even though dbt ran fine.
+		const logWrites: Promise<unknown>[] = [];
+		const appendLine = (line: string): void => {
+			logWrites.push(
+				appendCloudJobLogs({
+					orgId: job.orgId,
+					jobId: job.id,
+					workerId: input.workerId,
+					message: `${line}\n`
+				})
+			);
+		};
+		// Subscribe before replaying the backlog so lines emitted between spawnDbt()
+		// and here are not dropped.
+		dbtJob.emitter.on('line', appendLine);
+		for (const line of dbtJob.lines) appendLine(line);
+		try {
+			const exitCode = await waitForDbtJob(dbtJobId, job.timeoutMs);
+			await Promise.allSettled(logWrites);
+			if (exitCode !== 0) {
+				throw new Error(`dbt ${args[0] ?? 'run'} exited with code ${exitCode}.`);
+			}
+			return { jobId: dbtJobId, exitCode };
+		} finally {
+			dbtJob.emitter.off('line', appendLine);
+		}
 	}
 	if (job.kind === 'python') {
 		const notebookId = assertString(payload.notebookId, 'notebookId');

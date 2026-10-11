@@ -353,53 +353,120 @@ export async function fetchDbtManifest(folder: string): Promise<DbtModel[]> {
 	return body.models ?? [];
 }
 
-export async function dbtRun(folder: string, select?: string): Promise<string> {
-	const res = await fetch('/api/dbt/run', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ folder, select })
-	});
-	const body = (await res.json()) as { error?: string; jobId?: string };
-	if (!res.ok) throw new Error(body.error ?? 'Failed to run dbt');
-	return body.jobId!;
+/**
+ * Which transport a dbt job's logs live on.
+ *
+ * `inline` — the process was spawned in the app instance that served the request;
+ * its output is streamed over SSE from `/api/dbt/logs`.
+ *
+ * `queue` — the job was handed to a cloud worker (HTTP 202). There is no SSE
+ * channel for those: the worker persists output into `cloud_jobs.logs`, so the
+ * only way to read it is polling `/api/jobs/[id]`.
+ */
+export interface DbtJobRef {
+	mode: 'inline' | 'queue';
+	jobId: string;
 }
 
-export async function dbtCompile(folder: string): Promise<string> {
-	const res = await fetch('/api/dbt/compile', {
+async function submitDbt(url: string, body: Record<string, unknown>, fallback: string) {
+	const res = await fetch(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ folder })
+		body: JSON.stringify(body)
 	});
-	const body = (await res.json()) as { error?: string; jobId?: string };
-	if (!res.ok) throw new Error(body.error ?? 'Failed to compile dbt');
-	return body.jobId!;
+	const parsed = (await res.json()) as { error?: string; jobId?: string; job?: { id?: string } };
+	if (!res.ok) throw new Error(parsed.error ?? fallback);
+	// Inline execution returns `{ jobId }`; queue execution returns 202 `{ job }`.
+	if (parsed.jobId) return { mode: 'inline', jobId: parsed.jobId } satisfies DbtJobRef;
+	if (parsed.job?.id) return { mode: 'queue', jobId: parsed.job.id } satisfies DbtJobRef;
+	// Previously this returned `undefined`, which then 404'd inside the log stream
+	// and made every queued dbt command look like a silent no-op.
+	throw new Error('The dbt request did not return a job to follow.');
 }
 
-export async function dbtTest(folder: string, select?: string): Promise<string> {
-	const res = await fetch('/api/dbt/test', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ folder, select })
-	});
-	const body = (await res.json()) as { error?: string; jobId?: string };
-	if (!res.ok) throw new Error(body.error ?? 'Failed to test dbt');
-	return body.jobId!;
+export async function dbtRun(folder: string, select?: string): Promise<DbtJobRef> {
+	return submitDbt('/api/dbt/run', { folder, select }, 'Failed to run dbt');
+}
+
+export async function dbtCompile(folder: string): Promise<DbtJobRef> {
+	return submitDbt('/api/dbt/compile', { folder }, 'Failed to compile dbt');
+}
+
+export async function dbtTest(folder: string, select?: string): Promise<DbtJobRef> {
+	return submitDbt('/api/dbt/test', { folder, select }, 'Failed to test dbt');
+}
+
+export async function cancelDbtJob(jobId: string): Promise<void> {
+	const res = await fetch(`/api/dbt/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+	if (!res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(body.error ?? 'Failed to cancel dbt job');
+	}
+}
+
+/** Follow a queued cloud job's persisted output until it reaches a terminal state. */
+function watchQueuedDbtLogs(
+	jobId: string,
+	onLine: (text: string) => void,
+	onDone: (exitCode: number) => void,
+	signal: AbortSignal
+): void {
+	let sent = 0;
+	let stopped = false;
+
+	(async () => {
+		while (!signal.aborted && !stopped) {
+			try {
+				const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { signal });
+				if (!res.ok) break;
+				const body = (await res.json()) as {
+					job?: { status?: string; logs?: string | null };
+				};
+				const logs = body.job?.logs ?? '';
+				// `logs` accumulates server-side, so only forward what we haven't seen.
+				if (logs.length > sent) {
+					const delta = logs.slice(sent);
+					sent = logs.length;
+					for (const line of delta.split('\n')) {
+						if (line.trim()) onLine(line);
+					}
+				}
+				const status = body.job?.status;
+				if (status && ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(status)) {
+					stopped = true;
+					onDone(status === 'succeeded' ? 0 : 1);
+					return;
+				}
+			} catch {
+				break;
+			}
+			await new Promise((r) => setTimeout(r, 1500));
+		}
+		if (!stopped && !signal.aborted) onDone(1);
+	})();
 }
 
 /**
- * Subscribe to live log output for a dbt job.
+ * Subscribe to log output for a dbt job. Accepts a bare job id (always treated as
+ * an inline job — that's what schedules persist via `lastRunJobId`).
  * Returns an unsubscribe function.
  */
-export function watchDbtLogs(
-	jobId: string,
+export function watchDbtJob(
+	ref: DbtJobRef | string,
 	onLine: (text: string) => void,
 	onDone: (exitCode: number) => void
 ): () => void {
+	const jobRef: DbtJobRef = typeof ref === 'string' ? { mode: 'inline', jobId: ref } : ref;
 	const ctrl = new AbortController();
+
+	if (jobRef.mode === 'queue') {
+		watchQueuedDbtLogs(jobRef.jobId, onLine, onDone, ctrl.signal);
+		return () => ctrl.abort();
+	}
 
 	(async () => {
 		try {
-			const res = await fetch(`/api/dbt/logs?jobId=${encodeURIComponent(jobId)}`, {
+			const res = await fetch(`/api/dbt/logs?jobId=${encodeURIComponent(jobRef.jobId)}`, {
 				signal: ctrl.signal
 			});
 			if (!res.body) return;

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DbtSchedule } from '$lib/types/schedule';
 import { assertAllowedProjectFolder, assertSafe } from './project.js';
+import { projectsRoot } from './tenancy.js';
 
 // The currently open dbt project folder — set when a project is opened.
 let currentFolder: string | null = null;
@@ -14,6 +15,58 @@ export function getCurrentFolder(): string | null {
 export function setCurrentFolder(folder: string | null): void {
 	if (folder) assertAllowedProjectFolder(folder);
 	currentFolder = folder;
+}
+
+function safeReadDir(dir: string): fs.Dirent[] {
+	try {
+		// Symlinks are skipped so a stray link can't walk the scan outside the root.
+		return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory());
+	} catch {
+		return [];
+	}
+}
+
+function hasSchedulesFile(folder: string): boolean {
+	try {
+		return fs.statSync(path.join(folder, 'schedules.json')).isFile();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Every folder that could hold schedules, derived from persisted state.
+ *
+ * The scheduler used to rely on `getCurrentFolder()`, which is module-level: on a
+ * multi-replica deployment the cron callback lands on an instance that never saw
+ * `/api/project/open`, so nothing was ever scheduled — and because it holds a
+ * single folder, only the most recently opened project was tracked at all.
+ * Enumerating the projects root on each tick fixes both.
+ */
+export function listScheduleFolders(): string[] {
+	const found = new Set<string>();
+
+	// Single-project/self-hosted installs may sit outside the projects root.
+	for (const candidate of [currentFolder, process.env.PROJECT_FOLDER ?? null]) {
+		if (!candidate) continue;
+		try {
+			assertAllowedProjectFolder(candidate);
+			found.add(path.resolve(candidate));
+		} catch {
+			// not an allowed folder — skip
+		}
+	}
+
+	// `<projectsRoot>/<orgId>/<projectId>/schedules.json`
+	for (const org of safeReadDir(projectsRoot())) {
+		const orgDir = path.join(projectsRoot(), org.name);
+		for (const project of safeReadDir(orgDir)) {
+			const folder = path.join(orgDir, project.name);
+			if (hasSchedulesFile(folder)) found.add(folder);
+		}
+	}
+
+	return [...found];
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────

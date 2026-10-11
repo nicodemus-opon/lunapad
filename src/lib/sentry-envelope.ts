@@ -203,37 +203,102 @@ export function buildEnvelope(options: SentryEnvelopeOptions): string {
 	return `${header}\n${itemHeader}\n${payload}`;
 }
 
+/** Credential string for `X-Sentry-Auth` / `Authorization` style ingest auth. */
+function authHeader(key: string): string {
+	return `Sentry sentry_key=${key}, sentry_version=7, sentry_client=lunapad.sentry-lite/1.0.0`;
+}
+
 /**
  * POST an envelope. Never throws — error reporting must not break the app.
  * Fire-and-forget at call sites (`void postEnvelope(...)`); awaited in tests.
  *
+ * `key` is the DSN public key. It is sent twice because receivers disagree on
+ * where to read it: Sentry/Relay accept the `dsn` field in the envelope
+ * header, but GlitchTip's fallback view only inspects `X-Sentry-Auth` /
+ * `Authorization` / `?sentry_key=` and answers 403 `{"detail":"Denied"}` to a
+ * header-only DSN — and older builds deny the Rust path the same way. The key
+ * is a public ingest credential (it ships in browser bundles), so putting it
+ * in the URL is not a leak.
+ *
  * Rejections are silent by default. Enable `setSentryDebug(true)` (server:
- * SENTRY_DEBUG=1, browser: ?sentryDebug=1) to log the HTTP status of rejected
- * sends — e.g. a 403 means the endpoint refused the DSN/origin, which no
- * client-side change can fix. Throttled per status so a persistent rejection
- * can't spam the logs.
+ * SENTRY_DEBUG=1, browser: ?sentryDebug=1) to log the HTTP status plus the
+ * response body of a rejected send, which is what names the cause:
+ * `{"detail":"Denied"}` = the receiver rejected the DSN key, HTML starting
+ * `<title>Attention Required` = Cloudflare blocked the POST (fix it on the
+ * receiver), `429` = the receiver is throttling. Throttled per status so a
+ * persistent rejection can't spam the logs.
  */
-export async function postEnvelope(envelopeUrl: string, body: string): Promise<void> {
+export async function postEnvelope(envelopeUrl: string, body: string, key?: string): Promise<void> {
 	try {
-		const response = await fetch(envelopeUrl, {
+		let url = envelopeUrl;
+		const headers: Record<string, string> = { 'Content-Type': 'application/x-sentry-envelope' };
+		if (key) {
+			headers['X-Sentry-Auth'] = authHeader(key);
+			try {
+				const parsed = new URL(url);
+				parsed.searchParams.set('sentry_key', key);
+				url = parsed.toString();
+			} catch {
+				// Relative/unparsable URL — the header alone still authenticates.
+			}
+		}
+		const response = await fetch(url, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/x-sentry-envelope' },
+			headers,
 			body,
 			signal: AbortSignal.timeout(5000)
 		});
 		// 429/4xx: drop silently — retrying error reports risks feedback loops.
 		if (!response.ok) {
-			await response.body?.cancel().catch(() => {});
-			if (sentryDebugEnabled && shouldReportDeduped(`ingest ${response.status}`)) {
+			const status = response.status;
+			if (sentryDebugEnabled && shouldReportDeduped(`ingest ${status}`)) {
+				const detail = await describeRejection(response).catch(() => '');
 				console.warn(
-					`[sentry] ingest rejected the event (HTTP ${response.status} from ${envelopeUrl}). ` +
-						`A 401/403 means the DSN key is wrong for this project or the origin is not allow-listed — check the receiver's project settings, not this app.`
+					`[sentry] ingest rejected the event (HTTP ${status} from ${envelopeUrl}). ` +
+						`${diagnoseRejection(status, detail)}`
 				);
+			} else {
+				await response.body?.cancel().catch(() => {});
 			}
 		}
 	} catch {
 		// Offline / DNS / timeout — never surface.
 	}
+}
+
+/** Bounded body + transport headers of a rejected ingest response. */
+async function describeRejection(response: Response): Promise<string> {
+	const header = (name: string) => response.headers.get(name) ?? '';
+	const transport = [
+		header('server') && `server=${header('server')}`,
+		header('cf-ray') && `cf-ray=${header('cf-ray')}`,
+		header('cf-mitigated') && `cf-mitigated=${header('cf-mitigated')}`,
+		header('retry-after') && `retry-after=${header('retry-after')}`
+	]
+		.filter(Boolean)
+		.join(' ');
+	const text = (await response.text().catch(() => '')).trim().slice(0, 300);
+	return [transport && `[${transport}]`, text].filter(Boolean).join(' ');
+}
+
+/** One-line reading of a rejection, given its body ("" when unavailable). */
+function diagnoseRejection(status: number, detail: string): string {
+	if (/^\s*<\s*(html|!doctype)/i.test(detail)) {
+		return (
+			'The receiver answered with an HTML error page instead of the ingest API — ' +
+			'most likely a Cloudflare/WAF rule on the receiver. Check its security rules, not this app.'
+		);
+	}
+	if (status === 401 || status === 403) {
+		return (
+			`The receiver rejected the DSN key (${detail || 'no body'}). ` +
+			`Copy a fresh key from the receiver's project settings into SENTRY_DSN.`
+		);
+	}
+	if (status === 429) {
+		return `The receiver is throttling${detail ? ` (${detail})` : ''} — drop events or raise its quota.`;
+	}
+	return detail ? `Receiver said: ${detail}` : 'No body returned by the receiver.';
 }
 
 let sentryDebugEnabled = false;

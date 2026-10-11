@@ -1,5 +1,5 @@
 import { inngest } from '../client';
-import { getCurrentFolder, loadSchedules, isDueNow } from '$lib/server/dbt-schedules';
+import { listScheduleFolders, loadSchedules, isDueNow } from '$lib/server/dbt-schedules';
 import type { DbtRunEventData } from './dbt-run';
 
 export const dbtSchedulerFunction = inngest.createFunction(
@@ -8,26 +8,35 @@ export const dbtSchedulerFunction = inngest.createFunction(
 		triggers: [{ cron: '* * * * *' }]
 	},
 	async ({ step }) => {
-		const folder = getCurrentFolder();
-		if (!folder) return { skipped: true, reason: 'no project open' };
+		// Enumerated per tick rather than read from a single in-memory "current
+		// folder", so this works across replicas and covers every project that has
+		// schedules — not just the last one opened on this instance.
+		const folders = listScheduleFolders();
+		if (folders.length === 0) return { skipped: true, reason: 'no project open' };
 
-		const schedules = loadSchedules(folder);
-		const due = schedules.filter((s) => s.enabled && isDueNow(s.cron));
+		const events: Array<{ name: 'dbt/run'; data: DbtRunEventData }> = [];
+		const fired: string[] = [];
 
-		if (due.length === 0) return { fired: 0 };
+		for (const folder of folders) {
+			const due = loadSchedules(folder).filter((s) => s.enabled && isDueNow(s.cron));
+			for (const s of due) {
+				events.push({
+					name: 'dbt/run',
+					data: {
+						folder,
+						select: s.select || undefined,
+						scheduleId: s.id,
+						label: s.label
+					}
+				});
+				fired.push(s.label);
+			}
+		}
 
-		const events = due.map((s) => ({
-			name: 'dbt/run' as const,
-			data: {
-				folder,
-				select: s.select || undefined,
-				scheduleId: s.id,
-				label: s.label
-			} satisfies DbtRunEventData
-		}));
+		if (events.length === 0) return { fired: 0 };
 
 		await step.sendEvent('dispatch', events);
 
-		return { fired: due.length, schedules: due.map((s) => s.label) };
+		return { fired: fired.length, schedules: fired };
 	}
 );

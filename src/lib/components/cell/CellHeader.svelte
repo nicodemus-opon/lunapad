@@ -323,13 +323,11 @@
 			padding var(--motion-fast) var(--motion-ease-out);
 	}
 	.cell-name-input:focus {
-		background: var(--input);
-		border-color: var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0 0.375rem;
+		background: transparent;
+		border-color: transparent;
+		border-radius: 0;
+		padding: 0;
 		outline: none;
-		box-shadow:
-			inset 0 1px 2px oklch(0 0 0 / 0.06),
-			0 0 0 2px oklch(from var(--ring) l c h / 0.15);
+		box-shadow: none;
 	}
 </style>

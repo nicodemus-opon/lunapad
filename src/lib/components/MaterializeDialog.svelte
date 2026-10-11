@@ -32,7 +32,7 @@
 		type CellScheduleScope
 	} from '$lib/stores/notebook.svelte';
 	import { coerceNumber } from '$lib/utils';
-	import { dbtRun, dbtCompile, watchDbtLogs } from '$lib/services/project-client';
+	import { dbtRun, dbtCompile, watchDbtJob } from '$lib/services/project-client';
 
 	interface Props {
 		cell: Cell;
@@ -141,10 +141,10 @@
 		try {
 			const inManifest = getDbtModels().some((m) => m.name === cell.outputName);
 			if (!inManifest) {
-				const compileJobId = await dbtCompile(projectFolder);
+				const compileJob = await dbtCompile(projectFolder);
 				await new Promise<void>((resolve) => {
-					watchDbtLogs(
-						compileJobId,
+					watchDbtJob(
+						compileJob,
 						() => {},
 						(code) => {
 							if (code === 0) void refreshDbtManifest();
@@ -153,9 +153,9 @@
 					);
 				});
 			}
-			const jobId = await dbtRun(projectFolder, select);
-			watchDbtLogs(
-				jobId,
+			const job = await dbtRun(projectFolder, select);
+			watchDbtJob(
+				job,
 				(line) => {
 					dbtLogs = [...dbtLogs, line];
 				},

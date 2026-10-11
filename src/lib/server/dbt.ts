@@ -12,15 +12,26 @@ export interface DbtModel {
 	materialized: 'table' | 'view' | 'incremental' | 'ephemeral';
 	lastRunStatus: 'pass' | 'error' | 'unknown';
 	path: string; // relative path within models/
+	tags: string[];
 }
 
 interface ManifestNode {
 	name: string;
 	schema: string;
 	description?: string;
-	config?: { materialized?: string };
-	columns?: Record<string, { name: string; data_type?: string; description?: string }>;
+	config?: { materialized?: string; tags?: string[] };
+	columns?: Record<
+		string,
+		{
+			name: string;
+			data_type?: string;
+			description?: string;
+			tests?: Record<string, unknown>;
+			data_tests?: Record<string, unknown>;
+		}
+	>;
 	depends_on?: { nodes?: string[] };
+	tags?: string[];
 	path?: string;
 	resource_type?: string;
 }
@@ -31,6 +42,51 @@ interface Manifest {
 
 interface RunResults {
 	results?: Array<{ unique_id: string; status: string }>;
+}
+
+/**
+ * `node.path` means different things depending on the dbt flavour: dbt-core emits
+ * it relative to the model root ("staging/orders.sql") while dbt-fusion keeps the
+ * model-path prefix ("models/staging/orders.sql"). Everything downstream assumes
+ * the dbt-core form, so normalize once. Without this, `backfillColumnsFromManifest`
+ * re-joins "models" onto an already-prefixed path and writes into a phantom
+ * `models/models/` tree inside the user's project.
+ */
+function stripModelPathPrefix(nodePath: string, modelPaths: string[]): string {
+	let rel = nodePath.replace(/\\/g, '/');
+	for (const raw of modelPaths) {
+		const prefix = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+		if (!prefix) continue;
+		if (rel === prefix) return '';
+		if (rel.startsWith(`${prefix}/`)) return rel.slice(prefix.length + 1);
+	}
+	return rel;
+}
+
+/** dbt tags may arrive as an array or as a space-separated string (e.g. `+tags: "a b"`). */
+function normalizeTags(raw: string[] | string | undefined | null): string[] {
+	if (!raw) return [];
+	const list = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/);
+	return [...new Set(list.map((t) => String(t).trim()).filter(Boolean))];
+}
+
+/** Read `model-paths` from dbt_project.yml; defaults to ["models"] like dbt does. */ async function readModelPaths(
+	projectRoot: string
+): Promise<string[]> {
+	try {
+		const content = await fs.readFile(path.join(projectRoot, 'dbt_project.yml'), 'utf-8');
+		const match = content.match(/^[ \t]*model-paths[ \t]*:[ \t]*\[([^\]]*)\]/m);
+		if (match) {
+			const parsed = match[1]
+				.split(',')
+				.map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+				.filter(Boolean);
+			if (parsed.length) return parsed;
+		}
+	} catch {
+		// unreadable/missing — fall back to dbt's default
+	}
+	return ['models'];
 }
 
 // ── Manifest parsing ─────────────────────────────────────────────────────────
@@ -56,6 +112,8 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 		// optional
 	}
 
+	const modelPaths = await readModelPaths(projectRoot);
+
 	// Build run status map
 	const statusMap = new Map<string, 'pass' | 'error'>();
 	for (const result of runResults.results ?? []) {
@@ -80,14 +138,21 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 			}
 		}
 
-		const columns = Object.values(node.columns ?? {}).map((col) => ({
-			name: col.name,
-			dataType: col.data_type ?? 'unknown',
-			description: col.description ?? null,
-			tests: []
-		}));
+		// dbt-core records tests as a keyed object (`{ not_null: {...} }`); dbt-fusion
+		// uses the same shape under `data_tests` for dbt >= 1.10. Previously this was
+		// hardcoded to `[]`, which made the lineage "tested" badge unreachable for any
+		// project read from a manifest.
+		const columns = Object.values(node.columns ?? {}).map((col) => {
+			const tests = col.tests ?? col.data_tests ?? {};
+			return {
+				name: col.name,
+				dataType: col.data_type ?? 'unknown',
+				description: col.description ?? null,
+				tests: Array.isArray(tests) ? tests : Object.keys(tests)
+			};
+		});
 
-		models.set(node.path ?? nodeId, {
+		models.set(node.path ? stripModelPathPrefix(node.path, modelPaths) : nodeId, {
 			name: node.name,
 			schema: node.schema ?? '',
 			description: node.description ?? null,
@@ -95,7 +160,8 @@ export async function loadManifest(projectRoot: string): Promise<DbtModel[]> {
 			upstreamRefs,
 			materialized: (node.config?.materialized ?? 'view') as DbtModel['materialized'],
 			lastRunStatus: statusMap.get(nodeId) ?? 'unknown',
-			path: node.path ?? ''
+			path: node.path ? stripModelPathPrefix(node.path, modelPaths) : '',
+			tags: normalizeTags(node.tags ?? node.config?.tags)
 		});
 	}
 
@@ -152,7 +218,8 @@ async function parseModelFiles(projectRoot: string): Promise<DbtModel[]> {
 					upstreamRefs: refs,
 					materialized: (ymlModel?.config?.materialized ?? 'view') as DbtModel['materialized'],
 					lastRunStatus: 'unknown',
-					path: relPath
+					path: relPath,
+					tags: normalizeTags(ymlModel?.config?.tags)
 				});
 			} catch {
 				// skip
@@ -179,6 +246,8 @@ export async function backfillColumnsFromManifest(projectRoot: string): Promise<
 		return;
 	}
 
+	const modelPaths = await readModelPaths(projectRoot);
+
 	for (const [, node] of Object.entries(manifest.nodes ?? {})) {
 		if (node.resource_type !== 'model') continue;
 		if (!node.path) continue;
@@ -186,7 +255,9 @@ export async function backfillColumnsFromManifest(projectRoot: string): Promise<
 		const columns = Object.values(node.columns ?? {});
 		if (columns.length === 0) continue;
 
-		const modelRelPath = path.join('models', node.path);
+		// `node.path` is already root-relative for dbt-core but carries the model-path
+		// prefix for dbt-fusion, so normalize before re-anchoring under the model root.
+		const modelRelPath = path.join(modelPaths[0], stripModelPathPrefix(node.path, modelPaths));
 		const ymlPath = findSchemaFile(projectRoot, modelRelPath);
 		const schema = await readSchemaFile(ymlPath);
 

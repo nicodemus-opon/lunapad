@@ -49,7 +49,7 @@ import {
 	watchProjectFolder,
 	fetchDbtManifest,
 	dbtTest,
-	watchDbtLogs,
+	watchDbtJob,
 	updateProjectSchema,
 	auditProject,
 	backfillSchemaFromManifest,
@@ -3135,15 +3135,15 @@ export async function testCell(cellId: string): Promise<void> {
 	cell.dbtTestResults = [];
 	cell.dbtTestLog = [];
 
-	const jobId = await dbtTest(state.projectFolder, cell.outputName).catch(() => null);
-	if (!jobId) {
+	const jobRef = await dbtTest(state.projectFolder, cell.outputName).catch(() => null);
+	if (!jobRef) {
 		cell.dbtTestStatus = 'fail';
 		return;
 	}
 
 	const results: DbtTestResult[] = [];
-	const unsubscribe = watchDbtLogs(
-		jobId,
+	const unsubscribe = watchDbtJob(
+		jobRef,
 		(line: string) => {
 			const ctx2 = findCellContext(cellId);
 			if (!ctx2) return;

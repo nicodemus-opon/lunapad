@@ -34,12 +34,23 @@
 		saveDbtSchedule,
 		deleteDbtSchedule
 	} from '$lib/stores/notebook.svelte';
-	import { dbtCompile, dbtRun, dbtTest, watchDbtLogs } from '$lib/services/project-client';
+	import {
+		dbtCompile,
+		dbtRun,
+		dbtTest,
+		watchDbtJob,
+		cancelDbtJob,
+		type DbtJobRef
+	} from '$lib/services/project-client';
 	import type { DbtModel } from '$lib/server/dbt';
 	import type { DbtSchedule } from '$lib/types/schedule';
 	import DbtScheduleModal from './DbtScheduleModal.svelte';
 	import TreeRow from '$lib/components/sidebar/TreeRow.svelte';
 	import EmptyState from '$lib/components/sidebar/EmptyState.svelte';
+
+	// docker-compose publishes the Inngest dev server on 8267 (its internal port is
+	// 8288). Set PUBLIC_INNGEST_UI_URL to point somewhere else, or to '' to hide.
+	const INNGEST_UI_URL = import.meta.env.PUBLIC_INNGEST_UI_URL ?? 'http://localhost:8267';
 
 	const projectFolder = $derived(getProjectFolder());
 	const isDbtProject = $derived(getIsDbtProject());
@@ -104,9 +115,7 @@
 		const q = selectorInput.trim().toLowerCase();
 		if (!q) return [];
 		const modelNames = dbtModels.map((m) => m.name);
-		const tags = [
-			...new Set(dbtModels.flatMap((m) => (m as DbtModel & { tags?: string[] }).tags ?? []))
-		];
+		const tags = [...new Set(dbtModels.flatMap((m) => m.tags))];
 		const tagSuggestions = tags.map((t) => `tag:${t}`);
 		return [...modelNames, ...tagSuggestions]
 			.filter((s) => s.toLowerCase().includes(q))
@@ -128,7 +137,7 @@
 		return 'text-muted-foreground';
 	}
 
-	async function runCommand(fn: () => Promise<string>, label: string) {
+	async function runCommand(fn: () => Promise<DbtJobRef>, label: string) {
 		if (!projectFolder) return;
 		logLines = [];
 		logHeader = label;
@@ -137,10 +146,10 @@
 		logUnsubscribe?.();
 
 		try {
-			const jobId = await fn();
-			setDbtRunningJobId(jobId);
-			logUnsubscribe = watchDbtLogs(
-				jobId,
+			const job = await fn();
+			setDbtRunningJobId(job.jobId);
+			logUnsubscribe = watchDbtJob(
+				job,
 				(line) => {
 					logLines = [...logLines, line];
 				},
@@ -161,6 +170,20 @@
 		}
 	}
 
+	async function stopCommand() {
+		if (!runningJobId) return;
+		logUnsubscribe?.();
+		try {
+			await cancelDbtJob(runningJobId);
+			logLines = [...logLines, 'Cancelled.'];
+		} catch (err) {
+			toast.error((err as Error).message ?? 'Failed to cancel');
+		} finally {
+			setDbtRunningJobId(null);
+			exitCode = -1;
+		}
+	}
+
 	function modelStatusIcon(model: DbtModel) {
 		if (model.lastRunStatus === 'pass') return { icon: CheckCircle2, class: 'text-success' };
 		if (model.lastRunStatus === 'error') return { icon: XCircle, class: 'text-destructive' };
@@ -177,29 +200,6 @@
 		}
 		return groups;
 	});
-
-	function relativeNextRun(cron: string): string {
-		// Quick approximation: check the next-run time via the last-computed nextRun stored on
-		// server by re-using the existing PUT endpoint. For now show a static label.
-		// A reactive $effect would over-fetch; we compute once on render from cron string.
-		return '';
-	}
-
-	function nextRunLabel(schedule: DbtSchedule): string {
-		// Parse common cron patterns into readable text as a lightweight hint.
-		// For full accuracy users see the modal's preview.
-		const parts = schedule.cron.trim().split(/\s+/);
-		if (parts.length !== 5) return '';
-		const [min, hour, dom, month, dow] = parts;
-		if (dom === '*' && month === '*' && dow === '*') {
-			if (min !== '*' && hour !== '*')
-				return `daily ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
-			if (min !== '*' && hour === '*') return `every hour :${min.padStart(2, '0')}`;
-			if (min === '*' && hour === '*') return 'every min';
-		}
-		if (dow !== '*' && dom === '*') return `weekly`;
-		return schedule.cron;
-	}
 
 	async function handleToggleSchedule(schedule: DbtSchedule) {
 		try {
@@ -255,7 +255,7 @@
 				runningScheduleId = s.id;
 				setDbtRunningJobId(jobId);
 				startSchedulePoll();
-				logUnsubscribe = watchDbtLogs(
+				logUnsubscribe = watchDbtJob(
 					jobId,
 					(line) => {
 						logLines = [...logLines, line];
@@ -349,7 +349,9 @@
 
 	{#if expanded}
 		{#if projectFolder && !isDbtProject}
-			<div class="mx-2 mb-2 rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-2xs text-muted-foreground">
+			<div
+				class="mx-2 mb-2 rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-2xs text-muted-foreground"
+			>
 				No <span class="font-mono">dbt_project.yml</span> found in this folder, so the manifest is
 				empty. Lineage below still shows live notebook cells — open the project root (or add a
 				<span class="font-mono">dbt_project.yml</span>) and run
@@ -357,7 +359,10 @@
 			</div>
 		{/if}
 		{#if dbtError && dbtModels.length === 0}
-			<div class="mx-2 mb-2 rounded border border-border bg-muted/40 px-2 py-1.5 text-2xs text-muted-foreground" role="status">
+			<div
+				class="mx-2 mb-2 rounded border border-border bg-muted/40 px-2 py-1.5 text-2xs text-muted-foreground"
+				role="status"
+			>
 				{dbtError}
 				<button
 					class="ml-1 underline underline-offset-2 hover:text-foreground"
@@ -526,16 +531,20 @@
 						>
 					{/if}
 				</button>
-				<!-- Link to Inngest monitoring UI (Docker: localhost:8288) -->
-				<a
-					href="http://localhost:8288"
-					target="_blank"
-					rel="noopener"
-					class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
-					title="Open Inngest dashboard (run history & logs)"
-				>
-					<Network class="h-3.5 w-3.5" />
-				</a>
+				<!-- Inngest dashboard. docker-compose maps the host 8267 to the sidecar's
+					8288, so 8288 is not reachable from a browser — link 8267. Overridable
+					for non-Docker setups, and hidden entirely when unset. -->
+				{#if INNGEST_UI_URL}
+					<a
+						href={INNGEST_UI_URL}
+						target="_blank"
+						rel="noopener"
+						class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+						title="Open Inngest dashboard (run history & logs)"
+					>
+						<Network class="h-3.5 w-3.5" />
+					</a>
+				{/if}
 				<button
 					class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
 					title="Add schedule"
@@ -613,8 +622,11 @@
 		</div>
 	{/if}
 
-	<!-- Live log drawer — floats above the sidebar, does not push layout -->
-	{#if logOpen && logLines.length > 0}
+	<!-- Live log drawer — floats above the sidebar, does not push layout.
+		Renders whenever a command has been started, not just once output arrives: a
+		command that produces no lines (or whose log transport failed to attach) used
+		to leave no trace at all, which read as "the button did nothing". -->
+	{#if logOpen}
 		<div
 			class="fixed bottom-0 left-0 z-(--z-overlay) w-72 rounded-tr-lg border border-border bg-background shadow-xl"
 		>
@@ -626,14 +638,29 @@
 							? `${logHeader} completed`
 							: `${logHeader} failed (exit ${exitCode})`}
 				</span>
-				<button
-					class="ml-2 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-					onclick={() => (logOpen = false)}
-				>
-					<X class="h-3 w-3" />
-				</button>
+				<div class="ml-2 flex shrink-0 items-center gap-1">
+					{#if runningJobId}
+						<button
+							class="inline-flex items-center rounded px-1 text-2xs font-medium text-muted-foreground hover:text-destructive"
+							onclick={stopCommand}
+						>
+							Stop
+						</button>
+					{/if}
+					<button
+						class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+						onclick={() => (logOpen = false)}
+					>
+						<X class="h-3 w-3" />
+					</button>
+				</div>
 			</div>
 			<div class="max-h-44 overflow-y-auto px-2 py-1.5 font-mono text-2xs leading-5">
+				{#if logLines.length === 0}
+					<div class="text-muted-foreground/60">
+						{runningJobId ? 'Waiting for output…' : 'No output.'}
+					</div>
+				{/if}
 				{#each logLines as line}
 					<div class={logLineClass(line)}>{line}</div>
 				{/each}
