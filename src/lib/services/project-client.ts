@@ -184,11 +184,15 @@ export async function renameProjectFile(
 	}
 }
 
-export async function scaffoldProject(folder: string, name: string): Promise<void> {
+export async function scaffoldProject(
+	folder: string,
+	name: string,
+	adapter?: 'duckdb' | 'postgres' | 'trino'
+): Promise<void> {
 	const res = await fetch('/api/project/scaffold', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ folder, name })
+		body: JSON.stringify({ folder, name, adapter })
 	});
 	if (!res.ok) {
 		const body = (await res.json()) as { error?: string };

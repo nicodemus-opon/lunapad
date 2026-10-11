@@ -8,6 +8,7 @@ import { insecureCloudEnv, requiredCloudEnv } from '$lib/server/cloud-readiness'
 import { checkEmailHealth } from '$lib/server/email';
 import { checkObjectStorageHealth } from '$lib/server/object-storage';
 import { checkRedisHealth } from '$lib/server/redis-rate-limit';
+import { getDbtAdapterStatuses } from '$lib/server/dbt-venvs';
 import { deploymentMode } from '$lib/server/tenancy';
 
 export type HealthCheckStatus = 'ok' | 'degraded' | 'missing' | 'failed';
@@ -78,10 +79,9 @@ export function _healthFeatureRequirements(mode: string) {
 			'EXTERNAL_CONNECTIONS_ENABLED',
 			'CLOUD_EXTERNAL_CONNECTIONS_REQUIRED'
 		),
-		objectStorageRequired: enabled(
-			'PUBLISHING_OBJECT_STORAGE_REQUIRED',
-			'CLOUD_OBJECT_STORAGE_REQUIRED'
-		) || (cloud && process.env.OBJECT_STORAGE_PROVIDER === 's3'),
+		objectStorageRequired:
+			enabled('PUBLISHING_OBJECT_STORAGE_REQUIRED', 'CLOUD_OBJECT_STORAGE_REQUIRED') ||
+			(cloud && process.env.OBJECT_STORAGE_PROVIDER === 's3'),
 		aiRequired: enabled('AI_ENABLED', 'LUNAPAD_AI_ENABLED', 'AI_PROVIDER_REQUIRED')
 	};
 }
@@ -103,11 +103,13 @@ export const GET: RequestHandler = async () => {
 				const missing = requiredCloudEnv();
 				if (missing.length > 0) throw new Error(`Missing: ${missing.join(', ')}`);
 				const insecure = insecureCloudEnv();
-				if (insecure.length > 0) throw new Error(`Replace placeholder values: ${insecure.join(', ')}`);
+				if (insecure.length > 0)
+					throw new Error(`Replace placeholder values: ${insecure.join(', ')}`);
 			},
 			{
 				required: mode === 'cloud',
-				requiredBecause: mode === 'cloud' ? 'cloud mode requires explicit production config' : undefined,
+				requiredBecause:
+					mode === 'cloud' ? 'cloud mode requires explicit production config' : undefined,
 				feature: 'core'
 			}
 		),
@@ -129,7 +131,9 @@ export const GET: RequestHandler = async () => {
 			},
 			{
 				required: queueExecutionRequired,
-				requiredBecause: queueExecutionRequired ? 'queued execution requires worker auth' : undefined,
+				requiredBecause: queueExecutionRequired
+					? 'queued execution requires worker auth'
+					: undefined,
 				feature: 'workers'
 			}
 		),
@@ -151,19 +155,19 @@ export const GET: RequestHandler = async () => {
 			},
 			{
 				required: externalConnectionsRequired,
-				requiredBecause: externalConnectionsRequired ? 'external connections are enabled' : undefined,
+				requiredBecause: externalConnectionsRequired
+					? 'external connections are enabled'
+					: undefined,
 				feature: 'external-connections'
 			}
 		),
-		check(
-			'objectStorage',
-			async () => checkObjectStorageHealth(),
-			{
-				required: objectStorageRequired,
-				requiredBecause: objectStorageRequired ? 'published artifacts require object storage' : undefined,
-				feature: 'publishing'
-			}
-		),
+		check('objectStorage', async () => checkObjectStorageHealth(), {
+			required: objectStorageRequired,
+			requiredBecause: objectStorageRequired
+				? 'published artifacts require object storage'
+				: undefined,
+			feature: 'publishing'
+		}),
 		check('email', async () => checkEmailHealth(), {
 			required: mode === 'cloud' && process.env.EMAIL_PROVIDER === 'smtp',
 			requiredBecause:
@@ -186,6 +190,18 @@ export const GET: RequestHandler = async () => {
 				requiredBecause: aiRequired ? 'AI is enabled' : undefined,
 				feature: 'ai'
 			}
+		),
+		check(
+			'dbtAdapters',
+			async () => {
+				if (process.env.DEMO_MODE === '1') return 'not_configured';
+				// Sync snapshot only (no import probes) — stays fast on the
+				// 30s container healthcheck path.
+				const failed = getDbtAdapterStatuses().filter((s) => s.error && !s.provisioning);
+				if (failed.length > 0)
+					throw new Error(failed.map((s) => `${s.adapter}: ${s.error}`).join('; '));
+			},
+			{ required: false, feature: 'workers' }
 		)
 	]);
 	const executionCheck = {

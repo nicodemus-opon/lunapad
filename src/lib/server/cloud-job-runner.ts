@@ -2,7 +2,8 @@ import { appendCloudJobLogs, getCloudJob, type CloudJob } from './cloud-jobs.js'
 import { queryExternalConnection } from './connections.js';
 import { getSecret } from './connection-secrets.js';
 import { getConnectionMetadata, listConnectionsMetadata } from './connections-store.js';
-import { getJob, spawnDbt } from './dbt-runner.js';
+import { getJob, spawnDbtAsync } from './dbt-runner.js';
+import { ensureManagedProfileDefaults } from './project.js';
 import {
 	ensureProjectPinnedPackages,
 	getPythonJob,
@@ -111,7 +112,8 @@ export async function runClaimedCloudJob(input: {
 	if (job.kind === 'dbt') {
 		const folder = assertString(payload.folder, 'folder');
 		const args = assertStringArray(payload.args, 'args');
-		const dbtJobId = spawnDbt(args, folder);
+		await ensureManagedProfileDefaults(folder);
+		const dbtJobId = await spawnDbtAsync(args, folder);
 		const dbtJob = getJob(dbtJobId);
 		if (!dbtJob) throw new Error('dbt job not found immediately after spawning it.');
 
@@ -137,7 +139,13 @@ export async function runClaimedCloudJob(input: {
 			const exitCode = await waitForDbtJob(dbtJobId, job.timeoutMs);
 			await Promise.allSettled(logWrites);
 			if (exitCode !== 0) {
-				throw new Error(`dbt ${args[0] ?? 'run'} exited with code ${exitCode}.`);
+				// Surface the actual dbt failure in the error — without this the
+				// API only reports "exited with code N" and the real cause
+				// (e.g. a missing adapter plugin) is buried in the job logs.
+				const tail = dbtJob.lines.slice(-20).join('\n');
+				throw new Error(
+					`dbt ${args[0] ?? 'run'} exited with code ${exitCode}.${tail ? `\n${tail}` : ''}`
+				);
 			}
 			return { jobId: dbtJobId, exitCode };
 		} finally {

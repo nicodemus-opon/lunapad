@@ -148,7 +148,71 @@ export async function detectProject(folder: string): Promise<ProjectInfo> {
 
 // ── Directory scaffolding ────────────────────────────────────────────────────
 
-export async function scaffoldDbtProject(folder: string, name: string): Promise<void> {
+export type ScaffoldDbtAdapter = 'duckdb' | 'postgres' | 'trino';
+
+function scaffoldPostgresProfileFromEnv(): { host: string; port: number; user: string } {
+	let host = 'localhost';
+	let port = 5432;
+	try {
+		if (process.env.DATABASE_URL) {
+			const url = new URL(process.env.DATABASE_URL);
+			if (url.hostname) host = url.hostname;
+			if (url.port) port = Number(url.port);
+		}
+	} catch {
+		// keep localhost defaults
+	}
+	return { host, port, user: 'lunapad' };
+}
+
+function scaffoldProfilesYml(name: string, adapter: ScaffoldDbtAdapter): string {
+	if (adapter === 'postgres') {
+		const pg = scaffoldPostgresProfileFromEnv();
+		return `${name}:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      # Edit these to point at your Postgres (defaults follow DATABASE_URL).
+      host: ${pg.host}
+      port: ${pg.port}
+      user: ${pg.user}
+      pass: ''
+      dbname: lunapad
+      schema: public
+      threads: 4
+`;
+	}
+	if (adapter === 'trino') {
+		// Connectivity (host/port/user) is filled by ensureManagedProfileDefaults
+		// below; catalog/schema intentionally left for the project owner — only
+		// they know which catalog holds their data.
+		return `${name}:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      # TODO: set the catalog and schema holding your data, then run dbt compile.
+      # Host/port/user are managed automatically from TRINO_URL (see profiles.yml
+      # note below) — delete the managed block to take full manual control.
+      database: ''
+      schema: ''
+`;
+	}
+	return `${name}:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ':memory:'
+`;
+}
+
+export async function scaffoldDbtProject(
+	folder: string,
+	name: string,
+	adapter: ScaffoldDbtAdapter = 'duckdb'
+): Promise<void> {
 	assertAllowedProjectFolder(folder);
 	await fs.mkdir(folder, { recursive: true });
 
@@ -185,13 +249,7 @@ models:
       +materialized: table
 `;
 
-	const profilesYml = `${name}:
-  target: dev
-  outputs:
-    dev:
-      type: duckdb
-      path: ':memory:'
-`;
+	const profilesYml = scaffoldProfilesYml(name, adapter);
 
 	// Starter sources YAML for staging layer
 	const sourcesYml = `version: 2
@@ -245,6 +303,182 @@ models: []
 		fs.writeFile(path.join(folder, 'models', 'staging', '_models.yml'), stagingModelsYml, 'utf-8'),
 		fs.writeFile(path.join(folder, 'models', 'marts', '_models.yml'), martsModelsYml, 'utf-8')
 	]);
+	// Note: no ensureManagedProfileDefaults() here — a fresh trino scaffold
+	// intentionally leaves catalog/schema empty for the owner, and the overlay
+	// would (correctly) refuse. The first compile surfaces the actionable
+	// "set database:/schema:" error instead.
+}
+
+// ── Managed dbt profile defaults ─────────────────────────────────────────────
+// A `type: trino` target needs host/port/user that track the deployment
+// (TRINO_URL is http://trino:8080 in compose/cloud, http://localhost:8067 for
+// a local Trino). Only the app knows that mapping, so it maintains a marked
+// block inside trino outputs — everything else in the file stays user-owned.
+// catalog (`database:`) and `schema:` are deliberately never defaulted: only
+// the project owner knows which catalog holds their data, so a missing one is
+// an actionable error instead of a silent wrong guess.
+
+const MANAGED_PROFILE_MARKER = '# Lunapad-managed connection defaults';
+const MANAGED_PROFILE_KEYS = new Set(['host', 'port', 'user', 'http_scheme']);
+
+export interface TrinoConnectionDefaults {
+	host: string;
+	port: number;
+	user: string;
+	httpScheme: string;
+}
+
+export function trinoConnectionDefaults(): TrinoConnectionDefaults {
+	const raw = (process.env.TRINO_URL ?? 'http://trino:8080').replace(/\/$/, '');
+	let host = 'trino';
+	let port = 8080;
+	let httpScheme = 'http';
+	try {
+		const url = new URL(raw);
+		if (url.hostname) host = url.hostname;
+		if (url.port) port = Number(url.port);
+		else if (url.protocol === 'https:') port = 443;
+		if (url.protocol === 'https:') httpScheme = 'https';
+	} catch {
+		// keep container defaults
+	}
+	return { host, port, user: process.env.TRINO_USER ?? 'lunapad', httpScheme };
+}
+
+function managedTrinoHunk(indent: string): string[] {
+	const defaults = trinoConnectionDefaults();
+	return [
+		`${indent}${MANAGED_PROFILE_MARKER} (from TRINO_URL — delete this block to take manual control; it is re-created on next run)`,
+		`${indent}host: ${defaults.host}`,
+		`${indent}port: ${defaults.port}`,
+		`${indent}user: ${defaults.user}`,
+		`${indent}http_scheme: ${defaults.httpScheme}`
+	];
+}
+
+function indentOf(line: string): number {
+	return line.length - line.trimStart().length;
+}
+
+function isManagedHunkLine(line: string): boolean {
+	if (!line.trim()) return true;
+	const m = line.match(/^\s*([A-Za-z_][\w-]*)\s*:/);
+	return m !== null && MANAGED_PROFILE_KEYS.has(m[1].toLowerCase());
+}
+
+/**
+ * Range [start, end) of the output mapping that owns a `type:` line — i.e.
+ * the parent key above it (e.g. `dev:`) through the last key under that
+ * parent. Sibling keys share the `type:` line's indent, so the range must be
+ * anchored on the parent, not on the `type:` line itself.
+ */
+function trinoOutputRange(lines: string[], typeIndex: number): [number, number] {
+	const typeIndent = indentOf(lines[typeIndex]);
+	let parent = typeIndex - 1;
+	while (parent >= 0 && (!lines[parent].trim() || indentOf(lines[parent]) >= typeIndent)) parent--;
+	const parentIndent = parent >= 0 ? indentOf(lines[parent]) : -1;
+	let end = typeIndex + 1;
+	while (end < lines.length && (!lines[end].trim() || indentOf(lines[end]) > parentIndent)) end++;
+	return [parent + 1, end];
+}
+
+/**
+ * Insert a fresh managed hunk after every `type: trino` line whose block
+ * lacks one, and refresh hunks left by previous runs. User-owned lines are
+ * never touched. Returns the file unchanged when nothing needs doing.
+ */
+export function applyManagedTrinoBlock(content: string): string {
+	const lines = content.split('\n');
+	const typeIndices: number[] = [];
+	lines.forEach((line, i) => {
+		if (/^\s*type:\s*trino\s*$/i.test(line)) typeIndices.push(i);
+	});
+	if (typeIndices.length === 0) return content;
+
+	const blocksWithMarker = new Set<number>();
+	for (const i of typeIndices) {
+		const [, end] = trinoOutputRange(lines, i);
+		for (let j = i; j < end; j++) {
+			if (lines[j].trimStart().startsWith(MANAGED_PROFILE_MARKER)) {
+				blocksWithMarker.add(i);
+				break;
+			}
+		}
+	}
+
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		if (line.trimStart().startsWith(MANAGED_PROFILE_MARKER)) {
+			// Refresh a previous run's hunk wholesale.
+			const indent = line.slice(0, indentOf(line));
+			out.push(...managedTrinoHunk(indent));
+			i++;
+			while (i < lines.length && isManagedHunkLine(lines[i])) i++;
+			continue;
+		}
+		out.push(line);
+		if (typeIndices.includes(i) && !blocksWithMarker.has(i)) {
+			const indent = line.slice(0, indentOf(line));
+			out.push(...managedTrinoHunk(indent));
+		}
+		i++;
+	}
+	return out.join('\n');
+}
+
+function missingTrinoDatabaseKeys(content: string): string[] {
+	const lines = content.split('\n');
+	const missing = new Set<string>();
+	for (let i = 0; i < lines.length; i++) {
+		if (!/^\s*type:\s*trino\s*$/i.test(lines[i])) continue;
+		const [start, end] = trinoOutputRange(lines, i);
+		const block = lines.slice(start, end).join('\n');
+		for (const key of ['database', 'schema']) {
+			const m = block.match(new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`, 'im'));
+			const value = m?.[1]?.trim().replace(/^['"]|['"]$/g, '') ?? '';
+			// Jinja-templated values are the owner's explicit choice — present.
+			if (!value || value === "''" || value === '""') missing.add(key);
+		}
+	}
+	return [...missing];
+}
+
+export interface ManagedProfileResult {
+	applied: boolean;
+	adapter: string | null;
+}
+
+/**
+ * Fill the Lunapad-managed connection block for `type: trino` targets
+ * (host/port/user from TRINO_URL) and fail fast with an actionable error
+ * when catalog (`database:`) or `schema:` is still unset. No-op for every
+ * other adapter. Idempotent — safe to call before every dbt invocation.
+ */
+export async function ensureManagedProfileDefaults(folder: string): Promise<ManagedProfileResult> {
+	assertAllowedProjectFolder(folder);
+	const profilesPath = path.join(folder, 'profiles.yml');
+	let content: string;
+	try {
+		content = await fs.readFile(profilesPath, 'utf-8');
+	} catch {
+		return { applied: false, adapter: null };
+	}
+	const typeMatch = content.match(/^\s+type:\s*(\w+)/m);
+	const adapter = typeMatch?.[1]?.toLowerCase() ?? null;
+	if (adapter !== 'trino') return { applied: false, adapter };
+	const updated = applyManagedTrinoBlock(content);
+	if (updated !== content) await fs.writeFile(profilesPath, updated, 'utf-8');
+	const missing = missingTrinoDatabaseKeys(updated);
+	if (missing.length > 0) {
+		throw new Error(
+			`profiles.yml trino target in ${profilesPath} is missing ${missing.join(' and ')} — ` +
+				`set the catalog (database:) and schema: holding your data, then retry. ` +
+				`Connection details (host/port/user) are managed automatically from TRINO_URL.`
+		);
+	}
+	return { applied: updated !== content, adapter };
 }
 
 // ── Directory walking ────────────────────────────────────────────────────────

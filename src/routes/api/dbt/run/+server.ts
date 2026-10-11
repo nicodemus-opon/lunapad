@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { spawnDbt } from '$lib/server/dbt-runner';
+import { spawnDbtAsync } from '$lib/server/dbt-runner';
+import { ensureManagedProfileDefaults } from '$lib/server/project';
 import { precompileProjectModels, collectProjectModelNames } from '$lib/server/prql-compiler';
 import { getCloudExecutionAdapter } from '$lib/server/cloud-execution';
 import { assertTenantProjectFolder } from '$lib/server/project-folders';
@@ -30,7 +31,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			requestId: locals.requestId,
 			entitlements: locals.entitlements,
 			payload: { folder, args },
-			run: async () => ({ jobId: spawnDbt(args, folder) })
+			run: async () => {
+				await ensureManagedProfileDefaults(folder);
+				return { jobId: await spawnDbtAsync(args, folder) };
+			}
 		});
 		if (execution.queued) return json({ job: execution.job }, { status: 202 });
 		return json(execution.result);

@@ -340,11 +340,12 @@
 	const cellKindIcon = { query: Database, python: Terminal, plot: ChartLine } as const;
 </script>
 
-<!-- Outer container: dot-grid background, pan/zoom handlers -->
+<!-- Outer container: dot-grid background, pan/zoom handlers. flex-1 (not h-full)
+so the canvas keeps a definite height inside the tab's flex-col main. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
 <div
 	bind:this={containerEl}
-	class="lineage-canvas relative h-full w-full overflow-hidden bg-background {dragging
+	class="lineage-canvas relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-background {dragging
 		? 'cursor-grabbing'
 		: 'cursor-grab'}"
 	onwheel={onWheel}
@@ -357,7 +358,7 @@
 >
 	{#if lineageEntries.length === 0}
 		<!-- Empty state -->
-		<div class="flex h-full flex-col items-center justify-center gap-3 text-center">
+		<div class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
 			<div class="rounded-full bg-muted/50 p-4">
 				<svg
 					class="h-8 w-8 text-muted-foreground/40"

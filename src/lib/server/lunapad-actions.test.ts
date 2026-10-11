@@ -7,6 +7,7 @@ const {
 	getSecretMock,
 	queryExternalConnectionMock,
 	walkProjectDirectoryMock,
+	ensureManagedProfileDefaultsMock,
 	getCurrentFolderMock,
 	spawnDbtMock,
 	getJobMock,
@@ -20,6 +21,7 @@ const {
 	getSecretMock: vi.fn(),
 	queryExternalConnectionMock: vi.fn(),
 	walkProjectDirectoryMock: vi.fn(),
+	ensureManagedProfileDefaultsMock: vi.fn(),
 	getCurrentFolderMock: vi.fn(),
 	spawnDbtMock: vi.fn(),
 	getJobMock: vi.fn(),
@@ -37,10 +39,15 @@ vi.mock('./connection-secrets.js', () => ({ getSecret: getSecretMock }));
 vi.mock('./connections.js', () => ({ queryExternalConnection: queryExternalConnectionMock }));
 vi.mock('./project.js', () => ({
 	assertAllowedProjectFolder: vi.fn(),
+	ensureManagedProfileDefaults: ensureManagedProfileDefaultsMock,
 	walkProjectDirectory: walkProjectDirectoryMock
 }));
 vi.mock('./dbt-schedules.js', () => ({ getCurrentFolder: getCurrentFolderMock }));
-vi.mock('./dbt-runner.js', () => ({ spawnDbt: spawnDbtMock, getJob: getJobMock }));
+vi.mock('./dbt-runner.js', () => ({
+	spawnDbt: spawnDbtMock,
+	spawnDbtAsync: spawnDbtMock,
+	getJob: getJobMock
+}));
 vi.mock('./prql-compiler.js', () => ({
 	precompileProjectModels: precompileProjectModelsMock,
 	collectProjectModelNames: collectProjectModelNamesMock

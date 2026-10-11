@@ -20,15 +20,25 @@ RUN pnpm build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
-# Install Python + dbt-postgres + the curated package set Python cells run
+# Which dbt adapters to pre-warm as isolated venvs (/opt/dbt-venvs/<adapter>).
+# Deployment config, not code: override at build time
+# (`docker build --build-arg DBT_ADAPTERS=duckdb,trino ...`). Anything else a
+# mounted project targets is provisioned at container boot instead
+# (see src/lib/server/dbt-venvs.ts).
+ARG DBT_ADAPTERS=duckdb,postgres,trino
+ENV DBT_VENVS_DIR=/opt/dbt-venvs
+
+# Install Python + venv tooling + the curated package set Python cells run
 # against (see src/lib/server/python-runner.ts) — baked in so Python cells
 # need zero setup in this image, no uv/venv bootstrap required.
+# NOTE: no dbt packages in system Python by design — each adapter lives in
+# its own venv (pre-warmed below) so adapters can never break each other.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres pandas numpy pyarrow plotly jedi --break-system-packages \
+  && pip install pandas numpy pyarrow plotly jedi --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@11 --activate
@@ -47,6 +57,11 @@ RUN npx --yes playwright-core install --with-deps chromium
 COPY --from=builder /app/build ./build
 COPY scripts ./scripts
 
+# Pre-warm isolated dbt venvs for DBT_ADAPTERS (best-effort: a failure here
+# only defers to boot-time provisioning, it never fails the image build).
+RUN --mount=type=cache,id=dbt-pip,target=/root/.cache/pip \
+    sh ./scripts/dbt-venvs-warm.sh "$DBT_ADAPTERS"
+
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
@@ -62,13 +77,22 @@ CMD ["node", "build/index.js"]
 FROM node:22-bookworm-slim AS dev
 WORKDIR /app
 
+ARG DBT_ADAPTERS=duckdb,postgres,trino
+ENV DBT_VENVS_DIR=/opt/dbt-venvs
+
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     git \
     curl \
-  && pip install dbt-postgres pandas numpy pyarrow plotly jedi --break-system-packages \
+  && pip install pandas numpy pyarrow plotly jedi --break-system-packages \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Pre-warm isolated dbt venvs (best-effort; boot provisioning is the fallback).
+# Only the warm script is copied — the rest of the source arrives via bind-mount.
+COPY scripts/dbt-venvs-warm.sh ./scripts/dbt-venvs-warm.sh
+RUN --mount=type=cache,id=dbt-pip,target=/root/.cache/pip \
+    sh ./scripts/dbt-venvs-warm.sh "$DBT_ADAPTERS"
 
 RUN corepack enable && corepack prepare pnpm@11 --activate
 

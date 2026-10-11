@@ -613,7 +613,7 @@
 						>
 							<div class="flex items-center justify-between border-b border-border px-2 py-0.5">
 								<Input
-									class="h-5 min-w-0 flex-1 px-0 py-0 font-mono text-2xs text-muted-foreground shadow-none focus:border-transparent focus:text-foreground focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+									class="h-5 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 font-mono text-2xs text-muted-foreground shadow-none focus-visible:ring-0 focus:text-foreground dark:bg-transparent"
 									aria-label="Cell output name"
 									placeholder="model name"
 									value={nameDraft}

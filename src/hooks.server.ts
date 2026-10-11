@@ -21,6 +21,7 @@ import {
 } from '$lib/server/permissions';
 import { startShareRefreshWorker } from '$lib/server/share-refresh-worker';
 import { startTrinoCatalogReconciler } from '$lib/server/trino-reconcile-worker';
+import { startDbtAdapterReconciler } from '$lib/server/dbt-venvs';
 import { ensureBaseTrinoAccessFile } from '$lib/server/connections';
 import {
 	createOrganizationForUser,
@@ -46,6 +47,9 @@ import {
 
 startShareRefreshWorker();
 startTrinoCatalogReconciler();
+// Warm per-adapter dbt venvs for mounted projects in the background —
+// compile/run/test never block on installs (see dbt-venvs.ts).
+if (!building) startDbtAdapterReconciler();
 ensureBaseTrinoAccessFile().catch((err) =>
 	console.warn('[trino-access-control] failed to seed base rules file:', err)
 );

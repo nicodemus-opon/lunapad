@@ -2571,9 +2571,30 @@
 						</div>
 					{:else if activeExtraTab}
 						{#if activeExtraTab.type === 'lineage'}
-							<!-- Lineage fills the full remaining height with no scroll/padding -->
-							<main class="flex-1 overflow-hidden">
-								<DbtLineageView focusedModelName={activeExtraTab.focusedModelName} />
+							<!-- Lineage fills the full remaining height with no scroll/padding.
+						The boundary guarantees a render crash can never leave a blank
+						tab — it degrades to a visible error with a retry instead. -->
+							<main class="flex min-h-0 flex-1 flex-col overflow-hidden">
+								<svelte:boundary>
+									<DbtLineageView focusedModelName={activeExtraTab.focusedModelName} />
+									{#snippet failed(lineageError, retryLineage)}
+										<div class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+											<div class="max-w-sm">
+												<p class="text-sm font-medium text-foreground/80">
+													Lineage failed to render
+												</p>
+												<p class="mt-0.5 text-xs text-muted-foreground" role="status">
+													{lineageError instanceof Error
+														? lineageError.message
+														: 'Unexpected error loading the lineage graph.'}
+												</p>
+												<Button variant="outline" size="sm" class="mt-3" onclick={retryLineage}>
+													Retry lineage view
+												</Button>
+											</div>
+										</div>
+									{/snippet}
+								</svelte:boundary>
 							</main>
 						{:else if activeExtraTab.type === 'evidence-preview'}
 							<main class="flex-1 overflow-hidden">

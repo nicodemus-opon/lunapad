@@ -5,9 +5,13 @@ import { listConnectionsMetadata, getConnectionMetadata } from './connections-st
 import { getSecret } from './connection-secrets.js';
 import { queryExternalConnection } from './connections.js';
 import path from 'node:path';
-import { assertAllowedProjectFolder, walkProjectDirectory } from './project.js';
+import {
+	assertAllowedProjectFolder,
+	ensureManagedProfileDefaults,
+	walkProjectDirectory
+} from './project.js';
 import { getCurrentFolder } from './dbt-schedules.js';
-import { spawnDbt, getJob } from './dbt-runner.js';
+import { spawnDbtAsync, getJob } from './dbt-runner.js';
 import { precompileProjectModels, collectProjectModelNames } from './prql-compiler.js';
 import { loadManifest, type DbtModel } from './dbt.js';
 import { loadWorkspaceState } from './workspace-store.js';
@@ -230,7 +234,8 @@ export interface DbtJobResult {
 async function precompileAndSpawn(folder: string, args: string[]): Promise<DbtJobResult> {
 	const knownModels = await collectProjectModelNames(folder);
 	await precompileProjectModels(folder, knownModels);
-	return { jobId: spawnDbt(args, folder) };
+	await ensureManagedProfileDefaults(folder);
+	return { jobId: await spawnDbtAsync(args, folder) };
 }
 
 export async function dbtRunAction(input: DbtRunInput): Promise<DbtJobResult> {

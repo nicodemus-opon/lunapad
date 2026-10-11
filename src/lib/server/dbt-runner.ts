@@ -4,6 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { assertAllowedProjectFolder } from './project.js';
 import os from 'node:os';
+import {
+	adapterPackage,
+	ensureDbtVenv,
+	isProvisioning,
+	lastProvisionError,
+	mayRetryProvision,
+	readAdapter,
+	venvBinary,
+	venvBinaryExists
+} from './dbt-venvs.js';
+
+// Re-exported for callers/tests that resolve adapters per project folder.
+export { readAdapter };
 
 export interface DbtJob {
 	id: string;
@@ -21,8 +34,20 @@ function makeId(): string {
 }
 
 // ── Adapter-aware binary resolution ──────────────────────────────────────────
+// Resolution order per project folder (adapter read from its profiles.yml):
+//   1. PATH `dbt` when it genuinely supports the adapter (local dbt-fusion,
+//      or a fully-provisioned system install) — zero setup, fastest.
+//   2. The adapter's isolated venv (/opt/dbt-venvs/<adapter>/bin/dbt), warmed
+//      at server boot and on project open — the cloud multi-adapter path.
+//   3. Legacy local Python dbt installs (Homebrew, user site, project venvs).
+//   4. Fallback `dbt` — ensureDbtAdapter() turns this into provisioning or a
+//      descriptive error instead of a cryptic exit code.
 
-/** Adapters natively supported by dbt-fusion. */
+/**
+ * Adapters compiled into the dbt-fusion binary. A PATH `dbt` that is a
+ * compiled (shebang-less) binary is assumed to cover these; a Python-backed
+ * `dbt` is probed for real (see `binarySupportsAdapter`).
+ */
 const FUSION_ADAPTERS = new Set([
 	'duckdb',
 	'postgres',
@@ -37,41 +62,189 @@ const FUSION_ADAPTERS = new Set([
 	'fabric'
 ]);
 
-/** Parse the adapter type from a project's profiles.yml (first `type:` match). */
-function readAdapter(projectFolder: string): string {
-	try {
-		const content = fs.readFileSync(path.join(projectFolder, 'profiles.yml'), 'utf-8');
-		const m = content.match(/^\s+type:\s*(\w+)/m);
-		return m?.[1]?.toLowerCase() ?? 'duckdb';
-	} catch {
-		return 'duckdb';
+/** Cache: adapter type → resolved binary path. */
+const binaryCache = new Map<string, string>();
+
+/**
+ * Resolve the dbt binary for the given project folder.
+ * The binary is chosen based on the project's adapter type (read from
+ * profiles.yml): PATH `dbt` when it supports the adapter, otherwise the
+ * adapter's isolated venv, otherwise a legacy local install.
+ */
+export function resolveDbtBinary(projectFolder: string): string {
+	const adapter = readAdapter(projectFolder);
+	// Trusted without re-probing: every spawn pays only a map lookup.
+	// ensureDbtAdapter() explicitly invalidates this cache before re-resolving
+	// once provisioning completes, so freshness is handled there, not here.
+	const cached = binaryCache.get(adapter);
+	if (cached) return cached;
+
+	// Prefer the PATH binary when it genuinely supports the adapter.
+	if (binarySupportsAdapter('dbt', adapter)) {
+		binaryCache.set(adapter, 'dbt');
+		return 'dbt';
 	}
+
+	// The adapter's isolated venv (see dbt-venvs.ts) — existence is trusted
+	// here; provision-time verification plus ensureDbtAdapter()'s probe below
+	// keep a broken venv from silently serving bad runs.
+	if (venvBinaryExists(adapter)) {
+		const venvBin = venvBinary(adapter);
+		binaryCache.set(adapter, venvBin);
+		return venvBin;
+	}
+
+	// Otherwise scan for a legacy Python-based dbt binary that has the adapter.
+	for (const candidate of candidatePythonDbtBinaries()) {
+		if (fs.existsSync(candidate) && scriptSupportsAdapter(candidate, adapter)) {
+			binaryCache.set(adapter, candidate);
+			return candidate;
+		}
+	}
+
+	// Fallback — ensureDbtAdapter() turns this into background provisioning
+	// or a descriptive error.
+	binaryCache.set(adapter, 'dbt');
+	return 'dbt';
+}
+
+// ── Adapter provisioning (isolated venvs, never system Python) ───────────────
+
+export interface EnsureDbtAdapterOptions {
+	/**
+	 * Kick off background provisioning when the venv is missing. Defaults to
+	 * true; tests pass false to stay hermetic (no venv creation as a side
+	 * effect — the error is still thrown and asserted).
+	 */
+	triggerBackgroundProvision?: boolean;
 }
 
 /**
- * Check whether a Python dbt script (shebang-based) can run the given adapter.
- * Reads the shebang to find the interpreter, then checks the interpreter's
- * site-packages for the adapter directory — no dbt startup overhead.
+ * Ensure the dbt binary backing this project supports its profiles.yml
+ * adapter. Fast path (PATH dbt or ready venv) returns the verified binary.
+ * Otherwise this never blocks on an install: it kicks off background
+ * provisioning of the adapter's isolated venv (boot reconciliation usually
+ * got there first) and throws a descriptive, retryable error instead.
  */
-function scriptSupportsAdapter(scriptPath: string, adapter: string): boolean {
+export async function ensureDbtAdapter(
+	projectFolder: string,
+	onProgress?: (line: string) => void,
+	opts?: EnsureDbtAdapterOptions
+): Promise<string> {
+	const adapter = readAdapter(projectFolder);
+	// Resolve fresh: background provisioning may have completed since the
+	// cached fallback was stored.
+	binaryCache.delete(adapter);
+	const binary = resolveDbtBinary(projectFolder);
+	if (binarySupportsAdapter(binary, adapter)) return binary;
+
+	const pkg = adapterPackage(adapter);
+	if (isProvisioning(adapter)) {
+		throw new Error(`dbt adapter "${adapter}" is still provisioning (${pkg}); retry shortly.`);
+	}
+	if (opts?.triggerBackgroundProvision === false) {
+		throw new Error(
+			`dbt adapter "${adapter}" is not installed (${pkg} missing in ${venvBinary(adapter)}).`
+		);
+	}
+	if (mayRetryProvision(adapter)) {
+		void ensureDbtVenv(adapter, onProgress).catch(() => {
+			// Failure is recorded on the adapter state for the next call to
+			// report; the request itself stays fast.
+		});
+		throw new Error(
+			`dbt adapter "${adapter}" is not installed — provisioning ${pkg} in the background; retry shortly.`
+		);
+	}
+	throw new Error(
+		`dbt adapter "${adapter}" provisioning failed recently` +
+			`${lastProvisionError(adapter) ? `: ${lastProvisionError(adapter)}` : ''} — ` +
+			`retry shortly; see server logs for detail.`
+	);
+}
+
+/**
+ * Resolve the Python interpreter backing a dbt script: read its shebang, or
+ * resolve a bare name via PATH first. Returns null for compiled (non-Python)
+ * binaries such as dbt-fusion.
+ */
+function pythonForBinary(binary: string): string | null {
 	try {
+		let scriptPath = binary;
+		if (!binary.includes(path.sep)) {
+			const resolved = execFileSync('sh', ['-c', `command -v ${binary}`], {
+				timeout: 3000,
+				encoding: 'utf-8'
+			}).trim();
+			if (!resolved) return null;
+			scriptPath = resolved;
+		}
+		if (!fs.existsSync(scriptPath)) return null;
 		const firstLine = fs.readFileSync(scriptPath, 'utf-8').slice(0, 256).split('\n')[0];
 		const shebangMatch = firstLine.match(/^#!(.+)/);
-		if (!shebangMatch) return false;
-		const pythonBin = shebangMatch[1].trim();
-		if (!fs.existsSync(pythonBin)) return false;
+		if (!shebangMatch) return null;
+		const parts = shebangMatch[1].trim().split(/\s+/);
+		let pythonBin = parts[0];
+		// Handle `#!/usr/bin/env python3` style shebangs.
+		if (pythonBin === 'env' || pythonBin.endsWith('/env')) {
+			if (!parts[1]) return null;
+			try {
+				pythonBin = execFileSync('sh', ['-c', `command -v ${parts[1]}`], {
+					timeout: 3000,
+					encoding: 'utf-8'
+				}).trim();
+			} catch {
+				return null;
+			}
+			if (!pythonBin) return null;
+		}
+		return fs.existsSync(pythonBin) ? pythonBin : null;
+	} catch {
+		return null;
+	}
+}
 
-		// Ask the interpreter for its site-packages — fast, no dbt import.
-		// Use os.pathsep to delimit so the command needs no shell escaping.
+/** Site-packages directories visible to a Python interpreter. */
+function siteDirs(pythonBin: string): string[] {
+	try {
 		const siteOut = execFileSync(
 			pythonBin,
 			[
 				'-c',
 				'import site,os;print(os.pathsep.join(site.getsitepackages()+[site.getusersitepackages()]))'
 			],
-			{ timeout: 3000, encoding: 'utf-8' }
+			{ timeout: 5000, encoding: 'utf-8' }
 		);
-		for (const sitePath of siteOut.trim().split(path.delimiter)) {
+		return siteOut.trim().split(path.delimiter).filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Check whether a dbt binary can run the given adapter by looking for the
+ * adapter package in its interpreter's site-packages — no dbt startup
+ * overhead. Binaries with no resolvable path never support anything;
+ * compiled (shebang-less) binaries fall back to the fusion set.
+ */
+export function binarySupportsAdapter(binary: string, adapter: string): boolean {
+	const scriptPath = binary.includes(path.sep)
+		? binary
+		: (() => {
+				try {
+					return execFileSync('sh', ['-c', `command -v ${binary}`], {
+						timeout: 3000,
+						encoding: 'utf-8'
+					}).trim();
+				} catch {
+					return '';
+				}
+			})();
+	if (!scriptPath || !fs.existsSync(scriptPath)) return false;
+	const pythonBin = pythonForBinary(binary);
+	if (!pythonBin) return FUSION_ADAPTERS.has(adapter.toLowerCase());
+	try {
+		for (const sitePath of siteDirs(pythonBin)) {
 			if (fs.existsSync(path.join(sitePath, 'dbt', 'adapters', adapter.toLowerCase()))) {
 				return true;
 			}
@@ -80,6 +253,14 @@ function scriptSupportsAdapter(scriptPath: string, adapter: string): boolean {
 		// ignore
 	}
 	return false;
+}
+
+/**
+ * Check whether a Python dbt script (shebang-based) can run the given adapter.
+ * Thin wrapper over `binarySupportsAdapter` for explicit script paths.
+ */
+function scriptSupportsAdapter(scriptPath: string, adapter: string): boolean {
+	return binarySupportsAdapter(scriptPath, adapter);
 }
 
 /**
@@ -125,37 +306,6 @@ function candidatePythonDbtBinaries(): string[] {
 	return candidates;
 }
 
-/** Cache: adapter type → resolved binary path. */
-const binaryCache = new Map<string, string>();
-
-/**
- * Resolve the dbt binary for the given project folder.
- * dbt-fusion handles supported adapters directly; for others (e.g. clickhouse)
- * we scan for a Python-based dbt binary that has the adapter installed.
- */
-export function resolveDbtBinary(projectFolder: string): string {
-	const adapter = readAdapter(projectFolder);
-	const cached = binaryCache.get(adapter);
-	if (cached) return cached;
-
-	if (FUSION_ADAPTERS.has(adapter)) {
-		binaryCache.set(adapter, 'dbt');
-		return 'dbt';
-	}
-
-	// Non-fusion adapter — scan candidates
-	for (const candidate of candidatePythonDbtBinaries()) {
-		if (fs.existsSync(candidate) && scriptSupportsAdapter(candidate, adapter)) {
-			binaryCache.set(adapter, candidate);
-			return candidate;
-		}
-	}
-
-	// Fallback
-	binaryCache.set(adapter, 'dbt');
-	return 'dbt';
-}
-
 // ── Job management ────────────────────────────────────────────────────────────
 
 /**
@@ -164,6 +314,8 @@ export function resolveDbtBinary(projectFolder: string): string {
  * unsupported by dbt-fusion (e.g. clickhouse) use the correct python-based binary.
  * Log lines are emitted on the job's emitter as `'line'` events.
  * Completion is emitted as `'done'` with exit code.
+ * NOTE: this does not provision a missing adapter — async callers should use
+ * `spawnDbtAsync`, which ensures the profiles.yml adapter is installed first.
  */
 export function spawnDbt(args: string[], cwd: string): string {
 	assertAllowedProjectFolder(cwd);
@@ -216,6 +368,22 @@ export function spawnDbt(args: string[], cwd: string): string {
 
 export function getJob(id: string): DbtJob | undefined {
 	return jobs.get(id);
+}
+
+/**
+ * Ensure the project's adapter is installed, then spawn a dbt CLI command.
+ * Prefer this over `spawnDbt` in async contexts — it adapts to whatever
+ * database the project's profiles.yml targets (duckdb, postgres, trino, …)
+ * instead of assuming the PATH `dbt` already supports it.
+ */
+export async function spawnDbtAsync(
+	args: string[],
+	cwd: string,
+	onProgress?: (line: string) => void
+): Promise<string> {
+	assertAllowedProjectFolder(cwd);
+	await ensureDbtAdapter(cwd, onProgress);
+	return spawnDbt(args, cwd);
 }
 
 /**

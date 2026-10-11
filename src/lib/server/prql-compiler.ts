@@ -4,22 +4,50 @@ import { compile, CompileOptions } from 'prqlc/dist/node/prqlc_js';
 import { parseCellFile, injectRefs } from '$lib/services/prql-file';
 import { assertAllowedProjectFolder, assertSafe } from './project.js';
 
-type SqlTarget = 'sql.duckdb' | 'sql.trino';
+/** prqlc compile targets (see `get_targets()` in prqlc — there is no sql.trino). */
+type SqlTarget =
+	| 'sql.any'
+	| 'sql.ansi'
+	| 'sql.bigquery'
+	| 'sql.clickhouse'
+	| 'sql.duckdb'
+	| 'sql.generic'
+	| 'sql.mssql'
+	| 'sql.mysql'
+	| 'sql.oracle'
+	| 'sql.postgres'
+	| 'sql.redshift'
+	| 'sql.sqlite'
+	| 'sql.snowflake';
 
-/** Parse profiles.yml and extract the adapter type for the active target. */
+/** dbt adapter type → prqlc target. Adapters without a prqlc target (trino, …)
+ *  fall back to sql.any, which honors per-query `prql target:` headers. */
+const ADAPTER_SQL_TARGETS: Record<string, SqlTarget> = {
+	duckdb: 'sql.duckdb',
+	postgres: 'sql.postgres',
+	redshift: 'sql.redshift',
+	mysql: 'sql.mysql',
+	clickhouse: 'sql.clickhouse',
+	snowflake: 'sql.snowflake',
+	bigquery: 'sql.bigquery',
+	sqlserver: 'sql.mssql',
+	mssql: 'sql.mssql',
+	sqlite: 'sql.sqlite',
+	oracle: 'sql.oracle'
+};
+
+/** Parse profiles.yml and extract the prqlc target for the active adapter. */
 async function readProfileTarget(projectFolder: string): Promise<SqlTarget> {
 	assertAllowedProjectFolder(projectFolder);
 	try {
 		const content = await fs.readFile(path.join(projectFolder, 'profiles.yml'), 'utf-8');
 		const typeMatch = content.match(/^\s+type:\s*(\w+)/m);
 		const type = typeMatch?.[1]?.toLowerCase();
-		if (type === 'postgres' || type === 'clickhouse' || type === 'trino' || type === 'mysql') {
-			return 'sql.trino';
-		}
+		if (type && ADAPTER_SQL_TARGETS[type]) return ADAPTER_SQL_TARGETS[type];
 	} catch {
-		// ignore — default to duckdb
+		// ignore — default below
 	}
-	return 'sql.duckdb';
+	return 'sql.any';
 }
 
 /** Walk a directory and return all .prql file paths. */

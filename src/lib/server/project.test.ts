@@ -1,8 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { deleteCellFile, renameCellFile, walkProjectDirectory } from './project.js';
+import {
+	applyManagedTrinoBlock,
+	deleteCellFile,
+	ensureManagedProfileDefaults,
+	renameCellFile,
+	scaffoldDbtProject,
+	trinoConnectionDefaults,
+	walkProjectDirectory
+} from './project.js';
 
 let dir: string;
 
@@ -11,6 +19,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -139,5 +148,115 @@ describe('walkProjectDirectory', () => {
 		const { notebooks } = await walkProjectDirectory(dir);
 		const names = notebooks.flatMap((n) => n.cells.map((c) => c.outputName)).sort();
 		expect(names).toEqual(['orders', 'orders_copy']);
+	});
+});
+
+describe('trinoConnectionDefaults', () => {
+	it('derives host/port/user from TRINO_URL', () => {
+		vi.stubEnv('TRINO_URL', 'http://trino:8080');
+		expect(trinoConnectionDefaults()).toMatchObject({ host: 'trino', port: 8080 });
+		vi.stubEnv('TRINO_URL', 'https://trino.example.com:8443/');
+		expect(trinoConnectionDefaults()).toMatchObject({
+			host: 'trino.example.com',
+			port: 8443,
+			httpScheme: 'https'
+		});
+		vi.stubEnv('TRINO_URL', 'http://localhost:8067');
+		vi.stubEnv('TRINO_USER', 'analyst');
+		expect(trinoConnectionDefaults()).toMatchObject({ host: 'localhost', user: 'analyst' });
+	});
+});
+
+describe('applyManagedTrinoBlock', () => {
+	const TRINO_PROFILE = `myproj:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      database: mycatalog
+      schema: myschema
+`;
+
+	it('inserts connectivity from TRINO_URL and leaves owner keys alone', () => {
+		vi.stubEnv('TRINO_URL', 'http://localhost:8067');
+		const updated = applyManagedTrinoBlock(TRINO_PROFILE);
+		expect(updated).toContain('host: localhost');
+		expect(updated).toContain('port: 8067');
+		expect(updated).toContain('Lunapad-managed');
+		expect(updated).toContain('database: mycatalog');
+		expect(updated).toContain('schema: myschema');
+	});
+
+	it('is idempotent and refreshes values when TRINO_URL changes', () => {
+		vi.stubEnv('TRINO_URL', 'http://localhost:8067');
+		const once = applyManagedTrinoBlock(TRINO_PROFILE);
+		expect(applyManagedTrinoBlock(once)).toBe(once);
+		vi.stubEnv('TRINO_URL', 'http://trino:8080');
+		const refreshed = applyManagedTrinoBlock(once);
+		expect(refreshed).toContain('host: trino');
+		expect(refreshed).not.toContain('host: localhost');
+		// Still exactly one managed block.
+		expect(refreshed.match(/Lunapad-managed/g)?.length).toBe(1);
+	});
+
+	it('leaves non-trino profiles untouched', () => {
+		const duckdb = `myproj:\n  target: dev\n  outputs:\n    dev:\n      type: duckdb\n`;
+		expect(applyManagedTrinoBlock(duckdb)).toBe(duckdb);
+	});
+});
+
+describe('ensureManagedProfileDefaults', () => {
+	it('is a no-op without profiles.yml and for non-trino adapters', async () => {
+		await expect(ensureManagedProfileDefaults(dir)).resolves.toEqual({
+			applied: false,
+			adapter: null
+		});
+		await write('profiles.yml', `p:\n  target: dev\n  outputs:\n    dev:\n      type: duckdb\n`);
+		const before = await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8');
+		await expect(ensureManagedProfileDefaults(dir)).resolves.toEqual({
+			applied: false,
+			adapter: 'duckdb'
+		});
+		expect(await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8')).toBe(before);
+	});
+
+	it('fills connectivity but refuses a trino target with no catalog', async () => {
+		vi.stubEnv('TRINO_URL', 'http://trino:8080');
+		await write(
+			'profiles.yml',
+			`p:\n  target: dev\n  outputs:\n    dev:\n      type: trino\n      database: ''\n      schema: ''\n`
+		);
+		await expect(ensureManagedProfileDefaults(dir)).rejects.toThrow(/database and schema/);
+		// Connectivity was still written before the refusal.
+		const content = await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8');
+		expect(content).toContain('host: trino');
+	});
+
+	it('passes a fully-configured trino target', async () => {
+		vi.stubEnv('TRINO_URL', 'http://trino:8080');
+		await write(
+			'profiles.yml',
+			`p:\n  target: dev\n  outputs:\n    dev:\n      type: trino\n      database: cat\n      schema: public\n`
+		);
+		await expect(ensureManagedProfileDefaults(dir)).resolves.toMatchObject({ adapter: 'trino' });
+	});
+});
+
+describe('scaffoldDbtProject adapters', () => {
+	it('still scaffolds duckdb by default', async () => {
+		await scaffoldDbtProject(dir, 'pwoject');
+		const profiles = await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8');
+		expect(profiles).toContain('type: duckdb');
+	});
+
+	it('scaffolds postgres and trino profiles', async () => {
+		await scaffoldDbtProject(dir, 'pgproj', 'postgres');
+		expect(await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8')).toContain('type: postgres');
+		await fs.rm(path.join(dir, 'profiles.yml'));
+
+		vi.stubEnv('TRINO_URL', 'http://trino:8080');
+		await scaffoldDbtProject(dir, 'trinoproj', 'trino');
+		const trino = await fs.readFile(path.join(dir, 'profiles.yml'), 'utf-8');
+		expect(trino).toContain('type: trino');
 	});
 });

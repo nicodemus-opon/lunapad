@@ -1,5 +1,6 @@
 import { inngest } from '../client';
-import { spawnDbt, getJob } from '$lib/server/dbt-runner';
+import { spawnDbtAsync, getJob } from '$lib/server/dbt-runner';
+import { ensureManagedProfileDefaults } from '$lib/server/project';
 import { loadSchedules, saveSchedules } from '$lib/server/dbt-schedules';
 import { precompileProjectModels, collectProjectModelNames } from '$lib/server/prql-compiler';
 
@@ -29,7 +30,8 @@ export const dbtRunFunction = inngest.createFunction(
 			}
 
 			const args = ['run', ...(select ? ['--select', select] : [])];
-			const jobId = spawnDbt(args, folder);
+			await ensureManagedProfileDefaults(folder);
+			const jobId = await spawnDbtAsync(args, folder);
 
 			// Surface the jobId immediately so the UI can start streaming logs
 			if (scheduleId) {

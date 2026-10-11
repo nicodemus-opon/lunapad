@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { getJob, killJob, resolveDbtBinary, spawnDbt } from './dbt-runner.js';
+import { ensureDbtAdapter, readAdapter } from './dbt-runner.js';
+import { binarySupportsAdapter } from './dbt-runner.js';
 
 let root: string;
 let goodProject: string;
@@ -152,5 +154,53 @@ describe('resolveDbtBinary', () => {
 
 	it('returns a string for a project with no profiles.yml', () => {
 		expect(typeof resolveDbtBinary(root)).toBe('string');
+	});
+});
+
+describe('adapter-aware resolution', () => {
+	it('reads the adapter type per project folder', async () => {
+		const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'lunapad-dbt-adapter-'));
+		try {
+			await fs.writeFile(
+				path.join(folder, 'profiles.yml'),
+				`myproj:\n  target: dev\n  outputs:\n    dev:\n      type: trino\n      host: localhost\n`,
+				'utf-8'
+			);
+			expect(readAdapter(folder)).toBe('trino');
+		} finally {
+			await fs.rm(folder, { recursive: true, force: true });
+		}
+	});
+
+	it('defaults to duckdb when profiles.yml is missing', async () => {
+		const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'lunapad-dbt-adapter-'));
+		try {
+			expect(readAdapter(folder)).toBe('duckdb');
+		} finally {
+			await fs.rm(folder, { recursive: true, force: true });
+		}
+	});
+
+	it('reports a nonexistent binary as supporting nothing', () => {
+		expect(binarySupportsAdapter('/definitely/not/a/dbt-binary', 'duckdb')).toBe(false);
+		expect(binarySupportsAdapter('definitely-not-a-dbt-binary-xyz', 'postgres')).toBe(false);
+	});
+
+	it('ensureDbtAdapter fails fast without side effects when background provisioning is off', async () => {
+		const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'lunapad-dbt-adapter-'));
+		try {
+			await fs.writeFile(
+				path.join(folder, 'profiles.yml'),
+				`myproj:\n  target: dev\n  outputs:\n    dev:\n      type: hyperdb\n`,
+				'utf-8'
+			);
+			// Hermetic: no venv is created, the missing package is named by
+			// convention (dbt-<type>) instead of a maintained matrix.
+			await expect(
+				ensureDbtAdapter(folder, undefined, { triggerBackgroundProvision: false })
+			).rejects.toThrow('dbt-hyperdb');
+		} finally {
+			await fs.rm(folder, { recursive: true, force: true });
+		}
 	});
 });
